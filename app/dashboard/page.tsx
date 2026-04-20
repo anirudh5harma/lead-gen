@@ -30,7 +30,7 @@ export default async function DashboardPage() {
   const plan             = (extProfile as { plan?: string } | null)?.plan ?? 'free'
   const leadsUsed        = (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
-  const autoSendEnabled  = (extProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? true
+  const autoSendEnabled  = (extProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? false
 
   // Initial leads (server-rendered)
   const { data: leads } = await supabase

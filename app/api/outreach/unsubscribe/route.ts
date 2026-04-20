@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { verifyUnsubscribeToken } from '@/lib/unsubscribe'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -9,12 +10,9 @@ export async function GET(request: Request) {
     return new NextResponse('Invalid unsubscribe link.', { status: 400 })
   }
 
-  let email: string
-  try {
-    email = Buffer.from(token, 'base64url').toString('utf-8')
-    if (!email.includes('@')) throw new Error('invalid')
-  } catch {
-    return new NextResponse('Invalid unsubscribe link.', { status: 400 })
+  const email = await verifyUnsubscribeToken(token)
+  if (!email) {
+    return new NextResponse('Invalid or tampered unsubscribe link.', { status: 400 })
   }
 
   const supabase = await createServiceClient()

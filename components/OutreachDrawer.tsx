@@ -8,6 +8,7 @@ interface Props {
   lead: Lead
   onClose: () => void
   onEmailSent: () => void
+  onStatusChange?: (status: string) => void
   onDraftCreated?: () => void
 }
 
@@ -43,7 +44,7 @@ const SIGNAL_META: Record<string, { label: string; color: string }> = {
   regulation:  { label: 'Regulation',  color: 'var(--color-sig-regulation)' },
 }
 
-export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCreated }: Props) {
+export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusChange, onDraftCreated }: Props) {
   const [draft, setDraft]       = useState<Draft | null>(null)
   const [followUp, setFollowUp] = useState<FollowUp | null>(null)
   const [tab, setTab]           = useState<Tab>('initial')
@@ -53,6 +54,8 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
   const [copied, setCopied]     = useState(false)
   const [sendState, setSendState] = useState<SendState>('idle')
   const [sendError, setSendError] = useState<string | null>(null)
+  const [followupCancelling, setFollowupCancelling] = useState(false)
+  const [followupCancelled, setFollowupCancelled] = useState(false)
 
   // Load initial draft
   useEffect(() => {
@@ -111,6 +114,16 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
     setTimeout(() => setCopied(false), 2000)
   }
 
+  async function cancelFollowup() {
+    setFollowupCancelling(true)
+    try {
+      await fetch(`/api/leads/${lead.id}/followup`, { method: 'DELETE' })
+      setFollowupCancelled(true)
+    } finally {
+      setFollowupCancelling(false)
+    }
+  }
+
   async function sendEmail() {
     if (!draft) return
     const recipient = draft.stakeholders.find(s => s.email)
@@ -127,7 +140,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
       const res = await fetch('/api/outreach/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: lead.id, to: recipient.email, subject: currentSubject, body: currentBody }),
+        body: JSON.stringify({ leadId: lead.id, to: recipient.email, subject: currentSubject, body: currentBody, isFollowUp: tab === 'followup' }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to send')
@@ -146,7 +159,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
     const body    = tab === 'followup' && followUp ? followUp.followup_body    : draft.body
     const params  = new URLSearchParams({ to, su: subject, body })
     window.open(`https://mail.google.com/mail/?view=cm&fs=1&${params.toString()}`, '_blank')
-    onEmailSent()
+    // Don't close or mark as sent — user must confirm via "Mark as" buttons after sending from Gmail
   }
 
   const sig = Array.isArray(lead.signals) ? lead.signals[0] : lead.signals
@@ -296,7 +309,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
           {tab === 'followup' && followUp && (
             <>
               <div className="text-xs text-[var(--color-sig-expansion)] bg-[var(--color-sig-expansion-bg)] border border-[var(--color-sig-expansion)]/20 rounded-md px-3 py-2">
-                Send ~4 days after the initial email with no reply. Short by design.
+                Send ~3 days after the initial email with no reply. Short by design.
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">Subject</label>
@@ -370,7 +383,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
               {(['sent', 'replied', 'booked'] as const).map(s => (
                 <button
                   key={s}
-                  onClick={() => onEmailSent()}
+                  onClick={() => onStatusChange ? onStatusChange(s) : onEmailSent()}
                   className="text-[11px] px-2.5 py-1 rounded-full border border-[var(--color-line-2)] bg-white text-[var(--color-text-3)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-accent-ring)] hover:bg-[var(--color-accent-bg)] transition-colors capitalize"
                   title={`Mark this lead as ${s}`}
                 >
@@ -378,6 +391,25 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
                 </button>
               ))}
             </div>
+
+            {/* Per-lead follow-up cancellation */}
+            {lead.status === 'sent' && !followupCancelled && (
+              <div className="flex items-center justify-between pt-1 border-t border-[var(--color-line-1)]">
+                <span className="text-[11px] text-[var(--color-text-4)]">Auto follow-up in ~3 days</span>
+                <button
+                  onClick={cancelFollowup}
+                  disabled={followupCancelling}
+                  className="text-[11px] text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] disabled:opacity-50 transition-colors"
+                >
+                  {followupCancelling ? 'Cancelling…' : 'Cancel'}
+                </button>
+              </div>
+            )}
+            {followupCancelled && (
+              <p className="text-[11px] text-[var(--color-text-4)] pt-1 border-t border-[var(--color-line-1)]">
+                Auto follow-up cancelled.
+              </p>
+            )}
           </div>
         )}
       </div>

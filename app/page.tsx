@@ -68,21 +68,19 @@ export default function LoginPage() {
           <div className="space-y-8 fade-in">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--color-line-2)] bg-white text-[11px] text-[var(--color-text-2)] shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] pulse-dot" />
-              Live signals · updated every 6h
+              Live signals · updated every hour
             </div>
 
             <h1 className="text-[44px] md:text-[68px] leading-[0.98] tracking-[-0.02em] text-[var(--color-text-1)] font-medium">
-              Reach out the<br />
-              <span className="font-serif italic text-gradient">exact moment</span>{' '}
-              <span className="font-serif italic text-[var(--color-text-1)]">a</span>
+              Sell at the
+              <span className="font-serif italic text-gradient"> moment</span>{' '}
+              {/* <span className="font-serif italic text-[var(--color-text-1)]">a</span> */}
               <br />
-              <span>company is buying.</span>
+              <span>it matters.</span>
             </h1>
 
             <p className="text-[17px] leading-[1.55] text-[var(--color-text-2)] max-w-[540px]">
-              Bombsell watches for funding, hires, launches, and expansions across
-              thousands of companies — then drafts personalized outreach with Claude.
-              Instead of spraying cold emails, you strike when intent is fresh.
+              Bombsell helps you reach prospects at the exact moment they’re most likely to respond—with emails that actually feel human.
             </p>
 
             <div className="flex items-center gap-3 flex-wrap">
@@ -268,7 +266,7 @@ export default function LoginPage() {
                 <GoogleIconSmall /> Continue with Google
               </button>
               <p className="text-[12px] text-[var(--color-text-4)]">
-                Free forever · No card required · Takes 90 seconds
+                Free forever · No card required · Takes 60 seconds
               </p>
             </div>
           </div>
@@ -299,17 +297,17 @@ export default function LoginPage() {
 const STEPS = [
   {
     title: 'We listen for buying moments',
-    body: 'Every 6 hours we ingest funding rounds, new leadership hires, product launches, and geo expansions from Google News, press wires, and job boards.',
+    body: 'Every 6 hours we ingest funding rounds, new leadership hires, product launches, and geo expansions from across the web.',
     icon: <IconRadar />,
   },
   {
-    title: 'Claude scores every signal',
+    title: 'Bombsell scores every signal',
     body: 'Only the 70+ relevance signals matched to your ICP make it into your feed. No noise, no dozens of dashboards to babysit.',
     icon: <IconSpark />,
   },
   {
     title: 'Drafted. Sent. Tracked.',
-    body: 'One-click outreach drafted using Hormozi, Voss and Challenger frameworks — with verified emails, a 3-day follow-up, and reply detection baked in.',
+    body: 'Automated outreach drafted using proven sales and marketing frameworks — with verified emails, a 3-day follow-up, and reply detection baked in.',
     icon: <IconSend />,
   },
 ]
@@ -317,11 +315,11 @@ const STEPS = [
 const FEATURES = [
   {
     title: 'Verified contacts, not guesses',
-    body: 'Apollo + Hunter + ZeroBounce pipeline ensures every email is real and safe to send. No more 30% bounce rates.',
+    body: 'Our comprehensive pipeline ensures every contact is verified and every email is safe to send. No more 30% bounce rates.',
   },
   {
-    title: 'Claude-drafted emails',
-    body: 'Each email is personalized to the signal — mentioning the specific funding round, new hire or product launch that triggered it.',
+    title: 'Extremely personalized emails',
+    body: "Each email is personalized to the signal context, the company's recent news and your offering intent.",
   },
   {
     title: 'Automated follow-ups',

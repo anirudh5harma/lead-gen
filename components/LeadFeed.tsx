@@ -370,6 +370,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [] }: Props
           lead={activeLead}
           onClose={() => setActiveLead(null)}
           onEmailSent={() => { updateStatus(activeLead.id, 'sent'); setActiveLead(null) }}
+          onStatusChange={(status) => { updateStatus(activeLead.id, status); setActiveLead(null) }}
           onDraftCreated={() => {
             if (activeLead.status === 'viewed' || activeLead.status === 'new') {
               updateStatus(activeLead.id, 'drafted')

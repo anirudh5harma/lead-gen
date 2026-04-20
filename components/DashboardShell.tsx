@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState, useTransition, useCallback } from 'react'
+import { useMemo, useState, useTransition, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import Sidebar from './Sidebar'
 import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
@@ -43,6 +44,16 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   const [activeView, setActiveView] = useState<View>('feed')
   const [isRefreshing, startTransition] = useTransition()
   const router = useRouter()
+
+  // Auto-navigate to settings after OAuth redirect (?view=settings)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('view') === 'settings') {
+      setActiveView('settings')
+      // Clean the URL without triggering a re-render cycle
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
 
   const [mountedAtMs] = useState(() => Date.now())
 
@@ -120,6 +131,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 </svg>
                 Upgrade
               </a>
+              <LogoutButton />
             </div>
           </div>
         </header>
@@ -179,7 +191,7 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
   const used = profile.leads_used_this_month ?? 0
   const pct = limit === Infinity ? 0 : Math.min(100, (used / limit) * 100)
 
-  const [autoSend, setAutoSend] = useState(profile.auto_send_enabled ?? true)
+  const [autoSend, setAutoSend] = useState(profile.auto_send_enabled ?? false)
   const [autoSendSaving, setAutoSendSaving] = useState(false)
 
   const toggleAutoSend = useCallback(async (enabled: boolean) => {
@@ -270,14 +282,17 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
         </div>
       </div>
 
+      {/* Connected sending accounts */}
+      <ConnectedAccountsPanel />
+
       {/* Auto-send toggle (Pro / Max only) */}
       {(plan === 'pro' || plan === 'max') && (
-        <div className="card">
+        <div className="card divide-y divide-[var(--color-line-1)]">
           <div className="px-5 py-4 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Auto-send Follow-ups</h2>
               <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-                When on, follow-up emails are sent automatically 3 days after the initial outreach.
+                When on, a follow-up email is sent automatically ~3 days after the initial outreach if no reply is detected.
               </p>
             </div>
             <button
@@ -296,6 +311,7 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
               />
             </button>
           </div>
+          <PendingFollowupsPanel />
         </div>
       )}
 
@@ -402,11 +418,240 @@ function ManageBillingButton() {
   )
 }
 
+function LogoutButton() {
+  const [loading, setLoading] = useState(false)
+
+  async function logout() {
+    setLoading(true)
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    window.location.href = '/'
+  }
+
+  return (
+    <button
+      onClick={logout}
+      disabled={loading}
+      className="h-9 w-9 inline-flex items-center justify-center rounded-full text-[var(--color-text-2)] hover:text-[var(--color-sig-regulation)] hover:bg-[var(--color-ink-2)] disabled:opacity-50 transition-colors"
+      title="Sign out"
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+      </svg>
+    </button>
+  )
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[140px_1fr] gap-4 px-5 py-3 text-xs">
       <dt className="text-[10px] uppercase tracking-widest text-[var(--color-text-4)] pt-0.5 font-medium">{label}</dt>
       <dd className="text-[var(--color-text-1)]">{children}</dd>
+    </div>
+  )
+}
+
+interface PendingFollowup {
+  id: string
+  scheduled_for: string
+  lead_id: string
+  leads: { id: string; target_company: string; status: string } | null
+}
+
+function PendingFollowupsPanel() {
+  const [followups, setFollowups] = useState<PendingFollowup[]>([])
+  const [loaded, setLoaded]       = useState(false)
+  const [cancelling, setCancelling] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/leads/pending-followups')
+      .then(r => r.json() as Promise<{ followups?: PendingFollowup[] }>)
+      .then(d => { setFollowups(d.followups ?? []); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const cancel = useCallback(async (leadId: string, followupId: string) => {
+    setCancelling(followupId)
+    try {
+      await fetch(`/api/leads/${leadId}/followup`, { method: 'DELETE' })
+      setFollowups(prev => prev.filter(f => f.id !== followupId))
+    } finally {
+      setCancelling(null)
+    }
+  }, [])
+
+  if (!loaded || followups.length === 0) return null
+
+  return (
+    <>
+      <div className="px-5 py-3">
+        <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-4)] font-medium">
+          Scheduled · {followups.length}
+        </p>
+      </div>
+      <ul className="divide-y divide-[var(--color-line-1)]">
+        {followups.map(f => (
+          <li key={f.id} className="px-5 py-3 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs text-[var(--color-text-1)] truncate">{f.leads?.target_company ?? 'Unknown'}</p>
+              <p className="text-[10px] text-[var(--color-text-4)] mt-0.5">
+                {new Date(f.scheduled_for).toLocaleDateString('en-US', {
+                  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                })}
+              </p>
+            </div>
+            <button
+              onClick={() => f.leads && cancel(f.leads.id, f.id)}
+              disabled={cancelling === f.id}
+              className="text-[11px] text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] disabled:opacity-50 transition-colors shrink-0"
+            >
+              {cancelling === f.id ? 'Cancelling…' : 'Cancel'}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+interface ConnectedAccount {
+  id:           string
+  provider:     'gmail' | 'outlook'
+  email:        string
+  display_name: string | null
+  is_active:    boolean
+  last_used_at: string | null
+  created_at:   string
+}
+
+const PROVIDER_LABEL: Record<string, string> = { gmail: 'Gmail', outlook: 'Outlook' }
+
+function ConnectedAccountsPanel() {
+  const [accounts,    setAccounts]    = useState<ConnectedAccount[]>([])
+  const [loaded,      setLoaded]      = useState(false)
+  const [removing,    setRemoving]    = useState<string | null>(null)
+  const [banner,      setBanner]      = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    fetch('/api/connected-accounts')
+      .then(r => r.json() as Promise<{ accounts?: ConnectedAccount[] }>)
+      .then(d => { setAccounts(d.accounts ?? []); setLoaded(true) })
+      .catch(() => setLoaded(true))
+
+    // Read OAuth result from URL params
+    const params = new URLSearchParams(window.location.search)
+    const connected = params.get('ca_connected')
+    const error     = params.get('ca_error')
+    if (connected) {
+      showBanner('ok', `${PROVIDER_LABEL[connected] ?? connected} connected successfully.`)
+    } else if (error) {
+      const msgs: Record<string, string> = {
+        google_denied:    'Google sign-in was cancelled.',
+        microsoft_denied: 'Microsoft sign-in was cancelled.',
+        google_failed:    'Google connection failed — please try again.',
+        microsoft_failed: 'Microsoft connection failed — please try again.',
+        invalid_state:    'Invalid OAuth state — please try again.',
+      }
+      showBanner('err', msgs[error] ?? 'Connection failed.')
+    }
+  }, [])
+
+  function showBanner(type: 'ok' | 'err', msg: string) {
+    setBanner({ type, msg })
+    if (bannerTimer.current) clearTimeout(bannerTimer.current)
+    bannerTimer.current = setTimeout(() => setBanner(null), 5000)
+  }
+
+  const remove = useCallback(async (id: string) => {
+    setRemoving(id)
+    try {
+      await fetch('/api/connected-accounts', {
+        method:  'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ id }),
+      })
+      setAccounts(prev => prev.filter(a => a.id !== id))
+    } finally {
+      setRemoving(null)
+    }
+  }, [])
+
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Sending Accounts</h2>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          Emails send from your own inbox. Multiple accounts rotate automatically.
+        </p>
+      </div>
+
+      {banner && (
+        <div className={`px-5 py-2.5 text-xs ${
+          banner.type === 'ok'
+            ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+            : 'bg-red-50 text-red-600'
+        }`}>
+          {banner.msg}
+        </div>
+      )}
+
+      {loaded && accounts.length > 0 && (
+        <ul className="divide-y divide-[var(--color-line-1)]">
+          {accounts.map(a => (
+            <li key={a.id} className="px-5 py-3 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-ink-2)] border border-[var(--color-line-1)] text-[var(--color-text-3)]">
+                    {PROVIDER_LABEL[a.provider]}
+                  </span>
+                  <span className="text-xs text-[var(--color-text-1)] truncate">{a.email}</span>
+                </div>
+                {a.last_used_at && (
+                  <p className="text-[10px] text-[var(--color-text-4)] mt-0.5">
+                    Last used {new Date(a.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => remove(a.id)}
+                disabled={removing === a.id}
+                className="text-[11px] text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] disabled:opacity-50 transition-colors shrink-0"
+              >
+                {removing === a.id ? 'Removing…' : 'Disconnect'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="px-5 py-4 flex items-center gap-2 flex-wrap">
+        <a
+          href="/api/auth/google-mail"
+          className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"
+        >
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden>
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          Connect Gmail
+        </a>
+        <a
+          href="/api/auth/microsoft-mail"
+          className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"
+        >
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden>
+            <path fill="#F25022" d="M1 1h10v10H1z"/>
+            <path fill="#7FBA00" d="M13 1h10v10H13z"/>
+            <path fill="#00A4EF" d="M1 13h10v10H1z"/>
+            <path fill="#FFB900" d="M13 13h10v10H13z"/>
+          </svg>
+          Connect Outlook
+        </a>
+      </div>
     </div>
   )
 }

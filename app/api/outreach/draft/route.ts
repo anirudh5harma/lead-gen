@@ -3,7 +3,18 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { draftOutreachEmail } from '@/lib/claude'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { enrichCompany } from '@/lib/email-finder/enrich'
+import { scrapeSignalArticle } from '@/lib/email-finder/firecrawl'
 import type { Stakeholder } from '../../../api/contacts/find/route'
+
+function signalAgeLabel(publishedAt: string | null): string | null {
+  if (!publishedAt) return null
+  const ageHours = (Date.now() - new Date(publishedAt).getTime()) / 3_600_000
+  if (ageHours < 24)  return 'this morning'
+  if (ageHours < 48)  return 'yesterday'
+  if (ageHours < 96)  return '2 days ago'
+  if (ageHours < 168) return 'earlier this week'
+  return 'last week'
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -36,7 +47,7 @@ export async function POST(request: Request) {
   const [leadRes, profileRes] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, target_company, relevance_reason, contact_email, contact_name, contact_title, signals (signal_type, summary, company_domain)')
+      .select('id, target_company, relevance_reason, contact_email, contact_name, contact_title, signals (signal_type, summary, company_domain, headline, funding_amount, published_at, source_url)')
       .eq('id', leadId)
       .eq('user_id', user.id)
       .single(),
@@ -58,7 +69,11 @@ export async function POST(request: Request) {
   }
   const profile = profileRes.data
 
-  type SignalRow = { signal_type: string; summary: string; company_domain: string | null }
+  type SignalRow = {
+    signal_type: string; summary: string; company_domain: string | null
+    headline: string | null; funding_amount: string | null
+    published_at: string | null; source_url: string | null
+  }
   const signalRaw = lead.signals as unknown as SignalRow | SignalRow[] | null
   const signal = Array.isArray(signalRaw) ? signalRaw[0] ?? null : signalRaw
 
@@ -102,21 +117,29 @@ export async function POST(request: Request) {
     }
   }
 
-  // Draft email targeting the top stakeholder (or a generic title if none found)
-  const primaryStakeholder = stakeholders[0] || {
-    name: 'the team',
-    title: 'Leadership',
-  }
+  // Scrape article for personalization facts — race with a 5s timeout so it never blocks the draft
+  const articleContext = signal?.source_url
+    ? await Promise.race([
+        scrapeSignalArticle(signal.source_url),
+        new Promise<string>(resolve => setTimeout(() => resolve(''), 5000)),
+      ])
+    : ''
+
+  const primaryStakeholder = stakeholders[0] || { name: 'the team', title: 'Leadership' }
 
   const { subject, body } = await draftOutreachEmail({
-    senderCompany: profile?.company_name || 'us',
+    senderCompany:       profile?.company_name || 'us',
     servicesDescription: profile?.services_description || '',
-    stakeholderName: primaryStakeholder.name,
-    stakeholderTitle: primaryStakeholder.title,
-    targetCompany: lead.target_company,
-    signalType: signal?.signal_type || 'event',
-    signalSummary: signal?.summary || lead.relevance_reason || '',
-    calendlyUrl: (profile as { calendly_url?: string | null } | null)?.calendly_url || null,
+    stakeholderName:     primaryStakeholder.name,
+    stakeholderTitle:    primaryStakeholder.title,
+    targetCompany:       lead.target_company,
+    signalType:          signal?.signal_type || 'event',
+    signalSummary:       signal?.summary || lead.relevance_reason || '',
+    headline:            signal?.headline ?? null,
+    fundingAmount:       signal?.funding_amount ?? null,
+    signalAgeLabel:      signalAgeLabel(signal?.published_at ?? null),
+    articleContext:      articleContext || null,
+    calendlyUrl:         (profile as { calendly_url?: string | null } | null)?.calendly_url || null,
   })
 
   // Save draft to DB

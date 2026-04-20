@@ -1,19 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { Resend } from 'resend'
 import { canSendEmail, incrementSendCount, getUserPlan, getPlanLimits } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
-
-const UNSUBSCRIBE_BASE = `${process.env.NEXT_PUBLIC_APP_URL}/api/outreach/unsubscribe`
-
-function unsubscribeUrl(email: string): string {
-  const token = Buffer.from(email).toString('base64url')
-  return `${UNSUBSCRIBE_BASE}?token=${token}`
-}
-
-function appendUnsubscribeFooter(text: string, email: string): string {
-  return `${text}\n\n---\nTo unsubscribe, visit: ${unsubscribeUrl(email)}`
-}
+import { draftFollowUpEmail } from '@/lib/claude'
+import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -35,8 +25,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'leadId, to, subject, and body are required' }, { status: 400 })
   }
 
-  const { leadId, to, subject, body: emailBody } = body as {
-    leadId: string; to: string; subject: string; body: string
+  const { leadId, to, subject, body: emailBody, isFollowUp } = body as {
+    leadId: string; to: string; subject: string; body: string; isFollowUp?: boolean
   }
 
   if (!leadId || !to || !subject || !emailBody) {
@@ -54,24 +44,13 @@ export async function POST(request: Request) {
     )
   }
 
-  if (!process.env.RESEND_API_KEY) {
-    return NextResponse.json(
-      { error: 'Email sending is not configured. Add RESEND_API_KEY to your environment.' },
-      { status: 503 }
-    )
-  }
+  const [leadRes, profileRes] = await Promise.all([
+    supabase.from('leads').select('id, status').eq('id', leadId).eq('user_id', user.id).single(),
+    supabase.from('user_profiles').select('company_name, services_description').eq('user_id', user.id).single(),
+  ])
 
-  // Verify lead belongs to this user
-  const { data: lead } = await supabase
-    .from('leads')
-    .select('id, status')
-    .eq('id', leadId)
-    .eq('user_id', user.id)
-    .single()
+  if (!leadRes.data) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
-  if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
-
-  // Check send quota (Free: 15/30 days, Pro: 150/30 days, Max: unlimited)
   const allowed = await canSendEmail(user.id)
   if (!allowed) {
     return NextResponse.json(
@@ -80,73 +59,90 @@ export async function POST(request: Request) {
     )
   }
 
-  // Check unsubscribe list
-  const { data: unsub } = await supabase
-    .from('unsubscribed_emails')
-    .select('id')
-    .eq('email', to.toLowerCase())
-    .maybeSingle()
+  const [unsubRes, bounceRes] = await Promise.all([
+    supabase.from('unsubscribed_emails').select('id').eq('email', to.toLowerCase()).maybeSingle(),
+    supabase.from('bounced_emails').select('reason').eq('email', to.toLowerCase()).maybeSingle(),
+  ])
 
-  if (unsub) {
-    return NextResponse.json(
-      { error: 'This recipient has unsubscribed.' },
-      { status: 422 }
-    )
-  }
-
-  // Check bounce/complaint suppression
-  const { data: bounced } = await supabase
-    .from('bounced_emails')
-    .select('reason')
-    .eq('email', to.toLowerCase())
-    .maybeSingle()
-
-  if (bounced) {
-    return NextResponse.json(
-      { error: `Cannot send to this address (${bounced.reason}).` },
-      { status: 422 }
-    )
-  }
+  if (unsubRes.data) return NextResponse.json({ error: 'This recipient has unsubscribed.' }, { status: 422 })
+  if (bounceRes.data) return NextResponse.json({ error: `Cannot send to this address (${bounceRes.data.reason}).` }, { status: 422 })
 
   try {
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    const fromAddress = process.env.RESEND_FROM ?? 'outreach@bombsell.com'
+    const fromName = profileRes.data?.company_name || 'Outreach'
 
-    const bodyWithFooter = appendUnsubscribeFooter(emailBody, to)
-
-    const { data: sent, error: resendErr } = await resend.emails.send({
-      from: fromAddress,
+    const result = await sendWithConnectedAccount({
+      userId:   user.id,
+      supabase,
       to,
       subject,
-      text: bodyWithFooter,
-      headers: {
-        'List-Unsubscribe': `<${unsubscribeUrl(to)}>`,
-        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-      },
+      body:     emailBody,
+      fromName,
     })
 
-    if (resendErr) throw new Error(resendErr.message)
+    if (!result) {
+      return NextResponse.json(
+        { error: 'No sending account connected. Go to Settings → Sending Accounts to connect Gmail or Outlook.' },
+        { status: 503 }
+      )
+    }
 
     const now = new Date().toISOString()
-    await supabase
-      .from('leads')
-      .update({ status: 'sent', sent_at: now, message_id: sent?.id ?? null })
-      .eq('id', leadId)
+    await supabase.from('leads').update({
+      status:          'sent',
+      sent_at:         now,
+      message_id:      result.messageId,
+      from_email:      result.fromEmail,
+      gmail_thread_id: result.threadId,
+    }).eq('id', leadId)
 
-    // Increment send counter (counts against the 30-day quota)
     await incrementSendCount(user.id)
 
-    // Schedule follow-up for Pro/Max users (3 days out)
     const { plan } = await getUserPlan(user.id)
-    if (getPlanLimits(plan).followups) {
+    if (getPlanLimits(plan).followups && !isFollowUp) {
       const followAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
       await supabase.from('scheduled_followups').upsert(
         { user_id: user.id, lead_id: leadId, scheduled_for: followAt },
         { onConflict: 'lead_id' }
       )
+
+      const { data: existingSeq } = await supabase
+        .from('outreach_sequences').select('id').eq('lead_id', leadId).maybeSingle()
+
+      if (!existingSeq) {
+        try {
+          const [draftRes, leadSigRes] = await Promise.all([
+            supabase.from('outreach_drafts').select('subject, body, stakeholders').eq('lead_id', leadId).single(),
+            supabase.from('leads').select('target_company, relevance_reason, signals(signal_type, summary)').eq('id', leadId).single(),
+          ])
+          if (draftRes.data && leadSigRes.data) {
+            type SigRow = { signal_type: string; summary: string }
+            const sigRaw = leadSigRes.data.signals as unknown as SigRow | SigRow[] | null
+            const signal = Array.isArray(sigRaw) ? sigRaw[0] ?? null : sigRaw
+            const stks   = Array.isArray(draftRes.data.stakeholders)
+              ? (draftRes.data.stakeholders as Array<{ name?: string }>)
+              : []
+            const { subject: fuSubject, body: fuBody } = await draftFollowUpEmail({
+              senderCompany:       profileRes.data?.company_name || 'us',
+              servicesDescription: profileRes.data?.services_description || '',
+              stakeholderName:     stks[0]?.name || 'there',
+              targetCompany:       leadSigRes.data.target_company,
+              signalType:          signal?.signal_type || 'event',
+              signalSummary:       signal?.summary || leadSigRes.data.relevance_reason || '',
+              originalSubject:     draftRes.data.subject,
+              originalBody:        draftRes.data.body,
+            })
+            await supabase.from('outreach_sequences').upsert(
+              { lead_id: leadId, followup_subject: fuSubject, followup_body: fuBody },
+              { onConflict: 'lead_id' }
+            )
+          }
+        } catch (fuErr) {
+          console.error('[outreach/send] follow-up pre-generation failed:', fuErr)
+        }
+      }
     }
 
-    return NextResponse.json({ success: true, messageId: sent?.id })
+    return NextResponse.json({ success: true, messageId: result.messageId, fromEmail: result.fromEmail })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to send email'
     console.error('[outreach/send]', message)

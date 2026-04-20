@@ -2,6 +2,67 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g
 
+/**
+ * Scrapes a news article URL and extracts key facts for email personalization.
+ * Returns a formatted string of facts (CEO quote, lead investor, use of proceeds, etc.)
+ * or an empty string if unavailable. Gracefully handles all failure modes.
+ */
+export async function scrapeSignalArticle(url: string): Promise<string> {
+  if (!process.env.FIRECRAWL_API_KEY || !url) return ''
+
+  try {
+    const res = await fetch('https://api.firecrawl.dev/v0/scrape', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.FIRECRAWL_API_KEY}`,
+      },
+      body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true }),
+    })
+
+    if (!res.ok) return ''
+    const json = await res.json()
+    const markdown: string = json.data?.markdown || ''
+    if (!markdown || markdown.length < 100) return ''
+
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const message = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 350,
+      messages: [{
+        role: 'user',
+        content: `From this news article, extract facts useful for a sales email. Only include facts explicitly stated.
+
+${markdown.slice(0, 4000)}
+
+Return ONLY this JSON (omit any field you cannot find verbatim in the article):
+{
+  "lead_investor": "...",
+  "use_of_proceeds": "...",
+  "ceo_quote": "...",
+  "growth_target": "...",
+  "key_detail": "..."
+}`,
+      }],
+    })
+
+    const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
+    if (!text) return ''
+
+    const cleaned = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+    const facts = JSON.parse(cleaned) as Record<string, string>
+    const parts: string[] = []
+    if (facts.lead_investor)   parts.push(`Lead investor: ${facts.lead_investor}`)
+    if (facts.use_of_proceeds) parts.push(`Use of proceeds: ${facts.use_of_proceeds}`)
+    if (facts.ceo_quote)       parts.push(`CEO said: "${facts.ceo_quote}"`)
+    if (facts.growth_target)   parts.push(`Growth target: ${facts.growth_target}`)
+    if (facts.key_detail)      parts.push(`Key detail: ${facts.key_detail}`)
+    return parts.join('\n')
+  } catch {
+    return ''
+  }
+}
+
 interface FirecrawlContact {
   name: string
   title: string

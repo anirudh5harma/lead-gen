@@ -1,16 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { Resend } from 'resend'
 import { getPlanLimits, PLAN_LIMITS, type PlanTier } from '@/lib/plan'
+import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
-}
-
-const UNSUBSCRIBE_BASE = `${process.env.NEXT_PUBLIC_APP_URL}/api/outreach/unsubscribe`
-
-function unsubscribeUrl(email: string): string {
-  return `${UNSUBSCRIBE_BASE}?token=${Buffer.from(email).toString('base64url')}`
 }
 
 export async function GET(request: Request) {
@@ -18,18 +12,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!process.env.RESEND_API_KEY) {
-    return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 503 })
-  }
-
   const supabase = await createServiceClient()
-  const resend = new Resend(process.env.RESEND_API_KEY)
 
   const { data: pending } = await supabase
     .from('scheduled_followups')
     .select(`
       id, user_id, lead_id, scheduled_for,
-      leads(target_company, contact_email),
+      leads(target_company, contact_email, status, message_id, from_email, gmail_thread_id),
       outreach_sequences(followup_subject, followup_body)
     `)
     .lte('scheduled_for', new Date().toISOString())
@@ -41,17 +30,16 @@ export async function GET(request: Request) {
   const userIds = [...new Set(pending.map(p => p.user_id))]
   const { data: profiles } = await supabase
     .from('user_profiles')
-    .select('user_id, plan, auto_send_enabled, leads_used_this_month, leads_reset_at')
+    .select('user_id, plan, auto_send_enabled, leads_used_this_month, leads_reset_at, company_name')
     .in('user_id', userIds)
 
-  const now = new Date()
+  const now         = new Date()
   const windowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
-  // Build per-user quota state; reset counter if 30-day window elapsed
-  const quotaMap: Record<string, { plan: PlanTier; used: number; limit: number; autoSend: boolean }> = {}
+  const quotaMap: Record<string, { plan: PlanTier; used: number; limit: number; autoSend: boolean; companyName: string }> = {}
   for (const p of (profiles ?? [])) {
     const plan = (p.plan ?? 'free') as PlanTier
-    let used = p.leads_used_this_month ?? 0
+    let used   = p.leads_used_this_month ?? 0
 
     if (p.leads_reset_at && new Date(p.leads_reset_at) < windowStart) {
       used = 0
@@ -64,8 +52,9 @@ export async function GET(request: Request) {
     quotaMap[p.user_id] = {
       plan,
       used,
-      limit: PLAN_LIMITS[plan].sends_per_month,
-      autoSend: p.auto_send_enabled ?? true,
+      limit:       PLAN_LIMITS[plan].sends_per_month,
+      autoSend:    p.auto_send_enabled ?? false,
+      companyName: (p as { company_name?: string }).company_name || '',
     }
   }
 
@@ -75,49 +64,66 @@ export async function GET(request: Request) {
     if (!quota) continue
     if (!getPlanLimits(quota.plan).followups) continue
     if (!quota.autoSend) continue
-    if (quota.used >= quota.limit) continue  // quota exhausted — follow-ups count against limit
+    if (quota.used >= quota.limit) continue
 
-    const lead = item.leads as unknown as { contact_email?: string; target_company: string } | null
-    const seq  = item.outreach_sequences as unknown as { followup_subject: string; followup_body: string } | null
+    const lead = item.leads as unknown as {
+      contact_email?: string; target_company: string; status?: string
+      message_id?: string | null; from_email?: string | null; gmail_thread_id?: string | null
+    } | null
+    const seq = item.outreach_sequences as unknown as {
+      followup_subject: string; followup_body: string
+    } | null
+
     if (!lead?.contact_email || !seq) continue
 
+    if (lead.status === 'replied' || lead.status === 'booked') {
+      await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
+      continue
+    }
+
     const email = lead.contact_email.toLowerCase()
-
-    const { data: unsub } = await supabase
-      .from('unsubscribed_emails').select('id').eq('email', email).maybeSingle()
-    if (unsub) {
+    const [unsubRes, bounceRes] = await Promise.all([
+      supabase.from('unsubscribed_emails').select('id').eq('email', email).maybeSingle(),
+      supabase.from('bounced_emails').select('id').eq('email', email).maybeSingle(),
+    ])
+    if (unsubRes.data || bounceRes.data) {
       await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
       continue
     }
 
-    const { data: bounced } = await supabase
-      .from('bounced_emails').select('id').eq('email', email).maybeSingle()
-    if (bounced) {
-      await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
-      continue
-    }
+    // For Gmail threads, pass threadId for proper threading.
+    // For Outlook, gmail_thread_id stores the conversationId — not directly usable as inReplyTo,
+    // but the outlook webhook will handle reply detection via conversationId.
+    const gmailThreadId = lead.gmail_thread_id ?? null
+    const inReplyTo     = lead.message_id ? `<${lead.message_id}>` : null
 
-    const fromAddress = process.env.RESEND_FROM ?? 'outreach@bombsell.com'
-    const { data: emailData, error } = await resend.emails.send({
-      from: fromAddress,
-      to: lead.contact_email,
-      subject: seq.followup_subject,
-      text: `${seq.followup_body}\n\n---\nTo unsubscribe: ${unsubscribeUrl(lead.contact_email)}`,
-      headers: {
-        'List-Unsubscribe': `<${unsubscribeUrl(lead.contact_email)}>`,
-        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-      },
-    })
+    try {
+      const result = await sendWithConnectedAccount({
+        userId:        item.user_id,
+        supabase,
+        to:            lead.contact_email,
+        subject:       seq.followup_subject,
+        body:          seq.followup_body,
+        fromName:      quota.companyName,
+        inReplyTo,
+        gmailThreadId,
+        preferEmail:   lead.from_email ?? null,
+      })
 
-    if (!error) {
+      if (!result) continue  // no connected account — skip this follow-up
+
       await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
-      if (emailData?.id) {
-        await supabase.from('leads').update({ message_id: emailData.id }).eq('id', item.lead_id)
+      if (result.messageId) {
+        await supabase.from('leads').update({
+          message_id:      result.messageId,
+          gmail_thread_id: result.threadId ?? lead.gmail_thread_id,
+        }).eq('id', item.lead_id)
       }
-      // Increment quota — follow-ups count against the monthly send limit
       await supabase.rpc('increment_leads_used', { p_user_id: item.user_id })
-      quota.used++  // update in-memory so subsequent items in this run see the updated count
+      quota.used++
       sent++
+    } catch (err) {
+      console.error(`[send-followups] failed for lead ${item.lead_id}:`, err)
     }
   }
 

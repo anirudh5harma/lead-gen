@@ -242,7 +242,7 @@ export default function OnboardingPage() {
             {isEdit ? 'Edit your profile' : 'Set up your signal profile'}
           </h1>
           <p className="text-sm text-[var(--color-text-3)]">
-            Takes 90 seconds. Refine anytime.
+            Takes 60 seconds. Refine anytime.
           </p>
         </div>
 

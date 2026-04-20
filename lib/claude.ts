@@ -114,39 +114,56 @@ Return ONLY a JSON array of strings, no markdown.`,
   }
 }
 
-/**
- * Signal-specific strategic angles derived from sales methodology:
- * - Funding: money to spend + scaling pain imminent (Hormozi: "dream outcome within reach")
- * - Acquisition: integration chaos + 100-day mandate (Challenger: reframe their risk)
- * - Expansion: new market = new operational gaps (Predictable Revenue: research-led relevance)
- * - Regulation: fear + shrinking window (Voss: label the emotion, create urgency without pressure)
- * - Hiring: new leader = new mandate in first 90 days (Challenger: teach them something about their new role)
- */
 const SIGNAL_ANGLE: Record<string, string> = {
-  funding: `They just received capital and are under pressure to deploy it fast and show ROI to investors.
-The acute pain: headcount, tooling, and processes don't scale linearly with funding — something always breaks first.
-Your angle: position your solution as the thing that lets them scale without the typical breakage.
-Lead with what breaks at their stage (Challenger insight), frame your offer around time-to-value (Hormozi), and make the ask feel low-stakes (Voss: "Would it be crazy to...").`,
+  funding: `SITUATION: They closed a round. The board expects rapid growth; the CEO must deploy capital fast and show ROI within 12–18 months.
 
-  acquisition: `The first 90 days post-acquisition are defined by integration chaos — systems, teams, data, and processes colliding.
-The acute pain: the acquiring team has a mandate to show synergies fast but everything is slower than expected.
-Your angle: you've seen this exact situation and know the specific bottleneck they'll hit.
-Lead with a sharp insight about what breaks at this stage (Challenger), use tactical empathy to acknowledge the chaos (Voss labeling), frame your offer as eliminating one specific obstacle (Hormozi: reduce effort/sacrifice).`,
+PARAGRAPH 1: Open with what actually happens operationally in the first 90 days post-raise — not "congrats on the raise" but the specific hidden cost: hiring surges before process is ready, tooling decisions get locked in under speed pressure, and the systems that worked at half the headcount start cracking under load. If the article context includes the lead investor or use-of-proceeds language, weave it in — show you read beyond the headline.
 
-  expansion: `Entering a new market or geography means they're flying blind on local regulations, buyer behavior, and operational fit.
-The acute pain: the playbook that worked in their home market creates false confidence — unknown unknowns will slow them down.
-Your angle: you have specific knowledge about this new market/segment that they need.
-Lead with a non-obvious insight about the new market they're entering (Challenger), connect it directly to what you offer (Predictable Revenue: hyper-specific relevance), make the CTA about sharing intelligence, not selling (Blount: remove the pressure).`,
+PARAGRAPH 2: Frame your offer as the thing that prevents the most predictable post-raise breakdown relevant to what you sell. Hormozi lens: dream outcome + what pain is removed + at what speed?
 
-  regulation: `A new regulation creates a hard deadline and a fear of being caught unprepared.
-The acute pain: compliance teams are overwhelmed, leadership is unsure of scope, and the window to act is shrinking.
-Your angle: you've helped others navigate this exact regulation and know where most companies underestimate the work.
-Lead by labeling the emotional reality of compliance pressure (Voss), share one specific non-obvious risk they face (Challenger), make the offer feel like risk removal not a purchase (Hormozi: reduce downside fear).`,
+PARAGRAPH 3: Make it feel observed, not generic: "Teams at this stage typically hit [X] within [Y] months of the round — right at the inflection point they're about to enter."
 
-  hiring: `A new C-suite hire has ~90 days to establish credibility before the organization forms an opinion about them.
-The acute pain: they inherit systems and problems they didn't choose, and they're under pressure to show early wins.
-Your angle: you can help them get a quick win in your domain — which is exactly what new leaders are hunting for.
-Lead with insight about what new [title] leaders typically prioritize in their first 90 days (Challenger), position your offer as a fast path to that early win (Hormozi: time delay minimized), ask a calibrated question that makes them think, not a pitch (Voss: "What's the biggest gap you've found so far?").`,
+SUBJECT — prefer Challenger or Hormozi style. Something like "The hidden cost of [company]'s raise" or "How [company] scales without the usual breakage."`,
+
+  acquisition: `SITUATION: An acquisition just closed or was announced. The next 90 days are integration chaos — systems, teams, cultures, and data colliding under a mandate to show synergies fast.
+
+PARAGRAPH 1: Open with the real operational reality of Day 1–90 post-acquisition: the mandate to show synergies clashes with the actual pace of integration. The acquiring team is discovering unknown unknowns faster than they can address them. If the article mentions what was acquired or the stated strategic rationale, make the insight specific to that integration challenge.
+
+PARAGRAPH 2: Frame your offer as removing one precise integration bottleneck — not "we help with integrations" but the exact friction your product eliminates at this stage. Hormozi: reduce time delay + reduce sacrifice.
+
+PARAGRAPH 3: "Companies at this stage almost always underestimate [X] — by the time it surfaces, it's already a 3-month slip." Make it feel like you've seen this movie before.
+
+SUBJECT — Voss or Challenger style: name their situation or reframe their risk.`,
+
+  expansion: `SITUATION: They're entering a new market, launching a new product line, or expanding geographically. The playbook from their home market creates false confidence.
+
+PARAGRAPH 1: Open with the non-obvious challenge of this specific expansion — not "entering new markets is exciting" but the specific friction that catches companies in their situation off guard. If the article mentions the target market or geography, use that to be concrete.
+
+PARAGRAPH 2: Position your offer as specific capability that reduces the unknown-unknown risk of this expansion. Predictable Revenue style: hyper-specific relevance. "We work with companies making exactly this move."
+
+PARAGRAPH 3: "The first thing that breaks for companies coming from [their background] into [new market] is usually [X]." This is your vantage point — make it feel earned.
+
+SUBJECT — Challenger style: a non-obvious consequence of the expansion they haven't considered.`,
+
+  regulation: `SITUATION: A new regulation creates a hard deadline, fear of penalties, and an overwhelmed compliance team. The window to act is closing.
+
+PARAGRAPH 1: Open by naming the emotional reality — not the regulation itself but what it feels like inside the company right now. Voss labeling first: "Right now most [industry] teams are realizing the regulation is broader than the initial read — compliance is triaging, legal is cautious, and the deadline isn't moving." Then add the one non-obvious risk most companies underestimate about this specific regulation.
+
+PARAGRAPH 2: Frame your offer as risk removal + deadline certainty. Hormozi: the dream outcome is not getting caught off-guard; the removed downside is scrambling and penalties.
+
+PARAGRAPH 3: Make timeline the proof: "Teams that start [X weeks] before the deadline can [achieve Y] — teams that wait typically [face Z]."
+
+SUBJECT — Voss style: label their reality. "Looks like [company] has a tight compliance window."`,
+
+  hiring: `SITUATION: A new C-suite or VP hire just joined, or the company is on a major hiring surge. New leaders have ~90 days to establish credibility before the org forms an opinion.
+
+PARAGRAPH 1: Open with what new leaders at this specific title typically discover in their first 30 days — not generic "new leaders face challenges" but the role-specific pattern. A new VP of Engineering inherits tech debt and a team stretched by attrition. A new CMO inherits a funnel with attribution gaps. Make it title-specific. If the signal mentions the specific hire by name or title, calibrate to that role's typical 90-day mandate.
+
+PARAGRAPH 2: Frame your offer as a fast path to an early win in your domain — the thing that makes them look good before the honeymoon period ends. Hormozi: minimize time delay. "We typically have [result] visible within [X weeks] — fast enough to show in the next board update."
+
+PARAGRAPH 3: "New [titles] who address [your area] in the first 60 days typically [achieve X] — those who deprioritize it spend the first year fighting it instead."
+
+SUBJECT — Challenger style: teach them something about their role they didn't expect.`,
 }
 
 /**
@@ -175,10 +192,10 @@ export async function draftFollowUpEmail(params: {
     max_tokens: 400,
     messages: [{
       role: 'user',
-      content: `Write a BRIEF follow-up email for a cold outreach that got no reply after ~4 days.
+      content: `Write a BRIEF follow-up email for a cold outreach that got no reply after ~3 days.
 
 Context:
-- Sender: ${senderCompany} — ${servicesDescription.slice(0, 120)}
+- Sender: ${senderCompany} — ${servicesDescription.slice(0, 500)}
 - Recipient: ${firstName} at ${targetCompany}
 - Original trigger: ${targetCompany} ${signalType} — ${signalSummary}
 - Original subject line: "${originalSubject}"
@@ -227,11 +244,17 @@ export async function draftOutreachEmail(params: {
   targetCompany: string
   signalType: string
   signalSummary: string
+  headline?: string | null
+  fundingAmount?: string | null
+  signalAgeLabel?: string | null
+  articleContext?: string | null
   calendlyUrl?: string | null
 }): Promise<{ subject: string; body: string }> {
   const {
     senderCompany, servicesDescription, stakeholderName, stakeholderTitle,
-    targetCompany, signalType, signalSummary, calendlyUrl,
+    targetCompany, signalType, signalSummary,
+    headline, fundingAmount, signalAgeLabel, articleContext,
+    calendlyUrl,
   } = params
 
   const angle = SIGNAL_ANGLE[signalType] || SIGNAL_ANGLE.expansion
@@ -241,44 +264,56 @@ export async function draftOutreachEmail(params: {
     ? `4. CLOSING PARAGRAPH (standalone, 1–2 sentences): A low-friction ask to book a 15-minute call. Include the Calendly link naturally — e.g. "If any of this lands, here's a link to grab 15 minutes: ${calendlyUrl}" or "Happy to show you how in 15 min — ${calendlyUrl}". Keep it casual, not pushy.`
     : `4. CLOSING PARAGRAPH (standalone, 1–2 sentences): A low-friction ask for a 15-minute call — "15 min this week?" or a Voss calibrated question ("What would need to be true for this to be worth 15 minutes of your time?"). Never "Would you be interested in...".`
 
+  const signalBlock = [
+    `Trigger event: ${targetCompany} had a ${signalType} — ${signalSummary}`,
+    headline       ? `Original headline: ${headline}` : '',
+    fundingAmount  ? `Amount: ${fundingAmount}` : '',
+    signalAgeLabel ? `Timing: ${signalAgeLabel} (calibrate urgency accordingly)` : '',
+  ].filter(Boolean).join('\n')
+
+  const articleBlock = articleContext
+    ? `━━━ ARTICLE INTELLIGENCE (use these specific facts — they make the email feel researched) ━━━\n${articleContext}`
+    : ''
+
   const message = await client.messages.create({
     model: MODEL,
-    max_tokens: 900,
+    max_tokens: 1000,
     messages: [{
       role: 'user',
       content: `You are a world-class B2B sales strategist writing a cold outreach email.
-Your writing is informed by: Never Split the Difference (Voss), $100M Offers (Hormozi), Fanatical Prospecting (Blount), The Challenger Sale, Predictable Revenue (Aaron Ross), and top sales blogs (Lenny's Newsletter, Apollo, HubSpot, SaaStr).
+Your writing is informed by: Never Split the Difference (Voss), $100M Offers (Hormozi), Fanatical Prospecting (Blount), The Challenger Sale, Predictable Revenue (Aaron Ross).
 
 ━━━ CONTEXT ━━━
 Sender: ${senderCompany}
 What they offer: ${servicesDescription}
 
 Recipient: ${firstName} (${stakeholderTitle}) at ${targetCompany}
-Trigger event: ${targetCompany} just had a ${signalType} — ${signalSummary}
+${signalBlock}
+
+${articleBlock}
 
 ━━━ STRATEGIC ANGLE FOR THIS SIGNAL TYPE ━━━
 ${angle}
 
 ━━━ EMAIL CONSTRUCTION RULES ━━━
 
-SUBJECT LINE — pick one style based on the signal:
-- Challenger style: A non-obvious insight or provocative question ("The hidden cost of [event]")
-- Voss style: A label that names their reality ("Looks like [company] is in scale mode")
-- Hormozi style: Outcome-led, time-specific ("How [company] could [result] in 60 days")
-Max 9 words. No clickbait. No "Congrats on the raise" (everyone sends that).
+SUBJECT LINE — generate THREE options (one per style below), then choose the strongest for this specific signal:
+Option A — Challenger: A non-obvious insight or provocative question about their actual situation
+Option B — Voss: A label that names their emotional reality right now
+Option C — Hormozi: Outcome-led with a time anchor
+Constraints for all three: max 9 words, no clickbait, no "Congrats on the raise" (everyone sends that), no empty buzzwords.
+After writing all three, select the ONE that fits this signal best. Only that subject goes in the JSON.
 
-BODY — structured as 3 separate paragraphs + a closing paragraph:
+BODY — 3 paragraphs + closing:
 
 PARAGRAPH 1 — INTERRUPT + INSIGHT (2–3 sentences):
-- Open with one sentence showing deep awareness of their specific situation right now. Reference the event with an insight they haven't heard — not "Saw the news about X", but what this event *really means* for them operationally.
-- Follow with the Challenger "teach" moment: something they probably don't know — a pattern, a risk, a non-obvious consequence of their event that your vantage point gives you.
+Follow the PARAGRAPH 1 instruction in the strategic angle above. If article intelligence is provided, use a specific fact (CEO quote, use of proceeds, lead investor) — it signals you did real research.
 
 PARAGRAPH 2 — CONNECT (1–2 sentences):
-- Link the insight directly to what ${senderCompany} does. No feature-dumping.
-- Hormozi lens: what's the dream outcome they get + what's removed (pain, time, risk)?
+Follow the PARAGRAPH 2 instruction above. No feature-dumping. What dream outcome + what pain removed?
 
 PARAGRAPH 3 — PROOF OR SPECIFICITY (1–2 sentences):
-- One concrete, specific claim or example that makes this feel real. A number, a pattern you've seen, a named outcome. If you don't have specifics, frame it as "companies at this stage typically..." — make it feel earned, not generic.
+Follow the PARAGRAPH 3 instruction above. One concrete, felt-by-them claim. "Companies at this stage typically..." is acceptable if you make it specific.
 
 ${ctaInstruction}
 
@@ -287,12 +322,12 @@ TONE:
 - Zero corporate speak: no "synergies", "leverage", "solutions", "reach out", "touch base"
 - Write like a smart peer, not a sales rep
 - First name only for recipient
-- Don't mention the company name more than once in the body
+- Don't mention the company name more than twice in the body
 
 Return ONLY this JSON (no markdown):
 {"subject": "...", "body": "..."}
 
-The body must use \\n\\n between paragraphs so they render as separate paragraphs.`,
+The body must use \\n\\n between paragraphs.`,
     }],
   })
 
