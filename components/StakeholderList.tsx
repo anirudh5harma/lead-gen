@@ -10,13 +10,16 @@ export interface Stakeholder {
   source: 'apollo' | 'hunter' | 'pattern' | 'scrape'
 }
 
-const CONFIDENCE_CONFIG = {
-  high:   { label: 'Verified',  color: 'text-green-400',  dot: 'bg-green-400' },
-  medium: { label: 'Likely',    color: 'text-yellow-400', dot: 'bg-yellow-400' },
-  low:    { label: 'Guessed',   color: 'text-gray-500',   dot: 'bg-gray-500' },
+const CONFIDENCE_CONFIG: Record<
+  Stakeholder['confidence'],
+  { label: string; dot: string; text: string }
+> = {
+  high:   { label: 'Verified', dot: 'var(--color-sig-funding)',   text: 'text-[var(--color-sig-funding)]' },
+  medium: { label: 'Likely',   dot: 'var(--color-sig-expansion)', text: 'text-[var(--color-sig-expansion)]' },
+  low:    { label: 'Guessed',  dot: 'var(--color-text-4)',        text: 'text-[var(--color-text-3)]' },
 }
 
-const SOURCE_LABEL = {
+const SOURCE_LABEL: Record<Stakeholder['source'], string> = {
   apollo:  'Apollo',
   hunter:  'Hunter',
   pattern: 'Pattern',
@@ -28,7 +31,7 @@ export default function StakeholderList({ stakeholders }: { stakeholders: Stakeh
 
   if (stakeholders.length === 0) {
     return (
-      <div className="text-sm text-gray-500 py-4 text-center">
+      <div className="text-xs text-[var(--color-text-4)] py-4 text-center border border-dashed border-[var(--color-line-1)] rounded-md">
         No contacts found for this company.
       </div>
     )
@@ -41,34 +44,41 @@ export default function StakeholderList({ stakeholders }: { stakeholders: Stakeh
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {stakeholders.map((s) => {
         const conf = CONFIDENCE_CONFIG[s.confidence] || CONFIDENCE_CONFIG.low
         return (
           <div
             key={s.email}
-            className="flex items-center justify-between gap-3 rounded-lg bg-gray-800/60 px-3 py-2.5"
+            className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-2"
           >
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-white truncate">{s.name || 'Unknown'}</span>
-                <span className="text-xs text-gray-500 shrink-0">{s.title}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium text-[var(--color-text-1)] truncate">
+                  {s.name || 'Unknown'}
+                </span>
+                <span className="text-[11px] text-[var(--color-text-4)] shrink-0">{s.title}</span>
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-gray-400 truncate">{s.email}</span>
-                <div className="flex items-center gap-1 shrink-0">
-                  <span className={`w-1.5 h-1.5 rounded-full ${conf.dot}`} />
-                  <span className={`text-xs ${conf.color}`}>{conf.label}</span>
-                  <span className="text-gray-700">·</span>
-                  <span className="text-xs text-gray-600">{SOURCE_LABEL[s.source]}</span>
-                </div>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className="text-[11px] text-[var(--color-text-2)] truncate">{s.email}</span>
+                <span className="flex items-center gap-1 shrink-0">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: conf.dot }}
+                  />
+                  <span className={`text-[11px] ${conf.text}`}>{conf.label}</span>
+                  <span className="text-[var(--color-text-4)]">·</span>
+                  <span className="text-[11px] text-[var(--color-text-4)]">
+                    {SOURCE_LABEL[s.source]}
+                  </span>
+                </span>
               </div>
             </div>
             <button
               onClick={() => copyEmail(s.email)}
-              className="shrink-0 text-xs px-2.5 py-1 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+              className="shrink-0 text-[11px] px-2.5 py-1 rounded-full border border-[var(--color-line-2)] bg-white hover:border-[var(--color-line-3)] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors"
             >
-              {copied === s.email ? '✓ Copied' : 'Copy'}
+              {copied === s.email ? 'Copied' : 'Copy'}
             </button>
           </div>
         )

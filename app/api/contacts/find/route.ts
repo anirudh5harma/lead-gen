@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { searchApolloContacts } from '@/lib/email-finder/apollo'
-import { hunterDomainSearch, constructEmailCandidates } from '@/lib/email-finder/hunter'
-import { verifyEmailCandidates } from '@/lib/email-finder/smtp-verify'
+import { hunterDomainSearch } from '@/lib/email-finder/hunter'
+import { verifyEmail, isSafeToSend } from '@/lib/email-finder/zeroBounce'
 import { scrapeCompanyContacts } from '@/lib/email-finder/firecrawl'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export interface Stakeholder {
   name: string
   title: string
   email: string
   confidence: 'high' | 'medium' | 'low'
-  source: 'apollo' | 'hunter' | 'pattern' | 'scrape'
+  source: 'apollo' | 'hunter' | 'scrape'
 }
 
 export async function POST(request: Request) {
@@ -21,78 +22,54 @@ export async function POST(request: Request) {
   const { companyName, companyDomain } = await request.json()
   if (!companyName) return NextResponse.json({ error: 'companyName required' }, { status: 400 })
 
+  const rl = await checkRateLimit(`contacts:${user.id}`, 20, 3600)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many contact lookups. Limit is 20 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } }
+    )
+  }
+
   const stakeholders: Stakeholder[] = []
   const seenEmails = new Set<string>()
 
-  function addContact(s: Stakeholder) {
-    if (!s.email || seenEmails.has(s.email.toLowerCase())) return
-    seenEmails.add(s.email.toLowerCase())
-    stakeholders.push(s)
+  async function addVerified(name: string, title: string, email: string, source: Stakeholder['source']) {
+    const key = email.toLowerCase()
+    if (seenEmails.has(key)) return
+    seenEmails.add(key)
+    const zb = await verifyEmail(email)
+    if (zb && !isSafeToSend(zb.status)) return
+    const confidence: Stakeholder['confidence'] = zb?.status === 'valid' ? 'high' : 'medium'
+    stakeholders.push({ name, title, email, confidence, source })
   }
 
-  // --- Step 1: Apollo.io ---
+  // --- Step 1: Apollo — verified contacts only ---
   const apolloContacts = await searchApolloContacts(companyName, companyDomain)
   for (const c of apolloContacts) {
-    if (c.email) {
-      addContact({ name: c.name, title: c.title, email: c.email, confidence: 'high', source: 'apollo' })
-    }
+    if (c.email) await addVerified(c.name, c.title, c.email, 'apollo')
   }
 
-  // If Apollo found enough contacts, skip the rest
   if (stakeholders.length >= 3) {
     return NextResponse.json({ stakeholders: stakeholders.slice(0, 5) })
   }
 
-  // --- Step 2: Hunter.io domain search ---
-  const domain = companyDomain || guessDomain(companyName)
-  let emailPattern: string | null = null
-
+  // --- Step 2: Hunter — known emails with confidence ≥ 70 only, no pattern construction ---
+  const domain = companyDomain ?? null
   if (domain) {
     const hunterResult = await hunterDomainSearch(domain)
-    emailPattern = hunterResult.emailPattern
-
-    for (const c of hunterResult.contacts) {
-      addContact({ name: c.name, title: c.title, email: c.email, confidence: 'high', source: 'hunter' })
-    }
-
-    // --- Step 3: Pattern-based construction for Apollo contacts without emails ---
-    const contactsWithoutEmail = apolloContacts.filter(c => !c.email && c.name)
-    for (const c of contactsWithoutEmail) {
-      const [firstName, ...rest] = c.name.split(' ')
-      const lastName = rest.join(' ')
-      if (!firstName || !lastName) continue
-
-      const candidates = constructEmailCandidates(firstName, lastName, domain, emailPattern)
-      const verified = await verifyEmailCandidates(candidates)
-
-      for (const v of verified.slice(0, 1)) {
-        addContact({ name: c.name, title: c.title, email: v.email, confidence: v.confidence, source: 'pattern' })
-      }
+    const highConfidence = hunterResult.contacts.filter(c => c.confidence >= 70)
+    for (const c of highConfidence) {
+      await addVerified(c.name, c.title, c.email, 'hunter')
     }
   }
 
-  // --- Step 4: Firecrawl fallback if still sparse ---
+  // --- Step 3: Firecrawl fallback if still sparse ---
   if (stakeholders.length < 2 && domain) {
     const scraped = await scrapeCompanyContacts(domain)
     for (const c of scraped) {
-      if (c.email) {
-        addContact({ name: c.name, title: c.title, email: c.email, confidence: 'medium', source: 'scrape' })
-      }
+      if (c.email) await addVerified(c.name, c.title, c.email, 'scrape')
     }
   }
 
   return NextResponse.json({ stakeholders: stakeholders.slice(0, 5) })
-}
-
-/**
- * Simple heuristic: turn "Acme Corp" → "acmecorp.com"
- * This is a last resort — Hunter/Apollo domain data is much better.
- */
-function guessDomain(companyName: string): string | null {
-  const cleaned = companyName
-    .toLowerCase()
-    .replace(/\b(inc|llc|ltd|corp|co|company|technologies|tech|labs|ai)\b/g, '')
-    .replace(/[^a-z0-9]/g, '')
-    .trim()
-  return cleaned ? `${cleaned}.com` : null
 }

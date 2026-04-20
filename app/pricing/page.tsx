@@ -1,0 +1,249 @@
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+const PLANS = [
+  {
+    id: 'free' as const,
+    name: 'Free',
+    price: '$0',
+    period: 'forever',
+    description: 'Try the core signal feed.',
+    features: [
+      '15 leads / month',
+      'Manual email send',
+      'Signal feed & watchlist',
+      'AI email drafting',
+      'Keyboard shortcuts',
+    ],
+    cta: 'Get started',
+    highlight: false,
+  },
+  {
+    id: 'pro' as const,
+    name: 'Pro',
+    price: '$69',
+    period: '/ month',
+    description: 'For active solopreneurs.',
+    features: [
+      '300 emails / month',
+      'Auto-send from outreach drawer',
+      'Automated follow-ups (3 days)',
+      'Reply detection',
+      'Everything in Free',
+    ],
+    cta: 'Upgrade to Pro',
+    highlight: true,
+  },
+  {
+    id: 'max' as const,
+    name: 'Max',
+    price: '$169',
+    period: '/ month',
+    description: 'For teams that move fast.',
+    features: [
+      '1,500 emails / month',
+      'CRM export (CSV)',
+      'Slack signal alerts',
+      'Priority enrichment queue',
+      'Everything in Pro',
+    ],
+    cta: 'Upgrade to Max',
+    highlight: false,
+  },
+]
+
+const FAQS = [
+  {
+    q: 'Do follow-ups count against my send quota?',
+    a: 'Yes. Every email sent — initial outreach or the 3-day follow-up — decrements your monthly allowance. The quota resets on a rolling 30-day window.',
+  },
+  {
+    q: 'What happens when I hit my limit?',
+    a: 'Signals keep flowing into your feed. Sending pauses until your window resets, or you upgrade. Nothing is lost.',
+  },
+  {
+    q: 'Can I cancel or change plans anytime?',
+    a: 'Yes. Upgrades take effect immediately; downgrades apply at the end of the billing period. No contracts.',
+  },
+  {
+    q: 'Where do signals come from?',
+    a: 'Google News, press wires, and public job boards — refreshed every 6 hours. Every lead is scored against your positioning by Claude before it reaches you.',
+  },
+  {
+    q: 'How do you verify contact emails?',
+    a: 'We combine Apollo and Hunter discovery with ZeroBounce verification, and suppress any email that bounces or complains. You don&rsquo;t waste sends on bad addresses.',
+  },
+]
+
+export default function PricingPage() {
+  const [loading, setLoading] = useState<'pro' | 'max' | null>(null)
+  const router = useRouter()
+
+  async function startCheckout(plan: 'pro' | 'max') {
+    setLoading(plan)
+    try {
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      })
+      const data = await res.json() as { url?: string; error?: string }
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        console.error(data.error)
+        setLoading(null)
+      }
+    } catch {
+      setLoading(null)
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col relative overflow-hidden paper">
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
+        <div className="blob blob-1" style={{ width: 600, height: 600, top: -200, left: '50%', transform: 'translateX(-50%)', opacity: 0.7 }} />
+      </div>
+
+      <nav className="relative z-10 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/70 backdrop-blur-md">
+        <div className="w-full max-w-7xl mx-auto flex items-center justify-between px-6 md:px-8 h-16">
+          <a href="/" className="flex items-center gap-2.5">
+            <LogoMark />
+            <span className="text-[15px] font-medium text-[var(--color-text-1)] tracking-tight">Bombsell</span>
+          </a>
+          <a href="/dashboard" className="text-[13px] text-[var(--color-text-2)] hover:text-[var(--color-text-1)] transition-colors">
+            Back to dashboard →
+          </a>
+        </div>
+      </nav>
+
+      <main className="relative z-10 flex-1 flex flex-col items-center px-6 md:px-8 pt-20 md:pt-28 pb-24">
+        <div className="text-center mb-16 space-y-4 max-w-2xl fade-in">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pricing</p>
+          <h1 className="text-4xl md:text-6xl font-medium text-[var(--color-text-1)] tracking-[-0.02em] leading-[1.02]">
+            Simple pricing.<br />
+            <span className="font-serif italic text-gradient">Outsized outcomes.</span>
+          </h1>
+          <p className="text-[16px] text-[var(--color-text-2)] max-w-lg mx-auto leading-relaxed">
+            Start free. Upgrade when signals start converting into pipeline.
+          </p>
+        </div>
+
+        <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-5 fade-in-stagger">
+          {PLANS.map(plan => (
+            <div
+              key={plan.id}
+              className={`relative card p-7 flex flex-col gap-6 transition-all ${
+                plan.highlight
+                  ? 'ring-1 ring-[var(--color-accent)]/40 shadow-[0_24px_80px_-24px_var(--color-accent-glow)]'
+                  : 'hover:shadow-md'
+              }`}
+            >
+              {plan.highlight && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-[0.15em] px-3 py-1 rounded-full bg-[var(--color-accent)] text-white shadow-md shadow-[var(--color-accent)]/30">
+                  Most popular
+                </div>
+              )}
+
+              <div>
+                <p className="text-[13px] text-[var(--color-text-3)] font-medium">{plan.name}</p>
+                <div className="flex items-baseline gap-1.5 mt-2.5">
+                  <span className="text-5xl font-medium text-[var(--color-text-1)] tracking-[-0.02em]">{plan.price}</span>
+                  <span className="text-[13px] text-[var(--color-text-4)]">{plan.period}</span>
+                </div>
+                <p className="text-[13px] text-[var(--color-text-2)] mt-2 leading-relaxed">{plan.description}</p>
+              </div>
+
+              <div className="hairline" />
+
+              <ul className="flex-1 space-y-3">
+                {plan.features.map(f => (
+                  <li key={f} className="flex items-start gap-2.5 text-[13.5px] text-[var(--color-text-1)] leading-snug">
+                    <span className="w-4 h-4 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center shrink-0 mt-0.5">
+                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              {plan.id === 'free' ? (
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  className="w-full h-11 rounded-full btn-ghost text-[13.5px] font-medium"
+                >
+                  {plan.cta}
+                </button>
+              ) : (
+                <button
+                  onClick={() => startCheckout(plan.id)}
+                  disabled={loading === plan.id}
+                  className={`w-full h-11 rounded-full text-[13.5px] font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                    plan.highlight ? 'btn-primary' : 'btn-ghost'
+                  }`}
+                >
+                  {loading === plan.id ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Redirecting…
+                    </span>
+                  ) : plan.cta}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-12 text-[12px] text-[var(--color-text-3)]">
+          All plans include Google OAuth · SSL · 99.9% uptime · Cancel anytime
+        </p>
+
+        <section className="w-full max-w-3xl mt-28">
+          <div className="text-center mb-12 space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Questions</p>
+            <h2 className="text-3xl md:text-4xl font-medium tracking-[-0.02em] text-[var(--color-text-1)] leading-[1.05]">
+              What people ask before signing up
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {FAQS.map(item => (
+              <details
+                key={item.q}
+                className="group card px-5 py-4 cursor-pointer hover:shadow-md transition-shadow"
+              >
+                <summary className="flex items-center justify-between list-none text-[14px] font-medium text-[var(--color-text-1)]">
+                  {item.q}
+                  <span className="w-6 h-6 rounded-full bg-[var(--color-ink-2)] text-[var(--color-text-3)] group-open:bg-[var(--color-accent-bg)] group-open:text-[var(--color-accent-ring)] group-open:rotate-45 transition-all text-lg leading-none flex items-center justify-center">+</span>
+                </summary>
+                <p className="mt-3 text-[13.5px] text-[var(--color-text-2)] leading-relaxed">{item.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      </main>
+
+      <footer className="relative z-10 border-t border-[var(--color-line-1)]">
+        <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-6 text-xs text-[var(--color-text-3)] text-center">
+          © {new Date().getFullYear()} Bombsell
+        </div>
+      </footer>
+    </div>
+  )
+}
+
+function LogoMark() {
+  return (
+    <div
+      className="w-[30px] h-[30px] rounded-xl bg-[var(--color-accent)] flex items-center justify-center shrink-0"
+      style={{ boxShadow: '0 1px 2px #c15f3c44, 0 6px 16px -6px #c15f3c66' }}
+    >
+      <svg width="15" height="15" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    </div>
+  )
+}

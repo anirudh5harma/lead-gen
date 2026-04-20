@@ -2,7 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL       = 'claude-sonnet-4-6'
+const CHEAP_MODEL = 'claude-haiku-4-5-20251001'
 
 /**
  * Extracts structured signal data from a news headline + description.
@@ -59,7 +60,7 @@ export async function scoreLeadRelevance(
   signalSummary: string
 ): Promise<{ score: number; reason: string }> {
   const message = await client.messages.create({
-    model: MODEL,
+    model: CHEAP_MODEL,
     max_tokens: 200,
     messages: [{
       role: 'user',

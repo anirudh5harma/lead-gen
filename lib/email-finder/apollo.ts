@@ -3,6 +3,7 @@ export interface ApolloContact {
   title: string
   email: string | null
   linkedin_url: string | null
+  organization_domain: string | null  // extracted from org response — backfills company_domain on leads
 }
 
 const TARGET_TITLES = [
@@ -19,12 +20,16 @@ const TARGET_TITLES = [
   'Director of Technology',
 ]
 
-/**
- * Searches Apollo.io for decision-maker contacts at a given company.
- * Free tier: 50 exports/month. Paid: $49/mo for more.
- *
- * API docs: https://apolloio.github.io/apollo-api-docs/
- */
+function extractDomain(raw: string): string | null {
+  if (!raw) return null
+  try {
+    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`)
+    return url.hostname.replace(/^www\./, '') || null
+  } catch {
+    return null
+  }
+}
+
 export async function searchApolloContacts(
   companyName: string,
   companyDomain?: string | null
@@ -36,7 +41,7 @@ export async function searchApolloContacts(
     per_page: 5,
     page: 1,
     person_titles: TARGET_TITLES,
-    contact_email_status: ['verified', 'guessed', 'unavailable', 'bounced', 'pending_manual_fulfill'],
+    contact_email_status: ['verified'],
   }
 
   if (companyDomain) {
@@ -54,16 +59,21 @@ export async function searchApolloContacts(
 
     if (!res.ok) return []
     const json = await res.json()
-    const people = json.people || []
+    const people: Record<string, unknown>[] = json.people || []
 
     return people
-      .filter((p: Record<string, unknown>) => p.email || p.email_status === 'verified')
-      .map((p: Record<string, unknown>) => ({
-        name: String(p.name || ''),
-        title: String(p.title || ''),
-        email: p.email ? String(p.email) : null,
-        linkedin_url: p.linkedin_url ? String(p.linkedin_url) : null,
-      }))
+      .filter(p => p.email)
+      .map(p => {
+        const org = p.organization as Record<string, unknown> | null
+        const rawDomain = String(org?.primary_domain || org?.website_url || '')
+        return {
+          name: String(p.name || ''),
+          title: String(p.title || ''),
+          email: p.email ? String(p.email) : null,
+          linkedin_url: p.linkedin_url ? String(p.linkedin_url) : null,
+          organization_domain: extractDomain(rawDomain),
+        }
+      })
   } catch (e) {
     console.error('Apollo search error:', e)
     return []

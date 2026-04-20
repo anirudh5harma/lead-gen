@@ -62,28 +62,28 @@ export default function WatchlistManager() {
   }
 
   return (
-    <div className="border border-gray-800 rounded-xl bg-gray-900/50">
+    <div className="card">
       {/* Header */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
+        className="w-full flex items-center justify-between px-4 h-11 text-left"
       >
-        <div className="flex items-center gap-2">
-          <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        <div className="flex items-center gap-2 min-w-0">
+          <svg className="w-4 h-4 text-[var(--color-accent-ring)] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
               d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
           </svg>
-          <span className="text-sm font-medium text-gray-300">
+          <span className="text-sm font-medium text-[var(--color-text-1)]">
             Watchlist
           </span>
           {!loading && (
-            <span className="text-xs text-gray-500">
-              {companies.length} {companies.length === 1 ? 'company' : 'companies'} — signals boosted
+            <span className="text-[11px] text-[var(--color-text-4)] truncate">
+              {companies.length} {companies.length === 1 ? 'company' : 'companies'} · signals boosted
             </span>
           )}
         </div>
         <svg
-          className={`w-4 h-4 text-gray-600 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-[var(--color-text-4)] transition-transform shrink-0 ${open ? 'rotate-180' : ''}`}
           fill="none" stroke="currentColor" viewBox="0 0 24 24"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -91,7 +91,7 @@ export default function WatchlistManager() {
       </button>
 
       {open && (
-        <div className="px-4 pb-4 space-y-3 border-t border-gray-800 pt-3">
+        <div className="px-4 pb-4 space-y-3 border-t border-[var(--color-line-1)] pt-3">
           {/* Add form */}
           <form onSubmit={addCompany} className="flex gap-2">
             <input
@@ -99,53 +99,58 @@ export default function WatchlistManager() {
               placeholder="Company name"
               value={form.company_name}
               onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))}
-              className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 min-w-0 px-3 h-9 rounded-lg bg-white border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
             />
             <input
               type="text"
               placeholder="domain.com (optional)"
               value={form.company_domain}
               onChange={e => setForm(f => ({ ...f, company_domain: e.target.value }))}
-              className="w-36 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-40 px-3 h-9 rounded-lg bg-white border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
             />
             <button
               type="submit"
               disabled={adding || !form.company_name.trim()}
-              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              className="btn-primary px-4 h-9 rounded-full text-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             >
               {adding ? '…' : 'Watch'}
             </button>
           </form>
 
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-[var(--color-sig-regulation)]">{error}</p>}
 
           {/* Company list */}
           {loading ? (
             <div className="space-y-2">
               {[1, 2].map(i => (
-                <div key={i} className="h-8 bg-gray-800 rounded animate-pulse" />
+                <div key={i} className="h-8 rounded skeleton" />
               ))}
             </div>
           ) : companies.length === 0 ? (
-            <p className="text-xs text-gray-600 py-2">
+            <p className="text-xs text-[var(--color-text-4)] py-2">
               Add companies you care about — any signal from them bypasses the relevance filter.
             </p>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {companies.map(c => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-800/60 group"
+                  className="flex items-center justify-between px-3 h-9 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-1)] group"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm text-white truncate">{c.company_name}</span>
+                    <span className="text-sm text-[var(--color-text-1)] truncate">
+                      {c.company_name}
+                    </span>
                     {c.company_domain && (
-                      <span className="text-xs text-gray-500 shrink-0">{c.company_domain}</span>
+                      <span className="text-[11px] text-[var(--color-text-4)] shrink-0">
+                        {c.company_domain}
+                      </span>
                     )}
                   </div>
                   <button
                     onClick={() => removeCompany(c.id)}
-                    className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all p-1 shrink-0"
+                    aria-label="Remove"
+                    className="opacity-0 group-hover:opacity-100 text-[var(--color-text-4)] hover:text-[var(--color-sig-regulation)] transition-all p-1 shrink-0"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

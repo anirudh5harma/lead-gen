@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import OutreachDrawer from './OutreachDrawer'
-
-// ── Types ──────────────────────────────────────────────────────────
+import LeadCard, { type SignalType, type LeadStatus, type LeadCardLead } from './LeadCard'
+import SignalTimeline from './SignalTimeline'
 
 export interface SignalRow {
   signal_type: string
@@ -13,11 +13,13 @@ export interface SignalRow {
   funding_amount: string | null
   source_url: string | null
   published_at: string | null
+  company_domain?: string | null
 }
 
 export interface Lead {
   id: string
   target_company: string
+  company_domain?: string | null
   relevance_score: number
   relevance_reason: string | null
   status: string
@@ -28,59 +30,81 @@ export interface Lead {
   signals: SignalRow | SignalRow[] | null
 }
 
+interface WatchlistItem {
+  id: string
+  company_name: string
+  company_domain: string | null
+}
+
 interface Props {
   initialLeads: Lead[]
   userId: string
-  weeklyStats: { signals: number; drafted: number; sent: number; booked: number }
+  watchlist?: WatchlistItem[]
 }
 
-// ── Signal config ──────────────────────────────────────────────────
-
-const SIGNAL_CONFIG: Record<string, { label: string; icon: string; color: string; bg: string }> = {
-  funding:     { label: 'Funding',     icon: '💰', color: 'text-blue-400',   bg: 'bg-blue-900/30' },
-  acquisition: { label: 'Acquisition', icon: '🤝', color: 'text-orange-400', bg: 'bg-orange-900/30' },
-  expansion:   { label: 'Expansion',   icon: '🌍', color: 'text-green-400',  bg: 'bg-green-900/30' },
-  regulation:  { label: 'Regulation',  icon: '⚖️', color: 'text-purple-400', bg: 'bg-purple-900/30' },
-  hiring:      { label: 'Hiring',      icon: '👥', color: 'text-yellow-400', bg: 'bg-yellow-900/30' },
-}
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  new:      { label: 'New',      color: 'text-indigo-400', dot: 'bg-indigo-400' },
-  viewed:   { label: 'Viewed',   color: 'text-gray-400',   dot: 'bg-gray-500' },
-  drafted:  { label: 'Drafted',  color: 'text-blue-400',   dot: 'bg-blue-400' },
-  sent:     { label: 'Sent',     color: 'text-green-400',  dot: 'bg-green-400' },
-  replied:  { label: 'Replied',  color: 'text-emerald-400',dot: 'bg-emerald-400' },
-  booked:   { label: 'Booked ✓', color: 'text-yellow-400', dot: 'bg-yellow-400' },
-  dismissed:{ label: 'Dismissed',color: 'text-gray-600',   dot: 'bg-gray-700' },
-}
+const SIGNAL_TABS: { key: 'all' | SignalType; label: string }[] = [
+  { key: 'all',         label: 'All' },
+  { key: 'funding',     label: 'Funding' },
+  { key: 'acquisition', label: 'Acquisition' },
+  { key: 'expansion',   label: 'Expansion' },
+  { key: 'hiring',      label: 'Hiring' },
+  { key: 'regulation',  label: 'Regulation' },
+]
 
 function getSignal(lead: Lead): SignalRow | null {
   return Array.isArray(lead.signals) ? lead.signals[0] ?? null : lead.signals
 }
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const h = Math.floor(diff / 3_600_000)
-  if (h < 1) return 'Just now'
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
+function isSignalType(v: string): v is SignalType {
+  return ['funding', 'acquisition', 'expansion', 'hiring', 'regulation'].includes(v)
 }
 
-// ── Main component ─────────────────────────────────────────────────
+function isLeadStatus(v: string): v is LeadStatus {
+  return ['new', 'viewed', 'drafted', 'sent', 'replied', 'booked', 'dismissed'].includes(v)
+}
 
-export default function LeadFeed({ initialLeads, userId, weeklyStats }: Props) {
+function toCardLead(lead: Lead): LeadCardLead | null {
+  const sig = getSignal(lead)
+  if (!sig) return null
+  const signalType: SignalType = isSignalType(sig.signal_type) ? sig.signal_type : 'funding'
+  const status: LeadStatus = isLeadStatus(lead.status) ? lead.status : 'new'
+  return {
+    id: lead.id,
+    target_company: lead.target_company,
+    company_domain: lead.company_domain ?? sig.company_domain ?? undefined,
+    relevance_score: lead.relevance_score,
+    relevance_reason: lead.relevance_reason ?? '',
+    status,
+    created_at: lead.created_at,
+    signals: {
+      signal_type: signalType,
+      headline: sig.headline,
+      summary: sig.summary ?? '',
+      published_at: sig.published_at ?? lead.created_at,
+      company_domain: sig.company_domain ?? undefined,
+    },
+  }
+}
+
+export default function LeadFeed({ initialLeads, userId, watchlist = [] }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
-
-  // Filters
-  const [filterSignal, setFilterSignal] = useState<string>('all')
-  const [filterStatus, setFilterStatus] = useState<string>('active')
-  const [filterScore, setFilterScore] = useState<number>(0)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [timelineFor, setTimelineFor] = useState<{ name: string; domain?: string } | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [filterSignal, setFilterSignal] = useState<'all' | SignalType>('all')
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState<'created_at' | 'relevance_score'>('created_at')
-  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
+  const [sortBy, setSortBy] = useState<'newest' | 'top_score'>('newest')
 
-  // ── Realtime subscription ──────────────────────────────────────
+  const watchlistLookup = useMemo(() => {
+    const s = new Set<string>()
+    for (const w of watchlist) {
+      s.add(w.company_name.toLowerCase())
+      if (w.company_domain) s.add(w.company_domain.toLowerCase())
+    }
+    return s
+  }, [watchlist])
+
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
@@ -92,18 +116,26 @@ export default function LeadFeed({ initialLeads, userId, weeklyStats }: Props) {
           const { data } = await supabase
             .from('leads')
             .select(`id, target_company, relevance_score, relevance_reason, status, created_at, sent_at, replied_at, booked_at,
-              signals(signal_type, headline, summary, funding_amount, source_url, published_at)`)
+              signals(signal_type, headline, summary, funding_amount, source_url, published_at, company_domain)`)
             .eq('id', payload.new.id)
             .single()
-          if (data) setLeads(prev => [data as unknown as Lead, ...prev])
+          if (data) {
+            setLeads(prev => [data as unknown as Lead, ...prev])
+            setToast('✦ New signal detected')
+          }
         }
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [userId])
 
-  // ── Status helpers ─────────────────────────────────────────────
-  async function updateStatus(leadId: string, status: string) {
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const updateStatus = useCallback(async (leadId: string, status: string) => {
     const res = await fetch(`/api/leads/${leadId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -114,186 +146,230 @@ export default function LeadFeed({ initialLeads, userId, weeklyStats }: Props) {
       setLeads(prev => prev.map(l => {
         if (l.id !== leadId) return l
         return {
-          ...l,
-          status,
+          ...l, status,
           sent_at:    status === 'sent'    ? now : l.sent_at,
           replied_at: status === 'replied' ? now : l.replied_at,
           booked_at:  status === 'booked'  ? now : l.booked_at,
         }
       }))
     }
-  }
+  }, [])
 
-  function openDraft(lead: Lead) {
+  const deleteLead = useCallback(async (leadId: string) => {
+    const res = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+    if (res.ok) {
+      setLeads(prev => prev.filter(l => l.id !== leadId))
+      setToast('Lead deleted')
+    }
+  }, [])
+
+  const blockCompany = useCallback(async (
+    leadId: string,
+    companyName: string,
+    companyDomain?: string
+  ) => {
+    const res = await fetch('/api/blocked-companies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_name: companyName, company_domain: companyDomain ?? null }),
+    })
+    if (res.ok) {
+      // Remove all leads from this company from the local state
+      setLeads(prev => prev.filter(l => {
+        const sameDomain = companyDomain && l.company_domain === companyDomain
+        const sameName   = l.target_company.toLowerCase() === companyName.toLowerCase()
+        return !sameDomain && !sameName
+      }))
+      setToast(`${companyName} blocked — no future leads`)
+    }
+  }, [])
+
+  const openDraft = useCallback((lead: Lead) => {
     if (lead.status === 'new') updateStatus(lead.id, 'viewed')
     setActiveLead(lead)
-  }
+  }, [updateStatus])
 
-  // ── Filtered + sorted leads ────────────────────────────────────
   const filteredLeads = useMemo(() => {
-    let result = leads
-
-    if (filterSignal !== 'all') {
-      result = result.filter(l => getSignal(l)?.signal_type === filterSignal)
-    }
-    if (filterStatus === 'active') {
-      result = result.filter(l => l.status !== 'dismissed')
-    } else if (filterStatus !== 'all') {
-      result = result.filter(l => l.status === filterStatus)
-    }
-    if (filterScore > 0) {
-      result = result.filter(l => l.relevance_score >= filterScore)
-    }
+    let result = leads.filter(l => l.status !== 'dismissed')
+    if (filterSignal !== 'all') result = result.filter(l => getSignal(l)?.signal_type === filterSignal)
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(l =>
         l.target_company.toLowerCase().includes(q) ||
-        (l.relevance_reason || '').toLowerCase().includes(q)
+        (l.relevance_reason || '').toLowerCase().includes(q) ||
+        (getSignal(l)?.headline || '').toLowerCase().includes(q)
       )
     }
+    return [...result].sort((a, b) =>
+      sortBy === 'top_score'
+        ? b.relevance_score - a.relevance_score
+        : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+  }, [leads, filterSignal, search, sortBy])
 
-    return [...result].sort((a, b) => {
-      const valA = sortBy === 'relevance_score' ? a.relevance_score : new Date(a.created_at).getTime()
-      const valB = sortBy === 'relevance_score' ? b.relevance_score : new Date(b.created_at).getTime()
-      return sortDir === 'desc' ? valB - valA : valA - valB
-    })
-  }, [leads, filterSignal, filterStatus, filterScore, search, sortBy, sortDir])
+  const effectiveSelectedId = useMemo(() => {
+    if (selectedId && filteredLeads.some(l => l.id === selectedId)) return selectedId
+    return filteredLeads[0]?.id ?? null
+  }, [filteredLeads, selectedId])
 
-  function toggleSort(field: 'created_at' | 'relevance_score') {
-    if (sortBy === field) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
-    else { setSortBy(field); setSortDir('desc') }
-  }
+  useEffect(() => {
+    function isTyping(el: EventTarget | null) {
+      if (!(el instanceof HTMLElement)) return false
+      const t = el.tagName
+      return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable
+    }
+    function handler(e: KeyboardEvent) {
+      if (isTyping(e.target)) return
+      if (e.key === 'Escape') { if (activeLead) { setActiveLead(null); e.preventDefault() }; return }
+      if (!filteredLeads.length) return
+      const idx = effectiveSelectedId ? filteredLeads.findIndex(l => l.id === effectiveSelectedId) : -1
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault(); setSelectedId(filteredLeads[Math.min(idx < 0 ? 0 : idx + 1, filteredLeads.length - 1)].id)
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault(); setSelectedId(filteredLeads[Math.max(idx <= 0 ? 0 : idx - 1, 0)].id)
+      } else if (e.key === 'd') {
+        const sel = filteredLeads.find(l => l.id === effectiveSelectedId)
+        if (sel) { e.preventDefault(); openDraft(sel) }
+      } else if (e.key === 's' && effectiveSelectedId) {
+        e.preventDefault(); updateStatus(effectiveSelectedId, 'sent')
+      } else if (e.key === 'b' && effectiveSelectedId) {
+        e.preventDefault(); updateStatus(effectiveSelectedId, 'booked')
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [filteredLeads, effectiveSelectedId, activeLead, openDraft, updateStatus])
 
-  // ── Render ─────────────────────────────────────────────────────
   return (
-    <>
-      {/* Metrics bar */}
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: 'Signals this week', value: weeklyStats.signals },
-          { label: 'Emails drafted',    value: weeklyStats.drafted },
-          { label: 'Sent',              value: weeklyStats.sent },
-          { label: 'Calls booked',      value: weeklyStats.booked },
-        ].map(stat => (
-          <div key={stat.label} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
-            <div className="text-2xl font-bold text-white">{stat.value}</div>
-            <div className="text-xs text-gray-500 mt-0.5">{stat.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filter bar */}
-      <div className="flex flex-wrap gap-2 items-center">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[180px]">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search companies…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-1 p-1 rounded-full bg-[var(--color-ink-2)] border border-[var(--color-line-1)]">
+          {SIGNAL_TABS.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setFilterSignal(t.key)}
+              className={`
+                h-7 px-3 text-[12px] font-medium rounded-full transition-colors
+                ${filterSignal === t.key
+                  ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+                  : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}
+              `}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {/* Signal type */}
-        <select
-          value={filterSignal}
-          onChange={e => setFilterSignal(e.target.value)}
-          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="all">All signals</option>
-          {Object.entries(SIGNAL_CONFIG).map(([key, cfg]) => (
-            <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-3)] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search signals…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-[200px] pl-9 pr-3 h-9 rounded-full bg-white border border-[var(--color-line-2)] text-[12.5px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/20 transition-colors"
+            />
+          </div>
 
-        {/* Status */}
-        <select
-          value={filterStatus}
-          onChange={e => setFilterStatus(e.target.value)}
-          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="active">Active leads</option>
-          <option value="all">All statuses</option>
-          <option value="new">New</option>
-          <option value="drafted">Drafted</option>
-          <option value="sent">Sent</option>
-          <option value="replied">Replied</option>
-          <option value="booked">Booked</option>
-          <option value="dismissed">Dismissed</option>
-        </select>
+          <div className="inline-flex h-9 p-1 rounded-full border border-[var(--color-line-2)] bg-white">
+            {(['newest', 'top_score'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setSortBy(s)}
+                className={`
+                  text-[11.5px] font-medium px-3 h-7 rounded-full transition-colors
+                  ${sortBy === s ? 'bg-[var(--color-ink-2)] text-[var(--color-text-1)]' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}
+                `}
+              >
+                {s === 'newest' ? 'Newest' : 'Top score'}
+              </button>
+            ))}
+          </div>
 
-        {/* Score */}
-        <select
-          value={filterScore}
-          onChange={e => setFilterScore(Number(e.target.value))}
-          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value={0}>Any score</option>
-          <option value={7}>7+ score</option>
-          <option value={8}>8+ score</option>
-          <option value={9}>9+ score</option>
-        </select>
-
-        <span className="text-xs text-gray-600 ml-auto">{filteredLeads.length} leads</span>
+          <span className="text-[11.5px] text-[var(--color-text-3)] tabular-nums ml-1">
+            {filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}
+          </span>
+        </div>
       </div>
 
       {/* Table */}
       {filteredLeads.length === 0 ? (
-        <div className="text-center py-16 space-y-3 border border-gray-800 rounded-xl">
-          <div className="text-3xl">📡</div>
-          <p className="text-gray-400 text-sm">No leads match the current filters.</p>
-          <p className="text-gray-600 text-xs">
-            {leads.length === 0
-              ? 'New leads will appear as signals are detected.'
-              : 'Try adjusting the filters above.'}
-          </p>
-        </div>
+        <EmptyState />
       ) : (
-        <div className="border border-gray-800 rounded-xl overflow-hidden">
-          {/* Table header */}
-          <div className="grid grid-cols-[1fr_140px_80px_120px_180px] gap-3 px-4 py-2.5 bg-gray-800/60 border-b border-gray-800 text-xs font-medium text-gray-500 uppercase tracking-wide">
-            <button className="text-left flex items-center gap-1 hover:text-gray-300 transition-colors"
-              onClick={() => toggleSort('created_at')}>
-              Company
-              {sortBy === 'created_at' && <SortIcon dir={sortDir} />}
-            </button>
-            <span>Signal</span>
-            <button className="text-left flex items-center gap-1 hover:text-gray-300 transition-colors"
-              onClick={() => toggleSort('relevance_score')}>
-              Score
-              {sortBy === 'relevance_score' && <SortIcon dir={sortDir} />}
-            </button>
-            <span>Status</span>
-            <span>Actions</span>
-          </div>
-
-          {/* Table rows */}
-          <div className="divide-y divide-gray-800/60">
-            {filteredLeads.map(lead => (
-              <LeadRow
-                key={lead.id}
-                lead={lead}
-                onDraft={() => openDraft(lead)}
-                onStatusChange={status => updateStatus(lead.id, status)}
-              />
-            ))}
-          </div>
+        <div className="card overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60">
+                {['#', 'Company', 'Signal', 'Score', 'Status', 'Time', ''].map((h, i) => (
+                  <th
+                    key={i}
+                    className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-3)] text-left py-3 px-3 first:pl-5 last:pr-4 whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLeads.map((lead, i) => {
+                const card = toCardLead(lead)
+                if (!card) return null
+                const domain = card.company_domain ?? lead.company_domain ?? undefined
+                const watched =
+                  watchlistLookup.has(lead.target_company.toLowerCase()) ||
+                  (domain ? watchlistLookup.has(domain.toLowerCase()) : false)
+                return (
+                  <LeadCard
+                    key={lead.id}
+                    lead={card}
+                    rowIndex={i + 1}
+                    isSelected={effectiveSelectedId === lead.id}
+                    onSelect={() => setSelectedId(lead.id)}
+                    onDraftOutreach={() => openDraft(lead)}
+                    onStatusChange={(id, status) => updateStatus(id, status)}
+                    onOpenTimeline={(name, d) => setTimelineFor({ name, domain: d })}
+                    onDelete={deleteLead}
+                    onBlock={(id, name, domain) => blockCompany(id, name, domain)}
+                    isWatchlisted={watched}
+                  />
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Outreach drawer */}
+      {toast && (
+        <div
+          role="status"
+          className="fixed top-6 right-6 z-50 flex items-center gap-3 pl-3 pr-4 py-2.5 rounded-xl bg-white border border-[var(--color-line-2)] border-l-4 border-l-[var(--color-accent)] shadow-[0_20px_40px_-16px_#0000001f,0_4px_12px_-6px_#00000014] toast-enter"
+        >
+          <span className="text-sm text-[var(--color-text-1)]">{toast}</span>
+          <button onClick={() => setToast(null)} className="text-[var(--color-text-4)] hover:text-[var(--color-text-1)]">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {timelineFor && (
+        <SignalTimeline
+          companyName={timelineFor.name}
+          companyDomain={timelineFor.domain}
+          onClose={() => setTimelineFor(null)}
+        />
+      )}
+
       {activeLead && (
         <OutreachDrawer
           lead={activeLead}
           onClose={() => setActiveLead(null)}
-          onEmailSent={() => {
-            updateStatus(activeLead.id, 'sent')
-            setActiveLead(null)
-          }}
+          onEmailSent={() => { updateStatus(activeLead.id, 'sent'); setActiveLead(null) }}
           onDraftCreated={() => {
             if (activeLead.status === 'viewed' || activeLead.status === 'new') {
               updateStatus(activeLead.id, 'drafted')
@@ -301,140 +377,22 @@ export default function LeadFeed({ initialLeads, userId, weeklyStats }: Props) {
           }}
         />
       )}
-    </>
-  )
-}
-
-// ── Lead row ───────────────────────────────────────────────────────
-
-function LeadRow({
-  lead,
-  onDraft,
-  onStatusChange,
-}: {
-  lead: Lead
-  onDraft: () => void
-  onStatusChange: (status: string) => void
-}) {
-  const signal = getSignal(lead)
-  const sigType = signal?.signal_type || 'funding'
-  const sigCfg = SIGNAL_CONFIG[sigType] || SIGNAL_CONFIG.funding
-  const statusCfg = STATUS_CONFIG[lead.status] || STATUS_CONFIG.new
-  const [showStatusMenu, setShowStatusMenu] = useState(false)
-
-  return (
-    <div className="grid grid-cols-[1fr_140px_80px_120px_180px] gap-3 px-4 py-3.5 hover:bg-gray-800/30 transition-colors group items-center">
-      {/* Company + reason */}
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-white truncate">{lead.target_company}</span>
-          {lead.relevance_reason?.startsWith('[Watchlisted]') && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-400 shrink-0">★ Watchlisted</span>
-          )}
-        </div>
-        {lead.relevance_reason && (
-          <p className="text-xs text-gray-500 mt-0.5 truncate">
-            {lead.relevance_reason.replace('[Watchlisted] ', '')}
-          </p>
-        )}
-        <p className="text-xs text-gray-700 mt-0.5">{relativeTime(lead.created_at)}</p>
-      </div>
-
-      {/* Signal badge */}
-      <div className="flex items-center gap-1.5">
-        <span className={`text-xs font-medium px-2 py-1 rounded-full flex items-center gap-1 ${sigCfg.bg} ${sigCfg.color}`}>
-          <span>{sigCfg.icon}</span>
-          <span>{sigCfg.label}</span>
-        </span>
-      </div>
-
-      {/* Score */}
-      <div className="flex flex-col gap-0.5">
-        <span className="text-sm font-semibold text-white">{lead.relevance_score}<span className="text-gray-600 font-normal text-xs">/10</span></span>
-        <div className="flex gap-0.5">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className={`w-1 h-1.5 rounded-sm ${i < lead.relevance_score ? 'bg-indigo-500' : 'bg-gray-700'}`} />
-          ))}
-        </div>
-      </div>
-
-      {/* Status */}
-      <div className="relative">
-        <button
-          onClick={() => setShowStatusMenu(s => !s)}
-          className="flex items-center gap-1.5 text-xs hover:opacity-80 transition-opacity"
-        >
-          <span className={`w-2 h-2 rounded-full shrink-0 ${statusCfg.dot}`} />
-          <span className={statusCfg.color}>{statusCfg.label}</span>
-          <svg className="w-3 h-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {showStatusMenu && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setShowStatusMenu(false)} />
-            <div className="absolute left-0 top-6 z-20 w-36 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 overflow-hidden">
-              {Object.entries(STATUS_CONFIG).filter(([k]) => k !== 'dismissed').map(([key, cfg]) => (
-                <button
-                  key={key}
-                  onClick={() => { onStatusChange(key); setShowStatusMenu(false) }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors hover:bg-gray-700 ${lead.status === key ? 'bg-gray-700/50' : ''}`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                  <span className={cfg.color}>{cfg.label}</span>
-                </button>
-              ))}
-              <div className="border-t border-gray-700 mt-1 pt-1">
-                <button
-                  onClick={() => { onStatusChange('dismissed'); setShowStatusMenu(false) }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left text-gray-600 hover:text-gray-400 hover:bg-gray-700 transition-colors"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-700" />
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onDraft}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
-          {lead.status === 'new' || lead.status === 'viewed' ? 'Draft' : 'View draft'}
-        </button>
-        {signal?.source_url && (
-          <a
-            href={signal.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 rounded-lg border border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600 transition-colors"
-            title="Read article"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
-        )}
-      </div>
     </div>
   )
 }
 
-function SortIcon({ dir }: { dir: 'asc' | 'desc' }) {
+function EmptyState() {
   return (
-    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d={dir === 'desc' ? 'M19 9l-7 7-7-7' : 'M5 15l7-7 7 7'} />
-    </svg>
+    <div className="card flex flex-col items-center justify-center text-center py-20 px-4">
+      <div className="w-12 h-12 rounded-2xl bg-[var(--color-accent-bg)] flex items-center justify-center mb-4">
+        <svg className="w-5 h-5 text-[var(--color-accent-ring)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </div>
+      <h3 className="text-[14px] font-medium text-[var(--color-text-1)]">No signals matched your ICP</h3>
+      <p className="text-[12.5px] text-[var(--color-text-3)] mt-1.5 max-w-xs leading-relaxed">
+        Check back in an hour or refine your targeting in Settings.
+      </p>
+    </div>
   )
 }

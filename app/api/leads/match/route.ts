@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { scoreLeadRelevance } from '@/lib/claude'
+import { getPlanLimits } from '@/lib/plan'
+import { sendSlackAlert } from '@/lib/slack'
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
@@ -24,10 +26,9 @@ async function runMatch(request: Request) {
 
   const supabase = await createServiceClient()
 
-  // Get recent signals (limit 500, most recent first)
   const { data: newSignals, error: sigErr } = await supabase
     .from('signals')
-    .select('id, company_name, signal_type, summary, signal_embedding')
+    .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain')
     .order('processed_at', { ascending: false })
     .limit(500)
 
@@ -35,16 +36,14 @@ async function runMatch(request: Request) {
     return NextResponse.json({ matched: 0, reason: 'No signals found' })
   }
 
-  // Get all active profiles with their targeting preferences
   const { data: profiles, error: profErr } = await supabase
     .from('user_profiles')
-    .select('user_id, company_name, services_description, profile_embedding, target_signal_types, min_relevance_score')
+    .select('user_id, company_name, services_description, profile_embedding, target_signal_types, min_relevance_score, plan, slack_webhook_url')
 
   if (profErr || !profiles?.length) {
     return NextResponse.json({ matched: 0, reason: 'No profiles' })
   }
 
-  // Build a per-user watchlist map for boost logic
   const { data: watchlistRows } = await supabase
     .from('watchlist_companies')
     .select('user_id, company_name')
@@ -53,6 +52,30 @@ async function runMatch(request: Request) {
   for (const row of (watchlistRows ?? [])) {
     if (!watchlistMap[row.user_id]) watchlistMap[row.user_id] = new Set()
     watchlistMap[row.user_id].add(row.company_name.toLowerCase())
+  }
+
+  // Blocked companies: skip inserting leads for these
+  const { data: blockedRows } = await supabase
+    .from('blocked_companies')
+    .select('user_id, company_name, company_domain')
+
+  const blockedMap: Record<string, Set<string>> = {}
+  for (const row of (blockedRows ?? [])) {
+    if (!blockedMap[row.user_id]) blockedMap[row.user_id] = new Set()
+    if (row.company_domain) blockedMap[row.user_id].add(row.company_domain.toLowerCase())
+    blockedMap[row.user_id].add(row.company_name.toLowerCase())
+  }
+
+  // Batch existence check: single query instead of one per (user, signal) pair
+  const signalIds = newSignals.map(s => s.id)
+  const { data: existingLeads } = await supabase
+    .from('leads')
+    .select('user_id, signal_id')
+    .in('signal_id', signalIds)
+
+  const existingSet = new Set<string>()
+  for (const row of (existingLeads ?? [])) {
+    existingSet.add(`${row.user_id}:${row.signal_id}`)
   }
 
   let matched = 0
@@ -64,6 +87,7 @@ async function runMatch(request: Request) {
     rpc_errors: 0,
     claude_errors: 0,
     below_score: 0,
+    duplicate: 0,
   }
 
   for (const signal of newSignals) {
@@ -72,7 +96,17 @@ async function runMatch(request: Request) {
     for (const profile of profiles) {
       if (!profile.profile_embedding) { stats.no_profile_embedding++; continue }
 
-      // Respect user's target_signal_types preference
+      const pairKey = `${profile.user_id}:${signal.id}`
+      if (existingSet.has(pairKey)) { stats.duplicate++; continue }
+
+      // Skip blocked companies
+      const userBlocked = blockedMap[profile.user_id]
+      if (userBlocked) {
+        const companyKey = signal.company_name.toLowerCase()
+        const domainKey  = signal.company_domain?.toLowerCase()
+        if (userBlocked.has(companyKey) || (domainKey && userBlocked.has(domainKey))) continue
+      }
+
       const allowedTypes = (profile.target_signal_types as string[] | null) ??
         ['funding', 'acquisition', 'expansion', 'regulation', 'hiring']
       if (!allowedTypes.includes(signal.signal_type)) {
@@ -80,22 +114,10 @@ async function runMatch(request: Request) {
         continue
       }
 
-      // Skip if lead already exists
-      const { data: existing } = await supabase
-        .from('leads')
-        .select('id')
-        .eq('user_id', profile.user_id)
-        .eq('signal_id', signal.id)
-        .maybeSingle()
-
-      if (existing) continue
-
-      // Watchlist boost: bypass similarity check for explicitly watched companies
       const userWatchlist = watchlistMap[profile.user_id]
       const isWatchlisted = userWatchlist?.has(signal.company_name.toLowerCase()) ?? false
 
       if (!isWatchlisted) {
-        // Vector similarity check
         const { data: simResult, error: rpcErr } = await supabase.rpc('cosine_similarity', {
           a: signal.signal_embedding,
           b: profile.profile_embedding,
@@ -104,7 +126,6 @@ async function runMatch(request: Request) {
         if (rpcErr) {
           stats.rpc_errors++
           if (stats.rpc_errors === 1) console.error('cosine_similarity RPC error:', rpcErr.message)
-          // Fall through without vector filter if RPC is unavailable
         } else {
           const similarity = simResult as number | null
           if (!similarity || similarity < DEFAULT_SIMILARITY_THRESHOLD) {
@@ -114,7 +135,6 @@ async function runMatch(request: Request) {
         }
       }
 
-      // LLM scoring
       let score = 5
       let reason = ''
       try {
@@ -132,25 +152,31 @@ async function runMatch(request: Request) {
         continue
       }
 
-      // Use profile's min_relevance_score or default
       const minScore = (profile.min_relevance_score as number | null) ?? DEFAULT_SCORE_THRESHOLD
-      // Watchlisted companies get a lower bar (always show if score >= 4)
       const effectiveMin = isWatchlisted ? Math.min(minScore, 4) : minScore
 
       if (score < effectiveMin) { stats.below_score++; continue }
 
-      const { error } = await supabase.from('leads').insert({
+      const { data: inserted, error } = await supabase.from('leads').insert({
         user_id:          profile.user_id,
         signal_id:        signal.id,
         target_company:   signal.company_name,
+        company_domain:   signal.company_domain ?? null,
         relevance_score:  score,
-        relevance_reason: isWatchlisted
-          ? `[Watchlisted] ${reason}`
-          : reason,
+        relevance_reason: isWatchlisted ? `[Watchlisted] ${reason}` : reason,
         status: 'new',
-      })
+      }).select('id').single()
 
-      if (!error) matched++
+      if (!error && inserted) {
+        matched++
+        existingSet.add(pairKey)
+
+        // Slack alert for Max plan users with webhook configured
+        const planLimits = getPlanLimits((profile.plan ?? 'free') as 'free' | 'pro' | 'max')
+        if (planLimits.slack && profile.slack_webhook_url && score >= 70) {
+          sendSlackAlert(profile.slack_webhook_url, signal.company_name, signal.signal_type, signal.headline ?? signal.summary ?? '', score).catch(() => {})
+        }
+      }
     }
   }
 

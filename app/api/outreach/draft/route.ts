@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { draftOutreachEmail } from '@/lib/claude'
+import { checkRateLimit } from '@/lib/rate-limit'
+import { enrichCompany } from '@/lib/email-finder/enrich'
 import type { Stakeholder } from '../../../api/contacts/find/route'
 
 export async function POST(request: Request) {
@@ -10,6 +12,14 @@ export async function POST(request: Request) {
 
   const { leadId } = await request.json()
   if (!leadId) return NextResponse.json({ error: 'leadId required' }, { status: 400 })
+
+  const rl = await checkRateLimit(`draft:${user.id}`, 15, 3600)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many draft requests. Limit is 15 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } }
+    )
+  }
 
   // Check if draft already exists
   const { data: existingDraft } = await supabase
@@ -26,7 +36,7 @@ export async function POST(request: Request) {
   const [leadRes, profileRes] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, target_company, relevance_reason, signals (signal_type, summary, company_domain)')
+      .select('id, target_company, relevance_reason, contact_email, contact_name, contact_title, signals (signal_type, summary, company_domain)')
       .eq('id', leadId)
       .eq('user_id', user.id)
       .single(),
@@ -41,26 +51,56 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
   }
 
-  const lead = leadRes.data
+  const lead = leadRes.data as typeof leadRes.data & {
+    contact_email?: string | null
+    contact_name?: string | null
+    contact_title?: string | null
+  }
   const profile = profileRes.data
 
   type SignalRow = { signal_type: string; summary: string; company_domain: string | null }
   const signalRaw = lead.signals as unknown as SignalRow | SignalRow[] | null
   const signal = Array.isArray(signalRaw) ? signalRaw[0] ?? null : signalRaw
 
-  // Find stakeholder contacts in parallel with email drafting
-  const contactsRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/contacts/find`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', cookie: request.headers.get('cookie') || '' },
-    body: JSON.stringify({
-      companyName: lead.target_company,
-      companyDomain: signal?.company_domain,
-    }),
-  })
+  // Use pre-enriched contact if available; otherwise fall back to contacts/find
+  let stakeholders: Stakeholder[] = []
+  if (lead.contact_email && lead.contact_name) {
+    stakeholders = [{
+      name: lead.contact_name,
+      title: lead.contact_title ?? 'Decision Maker',
+      email: lead.contact_email,
+    } as Stakeholder]
+  } else {
+    // On-demand enrichment: checks cache first, then Apollo → Hunter
+    const serviceClient = await createServiceClient()
+    const { contact, resolvedDomain } = await enrichCompany(
+      lead.target_company,
+      signal?.company_domain ?? null,
+      serviceClient
+    )
 
-  const { stakeholders = [] }: { stakeholders: Stakeholder[] } = contactsRes.ok
-    ? await contactsRes.json()
-    : { stakeholders: [] }
+    if (contact) {
+      // Backfill the lead so the next draft request uses the cached path
+      const backfill: Record<string, unknown> = {
+        contact_email:       contact.email.toLowerCase(),
+        contact_name:        contact.name  || null,
+        contact_title:       contact.title || null,
+        contact_source:      contact.source,
+        contact_verified:    contact.verified,
+        contact_enriched_at: new Date().toISOString(),
+      }
+      if (resolvedDomain && !signal?.company_domain) backfill.company_domain = resolvedDomain
+      await serviceClient.from('leads').update(backfill).eq('id', leadId)
+
+      stakeholders = [{
+        name:       contact.name,
+        title:      contact.title || 'Decision Maker',
+        email:      contact.email,
+        confidence: contact.verified ? 'high' : 'medium',
+        source:     contact.source,
+      }]
+    }
+  }
 
   // Draft email targeting the top stakeholder (or a generic title if none found)
   const primaryStakeholder = stakeholders[0] || {

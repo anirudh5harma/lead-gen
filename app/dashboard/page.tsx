@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import LeadFeed from '@/components/LeadFeed'
-import WatchlistManager from '@/components/WatchlistManager'
+import DashboardShell from '@/components/DashboardShell'
+import type { Lead } from '@/components/LeadFeed'
 
 export const revalidate = 0
 
@@ -11,6 +11,7 @@ export default async function DashboardPage() {
 
   if (!user) redirect('/')
 
+  // Core fields — these exist from migration 001. Used to gate the onboarding redirect.
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('company_name, services_description, icp_keywords')
@@ -18,6 +19,18 @@ export default async function DashboardPage() {
     .single()
 
   if (!profile) redirect('/onboarding')
+
+  // Migration-004 fields — may not exist yet; use defaults if the query errors.
+  const { data: extProfile } = await supabase
+    .from('user_profiles')
+    .select('plan, leads_used_this_month, slack_webhook_url, auto_send_enabled')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const plan             = (extProfile as { plan?: string } | null)?.plan ?? 'free'
+  const leadsUsed        = (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
+  const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
+  const autoSendEnabled  = (extProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? true
 
   // Initial leads (server-rendered)
   const { data: leads } = await supabase
@@ -38,79 +51,38 @@ export default async function DashboardPage() {
         summary,
         funding_amount,
         source_url,
-        published_at
+        published_at,
+        company_domain
       )
     `)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(200)
 
-  // Weekly stats
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
-  const { data: statsRows } = await supabase
-    .from('leads')
-    .select('status, sent_at, booked_at, created_at')
+  // Watchlist
+  const { data: watchlist } = await supabase
+    .from('watchlist_companies')
+    .select('id, company_name, company_domain')
     .eq('user_id', user.id)
-    .gte('created_at', sevenDaysAgo)
+    .order('created_at', { ascending: false })
 
-  const weeklyStats = {
-    signals: statsRows?.length ?? 0,
-    drafted: statsRows?.filter(r => ['drafted', 'sent', 'replied', 'booked'].includes(r.status)).length ?? 0,
-    sent:    statsRows?.filter(r => r.sent_at !== null).length ?? 0,
-    booked:  statsRows?.filter(r => r.booked_at !== null).length ?? 0,
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const typedLeads = (leads ?? []) as any[]
+  const typedLeads = (leads ?? []) as unknown as Lead[]
 
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <span className="font-semibold text-white">ProspectSignal</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-400 hidden sm:block">
-            Watching for <span className="text-gray-200">{profile.company_name}</span>
-          </span>
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            Hourly
-          </div>
-          <a href="/onboarding" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
-            Edit profile
-          </a>
-        </div>
-      </header>
-
-      {/* Main content */}
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-white">Signal Dashboard</h1>
-            <p className="text-sm text-gray-400 mt-0.5">
-              Companies with a recent trigger event matched to your profile.
-            </p>
-          </div>
-        </div>
-
-        {/* Watchlist (collapsible) */}
-        <WatchlistManager />
-
-        {/* Lead feed — metrics, filters, table */}
-        <LeadFeed
-          initialLeads={typedLeads}
-          userId={user.id}
-          weeklyStats={weeklyStats}
-        />
-      </main>
-    </div>
+    <DashboardShell
+      initialLeads={typedLeads}
+      userId={user.id}
+      userProfile={{
+        company_name: profile.company_name,
+        services_description: profile.services_description,
+        icp_keywords: profile.icp_keywords,
+        email: user.email,
+        plan: plan,
+        leads_used_this_month: leadsUsed,
+        slack_webhook_url: slackWebhookUrl,
+        auto_send_enabled: autoSendEnabled,
+      }}
+      watchlist={watchlist ?? []}
+    />
   )
 }

@@ -1,0 +1,34 @@
+const REQUIRED = [
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'NEXT_PUBLIC_APP_URL',
+  'CRON_SECRET',
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+] as const
+
+const OPTIONAL_WITH_WARNINGS = [
+  'RESEND_API_KEY',
+  'RESEND_WEBHOOK_SECRET',
+  'ZEROBOUNCE_API_KEY',
+  'APOLLO_API_KEY',
+  'HUNTER_API_KEY',
+  'DODO_API_KEY',
+  'DODO_WEBHOOK_SECRET',
+  'DODO_PRODUCT_PRO',
+  'DODO_PRODUCT_MAX',
+  'DODO_BUSINESS_ID',
+] as const
+
+export function validateEnv(): void {
+  const missing = REQUIRED.filter(k => !process.env[k])
+  if (missing.length) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
+  }
+
+  const warnings = OPTIONAL_WITH_WARNINGS.filter(k => !process.env[k])
+  if (warnings.length) {
+    console.warn(`[env] Optional env vars not set (some features will be disabled): ${warnings.join(', ')}`)
+  }
+}

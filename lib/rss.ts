@@ -147,7 +147,7 @@ export async function fetchRSSItems(query: string): Promise<RSSItem[]> {
   const url = buildGoogleNewsUrl(query)
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProspectSignal/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bombsell/1.0)' },
       next: { revalidate: 0 },
     })
     if (!res.ok) {
@@ -167,7 +167,7 @@ export async function fetchRSSItems(query: string): Promise<RSSItem[]> {
 export async function fetchRSSFromUrl(url: string, source: string): Promise<RSSItem[]> {
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProspectSignal/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bombsell/1.0)' },
       next: { revalidate: 0 },
     })
     if (!res.ok) {

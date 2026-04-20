@@ -25,12 +25,22 @@ interface FollowUp {
 
 type Tab = 'initial' | 'followup'
 
+type SendState = 'idle' | 'sending' | 'success' | 'error'
+
 const ANGLE_LABELS: Record<string, string> = {
   funding:     'Hormozi value framing',
   acquisition: 'Challenger insight-led',
   expansion:   'Predictable Revenue',
   regulation:  'Voss tactical empathy',
   hiring:      'Challenger 90-day angle',
+}
+
+const SIGNAL_META: Record<string, { label: string; color: string }> = {
+  funding:     { label: 'Funding',     color: 'var(--color-sig-funding)' },
+  acquisition: { label: 'Acquisition', color: 'var(--color-sig-acquisition)' },
+  expansion:   { label: 'Expansion',   color: 'var(--color-sig-expansion)' },
+  hiring:      { label: 'Hiring',      color: 'var(--color-sig-hiring)' },
+  regulation:  { label: 'Regulation',  color: 'var(--color-sig-regulation)' },
 }
 
 export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCreated }: Props) {
@@ -41,6 +51,8 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
   const [followUpLoading, setFollowUpLoading] = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [copied, setCopied]     = useState(false)
+  const [sendState, setSendState] = useState<SendState>('idle')
+  const [sendError, setSendError] = useState<string | null>(null)
 
   // Load initial draft
   useEffect(() => {
@@ -99,6 +111,34 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
     setTimeout(() => setCopied(false), 2000)
   }
 
+  async function sendEmail() {
+    if (!draft) return
+    const recipient = draft.stakeholders.find(s => s.email)
+    if (!recipient?.email) {
+      setSendError('No email address found for any contact.')
+      return
+    }
+    const currentSubject = tab === 'followup' && followUp ? followUp.followup_subject : draft.subject
+    const currentBody    = tab === 'followup' && followUp ? followUp.followup_body    : draft.body
+
+    setSendState('sending')
+    setSendError(null)
+    try {
+      const res = await fetch('/api/outreach/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id, to: recipient.email, subject: currentSubject, body: currentBody }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to send')
+      setSendState('success')
+      setTimeout(() => onEmailSent(), 1500)
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : 'Failed to send email')
+      setSendState('error')
+    }
+  }
+
   function openInGmail() {
     if (!draft) return
     const to = draft.stakeholders[0]?.email || ''
@@ -111,62 +151,94 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
 
   const sig = Array.isArray(lead.signals) ? lead.signals[0] : lead.signals
   const sigType = sig?.signal_type ?? ''
+  const sigMeta = SIGNAL_META[sigType]
 
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/25 z-40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 bottom-0 w-full max-w-lg bg-gray-900 border-l border-gray-800 z-50 flex flex-col shadow-2xl">
+      <div
+        className="
+          fixed right-0 top-0 bottom-0 w-full max-w-lg
+          bg-white border-l border-[var(--color-line-1)]
+          z-50 flex flex-col shadow-[0_20px_60px_-20px_#00000033] drawer-enter
+        "
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
-          <div>
-            <h2 className="font-semibold text-white">Outreach to {lead.target_company}</h2>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <span className="text-xs text-gray-500">
-                {sig?.funding_amount || sig?.summary?.slice(0, 50) || ''}
-              </span>
+        <div className="flex items-start justify-between px-6 py-4 border-b border-[var(--color-line-1)]">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {sigMeta && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--color-text-3)]">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: sigMeta.color }}
+                  />
+                  {sigMeta.label}
+                </span>
+              )}
+              <h2 className="text-sm font-semibold text-[var(--color-text-1)] truncate">
+                Outreach to {lead.target_company}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {(sig?.funding_amount || sig?.summary) && (
+                <span className="text-[11px] text-[var(--color-text-4)] truncate max-w-[280px]">
+                  {sig?.funding_amount || sig?.summary?.slice(0, 60) || ''}
+                </span>
+              )}
               {ANGLE_LABELS[sigType] && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-400">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] border border-[var(--color-accent)]/25">
                   {ANGLE_LABELS[sigType]}
                 </span>
               )}
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors p-1">
+          <button
+            onClick={onClose}
+            className="text-[var(--color-text-4)] hover:text-[var(--color-text-1)] transition-colors p-1 shrink-0"
+            aria-label="Close drawer"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        {/* Tab bar */}
+        {/* Tab bar (underline style) */}
         {!loading && draft && (
-          <div className="flex border-b border-gray-800 px-6">
+          <div className="flex px-6 border-b border-[var(--color-line-1)]">
             <button
               onClick={() => setTab('initial')}
-              className={`py-2.5 text-sm font-medium border-b-2 mr-4 transition-colors ${
-                tab === 'initial'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
+              className={`
+                relative text-xs font-medium h-9 px-3 -mb-px border-b-2 transition-colors
+                ${tab === 'initial'
+                  ? 'border-[var(--color-text-1)] text-[var(--color-text-1)]'
+                  : 'border-transparent text-[var(--color-text-4)] hover:text-[var(--color-text-2)]'}
+              `}
             >
               Initial email
             </button>
             <button
               onClick={loadFollowUp}
               disabled={followUpLoading}
-              className={`py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                tab === 'followup'
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
+              className={`
+                relative text-xs font-medium h-9 px-3 -mb-px border-b-2 transition-colors flex items-center gap-1.5
+                ${tab === 'followup'
+                  ? 'border-[var(--color-text-1)] text-[var(--color-text-1)]'
+                  : 'border-transparent text-[var(--color-text-4)] hover:text-[var(--color-text-2)]'}
+              `}
             >
-              {followUpLoading
-                ? <><span className="w-3 h-3 border border-gray-500 border-t-indigo-400 rounded-full animate-spin" />Generating…</>
-                : 'Follow-up (day 4)'
-              }
+              {followUpLoading ? (
+                <>
+                  <span className="w-3 h-3 border border-[var(--color-text-4)] border-t-[var(--color-accent-ring)] rounded-full animate-spin" />
+                  Generating…
+                </>
+              ) : (
+                'Follow-up (day 4)'
+              )}
             </button>
           </div>
         )}
@@ -174,41 +246,45 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {loading && (
-            <div className="space-y-3 animate-pulse">
-              <div className="h-4 bg-gray-800 rounded w-1/3" />
-              <div className="h-10 bg-gray-800 rounded" />
-              <div className="h-4 bg-gray-800 rounded w-1/4 mt-4" />
-              <div className="h-32 bg-gray-800 rounded" />
-              <div className="h-4 bg-gray-800 rounded w-1/4 mt-4" />
-              <div className="h-16 bg-gray-800 rounded" />
+            <div className="space-y-3">
+              <div className="h-3 rounded w-1/3 skeleton" />
+              <div className="h-10 rounded skeleton" />
+              <div className="h-3 rounded w-1/4 mt-4 skeleton" />
+              <div className="h-32 rounded skeleton" />
+              <div className="h-3 rounded w-1/4 mt-4 skeleton" />
+              <div className="h-16 rounded skeleton" />
             </div>
           )}
 
-          {error && <div className="text-sm text-red-400 text-center py-8">{error}</div>}
+          {error && (
+            <div className="text-sm text-[var(--color-sig-regulation)] bg-[var(--color-sig-regulation-bg)] border border-[var(--color-sig-regulation)]/20 rounded-md px-3 py-2 text-center">
+              {error}
+            </div>
+          )}
 
           {/* Initial email */}
           {draft && !loading && tab === 'initial' && (
             <>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Subject</label>
+                <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">Subject</label>
                 <input
                   type="text"
                   value={draft.subject}
                   onChange={e => setDraft(d => d ? { ...d, subject: e.target.value } : d)}
-                  className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2.5 bg-white border border-[var(--color-line-2)] rounded-lg text-sm text-[var(--color-text-1)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Body</label>
+                <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">Body</label>
                 <textarea
                   rows={14}
                   value={draft.body}
                   onChange={e => setDraft(d => d ? { ...d, body: e.target.value } : d)}
-                  className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y leading-relaxed"
+                  className="w-full px-3 py-2.5 bg-white border border-[var(--color-line-2)] rounded-lg text-sm text-[var(--color-text-1)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 resize-y leading-relaxed transition-colors"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">
                   Send to · {draft.stakeholders.length} contact{draft.stakeholders.length !== 1 ? 's' : ''} found
                 </label>
                 <StakeholderList stakeholders={draft.stakeholders} />
@@ -219,30 +295,30 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
           {/* Follow-up email */}
           {tab === 'followup' && followUp && (
             <>
-              <div className="text-xs text-amber-400/80 bg-amber-900/20 border border-amber-800/30 rounded-lg px-3 py-2">
+              <div className="text-xs text-[var(--color-sig-expansion)] bg-[var(--color-sig-expansion-bg)] border border-[var(--color-sig-expansion)]/20 rounded-md px-3 py-2">
                 Send ~4 days after the initial email with no reply. Short by design.
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Subject</label>
+                <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">Subject</label>
                 <input
                   type="text"
                   value={followUp.followup_subject}
                   onChange={e => setFollowUp(f => f ? { ...f, followup_subject: e.target.value } : f)}
-                  className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2.5 bg-white border border-[var(--color-line-2)] rounded-lg text-sm text-[var(--color-text-1)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Body</label>
+                <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">Body</label>
                 <textarea
                   rows={8}
                   value={followUp.followup_body}
                   onChange={e => setFollowUp(f => f ? { ...f, followup_body: e.target.value } : f)}
-                  className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y leading-relaxed"
+                  className="w-full px-3 py-2.5 bg-white border border-[var(--color-line-2)] rounded-lg text-sm text-[var(--color-text-1)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 resize-y leading-relaxed transition-colors"
                 />
               </div>
               {draft && (
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Send to</label>
+                  <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">Send to</label>
                   <StakeholderList stakeholders={draft.stakeholders} />
                 </div>
               )}
@@ -252,35 +328,53 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onDraftCrea
 
         {/* Footer */}
         {(draft && !loading) && (
-          <div className="px-6 py-4 border-t border-gray-800 space-y-3">
-            {/* Gmail + copy */}
-            <div className="flex items-center gap-3">
+          <div className="px-6 py-4 border-t border-[var(--color-line-1)] space-y-3">
+            {/* Send error */}
+            {sendError && (
+              <p className="text-xs text-[var(--color-sig-regulation)] bg-[var(--color-sig-regulation-bg)] border border-[var(--color-sig-regulation)]/20 rounded-md px-3 py-2">
+                {sendError}
+              </p>
+            )}
+
+            {/* Primary: Send / Gmail / Copy */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={sendEmail}
+                disabled={sendState === 'sending' || sendState === 'success'}
+                className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+              >
+                {sendState === 'sending' && (
+                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                )}
+                {sendState === 'success' ? 'Sent' : sendState === 'sending' ? 'Sending…' : 'Send Email'}
+              </button>
               <button
                 onClick={openInGmail}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors"
+                title="Open in Gmail instead"
+                className="btn-ghost flex items-center justify-center gap-1.5 h-10 px-3 rounded-full text-xs"
               >
                 <GmailIcon />
-                Open in Gmail
+                <span className="hidden sm:inline">Gmail</span>
               </button>
               <button
                 onClick={copyFullEmail}
-                className="px-4 py-2.5 rounded-xl border border-gray-700 hover:border-gray-600 text-gray-300 text-sm font-medium transition-colors"
+                className="btn-ghost h-10 px-3 rounded-full text-xs font-medium"
               >
-                {copied ? '✓ Copied' : 'Copy all'}
+                {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
 
             {/* Manual status progression */}
-            <div className="flex items-center gap-2 pt-1">
-              <span className="text-xs text-gray-600 shrink-0">Mark as:</span>
-              {['sent', 'replied', 'booked'].map(s => (
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              <span className="text-[11px] text-[var(--color-text-4)] shrink-0">Mark as</span>
+              {(['sent', 'replied', 'booked'] as const).map(s => (
                 <button
                   key={s}
                   onClick={() => onEmailSent()}
-                  className="text-xs px-2.5 py-1 rounded-lg border border-gray-700 text-gray-400 hover:border-indigo-600 hover:text-indigo-400 transition-colors capitalize"
+                  className="text-[11px] px-2.5 py-1 rounded-full border border-[var(--color-line-2)] bg-white text-[var(--color-text-3)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-accent-ring)] hover:bg-[var(--color-accent-bg)] transition-colors capitalize"
                   title={`Mark this lead as ${s}`}
                 >
-                  {s === 'sent' ? '✈ Sent' : s === 'replied' ? '↩ Replied' : '📅 Booked'}
+                  {s}
                 </button>
               ))}
             </div>

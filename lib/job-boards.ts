@@ -42,7 +42,7 @@ export async function fetchJobBoard(
   try {
     const res = await fetch(`https://api.lever.co/v0/postings/${slug}?mode=json`, {
       signal: AbortSignal.timeout(6000),
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProspectSignal/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bombsell/1.0)' },
     })
     if (res.ok) {
       const jobs = (await res.json()) as Array<{
@@ -66,7 +66,7 @@ export async function fetchJobBoard(
       `https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`,
       {
         signal: AbortSignal.timeout(6000),
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProspectSignal/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bombsell/1.0)' },
       }
     )
     if (res.ok) {
