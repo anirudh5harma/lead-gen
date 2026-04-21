@@ -14,7 +14,7 @@ export async function sendSlackAlert(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `${emoji[signalType] ?? '⚡'} *${signalType.charAt(0).toUpperCase() + signalType.slice(1)} Signal* — Relevance ${score}/100`,
+          text: `${emoji[signalType] ?? '⚡'} *${signalType.charAt(0).toUpperCase() + signalType.slice(1)} Signal* — Relevance ${score}/10`,
         },
       },
       {

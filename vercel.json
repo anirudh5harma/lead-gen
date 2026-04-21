@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/enrich-contacts",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/renew-inbox-watches",
+      "schedule": "0 3 * * *"
     }
   ]
 }

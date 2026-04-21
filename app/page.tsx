@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
@@ -44,19 +45,19 @@ export default function LoginPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            {/* <button
               onClick={signInWithGoogle}
               disabled={loading}
-              className="hidden sm:inline-flex h-9 px-4 rounded-full text-[13px] btn-ghost items-center"
+              className="hidden sm:inline-flex h-9 px-4 rounded-full text-[13px] btn-ghost items-center cursor-pointer"
             >
               Sign in
-            </button>
+            </button> */}
             <button
               onClick={signInWithGoogle}
               disabled={loading}
-              className="h-9 px-4 rounded-full btn-primary text-[13px] disabled:opacity-60 inline-flex items-center gap-1.5"
+              className="h-9 px-4 rounded-full btn-primary text-[13px] disabled:opacity-60 inline-flex items-center gap-1.5 cursor-pointer"
             >
-              Start free <span aria-hidden>→</span>
+              Sign in <span aria-hidden>→</span>
             </button>
           </div>
         </div>
@@ -87,7 +88,7 @@ export default function LoginPage() {
               <button
                 onClick={signInWithGoogle}
                 disabled={loading}
-                className="h-12 px-6 rounded-full btn-primary text-[14px] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                className="h-12 px-6 rounded-full btn-primary text-[14px] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
               >
                 {loading ? (
                   <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -112,7 +113,7 @@ export default function LoginPage() {
 
             <div className="flex items-center gap-5 text-[12px] text-[var(--color-text-3)]">
               <span className="inline-flex items-center gap-1.5">
-                <CheckMark /> Free tier · 15 signals/mo
+                <CheckMark /> Free tier · 10 leads/mo
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <CheckMark /> No credit card
@@ -261,7 +262,7 @@ export default function LoginPage() {
               <button
                 onClick={signInWithGoogle}
                 disabled={loading}
-                className="h-12 px-7 rounded-full btn-primary text-[14px] font-medium inline-flex items-center gap-2 disabled:opacity-60"
+                className="h-12 px-7 rounded-full btn-primary text-[14px] font-medium inline-flex items-center gap-2 disabled:opacity-60 cursor-pointer"
               >
                 <GoogleIconSmall /> Continue with Google
               </button>
@@ -297,12 +298,12 @@ export default function LoginPage() {
 const STEPS = [
   {
     title: 'We listen for buying moments',
-    body: 'Every 6 hours we ingest funding rounds, new leadership hires, product launches, and geo expansions from across the web.',
+    body: 'Every hour we ingest funding rounds, new leadership hires, product launches, and geo expansions from across the web.',
     icon: <IconRadar />,
   },
   {
     title: 'Bombsell scores every signal',
-    body: 'Only the 70+ relevance signals matched to your ICP make it into your feed. No noise, no dozens of dashboards to babysit.',
+    body: 'Only the top relevance signals matched to your ICP make it into your feed. No noise, no dozens of dashboards to babysit.',
     icon: <IconSpark />,
   },
   {
@@ -318,12 +319,12 @@ const FEATURES = [
     body: 'Our comprehensive pipeline ensures every contact is verified and every email is safe to send. No more 30% bounce rates.',
   },
   {
-    title: 'Extremely personalized emails',
+    title: 'Hyper personalized emails',
     body: "Each email is personalized to the signal context, the company's recent news and your offering intent.",
   },
   {
     title: 'Automated follow-ups',
-    body: 'A 3-day follow-up fires automatically if they don&rsquo;t reply. Reply detection pauses the sequence instantly when they do.',
+    body: "A 3-day follow-up fires automatically if they don't reply. Reply detection pauses the sequence instantly when they do.",
   },
   {
     title: 'CRM-ready exports',
@@ -336,23 +337,23 @@ const TIERS = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    perks: ['15 leads / month', 'Manual send', 'Signal feed & watchlist', 'AI drafting'],
+    perks: ['10 leads / month', 'Hyper-personalized outreach', 'Manual send'],
     cta: 'Get started',
     highlight: false,
   },
   {
     name: 'Pro',
-    price: '$69',
+    price: '$100',
     period: '/ month',
-    perks: ['300 emails / month', 'Auto-send', '3-day follow-ups', 'Reply detection'],
+    perks: ['300 leads / month', 'Auto-send', '3-day follow-ups', 'Reply detection'],
     cta: 'Upgrade to Pro',
     highlight: true,
   },
   {
     name: 'Max',
-    price: '$169',
+    price: '$250',
     period: '/ month',
-    perks: ['1,500 emails / month', 'CRM export (CSV)', 'Slack signal alerts', 'Priority queue'],
+    perks: ['1,500 leads / month', 'Slack alerts', 'CRM export', 'Priority queue'],
     cta: 'Upgrade to Max',
     highlight: false,
   },
@@ -368,7 +369,7 @@ function ProductPreview() {
       {/* Floating stat card */}
       <div className="absolute -top-4 -left-4 z-20 card px-3 py-2 flex items-center gap-2 fade-in">
         <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-sig-funding)]" />
-        <span className="text-[11px] font-medium text-[var(--color-text-1)]">+12 signals today</span>
+        <span className="text-[11px] font-medium text-[var(--color-text-1)]">+12 leads today</span>
       </div>
 
       {/* Floating reply card */}
@@ -410,7 +411,7 @@ function ProductPreview() {
           ].map((row, i) => (
             <div
               key={row.company}
-              className={`px-4 py-3 flex items-center gap-3 ${i === 0 ? 'bg-[var(--color-accent-soft)]' : 'hover:bg-[var(--color-ink-2)]/40'} transition-colors`}
+              className={`px-4 py-3 flex items-center gap-3 ${i === 0 ? 'bg-[var(--color-accent-soft)]' : ''}`}
             >
               <span className={`pill chip-${row.tone} text-[10px] px-1.5`}>●</span>
               <div className="min-w-0 flex-1">
@@ -436,9 +437,9 @@ function ProductPreview() {
             <span className="kbd">⌘</span> <span className="kbd">K</span>
             <span className="ml-2">Command menu</span>
           </p>
-          <button className="h-7 px-3 rounded-full btn-primary text-[11px] font-medium inline-flex items-center gap-1.5">
-            Draft outreach <span aria-hidden>→</span>
-          </button>
+          <span aria-hidden className="h-7 px-3 rounded-full btn-primary text-[11px] font-medium inline-flex items-center gap-1.5 pointer-events-none cursor-default select-none">
+            Draft outreach →
+          </span>
         </div>
       </div>
     </div>
@@ -478,9 +479,9 @@ function EmailPreview() {
       </div>
 
       <div className="flex items-center gap-2 px-5 py-3 border-t border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
-        <button className="h-8 px-3 rounded-full btn-primary text-[12px] font-medium">Send</button>
-        <button className="h-8 px-3 rounded-full btn-ghost text-[12px]">Edit</button>
-        <button className="h-8 px-3 rounded-full btn-ghost text-[12px]">Regenerate</button>
+        <span aria-hidden className="h-8 px-3 rounded-full btn-primary text-[12px] font-medium inline-flex items-center pointer-events-none cursor-default select-none">Send</span>
+        <span aria-hidden className="h-8 px-3 rounded-full btn-ghost text-[12px] inline-flex items-center pointer-events-none cursor-default select-none">Edit</span>
+        <span aria-hidden className="h-8 px-3 rounded-full btn-ghost text-[12px] inline-flex items-center pointer-events-none cursor-default select-none">Regenerate</span>
         <span className="ml-auto text-[11px] text-[var(--color-text-3)]">Auto follow-up in 3 days</span>
       </div>
     </div>
@@ -488,20 +489,15 @@ function EmailPreview() {
 }
 
 function LogoMark({ small = false }: { small?: boolean }) {
-  const size = small ? 26 : 30
+  const size = small ? 26 : 32
   return (
-    <div
-      className="rounded-xl bg-[var(--color-accent)] flex items-center justify-center shrink-0"
-      style={{
-        width: size,
-        height: size,
-        boxShadow: '0 1px 2px #c15f3c44, 0 6px 16px -6px #c15f3c66',
-      }}
-    >
-      <svg width={small ? 13 : 15} height={small ? 13 : 15} fill="none" stroke="#ffffff" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    </div>
+    <Image
+      src="/logo.svg"
+      alt="Bombsell"
+      width={size}
+      height={size}
+      className="shrink-0"
+    />
   )
 }
 

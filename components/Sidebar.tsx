@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 
 export interface SidebarProps {
   companyName: string
@@ -60,14 +61,13 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
       {/* Brand */}
       <div className="h-16 px-3 flex items-center justify-between border-b border-[var(--color-line-1)] shrink-0">
         <div className="flex items-center gap-2.5 min-w-0 pl-1">
-          <div
-            className="w-[30px] h-[30px] shrink-0 rounded-xl bg-[var(--color-accent)] flex items-center justify-center"
-            style={{ boxShadow: '0 1px 2px #c15f3c44, 0 6px 16px -6px #c15f3c66' }}
-          >
-            <svg width="15" height="15" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
+          <Image
+            src="/logo.svg"
+            alt="Bombsell"
+            width={32}
+            height={32}
+            className="shrink-0"
+          />
           {!collapsed && (
             <span className="text-[15px] font-medium text-[var(--color-text-1)] tracking-tight truncate">
               Bombsell

@@ -45,6 +45,14 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   const [isRefreshing, startTransition] = useTransition()
   const router = useRouter()
 
+  const plan      = userProfile.plan ?? 'free'
+  const used      = userProfile.leads_used_this_month ?? 0
+  const planLimit = PLAN_LIMITS[plan] ?? 10
+  const usagePct  = planLimit > 0 ? (used / planLimit) * 100 : 0
+
+  const [dismissed80,   setDismissed80]   = useState(false)
+  const [dismissedOver, setDismissedOver] = useState(false)
+
   // Auto-navigate to settings after OAuth redirect (?view=settings)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -140,7 +148,24 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
         <main className="flex-1 px-6 py-6 pb-20 overflow-auto">
           <div className="max-w-6xl mx-auto fade-in">
             {activeView === 'feed' && (
-              <LeadFeed initialLeads={initialLeads} userId={userId} watchlist={watchlist} />
+              <div className="space-y-4">
+                {usagePct >= 80 && usagePct < 100 && !dismissed80 && (
+                  <UsageWarningBanner
+                    used={used}
+                    limit={planLimit}
+                    onDismiss={() => setDismissed80(true)}
+                  />
+                )}
+                {usagePct >= 100 && !dismissedOver && (
+                  <OverLimitModal
+                    plan={plan as 'free' | 'pro' | 'max'}
+                    used={used}
+                    limit={planLimit}
+                    onDismiss={() => setDismissedOver(true)}
+                  />
+                )}
+                <LeadFeed initialLeads={initialLeads} userId={userId} watchlist={watchlist} />
+              </div>
             )}
             {activeView === 'watchlist' && (
               <div className="max-w-2xl space-y-4">
@@ -179,10 +204,10 @@ function MetricChip({ value, label, accent = false }: { value: number; label: st
 
 const PLAN_LABELS: Record<string, { label: string; color: string; price: string }> = {
   free: { label: 'Free', color: 'text-[var(--color-text-4)]',    price: '$0' },
-  pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$69/mo' },
-  max:  { label: 'Max',  color: 'text-[var(--color-sig-funding)]', price: '$169/mo' },
+  pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$100/mo' },
+  max:  { label: 'Max',  color: 'text-[var(--color-sig-funding)]', price: '$250/mo' },
 }
-const PLAN_LIMITS: Record<string, number> = { free: 15, pro: 300, max: 1500 }
+const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 300, max: 1500 }
 
 function SettingsPanel({ profile }: { profile: UserProfile }) {
   const plan = profile.plan ?? 'free'
@@ -245,7 +270,7 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
         </div>
         <div className="px-5 py-4 space-y-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-[var(--color-text-3)]">Emails sent · 30 days</span>
+            <span className="text-[var(--color-text-3)]">Leads · 30 days</span>
             <span className="text-[var(--color-text-2)] tabular-nums">
               {used} / {limit === Infinity ? '∞' : limit}
             </span>
@@ -282,8 +307,8 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
         </div>
       </div>
 
-      {/* Connected sending accounts */}
-      <ConnectedAccountsPanel />
+      {/* Connected sending accounts — not available on free plan */}
+      {plan !== 'free' && <ConnectedAccountsPanel />}
 
       {/* Auto-send toggle (Pro / Max only) */}
       {(plan === 'pro' || plan === 'max') && (
@@ -361,7 +386,7 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
           <div className="px-5 py-4">
             <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Slack Alerts</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Get notified in Slack when a high-score signal (70+) is detected.
+              Get notified in Slack when a high-relevance signal (score 7+/10) is detected.
             </p>
           </div>
           <div className="px-5 py-4 space-y-3">
@@ -729,5 +754,162 @@ function BlockedCompaniesPanel() {
         )
       )}
     </div>
+  )
+}
+
+// ── Usage warning banner (80–99%) ─────────────────────────────────────────────
+
+function UsageWarningBanner({ used, limit, onDismiss }: { used: number; limit: number; onDismiss: () => void }) {
+  const pct = Math.round((used / limit) * 100)
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800">
+      <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      </svg>
+      <p className="text-[13px] flex-1">
+        <span className="font-medium">{pct}% of your monthly limit used</span>
+        {' '}— {used} of {limit} leads this period.{' '}
+        <a href="/pricing" className="underline underline-offset-2 hover:text-amber-900 transition-colors">Upgrade</a>
+        {' '}to avoid interruptions.
+      </p>
+      <button
+        onClick={onDismiss}
+        className="shrink-0 text-amber-500 hover:text-amber-700 transition-colors"
+        aria-label="Dismiss"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+// ── Over-limit modal (100%+) ──────────────────────────────────────────────────
+
+function OverLimitModal({
+  plan,
+  used,
+  limit,
+  onDismiss,
+}: {
+  plan: 'free' | 'pro' | 'max'
+  used: number
+  limit: number
+  onDismiss: () => void
+}) {
+  const [upgrading, setUpgrading] = useState(false)
+
+  async function upgradeToMax() {
+    setUpgrading(true)
+    try {
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: 'max' }),
+      })
+      const data = await res.json() as { url?: string }
+      if (data.url) window.location.href = data.url
+    } finally {
+      setUpgrading(false)
+    }
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" />
+
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-md card p-7 space-y-5 shadow-2xl">
+          {/* Icon */}
+          <div className="w-11 h-11 rounded-xl bg-[var(--color-sig-regulation-bg)] border border-[var(--color-sig-regulation)]/20 flex items-center justify-center">
+            <svg className="w-5 h-5 text-[var(--color-sig-regulation)]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-[17px] font-semibold text-[var(--color-text-1)] tracking-tight">
+              {plan === 'free' ? 'Free limit reached' : 'Monthly limit reached'}
+            </h2>
+            <p className="text-[13px] text-[var(--color-text-3)] leading-relaxed">
+              {plan === 'free' && (
+                <>You&rsquo;ve used all {limit} free leads this period. Upgrade to keep sending.</>
+              )}
+              {plan === 'pro' && (
+                <>You&rsquo;ve used all {limit} Pro leads ({used} sent). Extra sends cost <strong className="text-[var(--color-text-1)]">$0.50 per lead</strong>, billed at month end. Or upgrade to Max for 1,500 leads/mo.</>
+              )}
+              {plan === 'max' && (
+                <>You&rsquo;ve used all {limit} Max leads ({used} sent). Extra sends cost <strong className="text-[var(--color-text-1)]">$0.50 per lead</strong>, billed automatically at month end.</>
+              )}
+            </p>
+          </div>
+
+          {/* Usage bar */}
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-[11px] text-[var(--color-text-4)]">
+              <span>{used} used</span>
+              <span>{limit} limit</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-[var(--color-ink-2)] overflow-hidden">
+              <div className="h-full rounded-full bg-[var(--color-sig-regulation)]" style={{ width: '100%' }} />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-2 pt-1">
+            {plan === 'free' && (
+              <>
+                <a
+                  href="/pricing"
+                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center"
+                >
+                  Upgrade to Pro or Max
+                </a>
+                <button
+                  onClick={onDismiss}
+                  className="h-10 rounded-full btn-ghost text-[13px] flex items-center justify-center"
+                >
+                  Maybe later
+                </button>
+              </>
+            )}
+
+            {plan === 'pro' && (
+              <>
+                <button
+                  onClick={upgradeToMax}
+                  disabled={upgrading}
+                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center disabled:opacity-60"
+                >
+                  {upgrading ? 'Redirecting…' : 'Upgrade to Max — 1,500 leads/mo'}
+                </button>
+                <button
+                  onClick={onDismiss}
+                  className="h-10 rounded-full btn-ghost text-[13px] flex items-center justify-center gap-2"
+                >
+                  Continue with $0.50/lead overages
+                  <span className="text-[11px] text-[var(--color-text-4)]">billed month end</span>
+                </button>
+              </>
+            )}
+
+            {plan === 'max' && (
+              <>
+                <button
+                  onClick={onDismiss}
+                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center"
+                >
+                  Continue with $0.50/lead overages
+                </button>
+                <p className="text-center text-[11px] text-[var(--color-text-4)]">Charged automatically at month end</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
   )
 }

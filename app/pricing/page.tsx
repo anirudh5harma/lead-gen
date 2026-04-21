@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import { createClient } from '@/lib/supabase/client'
 
 const PLANS = [
   {
@@ -11,10 +13,9 @@ const PLANS = [
     period: 'forever',
     description: 'Try the core signal feed.',
     features: [
-      '15 leads / month',
+      '10 leads / month',
       'Manual email send',
-      'Signal feed & watchlist',
-      'AI email drafting',
+      'Hyper-personalized outreach',
       'Keyboard shortcuts',
     ],
     cta: 'Get started',
@@ -23,13 +24,13 @@ const PLANS = [
   {
     id: 'pro' as const,
     name: 'Pro',
-    price: '$69',
+    price: '$100',
     period: '/ month',
     description: 'For active solopreneurs.',
     features: [
-      '300 emails / month',
-      'Auto-send from outreach drawer',
-      'Automated follow-ups (3 days)',
+      '300 leads / month',
+      'Auto-send Gmail/Outlook',
+      'Automated follow-ups',
       'Reply detection',
       'Everything in Free',
     ],
@@ -39,13 +40,13 @@ const PLANS = [
   {
     id: 'max' as const,
     name: 'Max',
-    price: '$169',
+    price: '$250',
     period: '/ month',
     description: 'For teams that move fast.',
     features: [
-      '1,500 emails / month',
-      'CRM export (CSV)',
+      '1,500 leads / month',
       'Slack signal alerts',
+      'CRM export',
       'Priority enrichment queue',
       'Everything in Pro',
     ],
@@ -56,12 +57,12 @@ const PLANS = [
 
 const FAQS = [
   {
-    q: 'Do follow-ups count against my send quota?',
-    a: 'Yes. Every email sent — initial outreach or the 3-day follow-up — decrements your monthly allowance. The quota resets on a rolling 30-day window.',
+    q: 'Do follow-ups count against my lead quota?',
+    a: 'Yes — on Pro and Max plans, which are the only plans that include automated follow-ups. Each 3-day follow-up send uses one lead from your monthly allowance, just like an initial outreach. The quota resets on a rolling 30-day window.',
   },
   {
     q: 'What happens when I hit my limit?',
-    a: 'Signals keep flowing into your feed. Sending pauses until your window resets, or you upgrade. Nothing is lost.',
+    a: 'Signals keep flowing into your feed and nothing is lost. On Free, sending is hard-paused until your 30-day window resets. On Pro and Max, you can keep sending at $0.50 per additional lead — charged automatically via your billing account with no interruption.',
   },
   {
     q: 'Can I cancel or change plans anytime?',
@@ -69,17 +70,24 @@ const FAQS = [
   },
   {
     q: 'Where do signals come from?',
-    a: 'Google News, press wires, and public job boards — refreshed every 6 hours. Every lead is scored against your positioning by Claude before it reaches you.',
+    a: 'Google News, press wires, and public job boards — refreshed every hour. Every signal is scored against your ICP and product positioning by Bombsell before it reaches your feed.',
   },
   {
     q: 'How do you verify contact emails?',
-    a: 'We combine Apollo and Hunter discovery with ZeroBounce verification, and suppress any email that bounces or complains. You don&rsquo;t waste sends on bad addresses.',
+    a: "We run a multi-stage waterfall — then cross-check every address with ZeroBounce before it ever reaches you. Emails that bounce or generate complaints are permanently suppressed.",
   },
 ]
 
 export default function PricingPage() {
   const [loading, setLoading] = useState<'pro' | 'max' | null>(null)
+  const [isSignedIn, setIsSignedIn] = useState(false)
   const router = useRouter()
+
+  useEffect(() => {
+    createClient().auth.getSession().then(({ data }) => {
+      setIsSignedIn(!!data.session)
+    })
+  }, [])
 
   async function startCheckout(plan: 'pro' | 'max') {
     setLoading(plan)
@@ -113,9 +121,11 @@ export default function PricingPage() {
             <LogoMark />
             <span className="text-[15px] font-medium text-[var(--color-text-1)] tracking-tight">Bombsell</span>
           </a>
-          <a href="/dashboard" className="text-[13px] text-[var(--color-text-2)] hover:text-[var(--color-text-1)] transition-colors">
-            Back to dashboard →
-          </a>
+          {isSignedIn && (
+            <a href="/dashboard" className="text-[13px] text-[var(--color-text-2)] hover:text-[var(--color-text-1)] transition-colors">
+              Back to dashboard →
+            </a>
+          )}
         </div>
       </nav>
 
@@ -237,13 +247,12 @@ export default function PricingPage() {
 
 function LogoMark() {
   return (
-    <div
-      className="w-[30px] h-[30px] rounded-xl bg-[var(--color-accent)] flex items-center justify-center shrink-0"
-      style={{ boxShadow: '0 1px 2px #c15f3c44, 0 6px 16px -6px #c15f3c66' }}
-    >
-      <svg width="15" height="15" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    </div>
+    <Image
+      src="/logo.svg"
+      alt="Bombsell"
+      width={32}
+      height={32}
+      className="shrink-0"
+    />
   )
 }

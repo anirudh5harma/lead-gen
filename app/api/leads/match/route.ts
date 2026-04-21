@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient, createAdminClient } from '@/lib/supabase/server'
 import { scoreLeadRelevance } from '@/lib/claude'
 import { getPlanLimits } from '@/lib/plan'
 import { sendSlackAlert } from '@/lib/slack'
+import { sendFirstLeadEmail } from '@/lib/resend'
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
 }
 
-const DEFAULT_SIMILARITY_THRESHOLD = 0.35
-const DEFAULT_SCORE_THRESHOLD = 6
+const DEFAULT_SIMILARITY_THRESHOLD = 0.5
+const DEFAULT_SCORE_THRESHOLD = 7
 
 export async function GET(request: Request) {
   return runMatch(request)
@@ -26,10 +27,14 @@ async function runMatch(request: Request) {
 
   const supabase = await createServiceClient()
 
+  // Only match signals published within the last 72 hours — older signals are less actionable
+  const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
+
   const { data: newSignals, error: sigErr } = await supabase
     .from('signals')
     .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain')
-    .order('processed_at', { ascending: false })
+    .gte('published_at', seventyTwoHoursAgo)
+    .order('published_at', { ascending: false })
     .limit(500)
 
   if (sigErr || !newSignals?.length) {
@@ -38,7 +43,7 @@ async function runMatch(request: Request) {
 
   const { data: profiles, error: profErr } = await supabase
     .from('user_profiles')
-    .select('user_id, company_name, services_description, profile_embedding, target_signal_types, min_relevance_score, plan, slack_webhook_url')
+    .select('user_id, company_name, services_description, profile_embedding, icp_keywords, target_signal_types, min_relevance_score, plan, slack_webhook_url')
 
   if (profErr || !profiles?.length) {
     return NextResponse.json({ matched: 0, reason: 'No profiles' })
@@ -78,6 +83,22 @@ async function runMatch(request: Request) {
     existingSet.add(`${row.user_id}:${row.signal_id}`)
   }
 
+  // Company-level dedup: skip if user already has a lead for this company in the last 7 days
+  // Prevents 3 leads for "Stripe raises $X" from 3 separate news sources
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: recentCompanyLeads } = await supabase
+    .from('leads')
+    .select('user_id, target_company, company_domain')
+    .gte('created_at', sevenDaysAgo)
+
+  const recentCompanySet = new Set<string>()
+  for (const row of (recentCompanyLeads ?? [])) {
+    const domainKey = row.company_domain?.toLowerCase()
+    const nameKey   = row.target_company.toLowerCase()
+    if (domainKey) recentCompanySet.add(`${row.user_id}:${domainKey}`)
+    recentCompanySet.add(`${row.user_id}:${nameKey}`)
+  }
+
   let matched = 0
   const stats = {
     no_signal_embedding: 0,
@@ -88,6 +109,8 @@ async function runMatch(request: Request) {
     claude_errors: 0,
     below_score: 0,
     duplicate: 0,
+    company_duplicate: 0,
+    icp_filtered: 0,
   }
 
   for (const signal of newSignals) {
@@ -98,6 +121,14 @@ async function runMatch(request: Request) {
 
       const pairKey = `${profile.user_id}:${signal.id}`
       if (existingSet.has(pairKey)) { stats.duplicate++; continue }
+
+      // Skip if user already has a lead for this company in the last 7 days
+      const sigDomainKey = signal.company_domain?.toLowerCase()
+      const sigNameKey   = signal.company_name.toLowerCase()
+      if (
+        (sigDomainKey && recentCompanySet.has(`${profile.user_id}:${sigDomainKey}`)) ||
+        recentCompanySet.has(`${profile.user_id}:${sigNameKey}`)
+      ) { stats.company_duplicate++; continue }
 
       // Skip blocked companies
       const userBlocked = blockedMap[profile.user_id]
@@ -116,6 +147,16 @@ async function runMatch(request: Request) {
 
       const userWatchlist = watchlistMap[profile.user_id]
       const isWatchlisted = userWatchlist?.has(signal.company_name.toLowerCase()) ?? false
+
+      // ICP keyword pre-filter: fast string check before expensive RPC + Claude call
+      if (!isWatchlisted) {
+        const icpKeywords = (profile.icp_keywords as string[] | null) ?? []
+        if (icpKeywords.length > 0) {
+          const signalText = `${signal.company_name} ${signal.signal_type} ${signal.summary ?? ''} ${signal.headline ?? ''}`.toLowerCase()
+          const hasMatch = icpKeywords.some(kw => signalText.includes(kw.toLowerCase()))
+          if (!hasMatch) { stats.icp_filtered++; continue }
+        }
+      }
 
       if (!isWatchlisted) {
         const { data: simResult, error: rpcErr } = await supabase.rpc('cosine_similarity', {
@@ -170,11 +211,30 @@ async function runMatch(request: Request) {
       if (!error && inserted) {
         matched++
         existingSet.add(pairKey)
+        if (sigDomainKey) recentCompanySet.add(`${profile.user_id}:${sigDomainKey}`)
+        recentCompanySet.add(`${profile.user_id}:${sigNameKey}`)
 
         // Slack alert for Max plan users with webhook configured
         const planLimits = getPlanLimits((profile.plan ?? 'free') as 'free' | 'pro' | 'max')
-        if (planLimits.slack && profile.slack_webhook_url && score >= 70) {
+        if (planLimits.slack && profile.slack_webhook_url && score >= 7) {
           sendSlackAlert(profile.slack_webhook_url, signal.company_name, signal.signal_type, signal.headline ?? signal.summary ?? '', score).catch(() => {})
+        }
+
+        // First-lead email: check if this is user's very first lead
+        const { count } = await supabase
+          .from('leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', profile.user_id)
+        if (count === 1) {
+          const admin = createAdminClient()
+          admin.auth.admin.getUserById(profile.user_id)
+            .then(({ data }) => {
+              const email = data.user?.email
+              if (email) {
+                sendFirstLeadEmail(email, profile.company_name, signal.company_name, signal.signal_type).catch(() => {})
+              }
+            })
+            .catch(() => {})
         }
       }
     }

@@ -25,9 +25,9 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Bombsell — Strike when companies are primed to buy",
+  title: "Bombsell — Sell at the moment it matters",
   description:
-    "Real-time company signals + Claude-drafted outreach. Convert at 4x higher rates by reaching out the moment companies are ready.",
+    "Real-time company signals + extremely personalized outreach. Convert at 4x higher rates by reaching out the moment companies are ready.",
 };
 
 export default function RootLayout({

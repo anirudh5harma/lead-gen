@@ -1,3 +1,5 @@
+import { retryFetch } from '@/lib/retry'
+
 export interface ApolloContact {
   name: string
   title: string
@@ -51,7 +53,7 @@ export async function searchApolloContacts(
   }
 
   try {
-    const res = await fetch('https://api.apollo.io/v1/mixed_people/search', {
+    const res = await retryFetch('https://api.apollo.io/v1/mixed_people/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

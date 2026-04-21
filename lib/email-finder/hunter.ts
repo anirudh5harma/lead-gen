@@ -1,3 +1,5 @@
+import { retryFetch } from '@/lib/retry'
+
 export interface HunterContact {
   name: string
   title: string
@@ -25,7 +27,7 @@ export async function hunterDomainSearch(domain: string): Promise<HunterDomainRe
     url.searchParams.set('api_key', process.env.HUNTER_API_KEY)
     url.searchParams.set('limit', '10')
 
-    const res = await fetch(url.toString())
+    const res = await retryFetch(url.toString())
     if (!res.ok) return { emailPattern: null, contacts: [] }
 
     const json = await res.json()

@@ -128,6 +128,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isEdit, setIsEdit] = useState(false)
+  const [done, setDone] = useState(false)
   const [form, setForm] = useState({
     company_name: '',
     industry: '' as IndustryValue | '',
@@ -218,13 +219,78 @@ export default function OnboardingPage() {
       return
     }
 
-    router.push('/dashboard')
+    if (isEdit) {
+      router.push('/dashboard')
+    } else {
+      setDone(true)
+    }
   }
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (done) {
+    return (
+      <div className="relative min-h-screen flex items-center justify-center px-4 py-12 overflow-hidden">
+        <div className="absolute inset-0 grid-bg opacity-40" />
+        <div className="blob blob-1 w-[420px] h-[420px] top-[-100px] right-[-80px]" />
+
+        <div className="relative w-full max-w-lg text-center space-y-8 fade-in">
+          {/* pulse icon */}
+          <div className="flex justify-center">
+            <div className="relative w-20 h-20 flex items-center justify-center rounded-full bg-[var(--color-accent-bg)] border border-[var(--color-accent)]/20">
+              <svg className="w-9 h-9 text-[var(--color-accent-ring)]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3" />
+                <circle cx="12" cy="12" r="7" strokeOpacity="0.5" />
+                <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+              </svg>
+              <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-[var(--color-accent)] pulse-dot" />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h1 className="text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">
+              You&rsquo;re all set.
+            </h1>
+            <p className="text-[17px] leading-[1.55] text-[var(--color-text-2)]">
+              Bombsell is now scanning for buying signals matched to your ICP.
+              Your first leads will appear in a few hours.
+            </p>
+            <p className="text-[14px] text-[var(--color-text-3)]">
+              We&rsquo;ll send you an email the moment your first lead lands.
+            </p>
+          </div>
+
+          <div className="card p-5 text-left space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-4)] font-medium">What happens next</p>
+            <ul className="space-y-2.5">
+              {[
+                'Signals ingested every hour from funding, hiring, and expansion sources',
+                'Each signal scored against your ICP using AI',
+                'Matched leads appear in your feed with a drafted outreach email ready to send',
+              ].map((item, i) => (
+                <li key={i} className="flex items-start gap-2.5 text-[13px] text-[var(--color-text-2)]">
+                  <span className="mt-0.5 w-4 h-4 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center shrink-0 text-[10px] font-semibold">
+                    {i + 1}
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="h-12 px-8 rounded-full btn-primary text-[14px] font-medium inline-flex items-center gap-2"
+          >
+            Go to dashboard →
+          </button>
+        </div>
       </div>
     )
   }

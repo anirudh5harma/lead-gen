@@ -17,8 +17,8 @@ export async function extractSignal(headline: string, description: string): Prom
   funding_amount: string | null
 } | null> {
   const message = await client.messages.create({
-    model: MODEL,
-    max_tokens: 300,
+    model: CHEAP_MODEL,
+    max_tokens: 350,
     messages: [{
       role: 'user',
       content: `Extract structured signal data from this news item.
@@ -32,18 +32,29 @@ Return a JSON object with these fields:
 - signal_type: one of "funding" | "acquisition" | "expansion" | "regulation" | "hiring"
 - summary: string (one crisp sentence describing the event and its business implication)
 - funding_amount: string | null (e.g. "$50M Series B" — only for funding signals)
+- confidence: 1 | 2 | 3
+  - 3 = clear, specific company event with named company and concrete details
+  - 2 = plausible company event but vague or indirect
+  - 1 = generic industry news, opinion, listicle, product review, or no named company
 
-If this is not a clear company business event (e.g. it's an opinion piece, product review, or generic news), return null.
-
+If this is not a company business event at all, return null.
 Return ONLY valid JSON, no markdown, no explanation.`,
     }],
-  })
+  }, { signal: AbortSignal.timeout(30_000) })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
   if (text === 'null' || !text) return null
 
   try {
-    return JSON.parse(text)
+    const parsed = JSON.parse(text) as { confidence?: number } & Record<string, unknown>
+    if ((parsed.confidence ?? 3) <= 1) return null
+    return parsed as {
+      company_name: string
+      company_domain: string | null
+      signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
+      summary: string
+      funding_amount: string | null
+    }
   } catch {
     return null
   }
@@ -60,25 +71,27 @@ export async function scoreLeadRelevance(
   signalSummary: string
 ): Promise<{ score: number; reason: string }> {
   const message = await client.messages.create({
-    model: CHEAP_MODEL,
+    model: MODEL,
     max_tokens: 200,
-    messages: [{
-      role: 'user',
-      content: `You are evaluating whether a company event is a good sales trigger.
-
-Seller's product/service: ${servicesDescription}
-
-Event: ${companyName} — ${signalType}
-Summary: ${signalSummary}
-
-Score 1-10: How likely is this company to need what the seller offers RIGHT NOW because of this event?
-- 8-10: Strong fit — the event directly creates a need for the seller's product
+    system: [
+      {
+        type: 'text',
+        text: `You evaluate whether a company event is a good sales trigger. Score 1-10 based on how likely the company needs the seller's product RIGHT NOW because of the event.
+- 8-10: Strong fit — event directly creates a need
 - 5-7: Possible fit — plausible but indirect connection
 - 1-4: Poor fit — weak or no connection
+Return ONLY valid JSON: {"score": <int>, "reason": "<one sentence>"}`,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{
+      role: 'user',
+      content: `Seller's product/service: ${servicesDescription}
 
-Return ONLY this JSON: {"score": <int>, "reason": "<one sentence explaining why>"}`,
+Event: ${companyName} — ${signalType}
+Summary: ${signalSummary}`,
     }],
-  })
+  }, { signal: AbortSignal.timeout(25_000) })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
   try {
@@ -93,7 +106,7 @@ Return ONLY this JSON: {"score": <int>, "reason": "<one sentence explaining why>
  */
 export async function extractICPKeywords(servicesDescription: string): Promise<string[]> {
   const message = await client.messages.create({
-    model: MODEL,
+    model: CHEAP_MODEL,
     max_tokens: 150,
     messages: [{
       role: 'user',
@@ -104,7 +117,7 @@ Product/service: ${servicesDescription}
 
 Return ONLY a JSON array of strings, no markdown.`,
     }],
-  })
+  }, { signal: AbortSignal.timeout(20_000) })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '[]'
   try {
@@ -216,7 +229,7 @@ Return ONLY this JSON (no markdown):
 
 Body must use \\n\\n between paragraphs.`,
     }],
-  })
+  }, { signal: AbortSignal.timeout(30_000) })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
   try {
@@ -329,7 +342,7 @@ Return ONLY this JSON (no markdown):
 
 The body must use \\n\\n between paragraphs.`,
     }],
-  })
+  }, { signal: AbortSignal.timeout(60_000) })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
   try {

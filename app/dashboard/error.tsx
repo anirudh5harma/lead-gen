@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 
-export default function ErrorBoundary({
+export default function DashboardError({
   error,
   reset,
 }: {
@@ -23,11 +23,9 @@ export default function ErrorBoundary({
           </svg>
         </div>
         <div className="space-y-2">
-          <h2 className="text-xl font-medium tracking-tight text-[var(--color-text-1)]">Something went wrong</h2>
+          <h2 className="text-xl font-medium tracking-tight text-[var(--color-text-1)]">Dashboard error</h2>
           <p className="text-xs text-[var(--color-text-3)] leading-relaxed">
-            {process.env.NODE_ENV === 'development' && error.message
-              ? error.message
-              : 'An unexpected error occurred.'}
+            Failed to load your dashboard. Try refreshing — if it persists, contact support.
           </p>
         </div>
         <div className="flex items-center justify-center gap-3 pt-2">
@@ -38,10 +36,10 @@ export default function ErrorBoundary({
             Try again
           </button>
           <a
-            href="/dashboard"
+            href="/"
             className="h-9 px-4 rounded-full btn-ghost text-xs inline-flex items-center"
           >
-            Go to dashboard
+            Go home
           </a>
         </div>
       </div>

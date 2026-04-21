@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { canSendEmail, incrementSendCount, getUserPlan, getPlanLimits } from '@/lib/plan'
+import { incrementSendCount, getUserPlan, getPlanLimits } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/claude'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
+import { recordLeadOverage } from '@/lib/dodo'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -51,11 +52,27 @@ export async function POST(request: Request) {
 
   if (!leadRes.data) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
-  const allowed = await canSendEmail(user.id)
-  if (!allowed) {
+  const { plan: userPlan, used: leadsUsed, limit: leadsLimit } = await getUserPlan(user.id)
+  const isOverLimit = leadsUsed >= leadsLimit
+  if (isOverLimit) {
+    if (userPlan === 'free') {
+      return NextResponse.json(
+        { error: 'You\'ve reached your free limit of 10 leads. Upgrade to Pro or Max to send more.' },
+        { status: 429 }
+      )
+    }
+    // Pro/Max: allow send, charge $0.50 overage via Dodo metered billing
+    recordLeadOverage(user.id, leadId).catch(err =>
+      console.error('[overage] failed to record:', err)
+    )
+  }
+
+  const planLimits = getPlanLimits(userPlan)
+  const dailyRl = await checkRateLimit(`daily:${user.id}`, planLimits.leads_per_day, 86400)
+  if (!dailyRl.allowed) {
     return NextResponse.json(
-      { error: 'You\'ve reached your send limit for this 30-day period. Upgrade to send more.' },
-      { status: 429 }
+      { error: `You've reached your daily lead limit (${planLimits.leads_per_day}/day). Try again tomorrow.` },
+      { status: 429, headers: { 'Retry-After': '86400' } }
     )
   }
 
@@ -97,49 +114,16 @@ export async function POST(request: Request) {
 
     await incrementSendCount(user.id)
 
-    const { plan } = await getUserPlan(user.id)
-    if (getPlanLimits(plan).followups && !isFollowUp) {
+    if (planLimits.followups && !isFollowUp) {
       const followAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
       await supabase.from('scheduled_followups').upsert(
         { user_id: user.id, lead_id: leadId, scheduled_for: followAt },
         { onConflict: 'lead_id' }
       )
-
-      const { data: existingSeq } = await supabase
-        .from('outreach_sequences').select('id').eq('lead_id', leadId).maybeSingle()
-
-      if (!existingSeq) {
-        try {
-          const [draftRes, leadSigRes] = await Promise.all([
-            supabase.from('outreach_drafts').select('subject, body, stakeholders').eq('lead_id', leadId).single(),
-            supabase.from('leads').select('target_company, relevance_reason, signals(signal_type, summary)').eq('id', leadId).single(),
-          ])
-          if (draftRes.data && leadSigRes.data) {
-            type SigRow = { signal_type: string; summary: string }
-            const sigRaw = leadSigRes.data.signals as unknown as SigRow | SigRow[] | null
-            const signal = Array.isArray(sigRaw) ? sigRaw[0] ?? null : sigRaw
-            const stks   = Array.isArray(draftRes.data.stakeholders)
-              ? (draftRes.data.stakeholders as Array<{ name?: string }>)
-              : []
-            const { subject: fuSubject, body: fuBody } = await draftFollowUpEmail({
-              senderCompany:       profileRes.data?.company_name || 'us',
-              servicesDescription: profileRes.data?.services_description || '',
-              stakeholderName:     stks[0]?.name || 'there',
-              targetCompany:       leadSigRes.data.target_company,
-              signalType:          signal?.signal_type || 'event',
-              signalSummary:       signal?.summary || leadSigRes.data.relevance_reason || '',
-              originalSubject:     draftRes.data.subject,
-              originalBody:        draftRes.data.body,
-            })
-            await supabase.from('outreach_sequences').upsert(
-              { lead_id: leadId, followup_subject: fuSubject, followup_body: fuBody },
-              { onConflict: 'lead_id' }
-            )
-          }
-        } catch (fuErr) {
-          console.error('[outreach/send] follow-up pre-generation failed:', fuErr)
-        }
-      }
+      // Pre-generate follow-up copy fire-and-forget — never blocks the send response
+      pregenerateFollowup(supabase, leadId, profileRes.data).catch(err =>
+        console.error('[outreach/send] follow-up pre-generation failed:', err)
+      )
     }
 
     return NextResponse.json({ success: true, messageId: result.messageId, fromEmail: result.fromEmail })
@@ -148,4 +132,43 @@ export async function POST(request: Request) {
     console.error('[outreach/send]', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+async function pregenerateFollowup(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>,
+  leadId: string,
+  profile: { company_name: string; services_description: string } | null,
+) {
+  const { data: existingSeq } = await supabase
+    .from('outreach_sequences').select('id').eq('lead_id', leadId).maybeSingle()
+  if (existingSeq) return
+
+  const [draftRes, leadSigRes] = await Promise.all([
+    supabase.from('outreach_drafts').select('subject, body, stakeholders').eq('lead_id', leadId).single(),
+    supabase.from('leads').select('target_company, relevance_reason, signals(signal_type, summary)').eq('id', leadId).single(),
+  ])
+  if (!draftRes.data || !leadSigRes.data) return
+
+  type SigRow = { signal_type: string; summary: string }
+  const sigRaw = leadSigRes.data.signals as unknown as SigRow | SigRow[] | null
+  const signal = Array.isArray(sigRaw) ? sigRaw[0] ?? null : sigRaw
+  const stks   = Array.isArray(draftRes.data.stakeholders)
+    ? (draftRes.data.stakeholders as Array<{ name?: string }>)
+    : []
+
+  const { subject: fuSubject, body: fuBody } = await draftFollowUpEmail({
+    senderCompany:       profile?.company_name || 'us',
+    servicesDescription: profile?.services_description || '',
+    stakeholderName:     stks[0]?.name || 'there',
+    targetCompany:       leadSigRes.data.target_company,
+    signalType:          signal?.signal_type || 'event',
+    signalSummary:       signal?.summary || leadSigRes.data.relevance_reason || '',
+    originalSubject:     draftRes.data.subject,
+    originalBody:        draftRes.data.body,
+  })
+
+  await supabase.from('outreach_sequences').upsert(
+    { lead_id: leadId, followup_subject: fuSubject, followup_body: fuBody },
+    { onConflict: 'lead_id' }
+  )
 }

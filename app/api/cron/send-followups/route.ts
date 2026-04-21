@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getPlanLimits, PLAN_LIMITS, type PlanTier } from '@/lib/plan'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
+import { recordLeadOverage } from '@/lib/dodo'
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
     quotaMap[p.user_id] = {
       plan,
       used,
-      limit:       PLAN_LIMITS[plan].sends_per_month,
+      limit:       PLAN_LIMITS[plan].leads_per_month,
       autoSend:    p.auto_send_enabled ?? false,
       companyName: (p as { company_name?: string }).company_name || '',
     }
@@ -64,7 +65,9 @@ export async function GET(request: Request) {
     if (!quota) continue
     if (!getPlanLimits(quota.plan).followups) continue
     if (!quota.autoSend) continue
-    if (quota.used >= quota.limit) continue
+    // Free plan: hard block. Pro/Max: allow with overage billing.
+    if (quota.used >= quota.limit && quota.plan === 'free') continue
+    const isOverage = quota.used >= quota.limit
 
     const lead = item.leads as unknown as {
       contact_email?: string; target_company: string; status?: string
@@ -74,7 +77,12 @@ export async function GET(request: Request) {
       followup_subject: string; followup_body: string
     } | null
 
-    if (!lead?.contact_email || !seq) continue
+    if (!lead?.contact_email) continue
+
+    // Fall back to a generic follow-up template when pre-generation didn't complete
+    const fuSubject = seq?.followup_subject ?? `Following up`
+    const fuBody    = seq?.followup_body    ??
+      `Probably caught you at a bad time — figured I'd check back in case it's still relevant.\n\nWorth a quick 15-min call this week?`
 
     if (lead.status === 'replied' || lead.status === 'booked') {
       await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
@@ -102,8 +110,8 @@ export async function GET(request: Request) {
         userId:        item.user_id,
         supabase,
         to:            lead.contact_email,
-        subject:       seq.followup_subject,
-        body:          seq.followup_body,
+        subject:       fuSubject,
+        body:          fuBody,
         fromName:      quota.companyName,
         inReplyTo,
         gmailThreadId,
@@ -122,6 +130,12 @@ export async function GET(request: Request) {
       await supabase.rpc('increment_leads_used', { p_user_id: item.user_id })
       quota.used++
       sent++
+
+      if (isOverage) {
+        recordLeadOverage(item.user_id, item.lead_id, 'overage_followup').catch(err =>
+          console.error('[overage] follow-up record failed:', err)
+        )
+      }
     } catch (err) {
       console.error(`[send-followups] failed for lead ${item.lead_id}:`, err)
     }
