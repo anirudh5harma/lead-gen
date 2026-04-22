@@ -9,6 +9,8 @@ const QUERY_BATCH_SIZE = 5
 const MAX_CANDIDATES_PER_RUN = 60
 const PROCESS_BATCH_SIZE = 4
 const EXTRACT_TIMEOUT_MS = 12_000
+const MAX_EXTRACT_NULL_LOGS = 8
+const MAX_SHORTLIST_LOGS = 8
 
 const EVENT_KEYWORDS: Record<string, RegExp> = {
   funding: /\b(raise[sd]?|funding|financing|series [a-z]|seed round|venture capital|investment)\b/i,
@@ -16,6 +18,21 @@ const EVENT_KEYWORDS: Record<string, RegExp> = {
   expansion: /\b(expansion|expand(?:s|ed|ing)?|launch(?:ed)?|new office|new market|opens in|entered)\b/i,
   regulation: /\b(regulation|regulatory|compliance|sec|finra|fda|law|mandate)\b/i,
   hiring: /\b(hire[sd]?|appoint(?:ed)?|joins?|joined|chief|cto|cfo|cpo|ciso|cmo|cro|vp|vice president)\b/i,
+}
+
+const HIGH_SIGNAL_PATTERNS = [
+  { type: 'funding', pattern: /\b(raised|raises|secure[sd]?|closed|closes)\b.{0,80}\b(series [a-z]|seed|funding|financing|investment)\b/i },
+  { type: 'acquisition', pattern: /\b(acquire[sd]?|buyout|merger|merges with|to acquire)\b/i },
+  { type: 'expansion', pattern: /\b(expands? into|launch(?:es|ed)? in|opens? (?:a|its) .*office|enters? .*market|new office|new market)\b/i },
+  { type: 'hiring', pattern: /\b(appoint(?:ed|s)?|hires?|hired|joins?|joined)\b.{0,80}\b(ceo|cto|cfo|cpo|ciso|cmo|cro|chief|vp|vice president|head of)\b/i },
+]
+
+const NAMED_COMPANY_PATTERN = /\b[A-Z][A-Za-z0-9&.-]+(?:\s+[A-Z][A-Za-z0-9&.-]+){0,3}\b/
+
+interface ShortlistResult {
+  dedupedCount: number
+  items: RSSItem[]
+  sampledRejected: Array<{ title: string; source: string; reason: string }>
 }
 
 function isAuthorized(request: Request): boolean {
@@ -84,6 +101,9 @@ async function runPoll(request: Request) {
   stats.deduped_candidates = candidates.dedupedCount
   stats.shortlisted = candidates.items.length
   console.log(`[poll-signals] shortlisted ${candidates.items.length}/${candidates.dedupedCount} candidates`)
+  if (candidates.sampledRejected.length) {
+    console.log('[poll-signals] shortlist rejected samples', candidates.sampledRejected)
+  }
 
   for (let i = 0; i < candidates.items.length; i += PROCESS_BATCH_SIZE) {
     const batch = candidates.items.slice(i, i + PROCESS_BATCH_SIZE)
@@ -213,9 +233,10 @@ async function runPoll(request: Request) {
   return NextResponse.json({ inserted, skipped, stats })
 }
 
-function shortlistItems(allItems: RSSItem[]): { dedupedCount: number; items: RSSItem[] } {
+function shortlistItems(allItems: RSSItem[]): ShortlistResult {
   const seen = new Set<string>()
   const deduped: Array<{ item: RSSItem; rank: number }> = []
+  const sampledRejected: Array<{ title: string; source: string; reason: string }> = []
 
   for (const item of allItems) {
     // Skip articles older than 7 days
@@ -228,22 +249,40 @@ function shortlistItems(allItems: RSSItem[]): { dedupedCount: number; items: RSS
     if (seen.has(dedupeKey)) continue
     seen.add(dedupeKey)
 
-    const text = `${item.title} ${item.description}`.toLowerCase()
+    const combinedText = `${item.title} ${item.description}`
+    const text = combinedText.toLowerCase()
+    const hasNamedCompany = NAMED_COMPANY_PATTERN.test(item.title)
+    const matchedHighSignal = HIGH_SIGNAL_PATTERNS.some(({ pattern }) => pattern.test(combinedText))
+    const isPressRelease = item.source === 'prnewswire' || item.source === 'businesswire' || item.source === 'globenewswire'
+
+    if (!hasNamedCompany) {
+      if (sampledRejected.length < MAX_SHORTLIST_LOGS) {
+        sampledRejected.push({ title: item.title, source: item.source, reason: 'no_named_company' })
+      }
+      continue
+    }
+
+    if (!matchedHighSignal && !isPressRelease) {
+      if (sampledRejected.length < MAX_SHORTLIST_LOGS) {
+        sampledRejected.push({ title: item.title, source: item.source, reason: 'weak_event_pattern' })
+      }
+      continue
+    }
+
     const keywordHits = Object.values(EVENT_KEYWORDS).reduce((count, pattern) => (
       count + (pattern.test(text) ? 1 : 0)
     ), 0)
     const sourceBoost =
-      item.source === 'prnewswire' || item.source === 'businesswire' || item.source === 'globenewswire'
+      isPressRelease
         ? 4
         : 1
     const recencyBoost = item.pubDate
       ? Math.max(0, 48 - Math.floor((Date.now() - new Date(item.pubDate).getTime()) / (60 * 60 * 1000)))
       : 0
-    const companyLike = /\b[A-Z][A-Za-z0-9&.-]+(?:\s+[A-Z][A-Za-z0-9&.-]+){0,3}\b/.test(item.title) ? 2 : 0
 
     deduped.push({
       item,
-      rank: keywordHits * 5 + sourceBoost + Math.min(recencyBoost, 12) + companyLike,
+      rank: keywordHits * 5 + sourceBoost + Math.min(recencyBoost, 12) + (matchedHighSignal ? 8 : 0),
     })
   }
 
@@ -251,6 +290,7 @@ function shortlistItems(allItems: RSSItem[]): { dedupedCount: number; items: RSS
   return {
     dedupedCount: deduped.length,
     items: deduped.slice(0, MAX_CANDIDATES_PER_RUN).map(entry => entry.item),
+    sampledRejected,
   }
 }
 
@@ -280,7 +320,10 @@ async function processItem(
     return { status: 'extract_error' }
   }
 
-  if (!signal) return { status: 'extract_null' }
+  if (!signal) {
+    logExtractNullSample(item)
+    return { status: 'extract_null' }
+  }
 
   const pubDate = item.pubDate
     ? new Date(item.pubDate).toISOString()
@@ -326,4 +369,17 @@ async function processItem(
   }
 
   return { status: 'inserted' }
+}
+
+const extractNullSamples: Array<{ title: string; source: string; snippet: string }> = []
+
+function logExtractNullSample(item: RSSItem) {
+  if (extractNullSamples.length >= MAX_EXTRACT_NULL_LOGS) return
+  const sample = {
+    title: item.title,
+    source: item.source,
+    snippet: item.description.slice(0, 180),
+  }
+  extractNullSamples.push(sample)
+  console.log('[poll-signals] extract null sample', sample)
 }
