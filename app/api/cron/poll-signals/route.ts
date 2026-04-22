@@ -4,6 +4,7 @@ import { fetchRSSItems, fetchRSSFromUrl, RSS_QUERIES, PRESS_RELEASE_FEEDS, type 
 import { extractSignal } from '@/lib/claude'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { fetchJobBoard } from '@/lib/job-boards'
+import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -62,6 +63,8 @@ async function runPoll(request: Request) {
   }
 
   const supabase = await createServiceClient()
+  const runId = await startCronRun(supabase, 'poll_signals')
+  try {
   let inserted = 0
   let skipped = 0
   const stats = {
@@ -251,7 +254,9 @@ async function runPoll(request: Request) {
   }
 
   // ── 4. Kick off lead matching ─────────────────────────────────────
+  let matchTriggered = false
   if (inserted > 0) {
+    matchTriggered = true
     fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/leads/match`, {
       method: 'POST',
       headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
@@ -260,8 +265,16 @@ async function runPoll(request: Request) {
     })
   }
 
-  console.log('[poll-signals] stats', { inserted, skipped, ...stats })
-  return NextResponse.json({ inserted, skipped, stats })
+  const payload = { inserted, skipped, stats, match_triggered: matchTriggered }
+  console.log('[poll-signals] stats', { inserted, skipped, ...stats, match_triggered: matchTriggered })
+  await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
+  return NextResponse.json(payload)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    await finishCronRun(supabase, runId, { status: 'error', errorMessage: message })
+    console.error('[poll-signals]', message)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }
 
 function shortlistItems(allItems: RSSItem[]): ShortlistResult {

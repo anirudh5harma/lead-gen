@@ -5,6 +5,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/leads/match",
+      "schedule": "10 * * * *"
+    },
+    {
       "path": "/api/cron/send-followups",
       "schedule": "15 * * * *"
     },

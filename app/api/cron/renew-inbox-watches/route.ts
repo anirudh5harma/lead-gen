@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { startGmailWatch } from '@/lib/oauth/gmail-watch'
 import { renewOutlookSubscription } from '@/lib/oauth/outlook-watch'
 import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
+import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -18,6 +19,8 @@ export async function GET(request: Request) {
   }
 
   const supabase     = await createServiceClient()
+  const runId = await startCronRun(supabase, 'renew_inbox_watches')
+  try {
   const pubsubTopic  = process.env.GOOGLE_PUBSUB_TOPIC
   const renewedGmail = []
   const renewedOutlook = []
@@ -69,5 +72,15 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ renewedGmail, renewedOutlook })
+  const payload = { renewedGmail, renewedOutlook }
+  await finishCronRun(supabase, runId, { status: 'success', metrics: {
+    renewed_gmail: renewedGmail.length,
+    renewed_outlook: renewedOutlook.length,
+  } })
+  return NextResponse.json(payload)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    await finishCronRun(supabase, runId, { status: 'error', errorMessage: message })
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }

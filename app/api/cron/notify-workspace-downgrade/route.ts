@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient, createServiceClient } from '@/lib/supabase/server'
 import { sendMaxWorkspaceDowngradeWarningEmail } from '@/lib/resend'
+import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -18,6 +19,8 @@ export async function GET(request: Request) {
   }
 
   const supabase = await createServiceClient()
+  const runId = await startCronRun(supabase, 'notify_workspace_downgrade')
+  try {
   const admin = createAdminClient()
   const now = new Date()
   const windowEnd = new Date(now.getTime() + WARNING_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
@@ -33,6 +36,7 @@ export async function GET(request: Request) {
 
   if (error) {
     console.error('[notify-workspace-downgrade] subscriptions query error:', error.message)
+    await finishCronRun(supabase, runId, { status: 'error', errorMessage: error.message })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
@@ -111,5 +115,12 @@ export async function GET(request: Request) {
   }
 
   console.log('[notify-workspace-downgrade] stats', { eligible, sent, skipped })
-  return NextResponse.json({ eligible, sent, skipped })
+  const payload = { eligible, sent, skipped }
+  await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
+  return NextResponse.json(payload)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    await finishCronRun(supabase, runId, { status: 'error', errorMessage: message })
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }

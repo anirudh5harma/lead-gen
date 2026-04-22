@@ -309,7 +309,7 @@ const STEPS = [
   },
   {
     title: 'Drafted. Sent. Tracked.',
-    body: 'Automated outreach drafted using proven sales and marketing frameworks — with verified emails, a 3-day follow-up, and reply detection baked in.',
+    body: 'Every signal lands with a polished outreach draft. Pro and Max add connected inbox sending, a 3-day follow-up, and reply detection.',
     icon: <IconSend />,
   },
 ]
@@ -325,7 +325,7 @@ const FEATURES = [
   },
   {
     title: 'Automated follow-ups',
-    body: "A 3-day follow-up fires automatically if they don't reply. Reply detection pauses the sequence instantly when they do.",
+    body: "Pro and Max can auto-send a 3-day follow-up if they don't reply. Reply detection pauses the sequence instantly when they do.",
   },
   {
     title: 'CRM-ready exports',

@@ -38,6 +38,45 @@ interface Props {
   watchlist: WatchlistItem[]
 }
 
+interface OpsRun {
+  job_name: string
+  status: string
+  started_at: string
+  finished_at: string | null
+  metrics: Record<string, unknown> | null
+  error_message: string | null
+}
+
+interface LeadDiagnostic {
+  id: string
+  target_company: string
+  relevance_score: number
+  status: string
+  created_at: string
+  match_debug: {
+    client_name?: string
+    matched_via?: string
+    similarity?: number | null
+    min_relevance_score?: number
+  } | null
+  signal: {
+    signal_type?: string
+    headline?: string
+  } | null
+}
+
+interface OpsSummary {
+  counts: {
+    user_leads_last_24h: number
+    pending_enrichment: number
+    pending_followups: number
+    active_sending_accounts: number
+  }
+  signal_candidates_last_24h: Record<string, number>
+  cron_health: OpsRun[]
+  lead_diagnostics: LeadDiagnostic[]
+}
+
 const VIEW_TITLES: Record<View, string> = {
   feed:      'Signal Feed',
   watchlist: 'Watchlist',
@@ -107,7 +146,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
                 {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
                 {activeView === 'watchlist' && 'Companies you follow bypass relevance filtering'}
-                {activeView === 'settings' && 'Billing, targeting, and integrations'}
+                {activeView === 'settings' && 'Billing, targeting, integrations, and diagnostics'}
               </p>
             </div>
 
@@ -466,10 +505,17 @@ function SettingsPanel({
       </div>
 
       <SequenceTemplatesPanel />
-      <CrmSyncPanel />
+      {plan === 'max' ? <CrmSyncPanel /> : (
+        <MaxFeatureUpgradeCard
+          title="CRM Sync"
+          body="Push lead created, sent, replied, and booked events into your CRM or automation stack. Available on Max only."
+        />
+      )}
 
       {/* Blocked companies */}
       <BlockedCompaniesPanel />
+
+      <PipelineDiagnosticsPanel />
 
       {/* Slack (Max only) */}
       {plan === 'max' && (
@@ -521,6 +567,30 @@ function ClientWorkspaceUpgradeCard() {
         <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Client Workspaces</h2>
         <p className="text-xs text-[var(--color-text-4)] mt-0.5">
           Keep separate feeds, targeting, templates, and CRM sync for each client or business line.
+        </p>
+      </div>
+      <div className="px-5 py-4 flex items-center justify-between gap-4">
+        <p className="text-xs text-[var(--color-text-3)]">
+          Available on the Max plan only.
+        </p>
+        <Link
+          href="/pricing"
+          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
+        >
+          Upgrade to Max
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function MaxFeatureUpgradeCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h2>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          {body}
         </p>
       </div>
       <div className="px-5 py-4 flex items-center justify-between gap-4">
@@ -809,6 +879,198 @@ function CrmSyncPanel() {
         </button>
         {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
       </div>
+    </div>
+  )
+}
+
+function formatCronJobName(jobName: string) {
+  return jobName
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function PipelineDiagnosticsPanel() {
+  const [summary, setSummary] = useState<OpsSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/ops/summary')
+      .then(async response => {
+        if (!response.ok) {
+          throw new Error('Failed to load diagnostics')
+        }
+        return response.json() as Promise<OpsSummary>
+      })
+      .then(data => setSummary(data))
+      .catch(() => setSummary(null))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const counts = summary?.counts
+  const candidateCounts = summary?.signal_candidates_last_24h
+  const totalCandidates = candidateCounts
+    ? Object.values(candidateCounts).reduce((sum, count) => sum + count, 0)
+    : 0
+
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Pipeline Diagnostics</h2>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          Recent cron health, extraction flow, and the latest match explanations for your feed.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="px-5 py-5 text-xs text-[var(--color-text-4)]">Loading diagnostics…</div>
+      ) : !summary ? (
+        <div className="px-5 py-5 text-xs text-[var(--color-sig-regulation)]">
+          Diagnostics are temporarily unavailable.
+        </div>
+      ) : (
+        <>
+          <div className="px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <DiagStat label="Your leads · 24h" value={String(counts?.user_leads_last_24h ?? 0)} />
+            <DiagStat label="Pending enrichment" value={String(counts?.pending_enrichment ?? 0)} />
+            <DiagStat label="Due follow-ups" value={String(counts?.pending_followups ?? 0)} />
+            <DiagStat label="Active inboxes" value={String(counts?.active_sending_accounts ?? 0)} />
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-xs font-semibold text-[var(--color-text-1)] uppercase tracking-[0.14em]">Signal Extraction · 24h</h3>
+                <p className="text-[11px] text-[var(--color-text-4)] mt-1">
+                  {totalCandidates} candidates processed across recent polling runs.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {Object.entries(candidateCounts ?? {}).map(([status, count]) => (
+                <DiagPill key={status} label={status.replaceAll('_', ' ')} value={count} />
+              ))}
+            </div>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            <h3 className="text-xs font-semibold text-[var(--color-text-1)] uppercase tracking-[0.14em]">Cron Health</h3>
+            <div className="space-y-2">
+              {summary.cron_health.length === 0 ? (
+                <p className="text-xs text-[var(--color-text-4)]">No cron runs recorded yet.</p>
+              ) : (
+                summary.cron_health.map(run => (
+                  <div key={`${run.job_name}:${run.started_at}`} className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-[var(--color-text-1)]">{formatCronJobName(run.job_name)}</p>
+                        <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">
+                          Started {new Date(run.started_at).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                      <span className={`text-[10px] uppercase tracking-[0.14em] px-2 py-1 rounded-full border ${
+                        run.status === 'success'
+                          ? 'text-[var(--color-sig-funding)] border-[var(--color-sig-funding)]/30 bg-[var(--color-sig-funding-bg)]'
+                          : run.status === 'error'
+                            ? 'text-[var(--color-sig-regulation)] border-[var(--color-sig-regulation)]/30 bg-[var(--color-sig-regulation-bg)]'
+                            : 'text-[var(--color-text-3)] border-[var(--color-line-2)] bg-white'
+                      }`}>
+                        {run.status}
+                      </span>
+                    </div>
+                    {run.error_message && (
+                      <p className="text-[11px] text-[var(--color-sig-regulation)] mt-2">
+                        {run.error_message}
+                      </p>
+                    )}
+                    {run.metrics && Object.keys(run.metrics).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {Object.entries(run.metrics).slice(0, 6).map(([key, value]) => (
+                          <span key={key} className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
+                            {key.replaceAll('_', ' ')}: {typeof value === 'object' ? '…' : String(value)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            <h3 className="text-xs font-semibold text-[var(--color-text-1)] uppercase tracking-[0.14em]">Recent Match Explanations</h3>
+            <div className="space-y-2">
+              {summary.lead_diagnostics.length === 0 ? (
+                <p className="text-xs text-[var(--color-text-4)]">No recent match diagnostics available yet.</p>
+              ) : (
+                summary.lead_diagnostics.map(lead => (
+                  <div key={lead.id} className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-[var(--color-text-1)]">{lead.target_company}</p>
+                        <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">
+                          {lead.signal?.signal_type ?? 'signal'} · score {lead.relevance_score} · {lead.status}
+                        </p>
+                      </div>
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
+                        {lead.match_debug?.matched_via ?? 'matched'}
+                      </span>
+                    </div>
+                    {lead.signal?.headline && (
+                      <p className="text-[11px] text-[var(--color-text-2)] mt-2 line-clamp-2">
+                        {lead.signal.headline}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {lead.match_debug?.client_name && (
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
+                          workspace: {lead.match_debug.client_name}
+                        </span>
+                      )}
+                      {typeof lead.match_debug?.similarity === 'number' && (
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
+                          similarity: {lead.match_debug.similarity.toFixed(2)}
+                        </span>
+                      )}
+                      {typeof lead.match_debug?.min_relevance_score === 'number' && (
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
+                          min score: {lead.match_debug.min_relevance_score}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function DiagStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3">
+      <p className="text-[11px] text-[var(--color-text-4)]">{label}</p>
+      <p className="text-lg font-medium text-[var(--color-text-1)] mt-1">{value}</p>
+    </div>
+  )
+}
+
+function DiagPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-4)]">
+        {label}
+      </p>
+      <p className="text-sm font-medium text-[var(--color-text-1)] mt-1">{value}</p>
     </div>
   )
 }

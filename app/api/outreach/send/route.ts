@@ -5,6 +5,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/claude'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
+import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-context'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
 
   const [leadRes, profileRes] = await Promise.all([
     supabase.from('leads').select('id, status, client_id, target_company').eq('id', leadId).eq('user_id', user.id).single(),
-    supabase.from('user_profiles').select('company_name, services_description, plan').eq('user_id', user.id).single(),
+    supabase.from('user_profiles').select('company_name, services_description, calendly_url, plan').eq('user_id', user.id).single(),
   ])
 
   if (!leadRes.data) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
@@ -71,7 +72,19 @@ export async function POST(request: Request) {
   if (bounceRes.data) return NextResponse.json({ error: `Cannot send to this address (${bounceRes.data.reason}).` }, { status: 422 })
 
   try {
-    const fromName = profileRes.data?.company_name || 'Outreach'
+    const clientId = (leadRes.data as { client_id?: string | null }).client_id ?? null
+    const { data: clientProfile } = clientId
+      ? await supabase
+          .from('client_accounts')
+          .select('name, services_description, calendly_url')
+          .eq('id', clientId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+      : { data: null }
+    const outreachContext = resolveOutreachContext({
+      userProfile: profileRes.data,
+      clientProfile,
+    })
 
     const result = await sendWithConnectedAccount({
       userId:   user.id,
@@ -79,7 +92,7 @@ export async function POST(request: Request) {
       to,
       subject,
       body:     emailBody,
-      fromName,
+      fromName: outreachContext.fromName,
     })
 
     if (!result) {
@@ -111,13 +124,13 @@ export async function POST(request: Request) {
     }).catch(() => {})
 
     if (planLimits.followups && !isFollowUp) {
-      const followAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+      const followAt = scheduleFollowupAt()
       await supabase.from('scheduled_followups').upsert(
         { user_id: user.id, lead_id: leadId, scheduled_for: followAt },
         { onConflict: 'lead_id' }
       )
       // Pre-generate follow-up copy fire-and-forget — never blocks the send response
-      pregenerateFollowup(supabase, leadId, profileRes.data).catch(err =>
+      pregenerateFollowup(supabase, leadId, profileRes.data, clientProfile).catch(err =>
         console.error('[outreach/send] follow-up pre-generation failed:', err)
       )
     }
@@ -133,7 +146,8 @@ export async function POST(request: Request) {
 async function pregenerateFollowup(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>,
   leadId: string,
-  profile: { company_name: string; services_description: string } | null,
+  profile: { company_name: string; services_description: string; calendly_url?: string | null } | null,
+  clientProfile: { name?: string | null; services_description?: string | null; calendly_url?: string | null } | null,
 ) {
   const { data: existingSeq } = await supabase
     .from('outreach_sequences').select('id').eq('lead_id', leadId).maybeSingle()
@@ -152,9 +166,14 @@ async function pregenerateFollowup(
     ? (draftRes.data.stakeholders as Array<{ name?: string }>)
     : []
 
+  const outreachContext = resolveOutreachContext({
+    userProfile: profile,
+    clientProfile,
+  })
+
   const { subject: fuSubject, body: fuBody } = await draftFollowUpEmail({
-    senderCompany:       profile?.company_name || 'us',
-    servicesDescription: profile?.services_description || '',
+    senderCompany:       outreachContext.senderCompany,
+    servicesDescription: outreachContext.servicesDescription,
     stakeholderName:     stks[0]?.name || 'there',
     targetCompany:       leadSigRes.data.target_company,
     signalType:          signal?.signal_type || 'event',

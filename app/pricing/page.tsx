@@ -15,7 +15,8 @@ const PLANS = [
     description: 'Try the core signal feed.',
     features: [
       '10 leads / month',
-      'Manual email send',
+      'Draft + send via Gmail/Copy',
+      '1 workspace',
       'Hyper-personalized outreach',
       'Keyboard shortcuts',
     ],
@@ -30,6 +31,7 @@ const PLANS = [
     description: 'For active solopreneurs.',
     features: [
       '300 leads / month',
+      '1 workspace',
       'Auto-send Gmail/Outlook',
       'Automated follow-ups',
       'Reply detection',
@@ -43,9 +45,11 @@ const PLANS = [
     name: 'Max',
     price: '$250',
     period: '/ month',
-    description: 'For teams that move fast.',
+    description: 'For agencies and operators managing multiple client workspaces.',
     features: [
       '1,500 leads / month',
+      'Multiple client workspaces',
+      'Per-client targeting, templates, and CRM sync',
       'Slack signal alerts',
       'CRM export',
       'Priority enrichment queue',
@@ -64,6 +68,10 @@ const FAQS = [
   {
     q: 'What happens when I hit my limit?',
     a: 'Once you hit your lead quota, Free stops adding new leads until your rolling 30-day window frees up capacity. Pro and Max can either stop at the limit or keep the feed running by opting into $0.50 per extra lead. Existing leads remain available either way.',
+  },
+  {
+    q: 'Which plan includes client workspaces and CRM sync?',
+    a: 'Max. Free and Pro are single-workspace plans. Max unlocks multiple client workspaces with separate targeting, templates, feed views, CRM sync, and exports.',
   },
   {
     q: 'Can I cancel or change plans anytime?',

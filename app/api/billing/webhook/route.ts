@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { planFromProductId } from '@/lib/dodo'
 import { Webhook } from 'standardwebhooks'
+import { syncWorkspaceAccessForPlan } from '@/lib/client-workspaces'
 
 export const runtime = 'nodejs'
 
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
     const profileUpdate: Record<string, unknown> = { plan }
     if (plan === 'free') profileUpdate.allow_lead_overage = false
     await supabase.from('user_profiles').update(profileUpdate).eq('user_id', userId)
+    await syncWorkspaceAccessForPlan(supabase, userId, plan)
   }
 
   if (type === 'subscription.cancelled' || type === 'subscription.expired') {
@@ -106,6 +108,7 @@ export async function POST(request: Request) {
         plan: 'free',
         allow_lead_overage: false,
       }).eq('user_id', record.user_id)
+      await syncWorkspaceAccessForPlan(supabase, record.user_id, 'free')
       await supabase.from('subscriptions').update({
         plan:       'free',
         status:     data.status,

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
+import type { PlanTier } from '@/lib/plan'
 
 export async function GET() {
   const supabase = await createClient()
@@ -21,13 +23,23 @@ export async function GET() {
   ])
 
   if (clientsErr) return NextResponse.json({ error: clientsErr.message }, { status: 500 })
+  const plan = ((profile as { plan?: string | null } | null)?.plan ?? 'free') as PlanTier
   const activeClientId = (profile as { active_client_id?: string | null; plan?: string | null } | null)?.active_client_id ?? null
-  const canManageMultiple = ((profile as { plan?: string | null } | null)?.plan ?? 'free') === 'max'
-  return NextResponse.json({
-    clients: canManageMultiple
-      ? (clients ?? [])
-      : (clients ?? []).filter(client => client.id === activeClientId).slice(0, 1),
+  const canManageMultiple = plan === 'max'
+  const accessPlan = buildWorkspaceAccessPlan({
+    plan,
     activeClientId,
+    clients: (clients ?? []).map(client => ({
+      id: client.id,
+      is_archived: client.is_archived,
+      created_at: client.created_at,
+    })),
+  })
+  const visibleClients = (clients ?? []).filter(client => accessPlan.visibleClientIds.includes(client.id))
+
+  return NextResponse.json({
+    clients: visibleClients,
+    activeClientId: accessPlan.keepClientId,
     canManageMultiple,
   })
 }

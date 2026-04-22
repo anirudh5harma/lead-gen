@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
+import { getUserPlan } from '@/lib/plan'
 
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { plan } = await getUserPlan(user.id)
+  if (plan !== 'max') {
+    return NextResponse.json({ error: 'CRM sync requires the Max plan.' }, { status: 403 })
+  }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
   let query = supabase
@@ -29,6 +35,11 @@ export async function PATCH(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { plan } = await getUserPlan(user.id)
+  if (plan !== 'max') {
+    return NextResponse.json({ error: 'CRM sync requires the Max plan.' }, { status: 403 })
+  }
 
   const body = await request.json().catch(() => null) as {
     webhook_url?: string | null
