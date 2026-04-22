@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getActiveClientContext } from '@/lib/client-context'
 
 export async function DELETE(
   _request: Request,
@@ -9,12 +10,16 @@ export async function DELETE(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { activeClientId } = await getActiveClientContext(supabase, user.id)
 
-  const { error } = await supabase
+  let query = supabase
     .from('blocked_companies')
     .delete()
     .eq('id', id)
     .eq('user_id', user.id)
+
+  query = activeClientId ? query.eq('client_id', activeClientId) : query.is('client_id', null)
+  const { error } = await query
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })

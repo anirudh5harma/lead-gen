@@ -19,10 +19,25 @@ export async function extractSignal(
   signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
   summary: string
   funding_amount: string | null
+  confidence: 1 | 2 | 3
 } | null> {
   const message = await client.messages.create({
     model: CHEAP_MODEL,
     max_tokens: 350,
+    system: `You extract structured company-event signals from noisy RSS headlines and snippets.
+
+Many descriptions are truncated, HTML-encoded, or low quality. If the headline alone clearly indicates a company event, extract it.
+
+Be permissive for clear events like:
+- funding raises / funding rounds / valuation updates tied to a named company
+- acquisitions / mergers
+- executive appointments / CFO, CTO, CEO hires
+- market expansion / launches / new offices
+- regulations affecting a specific company
+
+Only return null for generic market commentary, roundups, sector snapshots, opinion pieces, or items without a specific named company event.
+
+Return JSON only.`,
     messages: [{
       role: 'user',
       content: `Extract structured signal data from this news item.
@@ -50,18 +65,177 @@ Return ONLY valid JSON, no markdown, no explanation.`,
   if (text === 'null' || !text) return null
 
   try {
-    const parsed = JSON.parse(text) as { confidence?: number } & Record<string, unknown>
-    if ((parsed.confidence ?? 3) <= 1) return null
-    return parsed as {
-      company_name: string
-      company_domain: string | null
-      signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
-      summary: string
-      funding_amount: string | null
+    const parsed = parseJsonObject(text)
+    if (!parsed) return fallbackExtractFromHeadline(headline, description)
+    const validated = normalizeExtractedSignal(parsed)
+    if (!validated || validated.confidence <= 1) {
+      return fallbackExtractFromHeadline(headline, description)
     }
+    return validated
   } catch {
-    return null
+    return fallbackExtractFromHeadline(headline, description)
   }
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  const cleaned = text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim()
+
+  try {
+    return JSON.parse(cleaned) as Record<string, unknown>
+  } catch {
+    const start = cleaned.indexOf('{')
+    const end = cleaned.lastIndexOf('}')
+    if (start === -1 || end === -1 || end <= start) return null
+    try {
+      return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+}
+
+function normalizeExtractedSignal(parsed: Record<string, unknown>): {
+  company_name: string
+  company_domain: string | null
+  signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
+  summary: string
+  funding_amount: string | null
+  confidence: 1 | 2 | 3
+} | null {
+  const company_name = typeof parsed.company_name === 'string' ? parsed.company_name.trim() : ''
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : ''
+  const rawType = typeof parsed.signal_type === 'string' ? parsed.signal_type.trim().toLowerCase() : ''
+  const funding_amount = typeof parsed.funding_amount === 'string' && parsed.funding_amount.trim()
+    ? parsed.funding_amount.trim()
+    : null
+  const company_domain = typeof parsed.company_domain === 'string' && parsed.company_domain.trim()
+    ? parsed.company_domain.trim().toLowerCase()
+    : null
+  const confidenceValue = typeof parsed.confidence === 'number' ? parsed.confidence : 2
+  const confidence = confidenceValue === 3 ? 3 : confidenceValue === 1 ? 1 : 2
+
+  const signal_type = normalizeSignalType(rawType)
+  if (!company_name || !summary || !signal_type) return null
+
+  return {
+    company_name,
+    company_domain,
+    signal_type,
+    summary,
+    funding_amount,
+    confidence,
+  }
+}
+
+function normalizeSignalType(value: string): 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring' | null {
+  if (['funding', 'fundraise', 'financing'].includes(value)) return 'funding'
+  if (['acquisition', 'acquire', 'merger', 'm&a', 'mna'].includes(value)) return 'acquisition'
+  if (['expansion', 'launch', 'market_expansion'].includes(value)) return 'expansion'
+  if (['regulation', 'compliance', 'legal'].includes(value)) return 'regulation'
+  if (['hiring', 'executive_hire', 'appointment'].includes(value)) return 'hiring'
+  return null
+}
+
+function fallbackExtractFromHeadline(
+  headline: string,
+  description: string,
+): {
+  company_name: string
+  company_domain: string | null
+  signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
+  summary: string
+  funding_amount: string | null
+  confidence: 1 | 2 | 3
+} | null {
+  const normalizedHeadline = decodeEntities(headline).replace(/\s+/g, ' ').trim()
+  const normalizedDescription = decodeEntities(description).replace(/\s+/g, ' ').trim()
+  const text = `${normalizedHeadline} ${normalizedDescription}`.trim()
+
+  const funding = /\b(raise|raises|raised|raising|funding|financing|series [a-z]|seed|pre-seed|valuation|valued at)\b/i
+  const acquisition = /\b(acquires?|acquired|acquisition|merger|merge(?:s|d)?|buyout)\b/i
+  const hiring = /\b(appoints?|appointed|hires?|hired|joins?|joined)\b.{0,80}\b(ceo|cto|cfo|cmo|cro|cpo|ciso|chief|vp|vice president|head of)\b/i
+  const expansion = /\b(expands?|expanded|launch(?:es|ed)?|opens? (?:a|its)|enters? .*market|new office|new market)\b/i
+  const regulation = /\b(regulation|regulatory|compliance|fined|settlement|sec|fda|finra)\b/i
+
+  let signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring' | null = null
+  if (acquisition.test(text)) signal_type = 'acquisition'
+  else if (funding.test(text)) signal_type = 'funding'
+  else if (hiring.test(text)) signal_type = 'hiring'
+  else if (expansion.test(text)) signal_type = 'expansion'
+  else if (regulation.test(text)) signal_type = 'regulation'
+
+  if (!signal_type) return null
+
+  const company_name = extractCompanyName(normalizedHeadline)
+  if (!company_name) return null
+
+  const fundingMatch = text.match(/(\$|€|£|Rs\.?\s?|INR\s?)\s?\d[\d.,]*(?:\s?(?:million|billion|crore|lakh|m|bn|b))?/i)
+  const summary = buildFallbackSummary(company_name, signal_type, normalizedHeadline, normalizedDescription)
+
+  return {
+    company_name,
+    company_domain: null,
+    signal_type,
+    summary,
+    funding_amount: signal_type === 'funding' ? fundingMatch?.[0] ?? null : null,
+    confidence: 2,
+  }
+}
+
+function extractCompanyName(headline: string): string | null {
+  const stripped = headline
+    .replace(/\s+-\s+[^-]+$/, '')
+    .replace(/\s+[|]\s+.+$/, '')
+    .replace(/^[/"' ]+|[/"' ]+$/g, '')
+
+  const patterns = [
+    /^(.+?)\s+\b(acquires?|acquired|acquisition|merger|merge(?:s|d)?|raises?|raised|raising|appoints?|appointed|hires?|hired|launch(?:es|ed)?|expands?|expanded)\b/i,
+    /^(.+?)\s+\bto\s+\b(acquire|raise|launch|expand)\b/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = stripped.match(pattern)
+    if (!match) continue
+    const candidate = match[1]?.trim()
+    if (candidate && candidate.length >= 2) return candidate
+  }
+
+  const generic = stripped.match(/\b[A-Z][A-Za-z0-9&.'-]+(?:\s+[A-Z][A-Za-z0-9&.'-]+){0,4}\b/)
+  return generic?.[0] ?? null
+}
+
+function buildFallbackSummary(
+  companyName: string,
+  signalType: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring',
+  headline: string,
+  description: string,
+): string {
+  const sourceText = description || headline
+  switch (signalType) {
+    case 'funding':
+      return `${companyName} appears to have raised capital, which usually signals active budget deployment and near-term vendor evaluation.`
+    case 'acquisition':
+      return `${companyName} appears to be involved in an acquisition or merger, which typically creates integration and change-management demand.`
+    case 'hiring':
+      return `${companyName} appears to have made a senior hire, which often signals a new mandate and openness to outside support.`
+    case 'expansion':
+      return `${companyName} appears to be expanding into a new market or initiative, which often creates fresh operational needs.`
+    case 'regulation':
+      return `${companyName} appears to be affected by a regulatory or compliance event, which can create urgency around operational changes.`
+    default:
+      return sourceText
+  }
+}
+
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
 }
 
 /**
@@ -196,10 +370,12 @@ export async function draftFollowUpEmail(params: {
   signalSummary: string
   originalSubject: string
   originalBody: string
+  customInstructions?: string | null
 }): Promise<{ subject: string; body: string }> {
   const {
     senderCompany, servicesDescription, stakeholderName, targetCompany,
     signalType, signalSummary, originalSubject, originalBody,
+    customInstructions,
   } = params
 
   const firstName = stakeholderName.split(' ')[0] || 'there'
@@ -219,6 +395,9 @@ Context:
 
 Original email body:
 ${originalBody.slice(0, 600)}
+
+Additional template guidance:
+${customInstructions || 'None'}
 
 Follow-up rules (strict):
 - Max 3 sentences total
@@ -266,12 +445,14 @@ export async function draftOutreachEmail(params: {
   signalAgeLabel?: string | null
   articleContext?: string | null
   calendlyUrl?: string | null
+  customInstructions?: string | null
 }): Promise<{ subject: string; body: string }> {
   const {
     senderCompany, servicesDescription, stakeholderName, stakeholderTitle,
     targetCompany, signalType, signalSummary,
     headline, fundingAmount, signalAgeLabel, articleContext,
     calendlyUrl,
+    customInstructions,
   } = params
 
   const angle = SIGNAL_ANGLE[signalType] || SIGNAL_ANGLE.expansion
@@ -308,6 +489,9 @@ Recipient: ${firstName} (${stakeholderTitle}) at ${targetCompany}
 ${signalBlock}
 
 ${articleBlock}
+
+━━━ TEMPLATE GUIDANCE ━━━
+${customInstructions || 'None'}
 
 ━━━ STRATEGIC ANGLE FOR THIS SIGNAL TYPE ━━━
 ${angle}

@@ -5,6 +5,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { enrichCompany } from '@/lib/email-finder/enrich'
 import { scrapeSignalArticle } from '@/lib/email-finder/firecrawl'
 import type { Stakeholder } from '../../../api/contacts/find/route'
+import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
 
 function signalAgeLabel(publishedAt: string | null): string | null {
   if (!publishedAt) return null
@@ -66,8 +67,22 @@ export async function POST(request: Request) {
     contact_email?: string | null
     contact_name?: string | null
     contact_title?: string | null
+    client_id?: string | null
   }
   const profile = profileRes.data
+  const clientId = lead.client_id ?? null
+
+  const [{ data: clientProfile }, template] = await Promise.all([
+    clientId
+      ? supabase
+          .from('client_accounts')
+          .select('name, services_description, calendly_url')
+          .eq('id', clientId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    getDefaultSequenceTemplate(supabase, user.id, clientId),
+  ])
 
   type SignalRow = {
     signal_type: string; summary: string; company_domain: string | null
@@ -128,8 +143,8 @@ export async function POST(request: Request) {
   const primaryStakeholder = stakeholders[0] || { name: 'the team', title: 'Leadership' }
 
   const { subject, body } = await draftOutreachEmail({
-    senderCompany:       profile?.company_name || 'us',
-    servicesDescription: profile?.services_description || '',
+    senderCompany:       (clientProfile as { name?: string } | null)?.name || profile?.company_name || 'us',
+    servicesDescription: (clientProfile as { services_description?: string } | null)?.services_description || profile?.services_description || '',
     stakeholderName:     primaryStakeholder.name,
     stakeholderTitle:    primaryStakeholder.title,
     targetCompany:       lead.target_company,
@@ -139,7 +154,8 @@ export async function POST(request: Request) {
     fundingAmount:       signal?.funding_amount ?? null,
     signalAgeLabel:      signalAgeLabel(signal?.published_at ?? null),
     articleContext:      articleContext || null,
-    calendlyUrl:         (profile as { calendly_url?: string | null } | null)?.calendly_url || null,
+    calendlyUrl:         (clientProfile as { calendly_url?: string | null } | null)?.calendly_url || (profile as { calendly_url?: string | null } | null)?.calendly_url || null,
+    customInstructions:  template?.custom_instructions ?? null,
   })
 
   // Save draft to DB
@@ -147,6 +163,7 @@ export async function POST(request: Request) {
     .from('outreach_drafts')
     .insert({
       lead_id: leadId,
+      client_id: clientId,
       subject,
       body,
       stakeholders,

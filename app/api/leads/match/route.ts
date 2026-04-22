@@ -5,6 +5,10 @@ import { getPlanLimits, type PlanTier } from '@/lib/plan'
 import { sendSlackAlert } from '@/lib/slack'
 import { sendFirstLeadEmail } from '@/lib/resend'
 import { recordLeadOverage } from '@/lib/dodo'
+import { emitCrmLeadEvent } from '@/lib/crm-sync'
+
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
@@ -43,45 +47,67 @@ async function runMatch(request: Request) {
   }
 
   const { data: profiles, error: profErr } = await supabase
-    .from('user_profiles')
-    .select('user_id, company_name, services_description, profile_embedding, icp_keywords, target_signal_types, min_relevance_score, plan, slack_webhook_url, allow_lead_overage')
+    .from('client_accounts')
+    .select('id, user_id, name, services_description, profile_embedding, icp_keywords, target_signal_types, min_relevance_score')
 
   if (profErr || !profiles?.length) {
     return NextResponse.json({ matched: 0, reason: 'No profiles' })
   }
 
+  const userIds = [...new Set(profiles.map(p => p.user_id))]
+  const { data: userSettings } = await supabase
+    .from('user_profiles')
+    .select('user_id, plan, slack_webhook_url, allow_lead_overage')
+    .in('user_id', userIds)
+
+  const userSettingsMap = new Map<string, {
+    plan: PlanTier
+    slackWebhookUrl: string | null
+    allowLeadOverage: boolean
+  }>()
+  for (const row of (userSettings ?? [])) {
+    userSettingsMap.set(row.user_id, {
+      plan: (row.plan ?? 'free') as PlanTier,
+      slackWebhookUrl: row.slack_webhook_url ?? null,
+      allowLeadOverage: row.allow_lead_overage ?? false,
+    })
+  }
+
   const { data: watchlistRows } = await supabase
     .from('watchlist_companies')
-    .select('user_id, company_name')
+    .select('client_id, company_name')
 
   const watchlistMap: Record<string, Set<string>> = {}
   for (const row of (watchlistRows ?? [])) {
-    if (!watchlistMap[row.user_id]) watchlistMap[row.user_id] = new Set()
-    watchlistMap[row.user_id].add(row.company_name.toLowerCase())
+    if (!row.client_id) continue
+    if (!watchlistMap[row.client_id]) watchlistMap[row.client_id] = new Set()
+    watchlistMap[row.client_id].add(row.company_name.toLowerCase())
   }
 
   // Blocked companies: skip inserting leads for these
   const { data: blockedRows } = await supabase
     .from('blocked_companies')
-    .select('user_id, company_name, company_domain')
+    .select('client_id, company_name, company_domain')
 
   const blockedMap: Record<string, Set<string>> = {}
   for (const row of (blockedRows ?? [])) {
-    if (!blockedMap[row.user_id]) blockedMap[row.user_id] = new Set()
-    if (row.company_domain) blockedMap[row.user_id].add(row.company_domain.toLowerCase())
-    blockedMap[row.user_id].add(row.company_name.toLowerCase())
+    if (!row.client_id) continue
+    if (!blockedMap[row.client_id]) blockedMap[row.client_id] = new Set()
+    if (row.company_domain) blockedMap[row.client_id].add(row.company_domain.toLowerCase())
+    blockedMap[row.client_id].add(row.company_name.toLowerCase())
   }
 
   // Batch existence check: single query instead of one per (user, signal) pair
   const signalIds = newSignals.map(s => s.id)
   const { data: existingLeads } = await supabase
     .from('leads')
-    .select('user_id, signal_id')
+    .select('client_id, signal_id')
     .in('signal_id', signalIds)
 
   const existingSet = new Set<string>()
   for (const row of (existingLeads ?? [])) {
-    existingSet.add(`${row.user_id}:${row.signal_id}`)
+    if (!row.client_id) continue
+    existingSet.add(`${row.client_id}:${row.signal_id}`)
   }
 
   // Company-level dedup: skip if user already has a lead for this company in the last 7 days
@@ -89,15 +115,16 @@ async function runMatch(request: Request) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data: recentCompanyLeads } = await supabase
     .from('leads')
-    .select('user_id, target_company, company_domain')
+    .select('client_id, target_company, company_domain')
     .gte('created_at', sevenDaysAgo)
 
   const recentCompanySet = new Set<string>()
   for (const row of (recentCompanyLeads ?? [])) {
+    if (!row.client_id) continue
     const domainKey = row.company_domain?.toLowerCase()
     const nameKey   = row.target_company.toLowerCase()
-    if (domainKey) recentCompanySet.add(`${row.user_id}:${domainKey}`)
-    recentCompanySet.add(`${row.user_id}:${nameKey}`)
+    if (domainKey) recentCompanySet.add(`${row.client_id}:${domainKey}`)
+    recentCompanySet.add(`${row.client_id}:${nameKey}`)
   }
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -138,19 +165,19 @@ async function runMatch(request: Request) {
     for (const profile of profiles) {
       if (!profile.profile_embedding) { stats.no_profile_embedding++; continue }
 
-      const pairKey = `${profile.user_id}:${signal.id}`
+      const pairKey = `${profile.id}:${signal.id}`
       if (existingSet.has(pairKey)) { stats.duplicate++; continue }
 
       // Skip if user already has a lead for this company in the last 7 days
       const sigDomainKey = signal.company_domain?.toLowerCase()
       const sigNameKey   = signal.company_name.toLowerCase()
       if (
-        (sigDomainKey && recentCompanySet.has(`${profile.user_id}:${sigDomainKey}`)) ||
-        recentCompanySet.has(`${profile.user_id}:${sigNameKey}`)
+        (sigDomainKey && recentCompanySet.has(`${profile.id}:${sigDomainKey}`)) ||
+        recentCompanySet.has(`${profile.id}:${sigNameKey}`)
       ) { stats.company_duplicate++; continue }
 
       // Skip blocked companies
-      const userBlocked = blockedMap[profile.user_id]
+      const userBlocked = blockedMap[profile.id]
       if (userBlocked) {
         const companyKey = signal.company_name.toLowerCase()
         const domainKey  = signal.company_domain?.toLowerCase()
@@ -164,8 +191,9 @@ async function runMatch(request: Request) {
         continue
       }
 
-      const userWatchlist = watchlistMap[profile.user_id]
+      const userWatchlist = watchlistMap[profile.id]
       const isWatchlisted = userWatchlist?.has(signal.company_name.toLowerCase()) ?? false
+      let similarityForDebug: number | null = null
 
       // ICP keyword pre-filter: fast string check before expensive RPC + Claude call
       if (!isWatchlisted) {
@@ -188,6 +216,7 @@ async function runMatch(request: Request) {
           if (stats.rpc_errors === 1) console.error('cosine_similarity RPC error:', rpcErr.message)
         } else {
           const similarity = simResult as number | null
+          similarityForDebug = similarity ?? null
           if (!similarity || similarity < DEFAULT_SIMILARITY_THRESHOLD) {
             stats.below_similarity++
             continue
@@ -217,10 +246,15 @@ async function runMatch(request: Request) {
 
       if (score < effectiveMin) { stats.below_score++; continue }
 
-      const plan = (profile.plan ?? 'free') as PlanTier
+      const settings = userSettingsMap.get(profile.user_id) ?? {
+        plan: 'free' as PlanTier,
+        slackWebhookUrl: null,
+        allowLeadOverage: false,
+      }
+      const plan = settings.plan
       const monthlyLimit = getPlanLimits(plan).leads_per_month
       const used = quotaState.get(profile.user_id) ?? 0
-      const allowLeadOverage = Boolean((profile as { allow_lead_overage?: boolean | null }).allow_lead_overage) && plan !== 'free'
+      const allowLeadOverage = settings.allowLeadOverage && plan !== 'free'
       let reservedQuota = false
       let isOverageLead = used >= monthlyLimit
 
@@ -249,12 +283,20 @@ async function runMatch(request: Request) {
 
       const { data: inserted, error } = await supabase.from('leads').insert({
         user_id:          profile.user_id,
+        client_id:        profile.id,
         signal_id:        signal.id,
         target_company:   signal.company_name,
         company_domain:   signal.company_domain ?? null,
         relevance_score:  score,
         relevance_reason: isWatchlisted ? `[Watchlisted] ${reason}` : reason,
         status: 'new',
+        match_debug: {
+          client_id: profile.id,
+          client_name: profile.name,
+          matched_via: isWatchlisted ? 'watchlist' : 'scored_match',
+          similarity: isWatchlisted ? null : similarityForDebug,
+          min_relevance_score: effectiveMin,
+        },
       }).select('id').single()
 
       if (!error && inserted) {
@@ -266,14 +308,25 @@ async function runMatch(request: Request) {
             console.error('[overage] lead record failed:', err)
           )
         }
+        emitCrmLeadEvent({
+          userId: profile.user_id,
+          clientId: profile.id,
+          eventType: 'lead.created',
+          payload: {
+            lead_id: inserted.id,
+            target_company: signal.company_name,
+            signal_type: signal.signal_type,
+            relevance_score: score,
+          },
+        }).catch(() => {})
         existingSet.add(pairKey)
-        if (sigDomainKey) recentCompanySet.add(`${profile.user_id}:${sigDomainKey}`)
-        recentCompanySet.add(`${profile.user_id}:${sigNameKey}`)
+        if (sigDomainKey) recentCompanySet.add(`${profile.id}:${sigDomainKey}`)
+        recentCompanySet.add(`${profile.id}:${sigNameKey}`)
 
         // Slack alert for Max plan users with webhook configured
-        const planLimits = getPlanLimits((profile.plan ?? 'free') as 'free' | 'pro' | 'max')
-        if (planLimits.slack && profile.slack_webhook_url && score >= 7) {
-          sendSlackAlert(profile.slack_webhook_url, signal.company_name, signal.signal_type, signal.headline ?? signal.summary ?? '', score).catch(() => {})
+        const planLimits = getPlanLimits(plan)
+        if (planLimits.slack && settings.slackWebhookUrl && score >= 7) {
+          sendSlackAlert(settings.slackWebhookUrl, signal.company_name, signal.signal_type, signal.headline ?? signal.summary ?? '', score).catch(() => {})
         }
 
         // First-lead email: check if this is user's very first lead
@@ -287,7 +340,7 @@ async function runMatch(request: Request) {
             .then(({ data }) => {
               const email = data.user?.email
               if (email) {
-                sendFirstLeadEmail(email, profile.company_name, signal.company_name, signal.signal_type).catch(() => {})
+                sendFirstLeadEmail(email, profile.name, signal.company_name, signal.signal_type).catch(() => {})
               }
             })
             .catch(() => {})

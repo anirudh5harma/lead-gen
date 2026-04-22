@@ -151,21 +151,33 @@ export default function OnboardingPage() {
       const { data: profile } = await supabase
         .from('user_profiles')
         .select(
-          'company_name, industry, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score',
+          'company_name, industry, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score, active_client_id',
         )
         .eq('user_id', user.id)
         .single()
 
-      if (profile) {
+      const activeClientId = (profile as { active_client_id?: string | null } | null)?.active_client_id ?? null
+      const { data: clientProfile } = activeClientId
+        ? await supabase
+            .from('client_accounts')
+            .select('name, industry, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score')
+            .eq('id', activeClientId)
+            .eq('user_id', user.id)
+            .maybeSingle()
+        : { data: null }
+
+      const effectiveProfile = clientProfile ?? profile
+
+      if (effectiveProfile) {
         setIsEdit(true)
         setForm({
-          company_name:         profile.company_name || '',
-          industry:             (profile.industry as IndustryValue) || '',
-          target_industries:    (profile.target_industries as IndustryValue[]) || [],
-          services_description: profile.services_description || '',
-          calendly_url:         (profile as { calendly_url?: string }).calendly_url || '',
-          target_signal_types:  (profile.target_signal_types as string[]) || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
-          min_relevance_score:  (profile.min_relevance_score as number) || 6,
+          company_name:         (effectiveProfile as { name?: string; company_name?: string }).name || (effectiveProfile as { company_name?: string }).company_name || '',
+          industry:             ((effectiveProfile as { industry?: IndustryValue }).industry as IndustryValue) || '',
+          target_industries:    ((effectiveProfile as { target_industries?: IndustryValue[] }).target_industries) || [],
+          services_description: (effectiveProfile as { services_description?: string }).services_description || '',
+          calendly_url:         (effectiveProfile as { calendly_url?: string }).calendly_url || '',
+          target_signal_types:  (effectiveProfile as { target_signal_types?: string[] }).target_signal_types || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
+          min_relevance_score:  (effectiveProfile as { min_relevance_score?: number }).min_relevance_score || 6,
         })
       }
       setLoading(false)

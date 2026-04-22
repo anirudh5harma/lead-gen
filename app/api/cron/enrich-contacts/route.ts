@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { enrichLeadsInBatch } from '@/lib/email-finder/enrich'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 300
+
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
 }

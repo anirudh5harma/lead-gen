@@ -18,6 +18,7 @@ export interface SignalRow {
 
 export interface Lead {
   id: string
+  client_id?: string | null
   target_company: string
   company_domain?: string | null
   relevance_score: number
@@ -40,6 +41,7 @@ interface Props {
   initialLeads: Lead[]
   userId: string
   watchlist?: WatchlistItem[]
+  activeClientId?: string | null
 }
 
 const SIGNAL_TABS: { key: 'all' | SignalType; label: string }[] = [
@@ -86,7 +88,7 @@ function toCardLead(lead: Lead): LeadCardLead | null {
   }
 }
 
-export default function LeadFeed({ initialLeads, userId, watchlist = [] }: Props) {
+export default function LeadFeed({ initialLeads, userId, watchlist = [], activeClientId = null }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -111,11 +113,19 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [] }: Props
       .channel('leads-realtime')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'leads', filter: `user_id=eq.${userId}` },
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'leads',
+          filter: `user_id=eq.${userId}`,
+        },
         async payload => {
+          const payloadClientId = (payload.new as { client_id?: string | null }).client_id ?? null
+          if (activeClientId !== payloadClientId) return
+
           const { data } = await supabase
             .from('leads')
-            .select(`id, target_company, relevance_score, relevance_reason, status, created_at, sent_at, replied_at, booked_at,
+            .select(`id, client_id, target_company, relevance_score, relevance_reason, status, created_at, sent_at, replied_at, booked_at,
               signals(signal_type, headline, summary, funding_amount, source_url, published_at, company_domain)`)
             .eq('id', payload.new.id)
             .single()
@@ -127,7 +137,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [] }: Props
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [userId])
+  }, [userId, activeClientId])
 
   useEffect(() => {
     if (!toast) return

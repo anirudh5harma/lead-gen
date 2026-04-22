@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getUserPlan } from '@/lib/plan'
+import { getActiveClientContext } from '@/lib/client-context'
 
 export async function GET() {
   const supabase = await createClient()
@@ -12,7 +13,9 @@ export async function GET() {
     return NextResponse.json({ error: 'CRM export requires the Max plan.' }, { status: 403 })
   }
 
-  const { data: leads } = await supabase
+  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+
+  let query = supabase
     .from('leads')
     .select(`
       target_company, company_domain, contact_email,
@@ -23,6 +26,9 @@ export async function GET() {
     .eq('user_id', user.id)
     .neq('status', 'dismissed')
     .order('created_at', { ascending: false })
+
+  query = activeClientId ? query.eq('client_id', activeClientId) : query.is('client_id', null)
+  const { data: leads } = await query
 
   if (!leads) return NextResponse.json({ error: 'No leads found' }, { status: 404 })
 

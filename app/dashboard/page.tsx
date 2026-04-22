@@ -14,11 +14,22 @@ export default async function DashboardPage() {
   // Core fields — these exist from migration 001. Used to gate the onboarding redirect.
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('company_name, services_description, icp_keywords')
+    .select('company_name, services_description, icp_keywords, active_client_id')
     .eq('user_id', user.id)
     .single()
 
   if (!profile) redirect('/onboarding')
+
+  const activeClientId = (profile as { active_client_id?: string | null }).active_client_id ?? null
+
+  const { data: clientProfile } = activeClientId
+    ? await supabase
+        .from('client_accounts')
+        .select('id, name, services_description, icp_keywords')
+        .eq('id', activeClientId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+    : { data: null }
 
   // Migration-004 fields — may not exist yet; use defaults if the query errors.
   const { data: extProfile } = await supabase
@@ -42,6 +53,7 @@ export default async function DashboardPage() {
     .from('leads')
     .select(`
       id,
+      client_id,
       target_company,
       relevance_score,
       relevance_reason,
@@ -61,6 +73,7 @@ export default async function DashboardPage() {
       )
     `)
     .eq('user_id', user.id)
+    .match(activeClientId ? { client_id: activeClientId } : {})
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -69,6 +82,7 @@ export default async function DashboardPage() {
     .from('watchlist_companies')
     .select('id, company_name, company_domain')
     .eq('user_id', user.id)
+    .match(activeClientId ? { client_id: activeClientId } : {})
     .order('created_at', { ascending: false })
 
   const typedLeads = (leads ?? []) as unknown as Lead[]
@@ -79,14 +93,16 @@ export default async function DashboardPage() {
       userId={user.id}
       userProfile={{
         company_name: profile.company_name,
-        services_description: profile.services_description,
-        icp_keywords: profile.icp_keywords,
+        services_description: (clientProfile as { services_description?: string } | null)?.services_description ?? profile.services_description,
+        icp_keywords: (clientProfile as { icp_keywords?: string[] | null } | null)?.icp_keywords ?? profile.icp_keywords,
         email: user.email,
         plan: plan,
         leads_used_this_month: leadsUsed,
         slack_webhook_url: slackWebhookUrl,
         auto_send_enabled: autoSendEnabled,
         allow_lead_overage: allowLeadOverage,
+        active_client_id: activeClientId,
+        client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
       }}
       watchlist={watchlist ?? []}
     />

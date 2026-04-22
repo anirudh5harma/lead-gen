@@ -57,7 +57,16 @@ export async function POST(request: Request) {
     type === 'subscription.plan_changed'
   ) {
     const plan = planFromProductId(data.product_id)
-    const userId = data.metadata?.user_id
+    let userId = data.metadata?.user_id
+
+    if (!userId) {
+      const { data: existingSub } = await supabase
+        .from('subscriptions')
+        .select('user_id')
+        .eq('dodo_subscription_id', data.subscription_id)
+        .maybeSingle()
+      userId = existingSub?.user_id
+    }
 
     if (!userId) {
       console.warn('[dodo webhook] Missing user_id in metadata for', data.subscription_id)
@@ -71,6 +80,12 @@ export async function POST(request: Request) {
       plan,
       status:               data.status,
       next_billing_date:    data.next_billing_date ?? null,
+      ...(plan !== 'max'
+        ? {
+            workspace_downgrade_warning_sent_at: null,
+            workspace_downgrade_warning_cycle_at: null,
+          }
+        : {}),
       updated_at:           new Date().toISOString(),
     }, { onConflict: 'user_id' })
 
@@ -94,6 +109,8 @@ export async function POST(request: Request) {
       await supabase.from('subscriptions').update({
         plan:       'free',
         status:     data.status,
+        workspace_downgrade_warning_sent_at: null,
+        workspace_downgrade_warning_cycle_at: null,
         updated_at: new Date().toISOString(),
       }).eq('dodo_subscription_id', data.subscription_id)
     }

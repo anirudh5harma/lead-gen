@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 export default function NotFound() {
   return (
     <div className="min-h-screen flex items-center justify-center px-6 bg-[var(--color-ink-1)] relative overflow-hidden">
@@ -11,18 +13,18 @@ export default function NotFound() {
           </p>
         </div>
         <div className="flex items-center justify-center gap-3 pt-2">
-          <a
+          <Link
             href="/dashboard"
             className="h-9 px-4 rounded-full btn-primary text-xs inline-flex items-center"
           >
             Go to dashboard
-          </a>
-          <a
+          </Link>
+          <Link
             href="/"
             className="h-9 px-4 rounded-full btn-ghost text-xs inline-flex items-center"
           >
             Home
-          </a>
+          </Link>
         </div>
       </div>
     </div>

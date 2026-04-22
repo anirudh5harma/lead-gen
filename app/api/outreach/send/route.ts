@@ -4,6 +4,7 @@ import { getPlanLimits, type PlanTier } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/claude'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
+import { emitCrmLeadEvent } from '@/lib/crm-sync'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   const [leadRes, profileRes] = await Promise.all([
-    supabase.from('leads').select('id, status').eq('id', leadId).eq('user_id', user.id).single(),
+    supabase.from('leads').select('id, status, client_id, target_company').eq('id', leadId).eq('user_id', user.id).single(),
     supabase.from('user_profiles').select('company_name, services_description, plan').eq('user_id', user.id).single(),
   ])
 
@@ -96,6 +97,18 @@ export async function POST(request: Request) {
       from_email:      result.fromEmail,
       gmail_thread_id: result.threadId,
     }).eq('id', leadId)
+
+    emitCrmLeadEvent({
+      userId: user.id,
+      clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+      eventType: 'lead.sent',
+      payload: {
+        lead_id: leadId,
+        target_company: (leadRes.data as { target_company?: string }).target_company ?? '',
+        from_email: result.fromEmail,
+        message_id: result.messageId,
+      },
+    }).catch(() => {})
 
     if (planLimits.followups && !isFollowUp) {
       const followAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()

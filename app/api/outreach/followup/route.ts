@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { draftFollowUpEmail } from '@/lib/claude'
+import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
   // Lead + signal
   const { data: lead } = await supabase
     .from('leads')
-    .select('target_company, relevance_reason, signals(signal_type, summary)')
+    .select('target_company, relevance_reason, client_id, signals(signal_type, summary)')
     .eq('id', leadId)
     .eq('user_id', user.id)
     .single()
@@ -50,6 +51,18 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .single()
 
+  const [{ data: clientProfile }, template] = await Promise.all([
+    lead?.client_id
+      ? supabase
+          .from('client_accounts')
+          .select('name, services_description')
+          .eq('id', lead.client_id)
+          .eq('user_id', user.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    getDefaultSequenceTemplate(supabase, user.id, lead?.client_id ?? null),
+  ])
+
   type SignalRow = { signal_type: string; summary: string }
   const signalRaw = lead.signals as unknown as SignalRow | SignalRow[] | null
   const signal = Array.isArray(signalRaw) ? signalRaw[0] ?? null : signalRaw
@@ -61,19 +74,20 @@ export async function POST(request: Request) {
   const primaryName = stakeholders[0]?.name || 'there'
 
   const { subject, body } = await draftFollowUpEmail({
-    senderCompany:      profile?.company_name || 'us',
-    servicesDescription: profile?.services_description || '',
+    senderCompany:      (clientProfile as { name?: string } | null)?.name || profile?.company_name || 'us',
+    servicesDescription: (clientProfile as { services_description?: string } | null)?.services_description || profile?.services_description || '',
     stakeholderName:    primaryName,
     targetCompany:      lead.target_company,
     signalType:         signal?.signal_type || 'event',
     signalSummary:      signal?.summary || lead.relevance_reason || '',
     originalSubject:    originalDraft.subject,
     originalBody:       originalDraft.body,
+    customInstructions: template?.followup_custom_instructions ?? null,
   })
 
   const { data: saved, error: saveErr } = await supabase
     .from('outreach_sequences')
-    .insert({ lead_id: leadId, followup_subject: subject, followup_body: body })
+    .insert({ lead_id: leadId, client_id: lead.client_id ?? null, followup_subject: subject, followup_body: body })
     .select('id, followup_subject, followup_body')
     .single()
 

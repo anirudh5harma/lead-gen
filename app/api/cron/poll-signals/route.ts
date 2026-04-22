@@ -5,12 +5,14 @@ import { extractSignal } from '@/lib/claude'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { fetchJobBoard } from '@/lib/job-boards'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 300
+
 const QUERY_BATCH_SIZE = 5
 const MAX_CANDIDATES_PER_RUN = 60
 const PROCESS_BATCH_SIZE = 4
 const EXTRACT_TIMEOUT_MS = 12_000
-const MAX_EXTRACT_NULL_LOGS = 8
-const MAX_SHORTLIST_LOGS = 8
 
 const EVENT_KEYWORDS: Record<string, RegExp> = {
   funding: /\b(raise[sd]?|funding|financing|series [a-z]|seed round|venture capital|investment)\b/i,
@@ -21,7 +23,7 @@ const EVENT_KEYWORDS: Record<string, RegExp> = {
 }
 
 const HIGH_SIGNAL_PATTERNS = [
-  { type: 'funding', pattern: /\b(raised|raises|secure[sd]?|closed|closes)\b.{0,80}\b(series [a-z]|seed|funding|financing|investment)\b/i },
+  { type: 'funding', pattern: /\b(raise|raises|raised|raising|secure[sd]?|closed|closes)\b.{0,80}\b(series [a-z]|seed|pre-seed|funding|financing|investment|round)\b/i },
   { type: 'acquisition', pattern: /\b(acquire[sd]?|buyout|merger|merges with|to acquire)\b/i },
   { type: 'expansion', pattern: /\b(expands? into|launch(?:es|ed)? in|opens? (?:a|its) .*office|enters? .*market|new office|new market)\b/i },
   { type: 'hiring', pattern: /\b(appoint(?:ed|s)?|hires?|hired|joins?|joined)\b.{0,80}\b(ceo|cto|cfo|cpo|ciso|cmo|cro|chief|vp|vice president|head of)\b/i },
@@ -31,8 +33,15 @@ const NAMED_COMPANY_PATTERN = /\b[A-Z][A-Za-z0-9&.-]+(?:\s+[A-Z][A-Za-z0-9&.-]+)
 
 interface ShortlistResult {
   dedupedCount: number
-  items: RSSItem[]
-  sampledRejected: Array<{ title: string; source: string; reason: string }>
+  items: CandidateWorkItem[]
+}
+
+interface CandidateWorkItem {
+  fingerprint: string
+  item: RSSItem
+  rank: number
+  shortlistReason: string
+  candidateId?: string
 }
 
 function isAuthorized(request: Request): boolean {
@@ -101,13 +110,35 @@ async function runPoll(request: Request) {
   stats.deduped_candidates = candidates.dedupedCount
   stats.shortlisted = candidates.items.length
   console.log(`[poll-signals] shortlisted ${candidates.items.length}/${candidates.dedupedCount} candidates`)
-  if (candidates.sampledRejected.length) {
-    console.log('[poll-signals] shortlist rejected samples', candidates.sampledRejected)
-  }
 
-  for (let i = 0; i < candidates.items.length; i += PROCESS_BATCH_SIZE) {
-    const batch = candidates.items.slice(i, i + PROCESS_BATCH_SIZE)
-    const results = await Promise.allSettled(batch.map(item => processItem(item, supabase)))
+  const persistedCandidates = await Promise.all(
+    candidates.items.map(async candidate => {
+      const { data, error } = await supabase
+        .from('signal_candidates')
+        .upsert({
+          fingerprint: candidate.fingerprint,
+          title: candidate.item.title,
+          description: candidate.item.description,
+          source_url: candidate.item.link || null,
+          source_name: candidate.item.source,
+          published_at: candidate.item.pubDate ? new Date(candidate.item.pubDate).toISOString() : null,
+          shortlist_score: candidate.rank,
+          shortlist_reason: candidate.shortlistReason,
+          extract_status: 'pending',
+          last_seen_at: new Date().toISOString(),
+        }, { onConflict: 'fingerprint' })
+        .select('id')
+        .single()
+      if (error) {
+        console.error('[poll-signals] signal_candidates upsert error:', error.message)
+      }
+      return { ...candidate, candidateId: (data as { id?: string } | null)?.id }
+    })
+  )
+
+  for (let i = 0; i < persistedCandidates.length; i += PROCESS_BATCH_SIZE) {
+    const batch = persistedCandidates.slice(i, i + PROCESS_BATCH_SIZE)
+    const results = await Promise.allSettled(batch.map(candidate => processItem(candidate, supabase)))
     for (const result of results) {
       if (result.status === 'fulfilled') {
         const outcome = result.value
@@ -235,8 +266,7 @@ async function runPoll(request: Request) {
 
 function shortlistItems(allItems: RSSItem[]): ShortlistResult {
   const seen = new Set<string>()
-  const deduped: Array<{ item: RSSItem; rank: number }> = []
-  const sampledRejected: Array<{ title: string; source: string; reason: string }> = []
+  const deduped: CandidateWorkItem[] = []
 
   for (const item of allItems) {
     // Skip articles older than 7 days
@@ -256,16 +286,10 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
     const isPressRelease = item.source === 'prnewswire' || item.source === 'businesswire' || item.source === 'globenewswire'
 
     if (!hasNamedCompany) {
-      if (sampledRejected.length < MAX_SHORTLIST_LOGS) {
-        sampledRejected.push({ title: item.title, source: item.source, reason: 'no_named_company' })
-      }
       continue
     }
 
     if (!matchedHighSignal && !isPressRelease) {
-      if (sampledRejected.length < MAX_SHORTLIST_LOGS) {
-        sampledRejected.push({ title: item.title, source: item.source, reason: 'weak_event_pattern' })
-      }
       continue
     }
 
@@ -281,16 +305,17 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
       : 0
 
     deduped.push({
+      fingerprint: dedupeKey,
       item,
       rank: keywordHits * 5 + sourceBoost + Math.min(recencyBoost, 12) + (matchedHighSignal ? 8 : 0),
+      shortlistReason: matchedHighSignal ? 'high_signal_pattern' : 'press_release_priority',
     })
   }
 
   deduped.sort((a, b) => b.rank - a.rank)
   return {
     dedupedCount: deduped.length,
-    items: deduped.slice(0, MAX_CANDIDATES_PER_RUN).map(entry => entry.item),
-    sampledRejected,
+    items: deduped.slice(0, MAX_CANDIDATES_PER_RUN),
   }
 }
 
@@ -304,9 +329,10 @@ type ProcessOutcome =
   | { status: 'insert_error' }
 
 async function processItem(
-  item: RSSItem,
+  candidate: CandidateWorkItem,
   supabase: Awaited<ReturnType<typeof createServiceClient>>
 ): Promise<ProcessOutcome> {
+  const { item, candidateId } = candidate
   let signal
   try {
     signal = await extractSignal(item.title, item.description, EXTRACT_TIMEOUT_MS)
@@ -314,14 +340,16 @@ async function processItem(
     const message = e instanceof Error ? e.message : String(e)
     if (message.includes('aborted')) {
       console.error('[poll-signals] extract timeout:', item.title)
+      await updateCandidateStatus(supabase, candidateId, { extract_status: 'extract_timeout' })
       return { status: 'extract_timeout' }
     }
     console.error('[poll-signals] extractSignal error:', message)
+    await updateCandidateStatus(supabase, candidateId, { extract_status: 'extract_error' })
     return { status: 'extract_error' }
   }
 
   if (!signal) {
-    logExtractNullSample(item)
+    await updateCandidateStatus(supabase, candidateId, { extract_status: 'extract_null' })
     return { status: 'extract_null' }
   }
 
@@ -339,7 +367,14 @@ async function processItem(
     .lte('published_at', `${dateOnly}T23:59:59Z`)
     .maybeSingle()
 
-  if (existing) return { status: 'duplicate' }
+  if (existing) {
+    await updateCandidateStatus(supabase, candidateId, {
+      extract_status: 'duplicate',
+      extract_confidence: signal.confidence,
+      extracted_signal: signal,
+    })
+    return { status: 'duplicate' }
+  }
 
   let embedding: number[]
   try {
@@ -347,6 +382,11 @@ async function processItem(
     embedding = await embed(embeddingText)
   } catch (e) {
     console.error('[poll-signals] embed error:', e instanceof Error ? e.message : String(e))
+    await updateCandidateStatus(supabase, candidateId, {
+      extract_status: 'embed_error',
+      extract_confidence: signal.confidence,
+      extracted_signal: signal,
+    })
     return { status: 'embed_error' }
   }
 
@@ -365,21 +405,40 @@ async function processItem(
 
   if (error) {
     console.error('[poll-signals] signal insert error:', error.message)
+    await updateCandidateStatus(supabase, candidateId, {
+      extract_status: 'insert_error',
+      extract_confidence: signal.confidence,
+      extracted_signal: signal,
+    })
     return { status: 'insert_error' }
   }
 
+  const { data: insertedSignal } = await supabase
+    .from('signals')
+    .select('id')
+    .eq('source_url', item.link)
+    .maybeSingle()
+
+  await updateCandidateStatus(supabase, candidateId, {
+    extract_status: 'inserted',
+    extract_confidence: signal.confidence,
+    extracted_signal: signal,
+    created_signal_id: insertedSignal?.id ?? null,
+  })
+
   return { status: 'inserted' }
 }
-
-const extractNullSamples: Array<{ title: string; source: string; snippet: string }> = []
-
-function logExtractNullSample(item: RSSItem) {
-  if (extractNullSamples.length >= MAX_EXTRACT_NULL_LOGS) return
-  const sample = {
-    title: item.title,
-    source: item.source,
-    snippet: item.description.slice(0, 180),
+async function updateCandidateStatus(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  candidateId: string | undefined,
+  updates: Record<string, unknown>,
+) {
+  if (!candidateId) return
+  const { error } = await supabase
+    .from('signal_candidates')
+    .update({ ...updates, processed_at: new Date().toISOString() })
+    .eq('id', candidateId)
+  if (error) {
+    console.error('[poll-signals] signal_candidates update error:', error.message)
   }
-  extractNullSamples.push(sample)
-  console.log('[poll-signals] extract null sample', sample)
 }

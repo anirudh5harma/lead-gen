@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState, useTransition, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -18,6 +19,7 @@ interface WatchlistItem {
 
 interface UserProfile {
   company_name: string
+  client_name?: string
   services_description: string
   icp_keywords: string[] | null
   email?: string
@@ -26,6 +28,7 @@ interface UserProfile {
   slack_webhook_url?: string | null
   auto_send_enabled?: boolean
   allow_lead_overage?: boolean
+  active_client_id?: string | null
 }
 
 interface Props {
@@ -42,7 +45,13 @@ const VIEW_TITLES: Record<View, string> = {
 }
 
 export default function DashboardShell({ initialLeads, userId, userProfile, watchlist }: Props) {
-  const [activeView, setActiveView] = useState<View>('feed')
+  const [activeView, setActiveView] = useState<View>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('view') === 'settings') return 'settings'
+    }
+    return 'feed'
+  })
   const [isRefreshing, startTransition] = useTransition()
   const router = useRouter()
 
@@ -55,12 +64,8 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   const [dismissedOver, setDismissedOver] = useState(false)
   const [overageEnabled, setOverageEnabled] = useState(userProfile.allow_lead_overage ?? false)
 
-  // Auto-navigate to settings after OAuth redirect (?view=settings)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('view') === 'settings') {
-      setActiveView('settings')
-      // Clean the URL without triggering a re-render cycle
+    if (window.location.search.includes('view=settings')) {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -85,7 +90,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   return (
     <div className="flex min-h-screen">
       <Sidebar
-        companyName={userProfile.company_name}
+        companyName={userProfile.client_name || userProfile.company_name}
         userEmail={userProfile.email}
         activeView={activeView}
         onNavigate={v => setActiveView(v)}
@@ -132,7 +137,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0A8.003 8.003 0 014.582 15M19.419 15H15" />
                 </svg>
               </button>
-              <a
+              <Link
                 href="/pricing"
                 className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-ghost text-[12.5px] font-medium items-center gap-1.5"
               >
@@ -140,7 +145,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                   <path d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 Upgrade
-              </a>
+              </Link>
               <LogoutButton />
             </div>
           </div>
@@ -168,7 +173,12 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                     onDismiss={() => setDismissedOver(true)}
                   />
                 )}
-                <LeadFeed initialLeads={initialLeads} userId={userId} watchlist={watchlist} />
+                <LeadFeed
+                  initialLeads={initialLeads}
+                  userId={userId}
+                  watchlist={watchlist}
+                  activeClientId={userProfile.active_client_id ?? null}
+                />
               </div>
             )}
             {activeView === 'watchlist' && (
@@ -327,23 +337,23 @@ function SettingsPanel({
         </div>
         <div className="px-5 py-4 flex items-center gap-3">
           {plan === 'free' && (
-            <a
+            <Link
               href="/pricing"
               className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
             >
               Upgrade
-            </a>
+            </Link>
           )}
           {plan !== 'free' && (
             <ManageBillingButton />
           )}
           {plan === 'max' && (
-            <a
+            <Link
               href="/api/export/crm"
               className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-ghost transition-colors"
             >
               Export CRM CSV
-            </a>
+            </Link>
           )}
         </div>
         {(plan === 'pro' || plan === 'max') && (
@@ -380,6 +390,12 @@ function SettingsPanel({
 
       {/* Connected sending accounts — not available on free plan */}
       {plan !== 'free' && <ConnectedAccountsPanel />}
+
+      {plan === 'max' ? (
+        <ClientWorkspacePanel activeClientId={profile.active_client_id ?? null} />
+      ) : (
+        <ClientWorkspaceUpgradeCard />
+      )}
 
       {/* Auto-send toggle (Pro / Max only) */}
       {(plan === 'pro' || plan === 'max') && (
@@ -421,6 +437,7 @@ function SettingsPanel({
         </div>
         <div className="divide-y divide-[var(--color-line-1)]">
           <Row label="Company">{profile.company_name || '—'}</Row>
+          <Row label="Workspace">{profile.client_name || profile.company_name || '—'}</Row>
           <Row label="What you sell">
             <span className="text-[var(--color-text-2)] leading-relaxed">{profile.services_description || '—'}</span>
           </Row>
@@ -439,14 +456,17 @@ function SettingsPanel({
           </Row>
         </div>
         <div className="px-5 py-4">
-          <a
+          <Link
             href="/onboarding"
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
           >
             Edit targeting
-          </a>
+          </Link>
         </div>
       </div>
+
+      <SequenceTemplatesPanel />
+      <CrmSyncPanel />
 
       {/* Blocked companies */}
       <BlockedCompaniesPanel />
@@ -485,6 +505,310 @@ function SettingsPanel({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+interface ClientAccountSummary {
+  id: string
+  name: string
+}
+
+function ClientWorkspaceUpgradeCard() {
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Client Workspaces</h2>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          Keep separate feeds, targeting, templates, and CRM sync for each client or business line.
+        </p>
+      </div>
+      <div className="px-5 py-4 flex items-center justify-between gap-4">
+        <p className="text-xs text-[var(--color-text-3)]">
+          Available on the Max plan only.
+        </p>
+        <Link
+          href="/pricing"
+          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
+        >
+          Upgrade to Max
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function ClientWorkspacePanel({ activeClientId }: { activeClientId: string | null }) {
+  const [clients, setClients] = useState<ClientAccountSummary[]>([])
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/clients')
+      const data = await res.json() as { clients?: ClientAccountSummary[] }
+      setClients(data.clients ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function createClient() {
+    if (!name.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => null) as { error?: string } | null
+      if (res.ok) window.location.reload()
+      else setError(data?.error ?? 'Failed to create client workspace')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function switchClient(id: string) {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activeClientId: id }),
+      })
+      const data = await res.json().catch(() => null) as { error?: string } | null
+      if (res.ok) window.location.reload()
+      else setError(data?.error ?? 'Failed to switch client workspace')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Clients</h2>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          Keep separate targeting and lead feeds for each client or business line.
+        </p>
+      </div>
+      <div className="px-5 py-4 space-y-3">
+        {loading ? (
+          <p className="text-xs text-[var(--color-text-4)]">Loading clients…</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {clients.map(client => (
+              <button
+                key={client.id}
+                onClick={() => switchClient(client.id)}
+                disabled={saving || client.id === activeClientId}
+                className={`px-3 py-1.5 rounded-full text-xs border ${
+                  client.id === activeClientId
+                    ? 'bg-[var(--color-accent-bg)] border-[var(--color-accent)]/30 text-[var(--color-accent-ring)]'
+                    : 'bg-white border-[var(--color-line-1)] text-[var(--color-text-2)] hover:text-[var(--color-text-1)]'
+                } disabled:opacity-70`}
+              >
+                {client.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Add a client workspace"
+            className="flex-1 h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+          />
+          <button
+            onClick={createClient}
+            disabled={saving || !name.trim()}
+            className="px-3.5 rounded-full btn-primary text-xs disabled:opacity-50"
+          >
+            Add
+          </button>
+        </div>
+        {error && <p className="text-[11px] text-[var(--color-sig-regulation)]">{error}</p>}
+      </div>
+    </div>
+  )
+}
+
+interface SequenceTemplateRow {
+  id: string
+  name: string
+  custom_instructions: string | null
+  followup_custom_instructions: string | null
+  is_default: boolean
+}
+
+function SequenceTemplatesPanel() {
+  const [templates, setTemplates] = useState<SequenceTemplateRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [name, setName] = useState('Default')
+  const [instructions, setInstructions] = useState('')
+  const [followupInstructions, setFollowupInstructions] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/sequence-templates')
+      const data = await res.json() as { templates?: SequenceTemplateRow[] }
+      setTemplates(data.templates ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function saveTemplate() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/sequence-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          custom_instructions: instructions,
+          followup_custom_instructions: followupInstructions,
+          is_default: true,
+        }),
+      })
+      if (res.ok) {
+        setInstructions('')
+        setFollowupInstructions('')
+        await load()
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function makeDefault(id: string) {
+    setSaving(true)
+    try {
+      await fetch('/api/sequence-templates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, is_default: true }),
+      })
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Sequence Templates</h2>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          Reusable guidance injected into draft generation for this client.
+        </p>
+      </div>
+      <div className="px-5 py-4 space-y-3">
+        <input value={name} onChange={e => setName(e.target.value)} className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]" placeholder="Template name" />
+        <textarea value={instructions} onChange={e => setInstructions(e.target.value)} className="w-full min-h-[80px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]" placeholder="Initial email guidance, tone, CTA, positioning…" />
+        <textarea value={followupInstructions} onChange={e => setFollowupInstructions(e.target.value)} className="w-full min-h-[80px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]" placeholder="Follow-up guidance, objection handling, CTA…" />
+        <button onClick={saveTemplate} disabled={saving || !name.trim()} className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50">
+          Save as default
+        </button>
+        {loading ? (
+          <p className="text-xs text-[var(--color-text-4)]">Loading templates…</p>
+        ) : (
+          <div className="space-y-2">
+            {templates.map(template => (
+              <div key={template.id} className="rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium text-[var(--color-text-1)]">{template.name}</p>
+                    <p className="text-[11px] text-[var(--color-text-4)]">{template.is_default ? 'Default template' : 'Saved template'}</p>
+                  </div>
+                  {!template.is_default && (
+                    <button onClick={() => makeDefault(template.id)} className="text-[11px] text-[var(--color-accent-ring)]">
+                      Make default
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CrmSyncPanel() {
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [enabled, setEnabled] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/settings/crm-sync')
+      .then(r => r.json() as Promise<{ webhook_url?: string; enabled?: boolean }>)
+      .then(data => {
+        setWebhookUrl(data.webhook_url ?? '')
+        setEnabled(Boolean(data.enabled))
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  async function save() {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/settings/crm-sync', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhook_url: webhookUrl, enabled }),
+      })
+      const data = await res.json() as { error?: string }
+      setMessage(data.error ?? 'Saved')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          Push lead created/sent/replied/booked events to your CRM or automation webhook.
+        </p>
+      </div>
+      <div className="px-5 py-4 space-y-3">
+        <input
+          type="url"
+          value={webhookUrl}
+          onChange={e => setWebhookUrl(e.target.value)}
+          placeholder="https://your-crm-sync-endpoint.example.com"
+          className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+        />
+        <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+          Enable CRM webhook sync
+        </label>
+        <button onClick={save} disabled={!loaded || saving} className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save CRM sync'}
+        </button>
+        {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
+      </div>
     </div>
   )
 }
@@ -840,7 +1164,7 @@ function UsageWarningBanner({ used, limit, onDismiss }: { used: number; limit: n
       <p className="text-[13px] flex-1">
         <span className="font-medium">{pct}% of your monthly limit used</span>
         {' '}— {used} of {limit} leads this period.{' '}
-        <a href="/pricing" className="underline underline-offset-2 hover:text-amber-900 transition-colors">Upgrade</a>
+        <Link href="/pricing" className="underline underline-offset-2 hover:text-amber-900 transition-colors">Upgrade</Link>
         {' '}to avoid interruptions.
       </p>
       <button
@@ -955,12 +1279,12 @@ function OverLimitModal({
           <div className="flex flex-col gap-2 pt-1">
             {plan === 'free' && (
               <>
-                <a
+                <Link
                   href="/pricing"
                   className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center"
                 >
                   Upgrade to Pro or Max
-                </a>
+                </Link>
                 <button
                   onClick={onDismiss}
                   className="h-10 rounded-full btn-ghost text-[13px] flex items-center justify-center"

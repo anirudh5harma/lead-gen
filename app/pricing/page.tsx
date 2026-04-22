@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -99,7 +100,7 @@ export default function PricingPage() {
       })
       const data = await res.json() as { url?: string; error?: string }
       if (data.url) {
-        window.location.href = data.url
+        window.location.assign(data.url)
       } else {
         console.error(data.error)
         setLoading(null)
@@ -117,14 +118,14 @@ export default function PricingPage() {
 
       <nav className="relative z-10 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/70 backdrop-blur-md">
         <div className="w-full max-w-7xl mx-auto flex items-center justify-between px-6 md:px-8 h-16">
-          <a href="/" className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
             <LogoMark />
             <span className="text-[15px] font-medium text-[var(--color-text-1)] tracking-tight">Bombsell</span>
-          </a>
+          </Link>
           {isSignedIn && (
-            <a href="/dashboard" className="text-[13px] text-[var(--color-text-2)] hover:text-[var(--color-text-1)] transition-colors">
+            <Link href="/dashboard" className="text-[13px] text-[var(--color-text-2)] hover:text-[var(--color-text-1)] transition-colors">
               Back to dashboard →
-            </a>
+            </Link>
           )}
         </div>
       </nav>
