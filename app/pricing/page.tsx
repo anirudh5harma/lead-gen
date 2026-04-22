@@ -58,11 +58,11 @@ const PLANS = [
 const FAQS = [
   {
     q: 'Do follow-ups count against my lead quota?',
-    a: 'Yes — on Pro and Max plans, which are the only plans that include automated follow-ups. Each 3-day follow-up send uses one lead from your monthly allowance, just like an initial outreach. The quota resets on a rolling 30-day window.',
+    a: 'No. Your monthly lead quota only controls how many new leads enter your feed in a rolling 30-day window. Follow-ups are included on Pro and Max and do not consume additional lead quota.',
   },
   {
     q: 'What happens when I hit my limit?',
-    a: 'Signals keep flowing into your feed and nothing is lost. On Free, sending is hard-paused until your 30-day window resets. On Pro and Max, you can keep sending at $0.50 per additional lead — charged automatically via your billing account with no interruption.',
+    a: 'Once you hit your lead quota, Free stops adding new leads until your rolling 30-day window frees up capacity. Pro and Max can either stop at the limit or keep the feed running by opting into $0.50 per extra lead. Existing leads remain available either way.',
   },
   {
     q: 'Can I cancel or change plans anytime?',

@@ -23,14 +23,19 @@ export default async function DashboardPage() {
   // Migration-004 fields — may not exist yet; use defaults if the query errors.
   const { data: extProfile } = await supabase
     .from('user_profiles')
-    .select('plan, leads_used_this_month, slack_webhook_url, auto_send_enabled')
+    .select('plan, leads_used_this_month, slack_webhook_url, auto_send_enabled, allow_lead_overage')
     .eq('user_id', user.id)
     .maybeSingle()
 
+  const { data: recentLeadCount } = await supabase.rpc('recent_lead_count', {
+    p_user_id: user.id,
+  })
+
   const plan             = (extProfile as { plan?: string } | null)?.plan ?? 'free'
-  const leadsUsed        = (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
+  const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
   const autoSendEnabled  = (extProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? false
+  const allowLeadOverage = (extProfile as { allow_lead_overage?: boolean } | null)?.allow_lead_overage ?? false
 
   // Initial leads (server-rendered)
   const { data: leads } = await supabase
@@ -81,6 +86,7 @@ export default async function DashboardPage() {
         leads_used_this_month: leadsUsed,
         slack_webhook_url: slackWebhookUrl,
         auto_send_enabled: autoSendEnabled,
+        allow_lead_overage: allowLeadOverage,
       }}
       watchlist={watchlist ?? []}
     />

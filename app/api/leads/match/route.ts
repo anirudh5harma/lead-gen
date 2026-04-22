@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient, createAdminClient } from '@/lib/supabase/server'
 import { scoreLeadRelevance } from '@/lib/claude'
-import { getPlanLimits } from '@/lib/plan'
+import { getPlanLimits, type PlanTier } from '@/lib/plan'
 import { sendSlackAlert } from '@/lib/slack'
 import { sendFirstLeadEmail } from '@/lib/resend'
+import { recordLeadOverage } from '@/lib/dodo'
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
@@ -43,7 +44,7 @@ async function runMatch(request: Request) {
 
   const { data: profiles, error: profErr } = await supabase
     .from('user_profiles')
-    .select('user_id, company_name, services_description, profile_embedding, icp_keywords, target_signal_types, min_relevance_score, plan, slack_webhook_url')
+    .select('user_id, company_name, services_description, profile_embedding, icp_keywords, target_signal_types, min_relevance_score, plan, slack_webhook_url, allow_lead_overage')
 
   if (profErr || !profiles?.length) {
     return NextResponse.json({ matched: 0, reason: 'No profiles' })
@@ -99,6 +100,12 @@ async function runMatch(request: Request) {
     recentCompanySet.add(`${row.user_id}:${nameKey}`)
   }
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: recentQuotaLeads } = await supabase
+    .from('leads')
+    .select('user_id')
+    .gte('created_at', thirtyDaysAgo)
+
   let matched = 0
   const stats = {
     no_signal_embedding: 0,
@@ -111,6 +118,18 @@ async function runMatch(request: Request) {
     duplicate: 0,
     company_duplicate: 0,
     icp_filtered: 0,
+    quota_reached: 0,
+    overage_inserted: 0,
+  }
+
+  const quotaState = new Map<string, number>()
+  for (const row of (recentQuotaLeads ?? [])) {
+    quotaState.set(row.user_id, (quotaState.get(row.user_id) ?? 0) + 1)
+  }
+  for (const profile of profiles) {
+    if (!quotaState.has(profile.user_id)) {
+      quotaState.set(profile.user_id, 0)
+    }
   }
 
   for (const signal of newSignals) {
@@ -198,6 +217,36 @@ async function runMatch(request: Request) {
 
       if (score < effectiveMin) { stats.below_score++; continue }
 
+      const plan = (profile.plan ?? 'free') as PlanTier
+      const monthlyLimit = getPlanLimits(plan).leads_per_month
+      const used = quotaState.get(profile.user_id) ?? 0
+      const allowLeadOverage = Boolean((profile as { allow_lead_overage?: boolean | null }).allow_lead_overage) && plan !== 'free'
+      let reservedQuota = false
+      let isOverageLead = used >= monthlyLimit
+
+      if (!isOverageLead) {
+        const { data: quotaReserved, error: quotaErr } = await supabase.rpc('consume_lead_quota', {
+          p_user_id: profile.user_id,
+          p_limit: monthlyLimit,
+        })
+        if (quotaErr) {
+          console.error('consume_lead_quota RPC error:', quotaErr.message)
+          stats.rpc_errors++
+          continue
+        }
+        if (quotaReserved) {
+          reservedQuota = true
+        } else if (allowLeadOverage) {
+          isOverageLead = true
+        } else {
+          stats.quota_reached++
+          continue
+        }
+      } else if (!allowLeadOverage) {
+        stats.quota_reached++
+        continue
+      }
+
       const { data: inserted, error } = await supabase.from('leads').insert({
         user_id:          profile.user_id,
         signal_id:        signal.id,
@@ -210,6 +259,13 @@ async function runMatch(request: Request) {
 
       if (!error && inserted) {
         matched++
+        quotaState.set(profile.user_id, used + 1)
+        if (isOverageLead) {
+          stats.overage_inserted++
+          recordLeadOverage(profile.user_id, inserted.id).catch(err =>
+            console.error('[overage] lead record failed:', err)
+          )
+        }
         existingSet.add(pairKey)
         if (sigDomainKey) recentCompanySet.add(`${profile.user_id}:${sigDomainKey}`)
         recentCompanySet.add(`${profile.user_id}:${sigNameKey}`)
@@ -236,6 +292,8 @@ async function runMatch(request: Request) {
             })
             .catch(() => {})
         }
+      } else if (reservedQuota) {
+        await supabase.rpc('refund_lead_quota', { p_user_id: profile.user_id })
       }
     }
   }

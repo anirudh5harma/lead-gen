@@ -25,6 +25,7 @@ interface UserProfile {
   leads_used_this_month?: number
   slack_webhook_url?: string | null
   auto_send_enabled?: boolean
+  allow_lead_overage?: boolean
 }
 
 interface Props {
@@ -52,6 +53,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
 
   const [dismissed80,   setDismissed80]   = useState(false)
   const [dismissedOver, setDismissedOver] = useState(false)
+  const [overageEnabled, setOverageEnabled] = useState(userProfile.allow_lead_overage ?? false)
 
   // Auto-navigate to settings after OAuth redirect (?view=settings)
   useEffect(() => {
@@ -156,11 +158,13 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                     onDismiss={() => setDismissed80(true)}
                   />
                 )}
-                {usagePct >= 100 && !dismissedOver && (
+                {usagePct >= 100 && !dismissedOver && (plan === 'free' || !overageEnabled) && (
                   <OverLimitModal
                     plan={plan as 'free' | 'pro' | 'max'}
                     used={used}
                     limit={planLimit}
+                    overageEnabled={overageEnabled}
+                    onEnableOverage={() => setOverageEnabled(true)}
                     onDismiss={() => setDismissedOver(true)}
                   />
                 )}
@@ -176,7 +180,11 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               </div>
             )}
             {activeView === 'settings' && (
-              <SettingsPanel profile={userProfile} />
+              <SettingsPanel
+                profile={userProfile}
+                overageEnabled={overageEnabled}
+                onOverageChange={setOverageEnabled}
+              />
             )}
           </div>
         </main>
@@ -209,7 +217,15 @@ const PLAN_LABELS: Record<string, { label: string; color: string; price: string 
 }
 const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 300, max: 1500 }
 
-function SettingsPanel({ profile }: { profile: UserProfile }) {
+function SettingsPanel({
+  profile,
+  overageEnabled,
+  onOverageChange,
+}: {
+  profile: UserProfile
+  overageEnabled: boolean
+  onOverageChange: (enabled: boolean) => void
+}) {
   const plan = profile.plan ?? 'free'
   const planMeta = PLAN_LABELS[plan] ?? PLAN_LABELS.free
   const limit = PLAN_LIMITS[plan] ?? 15
@@ -236,6 +252,8 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
   const [slackUrl, setSlackUrl] = useState(profile.slack_webhook_url ?? '')
   const [slackSaving, setSlackSaving] = useState(false)
   const [slackMsg, setSlackMsg] = useState<string | null>(null)
+  const [overageSaving, setOverageSaving] = useState(false)
+  const [overageMsg, setOverageMsg] = useState<string | null>(null)
 
   const saveSlack = useCallback(async () => {
     setSlackSaving(true)
@@ -254,6 +272,29 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
       setSlackSaving(false)
     }
   }, [slackUrl])
+
+  const toggleLeadOverage = useCallback(async (enabled: boolean) => {
+    setOverageSaving(true)
+    setOverageMsg(null)
+    try {
+      const res = await fetch('/api/settings/lead-overage', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allow_lead_overage: enabled }),
+      })
+      const data = await res.json() as { error?: string; allow_lead_overage?: boolean }
+      if (!res.ok) {
+        setOverageMsg(data.error ?? 'Failed to update')
+        return
+      }
+      onOverageChange(Boolean(data.allow_lead_overage))
+      setOverageMsg(enabled ? 'Overages enabled' : 'Overages disabled')
+    } catch {
+      setOverageMsg('Failed to update')
+    } finally {
+      setOverageSaving(false)
+    }
+  }, [onOverageChange])
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -305,6 +346,36 @@ function SettingsPanel({ profile }: { profile: UserProfile }) {
             </a>
           )}
         </div>
+        {(plan === 'pro' || plan === 'max') && (
+          <div className="px-5 py-4 flex items-center justify-between gap-4 border-t border-[var(--color-line-1)]">
+            <div>
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Lead overages</p>
+              <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+                When enabled, Bombsell keeps adding leads beyond your plan limit at $0.50 per extra lead.
+              </p>
+              {overageMsg && (
+                <p className={`text-[11px] mt-1 ${overageMsg.includes('Failed') ? 'text-[var(--color-sig-regulation)]' : 'text-[var(--color-text-3)]'}`}>
+                  {overageMsg}
+                </p>
+              )}
+            </div>
+            <button
+              role="switch"
+              aria-checked={overageEnabled}
+              disabled={overageSaving}
+              onClick={() => toggleLeadOverage(!overageEnabled)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
+                overageEnabled ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${
+                  overageEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Connected sending accounts — not available on free plan */}
@@ -791,14 +862,19 @@ function OverLimitModal({
   plan,
   used,
   limit,
+  overageEnabled,
+  onEnableOverage,
   onDismiss,
 }: {
   plan: 'free' | 'pro' | 'max'
   used: number
   limit: number
+  overageEnabled: boolean
+  onEnableOverage: () => void
   onDismiss: () => void
 }) {
   const [upgrading, setUpgrading] = useState(false)
+  const [enabling, setEnabling] = useState(false)
 
   async function upgradeToMax() {
     setUpgrading(true)
@@ -812,6 +888,23 @@ function OverLimitModal({
       if (data.url) window.location.href = data.url
     } finally {
       setUpgrading(false)
+    }
+  }
+
+  async function enableOverages() {
+    setEnabling(true)
+    try {
+      const res = await fetch('/api/settings/lead-overage', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allow_lead_overage: true }),
+      })
+      if (res.ok) {
+        onEnableOverage()
+        onDismiss()
+      }
+    } finally {
+      setEnabling(false)
     }
   }
 
@@ -836,13 +929,13 @@ function OverLimitModal({
             </h2>
             <p className="text-[13px] text-[var(--color-text-3)] leading-relaxed">
               {plan === 'free' && (
-                <>You&rsquo;ve used all {limit} free leads this period. Upgrade to keep sending.</>
+                <>You&rsquo;ve used all {limit} free leads this period. Upgrade to keep receiving new leads.</>
               )}
               {plan === 'pro' && (
-                <>You&rsquo;ve used all {limit} Pro leads ({used} sent). Extra sends cost <strong className="text-[var(--color-text-1)]">$0.50 per lead</strong>, billed at month end. Or upgrade to Max for 1,500 leads/mo.</>
+                <>You&rsquo;ve used all {limit} Pro leads in your current 30-day window. You can keep the feed running with <strong className="text-[var(--color-text-1)]">$0.50 per extra lead</strong>, or upgrade to Max for 1,500 leads/mo.</>
               )}
               {plan === 'max' && (
-                <>You&rsquo;ve used all {limit} Max leads ({used} sent). Extra sends cost <strong className="text-[var(--color-text-1)]">$0.50 per lead</strong>, billed automatically at month end.</>
+                <>You&rsquo;ve used all {limit} Max leads in your current 30-day window. You can keep the feed running with <strong className="text-[var(--color-text-1)]">$0.50 per extra lead</strong>, billed automatically at month end.</>
               )}
             </p>
           </div>
@@ -887,10 +980,11 @@ function OverLimitModal({
                   {upgrading ? 'Redirecting…' : 'Upgrade to Max — 1,500 leads/mo'}
                 </button>
                 <button
-                  onClick={onDismiss}
+                  onClick={enableOverages}
+                  disabled={enabling || overageEnabled}
                   className="h-10 rounded-full btn-ghost text-[13px] flex items-center justify-center gap-2"
                 >
-                  Continue with $0.50/lead overages
+                  {enabling ? 'Enabling…' : overageEnabled ? 'Overages already enabled' : 'Continue with $0.50/lead overages'}
                   <span className="text-[11px] text-[var(--color-text-4)]">billed month end</span>
                 </button>
               </>
@@ -899,10 +993,11 @@ function OverLimitModal({
             {plan === 'max' && (
               <>
                 <button
-                  onClick={onDismiss}
-                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center"
+                  onClick={enableOverages}
+                  disabled={enabling || overageEnabled}
+                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center disabled:opacity-60"
                 >
-                  Continue with $0.50/lead overages
+                  {enabling ? 'Enabling…' : overageEnabled ? 'Overages already enabled' : 'Continue with $0.50/lead overages'}
                 </button>
                 <p className="text-center text-[11px] text-[var(--color-text-4)]">Charged automatically at month end</p>
               </>

@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { incrementSendCount, getUserPlan, getPlanLimits } from '@/lib/plan'
+import { getPlanLimits, type PlanTier } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/claude'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
-import { recordLeadOverage } from '@/lib/dodo'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -47,31 +46,17 @@ export async function POST(request: Request) {
 
   const [leadRes, profileRes] = await Promise.all([
     supabase.from('leads').select('id, status').eq('id', leadId).eq('user_id', user.id).single(),
-    supabase.from('user_profiles').select('company_name, services_description').eq('user_id', user.id).single(),
+    supabase.from('user_profiles').select('company_name, services_description, plan').eq('user_id', user.id).single(),
   ])
 
   if (!leadRes.data) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
-  const { plan: userPlan, used: leadsUsed, limit: leadsLimit } = await getUserPlan(user.id)
-  const isOverLimit = leadsUsed >= leadsLimit
-  if (isOverLimit) {
-    if (userPlan === 'free') {
-      return NextResponse.json(
-        { error: 'You\'ve reached your free limit of 10 leads. Upgrade to Pro or Max to send more.' },
-        { status: 429 }
-      )
-    }
-    // Pro/Max: allow send, charge $0.50 overage via Dodo metered billing
-    recordLeadOverage(user.id, leadId).catch(err =>
-      console.error('[overage] failed to record:', err)
-    )
-  }
-
+  const userPlan = (profileRes.data?.plan ?? 'free') as PlanTier
   const planLimits = getPlanLimits(userPlan)
   const dailyRl = await checkRateLimit(`daily:${user.id}`, planLimits.leads_per_day, 86400)
   if (!dailyRl.allowed) {
     return NextResponse.json(
-      { error: `You've reached your daily lead limit (${planLimits.leads_per_day}/day). Try again tomorrow.` },
+      { error: `You've reached your daily send limit (${planLimits.leads_per_day}/day). Try again tomorrow.` },
       { status: 429, headers: { 'Retry-After': '86400' } }
     )
   }
@@ -111,8 +96,6 @@ export async function POST(request: Request) {
       from_email:      result.fromEmail,
       gmail_thread_id: result.threadId,
     }).eq('id', leadId)
-
-    await incrementSendCount(user.id)
 
     if (planLimits.followups && !isFollowUp) {
       const followAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()

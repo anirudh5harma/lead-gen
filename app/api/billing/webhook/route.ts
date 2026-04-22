@@ -74,7 +74,9 @@ export async function POST(request: Request) {
       updated_at:           new Date().toISOString(),
     }, { onConflict: 'user_id' })
 
-    await supabase.from('user_profiles').update({ plan }).eq('user_id', userId)
+    const profileUpdate: Record<string, unknown> = { plan }
+    if (plan === 'free') profileUpdate.allow_lead_overage = false
+    await supabase.from('user_profiles').update(profileUpdate).eq('user_id', userId)
   }
 
   if (type === 'subscription.cancelled' || type === 'subscription.expired') {
@@ -85,7 +87,10 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (record?.user_id) {
-      await supabase.from('user_profiles').update({ plan: 'free' }).eq('user_id', record.user_id)
+      await supabase.from('user_profiles').update({
+        plan: 'free',
+        allow_lead_overage: false,
+      }).eq('user_id', record.user_id)
       await supabase.from('subscriptions').update({
         plan:       'free',
         status:     data.status,

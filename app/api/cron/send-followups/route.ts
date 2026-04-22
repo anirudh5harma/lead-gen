@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { getPlanLimits, PLAN_LIMITS, type PlanTier } from '@/lib/plan'
+import { getPlanLimits, type PlanTier } from '@/lib/plan'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
-import { recordLeadOverage } from '@/lib/dodo'
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
@@ -31,29 +30,15 @@ export async function GET(request: Request) {
   const userIds = [...new Set(pending.map(p => p.user_id))]
   const { data: profiles } = await supabase
     .from('user_profiles')
-    .select('user_id, plan, auto_send_enabled, leads_used_this_month, leads_reset_at, company_name')
+    .select('user_id, plan, auto_send_enabled, company_name')
     .in('user_id', userIds)
 
-  const now         = new Date()
-  const windowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-
-  const quotaMap: Record<string, { plan: PlanTier; used: number; limit: number; autoSend: boolean; companyName: string }> = {}
+  const now = new Date()
+  const quotaMap: Record<string, { plan: PlanTier; autoSend: boolean; companyName: string }> = {}
   for (const p of (profiles ?? [])) {
     const plan = (p.plan ?? 'free') as PlanTier
-    let used   = p.leads_used_this_month ?? 0
-
-    if (p.leads_reset_at && new Date(p.leads_reset_at) < windowStart) {
-      used = 0
-      await supabase
-        .from('user_profiles')
-        .update({ leads_used_this_month: 0, leads_reset_at: now.toISOString() })
-        .eq('user_id', p.user_id)
-    }
-
     quotaMap[p.user_id] = {
       plan,
-      used,
-      limit:       PLAN_LIMITS[plan].leads_per_month,
       autoSend:    p.auto_send_enabled ?? false,
       companyName: (p as { company_name?: string }).company_name || '',
     }
@@ -65,9 +50,6 @@ export async function GET(request: Request) {
     if (!quota) continue
     if (!getPlanLimits(quota.plan).followups) continue
     if (!quota.autoSend) continue
-    // Free plan: hard block. Pro/Max: allow with overage billing.
-    if (quota.used >= quota.limit && quota.plan === 'free') continue
-    const isOverage = quota.used >= quota.limit
 
     const lead = item.leads as unknown as {
       contact_email?: string; target_company: string; status?: string
@@ -127,15 +109,7 @@ export async function GET(request: Request) {
           gmail_thread_id: result.threadId ?? lead.gmail_thread_id,
         }).eq('id', item.lead_id)
       }
-      await supabase.rpc('increment_leads_used', { p_user_id: item.user_id })
-      quota.used++
       sent++
-
-      if (isOverage) {
-        recordLeadOverage(item.user_id, item.lead_id, 'overage_followup').catch(err =>
-          console.error('[overage] follow-up record failed:', err)
-        )
-      }
     } catch (err) {
       console.error(`[send-followups] failed for lead ${item.lead_id}:`, err)
     }

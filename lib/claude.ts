@@ -9,7 +9,11 @@ const CHEAP_MODEL = 'claude-haiku-4-5-20251001'
  * Extracts structured signal data from a news headline + description.
  * Returns null if the item doesn't represent a clear company event.
  */
-export async function extractSignal(headline: string, description: string): Promise<{
+export async function extractSignal(
+  headline: string,
+  description: string,
+  timeoutMs = 12_000
+): Promise<{
   company_name: string
   company_domain: string | null
   signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
@@ -40,7 +44,7 @@ Return a JSON object with these fields:
 If this is not a company business event at all, return null.
 Return ONLY valid JSON, no markdown, no explanation.`,
     }],
-  }, { signal: AbortSignal.timeout(30_000) })
+  }, { signal: AbortSignal.timeout(timeoutMs) })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
   if (text === 'null' || !text) return null
