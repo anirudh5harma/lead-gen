@@ -5,28 +5,38 @@ import { extractSignal } from '@/lib/claude'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { fetchJobBoard } from '@/lib/job-boards'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
+import {
+  fetchCompanyOwnedItems,
+  fetchGdeltItems,
+  fetchHackerNewsItems,
+  fetchProductHuntItems,
+  type CompanySeed,
+} from '@/lib/signal-sources'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const QUERY_BATCH_SIZE = 5
-const MAX_CANDIDATES_PER_RUN = 60
+const MAX_CANDIDATES_PER_RUN = 100
 const PROCESS_BATCH_SIZE = 4
 const EXTRACT_TIMEOUT_MS = 12_000
+const JOB_BOARD_COMPANY_LIMIT = 30
+const JOB_BOARD_BATCH_SIZE = 8
 
 const EVENT_KEYWORDS: Record<string, RegExp> = {
   funding: /\b(raise[sd]?|funding|financing|series [a-z]|seed round|venture capital|investment)\b/i,
   acquisition: /\b(acquisition|acquire[sd]?|merger|buyout|deal)\b/i,
-  expansion: /\b(expansion|expand(?:s|ed|ing)?|launch(?:ed)?|new office|new market|opens in|entered)\b/i,
-  regulation: /\b(regulation|regulatory|compliance|sec|finra|fda|law|mandate)\b/i,
+  expansion: /\b(expansion|expand(?:s|ed|ing)?|launch(?:es|ed)?|new product|platform|partnership|integration|new office|new market|opens in|entered)\b/i,
+  regulation: /\b(regulation|regulatory|compliance|sec|finra|fda|law|mandate|fined|settlement|certification)\b/i,
   hiring: /\b(hire[sd]?|appoint(?:ed)?|joins?|joined|chief|cto|cfo|cpo|ciso|cmo|cro|vp|vice president)\b/i,
 }
 
 const HIGH_SIGNAL_PATTERNS = [
   { type: 'funding', pattern: /\b(raise|raises|raised|raising|secure[sd]?|closed|closes)\b.{0,80}\b(series [a-z]|seed|pre-seed|funding|financing|investment|round)\b/i },
   { type: 'acquisition', pattern: /\b(acquire[sd]?|buyout|merger|merges with|to acquire)\b/i },
-  { type: 'expansion', pattern: /\b(expands? into|launch(?:es|ed)? in|opens? (?:a|its) .*office|enters? .*market|new office|new market)\b/i },
+  { type: 'expansion', pattern: /\b(expands? into|launch(?:es|ed)? (?:in|new|a|an|the|product|platform|tool|app|feature)|opens? (?:a|its) .*office|enters? .*market|new office|new market|partnership|integration)\b/i },
+  { type: 'regulation', pattern: /\b(fined|settlement|regulatory approval|sec charges|fda approval|compliance mandate|data breach|soc 2|iso 27001)\b/i },
   { type: 'hiring', pattern: /\b(appoint(?:ed|s)?|hires?|hired|joins?|joined)\b.{0,80}\b(ceo|cto|cfo|cpo|ciso|cmo|cro|chief|vp|vice president|head of)\b/i },
 ]
 
@@ -43,6 +53,7 @@ interface CandidateWorkItem {
   rank: number
   shortlistReason: string
   candidateId?: string
+  extractStatus?: string
 }
 
 function isAuthorized(request: Request): boolean {
@@ -70,6 +81,10 @@ async function runPoll(request: Request) {
   const stats = {
     fetched_google: 0,
     fetched_press: 0,
+    fetched_gdelt: 0,
+    fetched_hacker_news: 0,
+    fetched_product_hunt: 0,
+    fetched_company_owned: 0,
     deduped_candidates: 0,
     shortlisted: 0,
     extract_success: 0,
@@ -79,7 +94,10 @@ async function runPoll(request: Request) {
     duplicates: 0,
     embed_errors: 0,
     insert_errors: 0,
-    watchlist_inserted: 0,
+    job_board_checked: 0,
+    job_board_inserted: 0,
+    monitored_companies: 0,
+    previously_processed: 0,
   }
 
   // ── 1. Collect all RSS items ──────────────────────────────────────
@@ -103,10 +121,38 @@ async function runPoll(request: Request) {
     if (r.status === 'fulfilled') prItems.push(...r.value)
   }
 
-  const allItems = [...googleItems, ...prItems]
+  const companySeeds = await collectCompaniesForMonitoring(supabase)
+  stats.monitored_companies = companySeeds.length
+
+  const [gdeltResult, hackerNewsResult, productHuntResult, companyOwnedResult] = await Promise.allSettled([
+    fetchGdeltItems(),
+    fetchHackerNewsItems(),
+    fetchProductHuntItems(),
+    fetchCompanyOwnedItems(companySeeds),
+  ])
+  const gdeltItems = gdeltResult.status === 'fulfilled' ? gdeltResult.value : []
+  const hackerNewsItems = hackerNewsResult.status === 'fulfilled' ? hackerNewsResult.value : []
+  const productHuntItems = productHuntResult.status === 'fulfilled' ? productHuntResult.value : []
+  const companyOwnedItems = companyOwnedResult.status === 'fulfilled' ? companyOwnedResult.value : []
+
+  const allItems = [
+    ...googleItems,
+    ...prItems,
+    ...gdeltItems,
+    ...hackerNewsItems,
+    ...productHuntItems,
+    ...companyOwnedItems,
+  ]
   stats.fetched_google = googleItems.length
   stats.fetched_press = prItems.length
-  console.log(`Poll: ${googleItems.length} Google News items, ${prItems.length} press release items`)
+  stats.fetched_gdelt = gdeltItems.length
+  stats.fetched_hacker_news = hackerNewsItems.length
+  stats.fetched_product_hunt = productHuntItems.length
+  stats.fetched_company_owned = companyOwnedItems.length
+  console.log(
+    `Poll: ${googleItems.length} Google News, ${prItems.length} press, ${gdeltItems.length} GDELT, ` +
+    `${hackerNewsItems.length} HN, ${productHuntItems.length} Product Hunt, ${companyOwnedItems.length} owned feed items`
+  )
 
   // ── 2. Process each RSS item ──────────────────────────────────────
   const candidates = shortlistItems(allItems)
@@ -127,20 +173,33 @@ async function runPoll(request: Request) {
           published_at: candidate.item.pubDate ? new Date(candidate.item.pubDate).toISOString() : null,
           shortlist_score: candidate.rank,
           shortlist_reason: candidate.shortlistReason,
-          extract_status: 'pending',
           last_seen_at: new Date().toISOString(),
         }, { onConflict: 'fingerprint' })
-        .select('id')
+        .select('id, extract_status')
         .single()
       if (error) {
         console.error('[poll-signals] signal_candidates upsert error:', error.message)
       }
-      return { ...candidate, candidateId: (data as { id?: string } | null)?.id }
+      const row = data as { id?: string; extract_status?: string } | null
+      return {
+        ...candidate,
+        candidateId: row?.id,
+        extractStatus: row?.extract_status ?? 'pending',
+      }
     })
   )
 
-  for (let i = 0; i < persistedCandidates.length; i += PROCESS_BATCH_SIZE) {
-    const batch = persistedCandidates.slice(i, i + PROCESS_BATCH_SIZE)
+  const candidatesToProcess = persistedCandidates.filter(candidate => {
+    if (['inserted', 'duplicate', 'extract_null', 'embed_error'].includes(candidate.extractStatus ?? 'pending')) {
+      stats.previously_processed++
+      skipped++
+      return false
+    }
+    return true
+  })
+
+  for (let i = 0; i < candidatesToProcess.length; i += PROCESS_BATCH_SIZE) {
+    const batch = candidatesToProcess.slice(i, i + PROCESS_BATCH_SIZE)
     const results = await Promise.allSettled(batch.map(candidate => processItem(candidate, supabase)))
     for (const result of results) {
       if (result.status === 'fulfilled') {
@@ -186,70 +245,75 @@ async function runPoll(request: Request) {
     }
   }
 
-  // ── 3. Watchlist job board monitoring ────────────────────────────
+  // ── 3. Job board monitoring ──────────────────────────────────────
   //
-  // For each watchlisted company, check Lever/Greenhouse.
+  // For each watchlisted or recently discovered company, check Lever/Greenhouse.
   // If they have 5+ open roles, create a hiring signal (once per 7 days).
 
-  const { data: watchlistEntries } = await supabase
-    .from('watchlist_companies')
-    .select('company_name, company_domain')
+  const jobBoardCompanies = companySeeds.slice(0, JOB_BOARD_COMPANY_LIMIT)
+  if (jobBoardCompanies.length) {
+    stats.job_board_checked = jobBoardCompanies.length
+    const jobBoardInserted: string[] = []
 
-  if (watchlistEntries?.length) {
-    const watchlistResults = await Promise.allSettled(
-      watchlistEntries.map(async entry => {
-        // Only check if no hiring signal exists in the last 7 days
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-        const { data: recentHiringSignal } = await supabase
-          .from('signals')
-          .select('id')
-          .eq('company_name', entry.company_name)
-          .eq('signal_type', 'hiring')
-          .eq('source_name', 'job_board')
-          .gte('published_at', sevenDaysAgo)
-          .maybeSingle()
+    for (let i = 0; i < jobBoardCompanies.length; i += JOB_BOARD_BATCH_SIZE) {
+      const batch = jobBoardCompanies.slice(i, i + JOB_BOARD_BATCH_SIZE)
+      const jobBoardResults = await Promise.allSettled(
+        batch.map(async entry => {
+          // Only check if no hiring signal exists in the last 7 days.
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+          const { data: recentHiringSignal } = await supabase
+            .from('signals')
+            .select('id')
+            .eq('company_name', entry.name)
+            .eq('signal_type', 'hiring')
+            .eq('source_name', 'job_board')
+            .gte('published_at', sevenDaysAgo)
+            .maybeSingle()
 
-        if (recentHiringSignal) return null
+          if (recentHiringSignal) return null
 
-        const result = await fetchJobBoard(entry.company_name, entry.company_domain)
-        if (!result || result.jobCount < 5) return null
+          const result = await fetchJobBoard(entry.name, entry.domain)
+          if (!result || (result.jobCount < 5 && result.seniorRoles.length === 0)) return null
 
-        const seniorTitles = result.seniorRoles.map(r => r.title).join(', ')
-        const summary = result.seniorRoles.length > 0
-          ? `${entry.company_name} is actively hiring ${result.jobCount} roles including senior positions: ${seniorTitles.slice(0, 150)}.`
-          : `${entry.company_name} has ${result.jobCount} open positions on ${result.platform}, signaling growth and potential new buying mandates.`
+          const seniorTitles = result.seniorRoles.map(r => r.title).join(', ')
+          const summary = result.seniorRoles.length > 0
+            ? `${entry.name} is actively hiring ${result.jobCount} roles including senior positions: ${seniorTitles.slice(0, 150)}.`
+            : `${entry.name} has ${result.jobCount} open positions on ${result.platform}, signaling growth and potential new buying mandates.`
 
-        const embedding = await embed(`${entry.company_name} hiring ${summary}`)
+          const embedding = await embed(`${entry.name} hiring ${summary}`)
 
-        const { error } = await supabase.from('signals').insert({
-          company_name:     entry.company_name,
-          company_domain:   entry.company_domain,
-          signal_type:      'hiring',
-          headline:         `${entry.company_name} is actively hiring - ${result.jobCount} open roles on ${result.platform}`,
-          summary,
-          source_url:       null,
-          source_name:      'job_board',
-          published_at:     new Date().toISOString(),
-          signal_embedding: toVectorLiteral(embedding),
+          const { error } = await supabase.from('signals').insert({
+            company_name:     entry.name,
+            company_domain:   entry.domain,
+            signal_type:      'hiring',
+            headline:         `${entry.name} is actively hiring - ${result.jobCount} open roles on ${result.platform}`,
+            summary,
+            source_url:       null,
+            source_name:      'job_board',
+            published_at:     new Date().toISOString(),
+            signal_embedding: toVectorLiteral(embedding),
+          })
+
+          if (error) {
+            console.error('[poll-signals] job board insert error:', error.message)
+            return null
+          }
+
+          inserted++
+          stats.job_board_inserted++
+          return entry.name
         })
+      )
 
-        if (error) {
-          console.error('[poll-signals] watchlist insert error:', error.message)
-          return null
-        }
+      jobBoardInserted.push(
+        ...jobBoardResults
+          .filter(r => r.status === 'fulfilled' && r.value !== null)
+          .map(r => (r as PromiseFulfilledResult<string>).value)
+      )
+    }
 
-        inserted++
-        stats.watchlist_inserted++
-        return entry.company_name
-      })
-    )
-
-    const watchlistInserted = watchlistResults
-      .filter(r => r.status === 'fulfilled' && r.value !== null)
-      .map(r => (r as PromiseFulfilledResult<string>).value)
-
-    if (watchlistInserted.length) {
-      console.log(`Watchlist job signals: ${watchlistInserted.join(', ')}`)
+    if (jobBoardInserted.length) {
+      console.log(`Job board signals: ${jobBoardInserted.join(', ')}`)
     }
   }
 
@@ -277,6 +341,56 @@ async function runPoll(request: Request) {
   }
 }
 
+async function collectCompaniesForMonitoring(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>
+): Promise<CompanySeed[]> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const [watchlistResult, signalsResult, leadsResult] = await Promise.allSettled([
+    supabase
+      .from('watchlist_companies')
+      .select('company_name, company_domain')
+      .limit(80),
+    supabase
+      .from('signals')
+      .select('company_name, company_domain')
+      .gte('published_at', thirtyDaysAgo)
+      .order('published_at', { ascending: false })
+      .limit(80),
+    supabase
+      .from('leads')
+      .select('target_company, company_domain')
+      .order('created_at', { ascending: false })
+      .limit(80),
+  ])
+
+  const companies: CompanySeed[] = []
+  const addCompany = (name?: string | null, domain?: string | null) => {
+    const trimmedName = name?.trim()
+    if (!trimmedName) return
+    companies.push({ name: trimmedName, domain: normalizeDomain(domain) })
+  }
+
+  if (watchlistResult.status === 'fulfilled') {
+    for (const row of watchlistResult.value.data ?? []) {
+      addCompany(row.company_name, row.company_domain)
+    }
+  }
+
+  if (signalsResult.status === 'fulfilled') {
+    for (const row of signalsResult.value.data ?? []) {
+      addCompany(row.company_name, row.company_domain)
+    }
+  }
+
+  if (leadsResult.status === 'fulfilled') {
+    for (const row of leadsResult.value.data ?? []) {
+      addCompany(row.target_company, row.company_domain)
+    }
+  }
+
+  return uniqueCompanySeeds(companies).slice(0, 50)
+}
+
 function shortlistItems(allItems: RSSItem[]): ShortlistResult {
   const seen = new Set<string>()
   const deduped: CandidateWorkItem[] = []
@@ -297,6 +411,9 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
     const hasNamedCompany = NAMED_COMPANY_PATTERN.test(item.title)
     const matchedHighSignal = HIGH_SIGNAL_PATTERNS.some(({ pattern }) => pattern.test(combinedText))
     const isPressRelease = item.source === 'prnewswire' || item.source === 'businesswire' || item.source === 'globenewswire'
+    const isOwnedSource = item.source === 'company_owned'
+    const isLaunchSource = item.source === 'hacker_news' || item.source === 'product_hunt'
+    const isBroadNewsSource = item.source === 'gdelt'
 
     if (!hasNamedCompany) {
       continue
@@ -309,10 +426,11 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
     const keywordHits = Object.values(EVENT_KEYWORDS).reduce((count, pattern) => (
       count + (pattern.test(text) ? 1 : 0)
     ), 0)
-    const sourceBoost =
-      isPressRelease
-        ? 4
-        : 1
+    let sourceBoost = 1
+    if (isPressRelease) sourceBoost = 4
+    if (isOwnedSource) sourceBoost = 5
+    if (isLaunchSource) sourceBoost = 3
+    if (isBroadNewsSource) sourceBoost = 2
     const recencyBoost = item.pubDate
       ? Math.max(0, 48 - Math.floor((Date.now() - new Date(item.pubDate).getTime()) / (60 * 60 * 1000)))
       : 0
@@ -346,6 +464,22 @@ async function processItem(
   supabase: Awaited<ReturnType<typeof createServiceClient>>
 ): Promise<ProcessOutcome> {
   const { item, candidateId } = candidate
+  if (item.link) {
+    const { data: existingByUrl } = await supabase
+      .from('signals')
+      .select('id')
+      .eq('source_url', item.link)
+      .maybeSingle()
+
+    if (existingByUrl) {
+      await updateCandidateStatus(supabase, candidateId, {
+        extract_status: 'duplicate',
+        created_signal_id: existingByUrl.id,
+      })
+      return { status: 'duplicate' }
+    }
+  }
+
   let signal
   try {
     signal = await extractSignal(item.title, item.description, EXTRACT_TIMEOUT_MS)
@@ -417,6 +551,24 @@ async function processItem(
   })
 
   if (error) {
+    if (error.code === '23505' || error.message.includes('signals_source_url_idx')) {
+      const { data: existingByUrl } = item.link
+        ? await supabase
+            .from('signals')
+            .select('id')
+            .eq('source_url', item.link)
+            .maybeSingle()
+        : { data: null }
+
+      await updateCandidateStatus(supabase, candidateId, {
+        extract_status: 'duplicate',
+        extract_confidence: signal.confidence,
+        extracted_signal: signal,
+        created_signal_id: existingByUrl?.id ?? null,
+      })
+      return { status: 'duplicate' }
+    }
+
     console.error('[poll-signals] signal insert error:', error.message)
     await updateCandidateStatus(supabase, candidateId, {
       extract_status: 'insert_error',
@@ -454,4 +606,31 @@ async function updateCandidateStatus(
   if (error) {
     console.error('[poll-signals] signal_candidates update error:', error.message)
   }
+}
+
+function uniqueCompanySeeds(companies: CompanySeed[]): CompanySeed[] {
+  const seen = new Set<string>()
+  const unique: CompanySeed[] = []
+
+  for (const company of companies) {
+    const name = company.name.trim()
+    if (!name) continue
+    const domain = normalizeDomain(company.domain)
+    const key = domain || name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push({ name, domain })
+  }
+
+  return unique
+}
+
+function normalizeDomain(domain?: string | null): string | null {
+  if (!domain) return null
+  return domain
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .trim() || null
 }

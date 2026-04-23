@@ -9,6 +9,7 @@ import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
 import { resolveLeadQuotaDecision } from '@/lib/lead-quota'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
+import { embed, toVectorLiteral } from '@/lib/embeddings'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -17,8 +18,9 @@ function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
 }
 
-const DEFAULT_SIMILARITY_THRESHOLD = 0.5
-const DEFAULT_SCORE_THRESHOLD = 7
+const DEFAULT_SIMILARITY_THRESHOLD = 0.35
+const KEYWORD_MATCH_SIMILARITY_DISCOUNT = 0.08
+const DEFAULT_SCORE_THRESHOLD = 6
 
 export async function GET(request: Request) {
   return runMatch(request)
@@ -182,19 +184,23 @@ async function runMatch(request: Request) {
     let matched = 0
     const stats = {
       no_signal_embedding: 0,
-      no_profile_embedding: 0,
-      signal_type_filtered: 0,
-      below_similarity: 0,
-      rpc_errors: 0,
-      claude_errors: 0,
-      below_score: 0,
-      duplicate: 0,
-      company_duplicate: 0,
-      icp_filtered: 0,
-      quota_reached: 0,
-      overage_inserted: 0,
-      eligible_profiles: eligibleProfiles.length,
-    }
+	      no_profile_embedding: 0,
+	      profile_embedding_backfilled: 0,
+	      signal_type_filtered: 0,
+	      below_similarity: 0,
+	      rpc_errors: 0,
+	      claude_errors: 0,
+	      below_score: 0,
+	      duplicate: 0,
+	      company_duplicate: 0,
+	      keyword_matches: 0,
+	      keyword_misses: 0,
+	      quota_reached: 0,
+	      overage_inserted: 0,
+	      eligible_profiles: eligibleProfiles.length,
+	      pairs_considered: 0,
+	      scored_by_claude: 0,
+	    }
 
     const quotaState = new Map<string, number>()
     for (const row of (recentQuotaLeads ?? [])) {
@@ -206,11 +212,29 @@ async function runMatch(request: Request) {
       }
     }
 
-    for (const signal of newSignals) {
-      if (!signal.signal_embedding) { stats.no_signal_embedding++; continue }
+	    for (const signal of newSignals) {
+	      if (!signal.signal_embedding) { stats.no_signal_embedding++; continue }
 
-      for (const profile of eligibleProfiles) {
-        if (!profile.profile_embedding) { stats.no_profile_embedding++; continue }
+	      for (const profile of eligibleProfiles) {
+	        stats.pairs_considered++
+	        let profileEmbedding = profile.profile_embedding
+	        if (!profileEmbedding) {
+	          try {
+	            const embedding = await embed(`${profile.name} ${profile.services_description}`)
+	            profileEmbedding = toVectorLiteral(embedding)
+	            await supabase
+	              .from('client_accounts')
+	              .update({ profile_embedding: profileEmbedding })
+	              .eq('id', profile.id)
+	            stats.profile_embedding_backfilled++
+	          } catch (e) {
+	            stats.no_profile_embedding++
+	            if (stats.no_profile_embedding === 1) {
+	              console.error('profile embedding backfill error:', (e as Error).message)
+	            }
+	            continue
+	          }
+	        }
 
       const pairKey = `${profile.id}:${signal.id}`
       if (existingSet.has(pairKey)) { stats.duplicate++; continue }
@@ -238,38 +262,45 @@ async function runMatch(request: Request) {
         continue
       }
 
-      const userWatchlist = watchlistMap[profile.id]
-      const isWatchlisted = userWatchlist?.has(signal.company_name.toLowerCase()) ?? false
-      let similarityForDebug: number | null = null
+	      const userWatchlist = watchlistMap[profile.id]
+	      const isWatchlisted = userWatchlist?.has(signal.company_name.toLowerCase()) ?? false
+	      let similarityForDebug: number | null = null
+	      let keywordMatched = false
 
-      // ICP keyword pre-filter: fast string check before expensive RPC + Claude call
-      if (!isWatchlisted) {
-        const icpKeywords = (profile.icp_keywords as string[] | null) ?? []
-        if (icpKeywords.length > 0) {
-          const signalText = `${signal.company_name} ${signal.signal_type} ${signal.summary ?? ''} ${signal.headline ?? ''}`.toLowerCase()
-          const hasMatch = icpKeywords.some(kw => signalText.includes(kw.toLowerCase()))
-          if (!hasMatch) { stats.icp_filtered++; continue }
-        }
-      }
+	      // ICP keywords are a signal boost, not a hard gate. Exact substring filters
+	      // were too brittle for real RSS headlines and caused zero-lead runs.
+	      if (!isWatchlisted) {
+	        const icpKeywords = (profile.icp_keywords as string[] | null) ?? []
+	        if (icpKeywords.length > 0) {
+	          const signalText = `${signal.company_name} ${signal.signal_type} ${signal.summary ?? ''} ${signal.headline ?? ''}`.toLowerCase()
+	          keywordMatched = icpKeywords.some(kw => signalText.includes(kw.toLowerCase()))
+	          if (keywordMatched) stats.keyword_matches++
+	          else stats.keyword_misses++
+	        }
+	      }
 
       if (!isWatchlisted) {
-        const { data: simResult, error: rpcErr } = await supabase.rpc('cosine_similarity', {
-          a: signal.signal_embedding,
-          b: profile.profile_embedding,
-        })
+	        const { data: simResult, error: rpcErr } = await supabase.rpc('cosine_similarity', {
+	          a: signal.signal_embedding,
+	          b: profileEmbedding,
+	        })
 
         if (rpcErr) {
           stats.rpc_errors++
           if (stats.rpc_errors === 1) console.error('cosine_similarity RPC error:', rpcErr.message)
         } else {
-          const similarity = simResult as number | null
-          similarityForDebug = similarity ?? null
-          if (!similarity || similarity < DEFAULT_SIMILARITY_THRESHOLD) {
-            stats.below_similarity++
-            continue
-          }
-        }
-      }
+	          const similarity = simResult as number | null
+	          similarityForDebug = similarity ?? null
+	          const effectiveSimilarityThreshold = Math.max(
+	            0.22,
+	            DEFAULT_SIMILARITY_THRESHOLD - (keywordMatched ? KEYWORD_MATCH_SIMILARITY_DISCOUNT : 0),
+	          )
+	          if (!similarity || similarity < effectiveSimilarityThreshold) {
+	            stats.below_similarity++
+	            continue
+	          }
+	        }
+	      }
 
       let score = 5
       let reason = ''
@@ -278,10 +309,11 @@ async function runMatch(request: Request) {
           profile.services_description,
           signal.signal_type,
           signal.company_name,
-          signal.summary || ''
-        )
-        score = result.score
-        reason = result.reason
+	          signal.summary || ''
+	        )
+	        stats.scored_by_claude++
+	        score = result.score
+	        reason = result.reason
       } catch (e) {
         stats.claude_errors++
         if (stats.claude_errors === 1) console.error('scoreLeadRelevance error:', (e as Error).message)
@@ -350,10 +382,11 @@ async function runMatch(request: Request) {
         match_debug: {
           client_id: profile.id,
           client_name: profile.name,
-          matched_via: isWatchlisted ? 'watchlist' : 'scored_match',
-          similarity: isWatchlisted ? null : similarityForDebug,
-          min_relevance_score: effectiveMin,
-        },
+	          matched_via: isWatchlisted ? 'watchlist' : 'scored_match',
+	          similarity: isWatchlisted ? null : similarityForDebug,
+	          keyword_matched: keywordMatched,
+	          min_relevance_score: effectiveMin,
+	        },
       }).select('id').single()
 
       if (!error && inserted) {

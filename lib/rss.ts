@@ -8,6 +8,11 @@ export interface RSSItem {
   source: string
 }
 
+interface RSSFetchOptions {
+  quiet?: boolean
+  timeoutMs?: number
+}
+
 /**
  * Google News RSS search URL builder.
  * `when:7d` restricts results to the last 7 days.
@@ -23,22 +28,36 @@ export function buildGoogleNewsUrl(query: string): string {
 export const RSS_QUERIES = [
   // Funding
   'startup funding round Series A B C',
+  'startup raises seed round',
+  'startup raises pre-seed funding',
+  'startup closes Series A funding',
+  'startup secures growth funding',
   'fintech startup raised million funding',
   'healthtech startup funding investment',
   'SaaS company fundraising venture capital',
+  'AI startup raises funding',
+  'cybersecurity startup raises funding',
+  'B2B SaaS startup raises funding',
   // Acquisition
   'company acquisition deal announced tech',
+  'startup acquired by company',
+  'company to acquire startup',
   'fintech acquisition merger',
   'health company acquisition announced',
   // Expansion
   'company expansion new market launch',
   'tech company new office expansion hiring',
+  'company launches new product platform',
+  'company enters new market expansion',
   // Regulation
   'government regulation technology compliance',
   'financial regulation update SEC FINRA',
   'healthcare compliance regulation update FDA',
+  'company fined regulatory compliance',
   // Hiring (C-suite = buying intent)
   'company hires new CTO CPO CISO CFO',
+  'company appoints new CEO CFO CTO',
+  'startup appoints chief revenue officer',
 ]
 
 /**
@@ -97,15 +116,15 @@ async function parseRSSXML(xml: string, source: string): Promise<RSSItem[]> {
   }
 
   const channel = (parsed as { rss?: { channel?: { item?: unknown } } })?.rss?.channel
-  if (!channel) return []
+  if (!channel) return parseAtomXML(parsed, source)
 
   const rawItems = Array.isArray((channel as { item?: unknown }).item)
     ? (channel as { item: unknown[] }).item
     : [(channel as { item?: unknown }).item].filter(Boolean)
 
   return (rawItems as Record<string, unknown>[]).map(item => ({
-    title: decodeEntities(String(item.title || '')),
-    description: decodeEntities(String(item.description || item.summary || '')),
+    title: decodeEntities(textValue(item.title)),
+    description: decodeEntities(textValue(item.description || item.summary)),
     link: extractLink(item),
     pubDate: item.pubDate
       ? String(item.pubDate)
@@ -117,12 +136,53 @@ async function parseRSSXML(xml: string, source: string): Promise<RSSItem[]> {
 }
 
 function extractLink(item: Record<string, unknown>): string {
+  if (Array.isArray(item.link)) {
+    const preferred = item.link.find(link => {
+      if (typeof link !== 'object' || link === null) return Boolean(link)
+      const attrs = (link as Record<string, unknown>).$ as Record<string, unknown> | undefined
+      return attrs?.href && attrs.rel !== 'self'
+    })
+    return extractLink({ link: preferred })
+  }
+
   // Atom/RSS hybrid: <link href="..."> parses as { $: { href: '...' } }
   if (typeof item.link === 'object' && item.link !== null) {
     const obj = item.link as Record<string, unknown>
     if (obj.$) return String((obj.$ as Record<string, unknown>).href || '')
   }
   return String(item.link || item.guid || '')
+}
+
+function parseAtomXML(parsed: Record<string, unknown>, source: string): RSSItem[] {
+  const feed = (parsed as { feed?: { entry?: unknown } }).feed
+  if (!feed) return []
+
+  const rawEntries = Array.isArray(feed.entry)
+    ? feed.entry
+    : [feed.entry].filter(Boolean)
+
+  return (rawEntries as Record<string, unknown>[]).map(entry => ({
+    title: decodeEntities(textValue(entry.title)),
+    description: decodeEntities(textValue(entry.summary || entry.content)),
+    link: extractLink(entry),
+    pubDate: entry.published
+      ? String(entry.published)
+      : entry.updated
+        ? String(entry.updated)
+        : null,
+    source,
+  }))
+}
+
+function textValue(value: unknown): string {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    if (typeof obj._ === 'string') return obj._
+  }
+  return String(value)
 }
 
 function decodeEntities(str: string): string {
@@ -147,6 +207,7 @@ export async function fetchRSSItems(query: string): Promise<RSSItem[]> {
   const url = buildGoogleNewsUrl(query)
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bombsell/1.0)' },
       next: { revalidate: 0 },
     })
@@ -164,19 +225,24 @@ export async function fetchRSSItems(query: string): Promise<RSSItem[]> {
 /**
  * Fetches and parses a direct RSS URL (PRNewswire, BusinessWire, GlobeNewswire, etc.)
  */
-export async function fetchRSSFromUrl(url: string, source: string): Promise<RSSItem[]> {
+export async function fetchRSSFromUrl(
+  url: string,
+  source: string,
+  options: RSSFetchOptions = {},
+): Promise<RSSItem[]> {
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(options.timeoutMs ?? 8000),
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bombsell/1.0)' },
       next: { revalidate: 0 },
     })
     if (!res.ok) {
-      console.error(`Press release RSS failed (${source}): ${res.status}`)
+      if (!options.quiet) console.error(`RSS fetch failed (${source}): ${res.status}`)
       return []
     }
     return await parseRSSXML(await res.text(), source)
   } catch (e) {
-    console.error(`Press release RSS error (${source}):`, (e as Error).message)
+    if (!options.quiet) console.error(`RSS fetch error (${source}):`, (e as Error).message)
     return []
   }
 }
