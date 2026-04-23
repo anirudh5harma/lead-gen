@@ -97,7 +97,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
 
   const plan      = userProfile.plan ?? 'free'
   const used      = userProfile.leads_used_this_month ?? 0
-  const planLimit = PLAN_LIMITS[plan] ?? 10
+  const planLimit = PLAN_LIMITS[plan] ?? 15
   const usagePct  = planLimit > 0 ? (used / planLimit) * 100 : 0
 
   const [dismissed80,   setDismissed80]   = useState(false)
@@ -266,7 +266,7 @@ const PLAN_LABELS: Record<string, { label: string; color: string; price: string 
   pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$100/mo' },
   max:  { label: 'Max',  color: 'text-[var(--color-sig-funding)]', price: '$250/mo' },
 }
-const PLAN_LIMITS: Record<string, number> = { free: 10, pro: 300, max: 1500 }
+const PLAN_LIMITS: Record<string, number> = { free: 15, pro: 300, max: 1500 }
 
 function SettingsPanel({
   profile,

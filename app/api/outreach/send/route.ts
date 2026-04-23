@@ -62,10 +62,10 @@ export async function POST(request: Request) {
     )
   }
 
-  const dailyRl = await checkRateLimit(`daily:${user.id}`, planLimits.leads_per_day, 86400)
+  const dailyRl = await checkRateLimit(`daily:${user.id}`, planLimits.sends_per_day, 86400)
   if (!dailyRl.allowed) {
     return NextResponse.json(
-      { error: `You've reached your daily send limit (${planLimits.leads_per_day}/day). Try again tomorrow.` },
+      { error: `You've reached your daily send limit (${planLimits.sends_per_day}/day). Try again tomorrow.` },
       { status: 429, headers: { 'Retry-After': '86400' } }
     )
   }

@@ -36,6 +36,13 @@ interface CandidatePerson {
   baseScore: number
 }
 
+interface RoleFallbackCandidate {
+  name: string
+  title: string
+  email: string
+  baseScore: number
+}
+
 export interface EnrichedContact {
   email: string
   name: string
@@ -290,7 +297,55 @@ async function resolveContacts(
     .sort((a, b) => (b.base_score ?? 0) - (a.base_score ?? 0))
     .slice(0, 8)
 
-  return { contacts, resolvedDomain }
+  if (contacts.length < 2) {
+    const roleCandidates = buildRoleFallbackCandidates(resolvedDomain)
+    const unseenRoleCandidates = roleCandidates.filter(candidate =>
+      !candidateRecords.some(record => record.email === candidate.email),
+    )
+    if (unseenRoleCandidates.length > 0) {
+      const roleVerification = await verifyEmailsBatch(unseenRoleCandidates.map(candidate => candidate.email))
+      for (const result of roleVerification) {
+        if (!isSafeToSend(result.status)) continue
+        const candidate = unseenRoleCandidates.find(item => item.email === result.email.toLowerCase())
+        if (!candidate) continue
+        contacts.push({
+          email: candidate.email,
+          name: candidate.name,
+          title: candidate.title,
+          source: 'pattern',
+          verified: result.status === 'valid',
+          zb_status: result.status,
+          base_score: candidate.baseScore,
+        })
+      }
+    }
+  }
+
+  contacts.sort((a, b) => (b.base_score ?? 0) - (a.base_score ?? 0))
+
+  return { contacts: contacts.slice(0, 8), resolvedDomain }
+}
+
+function buildRoleFallbackCandidates(domain: string): RoleFallbackCandidate[] {
+  const unique = new Map<string, RoleFallbackCandidate>()
+  const candidates: Array<[string, string, string, number]> = [
+    ['Founder', 'Founder', `founder@${domain}`, 88],
+    ['CEO', 'Chief Executive Officer', `ceo@${domain}`, 90],
+    ['Sales Team', 'Sales Leadership', `sales@${domain}`, 82],
+    ['Revenue Team', 'Revenue Leadership', `revenue@${domain}`, 80],
+    ['Growth Team', 'Growth Leadership', `growth@${domain}`, 76],
+    ['Operations Team', 'Operations Leadership', `ops@${domain}`, 78],
+    ['Operations Team', 'Operations Leadership', `operations@${domain}`, 78],
+    ['Team', 'Company Leadership', `hello@${domain}`, 60],
+    ['Team', 'Company Leadership', `contact@${domain}`, 58],
+    ['Team', 'Company Leadership', `info@${domain}`, 56],
+  ]
+
+  for (const [name, title, email, baseScore] of candidates) {
+    unique.set(email, { name, title, email, baseScore })
+  }
+
+  return Array.from(unique.values())
 }
 
 export async function enrichCompany(

@@ -165,7 +165,11 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
 
   function openInGmail() {
     if (!draft) return
-    const to = draft.stakeholders[0]?.email || ''
+    const to = Array.from(new Set(
+      draft.stakeholders
+        .map(stakeholder => stakeholder.email?.trim())
+        .filter((email): email is string => Boolean(email))
+    )).join(',')
     const subject = tab === 'followup' && followUp ? followUp.followup_subject : draft.subject
     const body    = tab === 'followup' && followUp ? followUp.followup_body    : draft.body
     const params  = new URLSearchParams({ to, su: subject, body })

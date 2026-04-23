@@ -4,7 +4,7 @@ export type PlanTier = 'free' | 'pro' | 'max'
 
 export interface PlanLimits {
   leads_per_month: number
-  leads_per_day: number
+  sends_per_day: number
   auto_send: boolean
   followups: boolean
   reply_detection: boolean
@@ -14,8 +14,8 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
-    leads_per_month: 10,
-    leads_per_day: 2,
+    leads_per_month: 15,
+    sends_per_day: 2,
     auto_send: false,
     followups: false,
     reply_detection: false,
@@ -24,7 +24,7 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   },
   pro: {
     leads_per_month: 300,
-    leads_per_day: 15,
+    sends_per_day: 15,
     auto_send: true,
     followups: true,
     reply_detection: true,
@@ -33,7 +33,7 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   },
   max: {
     leads_per_month: 1500,
-    leads_per_day: 60,
+    sends_per_day: 60,
     auto_send: true,
     followups: true,
     reply_detection: true,
