@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import StakeholderList, { type Stakeholder } from './StakeholderList'
 import type { Lead } from './LeadFeed'
 
 interface Props {
   lead: Lead
+  plan?: 'free' | 'pro' | 'max'
   onClose: () => void
   onEmailSent: () => void
   onStatusChange?: (status: string) => void
@@ -44,7 +46,8 @@ const SIGNAL_META: Record<string, { label: string; color: string }> = {
   regulation:  { label: 'Regulation',  color: 'var(--color-sig-regulation)' },
 }
 
-export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusChange, onDraftCreated }: Props) {
+export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSent, onStatusChange, onDraftCreated }: Props) {
+  const [mounted, setMounted]   = useState(false)
   const [draft, setDraft]       = useState<Draft | null>(null)
   const [followUp, setFollowUp] = useState<FollowUp | null>(null)
   const [tab, setTab]           = useState<Tab>('initial')
@@ -56,6 +59,10 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
   const [sendError, setSendError] = useState<string | null>(null)
   const [followupCancelling, setFollowupCancelling] = useState(false)
   const [followupCancelled, setFollowupCancelled] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Load initial draft
   useEffect(() => {
@@ -126,6 +133,10 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
 
   async function sendEmail() {
     if (!draft) return
+    if (plan === 'free') {
+      setSendError('Direct inbox sending is available on Pro and Max. Use Gmail or Copy on Free.')
+      return
+    }
     const recipient = draft.stakeholders.find(s => s.email)
     if (!recipient?.email) {
       setSendError('No email address found for any contact.')
@@ -165,8 +176,9 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
   const sig = Array.isArray(lead.signals) ? lead.signals[0] : lead.signals
   const sigType = sig?.signal_type ?? ''
   const sigMeta = SIGNAL_META[sigType]
+  const canSendDirect = plan === 'pro' || plan === 'max'
 
-  return (
+  const drawer = (
     <>
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/25 z-40 backdrop-blur-sm" onClick={onClose} />
@@ -174,13 +186,13 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
       {/* Drawer */}
       <div
         className="
-          fixed right-0 top-0 bottom-0 w-full max-w-lg
+          fixed right-0 top-0 bottom-0 h-dvh max-h-dvh w-full max-w-lg
           bg-white border-l border-[var(--color-line-1)]
           z-50 flex flex-col shadow-[0_20px_60px_-20px_#00000033] drawer-enter
         "
       >
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-[var(--color-line-1)]">
+        <div className="shrink-0 flex items-start justify-between px-6 py-4 border-b border-[var(--color-line-1)]">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {sigMeta && (
@@ -222,7 +234,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
 
         {/* Tab bar (underline style) */}
         {!loading && draft && (
-          <div className="flex px-6 border-b border-[var(--color-line-1)]">
+          <div className="shrink-0 flex px-6 border-b border-[var(--color-line-1)]">
             <button
               onClick={() => setTab('initial')}
               className={`
@@ -257,7 +269,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
         )}
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {loading && (
             <div className="space-y-3">
               <div className="h-3 rounded w-1/3 skeleton" />
@@ -341,7 +353,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
 
         {/* Footer */}
         {(draft && !loading) && (
-          <div className="px-6 py-4 border-t border-[var(--color-line-1)] space-y-3">
+          <div className="shrink-0 px-6 py-4 border-t border-[var(--color-line-1)] space-y-3">
             {/* Send error */}
             {sendError && (
               <p className="text-xs text-[var(--color-sig-regulation)] bg-[var(--color-sig-regulation-bg)] border border-[var(--color-sig-regulation)]/20 rounded-md px-3 py-2">
@@ -349,26 +361,52 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
               </p>
             )}
 
-            {/* Primary: Send / Gmail / Copy */}
+            {!canSendDirect && (
+              <p className="text-xs text-[var(--color-text-4)] bg-[var(--color-ink-2)] border border-[var(--color-line-1)] rounded-lg px-3 py-2">
+                Free includes personalized drafts. Upgrade to Pro or Max for one-click Gmail/Outlook sending, follow-ups, and reply detection.
+              </p>
+            )}
+
+            {/* Primary actions */}
             <div className="flex items-center gap-2">
-              <button
-                onClick={sendEmail}
-                disabled={sendState === 'sending' || sendState === 'success'}
-                className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full disabled:opacity-60 disabled:cursor-not-allowed text-sm"
-              >
-                {sendState === 'sending' && (
-                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                )}
-                {sendState === 'success' ? 'Sent' : sendState === 'sending' ? 'Sending…' : 'Send Email'}
-              </button>
-              <button
-                onClick={openInGmail}
-                title="Open in Gmail instead"
-                className="btn-ghost flex items-center justify-center gap-1.5 h-10 px-3 rounded-full text-xs"
-              >
-                <GmailIcon />
-                <span className="hidden sm:inline">Gmail</span>
-              </button>
+              {canSendDirect ? (
+                <button
+                  onClick={sendEmail}
+                  disabled={sendState === 'sending' || sendState === 'success'}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+                >
+                  {sendState === 'sending' && (
+                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  )}
+                  {sendState === 'success' ? 'Sent' : sendState === 'sending' ? 'Sending…' : 'Send Email'}
+                </button>
+              ) : (
+                <button
+                  onClick={openInGmail}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full text-sm"
+                >
+                  <GmailIcon />
+                  Open in Gmail
+                </button>
+              )}
+              {canSendDirect && (
+                <button
+                  onClick={openInGmail}
+                  title="Open in Gmail instead"
+                  className="btn-ghost flex items-center justify-center gap-1.5 h-10 px-3 rounded-full text-xs"
+                >
+                  <GmailIcon />
+                  <span className="hidden sm:inline">Gmail</span>
+                </button>
+              )}
+              {!canSendDirect && (
+                <a
+                  href="/pricing"
+                  className="btn-ghost h-10 px-3 rounded-full text-xs font-medium inline-flex items-center"
+                >
+                  Upgrade
+                </a>
+              )}
               <button
                 onClick={copyFullEmail}
                 className="btn-ghost h-10 px-3 rounded-full text-xs font-medium"
@@ -393,7 +431,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
             </div>
 
             {/* Per-lead follow-up cancellation */}
-            {lead.status === 'sent' && !followupCancelled && (
+            {canSendDirect && lead.status === 'sent' && !followupCancelled && (
               <div className="flex items-center justify-between pt-1 border-t border-[var(--color-line-1)]">
                 <span className="text-[11px] text-[var(--color-text-4)]">Auto follow-up in ~3 days</span>
                 <button
@@ -405,7 +443,7 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
                 </button>
               </div>
             )}
-            {followupCancelled && (
+            {canSendDirect && followupCancelled && (
               <p className="text-[11px] text-[var(--color-text-4)] pt-1 border-t border-[var(--color-line-1)]">
                 Auto follow-up cancelled.
               </p>
@@ -415,6 +453,10 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
       </div>
     </>
   )
+
+  if (!mounted) return null
+
+  return createPortal(drawer, document.body)
 }
 
 function GmailIcon() {

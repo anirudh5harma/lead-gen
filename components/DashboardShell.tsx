@@ -217,6 +217,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                   userId={userId}
                   watchlist={watchlist}
                   activeClientId={userProfile.active_client_id ?? null}
+                  plan={plan as 'free' | 'pro' | 'max'}
                 />
               </div>
             )}
@@ -1235,6 +1236,7 @@ function ConnectedAccountsPanel() {
         google_failed:    'Google connection failed — please try again.',
         microsoft_failed: 'Microsoft connection failed — please try again.',
         invalid_state:    'Invalid OAuth state — please try again.',
+        plan_required:    'Sending account connections are available on Pro and Max.',
       }
       showBanner('err', msgs[error] ?? 'Connection failed.')
     }

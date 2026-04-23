@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getPlanLimits, type PlanTier } from '@/lib/plan'
+import { canUseConnectedSending, getPlanLimits, type PlanTier } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/claude'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
@@ -38,14 +38,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Subject or body exceeds maximum length' }, { status: 400 })
   }
 
-  const rl = await checkRateLimit(`send:${user.id}`, 5, 3600)
-  if (!rl.allowed) {
-    return NextResponse.json(
-      { error: 'Too many sends. Limit is 5 per hour.' },
-      { status: 429, headers: { 'Retry-After': '3600' } }
-    )
-  }
-
   const [leadRes, profileRes] = await Promise.all([
     supabase.from('leads').select('id, status, client_id, target_company').eq('id', leadId).eq('user_id', user.id).single(),
     supabase.from('user_profiles').select('company_name, services_description, calendly_url, plan').eq('user_id', user.id).single(),
@@ -55,6 +47,21 @@ export async function POST(request: Request) {
 
   const userPlan = (profileRes.data?.plan ?? 'free') as PlanTier
   const planLimits = getPlanLimits(userPlan)
+  if (!canUseConnectedSending(userPlan)) {
+    return NextResponse.json(
+      { error: 'Direct Gmail/Outlook sending is available on Pro and Max. Free users can open Gmail or copy the draft from the outreach drawer.' },
+      { status: 403 }
+    )
+  }
+
+  const rl = await checkRateLimit(`send:${user.id}`, 5, 3600)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many sends. Limit is 5 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } }
+    )
+  }
+
   const dailyRl = await checkRateLimit(`daily:${user.id}`, planLimits.leads_per_day, 86400)
   if (!dailyRl.allowed) {
     return NextResponse.json(

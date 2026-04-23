@@ -85,3 +85,7 @@ export async function incrementSendCount(userId: string): Promise<void> {
 export function getPlanLimits(plan: PlanTier): PlanLimits {
   return PLAN_LIMITS[plan]
 }
+
+export function canUseConnectedSending(plan: string | null | undefined): boolean {
+  return plan === 'pro' || plan === 'max'
+}

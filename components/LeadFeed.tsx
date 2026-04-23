@@ -42,6 +42,7 @@ interface Props {
   userId: string
   watchlist?: WatchlistItem[]
   activeClientId?: string | null
+  plan?: 'free' | 'pro' | 'max'
 }
 
 const SIGNAL_TABS: { key: 'all' | SignalType; label: string }[] = [
@@ -88,7 +89,7 @@ function toCardLead(lead: Lead): LeadCardLead | null {
   }
 }
 
-export default function LeadFeed({ initialLeads, userId, watchlist = [], activeClientId = null }: Props) {
+export default function LeadFeed({ initialLeads, userId, watchlist = [], activeClientId = null, plan = 'free' }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -378,6 +379,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
       {activeLead && (
         <OutreachDrawer
           lead={activeLead}
+          plan={plan}
           onClose={() => setActiveLead(null)}
           onEmailSent={() => { updateStatus(activeLead.id, 'sent'); setActiveLead(null) }}
           onStatusChange={(status) => { updateStatus(activeLead.id, status); setActiveLead(null) }}

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { exchangeMicrosoftCode } from '@/lib/oauth/microsoft'
 import { createOutlookSubscription } from '@/lib/oauth/outlook-watch'
+import { canUseConnectedSending } from '@/lib/plan'
 import { randomUUID } from 'crypto'
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL!
@@ -26,8 +27,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const tokens  = await exchangeMicrosoftCode(code)
     const supabase = await createServiceClient()
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('plan')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!canUseConnectedSending(profile?.plan)) {
+      return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=plan_required`)
+    }
+
+    const tokens  = await exchangeMicrosoftCode(code)
 
     const { data: account } = await supabase.from('connected_accounts').upsert({
       user_id:          userId,
