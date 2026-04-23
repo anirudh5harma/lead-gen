@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createCheckoutUrl, PRODUCT_IDS } from '@/lib/dodo'
+import { createCheckoutUrl, getDodoConfigSummary, PRODUCT_IDS } from '@/lib/dodo'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -28,12 +28,40 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const url = await createCheckoutUrl(
-    user.email ?? '',
-    profile?.company_name ?? user.email ?? '',
-    productId,
-    user.id,
-  )
+  try {
+    const url = await createCheckoutUrl(
+      user.email ?? '',
+      profile?.company_name ?? user.email ?? '',
+      productId,
+      user.id,
+    )
 
-  return NextResponse.json({ url })
+    return NextResponse.json({ url })
+  } catch (error) {
+    const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : null
+    const config = getDodoConfigSummary()
+
+    console.error('[billing/checkout] dodo checkout error', {
+      status,
+      plan,
+      userId: user.id,
+      environment: config.environment,
+      hasApiKey: config.hasApiKey,
+      hasProProduct: config.hasProProduct,
+      hasMaxProduct: config.hasMaxProduct,
+      hasBusinessId: config.hasBusinessId,
+    })
+
+    if (status === 401) {
+      return NextResponse.json(
+        { error: 'Billing is misconfigured. Dodo API credentials or mode do not match the configured products.' },
+        { status: 503 },
+      )
+    }
+
+    return NextResponse.json(
+      { error: 'Unable to start checkout right now. Please try again shortly.' },
+      { status: 502 },
+    )
+  }
 }

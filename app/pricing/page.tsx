@@ -89,6 +89,7 @@ const FAQS = [
 export default function PricingPage() {
   const [loading, setLoading] = useState<'pro' | 'max' | null>(null)
   const [isSignedIn, setIsSignedIn] = useState(false)
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -99,6 +100,7 @@ export default function PricingPage() {
 
   async function startCheckout(plan: 'pro' | 'max') {
     setLoading(plan)
+    setCheckoutError(null)
     try {
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
@@ -109,10 +111,11 @@ export default function PricingPage() {
       if (data.url) {
         window.location.assign(data.url)
       } else {
-        console.error(data.error)
+        setCheckoutError(data.error || 'Unable to start checkout right now.')
         setLoading(null)
       }
     } catch {
+      setCheckoutError('Unable to start checkout right now.')
       setLoading(null)
     }
   }
@@ -219,6 +222,11 @@ export default function PricingPage() {
         <p className="mt-12 text-[12px] text-[var(--color-text-3)]">
           All plans include Google OAuth · SSL · 99.9% uptime · Cancel anytime
         </p>
+        {checkoutError && (
+          <p className="mt-4 rounded-lg border border-[var(--color-sig-regulation)]/20 bg-[var(--color-sig-regulation-bg)] px-4 py-3 text-[13px] text-[var(--color-sig-regulation)]">
+            {checkoutError}
+          </p>
+        )}
 
         <section className="w-full max-w-3xl mt-28">
           <div className="text-center mb-12 space-y-3">

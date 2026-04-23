@@ -1465,17 +1465,23 @@ function OverLimitModal({
 }) {
   const [upgrading, setUpgrading] = useState(false)
   const [enabling, setEnabling] = useState(false)
+  const [upgradeError, setUpgradeError] = useState<string | null>(null)
 
   async function upgradeToMax() {
     setUpgrading(true)
+    setUpgradeError(null)
     try {
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: 'max' }),
       })
-      const data = await res.json() as { url?: string }
-      if (data.url) window.location.href = data.url
+      const data = await res.json() as { url?: string; error?: string }
+      if (data.url) {
+        window.location.href = data.url
+        return
+      }
+      setUpgradeError(data.error || 'Unable to start checkout right now.')
     } finally {
       setUpgrading(false)
     }
@@ -1577,6 +1583,11 @@ function OverLimitModal({
                   {enabling ? 'Enabling…' : overageEnabled ? 'Overages already enabled' : 'Continue with $0.50/lead overages'}
                   <span className="text-[11px] text-[var(--color-text-4)]">billed month end</span>
                 </button>
+                {upgradeError && (
+                  <p className="rounded-lg border border-[var(--color-sig-regulation)]/20 bg-[var(--color-sig-regulation-bg)] px-3 py-2 text-xs text-[var(--color-sig-regulation)]">
+                    {upgradeError}
+                  </p>
+                )}
               </>
             )}
 

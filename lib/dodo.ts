@@ -1,14 +1,26 @@
 import DodoPayments from 'dodopayments'
 import { createAdminClient } from '@/lib/supabase/server'
 
-export const dodo = new DodoPayments({
-  bearerToken: process.env.DODO_API_KEY ?? '',
-  environment: (process.env.DODO_ENV ?? 'live_mode') as 'live_mode' | 'test_mode',
-})
+type DodoEnvironment = 'live_mode' | 'test_mode'
+
+function cleanEnvValue(value?: string | null): string {
+  return (value ?? '').split(/\s+#/, 1)[0].trim()
+}
+
+function getDodoEnvironment(): DodoEnvironment {
+  return cleanEnvValue(process.env.DODO_ENV) === 'test_mode' ? 'test_mode' : 'live_mode'
+}
+
+function getDodoClient(): DodoPayments {
+  return new DodoPayments({
+    bearerToken: cleanEnvValue(process.env.DODO_API_KEY),
+    environment: getDodoEnvironment(),
+  })
+}
 
 export const PRODUCT_IDS = {
-  pro: process.env.DODO_PRODUCT_PRO ?? '',
-  max: process.env.DODO_PRODUCT_MAX ?? '',
+  pro: cleanEnvValue(process.env.DODO_PRODUCT_PRO),
+  max: cleanEnvValue(process.env.DODO_PRODUCT_MAX),
 }
 
 export function planFromProductId(productId: string): 'pro' | 'max' | 'free' {
@@ -23,7 +35,7 @@ export async function createCheckoutUrl(
   productId: string,
   userId: string,
 ): Promise<string> {
-  const session = await dodo.checkoutSessions.create({
+  const session = await getDodoClient().checkoutSessions.create({
     product_cart: [{ product_id: productId, quantity: 1 }],
     return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?upgraded=1`,
     customer: { email: userEmail, name: userName },
@@ -49,7 +61,7 @@ export async function recordLeadOverage(
 
   if (!sub?.dodo_customer_id) return
 
-  await dodo.usageEvents.ingest({
+  await getDodoClient().usageEvents.ingest({
     events: [{
       customer_id: sub.dodo_customer_id,
       event_id:    `${prefix}_${leadId}`,
@@ -61,10 +73,26 @@ export async function recordLeadOverage(
 }
 
 export function getPortalUrl(): string {
-  const businessId = process.env.DODO_BUSINESS_ID ?? ''
-  const env = process.env.DODO_ENV ?? 'live_mode'
+  const businessId = cleanEnvValue(process.env.DODO_BUSINESS_ID)
+  const env = getDodoEnvironment()
   const base = env === 'test_mode'
     ? 'https://test.customer.dodopayments.com'
     : 'https://customer.dodopayments.com'
   return `${base}/login/${businessId}`
+}
+
+export function getDodoConfigSummary(): {
+  environment: DodoEnvironment
+  hasApiKey: boolean
+  hasProProduct: boolean
+  hasMaxProduct: boolean
+  hasBusinessId: boolean
+} {
+  return {
+    environment: getDodoEnvironment(),
+    hasApiKey: Boolean(cleanEnvValue(process.env.DODO_API_KEY)),
+    hasProProduct: Boolean(PRODUCT_IDS.pro),
+    hasMaxProduct: Boolean(PRODUCT_IDS.max),
+    hasBusinessId: Boolean(cleanEnvValue(process.env.DODO_BUSINESS_ID)),
+  }
 }
