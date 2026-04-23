@@ -165,15 +165,16 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
 
   function openInGmail() {
     if (!draft) return
-    const to = Array.from(new Set(
+    const recipients = Array.from(new Set(
       draft.stakeholders
         .map(stakeholder => stakeholder.email?.trim())
         .filter((email): email is string => Boolean(email))
-    )).join(',')
+    ))
+    const to = recipients.join(';')
     const subject = tab === 'followup' && followUp ? followUp.followup_subject : draft.subject
     const body    = tab === 'followup' && followUp ? followUp.followup_body    : draft.body
     const params  = new URLSearchParams({ to, su: subject, body })
-    window.open(`https://mail.google.com/mail/?view=cm&fs=1&${params.toString()}`, '_blank')
+    window.open(`https://mail.google.com/mail/u/0/?view=cm&fs=1&tf=1&${params.toString()}`, '_blank')
     // Don't close or mark as sent — user must confirm via "Mark as" buttons after sending from Gmail
   }
 
