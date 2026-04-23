@@ -154,7 +154,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
             {/* Inline metrics */}
             {activeView === 'feed' && (
               <div className="hidden lg:flex items-center gap-2 ml-6">
-                <MetricChip value={metrics.signals} label="Signals · 7d" />
+                <MetricChip value={metrics.signals} label="Signals" />
                 <MetricChip value={metrics.drafted} label="Drafted" />
                 <MetricChip value={metrics.sent}    label="Sent" />
                 <MetricChip value={metrics.booked}  label="Booked" accent />
@@ -248,7 +248,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
 
 function MetricChip({ value, label, accent = false }: { value: number; label: string; accent?: boolean }) {
   return (
-    <div className={`inline-flex items-baseline gap-1.5 px-3 h-8 rounded-full border text-[12px] ${
+    <div className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-full border text-[12px] ${
       accent
         ? 'border-[var(--color-accent)]/25 bg-[var(--color-accent-bg)]'
         : 'border-[var(--color-line-1)] bg-white'
