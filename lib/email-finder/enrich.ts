@@ -1,153 +1,324 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { searchApolloContacts } from './apollo'
-import { hunterDomainSearch } from './hunter'
-import { verifyEmail, verifyEmailsBatch, isSafeToSend, type ZBStatus } from './zeroBounce'
 import { createServiceClient } from '@/lib/supabase/server'
+import { searchFullEnrichPeople } from './fullenrich'
+import { hunterDomainSearch, constructEmailCandidates } from './hunter'
+import { verifyEmail, verifyEmailsBatch, isSafeToSend, type ZBStatus } from './zeroBounce'
+import { scrapeCompanyPeople } from './firecrawl'
+import { rankContactsForUseCase, baseContactScore } from './ranking'
 
 const CACHE_TTL_DAYS = 30
 const RETRY_AFTER_DAYS = 7
 const PLAN_PRIORITY: Record<string, number> = { max: 0, pro: 1, free: 2 }
+const MAX_CONTACTS_PER_COMPANY = 4
+
+type ContactSource = 'fullenrich' | 'hunter' | 'pattern' | 'scrape'
+
+interface CachedContactRow {
+  contact_email: string
+  contact_name: string | null
+  contact_title: string | null
+  contact_source: ContactSource
+  contact_verified: boolean
+  zb_status: ZBStatus | null
+  linkedin_url: string | null
+  base_score: number
+  enriched_at: string
+}
+
+interface CandidatePerson {
+  name: string
+  title: string
+  firstName: string
+  lastName: string
+  directEmail: string | null
+  linkedinUrl: string | null
+  source: ContactSource
+  baseScore: number
+}
 
 export interface EnrichedContact {
   email: string
   name: string
   title: string
-  source: 'apollo' | 'hunter'
+  source: ContactSource
   verified: boolean
   zb_status?: ZBStatus
+  linkedin_url?: string | null
+  base_score?: number
 }
 
 export interface EnrichResult {
   contact: EnrichedContact | null
+  contacts: EnrichedContact[]
   resolvedDomain: string | null
   fromCache: boolean
 }
 
-// ─── Cache I/O ───────────────────────────────────────────────────────────────
-
-async function readCache(domain: string, supabase: SupabaseClient): Promise<EnrichedContact | null> {
+async function readCache(
+  domain: string,
+  supabase: SupabaseClient,
+): Promise<EnrichedContact[]> {
   const cutoff = new Date(Date.now() - CACHE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const { data } = await supabase
+    .from('company_contact_candidates')
+    .select('contact_email, contact_name, contact_title, contact_source, contact_verified, zb_status, linkedin_url, base_score, enriched_at')
+    .eq('domain', domain)
+    .gte('enriched_at', cutoff)
+    .order('base_score', { ascending: false })
+    .order('enriched_at', { ascending: false })
+    .limit(12)
+
+  const contacts = ((data ?? []) as CachedContactRow[]).map(row => ({
+    email: row.contact_email,
+    name: row.contact_name ?? '',
+    title: row.contact_title ?? '',
+    source: row.contact_source,
+    verified: row.contact_verified,
+    zb_status: row.zb_status ?? undefined,
+    linkedin_url: row.linkedin_url,
+    base_score: row.base_score ?? 0,
+  }))
+
+  if (contacts.length > 0) return contacts
+
+  const { data: legacy } = await supabase
     .from('company_contacts')
     .select('contact_email, contact_name, contact_title, contact_source, contact_verified, zb_status')
     .eq('domain', domain)
     .gte('enriched_at', cutoff)
     .maybeSingle()
 
-  if (!data?.contact_email) return null
+  if (!legacy?.contact_email) return []
+  return [{
+    email: legacy.contact_email,
+    name: legacy.contact_name ?? '',
+    title: legacy.contact_title ?? '',
+    source: legacy.contact_source as ContactSource,
+    verified: legacy.contact_verified,
+    zb_status: legacy.zb_status as ZBStatus | undefined,
+    base_score: 0,
+  }]
+}
+
+async function writeCache(domain: string, contacts: EnrichedContact[], supabase: SupabaseClient): Promise<void> {
+  if (!contacts.length) return
+  const now = new Date().toISOString()
+  await supabase.from('company_contact_candidates').upsert(
+    contacts.map(contact => ({
+      domain,
+      contact_email: contact.email.toLowerCase(),
+      contact_name: contact.name || null,
+      contact_title: contact.title || null,
+      contact_source: contact.source,
+      contact_verified: contact.verified,
+      zb_status: contact.zb_status ?? null,
+      linkedin_url: contact.linkedin_url ?? null,
+      base_score: contact.base_score ?? 0,
+      enriched_at: now,
+    })),
+    { onConflict: 'domain,contact_email' },
+  )
+}
+
+function rankForUser(
+  contacts: EnrichedContact[],
+  servicesDescription?: string | null,
+  signalType?: string | null,
+  maxContacts = MAX_CONTACTS_PER_COMPANY,
+): EnrichedContact[] {
+  return rankContactsForUseCase(contacts, servicesDescription, signalType).slice(0, maxContacts)
+}
+
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean)
   return {
-    email: data.contact_email,
-    name: data.contact_name ?? '',
-    title: data.contact_title ?? '',
-    source: data.contact_source as 'apollo' | 'hunter',
-    verified: data.contact_verified,
-    zb_status: data.zb_status as ZBStatus | undefined,
+    firstName: parts[0] ?? '',
+    lastName: parts.slice(1).join(' '),
   }
 }
 
-async function writeCache(domain: string, contact: EnrichedContact, supabase: SupabaseClient): Promise<void> {
-  await supabase.from('company_contacts').upsert({
-    domain,
-    contact_email: contact.email,
-    contact_name: contact.name || null,
-    contact_title: contact.title || null,
-    contact_source: contact.source,
-    contact_verified: contact.verified,
-    zb_status: contact.zb_status ?? null,
-    enriched_at: new Date().toISOString(),
-  }, { onConflict: 'domain' })
+function dedupePeople(people: CandidatePerson[]): CandidatePerson[] {
+  const merged = new Map<string, CandidatePerson>()
+  for (const person of people) {
+    const key = (person.linkedinUrl?.toLowerCase() || `${person.name.toLowerCase()}::${person.title.toLowerCase()}`).trim()
+    if (!key) continue
+    const existing = merged.get(key)
+    if (!existing) {
+      merged.set(key, person)
+      continue
+    }
+    merged.set(key, {
+      ...existing,
+      directEmail: existing.directEmail || person.directEmail,
+      linkedinUrl: existing.linkedinUrl || person.linkedinUrl,
+      source: existing.directEmail ? existing.source : person.directEmail ? person.source : existing.source,
+      baseScore: Math.max(existing.baseScore, person.baseScore),
+    })
+  }
+  return Array.from(merged.values())
 }
 
-// ─── API waterfall ────────────────────────────────────────────────────────────
-
-async function findContactViaApis(
+async function collectCandidatePeople(
   companyName: string,
-  companyDomain: string | null
-): Promise<{ contact: EnrichedContact | null; resolvedDomain: string | null }> {
-  // Step 1: Apollo — verified contacts only
-  const apolloContacts = await searchApolloContacts(companyName, companyDomain)
+  companyDomain: string | null,
+): Promise<{ resolvedDomain: string | null; people: CandidatePerson[]; hunterPattern: string | null }> {
+  const [fullEnrichPeople, scrapedPeople, hunterResult] = await Promise.all([
+    searchFullEnrichPeople(companyName, companyDomain),
+    companyDomain ? scrapeCompanyPeople(companyDomain) : Promise.resolve([]),
+    companyDomain ? hunterDomainSearch(companyDomain) : Promise.resolve({ emailPattern: null, contacts: [] }),
+  ])
 
-  // Resolve domain from Apollo response if we didn't have one
   let resolvedDomain = companyDomain
-  if (!resolvedDomain && apolloContacts.length > 0) {
-    resolvedDomain = apolloContacts.find(c => c.organization_domain)?.organization_domain ?? null
+  if (!resolvedDomain) {
+    resolvedDomain = fullEnrichPeople.find(person => person.companyDomain)?.companyDomain ?? null
   }
 
-  const apolloWithEmail = apolloContacts.filter(c => c.email)
-  if (apolloWithEmail.length > 0) {
-    const zb = await verifyEmail(apolloWithEmail[0].email!)
-    if (!zb || isSafeToSend(zb.status)) {
+  const people: CandidatePerson[] = [
+    ...fullEnrichPeople.map(person => ({
+      name: person.name,
+      title: person.title,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      directEmail: null,
+      linkedinUrl: person.linkedinUrl,
+      source: 'fullenrich' as const,
+      baseScore: baseContactScore(person.title),
+    })),
+    ...scrapedPeople.map(person => {
+      const split = splitName(person.name)
       return {
-        contact: {
-          email: apolloWithEmail[0].email!,
-          name: apolloWithEmail[0].name,
-          title: apolloWithEmail[0].title,
-          source: 'apollo',
-          verified: zb?.status === 'valid',
-          zb_status: zb?.status,
-        },
-        resolvedDomain,
+        name: person.name,
+        title: person.title,
+        firstName: split.firstName,
+        lastName: split.lastName,
+        directEmail: person.email ?? null,
+        linkedinUrl: null,
+        source: 'scrape' as const,
+        baseScore: baseContactScore(person.title),
       }
-    }
-  }
-
-  // Step 2: Hunter — batch-verify all high-confidence candidates at once
-  if (resolvedDomain) {
-    const hunterResult = await hunterDomainSearch(resolvedDomain)
-    const candidates = hunterResult.contacts
-      .filter(c => c.confidence >= 70)
-      .sort((a, b) => b.confidence - a.confidence)
-
-    if (candidates.length > 0) {
-      const zbResults = await verifyEmailsBatch(candidates.map(c => c.email))
-      const zbMap = new Map(zbResults.map(r => [r.email.toLowerCase(), r]))
-
-      for (const candidate of candidates) {
-        const zb = zbMap.get(candidate.email.toLowerCase())
-        if (!zb || isSafeToSend(zb.status)) {
-          return {
-            contact: {
-              email: candidate.email,
-              name: candidate.name,
-              title: candidate.title,
-              source: 'hunter',
-              verified: zb?.status === 'valid',
-              zb_status: zb?.status,
-            },
-            resolvedDomain,
-          }
-        }
+    }),
+    ...hunterResult.contacts.map(contact => {
+      const split = splitName(contact.name)
+      return {
+        name: contact.name,
+        title: contact.title,
+        firstName: split.firstName,
+        lastName: split.lastName,
+        directEmail: contact.email,
+        linkedinUrl: null,
+        source: 'hunter' as const,
+        baseScore: baseContactScore(contact.title) + Math.min(10, Math.round(contact.confidence / 10)),
       }
-    }
-  }
+    }),
+  ]
 
-  return { contact: null, resolvedDomain }
+  return {
+    resolvedDomain,
+    people: dedupePeople(people).filter(person => person.name && person.title),
+    hunterPattern: hunterResult.emailPattern,
+  }
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+async function resolveContacts(
+  companyName: string,
+  companyDomain: string | null,
+): Promise<{ contacts: EnrichedContact[]; resolvedDomain: string | null }> {
+  const { people, resolvedDomain, hunterPattern } = await collectCandidatePeople(companyName, companyDomain)
+  if (!resolvedDomain || people.length === 0) {
+    return { contacts: [], resolvedDomain }
+  }
 
-// Used by both the cron and the draft route (on-demand fallback).
-// Checks the 30-day cache first; calls Apollo+Hunter only on a miss.
+  const rankedPeople = rankContactsForUseCase(
+    people.map(person => ({
+      name: person.name,
+      title: person.title,
+      email: person.directEmail ?? `${person.name}-${person.title}`,
+      verified: person.source === 'hunter',
+      source: person.source,
+      linkedinUrl: person.linkedinUrl,
+    })),
+    null,
+    null,
+  ).map(item => people.find(person => person.name === item.name && person.title === item.title)!).slice(0, 8)
+
+  const candidateRecords: Array<{ person: CandidatePerson; email: string; source: ContactSource }> = []
+  const emailSet = new Set<string>()
+  for (const person of rankedPeople) {
+    const directEmail = person.directEmail?.toLowerCase() ?? null
+    if (directEmail && !emailSet.has(directEmail)) {
+      emailSet.add(directEmail)
+      candidateRecords.push({ person, email: directEmail, source: person.source })
+    }
+
+    if (!person.firstName || !person.lastName) continue
+    for (const email of constructEmailCandidates(person.firstName, person.lastName, resolvedDomain, hunterPattern)) {
+      const normalized = email.toLowerCase()
+      if (emailSet.has(normalized)) continue
+      emailSet.add(normalized)
+      candidateRecords.push({ person, email: normalized, source: 'pattern' })
+    }
+  }
+
+  const verificationResults = await verifyEmailsBatch(candidateRecords.map(record => record.email))
+  const verificationMap = new Map(verificationResults.map(result => [result.email.toLowerCase(), result]))
+
+  const bestByPerson = new Map<string, EnrichedContact>()
+  for (const record of candidateRecords) {
+    const verification = verificationMap.get(record.email)
+    const safe = verification ? isSafeToSend(verification.status) : true
+    if (!safe) continue
+
+    const contact: EnrichedContact = {
+      email: record.email,
+      name: record.person.name,
+      title: record.person.title,
+      source: record.source,
+      verified: verification?.status === 'valid' || record.source === 'hunter',
+      zb_status: verification?.status,
+      linkedin_url: record.person.linkedinUrl,
+      base_score: record.person.baseScore,
+    }
+
+    const personKey = `${record.person.name.toLowerCase()}::${record.person.title.toLowerCase()}`
+    const existing = bestByPerson.get(personKey)
+    if (!existing || contact.verified || (existing.source === 'pattern' && contact.source !== 'pattern')) {
+      bestByPerson.set(personKey, contact)
+    }
+  }
+
+  const contacts = Array.from(bestByPerson.values())
+    .sort((a, b) => (b.base_score ?? 0) - (a.base_score ?? 0))
+    .slice(0, 8)
+
+  return { contacts, resolvedDomain }
+}
+
 export async function enrichCompany(
   companyName: string,
   companyDomain: string | null,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  options?: {
+    servicesDescription?: string | null
+    signalType?: string | null
+    maxContacts?: number
+  },
 ): Promise<EnrichResult> {
   if (companyDomain) {
     const cached = await readCache(companyDomain, supabase)
-    if (cached) return { contact: cached, resolvedDomain: companyDomain, fromCache: true }
+    if (cached.length > 0) {
+      const ranked = rankForUser(cached, options?.servicesDescription, options?.signalType, options?.maxContacts)
+      return { contact: ranked[0] ?? null, contacts: ranked, resolvedDomain: companyDomain, fromCache: true }
+    }
   }
 
-  const { contact, resolvedDomain } = await findContactViaApis(companyName, companyDomain)
-
-  if (contact && resolvedDomain) {
-    await writeCache(resolvedDomain, contact, supabase)
+  const { contacts, resolvedDomain } = await resolveContacts(companyName, companyDomain)
+  if (contacts.length > 0 && resolvedDomain) {
+    await writeCache(resolvedDomain, contacts, supabase)
   }
 
-  return { contact, resolvedDomain, fromCache: false }
+  const ranked = rankForUser(contacts, options?.servicesDescription, options?.signalType, options?.maxContacts)
+  return { contact: ranked[0] ?? null, contacts: ranked, resolvedDomain, fromCache: false }
 }
-
-// ─── Batch cron processor ─────────────────────────────────────────────────────
 
 export async function enrichLeadsInBatch(batchSize = 200): Promise<{
   enriched: number
@@ -167,17 +338,15 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
 
   if (error || !leads?.length) return { enriched: 0, failed: 0, cached: 0 }
 
-  // Fetch user plans for priority ordering
-  const userIds = [...new Set(leads.map(l => l.user_id))]
+  const userIds = [...new Set(leads.map(lead => lead.user_id))]
   const { data: profiles } = await supabase
     .from('user_profiles')
     .select('user_id, plan')
     .in('user_id', userIds)
 
   const planMap: Record<string, string> = {}
-  for (const p of profiles ?? []) planMap[p.user_id] = p.plan ?? 'free'
+  for (const profile of profiles ?? []) planMap[profile.user_id] = profile.plan ?? 'free'
 
-  // Sort: max → pro → free, then by relevance_score DESC within each tier
   leads.sort((a, b) => {
     const pa = PLAN_PRIORITY[planMap[a.user_id]] ?? 2
     const pb = PLAN_PRIORITY[planMap[b.user_id]] ?? 2
@@ -185,101 +354,48 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
     return (b.relevance_score ?? 0) - (a.relevance_score ?? 0)
   })
 
-  // Group by domain (cache-efficient: one API call serves all leads for a company)
-  // Leads without a domain are grouped by company name
-  const domainGroups = new Map<string, typeof leads>()
-  const nameGroups  = new Map<string, typeof leads>()
-
+  const groups = new Map<string, typeof leads>()
   for (const lead of leads) {
-    if (lead.company_domain) {
-      const key = lead.company_domain.toLowerCase()
-      if (!domainGroups.has(key)) domainGroups.set(key, [])
-      domainGroups.get(key)!.push(lead)
-    } else {
-      const key = lead.target_company.toLowerCase()
-      if (!nameGroups.has(key)) nameGroups.set(key, [])
-      nameGroups.get(key)!.push(lead)
-    }
+    const key = (lead.company_domain || `name:${lead.target_company.toLowerCase()}`).toLowerCase()
+    const group = groups.get(key)
+    if (group) group.push(lead)
+    else groups.set(key, [lead])
   }
 
-  let enriched = 0, failed = 0, cached = 0
+  let enriched = 0
+  let failed = 0
+  let cached = 0
   const now = new Date().toISOString()
 
-  // ── Domain-keyed groups ───────────────────────────────────────────────────
-  for (const [domain, groupLeads] of domainGroups) {
-    const { contact, fromCache } = await enrichCompany(
-      groupLeads[0].target_company,
-      domain,
-      supabase
-    )
+  for (const [, groupLeads] of groups) {
+    const firstLead = groupLeads[0]
+    const result = await enrichCompany(firstLead.target_company, firstLead.company_domain ?? null, supabase, { maxContacts: 4 })
+    if (result.fromCache) cached += groupLeads.length
 
-    if (fromCache) cached += groupLeads.length
-
-    if (contact) {
-      // Bounce check once per contact, not per lead
-      const { data: bounced } = await supabase
-        .from('bounced_emails')
-        .select('id')
-        .eq('email', contact.email.toLowerCase())
-        .maybeSingle()
-
-      if (bounced) {
-        await supabase.from('leads')
-          .update({ contact_enriched_at: now })
-          .in('id', groupLeads.map(l => l.id))
-        failed += groupLeads.length
-      } else {
-        // Batch update all leads in this group in one query
-        await supabase.from('leads').update({
-          contact_email:    contact.email.toLowerCase(),
-          contact_name:     contact.name  || null,
-          contact_title:    contact.title || null,
-          contact_source:   contact.source,
-          contact_verified: contact.verified,
-          contact_enriched_at: now,
-        }).in('id', groupLeads.map(l => l.id))
-        enriched += groupLeads.length
-      }
-    } else {
-      await supabase.from('leads')
-        .update({ contact_enriched_at: now })
-        .in('id', groupLeads.map(l => l.id))
-      failed += groupLeads.length
-    }
-  }
-
-  // ── Domain-less groups ────────────────────────────────────────────────────
-  for (const [, groupLeads] of nameGroups) {
-    const { contact, resolvedDomain } = await enrichCompany(
-      groupLeads[0].target_company,
-      null,
-      supabase
-    )
-
-    const bounced = contact
-      ? (await supabase.from('bounced_emails').select('id').eq('email', contact.email.toLowerCase()).maybeSingle()).data
-      : null
-
+    const topContact = result.contact
     const baseUpdate: Record<string, unknown> = { contact_enriched_at: now }
-    if (resolvedDomain) baseUpdate.company_domain = resolvedDomain
+    if (result.resolvedDomain) baseUpdate.company_domain = result.resolvedDomain
 
-    if (contact && !bounced) {
+    if (topContact) {
       await supabase.from('leads').update({
         ...baseUpdate,
-        contact_email:    contact.email.toLowerCase(),
-        contact_name:     contact.name  || null,
-        contact_title:    contact.title || null,
-        contact_source:   contact.source,
-        contact_verified: contact.verified,
-      }).in('id', groupLeads.map(l => l.id))
+        contact_email: topContact.email.toLowerCase(),
+        contact_name: topContact.name || null,
+        contact_title: topContact.title || null,
+        contact_source: topContact.source,
+        contact_verified: topContact.verified,
+      }).in('id', groupLeads.map(lead => lead.id))
       enriched += groupLeads.length
     } else {
-      await supabase.from('leads')
-        .update(baseUpdate)
-        .in('id', groupLeads.map(l => l.id))
+      await supabase.from('leads').update(baseUpdate).in('id', groupLeads.map(lead => lead.id))
       failed += groupLeads.length
     }
   }
 
   return { enriched, failed, cached }
+}
+
+export async function enrichSingleEmail(email: string): Promise<ZBStatus | null> {
+  const zb = await verifyEmail(email)
+  return zb?.status ?? null
 }

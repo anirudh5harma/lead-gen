@@ -40,7 +40,7 @@ Each cron now writes a row into `cron_runs`, which powers the in-app diagnostics
 
 - Node.js 22+
 - Supabase project with migrations applied
-- Environment variables for Supabase, Anthropic, Dodo, Resend, Gmail, Outlook, Apollo, Hunter, ZeroBounce, and cron auth
+- Environment variables for Supabase, Anthropic, Dodo, Resend, Gmail, Outlook, FullEnrich, Hunter, ZeroBounce, and cron auth
 
 ### Install and run
 

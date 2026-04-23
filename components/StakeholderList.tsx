@@ -7,7 +7,7 @@ export interface Stakeholder {
   title: string
   email: string
   confidence: 'high' | 'medium' | 'low'
-  source: 'apollo' | 'hunter' | 'pattern' | 'scrape'
+  source: 'fullenrich' | 'hunter' | 'pattern' | 'scrape'
 }
 
 const CONFIDENCE_CONFIG: Record<
@@ -20,7 +20,7 @@ const CONFIDENCE_CONFIG: Record<
 }
 
 const SOURCE_LABEL: Record<Stakeholder['source'], string> = {
-  apollo:  'Apollo',
+  fullenrich: 'FullEnrich',
   hunter:  'Hunter',
   pattern: 'Pattern',
   scrape:  'Web',

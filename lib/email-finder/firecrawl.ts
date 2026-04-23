@@ -69,6 +69,12 @@ interface FirecrawlContact {
   email: string
 }
 
+export interface FirecrawlPerson {
+  name: string
+  title: string
+  email?: string | null
+}
+
 /**
  * Scrapes a company's /about or /team page with Firecrawl,
  * then uses Claude to extract named contacts with emails.
@@ -76,9 +82,20 @@ interface FirecrawlContact {
  * Free tier: 500 pages/month.
  */
 export async function scrapeCompanyContacts(domain: string): Promise<FirecrawlContact[]> {
+  const people = await scrapeCompanyPeople(domain)
+  return people
+    .filter((person): person is FirecrawlContact => Boolean(person.email))
+    .map(person => ({
+      name: person.name,
+      title: person.title,
+      email: person.email!,
+    }))
+}
+
+export async function scrapeCompanyPeople(domain: string): Promise<FirecrawlPerson[]> {
   if (!process.env.FIRECRAWL_API_KEY) return []
 
-  const pagesToTry = [`https://${domain}/about`, `https://${domain}/team`, `https://${domain}/contact`]
+  const pagesToTry = [`https://${domain}/leadership`, `https://${domain}/team`, `https://${domain}/about`, `https://${domain}/company`, `https://${domain}/contact`]
   let pageContent = ''
 
   for (const url of pagesToTry) {
@@ -99,10 +116,7 @@ export async function scrapeCompanyContacts(domain: string): Promise<FirecrawlCo
       if (!res.ok) continue
       const json = await res.json()
       const markdown = json.data?.markdown || ''
-
-      // Quick check: does the page have any email addresses?
-      const emailsFound = markdown.match(EMAIL_REGEX)
-      if (emailsFound?.length) {
+      if (markdown.length >= 250) {
         pageContent = markdown
         break
       }
@@ -121,20 +135,23 @@ export async function scrapeCompanyContacts(domain: string): Promise<FirecrawlCo
       max_tokens: 400,
       messages: [{
         role: 'user',
-        content: `Extract contact information from this company page.
+        content: `Extract leadership contacts from this company page.
 
 ${pageContent.slice(0, 3000)}
 
-Return a JSON array of contacts. Each contact:
-{"name": "...", "title": "...", "email": "..."}
+Return a JSON array of people. Each person:
+{"name": "...", "title": "...", "email": "..." | null}
 
-Only include people with emails AND a clear title/role.
+Only include senior or decision-making roles with a clear title.
+Email can be null if the page does not show one.
 Return ONLY the JSON array, no markdown.`,
       }],
     })
 
     const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '[]'
-    return JSON.parse(text) as FirecrawlContact[]
+    const cleaned = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
+    const parsed = JSON.parse(cleaned) as FirecrawlPerson[]
+    return parsed.filter(person => person?.name && person?.title)
   } catch {
     // Fallback: just extract raw emails from the page
     const emails = pageContent.match(EMAIL_REGEX) || []

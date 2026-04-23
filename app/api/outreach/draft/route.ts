@@ -93,44 +93,49 @@ export async function POST(request: Request) {
   const signalRaw = lead.signals as unknown as SignalRow | SignalRow[] | null
   const signal = Array.isArray(signalRaw) ? signalRaw[0] ?? null : signalRaw
 
-  // Use pre-enriched contact if available; otherwise fall back to contacts/find
+  // Use the cached multi-contact enrichment path so the drawer can show 3-4 ranked contacts.
   let stakeholders: Stakeholder[] = []
-  if (lead.contact_email && lead.contact_name) {
+  const serviceClient = await createServiceClient()
+  const { contact, contacts, resolvedDomain } = await enrichCompany(
+    lead.target_company,
+    signal?.company_domain ?? null,
+    serviceClient,
+    {
+      servicesDescription: outreachContextDescription(profile, clientProfile),
+      signalType: signal?.signal_type ?? null,
+      maxContacts: 4,
+    },
+  )
+
+  if (contacts.length > 0) {
+    stakeholders = contacts.map(item => ({
+      name: item.name,
+      title: item.title || 'Decision Maker',
+      email: item.email,
+      confidence: item.verified ? 'high' : item.zb_status === 'catch-all' ? 'medium' : 'low',
+      source: item.source,
+    }))
+  } else if (lead.contact_email && lead.contact_name) {
     stakeholders = [{
       name: lead.contact_name,
       title: lead.contact_title ?? 'Decision Maker',
       email: lead.contact_email,
-    } as Stakeholder]
-  } else {
-    // On-demand enrichment: checks cache first, then Apollo → Hunter
-    const serviceClient = await createServiceClient()
-    const { contact, resolvedDomain } = await enrichCompany(
-      lead.target_company,
-      signal?.company_domain ?? null,
-      serviceClient
-    )
+      confidence: 'medium',
+      source: 'hunter',
+    }]
+  }
 
-    if (contact) {
-      // Backfill the lead so the next draft request uses the cached path
-      const backfill: Record<string, unknown> = {
-        contact_email:       contact.email.toLowerCase(),
-        contact_name:        contact.name  || null,
-        contact_title:       contact.title || null,
-        contact_source:      contact.source,
-        contact_verified:    contact.verified,
-        contact_enriched_at: new Date().toISOString(),
-      }
-      if (resolvedDomain && !signal?.company_domain) backfill.company_domain = resolvedDomain
-      await serviceClient.from('leads').update(backfill).eq('id', leadId)
-
-      stakeholders = [{
-        name:       contact.name,
-        title:      contact.title || 'Decision Maker',
-        email:      contact.email,
-        confidence: contact.verified ? 'high' : 'medium',
-        source:     contact.source,
-      }]
+  if (contact) {
+    const backfill: Record<string, unknown> = {
+      contact_email:       contact.email.toLowerCase(),
+      contact_name:        contact.name || null,
+      contact_title:       contact.title || null,
+      contact_source:      contact.source,
+      contact_verified:    contact.verified,
+      contact_enriched_at: new Date().toISOString(),
     }
+    if (resolvedDomain && !signal?.company_domain) backfill.company_domain = resolvedDomain
+    await serviceClient.from('leads').update(backfill).eq('id', leadId)
   }
 
   // Scrape article for personalization facts — race with a 5s timeout so it never blocks the draft
@@ -183,4 +188,11 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(draft)
+}
+
+function outreachContextDescription(
+  profile: { services_description?: string | null } | null,
+  clientProfile: { services_description?: string | null } | null,
+): string {
+  return clientProfile?.services_description || profile?.services_description || ''
 }
