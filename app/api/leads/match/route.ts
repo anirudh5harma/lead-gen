@@ -10,6 +10,7 @@ import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
 import { resolveLeadQuotaDecision } from '@/lib/lead-quota'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
+import { buildLeadDedupeKey, normalizeLeadCompanyKey } from '@/lib/lead-dedupe'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -158,21 +159,23 @@ async function runMatch(request: Request) {
       existingSet.add(`${row.client_id}:${row.signal_id}`)
     }
 
-  // Company-level dedup: skip if user already has a lead for this company in the last 7 days
-  // Prevents 3 leads for "Stripe raises $X" from 3 separate news sources
+  // Company-level dedup: skip if a workspace already has this company + signal type recently.
+  // The DB-level dedupe_key below also protects us from overlapping cron invocations.
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const { data: recentCompanyLeads } = await supabase
       .from('leads')
-      .select('client_id, target_company, company_domain')
+      .select('client_id, target_company, company_domain, dedupe_key, signals(signal_type)')
       .gte('created_at', sevenDaysAgo)
 
     const recentCompanySet = new Set<string>()
     for (const row of (recentCompanyLeads ?? [])) {
       if (!row.client_id) continue
-      const domainKey = row.company_domain?.toLowerCase()
-      const nameKey   = row.target_company.toLowerCase()
-      if (domainKey) recentCompanySet.add(`${row.client_id}:${domainKey}`)
-      recentCompanySet.add(`${row.client_id}:${nameKey}`)
+      if (row.dedupe_key) recentCompanySet.add(`${row.client_id}:${row.dedupe_key}`)
+      const signalRow = Array.isArray(row.signals) ? row.signals[0] : row.signals
+      const signalType = (signalRow as { signal_type?: string } | null)?.signal_type
+      if (!signalType) continue
+      const companyKey = normalizeLeadCompanyKey(row.target_company, row.company_domain)
+      recentCompanySet.add(`${row.client_id}:${companyKey}:${signalType}`)
     }
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -193,6 +196,7 @@ async function runMatch(request: Request) {
 	      below_score: 0,
 	      duplicate: 0,
 	      company_duplicate: 0,
+	      dedupe_conflict: 0,
 	      keyword_matches: 0,
 	      keyword_misses: 0,
 	      quota_reached: 0,
@@ -240,11 +244,15 @@ async function runMatch(request: Request) {
       if (existingSet.has(pairKey)) { stats.duplicate++; continue }
 
       // Skip if user already has a lead for this company in the last 7 days
-      const sigDomainKey = signal.company_domain?.toLowerCase()
-      const sigNameKey   = signal.company_name.toLowerCase()
+      const companyKey = normalizeLeadCompanyKey(signal.company_name, signal.company_domain)
+      const dedupeKey = buildLeadDedupeKey({
+        companyName: signal.company_name,
+        companyDomain: signal.company_domain,
+        signalType: signal.signal_type,
+      })
       if (
-        (sigDomainKey && recentCompanySet.has(`${profile.id}:${sigDomainKey}`)) ||
-        recentCompanySet.has(`${profile.id}:${sigNameKey}`)
+        recentCompanySet.has(`${profile.id}:${dedupeKey}`) ||
+        recentCompanySet.has(`${profile.id}:${companyKey}:${signal.signal_type}`)
       ) { stats.company_duplicate++; continue }
 
       // Skip blocked companies
@@ -379,6 +387,7 @@ async function runMatch(request: Request) {
         relevance_score:  score,
         relevance_reason: isWatchlisted ? `[Watchlisted] ${reason}` : reason,
         status: 'new',
+        dedupe_key: dedupeKey,
         match_debug: {
           client_id: profile.id,
           client_name: profile.name,
@@ -410,8 +419,8 @@ async function runMatch(request: Request) {
           },
         }).catch(() => {})
         existingSet.add(pairKey)
-        if (sigDomainKey) recentCompanySet.add(`${profile.id}:${sigDomainKey}`)
-        recentCompanySet.add(`${profile.id}:${sigNameKey}`)
+        recentCompanySet.add(`${profile.id}:${dedupeKey}`)
+        recentCompanySet.add(`${profile.id}:${companyKey}:${signal.signal_type}`)
 
         // Slack alert for Max plan users with webhook configured
         const planLimits = getPlanLimits(plan)
@@ -435,8 +444,12 @@ async function runMatch(request: Request) {
             })
             .catch(() => {})
         }
-      } else if (reservedQuota) {
+      } else {
+        if (error?.code === '23505') stats.dedupe_conflict++
+        else if (error) console.error('lead insert error:', error.message)
+        if (reservedQuota) {
         await supabase.rpc('refund_lead_quota', { p_user_id: profile.user_id })
+        }
       }
     }
     }

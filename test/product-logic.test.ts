@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { buildWorkspaceAccessPlan } from '../lib/client-workspaces.ts'
 import { resolveOutreachContext, scheduleFollowupAt } from '../lib/outreach-context.ts'
 import { resolveLeadQuotaDecision } from '../lib/lead-quota.ts'
+import { normalizeCompanyWebsiteUrl, resolveServicesDescription } from '../lib/company-profile.ts'
+import { buildLeadDedupeKey, normalizeLeadCompanyKey } from '../lib/lead-dedupe.ts'
 
 test('non-max plans only keep the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -112,4 +114,47 @@ test('lead quota decision reserves quota when still under limit', () => {
 test('follow-up scheduling stays exactly three days out by default', () => {
   const scheduledAt = scheduleFollowupAt(new Date('2026-04-23T10:00:00.000Z'))
   assert.equal(scheduledAt, '2026-04-26T10:00:00.000Z')
+})
+
+test('company website URL normalization accepts plain domains and rejects invalid hosts', () => {
+  assert.equal(normalizeCompanyWebsiteUrl('acme.com'), 'https://acme.com')
+  assert.equal(normalizeCompanyWebsiteUrl('https://www.acme.com/'), 'https://www.acme.com')
+  assert.equal(normalizeCompanyWebsiteUrl('localhost:3000'), null)
+  assert.equal(normalizeCompanyWebsiteUrl('not a url'), null)
+})
+
+test('services description resolver keeps manual description when website context is unavailable', async () => {
+  const resolved = await resolveServicesDescription({
+    companyName: 'Acme',
+    industry: 'saas',
+    manualDescription: 'We help finance teams automate revenue reconciliation and audit workflows.',
+    websiteUrl: '',
+  })
+
+  assert.equal(resolved?.description, 'We help finance teams automate revenue reconciliation and audit workflows.')
+  assert.equal(resolved?.websiteUrl, null)
+  assert.equal(resolved?.source, 'manual')
+})
+
+test('lead dedupe keys normalize company variants by domain or legal suffix', () => {
+  assert.equal(
+    normalizeLeadCompanyKey('Acme Technologies, Inc.', null),
+    normalizeLeadCompanyKey('Acme', null),
+  )
+  assert.equal(
+    normalizeLeadCompanyKey('Acme Anything', 'https://www.acme.com/team'),
+    'domain:acme.com',
+  )
+  assert.equal(
+    buildLeadDedupeKey({
+      companyName: 'Acme Inc.',
+      signalType: 'expansion',
+      date: new Date('2026-04-23T00:00:00.000Z'),
+    }),
+    buildLeadDedupeKey({
+      companyName: 'Acme',
+      signalType: 'expansion',
+      date: new Date('2026-04-23T12:00:00.000Z'),
+    }),
+  )
 })

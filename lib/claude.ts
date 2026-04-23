@@ -306,55 +306,55 @@ Return ONLY a JSON array of strings, no markdown.`,
 }
 
 const SIGNAL_ANGLE: Record<string, string> = {
-  funding: `SITUATION: They closed a round. The board expects rapid growth; the CEO must deploy capital fast and show ROI within 12–18 months.
+  funding: `SITUATION: They closed a round. The board expects rapid growth; the CEO must deploy capital fast and show ROI within 12-18 months.
 
-PARAGRAPH 1: Open with what actually happens operationally in the first 90 days post-raise — not "congrats on the raise" but the specific hidden cost: hiring surges before process is ready, tooling decisions get locked in under speed pressure, and the systems that worked at half the headcount start cracking under load. If the article context includes the lead investor or use-of-proceeds language, weave it in — show you read beyond the headline.
+PARAGRAPH 1: Open with what actually happens operationally in the first 90 days post-raise, not "congrats on the raise" but the specific hidden cost: hiring surges before process is ready, tooling decisions get locked in under speed pressure, and the systems that worked at half the headcount start cracking under load. If the article context includes the lead investor or use-of-proceeds language, weave it in and show you read beyond the headline.
 
 PARAGRAPH 2: Frame your offer as the thing that prevents the most predictable post-raise breakdown relevant to what you sell. Hormozi lens: dream outcome + what pain is removed + at what speed?
 
-PARAGRAPH 3: Make it feel observed, not generic: "Teams at this stage typically hit [X] within [Y] months of the round — right at the inflection point they're about to enter."
+PARAGRAPH 3: Make it feel observed, not generic: "Teams at this stage typically hit [X] within [Y] months of the round, right at the inflection point they're about to enter."
 
-SUBJECT — prefer Challenger or Hormozi style. Something like "The hidden cost of [company]'s raise" or "How [company] scales without the usual breakage."`,
+SUBJECT: prefer Challenger or Hormozi style. Something like "The hidden cost of [company]'s raise" or "How [company] scales without the usual breakage."`,
 
-  acquisition: `SITUATION: An acquisition just closed or was announced. The next 90 days are integration chaos — systems, teams, cultures, and data colliding under a mandate to show synergies fast.
+  acquisition: `SITUATION: An acquisition just closed or was announced. The next 90 days are integration chaos: systems, teams, cultures, and data colliding under a mandate to show synergies fast.
 
-PARAGRAPH 1: Open with the real operational reality of Day 1–90 post-acquisition: the mandate to show synergies clashes with the actual pace of integration. The acquiring team is discovering unknown unknowns faster than they can address them. If the article mentions what was acquired or the stated strategic rationale, make the insight specific to that integration challenge.
+PARAGRAPH 1: Open with the real operational reality of Day 1-90 post-acquisition: the mandate to show synergies clashes with the actual pace of integration. The acquiring team is discovering unknown unknowns faster than they can address them. If the article mentions what was acquired or the stated strategic rationale, make the insight specific to that integration challenge.
 
-PARAGRAPH 2: Frame your offer as removing one precise integration bottleneck — not "we help with integrations" but the exact friction your product eliminates at this stage. Hormozi: reduce time delay + reduce sacrifice.
+PARAGRAPH 2: Frame your offer as removing one precise integration bottleneck, not "we help with integrations" but the exact friction your product eliminates at this stage. Hormozi: reduce time delay + reduce sacrifice.
 
-PARAGRAPH 3: "Companies at this stage almost always underestimate [X] — by the time it surfaces, it's already a 3-month slip." Make it feel like you've seen this movie before.
+PARAGRAPH 3: "Companies at this stage almost always underestimate [X]. By the time it surfaces, it's already a 3-month slip." Make it feel like you've seen this movie before.
 
-SUBJECT — Voss or Challenger style: name their situation or reframe their risk.`,
+SUBJECT: Voss or Challenger style: name their situation or reframe their risk.`,
 
   expansion: `SITUATION: They're entering a new market, launching a new product line, or expanding geographically. The playbook from their home market creates false confidence.
 
-PARAGRAPH 1: Open with the non-obvious challenge of this specific expansion — not "entering new markets is exciting" but the specific friction that catches companies in their situation off guard. If the article mentions the target market or geography, use that to be concrete.
+PARAGRAPH 1: Open with the non-obvious challenge of this specific expansion, not "entering new markets is exciting" but the specific friction that catches companies in their situation off guard. If the article mentions the target market or geography, use that to be concrete.
 
 PARAGRAPH 2: Position your offer as specific capability that reduces the unknown-unknown risk of this expansion. Predictable Revenue style: hyper-specific relevance. "We work with companies making exactly this move."
 
-PARAGRAPH 3: "The first thing that breaks for companies coming from [their background] into [new market] is usually [X]." This is your vantage point — make it feel earned.
+PARAGRAPH 3: "The first thing that breaks for companies coming from [their background] into [new market] is usually [X]." This is your vantage point, make it feel earned.
 
-SUBJECT — Challenger style: a non-obvious consequence of the expansion they haven't considered.`,
+SUBJECT: Challenger style: a non-obvious consequence of the expansion they haven't considered.`,
 
   regulation: `SITUATION: A new regulation creates a hard deadline, fear of penalties, and an overwhelmed compliance team. The window to act is closing.
 
-PARAGRAPH 1: Open by naming the emotional reality — not the regulation itself but what it feels like inside the company right now. Voss labeling first: "Right now most [industry] teams are realizing the regulation is broader than the initial read — compliance is triaging, legal is cautious, and the deadline isn't moving." Then add the one non-obvious risk most companies underestimate about this specific regulation.
+PARAGRAPH 1: Open by naming the emotional reality, not the regulation itself but what it feels like inside the company right now. Voss labeling first: "Right now most [industry] teams are realizing the regulation is broader than the initial read. Compliance is triaging, legal is cautious, and the deadline isn't moving." Then add the one non-obvious risk most companies underestimate about this specific regulation.
 
 PARAGRAPH 2: Frame your offer as risk removal + deadline certainty. Hormozi: the dream outcome is not getting caught off-guard; the removed downside is scrambling and penalties.
 
-PARAGRAPH 3: Make timeline the proof: "Teams that start [X weeks] before the deadline can [achieve Y] — teams that wait typically [face Z]."
+PARAGRAPH 3: Make timeline the proof: "Teams that start [X weeks] before the deadline can [achieve Y]. Teams that wait typically [face Z]."
 
-SUBJECT — Voss style: label their reality. "Looks like [company] has a tight compliance window."`,
+SUBJECT: Voss style: label their reality. "Looks like [company] has a tight compliance window."`,
 
   hiring: `SITUATION: A new C-suite or VP hire just joined, or the company is on a major hiring surge. New leaders have ~90 days to establish credibility before the org forms an opinion.
 
-PARAGRAPH 1: Open with what new leaders at this specific title typically discover in their first 30 days — not generic "new leaders face challenges" but the role-specific pattern. A new VP of Engineering inherits tech debt and a team stretched by attrition. A new CMO inherits a funnel with attribution gaps. Make it title-specific. If the signal mentions the specific hire by name or title, calibrate to that role's typical 90-day mandate.
+PARAGRAPH 1: Open with what new leaders at this specific title typically discover in their first 30 days, not generic "new leaders face challenges" but the role-specific pattern. A new VP of Engineering inherits tech debt and a team stretched by attrition. A new CMO inherits a funnel with attribution gaps. Make it title-specific. If the signal mentions the specific hire by name or title, calibrate to that role's typical 90-day mandate.
 
-PARAGRAPH 2: Frame your offer as a fast path to an early win in your domain — the thing that makes them look good before the honeymoon period ends. Hormozi: minimize time delay. "We typically have [result] visible within [X weeks] — fast enough to show in the next board update."
+PARAGRAPH 2: Frame your offer as a fast path to an early win in your domain, the thing that makes them look good before the honeymoon period ends. Hormozi: minimize time delay. "We typically have [result] visible within [X weeks], fast enough to show in the next board update."
 
-PARAGRAPH 3: "New [titles] who address [your area] in the first 60 days typically [achieve X] — those who deprioritize it spend the first year fighting it instead."
+PARAGRAPH 3: "New [titles] who address [your area] in the first 60 days typically [achieve X]. Those who deprioritize it spend the first year fighting it instead."
 
-SUBJECT — Challenger style: teach them something about their role they didn't expect.`,
+SUBJECT: Challenger style: teach them something about their role they didn't expect.`,
 }
 
 /**
@@ -388,9 +388,9 @@ export async function draftFollowUpEmail(params: {
       content: `Write a BRIEF follow-up email for a cold outreach that got no reply after ~3 days.
 
 Context:
-- Sender: ${senderCompany} — ${servicesDescription.slice(0, 500)}
+- Sender: ${senderCompany}, ${servicesDescription.slice(0, 500)}
 - Recipient: ${firstName} at ${targetCompany}
-- Original trigger: ${targetCompany} ${signalType} — ${signalSummary}
+- Original trigger: ${targetCompany} ${signalType}, ${signalSummary}
 - Original subject line: "${originalSubject}"
 
 Original email body:
@@ -406,6 +406,7 @@ Follow-up rules (strict):
 - Voss-style opener: "Probably caught you at a bad time..." or "Figured this might still be on your radar given..."
 - Close with a single soft question or ultra-low-friction ask
 - Zero corporate speak. Write like a smart peer.
+- Do not use em dashes, en dashes, long divider lines, or separator-style punctuation. Use commas, periods, or short sentences instead.
 
 Return ONLY this JSON (no markdown):
 {"subject": "Re: ${originalSubject}", "body": "..."}
@@ -417,12 +418,12 @@ Body must use \\n\\n between paragraphs.`,
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
   try {
     const cleaned = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
-    return JSON.parse(cleaned)
+    return sanitizeGeneratedEmail(JSON.parse(cleaned))
   } catch {
-    return {
+    return sanitizeGeneratedEmail({
       subject: `Re: ${originalSubject}`,
-      body: `${firstName}, probably caught you in the middle of something — figured I'd check back since the ${signalType} at ${targetCompany} is likely still in full swing.\n\nIs there a better moment this week for a quick 15-min call?`,
-    }
+      body: `${firstName}, probably caught you in the middle of something. Figured I'd check back since the ${signalType} at ${targetCompany} is likely still in full swing.\n\nIs there a better moment this week for a quick 15-min call?`,
+    })
   }
 }
 
@@ -459,18 +460,18 @@ export async function draftOutreachEmail(params: {
   const firstName = stakeholderName.split(' ')[0] || stakeholderName
 
   const ctaInstruction = calendlyUrl
-    ? `4. CLOSING PARAGRAPH (standalone, 1–2 sentences): A low-friction ask to book a 15-minute call. Include the Calendly link naturally — e.g. "If any of this lands, here's a link to grab 15 minutes: ${calendlyUrl}" or "Happy to show you how in 15 min — ${calendlyUrl}". Keep it casual, not pushy.`
-    : `4. CLOSING PARAGRAPH (standalone, 1–2 sentences): A low-friction ask for a 15-minute call — "15 min this week?" or a Voss calibrated question ("What would need to be true for this to be worth 15 minutes of your time?"). Never "Would you be interested in...".`
+    ? `4. CLOSING PARAGRAPH (standalone, 1-2 sentences): A low-friction ask to book a 15-minute call. Include the Calendly link naturally, for example: "If any of this lands, here's a link to grab 15 minutes: ${calendlyUrl}" or "Happy to show you how in 15 min: ${calendlyUrl}". Keep it casual, not pushy.`
+    : `4. CLOSING PARAGRAPH (standalone, 1-2 sentences): A low-friction ask for a 15-minute call, such as "15 min this week?" or a Voss calibrated question ("What would need to be true for this to be worth 15 minutes of your time?"). Never "Would you be interested in...".`
 
   const signalBlock = [
-    `Trigger event: ${targetCompany} had a ${signalType} — ${signalSummary}`,
+    `Trigger event: ${targetCompany} had a ${signalType}: ${signalSummary}`,
     headline       ? `Original headline: ${headline}` : '',
     fundingAmount  ? `Amount: ${fundingAmount}` : '',
     signalAgeLabel ? `Timing: ${signalAgeLabel} (calibrate urgency accordingly)` : '',
   ].filter(Boolean).join('\n')
 
   const articleBlock = articleContext
-    ? `━━━ ARTICLE INTELLIGENCE (use these specific facts — they make the email feel researched) ━━━\n${articleContext}`
+    ? `ARTICLE INTELLIGENCE: use these specific facts because they make the email feel researched.\n${articleContext}`
     : ''
 
   const message = await client.messages.create({
@@ -481,7 +482,7 @@ export async function draftOutreachEmail(params: {
       content: `You are a world-class B2B sales strategist writing a cold outreach email.
 Your writing is informed by: Never Split the Difference (Voss), $100M Offers (Hormozi), Fanatical Prospecting (Blount), The Challenger Sale, Predictable Revenue (Aaron Ross).
 
-━━━ CONTEXT ━━━
+CONTEXT:
 Sender: ${senderCompany}
 What they offer: ${servicesDescription}
 
@@ -490,30 +491,30 @@ ${signalBlock}
 
 ${articleBlock}
 
-━━━ TEMPLATE GUIDANCE ━━━
+TEMPLATE GUIDANCE:
 ${customInstructions || 'None'}
 
-━━━ STRATEGIC ANGLE FOR THIS SIGNAL TYPE ━━━
+STRATEGIC ANGLE FOR THIS SIGNAL TYPE:
 ${angle}
 
-━━━ EMAIL CONSTRUCTION RULES ━━━
+EMAIL CONSTRUCTION RULES:
 
-SUBJECT LINE — generate THREE options (one per style below), then choose the strongest for this specific signal:
-Option A — Challenger: A non-obvious insight or provocative question about their actual situation
-Option B — Voss: A label that names their emotional reality right now
-Option C — Hormozi: Outcome-led with a time anchor
+SUBJECT LINE: generate THREE options (one per style below), then choose the strongest for this specific signal:
+Option A, Challenger: A non-obvious insight or provocative question about their actual situation
+Option B, Voss: A label that names their emotional reality right now
+Option C, Hormozi: Outcome-led with a time anchor
 Constraints for all three: max 9 words, no clickbait, no "Congrats on the raise" (everyone sends that), no empty buzzwords.
 After writing all three, select the ONE that fits this signal best. Only that subject goes in the JSON.
 
-BODY — 3 paragraphs + closing:
+BODY: 3 paragraphs + closing:
 
-PARAGRAPH 1 — INTERRUPT + INSIGHT (2–3 sentences):
-Follow the PARAGRAPH 1 instruction in the strategic angle above. If article intelligence is provided, use a specific fact (CEO quote, use of proceeds, lead investor) — it signals you did real research.
+PARAGRAPH 1, INTERRUPT + INSIGHT (2-3 sentences):
+Follow the PARAGRAPH 1 instruction in the strategic angle above. If article intelligence is provided, use a specific fact (CEO quote, use of proceeds, lead investor) because it signals you did real research.
 
-PARAGRAPH 2 — CONNECT (1–2 sentences):
+PARAGRAPH 2, CONNECT (1-2 sentences):
 Follow the PARAGRAPH 2 instruction above. No feature-dumping. What dream outcome + what pain removed?
 
-PARAGRAPH 3 — PROOF OR SPECIFICITY (1–2 sentences):
+PARAGRAPH 3, PROOF OR SPECIFICITY (1-2 sentences):
 Follow the PARAGRAPH 3 instruction above. One concrete, felt-by-them claim. "Companies at this stage typically..." is acceptable if you make it specific.
 
 ${ctaInstruction}
@@ -524,6 +525,8 @@ TONE:
 - Write like a smart peer, not a sales rep
 - First name only for recipient
 - Don't mention the company name more than twice in the body
+- Do not use em dashes, en dashes, long divider lines, or separator-style punctuation. Use commas, periods, colons, or short sentences instead.
+- Do not put dash-separated clauses in the body. If a sentence needs a dash, split it into two sentences.
 
 Return ONLY this JSON (no markdown):
 {"subject": "...", "body": "..."}
@@ -536,11 +539,30 @@ The body must use \\n\\n between paragraphs.`,
   try {
     // Strip markdown code fences if Claude wrapped the JSON
     const cleaned = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
-    return JSON.parse(cleaned)
+    return sanitizeGeneratedEmail(JSON.parse(cleaned))
   } catch {
-    return {
-      subject: `${targetCompany}'s ${signalType} — a thought`,
-      body: `${firstName}, most companies at this stage of ${signalType} hit a specific wall around [area] — usually faster than expected. ${senderCompany} helps ${signalType === 'funding' ? 'post-raise teams' : 'companies in this situation'} avoid that by ${servicesDescription.split('.')[0].toLowerCase()}. Worth a 15-min call to see if it's relevant?`,
-    }
+    return sanitizeGeneratedEmail({
+      subject: `${targetCompany}'s ${signalType}: a thought`,
+      body: `${firstName}, most companies at this stage of ${signalType} hit a specific wall around [area], usually faster than expected. ${senderCompany} helps ${signalType === 'funding' ? 'post-raise teams' : 'companies in this situation'} avoid that by ${servicesDescription.split('.')[0].toLowerCase()}. Worth a 15-min call to see if it's relevant?`,
+    })
   }
+}
+
+function sanitizeGeneratedEmail(value: unknown): { subject: string; body: string } {
+  const input = value as { subject?: unknown; body?: unknown }
+  return {
+    subject: sanitizeEmailText(typeof input.subject === 'string' ? input.subject : ''),
+    body: sanitizeEmailText(typeof input.body === 'string' ? input.body : ''),
+  }
+}
+
+function sanitizeEmailText(value: string): string {
+  return value
+    .replace(/[\u2500-\u257f]+/g, '')
+    .replace(/^\s*[-_=*]{3,}\s*$/gm, '')
+    .replace(/\s*[\u2013\u2014]\s*/g, ', ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
 }

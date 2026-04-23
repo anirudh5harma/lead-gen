@@ -132,6 +132,7 @@ export default function OnboardingPage() {
   const [form, setForm] = useState({
     company_name: '',
     industry: '' as IndustryValue | '',
+    website_url: '',
     target_industries: [] as IndustryValue[],
     services_description: '',
     calendly_url: '',
@@ -151,7 +152,7 @@ export default function OnboardingPage() {
       const { data: profile } = await supabase
         .from('user_profiles')
         .select(
-          'company_name, industry, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score, active_client_id',
+          'company_name, industry, website_url, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score, active_client_id',
         )
         .eq('user_id', user.id)
         .single()
@@ -160,7 +161,7 @@ export default function OnboardingPage() {
       const { data: clientProfile } = activeClientId
         ? await supabase
             .from('client_accounts')
-            .select('name, industry, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score')
+            .select('name, industry, website_url, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score')
             .eq('id', activeClientId)
             .eq('user_id', user.id)
             .maybeSingle()
@@ -173,6 +174,7 @@ export default function OnboardingPage() {
         setForm({
           company_name:         (effectiveProfile as { name?: string; company_name?: string }).name || (effectiveProfile as { company_name?: string }).company_name || '',
           industry:             ((effectiveProfile as { industry?: IndustryValue }).industry as IndustryValue) || '',
+          website_url:          (effectiveProfile as { website_url?: string }).website_url || '',
           target_industries:    ((effectiveProfile as { target_industries?: IndustryValue[] }).target_industries) || [],
           services_description: (effectiveProfile as { services_description?: string }).services_description || '',
           calendly_url:         (effectiveProfile as { calendly_url?: string }).calendly_url || '',
@@ -205,7 +207,7 @@ export default function OnboardingPage() {
 
   // Step validation
   const stepValid = [
-    form.company_name.trim().length > 1 && form.industry !== '' && form.services_description.trim().length > 20,
+    form.company_name.trim().length > 1 && form.industry !== '' && (looksLikeWebsite(form.website_url) || form.services_description.trim().length >= 10),
     form.target_industries.length > 0,
     form.target_signal_types.length > 0,
   ]
@@ -404,6 +406,17 @@ export default function OnboardingPage() {
   )
 }
 
+function looksLikeWebsite(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`)
+    return url.hostname.includes('.') && url.hostname !== 'localhost'
+  } catch {
+    return false
+  }
+}
+
 // ── Step indicator ─────────────────────────────────────────────────
 
 function StepIndicator({ current, steps }: { current: number; steps: string[] }) {
@@ -456,6 +469,7 @@ interface StepFormProps {
   form: {
     company_name: string
     industry: IndustryValue | ''
+    website_url: string
     target_industries: IndustryValue[]
     services_description: string
     calendly_url: string
@@ -512,17 +526,33 @@ function StepCompany({ form, setForm }: StepFormProps) {
 
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--color-text-3)] uppercase tracking-wider">
-          What you offer
+          Website URL
+        </label>
+        <input
+          type="url"
+          placeholder="https://yourcompany.com"
+          value={form.website_url}
+          onChange={(e) => setForm((f) => ({ ...f, website_url: e.target.value }))}
+          className="w-full px-4 py-3 rounded-xl bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[var(--color-text-1)] placeholder-[var(--color-text-4)] text-sm focus:outline-none focus:border-[var(--color-accent)] focus:bg-white focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
+        />
+        <p className="text-[11px] text-[var(--color-text-4)]">
+          We can read your site and turn it into a product/service description automatically.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--color-text-3)] uppercase tracking-wider">
+          What you offer <span className="text-[var(--color-text-4)] normal-case font-normal">(optional if website is added)</span>
         </label>
         <textarea
           rows={4}
-          placeholder="We provide AI-powered compliance automation software for financial institutions. Our platform cuts audit prep time by 70%…"
+          placeholder="Optional: add positioning, your best-fit buyers, or outcomes if the website does not say it clearly."
           value={form.services_description}
           onChange={(e) => setForm((f) => ({ ...f, services_description: e.target.value }))}
           className="w-full px-4 py-3 rounded-xl bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[var(--color-text-1)] placeholder-[var(--color-text-4)] text-sm focus:outline-none focus:border-[var(--color-accent)] focus:bg-white focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-all resize-none leading-relaxed"
         />
         <p className="text-[11px] text-[var(--color-text-4)]">
-          The AI uses this to score every incoming signal. Be specific.
+          If you add both, we combine your notes with the scraped website context for better matching.
         </p>
       </div>
 

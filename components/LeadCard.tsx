@@ -218,7 +218,7 @@ export default function LeadCard({
 
       {/* Actions */}
       <td className="px-4 py-3.5 w-[130px] text-right">
-        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center justify-end gap-1">
           <button
             onClick={e => { e.stopPropagation(); onDraftOutreach(lead.id) }}
             className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] border border-[var(--color-accent)]/25 hover:bg-[var(--color-accent)] hover:text-white hover:border-transparent transition-all"

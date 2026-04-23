@@ -21,6 +21,7 @@ interface UserProfile {
   company_name: string
   client_name?: string
   services_description: string
+  website_url?: string | null
   icp_keywords: string[] | null
   email?: string
   plan?: string
@@ -478,6 +479,7 @@ function SettingsPanel({
         <div className="divide-y divide-[var(--color-line-1)]">
           <Row label="Company">{profile.company_name || '—'}</Row>
           <Row label="Workspace">{profile.client_name || profile.company_name || '—'}</Row>
+          <Row label="Website">{profile.website_url || '—'}</Row>
           <Row label="What you sell">
             <span className="text-[var(--color-text-2)] leading-relaxed">{profile.services_description || '—'}</span>
           </Row>
