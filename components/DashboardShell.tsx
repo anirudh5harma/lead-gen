@@ -38,15 +38,6 @@ interface Props {
   watchlist: WatchlistItem[]
 }
 
-interface OpsRun {
-  job_name: string
-  status: string
-  started_at: string
-  finished_at: string | null
-  metrics: Record<string, unknown> | null
-  error_message: string | null
-}
-
 interface LeadDiagnostic {
   id: string
   target_company: string
@@ -72,8 +63,6 @@ interface OpsSummary {
     pending_followups: number
     active_sending_accounts: number
   }
-  signal_candidates_last_24h: Record<string, number>
-  cron_health: OpsRun[]
   lead_diagnostics: LeadDiagnostic[]
 }
 
@@ -891,13 +880,6 @@ function CrmSyncPanel() {
   )
 }
 
-function formatCronJobName(jobName: string) {
-  return jobName
-    .split('_')
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
 function PipelineDiagnosticsPanel() {
   const [summary, setSummary] = useState<OpsSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -916,17 +898,13 @@ function PipelineDiagnosticsPanel() {
   }, [])
 
   const counts = summary?.counts
-  const candidateCounts = summary?.signal_candidates_last_24h
-  const totalCandidates = candidateCounts
-    ? Object.values(candidateCounts).reduce((sum, count) => sum + count, 0)
-    : 0
 
   return (
     <div className="card divide-y divide-[var(--color-line-1)]">
       <div className="px-5 py-4">
         <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Pipeline Diagnostics</h2>
         <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          Recent cron health, extraction flow, and the latest match explanations for your feed.
+          Recent pipeline counts and the latest match explanations for your feed.
         </p>
       </div>
 
@@ -943,72 +921,6 @@ function PipelineDiagnosticsPanel() {
             <DiagStat label="Pending enrichment" value={String(counts?.pending_enrichment ?? 0)} />
             <DiagStat label="Due follow-ups" value={String(counts?.pending_followups ?? 0)} />
             <DiagStat label="Active inboxes" value={String(counts?.active_sending_accounts ?? 0)} />
-          </div>
-
-          <div className="px-5 py-4 space-y-3">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h3 className="text-xs font-semibold text-[var(--color-text-1)] uppercase tracking-[0.14em]">Signal Extraction · 24h</h3>
-                <p className="text-[11px] text-[var(--color-text-4)] mt-1">
-                  {totalCandidates} candidates processed across recent polling runs.
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {Object.entries(candidateCounts ?? {}).map(([status, count]) => (
-                <DiagPill key={status} label={status.replaceAll('_', ' ')} value={count} />
-              ))}
-            </div>
-          </div>
-
-          <div className="px-5 py-4 space-y-3">
-            <h3 className="text-xs font-semibold text-[var(--color-text-1)] uppercase tracking-[0.14em]">Cron Health</h3>
-            <div className="space-y-2">
-              {summary.cron_health.length === 0 ? (
-                <p className="text-xs text-[var(--color-text-4)]">No cron runs recorded yet.</p>
-              ) : (
-                summary.cron_health.map(run => (
-                  <div key={`${run.job_name}:${run.started_at}`} className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-[var(--color-text-1)]">{formatCronJobName(run.job_name)}</p>
-                        <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">
-                          Started {new Date(run.started_at).toLocaleString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
-                      <span className={`text-[10px] uppercase tracking-[0.14em] px-2 py-1 rounded-full border ${
-                        run.status === 'success'
-                          ? 'text-[var(--color-sig-funding)] border-[var(--color-sig-funding)]/30 bg-[var(--color-sig-funding-bg)]'
-                          : run.status === 'error'
-                            ? 'text-[var(--color-sig-regulation)] border-[var(--color-sig-regulation)]/30 bg-[var(--color-sig-regulation-bg)]'
-                            : 'text-[var(--color-text-3)] border-[var(--color-line-2)] bg-white'
-                      }`}>
-                        {run.status}
-                      </span>
-                    </div>
-                    {run.error_message && (
-                      <p className="text-[11px] text-[var(--color-sig-regulation)] mt-2">
-                        {run.error_message}
-                      </p>
-                    )}
-                    {run.metrics && Object.keys(run.metrics).length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {Object.entries(run.metrics).slice(0, 6).map(([key, value]) => (
-                          <span key={key} className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
-                            {key.replaceAll('_', ' ')}: {typeof value === 'object' ? '…' : String(value)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
           </div>
 
           <div className="px-5 py-4 space-y-3">
@@ -1068,17 +980,6 @@ function DiagStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3">
       <p className="text-[11px] text-[var(--color-text-4)]">{label}</p>
       <p className="text-lg font-medium text-[var(--color-text-1)] mt-1">{value}</p>
-    </div>
-  )
-}
-
-function DiagPill({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-4)]">
-        {label}
-      </p>
-      <p className="text-sm font-medium text-[var(--color-text-1)] mt-1">{value}</p>
     </div>
   )
 }
