@@ -14,7 +14,8 @@ const PLANS = [
     period: 'forever',
     description: 'Try the core signal feed.',
     features: [
-      '15 leads / month',
+      'Unlimited signal previews',
+      '15 lead unlocks / month',
       'Draft + send via Gmail',
       '1 workspace',
       'Hyper-personalized outreach',
@@ -46,7 +47,7 @@ const PLANS = [
     period: '/ month',
     description: 'For teams and agencies that move fast.',
     features: [
-      'Upto 1,500 leads / month',
+      'Unlimited leads / month',
       'Multiple client workspaces',
       'Per-client targeting and templates',
       'Slack signal alerts',
@@ -66,7 +67,7 @@ const FAQS = [
   },
   {
     q: 'What happens when I hit my limit?',
-    a: 'Once you hit your lead quota, Free stops adding new leads until your rolling 30-day window frees up capacity. Pro and Max can either stop at the limit or keep the feed running by opting into $0.50 per extra lead. Existing leads remain available either way.',
+    a: 'Free users can keep browsing all matched signals, but only 15 leads per rolling 30-day window can be fully unlocked with contacts and drafts. Pro and Max can either stop at the limit or keep the feed running by opting into $0.50 per extra lead.',
   },
   {
     q: 'Which plan includes client workspaces and CRM sync?',

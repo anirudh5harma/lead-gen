@@ -182,7 +182,8 @@ async function runMatch(request: Request) {
     const { data: recentQuotaLeads } = await supabase
       .from('leads')
       .select('user_id')
-      .gte('created_at', thirtyDaysAgo)
+      .eq('is_unlocked', true)
+      .gte('unlocked_at', thirtyDaysAgo)
 
     let matched = 0
     const stats = {
@@ -200,6 +201,7 @@ async function runMatch(request: Request) {
 	      keyword_matches: 0,
 	      keyword_misses: 0,
 	      quota_reached: 0,
+	      preview_inserted: 0,
 	      overage_inserted: 0,
 	      eligible_profiles: eligibleProfiles.length,
 	      pairs_considered: 0,
@@ -345,6 +347,7 @@ async function runMatch(request: Request) {
         const allowLeadOverage = settings.allowLeadOverage && plan !== 'free'
         let reservedQuota = false
         let isOverageLead = false
+        let isUnlockedLead = true
 
         const quotaDecision = resolveLeadQuotaDecision({
           used,
@@ -365,6 +368,8 @@ async function runMatch(request: Request) {
           }
           if (quotaReserved) {
             reservedQuota = true
+          } else if (plan === 'free') {
+            isUnlockedLead = false
           } else if (allowLeadOverage) {
             isOverageLead = true
           } else {
@@ -373,6 +378,8 @@ async function runMatch(request: Request) {
           }
         } else if (quotaDecision === 'overage') {
           isOverageLead = true
+        } else if (quotaDecision === 'preview') {
+          isUnlockedLead = false
         } else {
           stats.quota_reached++
           continue
@@ -387,6 +394,8 @@ async function runMatch(request: Request) {
         relevance_score:  score,
         relevance_reason: isWatchlisted ? `[Watchlisted] ${reason}` : reason,
         status: 'new',
+        is_unlocked: isUnlockedLead,
+        unlocked_at: isUnlockedLead ? new Date().toISOString() : null,
         dedupe_key: dedupeKey,
         match_debug: {
           client_id: profile.id,
@@ -400,7 +409,11 @@ async function runMatch(request: Request) {
 
       if (!error && inserted) {
         matched++
-        quotaState.set(profile.user_id, used + 1)
+        if (isUnlockedLead) {
+          quotaState.set(profile.user_id, used + 1)
+        } else {
+          stats.preview_inserted++
+        }
         if (isOverageLead) {
           stats.overage_inserted++
           recordLeadOverage(profile.user_id, inserted.id).catch(err =>

@@ -20,6 +20,7 @@ export interface LeadCardLead {
   relevance_score: number
   relevance_reason: string
   status: LeadStatus
+  is_unlocked: boolean
   created_at: string
   signals: LeadCardSignal
 }
@@ -28,6 +29,7 @@ export interface LeadCardProps {
   lead: LeadCardLead
   rowIndex: number
   isSelected: boolean
+  actionBusy?: boolean
   onSelect: () => void
   onDraftOutreach: (leadId: string) => void
   onStatusChange: (leadId: string, status: string) => void
@@ -71,6 +73,7 @@ export default function LeadCard({
   lead,
   rowIndex,
   isSelected,
+  actionBusy = false,
   onSelect,
   onDraftOutreach,
   onStatusChange,
@@ -92,14 +95,9 @@ export default function LeadCard({
         scoreBtnRef.current && !scoreBtnRef.current.contains(t)
       ) setShowReason(false)
     }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setShowReason(false)
-    }
     document.addEventListener('mousedown', onDocClick)
-    document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDocClick)
-      document.removeEventListener('keydown', onKey)
     }
   }, [showReason])
 
@@ -139,6 +137,11 @@ export default function LeadCard({
             <svg className="w-3 h-3 text-[var(--color-sig-hiring)] shrink-0" fill="currentColor" viewBox="0 0 24 24">
               <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.968 6.058a1 1 0 00.95.69h6.37c.969 0 1.371 1.24.588 1.81l-5.15 3.742a1 1 0 00-.364 1.118l1.968 6.058c.3.922-.755 1.688-1.54 1.118L12 17.79l-5.148 3.73c-.785.57-1.84-.196-1.54-1.117l1.967-6.058a1 1 0 00-.364-1.118L1.765 11.485c-.783-.57-.38-1.81.588-1.81h6.37a1 1 0 00.95-.69l1.968-6.058z" />
             </svg>
+          )}
+          {!lead.is_unlocked && (
+            <span className="inline-flex items-center rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-3)]">
+              Preview
+            </span>
           )}
         </div>
         {lead.company_domain && (
@@ -195,18 +198,22 @@ export default function LeadCard({
 
       {/* Status */}
       <td className="px-3 py-3.5 w-[110px]">
-        <select
-          value={lead.status}
-          onClick={e => e.stopPropagation()}
-          onChange={e => onStatusChange(lead.id, e.target.value)}
-          className={`text-[11px] font-medium bg-transparent border-0 outline-none cursor-pointer ${statusOption.style}`}
-        >
-          {STATUS_OPTIONS.map(s => (
-            <option key={s.value} value={s.value} className="bg-white text-[var(--color-text-1)]">
-              {s.label}
-            </option>
-          ))}
-        </select>
+        {lead.is_unlocked ? (
+          <select
+            value={lead.status}
+            onClick={e => e.stopPropagation()}
+            onChange={e => onStatusChange(lead.id, e.target.value)}
+            className={`text-[11px] font-medium bg-transparent border-0 outline-none cursor-pointer ${statusOption.style}`}
+          >
+            {STATUS_OPTIONS.map(s => (
+              <option key={s.value} value={s.value} className="bg-white text-[var(--color-text-1)]">
+                {s.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-[11px] font-medium text-[var(--color-text-4)]">Preview</span>
+        )}
       </td>
 
       {/* Time */}
@@ -221,9 +228,10 @@ export default function LeadCard({
         <div className="flex items-center justify-end gap-1">
           <button
             onClick={e => { e.stopPropagation(); onDraftOutreach(lead.id) }}
-            className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] border border-[var(--color-accent)]/25 hover:bg-[var(--color-accent)] hover:text-white hover:border-transparent transition-all"
+            disabled={actionBusy}
+            className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] border border-[var(--color-accent)]/25 hover:bg-[var(--color-accent)] hover:text-white hover:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Draft
+            {actionBusy ? 'Unlocking…' : lead.is_unlocked ? 'Draft' : 'Unlock'}
           </button>
           <button
             onClick={e => { e.stopPropagation(); onDelete(lead.id) }}

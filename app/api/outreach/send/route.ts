@@ -39,11 +39,14 @@ export async function POST(request: Request) {
   }
 
   const [leadRes, profileRes] = await Promise.all([
-    supabase.from('leads').select('id, status, client_id, target_company').eq('id', leadId).eq('user_id', user.id).single(),
+    supabase.from('leads').select('id, status, is_unlocked, client_id, target_company').eq('id', leadId).eq('user_id', user.id).single(),
     supabase.from('user_profiles').select('company_name, services_description, calendly_url, plan').eq('user_id', user.id).single(),
   ])
 
   if (!leadRes.data) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+  if (!leadRes.data.is_unlocked) {
+    return NextResponse.json({ error: 'Unlock this lead first before sending outreach.' }, { status: 403 })
+  }
 
   const userPlan = (profileRes.data?.plan ?? 'free') as PlanTier
   const planLimits = getPlanLimits(userPlan)

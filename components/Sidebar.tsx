@@ -117,15 +117,6 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
         })}
       </nav>
 
-      {/* Help / shortcut hint */}
-      {!collapsed && (
-        <div className="px-2.5 pb-2">
-          <div className="rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2.5 text-[11px] text-[var(--color-text-3)] leading-snug">
-            Press <span className="kbd">?</span> anywhere for keyboard shortcuts.
-          </div>
-        </div>
-      )}
-
       {/* User */}
       <div className="px-2.5 py-2.5 border-t border-[var(--color-line-1)] shrink-0">
         <div className={`flex items-center gap-2.5 rounded-lg px-2 h-10 hover:bg-[var(--color-ink-2)] transition-colors cursor-default ${collapsed ? 'justify-center' : ''}`}>

@@ -1,6 +1,6 @@
 import type { PlanTier } from '@/lib/plan'
 
-export type LeadQuotaDecision = 'reserve' | 'overage' | 'blocked'
+export type LeadQuotaDecision = 'reserve' | 'overage' | 'preview' | 'blocked'
 
 export function resolveLeadQuotaDecision(params: {
   used: number
@@ -14,7 +14,11 @@ export function resolveLeadQuotaDecision(params: {
     return 'reserve'
   }
 
-  if (allowLeadOverage && plan !== 'free') {
+  if (plan === 'free') {
+    return 'preview'
+  }
+
+  if (allowLeadOverage) {
     return 'overage'
   }
 

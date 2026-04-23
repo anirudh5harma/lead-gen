@@ -58,6 +58,8 @@ export default async function DashboardPage() {
       relevance_score,
       relevance_reason,
       status,
+      is_unlocked,
+      unlocked_at,
       created_at,
       sent_at,
       replied_at,

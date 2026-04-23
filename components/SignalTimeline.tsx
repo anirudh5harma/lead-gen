@@ -60,14 +60,6 @@ export default function SignalTimeline({ companyName, companyDomain, onClose }: 
     return () => { cancelled = true }
   }, [companyName])
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
     <>
       {/* Mobile full-screen overlay; desktop click-outside */}

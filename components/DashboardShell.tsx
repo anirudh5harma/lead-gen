@@ -7,7 +7,6 @@ import { createClient } from '@/lib/supabase/client'
 import Sidebar from './Sidebar'
 import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
-import ShortcutsHint from './ShortcutsHint'
 
 type View = 'feed' | 'watchlist' | 'settings'
 
@@ -198,12 +197,19 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               <div className="space-y-4">
                 {usagePct >= 80 && usagePct < 100 && !dismissed80 && (
                   <UsageWarningBanner
+                    plan={plan as 'free' | 'pro' | 'max'}
                     used={used}
                     limit={planLimit}
                     onDismiss={() => setDismissed80(true)}
                   />
                 )}
-                {usagePct >= 100 && !dismissedOver && (plan === 'free' || !overageEnabled) && (
+                {usagePct >= 100 && plan === 'free' && !dismissedOver && (
+                  <FreePreviewBanner
+                    limit={planLimit}
+                    onDismiss={() => setDismissedOver(true)}
+                  />
+                )}
+                {usagePct >= 100 && plan !== 'free' && !dismissedOver && !overageEnabled && (
                   <OverLimitModal
                     plan={plan as 'free' | 'pro' | 'max'}
                     used={used}
@@ -240,7 +246,6 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
           </div>
         </main>
 
-        <ShortcutsHint />
       </div>
     </div>
   )
@@ -1420,7 +1425,17 @@ function BlockedCompaniesPanel() {
 
 // ── Usage warning banner (80–99%) ─────────────────────────────────────────────
 
-function UsageWarningBanner({ used, limit, onDismiss }: { used: number; limit: number; onDismiss: () => void }) {
+function UsageWarningBanner({
+  plan,
+  used,
+  limit,
+  onDismiss,
+}: {
+  plan: 'free' | 'pro' | 'max'
+  used: number
+  limit: number
+  onDismiss: () => void
+}) {
   const pct = Math.round((used / limit) * 100)
   return (
     <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800">
@@ -1429,13 +1444,39 @@ function UsageWarningBanner({ used, limit, onDismiss }: { used: number; limit: n
       </svg>
       <p className="text-[13px] flex-1">
         <span className="font-medium">{pct}% of your monthly limit used</span>
-        {' '}— {used} of {limit} leads this period.{' '}
+        {' '}— {used} of {limit} {plan === 'free' ? 'lead unlocks' : 'leads'} this period.{' '}
         <Link href="/pricing" className="underline underline-offset-2 hover:text-amber-900 transition-colors">Upgrade</Link>
         {' '}to avoid interruptions.
       </p>
       <button
         onClick={onDismiss}
         className="shrink-0 text-amber-500 hover:text-amber-700 transition-colors"
+        aria-label="Dismiss"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+function FreePreviewBanner({ limit, onDismiss }: { limit: number; onDismiss: () => void }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--color-line-1)] bg-white text-[var(--color-text-2)]">
+      <svg className="w-4 h-4 shrink-0 text-[var(--color-accent)]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+      <p className="text-[13px] flex-1">
+        <span className="font-medium text-[var(--color-text-1)]">You’ve used all {limit} free lead unlocks.</span>
+        {' '}You can still browse every matched signal in preview mode. Upgrade to unlock more contacts and drafts.
+      </p>
+      <Link href="/pricing" className="shrink-0 h-8 px-3 rounded-full btn-primary text-[12px] font-medium inline-flex items-center">
+        Upgrade
+      </Link>
+      <button
+        onClick={onDismiss}
+        className="shrink-0 text-[var(--color-text-4)] hover:text-[var(--color-text-1)] transition-colors"
         aria-label="Dismiss"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -1525,7 +1566,7 @@ function OverLimitModal({
             </h2>
             <p className="text-[13px] text-[var(--color-text-3)] leading-relaxed">
               {plan === 'free' && (
-                <>You&rsquo;ve used all {limit} free leads this period. Upgrade to keep receiving new leads.</>
+                <>You&rsquo;ve used all {limit} free lead unlocks this period. You can still browse matched signals in preview mode, or upgrade to unlock more contacts and drafts.</>
               )}
               {plan === 'pro' && (
                 <>You&rsquo;ve used all {limit} Pro leads in your current 30-day window. You can keep the feed running with <strong className="text-[var(--color-text-1)]">$0.50 per extra lead</strong>, or upgrade to Max for 1,500 leads/mo.</>

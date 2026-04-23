@@ -84,7 +84,7 @@ export default function LoginPage() {
 
             <div className="flex items-center gap-5 text-[12px] text-[var(--color-text-3)]">
               <span className="inline-flex items-center gap-1.5">
-                <CheckMark /> Free tier · 15 leads/mo
+                <CheckMark /> Free tier · unlimited previews
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <CheckMark /> No credit card
@@ -308,7 +308,7 @@ const TIERS = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    perks: ['15 leads / month', 'Hyper-personalized outreach', 'Manual send'],
+    perks: ['Unlimited signal previews', '15 lead unlocks / month', 'Hyper-personalized outreach', 'Manual send'],
     cta: 'Get started',
     highlight: false,
   },
@@ -324,7 +324,7 @@ const TIERS = [
     name: 'Max',
     price: '$250',
     period: '/ month',
-    perks: ['Upto 1,500 leads / month', 'Multi-client workspaces', 'Slack alerts', 'CRM sync and exports', 'Priority queue'],
+    perks: ['Unlimited leads / month', 'Multi-client workspaces', 'Slack alerts', 'CRM sync and exports', 'Priority queue'],
     cta: 'Upgrade to Max',
     highlight: true,
   },

@@ -24,6 +24,8 @@ export interface Lead {
   relevance_score: number
   relevance_reason: string | null
   status: string
+  is_unlocked?: boolean
+  unlocked_at?: string | null
   created_at: string
   sent_at?: string | null
   replied_at?: string | null
@@ -78,6 +80,7 @@ function toCardLead(lead: Lead): LeadCardLead | null {
     relevance_score: lead.relevance_score,
     relevance_reason: lead.relevance_reason ?? '',
     status,
+    is_unlocked: lead.is_unlocked !== false,
     created_at: lead.created_at,
     signals: {
       signal_type: signalType,
@@ -93,6 +96,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [unlockingLeadId, setUnlockingLeadId] = useState<string | null>(null)
   const [timelineFor, setTimelineFor] = useState<{ name: string; domain?: string } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [filterSignal, setFilterSignal] = useState<'all' | SignalType>('all')
@@ -126,7 +130,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
 
           const { data } = await supabase
             .from('leads')
-            .select(`id, client_id, target_company, relevance_score, relevance_reason, status, created_at, sent_at, replied_at, booked_at,
+            .select(`id, client_id, target_company, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at,
               signals(signal_type, headline, summary, funding_amount, source_url, published_at, company_domain)`)
             .eq('id', payload.new.id)
             .single()
@@ -195,10 +199,35 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
     }
   }, [])
 
-  const openDraft = useCallback((lead: Lead) => {
+  const unlockLead = useCallback(async (lead: Lead) => {
+    if (lead.is_unlocked !== false) return true
+    setUnlockingLeadId(lead.id)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/unlock`, { method: 'POST' })
+      const data = await res.json().catch(() => ({})) as { unlockedAt?: string; error?: string }
+      if (!res.ok) {
+        setToast(data.error || 'Unable to unlock this lead right now.')
+        return false
+      }
+      setLeads(prev => prev.map(item =>
+        item.id === lead.id
+          ? { ...item, is_unlocked: true, unlocked_at: data.unlockedAt ?? new Date().toISOString() }
+          : item
+      ))
+      return true
+    } finally {
+      setUnlockingLeadId(null)
+    }
+  }, [])
+
+  const openDraft = useCallback(async (lead: Lead) => {
+    if (lead.is_unlocked === false) {
+      const unlocked = await unlockLead(lead)
+      if (!unlocked) return
+    }
     if (lead.status === 'new') updateStatus(lead.id, 'viewed')
-    setActiveLead(lead)
-  }, [updateStatus])
+    setActiveLead({ ...lead, is_unlocked: true, unlocked_at: lead.unlocked_at ?? new Date().toISOString() })
+  }, [unlockLead, updateStatus])
 
   const filteredLeads = useMemo(() => {
     let result = leads.filter(l => l.status !== 'dismissed')
@@ -222,34 +251,6 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
     if (selectedId && filteredLeads.some(l => l.id === selectedId)) return selectedId
     return filteredLeads[0]?.id ?? null
   }, [filteredLeads, selectedId])
-
-  useEffect(() => {
-    function isTyping(el: EventTarget | null) {
-      if (!(el instanceof HTMLElement)) return false
-      const t = el.tagName
-      return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable
-    }
-    function handler(e: KeyboardEvent) {
-      if (isTyping(e.target)) return
-      if (e.key === 'Escape') { if (activeLead) { setActiveLead(null); e.preventDefault() }; return }
-      if (!filteredLeads.length) return
-      const idx = effectiveSelectedId ? filteredLeads.findIndex(l => l.id === effectiveSelectedId) : -1
-      if (e.key === 'j' || e.key === 'ArrowDown') {
-        e.preventDefault(); setSelectedId(filteredLeads[Math.min(idx < 0 ? 0 : idx + 1, filteredLeads.length - 1)].id)
-      } else if (e.key === 'k' || e.key === 'ArrowUp') {
-        e.preventDefault(); setSelectedId(filteredLeads[Math.max(idx <= 0 ? 0 : idx - 1, 0)].id)
-      } else if (e.key === 'd') {
-        const sel = filteredLeads.find(l => l.id === effectiveSelectedId)
-        if (sel) { e.preventDefault(); openDraft(sel) }
-      } else if (e.key === 's' && effectiveSelectedId) {
-        e.preventDefault(); updateStatus(effectiveSelectedId, 'sent')
-      } else if (e.key === 'b' && effectiveSelectedId) {
-        e.preventDefault(); updateStatus(effectiveSelectedId, 'booked')
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [filteredLeads, effectiveSelectedId, activeLead, openDraft, updateStatus])
 
   return (
     <div className="space-y-4">
@@ -339,6 +340,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
                     lead={card}
                     rowIndex={i + 1}
                     isSelected={effectiveSelectedId === lead.id}
+                    actionBusy={unlockingLeadId === lead.id}
                     onSelect={() => setSelectedId(lead.id)}
                     onDraftOutreach={() => openDraft(lead)}
                     onStatusChange={(id, status) => updateStatus(id, status)}

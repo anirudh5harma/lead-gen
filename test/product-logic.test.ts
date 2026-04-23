@@ -86,13 +86,13 @@ test('outreach context falls back cleanly when no client profile exists', () => 
   assert.equal(context.calendlyUrl, null)
 })
 
-test('lead quota decision blocks free overage and allows paid overage', () => {
+test('lead quota decision previews free over-limit leads and allows paid overage', () => {
   assert.equal(resolveLeadQuotaDecision({
     used: 10,
     monthlyLimit: 10,
     allowLeadOverage: true,
     plan: 'free',
-  }), 'blocked')
+  }), 'preview')
 
   assert.equal(resolveLeadQuotaDecision({
     used: 300,

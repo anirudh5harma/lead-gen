@@ -34,22 +34,11 @@ export async function POST(request: Request) {
     )
   }
 
-  // Check if draft already exists
-  const { data: existingDraft } = await supabase
-    .from('outreach_drafts')
-    .select('id, subject, body, stakeholders')
-    .eq('lead_id', leadId)
-    .single()
-
-  if (existingDraft) {
-    return NextResponse.json(existingDraft)
-  }
-
   // Fetch lead + signal, and user profile separately (no direct FK from leads → user_profiles)
   const [leadRes, profileRes] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, client_id, target_company, relevance_reason, contact_email, contact_name, contact_title, signals (signal_type, summary, company_domain, headline, funding_amount, published_at, source_url)')
+      .select('id, client_id, is_unlocked, target_company, relevance_reason, contact_email, contact_name, contact_title, signals (signal_type, summary, company_domain, headline, funding_amount, published_at, source_url)')
       .eq('id', leadId)
       .eq('user_id', user.id)
       .single(),
@@ -62,6 +51,21 @@ export async function POST(request: Request) {
 
   if (leadRes.error || !leadRes.data) {
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+  }
+
+  if (!leadRes.data.is_unlocked) {
+    return NextResponse.json({ error: 'Unlock this lead first to generate contacts and outreach.' }, { status: 403 })
+  }
+
+  // Check if draft already exists
+  const { data: existingDraft } = await supabase
+    .from('outreach_drafts')
+    .select('id, subject, body, stakeholders')
+    .eq('lead_id', leadId)
+    .single()
+
+  if (existingDraft) {
+    return NextResponse.json(existingDraft)
   }
 
   const lead = leadRes.data as typeof leadRes.data & {
