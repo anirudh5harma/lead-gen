@@ -87,7 +87,11 @@ export async function POST(request: Request) {
 
     await supabase.from('leads').update({ status: 'replied', replied_at: now }).eq('id', lead.id)
     await supabase.from('scheduled_followups')
-      .update({ sent_at: now })
+      .update({
+        sent_at: now,
+        processing_started_at: null,
+        processing_token: null,
+      })
       .eq('lead_id', lead.id)
       .is('sent_at', null)
   }

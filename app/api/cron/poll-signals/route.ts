@@ -9,9 +9,16 @@ import {
   fetchCompanyOwnedItems,
   fetchGdeltItems,
   fetchHackerNewsItems,
+  fetchMonitoredCompanyNewsItems,
   fetchProductHuntItems,
-  type CompanySeed,
 } from '@/lib/signal-sources'
+import {
+  fetchMonitoredCompaniesForPolling,
+  markMonitoredCompaniesPolled,
+  markMonitoredCompanySignalsByKey,
+  syncMonitoredAccountsFromWorkspaceSources,
+} from '@/lib/monitored-accounts'
+import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '@/lib/signal-novelty'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,8 +28,9 @@ const QUERY_BATCH_SIZE = 5
 const MAX_CANDIDATES_PER_RUN = 100
 const PROCESS_BATCH_SIZE = 4
 const EXTRACT_TIMEOUT_MS = 12_000
-const JOB_BOARD_COMPANY_LIMIT = 30
-const JOB_BOARD_BATCH_SIZE = 8
+const MONITORED_COMPANY_LIMIT = 140
+const JOB_BOARD_COMPANY_LIMIT = 120
+const JOB_BOARD_BATCH_SIZE = 12
 
 const EVENT_KEYWORDS: Record<string, RegExp> = {
   funding: /\b(raise[sd]?|funding|financing|series [a-z]|seed round|venture capital|investment)\b/i,
@@ -85,6 +93,7 @@ async function runPoll(request: Request) {
     fetched_hacker_news: 0,
     fetched_product_hunt: 0,
     fetched_company_owned: 0,
+    fetched_company_news: 0,
     deduped_candidates: 0,
     shortlisted: 0,
     extract_success: 0,
@@ -96,9 +105,11 @@ async function runPoll(request: Request) {
     insert_errors: 0,
     job_board_checked: 0,
     job_board_inserted: 0,
-    monitored_companies: 0,
+    monitored_accounts_seeded: 0,
+    monitored_accounts_selected: 0,
     previously_processed: 0,
   }
+  const insertedCompanies: Array<{ name: string; domain: string | null }> = []
 
   // ── 1. Collect all RSS items ──────────────────────────────────────
 
@@ -121,19 +132,24 @@ async function runPoll(request: Request) {
     if (r.status === 'fulfilled') prItems.push(...r.value)
   }
 
-  const companySeeds = await collectCompaniesForMonitoring(supabase)
-  stats.monitored_companies = companySeeds.length
+  const monitorSync = await syncMonitoredAccountsFromWorkspaceSources(supabase)
+  stats.monitored_accounts_seeded = monitorSync.seeded
 
-  const [gdeltResult, hackerNewsResult, productHuntResult, companyOwnedResult] = await Promise.allSettled([
+  const monitoredCompanies = await fetchMonitoredCompaniesForPolling(supabase, MONITORED_COMPANY_LIMIT)
+  stats.monitored_accounts_selected = monitoredCompanies.length
+
+  const [gdeltResult, hackerNewsResult, productHuntResult, companyOwnedResult, companyNewsResult] = await Promise.allSettled([
     fetchGdeltItems(),
     fetchHackerNewsItems(),
     fetchProductHuntItems(),
-    fetchCompanyOwnedItems(companySeeds),
+    fetchCompanyOwnedItems(monitoredCompanies),
+    fetchMonitoredCompanyNewsItems(monitoredCompanies),
   ])
   const gdeltItems = gdeltResult.status === 'fulfilled' ? gdeltResult.value : []
   const hackerNewsItems = hackerNewsResult.status === 'fulfilled' ? hackerNewsResult.value : []
   const productHuntItems = productHuntResult.status === 'fulfilled' ? productHuntResult.value : []
   const companyOwnedItems = companyOwnedResult.status === 'fulfilled' ? companyOwnedResult.value : []
+  const companyNewsItems = companyNewsResult.status === 'fulfilled' ? companyNewsResult.value : []
 
   const allItems = [
     ...googleItems,
@@ -142,6 +158,7 @@ async function runPoll(request: Request) {
     ...hackerNewsItems,
     ...productHuntItems,
     ...companyOwnedItems,
+    ...companyNewsItems,
   ]
   stats.fetched_google = googleItems.length
   stats.fetched_press = prItems.length
@@ -149,10 +166,16 @@ async function runPoll(request: Request) {
   stats.fetched_hacker_news = hackerNewsItems.length
   stats.fetched_product_hunt = productHuntItems.length
   stats.fetched_company_owned = companyOwnedItems.length
+  stats.fetched_company_news = companyNewsItems.length
   console.log(
     `Poll: ${googleItems.length} Google News, ${prItems.length} press, ${gdeltItems.length} GDELT, ` +
-    `${hackerNewsItems.length} HN, ${productHuntItems.length} Product Hunt, ${companyOwnedItems.length} owned feed items`
+    `${hackerNewsItems.length} HN, ${productHuntItems.length} Product Hunt, ${companyOwnedItems.length} owned feed items, ` +
+    `${companyNewsItems.length} monitored company news items`
   )
+
+  if (monitoredCompanies.length > 0) {
+    await markMonitoredCompaniesPolled(supabase, monitoredCompanies)
+  }
 
   // ── 2. Process each RSS item ──────────────────────────────────────
   const candidates = shortlistItems(allItems)
@@ -208,6 +231,10 @@ async function runPoll(request: Request) {
           case 'inserted':
             inserted++
             stats.extract_success++
+            insertedCompanies.push({
+              name: outcome.companyName,
+              domain: outcome.companyDomain ?? null,
+            })
             break
           case 'duplicate':
             stats.extract_success++
@@ -250,7 +277,7 @@ async function runPoll(request: Request) {
   // For each watchlisted or recently discovered company, check Lever/Greenhouse.
   // If they have 5+ open roles, create a hiring signal (once per 7 days).
 
-  const jobBoardCompanies = companySeeds.slice(0, JOB_BOARD_COMPANY_LIMIT)
+  const jobBoardCompanies = monitoredCompanies.slice(0, JOB_BOARD_COMPANY_LIMIT)
   if (jobBoardCompanies.length) {
     stats.job_board_checked = jobBoardCompanies.length
     const jobBoardInserted: string[] = []
@@ -279,6 +306,13 @@ async function runPoll(request: Request) {
           const summary = result.seniorRoles.length > 0
             ? `${entry.name} is actively hiring ${result.jobCount} roles including senior positions: ${seniorTitles.slice(0, 150)}.`
             : `${entry.name} has ${result.jobCount} open positions on ${result.platform}, signaling growth and potential new buying mandates.`
+          const headline = `${entry.name} is actively hiring - ${result.jobCount} open roles on ${result.platform}`
+          const noveltyKey = buildSignalNoveltyKey({
+            companyName: entry.name,
+            companyDomain: entry.domain,
+            headline,
+            summary,
+          })
 
           const embedding = await embed(`${entry.name} hiring ${summary}`)
 
@@ -286,8 +320,9 @@ async function runPoll(request: Request) {
             company_name:     entry.name,
             company_domain:   entry.domain,
             signal_type:      'hiring',
-            headline:         `${entry.name} is actively hiring - ${result.jobCount} open roles on ${result.platform}`,
+            headline,
             summary,
+            novelty_key:      noveltyKey,
             source_url:       null,
             source_name:      'job_board',
             published_at:     new Date().toISOString(),
@@ -301,6 +336,10 @@ async function runPoll(request: Request) {
 
           inserted++
           stats.job_board_inserted++
+          insertedCompanies.push({
+            name: entry.name,
+            domain: entry.domain ?? null,
+          })
           return entry.name
         })
       )
@@ -320,6 +359,7 @@ async function runPoll(request: Request) {
   // ── 4. Kick off lead matching ─────────────────────────────────────
   let matchTriggered = false
   if (inserted > 0) {
+    await markMonitoredCompanySignalsByKey(supabase, insertedCompanies)
     matchTriggered = true
     fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/leads/match`, {
       method: 'POST',
@@ -341,56 +381,6 @@ async function runPoll(request: Request) {
   }
 }
 
-async function collectCompaniesForMonitoring(
-  supabase: Awaited<ReturnType<typeof createServiceClient>>
-): Promise<CompanySeed[]> {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  const [watchlistResult, signalsResult, leadsResult] = await Promise.allSettled([
-    supabase
-      .from('watchlist_companies')
-      .select('company_name, company_domain')
-      .limit(80),
-    supabase
-      .from('signals')
-      .select('company_name, company_domain')
-      .gte('published_at', thirtyDaysAgo)
-      .order('published_at', { ascending: false })
-      .limit(80),
-    supabase
-      .from('leads')
-      .select('target_company, company_domain')
-      .order('created_at', { ascending: false })
-      .limit(80),
-  ])
-
-  const companies: CompanySeed[] = []
-  const addCompany = (name?: string | null, domain?: string | null) => {
-    const trimmedName = name?.trim()
-    if (!trimmedName) return
-    companies.push({ name: trimmedName, domain: normalizeDomain(domain) })
-  }
-
-  if (watchlistResult.status === 'fulfilled') {
-    for (const row of watchlistResult.value.data ?? []) {
-      addCompany(row.company_name, row.company_domain)
-    }
-  }
-
-  if (signalsResult.status === 'fulfilled') {
-    for (const row of signalsResult.value.data ?? []) {
-      addCompany(row.company_name, row.company_domain)
-    }
-  }
-
-  if (leadsResult.status === 'fulfilled') {
-    for (const row of leadsResult.value.data ?? []) {
-      addCompany(row.target_company, row.company_domain)
-    }
-  }
-
-  return uniqueCompanySeeds(companies).slice(0, 50)
-}
-
 function shortlistItems(allItems: RSSItem[]): ShortlistResult {
   const seen = new Set<string>()
   const deduped: CandidateWorkItem[] = []
@@ -410,25 +400,31 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
     const text = combinedText.toLowerCase()
     const hasNamedCompany = NAMED_COMPANY_PATTERN.test(item.title)
     const matchedHighSignal = HIGH_SIGNAL_PATTERNS.some(({ pattern }) => pattern.test(combinedText))
+    const keywordHits = Object.values(EVENT_KEYWORDS).reduce((count, pattern) => (
+      count + (pattern.test(text) ? 1 : 0)
+    ), 0)
     const isPressRelease = item.source === 'prnewswire' || item.source === 'businesswire' || item.source === 'globenewswire'
     const isOwnedSource = item.source === 'company_owned'
     const isLaunchSource = item.source === 'hacker_news' || item.source === 'product_hunt'
     const isBroadNewsSource = item.source === 'gdelt'
+    const isMonitoredNewsSource = item.source === 'google_news_company'
 
     if (!hasNamedCompany) {
       continue
     }
 
-    if (!matchedHighSignal && !isPressRelease) {
+    if (
+      !matchedHighSignal &&
+      !isPressRelease &&
+      !((isOwnedSource || isMonitoredNewsSource || isLaunchSource) && keywordHits > 0)
+    ) {
       continue
     }
 
-    const keywordHits = Object.values(EVENT_KEYWORDS).reduce((count, pattern) => (
-      count + (pattern.test(text) ? 1 : 0)
-    ), 0)
     let sourceBoost = 1
     if (isPressRelease) sourceBoost = 4
     if (isOwnedSource) sourceBoost = 5
+    if (isMonitoredNewsSource) sourceBoost = 4
     if (isLaunchSource) sourceBoost = 3
     if (isBroadNewsSource) sourceBoost = 2
     const recencyBoost = item.pubDate
@@ -451,7 +447,7 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
 }
 
 type ProcessOutcome =
-  | { status: 'inserted' }
+  | { status: 'inserted'; companyName: string; companyDomain: string | null }
   | { status: 'duplicate' }
   | { status: 'extract_null' }
   | { status: 'extract_timeout' }
@@ -503,22 +499,52 @@ async function processItem(
   const pubDate = item.pubDate
     ? new Date(item.pubDate).toISOString()
     : new Date().toISOString()
-  const dateOnly = pubDate.split('T')[0]
+  const noveltyKey = buildSignalNoveltyKey({
+    companyName: signal.company_name,
+    companyDomain: signal.company_domain,
+    headline: item.title,
+    summary: signal.summary,
+    fundingAmount: signal.funding_amount,
+  })
+  const noveltyWindowStart = new Date(new Date(pubDate).getTime() - (72 * 60 * 60 * 1000)).toISOString()
 
-  const { data: existing } = await supabase
+  const recentSignalsQuery = supabase
     .from('signals')
-    .select('id')
-    .eq('company_name', signal.company_name)
-    .eq('signal_type', signal.signal_type)
-    .gte('published_at', `${dateOnly}T00:00:00Z`)
-    .lte('published_at', `${dateOnly}T23:59:59Z`)
-    .maybeSingle()
+    .select('id, novelty_key, headline, summary, company_name, company_domain, funding_amount')
+    .gte('published_at', noveltyWindowStart)
+    .order('published_at', { ascending: false })
+    .limit(12)
 
-  if (existing) {
+  const { data: recentSignals } = signal.company_domain
+    ? await recentSignalsQuery.eq('company_domain', signal.company_domain)
+    : await recentSignalsQuery.eq('company_name', signal.company_name)
+
+  const duplicateSignal = (recentSignals ?? []).find(existing =>
+    (existing.novelty_key && existing.novelty_key === noveltyKey) ||
+    isLikelySameSignalEvent(
+      {
+        companyName: signal.company_name,
+        companyDomain: signal.company_domain,
+        headline: item.title,
+        summary: signal.summary,
+        fundingAmount: signal.funding_amount,
+      },
+      {
+        companyName: existing.company_name,
+        companyDomain: existing.company_domain,
+        headline: existing.headline,
+        summary: existing.summary,
+        fundingAmount: existing.funding_amount,
+      },
+    )
+  )
+
+  if (duplicateSignal) {
     await updateCandidateStatus(supabase, candidateId, {
       extract_status: 'duplicate',
       extract_confidence: signal.confidence,
       extracted_signal: signal,
+      created_signal_id: duplicateSignal.id,
     })
     return { status: 'duplicate' }
   }
@@ -544,6 +570,7 @@ async function processItem(
     headline:         item.title,
     summary:          signal.summary,
     funding_amount:   signal.funding_amount,
+    novelty_key:      noveltyKey,
     source_url:       item.link,
     source_name:      item.source,
     published_at:     pubDate,
@@ -578,20 +605,32 @@ async function processItem(
     return { status: 'insert_error' }
   }
 
-  const { data: insertedSignal } = await supabase
-    .from('signals')
-    .select('id')
-    .eq('source_url', item.link)
-    .maybeSingle()
+  const insertedSignal = item.link
+    ? await supabase
+        .from('signals')
+        .select('id')
+        .eq('source_url', item.link)
+        .maybeSingle()
+    : await supabase
+        .from('signals')
+        .select('id')
+        .eq('novelty_key', noveltyKey)
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
   await updateCandidateStatus(supabase, candidateId, {
     extract_status: 'inserted',
     extract_confidence: signal.confidence,
     extracted_signal: signal,
-    created_signal_id: insertedSignal?.id ?? null,
+    created_signal_id: insertedSignal.data?.id ?? null,
   })
 
-  return { status: 'inserted' }
+  return {
+    status: 'inserted',
+    companyName: signal.company_name,
+    companyDomain: signal.company_domain ?? null,
+  }
 }
 async function updateCandidateStatus(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
@@ -606,31 +645,4 @@ async function updateCandidateStatus(
   if (error) {
     console.error('[poll-signals] signal_candidates update error:', error.message)
   }
-}
-
-function uniqueCompanySeeds(companies: CompanySeed[]): CompanySeed[] {
-  const seen = new Set<string>()
-  const unique: CompanySeed[] = []
-
-  for (const company of companies) {
-    const name = company.name.trim()
-    if (!name) continue
-    const domain = normalizeDomain(company.domain)
-    const key = domain || name.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    unique.push({ name, domain })
-  }
-
-  return unique
-}
-
-function normalizeDomain(domain?: string | null): string | null {
-  if (!domain) return null
-  return domain
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '')
-    .split('/')[0]
-    .trim() || null
 }

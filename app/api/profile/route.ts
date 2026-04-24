@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { extractICPKeywords } from '@/lib/claude'
 import { resolveServicesDescription } from '@/lib/company-profile'
+import { syncMonitoredAccountsFromWorkspaceSources } from '@/lib/monitored-accounts'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const service = await createServiceClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
@@ -137,6 +139,10 @@ export async function POST(request: Request) {
     console.error('Profile save error:', error)
     return NextResponse.json({ error: 'Failed to save profile' }, { status: 500 })
   }
+
+  syncMonitoredAccountsFromWorkspaceSources(service).catch(syncError => {
+    console.error('[profile] monitored account sync failed:', syncError)
+  })
 
   return NextResponse.json({ ok: true })
 }

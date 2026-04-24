@@ -2,15 +2,19 @@
   "crons": [
     {
       "path": "/api/cron/poll-signals",
-      "schedule": "0 */3 * * *"
+      "schedule": "0 */2 * * *"
     },
     {
       "path": "/api/leads/match",
-      "schedule": "10 * * * *"
+      "schedule": "10 */2 * * *"
+    },
+    {
+      "path": "/api/cron/deliver-leads",
+      "schedule": "20 */2 * * *"
     },
     {
       "path": "/api/cron/send-followups",
-      "schedule": "15 * * * *"
+      "schedule": "25 */2 * * *"
     },
     {
       "path": "/api/cron/enrich-contacts",

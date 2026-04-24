@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
+import { syncMonitoredAccountsFromWorkspaceSources, upsertMonitoredAccountSeeds } from '@/lib/monitored-accounts'
 
 export async function GET() {
   const supabase = await createClient()
@@ -23,6 +24,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const service = await createServiceClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
@@ -57,11 +59,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  if (activeClientId) {
+    upsertMonitoredAccountSeeds(service, [{
+      userId: user.id,
+      clientId: activeClientId,
+      companyName: company_name.trim(),
+      companyDomain: company_domain?.trim() || null,
+      source: 'watchlist',
+      sourceTimestamp: new Date().toISOString(),
+      priorityBoost: 20,
+    }]).catch(err => {
+      console.error('[watchlist] monitored account upsert failed:', err)
+    })
+  }
+
   return NextResponse.json({ company: data })
 }
 
 export async function DELETE(request: Request) {
   const supabase = await createClient()
+  const service = await createServiceClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
@@ -79,5 +96,8 @@ export async function DELETE(request: Request) {
   const { error } = await query
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  syncMonitoredAccountsFromWorkspaceSources(service).catch(err => {
+    console.error('[watchlist] monitored account sync failed:', err)
+  })
   return NextResponse.json({ ok: true })
 }

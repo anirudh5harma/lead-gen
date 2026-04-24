@@ -1,4 +1,4 @@
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+const DEDUPE_WINDOW_MS = 72 * 60 * 60 * 1000
 
 const COMPANY_SUFFIX_RE = /\b(inc|incorporated|corp|corporation|llc|ltd|limited|plc|co|company|group|holdings|technologies|technology)\b\.?/g
 
@@ -18,15 +18,23 @@ export function normalizeLeadCompanyKey(companyName: string, companyDomain?: str
 }
 
 export function leadDedupeBucket(date = new Date()): string {
-  return String(Math.floor(date.getTime() / WEEK_MS))
+  return String(Math.floor(date.getTime() / DEDUPE_WINDOW_MS))
 }
 
 export function buildLeadDedupeKey(params: {
   companyName: string
   companyDomain?: string | null
   signalType: string
+  noveltyKey?: string | null
   date?: Date
 }): string {
+  if (params.noveltyKey?.trim()) {
+    return [
+      params.noveltyKey.trim().toLowerCase(),
+      leadDedupeBucket(params.date),
+    ].join(':')
+  }
+
   return [
     normalizeLeadCompanyKey(params.companyName, params.companyDomain),
     params.signalType.toLowerCase(),

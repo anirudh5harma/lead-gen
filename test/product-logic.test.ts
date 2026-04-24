@@ -5,6 +5,14 @@ import { resolveOutreachContext, scheduleFollowupAt } from '../lib/outreach-cont
 import { resolveLeadQuotaDecision } from '../lib/lead-quota.ts'
 import { normalizeCompanyWebsiteUrl, resolveServicesDescription } from '../lib/company-profile.ts'
 import { buildLeadDedupeKey, normalizeLeadCompanyKey } from '../lib/lead-dedupe.ts'
+import { computeDeliveryAllowance } from '../lib/lead-delivery.ts'
+import { aggregateMonitoredAccountSeeds, buildMonitoredAccountKey, computeMonitoredAccountPriority } from '../lib/monitored-accounts.ts'
+import { mergeProfileCandidates, signalTextMatchesKeywords } from '../lib/match-candidates.ts'
+import { buildFeedbackMaps, computeCandidateFeedbackBoost, computeLeadFeedbackScore, sortQueueRowsByFeedback } from '../lib/ranking-feedback.ts'
+import { extractBearerToken, isInternalOpsBearerToken, isInternalOpsEmailAllowed } from '../lib/internal-ops-auth.ts'
+import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
+import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
+import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 
 test('non-max plans only keep the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -157,4 +165,451 @@ test('lead dedupe keys normalize company variants by domain or legal suffix', ()
       date: new Date('2026-04-23T12:00:00.000Z'),
     }),
   )
+
+  const noveltyKey = 'domain:acme.com:credit-union-underwrit'
+  assert.equal(
+    buildLeadDedupeKey({
+      companyName: 'Acme',
+      companyDomain: 'acme.com',
+      signalType: 'expansion',
+      noveltyKey,
+      date: new Date('2026-04-23T00:00:00.000Z'),
+    }),
+    buildLeadDedupeKey({
+      companyName: 'Acme',
+      companyDomain: 'acme.com',
+      signalType: 'funding',
+      noveltyKey,
+      date: new Date('2026-04-23T12:00:00.000Z'),
+    }),
+  )
+})
+
+test('signal novelty detects the same event across slightly different wording', () => {
+  const eventA = {
+    companyName: 'Acme',
+    companyDomain: 'acme.com',
+    headline: 'Acme launches underwriting platform for credit unions',
+    summary: 'Acme launched an underwriting workflow product for credit unions and community lenders.',
+  }
+  const eventB = {
+    companyName: 'Acme Inc.',
+    companyDomain: 'https://www.acme.com',
+    headline: 'Acme unveils product for credit unions',
+    summary: 'Acme introduced an underwriting workflow platform for credit unions and community lenders.',
+  }
+
+  assert.equal(isLikelySameSignalEvent(eventA, eventB), true)
+  assert.match(buildSignalNoveltyKey(eventA), /^domain:acme\.com:/)
+})
+
+test('delivery allowance scales with paid backlog but respects recent daily volume', () => {
+  assert.equal(computeDeliveryAllowance({
+    plan: 'pro',
+    monthlyLimit: 300,
+    used: 120,
+    pendingCount: 96,
+    deliveredLast24h: 2,
+    allowLeadOverage: false,
+  }), 1)
+
+  assert.equal(computeDeliveryAllowance({
+    plan: 'max',
+    monthlyLimit: 1500,
+    used: 400,
+    pendingCount: 360,
+    deliveredLast24h: 8,
+    allowLeadOverage: true,
+  }), 6)
+})
+
+test('delivery allowance lets free users receive preview batches', () => {
+  assert.equal(computeDeliveryAllowance({
+    plan: 'free',
+    monthlyLimit: 15,
+    used: 15,
+    pendingCount: 48,
+    deliveredLast24h: 0,
+    allowLeadOverage: false,
+  }), 1)
+})
+
+test('monitored account keys normalize across website and domain variants', () => {
+  assert.equal(
+    buildMonitoredAccountKey({
+      companyName: 'Acme Technologies, Inc.',
+      websiteUrl: 'https://www.acme.com',
+    }),
+    buildMonitoredAccountKey({
+      companyName: 'Acme',
+      companyDomain: 'acme.com',
+    }),
+  )
+})
+
+test('watchlist seeds outrank queue-only monitored accounts', () => {
+  const watchlistPriority = computeMonitoredAccountPriority({
+    userId: 'u1',
+    clientId: 'c1',
+    companyName: 'Acme',
+    companyDomain: 'acme.com',
+    source: 'watchlist',
+    sourceTimestamp: new Date().toISOString(),
+  })
+
+  const queuePriority = computeMonitoredAccountPriority({
+    userId: 'u1',
+    clientId: 'c1',
+    companyName: 'Acme',
+    companyDomain: 'acme.com',
+    source: 'queue',
+    sourceTimestamp: new Date().toISOString(),
+  })
+
+  assert.ok(watchlistPriority > queuePriority)
+})
+
+test('monitored account aggregation merges seed sources for the same workspace company', () => {
+  const aggregated = aggregateMonitoredAccountSeeds([
+    {
+      userId: 'u1',
+      clientId: 'c1',
+      companyName: 'Acme',
+      companyDomain: 'acme.com',
+      source: 'watchlist',
+      sourceTimestamp: '2026-04-24T00:00:00.000Z',
+    },
+    {
+      userId: 'u1',
+      clientId: 'c1',
+      companyName: 'Acme Inc.',
+      websiteUrl: 'https://www.acme.com',
+      source: 'lead',
+      sourceTimestamp: '2026-04-25T00:00:00.000Z',
+    },
+  ])
+
+  assert.equal(aggregated.length, 1)
+  assert.equal(aggregated[0]?.isWatchlist, true)
+  assert.deepEqual([...aggregated[0]!.seedSources].sort(), ['lead', 'watchlist'])
+})
+
+test('keyword matching checks signal text fields together', () => {
+  assert.equal(signalTextMatchesKeywords({
+    id: 'sig_1',
+    company_name: 'Acme',
+    signal_type: 'expansion',
+    summary: 'Acme launched an underwriting platform for credit unions.',
+    headline: 'Acme launches new underwriting platform',
+  }, ['credit unions']), true)
+
+  assert.equal(signalTextMatchesKeywords({
+    id: 'sig_2',
+    company_name: 'Acme',
+    signal_type: 'funding',
+    summary: 'Series A financing',
+    headline: 'Acme raises capital',
+  }, ['health systems']), false)
+})
+
+test('candidate merging keeps the strongest combined watchlist and semantic signals', () => {
+  const merged = mergeProfileCandidates([
+    {
+      signal: {
+        id: 'sig_1',
+        company_name: 'Acme',
+        signal_type: 'expansion',
+        summary: 'Acme launched a new platform',
+        headline: 'Acme launches platform',
+        published_at: '2026-04-24T10:00:00.000Z',
+        source_name: 'company_owned',
+      },
+      similarity: 0.42,
+    },
+    {
+      signal: {
+        id: 'sig_1',
+        company_name: 'Acme',
+        signal_type: 'expansion',
+        summary: 'Acme launched a new platform',
+        headline: 'Acme launches platform',
+        published_at: '2026-04-24T10:00:00.000Z',
+        source_name: 'company_owned',
+      },
+      isWatchlisted: true,
+    },
+    {
+      signal: {
+        id: 'sig_2',
+        company_name: 'Beta',
+        signal_type: 'funding',
+        summary: 'Beta raised a Series A',
+        headline: 'Beta raises Series A',
+        published_at: '2026-04-23T10:00:00.000Z',
+        source_name: 'prnewswire',
+      },
+      similarity: 0.55,
+    },
+  ], 5)
+
+  assert.equal(merged.length, 2)
+  assert.equal(merged[0]?.signal.id, 'sig_1')
+  assert.equal(merged[0]?.isWatchlisted, true)
+  assert.equal(merged[0]?.similarity, 0.42)
+})
+
+test('feedback boosts favor companies and sources with positive historical outcomes', () => {
+  const maps = buildFeedbackMaps([
+    {
+      client_id: 'client_1',
+      target_company: 'Acme',
+      company_domain: 'acme.com',
+      status: 'replied',
+      is_unlocked: true,
+      created_at: new Date().toISOString(),
+      replied_at: new Date().toISOString(),
+      signals: { signal_type: 'expansion', source_name: 'company_owned' },
+    },
+    {
+      client_id: 'client_1',
+      target_company: 'Acme',
+      company_domain: 'acme.com',
+      status: 'booked',
+      is_unlocked: true,
+      created_at: new Date().toISOString(),
+      booked_at: new Date().toISOString(),
+      signals: { signal_type: 'expansion', source_name: 'company_owned' },
+    },
+  ])
+
+  const positiveBoost = computeCandidateFeedbackBoost(maps, {
+    clientId: 'client_1',
+    companyName: 'Acme Inc.',
+    companyDomain: 'acme.com',
+    signalType: 'expansion',
+    sourceName: 'company_owned',
+  })
+
+  const neutralBoost = computeCandidateFeedbackBoost(maps, {
+    clientId: 'client_1',
+    companyName: 'Beta',
+    companyDomain: 'beta.com',
+    signalType: 'funding',
+    sourceName: 'prnewswire',
+  })
+
+  assert.ok(positiveBoost > neutralBoost)
+})
+
+test('feedback ranking can reorder queue rows beyond stored priority', () => {
+  const maps = buildFeedbackMaps([
+    {
+      client_id: 'client_1',
+      target_company: 'Acme',
+      company_domain: 'acme.com',
+      status: 'booked',
+      is_unlocked: true,
+      created_at: new Date().toISOString(),
+      booked_at: new Date().toISOString(),
+      signals: { signal_type: 'expansion', source_name: 'company_owned' },
+    },
+  ])
+
+  const ranked = sortQueueRowsByFeedback([
+    {
+      id: 'queue_1',
+      client_id: 'client_1',
+      target_company: 'Beta',
+      company_domain: 'beta.com',
+      source_name: 'prnewswire',
+      priority_score: 120,
+      signals: { signal_type: 'funding' },
+    },
+    {
+      id: 'queue_2',
+      client_id: 'client_1',
+      target_company: 'Acme',
+      company_domain: 'acme.com',
+      source_name: 'company_owned',
+      priority_score: 90,
+      signals: { signal_type: 'expansion' },
+    },
+  ], maps)
+
+  assert.equal(ranked[0]?.id, 'queue_2')
+  assert.ok((ranked[0]?.feedbackBoost ?? 0) > 0)
+})
+
+test('feedback scoring does not treat missing unlock state as positive engagement', () => {
+  const score = computeLeadFeedbackScore({
+    client_id: 'client_1',
+    target_company: 'Acme',
+    status: 'new',
+    created_at: new Date().toISOString(),
+  })
+
+  assert.equal(score, 0)
+})
+
+test('weekly review compares current and prior seven-day windows correctly', () => {
+  const review = buildWeeklyReview({
+    now: new Date('2026-04-24T12:00:00.000Z'),
+    signalRows: [
+      { id: 'sig_current', signal_type: 'funding', source_name: 'company_owned', published_at: '2026-04-22T00:00:00.000Z' },
+      { id: 'sig_previous', signal_type: 'funding', source_name: 'prnewswire', published_at: '2026-04-12T00:00:00.000Z' },
+    ],
+    queueRows: [
+      {
+        id: 'queue_current',
+        queue_status: 'delivered',
+        attempt_count: 1,
+        created_at: '2026-04-21T00:00:00.000Z',
+        queued_at: '2026-04-21T00:00:00.000Z',
+        delivered_at: '2026-04-22T00:00:00.000Z',
+        last_attempted_at: '2026-04-22T00:00:00.000Z',
+        source_name: 'company_owned',
+        priority_score: 120,
+      },
+      {
+        id: 'queue_previous',
+        queue_status: 'expired',
+        attempt_count: 3,
+        created_at: '2026-04-11T00:00:00.000Z',
+        queued_at: '2026-04-11T00:00:00.000Z',
+        delivered_at: null,
+        last_attempted_at: '2026-04-13T00:00:00.000Z',
+        source_name: 'prnewswire',
+        priority_score: 80,
+      },
+    ],
+    leadRows: [
+      {
+        client_id: 'client_1',
+        target_company: 'Acme',
+        company_domain: 'acme.com',
+        status: 'replied',
+        is_unlocked: true,
+        created_at: '2026-04-22T00:00:00.000Z',
+        unlocked_at: '2026-04-22T00:00:00.000Z',
+        replied_at: '2026-04-23T00:00:00.000Z',
+        signals: { signal_type: 'funding', source_name: 'company_owned' },
+      },
+      {
+        client_id: 'client_1',
+        target_company: 'Beta',
+        company_domain: 'beta.com',
+        status: 'new',
+        is_unlocked: true,
+        created_at: '2026-04-12T00:00:00.000Z',
+        unlocked_at: '2026-04-12T00:00:00.000Z',
+        signals: { signal_type: 'funding', source_name: 'prnewswire' },
+      },
+    ],
+  })
+
+  assert.equal(review.current.signals, 1)
+  assert.equal(review.previous.signals, 1)
+  assert.equal(review.current.delivered, 1)
+  assert.equal(review.previous.expired, 1)
+  assert.equal(review.current.replied, 1)
+  assert.equal(review.deltas.replied, 1)
+  assert.equal(review.top_sources[0]?.source, 'company_owned')
+  assert.ok(review.recommendations.length > 0)
+})
+
+test('internal ops auth recognizes allowlisted emails and bearer tokens', () => {
+  const originalEmails = process.env.INTERNAL_OPS_ALLOWED_EMAILS
+  const originalSecret = process.env.INTERNAL_OPS_SECRET
+  const originalCron = process.env.CRON_SECRET
+
+  process.env.INTERNAL_OPS_ALLOWED_EMAILS = 'ops@example.com, founder@example.com'
+  process.env.INTERNAL_OPS_SECRET = 'internal-secret'
+  process.env.CRON_SECRET = 'cron-secret'
+
+  try {
+    assert.equal(isInternalOpsEmailAllowed('ops@example.com'), true)
+    assert.equal(isInternalOpsEmailAllowed('random@example.com'), false)
+    assert.equal(extractBearerToken('Bearer internal-secret'), 'internal-secret')
+    assert.equal(isInternalOpsBearerToken('internal-secret'), true)
+    assert.equal(isInternalOpsBearerToken('cron-secret'), true)
+    assert.equal(isInternalOpsBearerToken('wrong-secret'), false)
+  } finally {
+    process.env.INTERNAL_OPS_ALLOWED_EMAILS = originalEmails
+    process.env.INTERNAL_OPS_SECRET = originalSecret
+    process.env.CRON_SECRET = originalCron
+  }
+})
+
+test('cached contact comparison prefers verified direct contacts over newer weaker rows', () => {
+  const stronger = {
+    contact_email: 'ceo@acme.com',
+    contact_name: 'Jane Doe',
+    contact_title: 'CEO',
+    contact_source: 'hunter' as const,
+    contact_verified: true,
+    zb_status: 'valid' as const,
+    linkedin_url: null,
+    base_score: 95,
+    resolution_method: 'direct' as const,
+    enriched_at: '2026-04-20T00:00:00.000Z',
+  }
+  const weakerButNewer = {
+    ...stronger,
+    contact_verified: false,
+    zb_status: null,
+    contact_source: 'pattern' as const,
+    resolution_method: 'pattern' as const,
+    enriched_at: '2026-04-24T00:00:00.000Z',
+  }
+
+  assert.ok(compareCachedContactRows(stronger, weakerButNewer) > 0)
+  assert.ok(compareCachedContactRows(weakerButNewer, stronger) < 0)
+})
+
+test('recent enrichment failures do not suppress retries when a new domain appears or success exists', () => {
+  const recentFailure = {
+    company_key: 'name:acme',
+    input_domain: null,
+    resolved_domain: null,
+    last_succeeded_at: null,
+    last_failed_at: '2026-04-23T12:00:00.000Z',
+  }
+
+  assert.equal(shouldShortCircuitEnrichmentFailure({
+    cache: recentFailure,
+    companyDomain: null,
+    now: new Date('2026-04-24T00:00:00.000Z'),
+  }), true)
+
+  assert.equal(shouldShortCircuitEnrichmentFailure({
+    cache: recentFailure,
+    companyDomain: 'acme.com',
+    now: new Date('2026-04-24T00:00:00.000Z'),
+  }), false)
+
+  assert.equal(shouldShortCircuitEnrichmentFailure({
+    cache: {
+      ...recentFailure,
+      last_succeeded_at: '2026-04-10T00:00:00.000Z',
+    },
+    companyDomain: null,
+    now: new Date('2026-04-24T00:00:00.000Z'),
+  }), false)
+})
+
+test('unverified candidates are only treated as safe when zerobounce is disabled', () => {
+  assert.equal(isCandidateSafeWithoutVerification({
+    zeroBounceEnabled: false,
+    resolutionMethod: 'direct',
+  }), true)
+
+  assert.equal(isCandidateSafeWithoutVerification({
+    zeroBounceEnabled: true,
+    resolutionMethod: 'direct',
+  }), false)
+
+  assert.equal(isCandidateSafeWithoutVerification({
+    zeroBounceEnabled: false,
+    resolutionMethod: 'pattern',
+  }), false)
 })

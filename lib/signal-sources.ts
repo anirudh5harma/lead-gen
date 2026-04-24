@@ -1,15 +1,20 @@
-import { fetchRSSFromUrl, type RSSItem } from '@/lib/rss'
+import { fetchRSSFromUrl, fetchRSSItems, type RSSItem } from '@/lib/rss'
 
 export interface CompanySeed {
+  clientId?: string
   name: string
   domain: string | null
+  websiteUrl?: string | null
+  priorityScore?: number
+  isWatchlist?: boolean
 }
 
 const USER_AGENT = 'Mozilla/5.0 (compatible; Bombsell/1.0)'
 const GDELT_MAX_RECORDS = 25
 const HN_STORY_LIMIT = 80
-const COMPANY_FEED_COMPANY_LIMIT = 12
-const COMPANY_FEEDS_PER_COMPANY = 3
+const COMPANY_FEED_COMPANY_LIMIT = 120
+const COMPANY_FEEDS_PER_COMPANY = 8
+const MONITORED_NEWS_COMPANY_LIMIT = 24
 
 const GDELT_QUERIES = [
   '(startup OR company) (raises OR funding OR "Series A" OR "seed round")',
@@ -17,6 +22,8 @@ const GDELT_QUERIES = [
   '(company OR startup) (launches OR expands OR "new market" OR "new office")',
   '(company OR startup) (appoints OR hires OR "new CEO" OR "new CFO" OR "new CTO")',
   '(company OR fintech OR healthcare) (regulation OR compliance OR fined OR settlement)',
+  '(company OR startup) ("soc 2" OR "iso 27001" OR certification OR compliance)',
+  '(company OR startup) (partnership OR integration OR reseller OR alliance)',
 ]
 
 const HN_SIGNAL_PATTERN =
@@ -189,27 +196,60 @@ export async function fetchProductHuntItems(): Promise<RSSItem[]> {
   }
 }
 
+export async function fetchMonitoredCompanyNewsItems(companies: CompanySeed[]): Promise<RSSItem[]> {
+  const scopedCompanies = uniqueCompanies(companies)
+    .slice(0, MONITORED_NEWS_COMPANY_LIMIT)
+
+  const results = await Promise.allSettled(
+    scopedCompanies.map(async company => {
+      const query = `"${company.name}" (funding OR acquisition OR merger OR hiring OR partnership OR integration OR launch OR expansion OR compliance OR "new office")`
+      const items = await fetchRSSItems(query)
+      return items.map(item => ({
+        ...item,
+        source: 'google_news_company',
+        title: titleWithCompany(company.name, item.title),
+      }))
+    })
+  )
+
+  return flattenSettled(results)
+}
+
 /**
  * Company-owned monitoring stays cheap by checking RSS/feed endpoints only for
  * companies already seen in the product. It intentionally avoids HTML crawling.
  */
 export async function fetchCompanyOwnedItems(companies: CompanySeed[]): Promise<RSSItem[]> {
   const scopedCompanies = uniqueCompanies(companies)
-    .filter(company => company.domain)
+    .filter(company => company.domain || company.websiteUrl)
     .slice(0, COMPANY_FEED_COMPANY_LIMIT)
 
   const results = await Promise.allSettled(
     scopedCompanies.map(async company => {
       const domain = normalizeDomain(company.domain)
-      if (!domain) return []
+      const websiteDomain = normalizeDomain(company.websiteUrl ?? null)
+      const resolvedDomain = domain ?? websiteDomain
+      if (!resolvedDomain) return []
 
       const feedUrls = [
-        `https://${domain}/feed`,
-        `https://${domain}/rss.xml`,
-        `https://${domain}/blog/feed`,
-        `https://${domain}/news/rss.xml`,
-        `https://${domain}/press/rss.xml`,
-        `https://${domain}/changelog.xml`,
+        `https://${resolvedDomain}/feed`,
+        `https://${resolvedDomain}/feed.xml`,
+        `https://${resolvedDomain}/atom.xml`,
+        `https://${resolvedDomain}/rss.xml`,
+        `https://${resolvedDomain}/blog/feed`,
+        `https://${resolvedDomain}/blog/rss.xml`,
+        `https://${resolvedDomain}/blog/index.xml`,
+        `https://${resolvedDomain}/news/rss.xml`,
+        `https://${resolvedDomain}/news/feed`,
+        `https://${resolvedDomain}/newsroom/feed`,
+        `https://${resolvedDomain}/newsroom/rss.xml`,
+        `https://${resolvedDomain}/press/rss.xml`,
+        `https://${resolvedDomain}/changelog.xml`,
+        `https://${resolvedDomain}/changelog/feed`,
+        `https://${resolvedDomain}/release-notes.xml`,
+        `https://${resolvedDomain}/releases/feed`,
+        `https://${resolvedDomain}/updates/feed`,
+        `https://${resolvedDomain}/resources/rss.xml`,
       ].slice(0, COMPANY_FEEDS_PER_COMPANY)
 
       const feedResults = await Promise.allSettled(
@@ -266,7 +306,14 @@ function uniqueCompanies(companies: CompanySeed[]): CompanySeed[] {
     const key = domain || name.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    unique.push({ name, domain })
+    unique.push({
+      clientId: company.clientId,
+      name,
+      domain,
+      websiteUrl: company.websiteUrl ?? null,
+      priorityScore: company.priorityScore,
+      isWatchlist: company.isWatchlist,
+    })
   }
 
   return unique

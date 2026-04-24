@@ -9,6 +9,9 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+const FOLLOWUP_BATCH_LIMIT = 50
+const FOLLOWUP_CLAIM_STALE_MS = 15 * 60 * 1000
+
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
 }
@@ -21,18 +24,41 @@ export async function GET(request: Request) {
   const supabase = await createServiceClient()
   const runId = await startCronRun(supabase, 'send_followups')
   try {
-    const { data: pending } = await supabase
-      .from('scheduled_followups')
-      .select(`
-        id, user_id, lead_id, scheduled_for,
-        leads(target_company, contact_email, status, message_id, from_email, gmail_thread_id, client_id),
-        outreach_sequences(followup_subject, followup_body)
-      `)
-      .lte('scheduled_for', new Date().toISOString())
-      .is('sent_at', null)
-      .limit(50)
+    const nowIso = new Date().toISOString()
+    const claimToken = crypto.randomUUID()
+    const staleBeforeIso = new Date(Date.now() - FOLLOWUP_CLAIM_STALE_MS).toISOString()
 
-    if (!pending?.length) {
+    const { data: claimedRows, error: claimError } = await supabase.rpc('claim_due_followups', {
+      p_limit: FOLLOWUP_BATCH_LIMIT,
+      p_claim_token: claimToken,
+      p_now: nowIso,
+      p_stale_before: staleBeforeIso,
+    })
+
+    if (claimError) {
+      throw new Error(claimError.message)
+    }
+
+    const claimedIds = ((claimedRows ?? []) as Array<{ id: string | null }>)
+      .map(row => row.id)
+      .filter((id): id is string => Boolean(id))
+    const pendingResult = claimedIds.length > 0
+      ? await supabase
+          .from('scheduled_followups')
+          .select(`
+            id, user_id, lead_id, scheduled_for,
+            leads(target_company, contact_email, status, message_id, from_email, gmail_thread_id, client_id),
+            outreach_sequences(followup_subject, followup_body)
+          `)
+          .in('id', claimedIds)
+      : { data: [], error: null }
+
+    if (pendingResult.error) {
+      throw new Error(pendingResult.error.message)
+    }
+    const pending = pendingResult.data ?? []
+
+    if (!pending.length) {
       const payload = { sent: 0, pending: 0 }
       await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
       return NextResponse.json(payload)
@@ -54,7 +80,6 @@ export async function GET(request: Request) {
           .in('id', clientIds)
       : { data: [] }
 
-    const now = new Date()
     const quotaMap: Record<string, {
       plan: PlanTier
       autoSend: boolean
@@ -86,9 +111,18 @@ export async function GET(request: Request) {
     let sent = 0
     for (const item of pending) {
       const quota = quotaMap[item.user_id]
-      if (!quota) continue
-      if (!getPlanLimits(quota.plan).followups) continue
-      if (!quota.autoSend) continue
+      if (!quota) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
+      if (!getPlanLimits(quota.plan).followups) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
+      if (!quota.autoSend) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
 
       const lead = item.leads as unknown as {
         contact_email?: string; target_company: string; status?: string
@@ -99,7 +133,10 @@ export async function GET(request: Request) {
         followup_subject: string; followup_body: string
       } | null
 
-      if (!lead?.contact_email) continue
+      if (!lead?.contact_email) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
 
     // Fall back to a generic follow-up template when pre-generation didn't complete
       const fuSubject = seq?.followup_subject ?? `Following up`
@@ -107,7 +144,7 @@ export async function GET(request: Request) {
         `Probably caught you at a bad time — figured I'd check back in case it's still relevant.\n\nWorth a quick 15-min call this week?`
 
       if (lead.status === 'replied' || lead.status === 'booked') {
-        await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
+        await completeFollowup(supabase, item.id, claimToken, nowIso)
         continue
       }
 
@@ -117,7 +154,7 @@ export async function GET(request: Request) {
         supabase.from('bounced_emails').select('id').eq('email', email).maybeSingle(),
       ])
       if (unsubRes.data || bounceRes.data) {
-        await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
+        await completeFollowup(supabase, item.id, claimToken, nowIso)
         continue
       }
 
@@ -145,9 +182,12 @@ export async function GET(request: Request) {
           preferEmail:   lead.from_email ?? null,
         })
 
-        if (!result) continue  // no connected account — skip this follow-up
+        if (!result) {
+          await releaseClaim(supabase, item.id, claimToken)
+          continue
+        }
 
-        await supabase.from('scheduled_followups').update({ sent_at: now.toISOString() }).eq('id', item.id)
+        await completeFollowup(supabase, item.id, claimToken, nowIso)
         if (result.messageId) {
           await supabase.from('leads').update({
             message_id:      result.messageId,
@@ -157,6 +197,7 @@ export async function GET(request: Request) {
         sent++
       } catch (err) {
         console.error(`[send-followups] failed for lead ${item.lead_id}:`, err)
+        await releaseClaim(supabase, item.id, claimToken)
       }
     }
 
@@ -168,4 +209,37 @@ export async function GET(request: Request) {
     await finishCronRun(supabase, runId, { status: 'error', errorMessage: message })
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+async function completeFollowup(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  followupId: string,
+  claimToken: string,
+  sentAt: string,
+) {
+  await supabase
+    .from('scheduled_followups')
+    .update({
+      sent_at: sentAt,
+      processing_started_at: null,
+      processing_token: null,
+    })
+    .eq('id', followupId)
+    .eq('processing_token', claimToken)
+}
+
+async function releaseClaim(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  followupId: string,
+  claimToken: string,
+) {
+  await supabase
+    .from('scheduled_followups')
+    .update({
+      processing_started_at: null,
+      processing_token: null,
+    })
+    .eq('id', followupId)
+    .eq('processing_token', claimToken)
+    .is('sent_at', null)
 }

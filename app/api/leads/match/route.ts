@@ -1,27 +1,39 @@
 import { NextResponse } from 'next/server'
-import { createServiceClient, createAdminClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { scoreLeadRelevance } from '@/lib/claude'
-import { getPlanLimits, type PlanTier } from '@/lib/plan'
-import { sendSlackAlert } from '@/lib/slack'
-import { sendFirstLeadEmail } from '@/lib/resend'
-import { recordLeadOverage } from '@/lib/dodo'
-import { emitCrmLeadEvent } from '@/lib/crm-sync'
+import { type PlanTier } from '@/lib/plan'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
-import { resolveLeadQuotaDecision } from '@/lib/lead-quota'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { buildLeadDedupeKey, normalizeLeadCompanyKey } from '@/lib/lead-dedupe'
+import { computeQueuePriority, queueExpiryFromPublishedAt } from '@/lib/lead-delivery'
+import {
+  mergeProfileCandidates,
+  signalTextMatchesKeywords,
+  type MatchSignalCandidate,
+} from '@/lib/match-candidates'
+import {
+  buildFeedbackMaps,
+  computeCandidateFeedbackBoost,
+  getFeedbackWindowStart,
+} from '@/lib/ranking-feedback'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+const DEFAULT_SIMILARITY_THRESHOLD = 0.32
+const KEYWORD_MATCH_SIMILARITY_DISCOUNT = 0.08
+const DEFAULT_SCORE_THRESHOLD = 6
+const DEDUPE_WINDOW_HOURS = 72
+const RECENT_SIGNAL_LIMIT = 750
+const ANN_CANDIDATE_LIMIT = 24
+const PROFILE_CANDIDATE_LIMIT = 18
+const LLM_RERANK_LIMIT = 8
+const ANN_SIMILARITY_FLOOR = 0.18
+
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
 }
-
-const DEFAULT_SIMILARITY_THRESHOLD = 0.35
-const KEYWORD_MATCH_SIMILARITY_DISCOUNT = 0.08
-const DEFAULT_SCORE_THRESHOLD = 6
 
 export async function GET(request: Request) {
   return runMatch(request)
@@ -40,20 +52,24 @@ async function runMatch(request: Request) {
   const runId = await startCronRun(supabase, 'match_leads')
 
   try {
-    // Only match signals published within the last 72 hours — older signals are less actionable
-    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
+    const windowStart = new Date(Date.now() - DEDUPE_WINDOW_HOURS * 60 * 60 * 1000).toISOString()
 
-    const { data: newSignals, error: sigErr } = await supabase
+    const { data: recentSignals, error: sigErr } = await supabase
       .from('signals')
-      .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain')
-      .gte('published_at', seventyTwoHoursAgo)
+      .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain, novelty_key, published_at, source_name')
+      .gte('published_at', windowStart)
       .order('published_at', { ascending: false })
-      .limit(500)
+      .limit(RECENT_SIGNAL_LIMIT)
 
-    if (sigErr || !newSignals?.length) {
-      const payload = { matched: 0, reason: 'No signals found' }
+    if (sigErr || !recentSignals?.length) {
+      const payload = { queued: 0, reason: 'No signals found' }
       await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
       return NextResponse.json(payload)
+    }
+
+    const recentSignalsById = new Map<string, MatchSignalCandidate>()
+    for (const signal of recentSignals) {
+      recentSignalsById.set(signal.id, signal)
     }
 
     const { data: profiles, error: profErr } = await supabase
@@ -61,28 +77,24 @@ async function runMatch(request: Request) {
       .select('id, user_id, name, services_description, profile_embedding, icp_keywords, target_signal_types, min_relevance_score, created_at, is_archived')
 
     if (profErr || !profiles?.length) {
-      const payload = { matched: 0, reason: 'No profiles' }
+      const payload = { queued: 0, reason: 'No profiles' }
       await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
       return NextResponse.json(payload)
     }
 
-    const userIds = [...new Set(profiles.map(p => p.user_id))]
+    const userIds = [...new Set(profiles.map(profile => profile.user_id))]
     const { data: userSettings } = await supabase
       .from('user_profiles')
-      .select('user_id, plan, slack_webhook_url, allow_lead_overage, active_client_id')
+      .select('user_id, plan, active_client_id')
       .in('user_id', userIds)
 
     const userSettingsMap = new Map<string, {
       plan: PlanTier
-      slackWebhookUrl: string | null
-      allowLeadOverage: boolean
       activeClientId: string | null
     }>()
     for (const row of (userSettings ?? [])) {
       userSettingsMap.set(row.user_id, {
         plan: (row.plan ?? 'free') as PlanTier,
-        slackWebhookUrl: row.slack_webhook_url ?? null,
-        allowLeadOverage: row.allow_lead_overage ?? false,
         activeClientId: row.active_client_id ?? null,
       })
     }
@@ -97,8 +109,6 @@ async function runMatch(request: Request) {
     const eligibleProfiles = Array.from(profilesByUser.entries()).flatMap(([userId, userProfiles]) => {
       const settings = userSettingsMap.get(userId) ?? {
         plan: 'free' as PlanTier,
-        slackWebhookUrl: null,
-        allowLeadOverage: false,
         activeClientId: null,
       }
 
@@ -117,358 +127,352 @@ async function runMatch(request: Request) {
     })
 
     if (eligibleProfiles.length === 0) {
-      const payload = { matched: 0, reason: 'No eligible profiles' }
+      const payload = { queued: 0, reason: 'No eligible profiles' }
       await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
       return NextResponse.json(payload)
     }
 
-    const { data: watchlistRows } = await supabase
-      .from('watchlist_companies')
-      .select('client_id, company_name')
+    const clientIds = eligibleProfiles.map(profile => profile.id)
+    const signalIds = recentSignals.map(signal => signal.id)
+    const [watchlistRowsResult, blockedRowsResult, liveQueueRowsResult, recentLeadsResult] = await Promise.all([
+      supabase
+        .from('watchlist_companies')
+        .select('client_id, company_name, company_domain')
+        .in('client_id', clientIds),
+      supabase
+        .from('blocked_companies')
+        .select('client_id, company_name, company_domain')
+        .in('client_id', clientIds),
+      supabase
+        .from('lead_delivery_queue')
+        .select('client_id, signal_id, dedupe_key, target_company, company_domain, queue_status, signals(signal_type, novelty_key)')
+        .in('client_id', clientIds)
+        .in('signal_id', signalIds),
+      supabase
+        .from('leads')
+        .select('client_id, signal_id, target_company, company_domain, dedupe_key, signals(signal_type, novelty_key)')
+        .in('client_id', clientIds)
+        .gte('created_at', windowStart),
+    ])
 
     const watchlistMap: Record<string, Set<string>> = {}
-    for (const row of (watchlistRows ?? [])) {
+    for (const row of (watchlistRowsResult.data ?? [])) {
       if (!row.client_id) continue
       if (!watchlistMap[row.client_id]) watchlistMap[row.client_id] = new Set()
-      watchlistMap[row.client_id].add(row.company_name.toLowerCase())
+      watchlistMap[row.client_id].add(normalizeLeadCompanyKey(row.company_name, row.company_domain))
     }
-
-  // Blocked companies: skip inserting leads for these
-    const { data: blockedRows } = await supabase
-      .from('blocked_companies')
-      .select('client_id, company_name, company_domain')
 
     const blockedMap: Record<string, Set<string>> = {}
-    for (const row of (blockedRows ?? [])) {
+    for (const row of (blockedRowsResult.data ?? [])) {
       if (!row.client_id) continue
       if (!blockedMap[row.client_id]) blockedMap[row.client_id] = new Set()
-      if (row.company_domain) blockedMap[row.client_id].add(row.company_domain.toLowerCase())
-      blockedMap[row.client_id].add(row.company_name.toLowerCase())
+      blockedMap[row.client_id].add(normalizeLeadCompanyKey(row.company_name, row.company_domain))
     }
 
-  // Batch existence check: single query instead of one per (user, signal) pair
-    const signalIds = newSignals.map(s => s.id)
-    const { data: existingLeads } = await supabase
-      .from('leads')
-      .select('client_id, signal_id')
-      .in('signal_id', signalIds)
+    const feedbackWindowStart = getFeedbackWindowStart()
+    const { data: feedbackLeadRows } = clientIds.length > 0
+      ? await supabase
+          .from('leads')
+          .select('client_id, target_company, company_domain, status, is_unlocked, created_at, unlocked_at, sent_at, replied_at, booked_at, signals(signal_type, source_name)')
+          .in('client_id', clientIds)
+          .gte('created_at', feedbackWindowStart)
+      : { data: [] }
+    const feedbackMaps = buildFeedbackMaps((feedbackLeadRows ?? []) as Array<{
+      client_id: string | null
+      target_company: string
+      company_domain?: string | null
+      status: string
+      is_unlocked?: boolean | null
+      created_at?: string | null
+      unlocked_at?: string | null
+      sent_at?: string | null
+      replied_at?: string | null
+      booked_at?: string | null
+      signals?: { signal_type?: string | null; source_name?: string | null } | Array<{ signal_type?: string | null; source_name?: string | null }> | null
+    }>)
 
-    const existingSet = new Set<string>()
-    for (const row of (existingLeads ?? [])) {
-      if (!row.client_id) continue
-      existingSet.add(`${row.client_id}:${row.signal_id}`)
-    }
-
-  // Company-level dedup: skip if a workspace already has this company + signal type recently.
-  // The DB-level dedupe_key below also protects us from overlapping cron invocations.
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-    const { data: recentCompanyLeads } = await supabase
-      .from('leads')
-      .select('client_id, target_company, company_domain, dedupe_key, signals(signal_type)')
-      .gte('created_at', sevenDaysAgo)
-
+    const existingPairSet = new Set<string>()
     const recentCompanySet = new Set<string>()
-    for (const row of (recentCompanyLeads ?? [])) {
+    const recentNoveltySet = new Set<string>()
+
+    for (const row of (liveQueueRowsResult.data ?? [])) {
       if (!row.client_id) continue
+      if (row.signal_id) existingPairSet.add(`${row.client_id}:${row.signal_id}`)
+      if (row.queue_status === 'pending' || row.queue_status === 'delivered') {
+        if (row.dedupe_key) recentCompanySet.add(`${row.client_id}:${row.dedupe_key}`)
+        const signalRow = Array.isArray(row.signals) ? row.signals[0] : row.signals
+        const noveltyKey = (signalRow as { novelty_key?: string | null } | null)?.novelty_key
+        if (noveltyKey) recentNoveltySet.add(`${row.client_id}:${noveltyKey}`)
+        const signalType = (signalRow as { signal_type?: string } | null)?.signal_type
+        if (!signalType) continue
+        const companyKey = normalizeLeadCompanyKey(row.target_company, row.company_domain)
+        recentCompanySet.add(`${row.client_id}:${companyKey}:${signalType}`)
+      }
+    }
+
+    for (const row of (recentLeadsResult.data ?? [])) {
+      if (!row.client_id) continue
+      if (row.signal_id) existingPairSet.add(`${row.client_id}:${row.signal_id}`)
       if (row.dedupe_key) recentCompanySet.add(`${row.client_id}:${row.dedupe_key}`)
       const signalRow = Array.isArray(row.signals) ? row.signals[0] : row.signals
+      const noveltyKey = (signalRow as { novelty_key?: string | null } | null)?.novelty_key
+      if (noveltyKey) recentNoveltySet.add(`${row.client_id}:${noveltyKey}`)
       const signalType = (signalRow as { signal_type?: string } | null)?.signal_type
       if (!signalType) continue
       const companyKey = normalizeLeadCompanyKey(row.target_company, row.company_domain)
       recentCompanySet.add(`${row.client_id}:${companyKey}:${signalType}`)
     }
 
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const { data: recentQuotaLeads } = await supabase
-      .from('leads')
-      .select('user_id')
-      .eq('is_unlocked', true)
-      .gte('unlocked_at', thirtyDaysAgo)
-
-    let matched = 0
     const stats = {
-      no_signal_embedding: 0,
-	      no_profile_embedding: 0,
-	      profile_embedding_backfilled: 0,
-	      signal_type_filtered: 0,
-	      below_similarity: 0,
-	      rpc_errors: 0,
-	      claude_errors: 0,
-	      below_score: 0,
-	      duplicate: 0,
-	      company_duplicate: 0,
-	      dedupe_conflict: 0,
-	      keyword_matches: 0,
-	      keyword_misses: 0,
-	      quota_reached: 0,
-	      preview_inserted: 0,
-	      overage_inserted: 0,
-	      eligible_profiles: eligibleProfiles.length,
-	      pairs_considered: 0,
-	      scored_by_claude: 0,
-	    }
-
-    const quotaState = new Map<string, number>()
-    for (const row of (recentQuotaLeads ?? [])) {
-      quotaState.set(row.user_id, (quotaState.get(row.user_id) ?? 0) + 1)
+      no_profile_embedding: 0,
+      profile_embedding_backfilled: 0,
+      ann_candidates: 0,
+      watchlist_candidates: 0,
+      keyword_candidates: 0,
+      candidate_pool_total: 0,
+      candidate_pool_kept: 0,
+      below_similarity: 0,
+      claude_errors: 0,
+      below_score: 0,
+      feedback_positive: 0,
+      feedback_negative: 0,
+      duplicate: 0,
+      company_duplicate: 0,
+      queue_insert_errors: 0,
+      keyword_matches: 0,
+      keyword_misses: 0,
+      eligible_profiles: eligibleProfiles.length,
+      profiles_considered: 0,
+      scored_by_claude: 0,
     }
+    let queued = 0
+
     for (const profile of eligibleProfiles) {
-      if (!quotaState.has(profile.user_id)) {
-        quotaState.set(profile.user_id, 0)
-      }
-    }
-
-	    for (const signal of newSignals) {
-	      if (!signal.signal_embedding) { stats.no_signal_embedding++; continue }
-
-	      for (const profile of eligibleProfiles) {
-	        stats.pairs_considered++
-	        let profileEmbedding = profile.profile_embedding
-	        if (!profileEmbedding) {
-	          try {
-	            const embedding = await embed(`${profile.name} ${profile.services_description}`)
-	            profileEmbedding = toVectorLiteral(embedding)
-	            await supabase
-	              .from('client_accounts')
-	              .update({ profile_embedding: profileEmbedding })
-	              .eq('id', profile.id)
-	            stats.profile_embedding_backfilled++
-	          } catch (e) {
-	            stats.no_profile_embedding++
-	            if (stats.no_profile_embedding === 1) {
-	              console.error('profile embedding backfill error:', (e as Error).message)
-	            }
-	            continue
-	          }
-	        }
-
-      const pairKey = `${profile.id}:${signal.id}`
-      if (existingSet.has(pairKey)) { stats.duplicate++; continue }
-
-      // Skip if user already has a lead for this company in the last 7 days
-      const companyKey = normalizeLeadCompanyKey(signal.company_name, signal.company_domain)
-      const dedupeKey = buildLeadDedupeKey({
-        companyName: signal.company_name,
-        companyDomain: signal.company_domain,
-        signalType: signal.signal_type,
-      })
-      if (
-        recentCompanySet.has(`${profile.id}:${dedupeKey}`) ||
-        recentCompanySet.has(`${profile.id}:${companyKey}:${signal.signal_type}`)
-      ) { stats.company_duplicate++; continue }
-
-      // Skip blocked companies
-      const userBlocked = blockedMap[profile.id]
-      if (userBlocked) {
-        const companyKey = signal.company_name.toLowerCase()
-        const domainKey  = signal.company_domain?.toLowerCase()
-        if (userBlocked.has(companyKey) || (domainKey && userBlocked.has(domainKey))) continue
+      stats.profiles_considered++
+      let profileEmbedding = profile.profile_embedding
+      if (!profileEmbedding) {
+        try {
+          const embedding = await embed(`${profile.name} ${profile.services_description}`)
+          profileEmbedding = toVectorLiteral(embedding)
+          await supabase
+            .from('client_accounts')
+            .update({ profile_embedding: profileEmbedding })
+            .eq('id', profile.id)
+          stats.profile_embedding_backfilled++
+        } catch (error) {
+          stats.no_profile_embedding++
+          if (stats.no_profile_embedding === 1) {
+            console.error('profile embedding backfill error:', (error as Error).message)
+          }
+          continue
+        }
       }
 
       const allowedTypes = (profile.target_signal_types as string[] | null) ??
         ['funding', 'acquisition', 'expansion', 'regulation', 'hiring']
-      if (!allowedTypes.includes(signal.signal_type)) {
-        stats.signal_type_filtered++
-        continue
+      const allowedTypeSet = new Set(allowedTypes)
+      const watchlist = watchlistMap[profile.id] ?? new Set<string>()
+      const icpKeywords = (profile.icp_keywords as string[] | null) ?? []
+
+      const annResult = await supabase.rpc('match_candidate_signals', {
+        p_profile_embedding: profileEmbedding,
+        p_signal_types: allowedTypes,
+        p_since: windowStart,
+        p_limit: ANN_CANDIDATE_LIMIT,
+        p_similarity_floor: ANN_SIMILARITY_FLOOR,
+      })
+
+      if (annResult.error) {
+        console.error('[match-leads] match_candidate_signals RPC error:', annResult.error.message)
       }
 
-	      const userWatchlist = watchlistMap[profile.id]
-	      const isWatchlisted = userWatchlist?.has(signal.company_name.toLowerCase()) ?? false
-	      let similarityForDebug: number | null = null
-	      let keywordMatched = false
+      const annCandidates = (annResult.data ?? []) as Array<MatchSignalCandidate & { similarity?: number | null }>
+      stats.ann_candidates += annCandidates.length
 
-	      // ICP keywords are a signal boost, not a hard gate. Exact substring filters
-	      // were too brittle for real RSS headlines and caused zero-lead runs.
-	      if (!isWatchlisted) {
-	        const icpKeywords = (profile.icp_keywords as string[] | null) ?? []
-	        if (icpKeywords.length > 0) {
-	          const signalText = `${signal.company_name} ${signal.signal_type} ${signal.summary ?? ''} ${signal.headline ?? ''}`.toLowerCase()
-	          keywordMatched = icpKeywords.some(kw => signalText.includes(kw.toLowerCase()))
-	          if (keywordMatched) stats.keyword_matches++
-	          else stats.keyword_misses++
-	        }
-	      }
+      const watchlistCandidates = recentSignals.filter(signal =>
+        allowedTypeSet.has(signal.signal_type) &&
+        watchlist.has(normalizeLeadCompanyKey(signal.company_name, signal.company_domain)),
+      )
+      stats.watchlist_candidates += watchlistCandidates.length
 
-      if (!isWatchlisted) {
-	        const { data: simResult, error: rpcErr } = await supabase.rpc('cosine_similarity', {
-	          a: signal.signal_embedding,
-	          b: profileEmbedding,
-	        })
+      const keywordCandidates = icpKeywords.length > 0
+        ? recentSignals.filter(signal =>
+            allowedTypeSet.has(signal.signal_type) &&
+            signalTextMatchesKeywords(signal, icpKeywords),
+          )
+        : []
+      stats.keyword_candidates += keywordCandidates.length
 
-        if (rpcErr) {
-          stats.rpc_errors++
-          if (stats.rpc_errors === 1) console.error('cosine_similarity RPC error:', rpcErr.message)
-        } else {
-	          const similarity = simResult as number | null
-	          similarityForDebug = similarity ?? null
-	          const effectiveSimilarityThreshold = Math.max(
-	            0.22,
-	            DEFAULT_SIMILARITY_THRESHOLD - (keywordMatched ? KEYWORD_MATCH_SIMILARITY_DISCOUNT : 0),
-	          )
-	          if (!similarity || similarity < effectiveSimilarityThreshold) {
-	            stats.below_similarity++
-	            continue
-	          }
-	        }
-	      }
+      const mergedCandidates = mergeProfileCandidates([
+        ...annCandidates.map(signal => ({
+          signal,
+          similarity: typeof signal.similarity === 'number' ? signal.similarity : null,
+          keywordMatched: false,
+          isWatchlisted: watchlist.has(normalizeLeadCompanyKey(signal.company_name, signal.company_domain)),
+        })),
+        ...watchlistCandidates.map(signal => ({
+          signal,
+          similarity: null,
+          keywordMatched: false,
+          isWatchlisted: true,
+        })),
+        ...keywordCandidates.map(signal => ({
+          signal,
+          similarity: (annCandidates.find(candidate => candidate.id === signal.id)?.similarity as number | null | undefined) ?? null,
+          keywordMatched: true,
+          isWatchlisted: watchlist.has(normalizeLeadCompanyKey(signal.company_name, signal.company_domain)),
+        })),
+      ], PROFILE_CANDIDATE_LIMIT)
 
-      let score = 5
-      let reason = ''
-      try {
-        const result = await scoreLeadRelevance(
-          profile.services_description,
-          signal.signal_type,
-          signal.company_name,
-	          signal.summary || ''
-	        )
-	        stats.scored_by_claude++
-	        score = result.score
-	        reason = result.reason
-      } catch (e) {
-        stats.claude_errors++
-        if (stats.claude_errors === 1) console.error('scoreLeadRelevance error:', (e as Error).message)
-        continue
-      }
+      stats.candidate_pool_total += annCandidates.length + watchlistCandidates.length + keywordCandidates.length
+      stats.candidate_pool_kept += mergedCandidates.length
 
-      const minScore = (profile.min_relevance_score as number | null) ?? DEFAULT_SCORE_THRESHOLD
-      const effectiveMin = isWatchlisted ? Math.min(minScore, 4) : minScore
-
-      if (score < effectiveMin) { stats.below_score++; continue }
-
-        const settings = userSettingsMap.get(profile.user_id) ?? {
-          plan: 'free' as PlanTier,
-          slackWebhookUrl: null,
-          allowLeadOverage: false,
-          activeClientId: null,
-        }
-        const plan = settings.plan
-        const monthlyLimit = getPlanLimits(plan).leads_per_month
-        const used = quotaState.get(profile.user_id) ?? 0
-        const allowLeadOverage = settings.allowLeadOverage && plan !== 'free'
-        let reservedQuota = false
-        let isOverageLead = false
-        let isUnlockedLead = true
-
-        const quotaDecision = resolveLeadQuotaDecision({
-          used,
-          monthlyLimit,
-          allowLeadOverage,
-          plan,
-        })
-
-        if (quotaDecision === 'reserve') {
-          const { data: quotaReserved, error: quotaErr } = await supabase.rpc('consume_lead_quota', {
-            p_user_id: profile.user_id,
-            p_limit: monthlyLimit,
+      const rerankCandidates = mergedCandidates
+        .map(candidate => {
+          const feedbackBoost = computeCandidateFeedbackBoost(feedbackMaps, {
+            clientId: profile.id,
+            companyName: candidate.signal.company_name,
+            companyDomain: candidate.signal.company_domain,
+            signalType: candidate.signal.signal_type,
+            sourceName: candidate.signal.source_name,
           })
-          if (quotaErr) {
-            console.error('consume_lead_quota RPC error:', quotaErr.message)
-            stats.rpc_errors++
-            continue
+          if (feedbackBoost > 0) stats.feedback_positive++
+          if (feedbackBoost < 0) stats.feedback_negative++
+          return {
+            ...candidate,
+            feedbackBoost,
+            adjustedRank: candidate.rank + feedbackBoost,
           }
-          if (quotaReserved) {
-            reservedQuota = true
-          } else if (plan === 'free') {
-            isUnlockedLead = false
-          } else if (allowLeadOverage) {
-            isOverageLead = true
-          } else {
-            stats.quota_reached++
-            continue
-          }
-        } else if (quotaDecision === 'overage') {
-          isOverageLead = true
-        } else if (quotaDecision === 'preview') {
-          isUnlockedLead = false
-        } else {
-          stats.quota_reached++
+        })
+        .sort((a, b) => b.adjustedRank - a.adjustedRank || b.rank - a.rank)
+        .slice(0, LLM_RERANK_LIMIT)
+      for (const candidate of rerankCandidates) {
+        const signal = recentSignalsById.get(candidate.signal.id) ?? candidate.signal
+        const pairKey = `${profile.id}:${signal.id}`
+        if (existingPairSet.has(pairKey)) {
+          stats.duplicate++
+          continue
+        }
+        if (signal.novelty_key && recentNoveltySet.has(`${profile.id}:${signal.novelty_key}`)) {
+          stats.company_duplicate++
           continue
         }
 
-      const { data: inserted, error } = await supabase.from('leads').insert({
-        user_id:          profile.user_id,
-        client_id:        profile.id,
-        signal_id:        signal.id,
-        target_company:   signal.company_name,
-        company_domain:   signal.company_domain ?? null,
-        relevance_score:  score,
-        relevance_reason: isWatchlisted ? `[Watchlisted] ${reason}` : reason,
-        status: 'new',
-        is_unlocked: isUnlockedLead,
-        unlocked_at: isUnlockedLead ? new Date().toISOString() : null,
-        dedupe_key: dedupeKey,
-        match_debug: {
-          client_id: profile.id,
-          client_name: profile.name,
-	          matched_via: isWatchlisted ? 'watchlist' : 'scored_match',
-	          similarity: isWatchlisted ? null : similarityForDebug,
-	          keyword_matched: keywordMatched,
-	          min_relevance_score: effectiveMin,
-	        },
-      }).select('id').single()
+        const companyKey = normalizeLeadCompanyKey(signal.company_name, signal.company_domain)
+        const dedupeKey = buildLeadDedupeKey({
+          companyName: signal.company_name,
+          companyDomain: signal.company_domain,
+          signalType: signal.signal_type,
+          noveltyKey: signal.novelty_key,
+        })
+        if (
+          recentCompanySet.has(`${profile.id}:${dedupeKey}`) ||
+          recentCompanySet.has(`${profile.id}:${companyKey}:${signal.signal_type}`)
+        ) {
+          stats.company_duplicate++
+          continue
+        }
 
-      if (!error && inserted) {
-        matched++
-        if (isUnlockedLead) {
-          quotaState.set(profile.user_id, used + 1)
-        } else {
-          stats.preview_inserted++
+        const userBlocked = blockedMap[profile.id]
+        if (userBlocked) {
+          const blockedCompanyKey = normalizeLeadCompanyKey(signal.company_name, signal.company_domain)
+          if (userBlocked.has(blockedCompanyKey)) {
+            continue
+          }
         }
-        if (isOverageLead) {
-          stats.overage_inserted++
-          recordLeadOverage(profile.user_id, inserted.id).catch(err =>
-            console.error('[overage] lead record failed:', err)
+
+        const effectiveSimilarityThreshold = Math.max(
+          0.22,
+          DEFAULT_SIMILARITY_THRESHOLD - (candidate.keywordMatched ? KEYWORD_MATCH_SIMILARITY_DISCOUNT : 0),
+        )
+        if (!candidate.isWatchlisted && typeof candidate.similarity === 'number' && candidate.similarity < effectiveSimilarityThreshold) {
+          stats.below_similarity++
+          continue
+        }
+
+        if (candidate.keywordMatched) stats.keyword_matches++
+        else if (icpKeywords.length > 0) stats.keyword_misses++
+
+        let score = 5
+        let reason = ''
+        try {
+          const result = await scoreLeadRelevance(
+            profile.services_description,
+            signal.signal_type,
+            signal.company_name,
+            signal.summary || '',
           )
+          stats.scored_by_claude++
+          score = result.score
+          reason = result.reason
+        } catch (error) {
+          stats.claude_errors++
+          if (stats.claude_errors === 1) console.error('scoreLeadRelevance error:', (error as Error).message)
+          continue
         }
-        emitCrmLeadEvent({
-          userId: profile.user_id,
-          clientId: profile.id,
-          eventType: 'lead.created',
-          payload: {
-            lead_id: inserted.id,
-            target_company: signal.company_name,
-            signal_type: signal.signal_type,
-            relevance_score: score,
+
+        const minScore = (profile.min_relevance_score as number | null) ?? DEFAULT_SCORE_THRESHOLD
+        const effectiveMin = candidate.isWatchlisted ? Math.min(minScore, 4) : minScore
+        if (score < effectiveMin) {
+          stats.below_score++
+          continue
+        }
+
+        const priorityScore = computeQueuePriority({
+          relevanceScore: score,
+          publishedAt: signal.published_at,
+          sourceName: signal.source_name,
+          isWatchlisted: candidate.isWatchlisted,
+          keywordMatched: candidate.keywordMatched,
+        }) + candidate.feedbackBoost
+
+        const { error } = await supabase.from('lead_delivery_queue').insert({
+          user_id: profile.user_id,
+          client_id: profile.id,
+          signal_id: signal.id,
+          target_company: signal.company_name,
+          company_domain: signal.company_domain ?? null,
+          relevance_score: score,
+          relevance_reason: candidate.isWatchlisted ? `[Watchlisted] ${reason}` : reason,
+          priority_score: priorityScore,
+          dedupe_key: dedupeKey,
+          source_name: signal.source_name ?? null,
+          published_at: signal.published_at ?? null,
+          match_debug: {
+            client_id: profile.id,
+            client_name: profile.name,
+            matched_via: candidate.isWatchlisted ? 'watchlist' : candidate.keywordMatched ? 'keyword_or_semantic' : 'semantic_match',
+            similarity: candidate.isWatchlisted ? null : candidate.similarity ?? null,
+            keyword_matched: candidate.keywordMatched,
+            min_relevance_score: effectiveMin,
+            candidate_rank: candidate.rank,
+            feedback_boost: candidate.feedbackBoost,
+            adjusted_candidate_rank: candidate.adjustedRank,
           },
-        }).catch(() => {})
-        existingSet.add(pairKey)
+          queue_status: 'pending',
+          next_delivery_at: new Date().toISOString(),
+          expires_at: queueExpiryFromPublishedAt(signal.published_at ?? null),
+        })
+
+        if (error) {
+          if (error.code === '23505') {
+            stats.duplicate++
+          } else {
+            stats.queue_insert_errors++
+            console.error('lead queue insert error:', error.message)
+          }
+          continue
+        }
+
+        queued++
+        existingPairSet.add(pairKey)
+        if (signal.novelty_key) recentNoveltySet.add(`${profile.id}:${signal.novelty_key}`)
         recentCompanySet.add(`${profile.id}:${dedupeKey}`)
         recentCompanySet.add(`${profile.id}:${companyKey}:${signal.signal_type}`)
-
-        // Slack alert for Max plan users with webhook configured
-        const planLimits = getPlanLimits(plan)
-        if (planLimits.slack && settings.slackWebhookUrl && score >= 7) {
-          sendSlackAlert(settings.slackWebhookUrl, signal.company_name, signal.signal_type, signal.headline ?? signal.summary ?? '', score).catch(() => {})
-        }
-
-        // First-lead email: check if this is user's very first lead
-        const { count } = await supabase
-          .from('leads')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', profile.user_id)
-        if (count === 1) {
-          const admin = createAdminClient()
-          admin.auth.admin.getUserById(profile.user_id)
-            .then(({ data }) => {
-              const email = data.user?.email
-              if (email) {
-                sendFirstLeadEmail(email, profile.name, signal.company_name, signal.signal_type).catch(() => {})
-              }
-            })
-            .catch(() => {})
-        }
-      } else {
-        if (error?.code === '23505') stats.dedupe_conflict++
-        else if (error) console.error('lead insert error:', error.message)
-        if (reservedQuota) {
-        await supabase.rpc('refund_lead_quota', { p_user_id: profile.user_id })
-        }
       }
     }
-    }
 
-    console.log('Match stats:', stats)
-    const payload = { matched, stats }
+    const payload = { queued, stats }
     await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
     return NextResponse.json(payload)
   } catch (error) {

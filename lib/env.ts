@@ -23,6 +23,8 @@ const OPTIONAL_WITH_WARNINGS = [
   'DODO_PRODUCT_PRO',
   'DODO_PRODUCT_MAX',
   'DODO_BUSINESS_ID',
+  'INTERNAL_OPS_ALLOWED_EMAILS',
+  'INTERNAL_OPS_SECRET',
 ] as const
 
 export function validateEnv(): void {
