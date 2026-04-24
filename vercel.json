@@ -14,11 +14,11 @@
     },
     {
       "path": "/api/cron/send-followups",
-      "schedule": "25 */2 * * *"
+      "schedule": "30 */2 * * *"
     },
     {
       "path": "/api/cron/enrich-contacts",
-      "schedule": "20 */2 * * *"
+      "schedule": "25 */2 * * *"
     },
     {
       "path": "/api/cron/renew-inbox-watches",
