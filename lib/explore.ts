@@ -22,6 +22,89 @@ export function shouldUseWorkspaceIcp(params: {
   ].some(pattern => pattern.test(prompt))
 }
 
+export function assessExplorePrompt(prompt: string): {
+  allowed: boolean
+  reason: string | null
+} {
+  const normalized = prompt.trim().toLowerCase()
+
+  if (normalized.length < 8) {
+    return {
+      allowed: false,
+      reason: 'Add a more specific targeting prompt.',
+    }
+  }
+
+  const targetingIntent = [
+    /\bfind\b/,
+    /\btarget\b/,
+    /\bprospect\b/,
+    /\baccount\b/,
+    /\blead\b/,
+    /\bcompany\b/,
+    /\bcompanies\b/,
+    /\bstartup\b/,
+    /\bstartups\b/,
+    /\bbuyer\b/,
+    /\bbuyers\b/,
+    /\bsegment\b/,
+    /\bsegments\b/,
+    /\bindustry\b/,
+    /\bindustries\b/,
+    /\boutreach\b/,
+    /\bicp\b/,
+    /\bwho should (i|we) (target|go after|reach out to)\b/,
+  ].some(pattern => pattern.test(normalized))
+
+  if (targetingIntent) {
+    return {
+      allowed: true,
+      reason: null,
+    }
+  }
+
+  const obviouslyUnrelated = [
+    /\brecipe\b/,
+    /\bpoem\b/,
+    /\bstory\b/,
+    /\bjoke\b/,
+    /\btranslate\b/,
+    /\bsummar(?:ize|ise)\b/,
+    /\brewrite\b/,
+    /\bgrammar\b/,
+    /\bessay\b/,
+    /\bcover letter\b/,
+    /\bresume\b/,
+    /\bmath\b/,
+    /\bequation\b/,
+    /\bsql\b/,
+    /\bjavascript\b/,
+    /\btypescript\b/,
+    /\breact\b/,
+    /\bnext\.?js\b/,
+    /\bpython\b/,
+    /\bdebug\b/,
+    /\berror\b/,
+    /\bstack trace\b/,
+    /\bbug\b/,
+    /\bcustomer support\b/,
+    /\bsupport ticket\b/,
+    /\bmeeting notes\b/,
+  ].some(pattern => pattern.test(normalized))
+
+  if (obviouslyUnrelated) {
+    return {
+      allowed: false,
+      reason: 'Explore only supports prompts for finding target accounts, companies, or prospects.',
+    }
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+  }
+}
+
 export function resolveExploreScoreThreshold(params: {
   useWorkspaceIcp: boolean
   minRelevanceScore: number

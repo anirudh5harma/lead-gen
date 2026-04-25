@@ -1,3 +1,5 @@
+import { assessExplorePrompt } from './explore.ts'
+
 const MODEL = 'deepseek-v4-flash'
 const API_URL = 'https://api.deepseek.com/chat/completions'
 
@@ -78,19 +80,38 @@ function stripCodeFences(text: string): string {
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
+  const parsed = parseJsonValue(text)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  return parsed as Record<string, unknown>
+}
+
+function parseJsonValue(text: string): unknown | null {
   const cleaned = stripCodeFences(text)
 
   try {
-    return JSON.parse(cleaned) as Record<string, unknown>
+    return JSON.parse(cleaned)
   } catch {
-    const start = cleaned.indexOf('{')
-    const end = cleaned.lastIndexOf('}')
-    if (start === -1 || end === -1 || end <= start) return null
-    try {
-      return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>
-    } catch {
-      return null
+    const objectStart = cleaned.indexOf('{')
+    const objectEnd = cleaned.lastIndexOf('}')
+    if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+      try {
+        return JSON.parse(cleaned.slice(objectStart, objectEnd + 1))
+      } catch {
+        // Fall through to array parsing.
+      }
     }
+
+    const arrayStart = cleaned.indexOf('[')
+    const arrayEnd = cleaned.lastIndexOf(']')
+    if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+      try {
+        return JSON.parse(cleaned.slice(arrayStart, arrayEnd + 1))
+      } catch {
+        return null
+      }
+    }
+
+    return null
   }
 }
 
@@ -422,6 +443,7 @@ export interface ExploreLeadSuggestion {
 
 export interface ExploreLeadGenerationResult {
   ok: boolean
+  failure_kind: 'invalid_prompt' | 'generation_error' | null
   rejection_reason: string | null
   leads: ExploreLeadSuggestion[]
 }
@@ -438,16 +460,23 @@ export async function generateExploreLeads(params: {
     workspaceIcpContext = '',
     useWorkspaceIcp = false,
   } = params
+  const promptAssessment = assessExplorePrompt(prompt)
+
+  if (!promptAssessment.allowed) {
+    return {
+      ok: false,
+      failure_kind: 'invalid_prompt',
+      rejection_reason: promptAssessment.reason ?? 'This prompt is outside the scope of lead generation.',
+      leads: [],
+    }
+  }
 
   try {
     const text = await completePrompt({
       system: `You handle prompted account discovery for a B2B outbound product.
-First decide whether the user's request is actually for lead generation or account targeting.
+Generate plausible target accounts from the user's targeting brief.
 
 Rules:
-- Reject prompts that are unrelated to finding target accounts or lead generation.
-- Examples to reject: coding help, math, general advice, personal writing, random brainstorming unrelated to target accounts, support requests unrelated to prospect discovery.
-- Accept prompts that ask for companies, account lists, target segments, buyer groups, industries, startup sets, or outreach targets.
 - Prefer real companies when reasonably likely.
 - Do not return placeholders or obviously fake names.
 - Keep summaries and reasons concise.
@@ -463,11 +492,9 @@ Seller profile description: ${sellerProfileDescription || 'None provided'}
 ${useWorkspaceIcp && workspaceIcpContext ? `Workspace ICP context: ${workspaceIcpContext}` : 'Workspace ICP context: none'}
 
 Return a JSON object with:
-- ok: boolean
-- rejection_reason: string | null
 - leads: array
 
-If ok is true, leads should contain 8 to 12 items and each item must have:
+Leads should contain 8 to 12 items and each item must have:
 - company_name: string
 - company_domain: string | null
 - signal_type: "funding" | "acquisition" | "expansion" | "regulation" | "hiring"
@@ -476,50 +503,48 @@ If ok is true, leads should contain 8 to 12 items and each item must have:
 - relevance_reason: string
 - relevance_score: integer 1-10
 
-If ok is false, leads must be [] and rejection_reason must explain why the prompt is outside lead generation scope.
-
 The headline and summary should read like a lead rationale, not a news citation.`,
       maxTokens: 1400,
       timeoutMs: 35_000,
       temperature: 0.3,
     })
 
-    const parsed = parseJsonObject(text)
+    const parsed = parseJsonValue(text)
     if (!parsed) {
       return {
         ok: false,
-        rejection_reason: 'Could not interpret this request as a lead-generation prompt.',
+        failure_kind: 'generation_error',
+        rejection_reason: 'Could not generate lead suggestions for this prompt right now.',
         leads: [],
       }
     }
 
-    const ok = parsed.ok === true
-    const rejectionReason = typeof parsed.rejection_reason === 'string' && parsed.rejection_reason.trim()
-      ? parsed.rejection_reason.trim()
-      : null
-    const rawLeads = Array.isArray(parsed.leads) ? parsed.leads : []
+    const rawLeads = Array.isArray(parsed)
+      ? parsed
+      : (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        !Array.isArray(parsed) &&
+        Array.isArray((parsed as Record<string, unknown>).leads)
+      )
+          ? (parsed as Record<string, unknown>).leads as unknown[]
+          : []
 
     const leads = rawLeads
       .map(item => normalizeExploreLeadSuggestion(item))
       .filter((item): item is ExploreLeadSuggestion => item !== null)
       .slice(0, 12)
 
-    if (!ok) {
-      return {
-        ok: false,
-        rejection_reason: rejectionReason ?? 'This prompt is outside the scope of lead generation.',
-        leads: [],
-      }
-    }
-
     return {
       ok: true,
+      failure_kind: null,
       rejection_reason: null,
       leads,
     }
   } catch {
     return {
       ok: false,
+      failure_kind: 'generation_error',
       rejection_reason: 'Could not generate leads for this prompt right now.',
       leads: [],
     }

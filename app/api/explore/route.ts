@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       generated: 0,
       duration_ms: Date.now() - startedAt,
       message: generation.rejection_reason ?? 'This prompt is outside the scope of lead generation.',
-    }, { status: 400 })
+    }, { status: generation.failure_kind === 'invalid_prompt' ? 400 : 502 })
   }
 
   const suggestions = generation.leads

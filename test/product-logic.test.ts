@@ -15,6 +15,7 @@ import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-no
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import {
+  assessExplorePrompt,
   buildExploreSearchTerms,
   rankExploreCandidates,
   resolveExploreScoreThreshold,
@@ -274,6 +275,26 @@ test('explore only applies workspace icp when the user explicitly asks for it', 
     prompt: 'find some early stage AI startups for me',
     icpHint: 'Series A, US healthcare',
   }), true)
+})
+
+test('explore prompt assessment accepts normal targeting prompts and rejects obviously unrelated ones', () => {
+  assert.deepEqual(
+    assessExplorePrompt('find some early stage AI startups for me'),
+    { allowed: true, reason: null },
+  )
+
+  assert.deepEqual(
+    assessExplorePrompt('find React developer tools companies selling into fintech'),
+    { allowed: true, reason: null },
+  )
+
+  assert.deepEqual(
+    assessExplorePrompt('debug this Next.js build error for me'),
+    {
+      allowed: false,
+      reason: 'Explore only supports prompts for finding target accounts, companies, or prospects.',
+    },
+  )
 })
 
 test('explore threshold is looser for prompt-only discovery', () => {
