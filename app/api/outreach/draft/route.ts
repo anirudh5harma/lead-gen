@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { draftOutreachEmail } from '@/lib/claude'
+import { draftOutreachEmail } from '@/lib/deepseek'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { enrichCompany } from '@/lib/email-finder/enrich'
 import { scrapeSignalArticle } from '@/lib/email-finder/firecrawl'

@@ -15,10 +15,10 @@ interface RSSFetchOptions {
 
 /**
  * Google News RSS search URL builder.
- * `when:7d` restricts results to the last 7 days.
+ * `when` restricts results to the last N days.
  */
-export function buildGoogleNewsUrl(query: string): string {
-  const encoded = encodeURIComponent(`${query} when:7d`)
+export function buildGoogleNewsUrl(query: string, when = '7d'): string {
+  const encoded = encodeURIComponent(`${query} when:${when}`)
   return `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`
 }
 
@@ -203,8 +203,8 @@ function decodeEntities(str: string): string {
 /**
  * Fetches and parses a Google News RSS feed for a keyword query.
  */
-export async function fetchRSSItems(query: string): Promise<RSSItem[]> {
-  const url = buildGoogleNewsUrl(query)
+export async function fetchRSSItems(query: string, when = '7d'): Promise<RSSItem[]> {
+  const url = buildGoogleNewsUrl(query, when)
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),

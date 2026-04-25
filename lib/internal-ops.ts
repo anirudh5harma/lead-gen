@@ -76,7 +76,7 @@ export interface InternalOpsSummary {
       runs: number
       ann_candidates: number
       candidate_pool_kept: number
-      scored_by_claude: number
+      scored_by_llm: number
       queued: number
     }
     deliver_leads: {
@@ -294,7 +294,7 @@ export async function getInternalOpsSummary(
         runs: 0,
         ann_candidates: 0,
         candidate_pool_kept: 0,
-        scored_by_claude: 0,
+        scored_by_llm: 0,
         queued: 0,
       }, metric => {
         const stats = asRecord(metric.stats)
@@ -302,7 +302,7 @@ export async function getInternalOpsSummary(
           runs: 1,
           ann_candidates: num(stats.ann_candidates),
           candidate_pool_kept: num(stats.candidate_pool_kept),
-          scored_by_claude: num(stats.scored_by_claude),
+          scored_by_llm: num(stats.scored_by_llm),
           queued: num(metric.queued),
         }
       }),

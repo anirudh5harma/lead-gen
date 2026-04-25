@@ -2,7 +2,7 @@
 
 /* ─────────────────────────────────────────────────────────────
    Bombsell — Design System
-   Light, paper-toned theme inspired by Claude.ai with a coral
+   Light, paper-toned theme with a coral
    accent. Clay / Instantly / Linear-flavored data density.
    Variable names are stable so components cascade.
    ───────────────────────────────────────────────────────────── */
@@ -10,7 +10,7 @@
 @theme inline {
   /* Surfaces — warm paper, cream, latte */
   --color-ink-0: #ffffff;      /* overlays / highest */
-  --color-ink-1: #faf9f5;      /* page bg (Claude cream) */
+  --color-ink-1: #faf9f5;      /* page bg */
   --color-ink-2: #f4f2ea;      /* panel bg */
   --color-ink-3: #ece7d9;      /* elevated surface */
   --color-ink-4: #ddd6c4;      /* hover / active */
@@ -26,7 +26,7 @@
   --color-text-3: #726b5f;     /* tertiary */
   --color-text-4: #a29a8b;     /* quaternary / hints */
 
-  /* Accent — Claude coral */
+  /* Accent coral */
   --color-accent: #c15f3c;
   --color-accent-soft: #c15f3c14;
   --color-accent-glow: #c15f3c2a;

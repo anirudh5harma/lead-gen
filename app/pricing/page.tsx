@@ -17,6 +17,7 @@ const PLANS = [
       'Unlimited signal previews',
       '15 lead unlocks / month',
       'Draft + send via Gmail',
+      'CRM sync and exports',
       '1 workspace',
       'Hyper-personalized outreach',
     ],
@@ -32,6 +33,7 @@ const PLANS = [
     features: [
       'Upto 300 leads / month',
       '1 workspace',
+      'CRM sync and exports',
       'Auto-send Gmail/Outlook',
       'Automated follow-ups',
       'Reply detection',
@@ -51,7 +53,6 @@ const PLANS = [
       'Multiple client workspaces',
       'Per-client targeting and templates',
       'Slack signal alerts',
-      'CRM sync and exports',
       'Priority enrichment queue',
       'Everything in Pro',
     ],
@@ -70,8 +71,8 @@ const FAQS = [
     a: 'Free users can keep browsing all matched signals, but only 15 leads per rolling 30-day window can be fully unlocked with contacts and drafts. Pro and Max can either stop at the limit or keep the feed running by opting into $0.50 per extra lead.',
   },
   {
-    q: 'Which plan includes client workspaces and CRM sync?',
-    a: 'Max. Free and Pro are single-workspace plans. Max unlocks multiple client workspaces with separate targeting, templates, feed views, CRM sync, and exports.',
+    q: 'Which plan includes client workspaces?',
+    a: 'Max. CRM sync and exports are available on every plan, but Max is the tier that unlocks multiple client workspaces with separate targeting, templates, and feed views.',
   },
   {
     q: 'Can I cancel or change plans anytime?',

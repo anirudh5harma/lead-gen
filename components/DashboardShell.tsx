@@ -8,7 +8,7 @@ import Sidebar from './Sidebar'
 import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
 
-type View = 'feed' | 'watchlist' | 'settings'
+type View = 'feed' | 'explore' | 'watchlist' | 'settings'
 
 interface WatchlistItem {
   id: string
@@ -68,6 +68,7 @@ interface OpsSummary {
 
 const VIEW_TITLES: Record<View, string> = {
   feed:      'Signal Feed',
+  explore:   'Explore',
   watchlist: 'Watchlist',
   settings:  'Settings',
 }
@@ -102,7 +103,10 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
 
   const metrics = useMemo(() => {
     const cutoff = mountedAtMs - 7 * 24 * 60 * 60 * 1000
-    const recent = initialLeads.filter(l => new Date(l.created_at).getTime() >= cutoff)
+    const recent = initialLeads.filter(l =>
+      (l.origin ?? 'live') === 'live' &&
+      new Date(l.created_at).getTime() >= cutoff,
+    )
     return {
       signals: recent.length,
       drafted: recent.filter(l => ['drafted', 'sent', 'replied', 'booked'].includes(l.status)).length,
@@ -134,6 +138,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
                 {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
+                {activeView === 'explore' && 'Prompt-driven discovery plus CRM-imported outreach targets'}
                 {activeView === 'watchlist' && 'Companies you follow bypass relevance filtering'}
                 {activeView === 'settings' && 'Billing, targeting, integrations, and diagnostics'}
               </p>
@@ -214,8 +219,19 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                   watchlist={watchlist}
                   activeClientId={userProfile.active_client_id ?? null}
                   plan={plan as 'free' | 'pro' | 'max'}
+                  origin="live"
                 />
               </div>
+            )}
+            {activeView === 'explore' && (
+              <ExplorePanel
+                initialLeads={initialLeads}
+                userId={userId}
+                watchlist={watchlist}
+                activeClientId={userProfile.active_client_id ?? null}
+                plan={plan as 'free' | 'pro' | 'max'}
+                icpKeywords={userProfile.icp_keywords ?? []}
+              />
             )}
             {activeView === 'watchlist' && (
               <div className="max-w-2xl space-y-4">
@@ -382,14 +398,12 @@ function SettingsPanel({
           {plan !== 'free' && (
             <ManageBillingButton />
           )}
-          {plan === 'max' && (
-            <Link
-              href="/api/export/crm"
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-ghost transition-colors"
-            >
-              Export CRM CSV
-            </Link>
-          )}
+          <Link
+            href="/api/export/crm"
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-ghost transition-colors"
+          >
+            Export CRM CSV
+          </Link>
         </div>
         {(plan === 'pro' || plan === 'max') && (
           <div className="px-5 py-4 flex items-center justify-between gap-4 border-t border-[var(--color-line-1)]">
@@ -502,12 +516,7 @@ function SettingsPanel({
       </div>
 
       <SequenceTemplatesPanel />
-      {plan === 'max' ? <CrmSyncPanel /> : (
-        <MaxFeatureUpgradeCard
-          title="CRM Sync"
-          body="Push lead created, sent, replied, and booked events into your CRM or automation stack. Available on Max only."
-        />
-      )}
+      <CrmSyncPanel />
 
       {/* Blocked companies */}
       <BlockedCompaniesPanel />
@@ -552,6 +561,132 @@ function SettingsPanel({
   )
 }
 
+function ExplorePanel({
+  initialLeads,
+  userId,
+  watchlist,
+  activeClientId,
+  plan,
+  icpKeywords,
+}: {
+  initialLeads: Lead[]
+  userId: string
+  watchlist: WatchlistItem[]
+  activeClientId: string | null
+  plan: 'free' | 'pro' | 'max'
+  icpKeywords: string[]
+}) {
+  const [activeTab, setActiveTab] = useState<'search' | 'crm'>('search')
+  const [prompt, setPrompt] = useState('')
+  const [icpHint, setIcpHint] = useState(icpKeywords.slice(0, 4).join(', '))
+  const [searching, setSearching] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function runSearch() {
+    if (!prompt.trim()) return
+    setSearching(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/explore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, icp_hint: icpHint }),
+      })
+      const data = await res.json() as { error?: string; inserted?: number; skipped?: number }
+      setMessage(
+        data.error
+          ? data.error
+          : `Added ${data.inserted ?? 0} explore leads${typeof data.skipped === 'number' ? `, skipped ${data.skipped}` : ''}.`,
+      )
+      if (res.ok) setActiveTab('search')
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card divide-y divide-[var(--color-line-1)]">
+        <div className="px-5 py-4">
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Prompted Discovery</h2>
+          <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+            Describe who you want to target. Bombsell runs a broader search, scores the results against your ICP, and drops them into an explore-only feed.
+          </p>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            placeholder="Example: Fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
+            className="w-full min-h-[96px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+          />
+          <input
+            value={icpHint}
+            onChange={e => setIcpHint(e.target.value)}
+            placeholder="Optional ICP hints, for example: Series B, RevOps owner, US healthcare"
+            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={runSearch}
+              disabled={searching || !prompt.trim()}
+              className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50"
+            >
+              {searching ? 'Searching…' : 'Run search'}
+            </button>
+            {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
+          </div>
+        </div>
+      </div>
+
+      <div className="inline-flex h-9 p-1 rounded-full border border-[var(--color-line-2)] bg-white">
+        {([
+          { id: 'search', label: 'Explore Results' },
+          { id: 'crm', label: 'CRM Outreach Feed' },
+        ] as const).map(item => (
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id)}
+            className={`
+              text-[11.5px] font-medium px-3 h-7 rounded-full transition-colors
+              ${activeTab === item.id ? 'bg-[var(--color-ink-2)] text-[var(--color-text-1)]' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}
+            `}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'search' ? (
+        <LeadFeed
+          initialLeads={initialLeads}
+          userId={userId}
+          watchlist={watchlist}
+          activeClientId={activeClientId}
+          plan={plan}
+          origin="explore"
+          searchPlaceholder="Search explore leads…"
+          emptyTitle="No explore leads yet"
+          emptyBody="Run a prompted search above and Bombsell will add the strongest matches here."
+        />
+      ) : (
+        <LeadFeed
+          initialLeads={initialLeads}
+          userId={userId}
+          watchlist={watchlist}
+          activeClientId={activeClientId}
+          plan={plan}
+          origin="crm_import"
+          hideSignalTabs
+          searchPlaceholder="Search CRM prospects…"
+          emptyTitle="No CRM prospects imported yet"
+          emptyBody="Enable CRM imports in Settings, then send records into Bombsell to create an outreach-ready CRM feed."
+        />
+      )}
+    </div>
+  )
+}
+
 interface ClientAccountSummary {
   id: string
   name: string
@@ -564,30 +699,6 @@ function ClientWorkspaceUpgradeCard() {
         <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Client Workspaces</h2>
         <p className="text-xs text-[var(--color-text-4)] mt-0.5">
           Keep separate feeds, targeting, templates, and CRM sync for each client or business line.
-        </p>
-      </div>
-      <div className="px-5 py-4 flex items-center justify-between gap-4">
-        <p className="text-xs text-[var(--color-text-3)]">
-          Available on the Max plan only.
-        </p>
-        <Link
-          href="/pricing"
-          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
-        >
-          Upgrade to Max
-        </Link>
-      </div>
-    </div>
-  )
-}
-
-function MaxFeatureUpgradeCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="card divide-y divide-[var(--color-line-1)]">
-      <div className="px-5 py-4">
-        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h2>
-        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          {body}
         </p>
       </div>
       <div className="px-5 py-4 flex items-center justify-between gap-4">
@@ -818,22 +929,55 @@ function SequenceTemplatesPanel() {
 }
 
 function CrmSyncPanel() {
+  const [provider, setProvider] = useState('webhook')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [enabled, setEnabled] = useState(false)
+  const [importEnabled, setImportEnabled] = useState(false)
+  const [importUrl, setImportUrl] = useState('')
+  const [providers, setProviders] = useState<Array<{
+    id: string
+    label: string
+    export_url: string
+    exportDescription: string
+    importDescription: string
+    exportFields: Array<{ ourField: string; crmField: string }>
+    importFields: Array<{ ourField: string; crmField: string; required?: boolean }>
+  }>>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/settings/crm-sync')
-      .then(r => r.json() as Promise<{ webhook_url?: string; enabled?: boolean }>)
+      .then(r => r.json() as Promise<{
+        provider?: string
+        webhook_url?: string
+        enabled?: boolean
+        import_enabled?: boolean
+        import_url?: string
+        providers?: Array<{
+          id: string
+          label: string
+          export_url: string
+          exportDescription: string
+          importDescription: string
+          exportFields: Array<{ ourField: string; crmField: string }>
+          importFields: Array<{ ourField: string; crmField: string; required?: boolean }>
+        }>
+      }>)
       .then(data => {
+        setProvider(data.provider ?? 'webhook')
         setWebhookUrl(data.webhook_url ?? '')
         setEnabled(Boolean(data.enabled))
+        setImportEnabled(Boolean(data.import_enabled))
+        setImportUrl(data.import_url ?? '')
+        setProviders(data.providers ?? [])
         setLoaded(true)
       })
       .catch(() => setLoaded(true))
   }, [])
+
+  const selectedProvider = providers.find(item => item.id === provider) ?? providers[0] ?? null
 
   async function save() {
     setSaving(true)
@@ -842,9 +986,15 @@ function CrmSyncPanel() {
       const res = await fetch('/api/settings/crm-sync', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webhook_url: webhookUrl, enabled }),
+        body: JSON.stringify({
+          provider,
+          webhook_url: webhookUrl,
+          enabled,
+          import_enabled: importEnabled,
+        }),
       })
-      const data = await res.json() as { error?: string }
+      const data = await res.json() as { error?: string; import_url?: string }
+      if (data.import_url) setImportUrl(data.import_url)
       setMessage(data.error ?? 'Saved')
     } finally {
       setSaving(false)
@@ -856,24 +1006,96 @@ function CrmSyncPanel() {
       <div className="px-5 py-4">
         <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
         <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          Push lead created/sent/replied/booked events to your CRM or automation webhook.
+          CRM sync is available on every plan. Export live-signal leads to the main CRMs, and import CRM-held targets into a separate outreach feed.
         </p>
       </div>
       <div className="px-5 py-4 space-y-3">
+        <label className="block space-y-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">
+            Provider
+          </span>
+          <select
+            value={provider}
+            onChange={e => setProvider(e.target.value)}
+            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+          >
+            {providers.map(item => (
+              <option key={item.id} value={item.id}>{item.label}</option>
+            ))}
+          </select>
+        </label>
         <input
           type="url"
           value={webhookUrl}
           onChange={e => setWebhookUrl(e.target.value)}
-          placeholder="https://your-crm-sync-endpoint.example.com"
+          placeholder="https://your-outbound-crm-sync-endpoint.example.com"
           className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
         />
         <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
           <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
-          Enable CRM webhook sync
+          Push lead created, sent, replied, and booked events outbound
         </label>
+        <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+          <input type="checkbox" checked={importEnabled} onChange={e => setImportEnabled(e.target.checked)} />
+          Accept CRM imports into the CRM outreach feed
+        </label>
+        <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3 space-y-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import URL</p>
+          <input
+            readOnly
+            value={importUrl}
+            className="w-full h-9 px-3 rounded-lg bg-white border border-[var(--color-line-2)] text-[12px] text-[var(--color-text-2)]"
+          />
+          <p className="text-[11px] text-[var(--color-text-4)]">
+            Send CRM workflow payloads to this URL. Imported accounts land in Explore - CRM Outreach Feed and do not consume signal-feed lead quota.
+          </p>
+        </div>
         <button onClick={save} disabled={!loaded || saving} className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50">
           {saving ? 'Saving…' : 'Save CRM sync'}
         </button>
+        {selectedProvider && (
+          <div className="rounded-xl border border-[var(--color-line-1)] bg-white px-3 py-3 space-y-3">
+            <div>
+              <p className="text-xs font-medium text-[var(--color-text-1)]">{selectedProvider.label} mapping</p>
+              <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">{selectedProvider.exportDescription}</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)] mb-2">Export fields</p>
+                <div className="space-y-1.5">
+                  {selectedProvider.exportFields.map(field => (
+                    <div key={`${field.ourField}-${field.crmField}`} className="flex items-start justify-between gap-3 text-[11px]">
+                      <span className="text-[var(--color-text-2)]">{field.ourField}</span>
+                      <span className="text-[var(--color-text-4)] text-right">{field.crmField}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)] mb-2">Import fields</p>
+                <div className="space-y-1.5">
+                  {selectedProvider.importFields.map(field => (
+                    <div key={`${field.ourField}-${field.crmField}`} className="flex items-start justify-between gap-3 text-[11px]">
+                      <span className="text-[var(--color-text-2)]">{field.ourField}{field.required ? ' *' : ''}</span>
+                      <span className="text-[var(--color-text-4)] text-right">{field.crmField}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {providers.map(item => (
+                <a
+                  key={item.id}
+                  href={item.export_url}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-full btn-ghost transition-colors"
+                >
+                  Export {item.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
         {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
       </div>
     </div>

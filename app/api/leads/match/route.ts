@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { scoreLeadRelevance } from '@/lib/claude'
+import { scoreLeadRelevance } from '@/lib/deepseek'
 import { type PlanTier } from '@/lib/plan'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
@@ -232,7 +232,7 @@ async function runMatch(request: Request) {
       candidate_pool_total: 0,
       candidate_pool_kept: 0,
       below_similarity: 0,
-      claude_errors: 0,
+      llm_errors: 0,
       below_score: 0,
       feedback_positive: 0,
       feedback_negative: 0,
@@ -243,7 +243,7 @@ async function runMatch(request: Request) {
       keyword_misses: 0,
       eligible_profiles: eligibleProfiles.length,
       profiles_considered: 0,
-      scored_by_claude: 0,
+      scored_by_llm: 0,
     }
     let queued = 0
 
@@ -402,12 +402,12 @@ async function runMatch(request: Request) {
             signal.company_name,
             signal.summary || '',
           )
-          stats.scored_by_claude++
+          stats.scored_by_llm++
           score = result.score
           reason = result.reason
         } catch (error) {
-          stats.claude_errors++
-          if (stats.claude_errors === 1) console.error('scoreLeadRelevance error:', (error as Error).message)
+          stats.llm_errors++
+          if (stats.llm_errors === 1) console.error('scoreLeadRelevance error:', (error as Error).message)
           continue
         }
 

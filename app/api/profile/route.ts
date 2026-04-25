@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
-import { extractICPKeywords } from '@/lib/claude'
+import { extractICPKeywords } from '@/lib/deepseek'
 import { resolveServicesDescription } from '@/lib/company-profile'
 import { syncMonitoredAccountsFromWorkspaceSources } from '@/lib/monitored-accounts'
 

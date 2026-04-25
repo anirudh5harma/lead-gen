@@ -54,7 +54,9 @@ export default async function DashboardPage() {
     .select(`
       id,
       client_id,
+      origin,
       target_company,
+      company_domain,
       relevance_score,
       relevance_reason,
       status,
@@ -70,6 +72,7 @@ export default async function DashboardPage() {
         summary,
         funding_amount,
         source_url,
+        source_name,
         published_at,
         company_domain
       )

@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { completePrompt } from './deepseek.ts'
 
 export interface ServicesDescriptionResult {
   description: string
@@ -73,18 +73,13 @@ async function describeWebsite(params: {
   const markdown = await scrapeWebsiteMarkdown(params.websiteUrl)
   if (!markdown) return null
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.DEEPSEEK_API_KEY) {
     return fallbackWebsiteDescription(markdown)
   }
 
   try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 220,
-      messages: [{
-        role: 'user',
-        content: `Create a concise product/service description for outreach lead matching.
+    const text = await completePrompt({
+      prompt: `Create a concise product/service description for outreach lead matching.
 
 Company: ${params.companyName}
 Industry: ${params.industry}
@@ -95,10 +90,9 @@ Website content:
 ${markdown.slice(0, 5500)}
 
 Return 2-4 plain-English sentences. Be specific about what the company sells, who it helps, and the business outcomes. Do not invent details. No markdown.`,
-      }],
+      maxTokens: 220,
+      timeoutMs: 20_000,
     })
-
-    const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
     return cleanDescription(text) || fallbackWebsiteDescription(markdown)
   } catch {
     return fallbackWebsiteDescription(markdown)

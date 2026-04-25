@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchRSSItems, fetchRSSFromUrl, RSS_QUERIES, PRESS_RELEASE_FEEDS, type RSSItem } from '@/lib/rss'
-import { extractSignal } from '@/lib/claude'
+import { extractSignal } from '@/lib/deepseek'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { fetchJobBoard } from '@/lib/job-boards'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'

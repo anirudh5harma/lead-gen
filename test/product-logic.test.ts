@@ -13,6 +13,7 @@ import { extractBearerToken, isInternalOpsBearerToken, isInternalOpsEmailAllowed
 import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
+import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 
 test('non-max plans only keep the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -201,6 +202,54 @@ test('signal novelty detects the same event across slightly different wording', 
 
   assert.equal(isLikelySameSignalEvent(eventA, eventB), true)
   assert.match(buildSignalNoveltyKey(eventA), /^domain:acme\.com:/)
+})
+
+test('crm provider normalization falls back to webhook for unknown providers', () => {
+  assert.equal(normalizeCrmProvider('hubspot'), 'hubspot')
+  assert.equal(normalizeCrmProvider('unknown-crm'), 'webhook')
+})
+
+test('crm import mapping normalizes hubspot style workflow payloads', () => {
+  const mapped = mapCrmImportRecord('hubspot', {
+    id: '123',
+    properties: {
+      company: 'Acme Labs',
+      domain: 'www.acme.com',
+      email: 'owner@acme.com',
+      firstname: 'Taylor',
+      lastname: 'Chen',
+      job_title: 'VP Revenue',
+      hs_lead_status: 'OPEN',
+      notes: 'Existing outbound target',
+    },
+  })
+
+  assert.equal(mapped?.companyName, 'Acme Labs')
+  assert.equal(mapped?.companyDomain, 'acme.com')
+  assert.equal(mapped?.contactName, 'Taylor Chen')
+  assert.equal(mapped?.contactEmail, 'owner@acme.com')
+  assert.equal(mapped?.crmStatus, 'OPEN')
+})
+
+test('crm export records build CRM-safe notes and split contact names', () => {
+  const record = buildCrmExportRecord({
+    company: 'Acme Labs',
+    domain: 'acme.com',
+    contactName: 'Taylor Chen',
+    contactTitle: 'VP Revenue',
+    contactEmail: 'taylor@acme.com',
+    signalType: 'funding',
+    signalHeadline: 'Acme closes Series B',
+    signalSummary: 'Acme raised a growth round.',
+    fitScore: 8,
+    fitReason: 'Recent funding and expansion fit the ICP.',
+    status: 'new',
+  })
+
+  assert.equal(record.website, 'https://acme.com')
+  assert.equal(record.firstName, 'Taylor')
+  assert.equal(record.lastName, 'Chen')
+  assert.match(record.crmNote, /Recent funding/)
 })
 
 test('delivery allowance scales with paid backlog but respects recent daily volume', () => {

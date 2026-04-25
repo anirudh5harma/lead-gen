@@ -36,6 +36,7 @@ const ANGLE_LABELS: Record<string, string> = {
   expansion:   'Predictable Revenue',
   regulation:  'Voss tactical empathy',
   hiring:      'Challenger 90-day angle',
+  crm_import:  'CRM account-based angle',
 }
 
 const SIGNAL_META: Record<string, { label: string; color: string }> = {
@@ -44,6 +45,7 @@ const SIGNAL_META: Record<string, { label: string; color: string }> = {
   expansion:   { label: 'Expansion',   color: 'var(--color-sig-expansion)' },
   hiring:      { label: 'Hiring',      color: 'var(--color-sig-hiring)' },
   regulation:  { label: 'Regulation',  color: 'var(--color-sig-regulation)' },
+  crm_import:  { label: 'CRM Import',  color: 'var(--color-accent)' },
 }
 
 export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSent, onStatusChange, onDraftCreated }: Props) {

@@ -131,7 +131,7 @@ export default async function InternalOpsPage() {
             <MiniStat label="Poll runs" value={String(summary.cron_30d.poll_signals.runs)} />
             <MiniStat label="Signals inserted" value={String(summary.cron_30d.poll_signals.inserted)} />
             <MiniStat label="ANN candidates" value={String(summary.cron_30d.match_leads.ann_candidates)} />
-            <MiniStat label="Claude reranks" value={String(summary.cron_30d.match_leads.scored_by_claude)} />
+            <MiniStat label="LLM reranks" value={String(summary.cron_30d.match_leads.scored_by_llm)} />
             <MiniStat label="Queue delivered" value={String(summary.cron_30d.deliver_leads.delivered)} />
             <MiniStat label="Feedback reorders" value={String(summary.cron_30d.deliver_leads.feedback_reordered)} />
           </Panel>

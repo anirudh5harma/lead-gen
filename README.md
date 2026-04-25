@@ -8,7 +8,9 @@ Bombsell ingests public buying signals, matches them against user or client ICPs
 
 - `Free`: 10 leads per rolling 30 days, single workspace, manual send via Gmail/copy handoff.
 - `Pro`: 300 leads per rolling 30 days, single workspace, connected inbox sending, automated follow-ups, reply detection.
-- `Max`: 1,500 leads per rolling 30 days, multiple client workspaces, CRM sync, CRM export, Slack alerts, priority enrichment.
+- `Max`: 1,500 leads per rolling 30 days, multiple client workspaces, Slack alerts, priority enrichment.
+
+CRM sync and CRM export are available on every plan. CRM-imported outreach records land in a separate feed and do not consume signal-feed lead quota.
 
 Leads are quota-limited at feed-ingestion time, not at send time. Follow-ups do not consume lead quota.
 
@@ -59,7 +61,7 @@ Ranking is now adaptive:
 
 - Node.js 22+
 - Supabase project with migrations applied
-- Environment variables for Supabase, Anthropic, Dodo, Resend, Gmail, Outlook, FullEnrich, Hunter, ZeroBounce, and cron auth
+- Environment variables for Supabase, DeepSeek, Dodo, Resend, Gmail, Outlook, FullEnrich, Hunter, ZeroBounce, and cron auth
 
 ### Install and run
 
@@ -108,7 +110,7 @@ Apply migrations before deploying code that depends on them.
 - When a user downgrades below Max, extra workspaces are archived and archived workspace CRM sync is disabled.
 - Matching only considers eligible, non-archived workspaces, so hidden workspaces cannot consume quota.
 - Draft/send/follow-up logic now resolves sender context from the lead's `client_id` first, then falls back to the user profile.
-- CRM sync is Max-only at both the UI and API layers.
+- CRM sync is available on every plan. Only multi-workspace CRM partitioning remains Max-specific because multiple client workspaces are still a Max feature.
 
 ## Diagnostics
 

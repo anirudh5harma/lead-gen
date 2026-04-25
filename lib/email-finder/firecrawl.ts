@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { completePrompt } from '../deepseek.ts'
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g
 
@@ -25,13 +25,8 @@ export async function scrapeSignalArticle(url: string): Promise<string> {
     const markdown: string = json.data?.markdown || ''
     if (!markdown || markdown.length < 100) return ''
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 350,
-      messages: [{
-        role: 'user',
-        content: `From this news article, extract facts useful for a sales email. Only include facts explicitly stated.
+    const text = await completePrompt({
+      prompt: `From this news article, extract facts useful for a sales email. Only include facts explicitly stated.
 
 ${markdown.slice(0, 4000)}
 
@@ -43,10 +38,10 @@ Return ONLY this JSON (omit any field you cannot find verbatim in the article):
   "growth_target": "...",
   "key_detail": "..."
 }`,
-      }],
+      maxTokens: 350,
+      timeoutMs: 20_000,
     })
 
-    const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
     if (!text) return ''
 
     const cleaned = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
@@ -77,7 +72,7 @@ export interface FirecrawlPerson {
 
 /**
  * Scrapes a company's /about or /team page with Firecrawl,
- * then uses Claude to extract named contacts with emails.
+ * then uses DeepSeek to extract named contacts with emails.
  *
  * Free tier: 500 pages/month.
  */
@@ -127,15 +122,10 @@ export async function scrapeCompanyPeople(domain: string): Promise<FirecrawlPers
 
   if (!pageContent) return []
 
-  // Use Claude to extract structured contacts from page content
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  // Use DeepSeek to extract structured contacts from page content
   try {
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001', // cheap model for extraction
-      max_tokens: 400,
-      messages: [{
-        role: 'user',
-        content: `Extract leadership contacts from this company page.
+    const text = await completePrompt({
+      prompt: `Extract leadership contacts from this company page.
 
 ${pageContent.slice(0, 3000)}
 
@@ -145,10 +135,10 @@ Return a JSON array of people. Each person:
 Only include senior or decision-making roles with a clear title.
 Email can be null if the page does not show one.
 Return ONLY the JSON array, no markdown.`,
-      }],
+      maxTokens: 400,
+      timeoutMs: 20_000,
     })
 
-    const text = message.content[0].type === 'text' ? message.content[0].text.trim() : '[]'
     const cleaned = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
     const parsed = JSON.parse(cleaned) as FirecrawlPerson[]
     return parsed.filter(person => person?.name && person?.title)

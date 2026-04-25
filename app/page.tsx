@@ -299,7 +299,7 @@ const FEATURES = [
   },
   {
     title: 'CRM-ready exports',
-    body: 'Max users get a one-click CSV export plus Slack alerts for high-intent signals so the whole team moves when it matters.',
+    body: 'Every plan gets CRM-ready exports and sync workflows. Max adds multi-client workspaces, Slack alerts, and the priority queue for teams.',
   },
 ]
 
@@ -308,7 +308,7 @@ const TIERS = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    perks: ['Unlimited signal previews', '15 lead unlocks / month', 'Hyper-personalized outreach', 'Manual send'],
+    perks: ['Unlimited signal previews', '15 lead unlocks / month', 'CRM sync and exports', 'Hyper-personalized outreach', 'Manual send'],
     cta: 'Get started',
     highlight: false,
   },
@@ -316,7 +316,7 @@ const TIERS = [
     name: 'Pro',
     price: '$100',
     period: '/ month',
-    perks: ['Upto 300 leads / month', 'Auto-send', '3-day follow-ups', 'Reply detection'],
+    perks: ['Upto 300 leads / month', 'CRM sync and exports', 'Auto-send', '3-day follow-ups', 'Reply detection'],
     cta: 'Upgrade to Pro',
     highlight: false,
   },
@@ -324,7 +324,7 @@ const TIERS = [
     name: 'Max',
     price: '$250',
     period: '/ month',
-    perks: ['Unlimited leads / month', 'Multi-client workspaces', 'Slack alerts', 'CRM sync and exports', 'Priority queue'],
+    perks: ['Unlimited leads / month', 'Multi-client workspaces', 'Slack alerts', 'Priority queue'],
     cta: 'Upgrade to Max',
     highlight: true,
   },

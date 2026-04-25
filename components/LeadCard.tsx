@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-export type SignalType = 'funding' | 'acquisition' | 'expansion' | 'hiring' | 'regulation'
+export type SignalType = 'funding' | 'acquisition' | 'expansion' | 'hiring' | 'regulation' | 'crm_import'
 export type LeadStatus = 'new' | 'viewed' | 'drafted' | 'sent' | 'replied' | 'booked' | 'dismissed'
 
 export interface LeadCardSignal {
@@ -45,6 +45,7 @@ const SIGNAL_DOT: Record<SignalType, { label: string; dot: string }> = {
   expansion:   { label: 'Expansion',   dot: 'bg-[var(--color-sig-expansion)]' },
   hiring:      { label: 'Hiring',      dot: 'bg-[var(--color-sig-hiring)]' },
   regulation:  { label: 'Regulation',  dot: 'bg-[var(--color-sig-regulation)]' },
+  crm_import:  { label: 'CRM Import',  dot: 'bg-[var(--color-accent)]' },
 }
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string; style: string }[] = [

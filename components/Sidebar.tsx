@@ -6,17 +6,27 @@ import Image from 'next/image'
 export interface SidebarProps {
   companyName: string
   userEmail?: string
-  activeView: 'feed' | 'watchlist' | 'settings'
-  onNavigate: (view: 'feed' | 'watchlist' | 'settings') => void
+  activeView: 'feed' | 'explore' | 'watchlist' | 'settings'
+  onNavigate: (view: 'feed' | 'explore' | 'watchlist' | 'settings') => void
 }
 
-const NAV: { id: 'feed' | 'watchlist' | 'settings'; label: string; icon: React.ReactNode }[] = [
+const NAV: { id: 'feed' | 'explore' | 'watchlist' | 'settings'; label: string; icon: React.ReactNode }[] = [
   {
     id: 'feed',
     label: 'Signal Feed',
     icon: (
       <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'explore',
+    label: 'Explore',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16l2.879-2.879m0 0A3 3 0 1115.12 8.88a3 3 0 01-4.242 4.242z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 3a9 9 0 109 9" />
       </svg>
     ),
   },

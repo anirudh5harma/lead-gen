@@ -13,12 +13,14 @@ export interface SignalRow {
   funding_amount: string | null
   source_url: string | null
   published_at: string | null
+  source_name?: string | null
   company_domain?: string | null
 }
 
 export interface Lead {
   id: string
   client_id?: string | null
+  origin?: 'live' | 'explore' | 'crm_import'
   target_company: string
   company_domain?: string | null
   relevance_score: number
@@ -45,6 +47,11 @@ interface Props {
   watchlist?: WatchlistItem[]
   activeClientId?: string | null
   plan?: 'free' | 'pro' | 'max'
+  origin?: 'live' | 'explore' | 'crm_import'
+  hideSignalTabs?: boolean
+  searchPlaceholder?: string
+  emptyTitle?: string
+  emptyBody?: string
 }
 
 const SIGNAL_TABS: { key: 'all' | SignalType; label: string }[] = [
@@ -61,7 +68,7 @@ function getSignal(lead: Lead): SignalRow | null {
 }
 
 function isSignalType(v: string): v is SignalType {
-  return ['funding', 'acquisition', 'expansion', 'hiring', 'regulation'].includes(v)
+  return ['funding', 'acquisition', 'expansion', 'hiring', 'regulation', 'crm_import'].includes(v)
 }
 
 function isLeadStatus(v: string): v is LeadStatus {
@@ -92,7 +99,18 @@ function toCardLead(lead: Lead): LeadCardLead | null {
   }
 }
 
-export default function LeadFeed({ initialLeads, userId, watchlist = [], activeClientId = null, plan = 'free' }: Props) {
+export default function LeadFeed({
+  initialLeads,
+  userId,
+  watchlist = [],
+  activeClientId = null,
+  plan = 'free',
+  origin = 'live',
+  hideSignalTabs = false,
+  searchPlaceholder = 'Search signals…',
+  emptyTitle = 'No signals matched your ICP',
+  emptyBody = 'Check back in an hour or refine your targeting in Settings.',
+}: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -113,6 +131,10 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
   }, [watchlist])
 
   useEffect(() => {
+    setLeads(initialLeads)
+  }, [initialLeads])
+
+  useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('leads-realtime')
@@ -126,23 +148,25 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
         },
         async payload => {
           const payloadClientId = (payload.new as { client_id?: string | null }).client_id ?? null
+          const payloadOrigin = (payload.new as { origin?: Lead['origin'] | null }).origin ?? 'live'
           if (activeClientId !== payloadClientId) return
+          if (payloadOrigin !== origin) return
 
           const { data } = await supabase
             .from('leads')
-            .select(`id, client_id, target_company, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at,
-              signals(signal_type, headline, summary, funding_amount, source_url, published_at, company_domain)`)
+            .select(`id, client_id, origin, target_company, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at,
+              signals(signal_type, headline, summary, funding_amount, source_url, source_name, published_at, company_domain)`)
             .eq('id', payload.new.id)
             .single()
           if (data) {
             setLeads(prev => [data as unknown as Lead, ...prev])
-            setToast('✦ New signal detected')
+            setToast(origin === 'explore' ? 'New explore result added' : origin === 'crm_import' ? 'New CRM prospect imported' : 'New signal detected')
           }
         }
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [userId, activeClientId])
+  }, [userId, activeClientId, origin])
 
   useEffect(() => {
     if (!toast) return
@@ -230,7 +254,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
   }, [unlockLead, updateStatus])
 
   const filteredLeads = useMemo(() => {
-    let result = leads.filter(l => l.status !== 'dismissed')
+    let result = leads.filter(l => (l.origin ?? 'live') === origin && l.status !== 'dismissed')
     if (filterSignal !== 'all') result = result.filter(l => getSignal(l)?.signal_type === filterSignal)
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -245,7 +269,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
         ? b.relevance_score - a.relevance_score
         : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
-  }, [leads, filterSignal, search, sortBy])
+  }, [leads, filterSignal, search, sortBy, origin])
 
   const effectiveSelectedId = useMemo(() => {
     if (selectedId && filteredLeads.some(l => l.id === selectedId)) return selectedId
@@ -256,22 +280,26 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-1 p-1 rounded-full bg-[var(--color-ink-2)] border border-[var(--color-line-1)]">
-          {SIGNAL_TABS.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setFilterSignal(t.key)}
-              className={`
-                h-7 px-3 text-[12px] font-medium rounded-full transition-colors
-                ${filterSignal === t.key
-                  ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
-                  : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}
-              `}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {hideSignalTabs ? (
+          <div />
+        ) : (
+          <div className="inline-flex items-center gap-1 p-1 rounded-full bg-[var(--color-ink-2)] border border-[var(--color-line-1)]">
+            {SIGNAL_TABS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setFilterSignal(t.key)}
+                className={`
+                  h-7 px-3 text-[12px] font-medium rounded-full transition-colors
+                  ${filterSignal === t.key
+                    ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+                    : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}
+                `}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -280,7 +308,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
             </svg>
             <input
               type="text"
-              placeholder="Search signals…"
+              placeholder={searchPlaceholder}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-[200px] pl-9 pr-3 h-9 rounded-full bg-white border border-[var(--color-line-2)] text-[12.5px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-3)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/20 transition-colors"
@@ -310,7 +338,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
 
       {/* Table */}
       {filteredLeads.length === 0 ? (
-        <EmptyState />
+        <EmptyState title={emptyTitle} body={emptyBody} />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full border-collapse">
@@ -396,7 +424,7 @@ export default function LeadFeed({ initialLeads, userId, watchlist = [], activeC
   )
 }
 
-function EmptyState() {
+function EmptyState({ title, body }: { title: string; body: string }) {
   return (
     <div className="card flex flex-col items-center justify-center text-center py-20 px-4">
       <div className="w-12 h-12 rounded-2xl bg-[var(--color-accent-bg)] flex items-center justify-center mb-4">
@@ -404,9 +432,9 @@ function EmptyState() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
       </div>
-      <h3 className="text-[14px] font-medium text-[var(--color-text-1)]">No signals matched your ICP</h3>
+      <h3 className="text-[14px] font-medium text-[var(--color-text-1)]">{title}</h3>
       <p className="text-[12.5px] text-[var(--color-text-3)] mt-1.5 max-w-xs leading-relaxed">
-        Check back in an hour or refine your targeting in Settings.
+        {body}
       </p>
     </div>
   )
