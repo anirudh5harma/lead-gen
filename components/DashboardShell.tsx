@@ -8,7 +8,7 @@ import Sidebar from './Sidebar'
 import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
 
-type View = 'feed' | 'explore' | 'watchlist' | 'settings'
+type View = 'feed' | 'explore' | 'crm' | 'watchlist' | 'settings'
 
 interface WatchlistItem {
   id: string
@@ -69,6 +69,7 @@ interface OpsSummary {
 const VIEW_TITLES: Record<View, string> = {
   feed:      'Signal Feed',
   explore:   'Explore',
+  crm:       'CRM',
   watchlist: 'Watchlist',
   settings:  'Settings',
 }
@@ -77,7 +78,10 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   const [activeView, setActiveView] = useState<View>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
-      if (params.get('view') === 'settings') return 'settings'
+      const requestedView = params.get('view')
+      if (requestedView === 'feed' || requestedView === 'explore' || requestedView === 'crm' || requestedView === 'watchlist' || requestedView === 'settings') {
+        return requestedView
+      }
     }
     return 'feed'
   })
@@ -94,7 +98,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   const [overageEnabled, setOverageEnabled] = useState(userProfile.allow_lead_overage ?? false)
 
   useEffect(() => {
-    if (window.location.search.includes('view=settings')) {
+    if (window.location.search.includes('view=')) {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -138,9 +142,10 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
                 {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
-                {activeView === 'explore' && 'Prompt-driven discovery plus CRM-imported outreach targets'}
+                {activeView === 'explore' && 'Prompt-driven lead discovery based on who you want to target next'}
+                {activeView === 'crm' && 'Connect your CRM, import outreach targets, and push exports back out'}
                 {activeView === 'watchlist' && 'Companies you follow bypass relevance filtering'}
-                {activeView === 'settings' && 'Billing, targeting, integrations, and diagnostics'}
+                {activeView === 'settings' && 'Billing, targeting, automations, and diagnostics'}
               </p>
             </div>
 
@@ -220,6 +225,8 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                   activeClientId={userProfile.active_client_id ?? null}
                   plan={plan as 'free' | 'pro' | 'max'}
                   origin="live"
+                  exportFeed="signal"
+                  onOpenCrmTab={() => setActiveView('crm')}
                 />
               </div>
             )}
@@ -231,6 +238,16 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 activeClientId={userProfile.active_client_id ?? null}
                 plan={plan as 'free' | 'pro' | 'max'}
                 icpKeywords={userProfile.icp_keywords ?? []}
+                onOpenCrmTab={() => setActiveView('crm')}
+              />
+            )}
+            {activeView === 'crm' && (
+              <CrmWorkspacePanel
+                initialLeads={initialLeads}
+                userId={userId}
+                watchlist={watchlist}
+                activeClientId={userProfile.active_client_id ?? null}
+                plan={plan as 'free' | 'pro' | 'max'}
               />
             )}
             {activeView === 'watchlist' && (
@@ -398,12 +415,6 @@ function SettingsPanel({
           {plan !== 'free' && (
             <ManageBillingButton />
           )}
-          <Link
-            href="/api/export/crm"
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-ghost transition-colors"
-          >
-            Export CRM CSV
-          </Link>
         </div>
         {(plan === 'pro' || plan === 'max') && (
           <div className="px-5 py-4 flex items-center justify-between gap-4 border-t border-[var(--color-line-1)]">
@@ -516,7 +527,6 @@ function SettingsPanel({
       </div>
 
       <SequenceTemplatesPanel />
-      <CrmSyncPanel />
 
       {/* Blocked companies */}
       <BlockedCompaniesPanel />
@@ -568,6 +578,7 @@ function ExplorePanel({
   activeClientId,
   plan,
   icpKeywords,
+  onOpenCrmTab,
 }: {
   initialLeads: Lead[]
   userId: string
@@ -575,8 +586,8 @@ function ExplorePanel({
   activeClientId: string | null
   plan: 'free' | 'pro' | 'max'
   icpKeywords: string[]
+  onOpenCrmTab: () => void
 }) {
-  const [activeTab, setActiveTab] = useState<'search' | 'crm'>('search')
   const [prompt, setPrompt] = useState('')
   const [icpHint, setIcpHint] = useState(icpKeywords.slice(0, 4).join(', '))
   const [searching, setSearching] = useState(false)
@@ -598,7 +609,6 @@ function ExplorePanel({
           ? data.error
           : `Added ${data.inserted ?? 0} explore leads${typeof data.skipped === 'number' ? `, skipped ${data.skipped}` : ''}.`,
       )
-      if (res.ok) setActiveTab('search')
     } finally {
       setSearching(false)
     }
@@ -606,58 +616,69 @@ function ExplorePanel({
 
   return (
     <div className="space-y-4">
-      <div className="card divide-y divide-[var(--color-line-1)]">
-        <div className="px-5 py-4">
-          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Prompted Discovery</h2>
-          <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-            Describe who you want to target. Bombsell runs a broader search, scores the results against your ICP, and drops them into an explore-only feed.
-          </p>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <textarea
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            placeholder="Example: Fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
-            className="w-full min-h-[96px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
-          />
-          <input
-            value={icpHint}
-            onChange={e => setIcpHint(e.target.value)}
-            placeholder="Optional ICP hints, for example: Series B, RevOps owner, US healthcare"
-            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
-          />
-          <div className="flex items-center gap-3">
-            <button
-              onClick={runSearch}
-              disabled={searching || !prompt.trim()}
-              className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50"
-            >
-              {searching ? 'Searching…' : 'Run search'}
-            </button>
-            {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.9fr)]">
+        <div className="card divide-y divide-[var(--color-line-1)]">
+          <div className="px-5 py-4">
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Prompted Discovery</h2>
+            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+              Describe the accounts, roles, and themes you want to pursue. Bombsell runs a broader search, scores the results against your ICP, and adds the strongest matches to an explore-only feed.
+            </p>
+          </div>
+          <div className="px-5 py-4 space-y-3">
+            <textarea
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              placeholder="Example: Fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
+              className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+            />
+            <input
+              value={icpHint}
+              onChange={e => setIcpHint(e.target.value)}
+              placeholder="Optional ICP hints, for example: Series B, RevOps owner, US healthcare"
+              className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={runSearch}
+                disabled={searching || !prompt.trim()}
+                className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50"
+              >
+                {searching ? 'Searching…' : 'Run search'}
+              </button>
+              {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
+            </div>
           </div>
         </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+          <InsightCard
+            eyebrow="Search framing"
+            title="Give the model a buyer thesis, not just a market."
+            body="Mention the trigger, the segment, and the operator you want. You will get cleaner results than broad category prompts."
+          />
+          <InsightCard
+            eyebrow="CRM handoff"
+            title="Explore is for discovery. CRM is for activation."
+            body="When a search surfaces strong accounts, export them as CSV or push them into your connected CRM directly from this feed."
+            actionLabel="Open CRM tab"
+            onAction={onOpenCrmTab}
+          />
+        </div>
       </div>
 
-      <div className="inline-flex h-9 p-1 rounded-full border border-[var(--color-line-2)] bg-white">
-        {([
-          { id: 'search', label: 'Explore Results' },
-          { id: 'crm', label: 'CRM Outreach Feed' },
-        ] as const).map(item => (
-          <button
-            key={item.id}
-            onClick={() => setActiveTab(item.id)}
-            className={`
-              text-[11.5px] font-medium px-3 h-7 rounded-full transition-colors
-              ${activeTab === item.id ? 'bg-[var(--color-ink-2)] text-[var(--color-text-1)]' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}
-            `}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'search' ? (
+      <div className="card border border-[var(--color-line-1)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,246,240,0.88))]">
+        <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line-1)]">
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Explore Results</h3>
+            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+              Broader account discovery based on your prompts and ICP hints.
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-white px-3 py-1.5 text-[11px] text-[var(--color-text-3)]">
+            <span className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />
+            Separate from the live signal feed
+          </div>
+        </div>
         <LeadFeed
           initialLeads={initialLeads}
           userId={userId}
@@ -665,11 +686,61 @@ function ExplorePanel({
           activeClientId={activeClientId}
           plan={plan}
           origin="explore"
+          exportFeed="explore"
+          onOpenCrmTab={onOpenCrmTab}
           searchPlaceholder="Search explore leads…"
           emptyTitle="No explore leads yet"
           emptyBody="Run a prompted search above and Bombsell will add the strongest matches here."
         />
-      ) : (
+      </div>
+    </div>
+  )
+}
+
+function CrmWorkspacePanel({
+  initialLeads,
+  userId,
+  watchlist,
+  activeClientId,
+  plan,
+}: {
+  initialLeads: Lead[]
+  userId: string
+  watchlist: WatchlistItem[]
+  activeClientId: string | null
+  plan: 'free' | 'pro' | 'max'
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.85fr)]">
+        <CrmSyncPanel />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+          <InsightCard
+            eyebrow="Inbound CRM"
+            title="Import known accounts into a separate outreach lane."
+            body="Imported CRM records do not pollute the live signal feed. They land here with CRM context so reps can work them independently."
+          />
+          <InsightCard
+            eyebrow="Outbound CRM"
+            title="Push feed exports back into your system of record."
+            body="Use Export -> CRM from Signal Feed or Explore after your outbound webhook is connected. Bombsell will send the current feed as a normalized batch."
+          />
+        </div>
+      </div>
+
+      <div className="card border border-[var(--color-line-1)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(243,248,246,0.9))]">
+        <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line-1)]">
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Outreach Feed</h3>
+            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+              Imported CRM records that are ready for outbound sequencing and manual follow-up.
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-white px-3 py-1.5 text-[11px] text-[var(--color-text-3)]">
+            <span className="h-2 w-2 rounded-full bg-[var(--color-sig-funding)]" />
+            Separate from signal quota
+          </div>
+        </div>
         <LeadFeed
           initialLeads={initialLeads}
           userId={userId}
@@ -677,12 +748,70 @@ function ExplorePanel({
           activeClientId={activeClientId}
           plan={plan}
           origin="crm_import"
+          exportFeed="crm_import"
           hideSignalTabs
           searchPlaceholder="Search CRM prospects…"
           emptyTitle="No CRM prospects imported yet"
-          emptyBody="Enable CRM imports in Settings, then send records into Bombsell to create an outreach-ready CRM feed."
+          emptyBody="Enable CRM imports here, then send records into Bombsell to create an outreach-ready CRM feed."
         />
-      )}
+      </div>
+    </div>
+  )
+}
+
+function InsightCard({
+  eyebrow,
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  eyebrow: string
+  title: string
+  body: string
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  return (
+    <div className="card bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,242,234,0.88))]">
+      <div className="px-5 py-4 space-y-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">
+          {eyebrow}
+        </p>
+        <div className="space-y-1.5">
+          <h3 className="text-[15px] font-medium tracking-tight text-[var(--color-text-1)]">{title}</h3>
+          <p className="text-[12.5px] leading-relaxed text-[var(--color-text-3)]">{body}</p>
+        </div>
+        {actionLabel && onAction && (
+          <button
+            onClick={onAction}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]"
+          >
+            {actionLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function StatusPill({
+  active,
+  activeLabel,
+  idleLabel,
+}: {
+  active: boolean
+  activeLabel: string
+  idleLabel: string
+}) {
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] ${
+      active
+        ? 'border-[var(--color-accent)]/25 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+        : 'border-[var(--color-line-1)] bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
+    }`}>
+      <span className={`h-2 w-2 rounded-full ${active ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-text-4)]/60'}`} />
+      <span>{active ? activeLabel : idleLabel}</span>
     </div>
   )
 }
@@ -934,6 +1063,7 @@ function CrmSyncPanel() {
   const [enabled, setEnabled] = useState(false)
   const [importEnabled, setImportEnabled] = useState(false)
   const [importUrl, setImportUrl] = useState('')
+  const [copiedImportUrl, setCopiedImportUrl] = useState(false)
   const [providers, setProviders] = useState<Array<{
     id: string
     label: string
@@ -979,6 +1109,17 @@ function CrmSyncPanel() {
 
   const selectedProvider = providers.find(item => item.id === provider) ?? providers[0] ?? null
 
+  async function copyImportUrl() {
+    if (!importUrl) return
+    try {
+      await navigator.clipboard.writeText(importUrl)
+      setCopiedImportUrl(true)
+      window.setTimeout(() => setCopiedImportUrl(false), 1500)
+    } catch {
+      setCopiedImportUrl(false)
+    }
+  }
+
   async function save() {
     setSaving(true)
     setMessage(null)
@@ -1006,10 +1147,14 @@ function CrmSyncPanel() {
       <div className="px-5 py-4">
         <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
         <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          CRM sync is available on every plan. Export live-signal leads to the main CRMs, and import CRM-held targets into a separate outreach feed.
+          CRM sync is available on every plan. Connect one outbound destination for feed exports and event sync, then ingest CRM-held targets into a dedicated outreach feed.
         </p>
       </div>
       <div className="px-5 py-4 space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <StatusPill active={enabled} activeLabel="Outbound connected" idleLabel="Outbound off" />
+          <StatusPill active={importEnabled} activeLabel="Imports on" idleLabel="Imports off" />
+        </div>
         <label className="block space-y-1.5">
           <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">
             Provider
@@ -1040,14 +1185,23 @@ function CrmSyncPanel() {
           Accept CRM imports into the CRM outreach feed
         </label>
         <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3 space-y-2">
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import URL</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import URL</p>
+            <button
+              onClick={copyImportUrl}
+              disabled={!importUrl}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-2)] bg-white px-2.5 py-1 text-[10px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
+            >
+              {copiedImportUrl ? 'Copied' : 'Copy'}
+            </button>
+          </div>
           <input
             readOnly
             value={importUrl}
             className="w-full h-9 px-3 rounded-lg bg-white border border-[var(--color-line-2)] text-[12px] text-[var(--color-text-2)]"
           />
           <p className="text-[11px] text-[var(--color-text-4)]">
-            Send CRM workflow payloads to this URL. Imported accounts land in Explore - CRM Outreach Feed and do not consume signal-feed lead quota.
+            Send CRM workflow payloads to this URL. Imported accounts land in the CRM Outreach Feed and do not consume signal-feed lead quota.
           </p>
         </div>
         <button onClick={save} disabled={!loaded || saving} className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50">
@@ -1083,17 +1237,9 @@ function CrmSyncPanel() {
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {providers.map(item => (
-                <a
-                  key={item.id}
-                  href={item.export_url}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-full btn-ghost transition-colors"
-                >
-                  Export {item.label}
-                </a>
-              ))}
-            </div>
+            <p className="text-[11px] text-[var(--color-text-4)]">
+              Export actions now live on Signal Feed and Explore so reps can push the exact working set they are reviewing.
+            </p>
           </div>
         )}
         {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}

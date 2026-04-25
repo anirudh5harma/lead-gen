@@ -6,11 +6,11 @@ import Image from 'next/image'
 export interface SidebarProps {
   companyName: string
   userEmail?: string
-  activeView: 'feed' | 'explore' | 'watchlist' | 'settings'
-  onNavigate: (view: 'feed' | 'explore' | 'watchlist' | 'settings') => void
+  activeView: 'feed' | 'explore' | 'crm' | 'watchlist' | 'settings'
+  onNavigate: (view: 'feed' | 'explore' | 'crm' | 'watchlist' | 'settings') => void
 }
 
-const NAV: { id: 'feed' | 'explore' | 'watchlist' | 'settings'; label: string; icon: React.ReactNode }[] = [
+const NAV: { id: 'feed' | 'explore' | 'crm' | 'watchlist' | 'settings'; label: string; icon: React.ReactNode }[] = [
   {
     id: 'feed',
     label: 'Signal Feed',
@@ -27,6 +27,16 @@ const NAV: { id: 'feed' | 'explore' | 'watchlist' | 'settings'; label: string; i
       <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16l2.879-2.879m0 0A3 3 0 1115.12 8.88a3 3 0 01-4.242 4.242z" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 3a9 9 0 109 9" />
+      </svg>
+    ),
+  },
+  {
+    id: 'crm',
+    label: 'CRM',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v9A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5v-9z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9.5h8M8 13h5" />
       </svg>
     ),
   },

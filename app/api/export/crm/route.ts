@@ -5,20 +5,27 @@ import {
   buildCrmExportCsv,
   buildCrmExportFilename,
   buildCrmExportRecord,
+  type CrmExportFeed,
   normalizeCrmProvider,
 } from '@/lib/crm-sync'
 
-export async function GET(request: Request) {
+async function loadExportContext(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
   const { searchParams } = new URL(request.url)
   const provider = normalizeCrmProvider(searchParams.get('provider'))
-  const feed = searchParams.get('feed') === 'crm_import' ? 'crm_import' : 'signal'
+  const feedParam = searchParams.get('feed')
+  const feed: CrmExportFeed =
+    feedParam === 'crm_import'
+      ? 'crm_import'
+      : feedParam === 'explore'
+        ? 'explore'
+        : 'signal'
   const workspaceName = searchParams.get('workspace') ?? ''
-  const expectedOrigin = feed === 'crm_import' ? 'crm_import' : 'live'
+  const expectedOrigin = feed === 'crm_import' ? 'crm_import' : feed === 'explore' ? 'explore' : 'live'
 
   let query = supabase
     .from('leads')
@@ -37,9 +44,8 @@ export async function GET(request: Request) {
   query = activeClientId ? query.eq('client_id', activeClientId) : query.is('client_id', null)
   const { data: leads } = await query
 
-  if (!leads) return NextResponse.json({ error: 'No leads found' }, { status: 404 })
-
   const records = leads
+    ? leads
     .filter(lead => ((lead as { origin?: string | null }).origin ?? 'live') === expectedOrigin)
     .map(lead => {
       const sig = Array.isArray(lead.signals) ? lead.signals[0] : lead.signals
@@ -62,13 +68,78 @@ export async function GET(request: Request) {
         bookedAt: lead.booked_at ?? '',
       })
     })
+    : []
 
-  const csv = buildCrmExportCsv(provider, records)
+  return {
+    supabase,
+    user,
+    activeClientId,
+    provider,
+    feed,
+    records,
+    csv: buildCrmExportCsv(provider, records),
+  }
+}
 
-  return new NextResponse(csv, {
+export async function GET(request: Request) {
+  const context = await loadExportContext(request)
+  if ('error' in context) return context.error
+
+  return new NextResponse(context.csv, {
     headers: {
       'Content-Type': 'text/csv',
-      'Content-Disposition': `attachment; filename="${buildCrmExportFilename(provider, feed)}"`,
+      'Content-Disposition': `attachment; filename="${buildCrmExportFilename(context.provider, context.feed)}"`,
     },
+  })
+}
+
+export async function POST(request: Request) {
+  const context = await loadExportContext(request)
+  if ('error' in context) return context.error
+
+  let crmQuery = context.supabase
+    .from('crm_sync_settings')
+    .select('provider, webhook_url, enabled')
+    .eq('user_id', context.user.id)
+    .eq('enabled', true)
+    .limit(1)
+
+  crmQuery = context.activeClientId
+    ? crmQuery.eq('client_id', context.activeClientId)
+    : crmQuery.is('client_id', null)
+
+  const { data: setting } = await crmQuery.maybeSingle()
+  const row = setting as { provider?: string | null; webhook_url?: string | null; enabled?: boolean | null } | null
+
+  if (!row?.enabled || !row.webhook_url) {
+    return NextResponse.json({ error: 'CRM sync is not connected' }, { status: 409 })
+  }
+
+  const provider = normalizeCrmProvider(row.provider ?? context.provider)
+  const response = await fetch(row.webhook_url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'feed.export',
+      occurred_at: new Date().toISOString(),
+      provider,
+      feed: context.feed,
+      exported_count: context.records.length,
+      records: context.records,
+    }),
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    return NextResponse.json({
+      error: body || `CRM export failed with status ${response.status}`,
+    }, { status: 502 })
+  }
+
+  return NextResponse.json({
+    ok: true,
+    provider,
+    feed: context.feed,
+    exported: context.records.length,
   })
 }

@@ -52,6 +52,8 @@ interface Props {
   searchPlaceholder?: string
   emptyTitle?: string
   emptyBody?: string
+  exportFeed?: 'signal' | 'explore' | 'crm_import'
+  onOpenCrmTab?: () => void
 }
 
 const SIGNAL_TABS: { key: 'all' | SignalType; label: string }[] = [
@@ -110,6 +112,8 @@ export default function LeadFeed({
   searchPlaceholder = 'Search signals…',
   emptyTitle = 'No signals matched your ICP',
   emptyBody = 'Check back in an hour or refine your targeting in Settings.',
+  exportFeed = origin === 'explore' ? 'explore' : origin === 'crm_import' ? 'crm_import' : 'signal',
+  onOpenCrmTab,
 }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
@@ -120,6 +124,8 @@ export default function LeadFeed({
   const [filterSignal, setFilterSignal] = useState<'all' | SignalType>('all')
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'newest' | 'top_score'>('newest')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exporting, setExporting] = useState<'csv' | 'crm' | null>(null)
 
   const watchlistLookup = useMemo(() => {
     const s = new Set<string>()
@@ -276,6 +282,55 @@ export default function LeadFeed({
     return filteredLeads[0]?.id ?? null
   }, [filteredLeads, selectedId])
 
+  const handleExport = useCallback(async (mode: 'csv' | 'crm') => {
+    setExportOpen(false)
+
+    const params = new URLSearchParams({ feed: exportFeed })
+
+    if (mode === 'csv') {
+      setExporting('csv')
+      window.location.href = `/api/export/crm?${params.toString()}`
+      setToast(exportFeed === 'explore' ? 'Explore CSV export started' : exportFeed === 'crm_import' ? 'CRM feed CSV export started' : 'Signal CSV export started')
+      window.setTimeout(() => setExporting(null), 500)
+      return
+    }
+
+    setExporting('crm')
+    try {
+      const settingsRes = await fetch('/api/settings/crm-sync', { cache: 'no-store' })
+      const settings = await settingsRes.json().catch(() => null) as {
+        enabled?: boolean
+        webhook_url?: string
+      } | null
+
+      if (!settingsRes.ok || !settings?.enabled || !settings.webhook_url) {
+        setToast('Connect CRM sync first to export directly into your CRM.')
+        onOpenCrmTab?.()
+        return
+      }
+
+      const res = await fetch(`/api/export/crm?${params.toString()}`, {
+        method: 'POST',
+      })
+      const data = await res.json().catch(() => null) as {
+        ok?: boolean
+        exported?: number
+        error?: string
+      } | null
+
+      if (!res.ok || !data?.ok) {
+        setToast(data?.error || 'CRM export failed')
+        return
+      }
+
+      setToast(`Exported ${data.exported ?? 0} ${data.exported === 1 ? 'lead' : 'leads'} to CRM`)
+    } catch {
+      setToast('CRM export failed')
+    } finally {
+      setExporting(null)
+    }
+  }, [exportFeed, onOpenCrmTab])
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -302,6 +357,41 @@ export default function LeadFeed({
         )}
 
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen(open => !open)}
+              disabled={exporting !== null}
+              className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--color-line-2)] bg-white px-3.5 text-[12px] font-medium text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
+            >
+              <svg className="h-3.5 w-3.5 text-[var(--color-accent-ring)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
+              </svg>
+              {exporting === 'csv' ? 'Exporting CSV…' : exporting === 'crm' ? 'Pushing to CRM…' : 'Export'}
+              <svg className="h-3.5 w-3.5 text-[var(--color-text-3)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+
+            {exportOpen && (
+              <div className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-2xl border border-[var(--color-line-1)] bg-white p-1.5 shadow-[0_20px_40px_-20px_#00000040,0_8px_16px_-8px_#00000024]">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[12px] text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]"
+                >
+                  <span>CSV</span>
+                  <span className="text-[10px] text-[var(--color-text-4)]">Download</span>
+                </button>
+                <button
+                  onClick={() => handleExport('crm')}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[12px] text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]"
+                >
+                  <span>CRM</span>
+                  <span className="text-[10px] text-[var(--color-text-4)]">Push live</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-3)] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />

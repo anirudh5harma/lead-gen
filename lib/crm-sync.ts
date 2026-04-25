@@ -1,4 +1,5 @@
 export type CrmProvider = 'webhook' | 'hubspot' | 'salesforce' | 'pipedrive' | 'zoho'
+export type CrmExportFeed = 'signal' | 'explore' | 'crm_import'
 
 export interface CrmProviderPreset {
   id: CrmProvider
@@ -253,9 +254,14 @@ export function buildCrmImportUrl(secret: string): string {
   return `${baseUrl}/api/crm/import?key=${encodeURIComponent(secret)}`
 }
 
-export function buildCrmExportFilename(provider: unknown, feed: 'signal' | 'crm_import'): string {
+export function buildCrmExportFilename(provider: unknown, feed: CrmExportFeed): string {
   const preset = getCrmProviderPreset(provider)
-  const suffix = feed === 'crm_import' ? 'crm-imports' : 'signal-feed'
+  const suffix =
+    feed === 'crm_import'
+      ? 'crm-imports'
+      : feed === 'explore'
+        ? 'explore-feed'
+        : 'signal-feed'
   return `bombsell-${preset.id}-${suffix}-${new Date().toISOString().slice(0, 10)}.csv`
 }
 
