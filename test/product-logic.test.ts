@@ -14,6 +14,13 @@ import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
+import {
+  buildExploreSearchTerms,
+  rankExploreCandidates,
+  resolveExploreScoreThreshold,
+  scoreExploreSourceItem,
+  shouldUseWorkspaceIcp,
+} from '../lib/explore.ts'
 
 test('non-max plans only keep the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -250,6 +257,66 @@ test('crm export records build CRM-safe notes and split contact names', () => {
   assert.equal(record.firstName, 'Taylor')
   assert.equal(record.lastName, 'Chen')
   assert.match(record.crmNote, /Recent funding/)
+})
+
+test('explore only applies workspace icp when the user explicitly asks for it', () => {
+  assert.equal(shouldUseWorkspaceIcp({
+    prompt: 'find some early stage AI startups for me',
+    icpHint: null,
+  }), false)
+
+  assert.equal(shouldUseWorkspaceIcp({
+    prompt: 'find companies that match our ICP in fintech infrastructure',
+    icpHint: null,
+  }), true)
+
+  assert.equal(shouldUseWorkspaceIcp({
+    prompt: 'find some early stage AI startups for me',
+    icpHint: 'Series A, US healthcare',
+  }), true)
+})
+
+test('explore threshold is looser for prompt-only discovery', () => {
+  assert.equal(resolveExploreScoreThreshold({
+    useWorkspaceIcp: false,
+    minRelevanceScore: 8,
+  }), 4)
+
+  assert.equal(resolveExploreScoreThreshold({
+    useWorkspaceIcp: true,
+    minRelevanceScore: 8,
+  }), 7)
+})
+
+test('explore candidates rank by score first and recency second', () => {
+  const ranked = rankExploreCandidates([
+    { id: 'older-mid', score: 6, publishedAt: '2026-04-20T00:00:00.000Z' },
+    { id: 'top', score: 8, publishedAt: '2026-04-18T00:00:00.000Z' },
+    { id: 'newer-mid', score: 6, publishedAt: '2026-04-22T00:00:00.000Z' },
+  ])
+
+  assert.deepEqual(ranked.map(candidate => candidate.id), ['top', 'newer-mid', 'older-mid'])
+})
+
+test('explore search terms enrich startup and ai prompts with useful aliases', () => {
+  const terms = buildExploreSearchTerms({
+    prompt: 'find some early stage AI startups for me',
+    queries: ['early stage ai startups', 'seed ai startup funding'],
+  })
+
+  assert.ok(terms.includes('ai'))
+  assert.ok(terms.includes('startup'))
+  assert.ok(terms.includes('seed'))
+  assert.ok(terms.includes('series a'))
+})
+
+test('explore source scoring favors press release items with matching topical terms', () => {
+  const terms = ['ai', 'startup', 'series a']
+  const matching = scoreExploreSourceItem('AI startup raises Series A funding', terms)
+  const nonMatching = scoreExploreSourceItem('Industrial manufacturer opens Ohio warehouse', terms)
+
+  assert.ok(matching > nonMatching)
+  assert.equal(nonMatching, 0)
 })
 
 test('delivery allowance scales with paid backlog but respects recent daily volume', () => {

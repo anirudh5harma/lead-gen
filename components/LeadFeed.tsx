@@ -334,7 +334,7 @@ export default function LeadFeed({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         {hideSignalTabs ? (
           <div />
         ) : (
@@ -428,9 +428,11 @@ export default function LeadFeed({
 
       {/* Table */}
       {filteredLeads.length === 0 ? (
-        <EmptyState title={emptyTitle} body={emptyBody} />
+        <div className="px-5 pb-5">
+          <EmptyState title={emptyTitle} body={emptyBody} />
+        </div>
       ) : (
-        <div className="card overflow-x-auto">
+        <div className="card mx-5 mb-5 overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60">

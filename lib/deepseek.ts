@@ -369,19 +369,27 @@ Return ONLY a JSON array of strings, no markdown.`,
 
 export async function generateExploreQueries(params: {
   prompt: string
-  servicesDescription: string
-  icpKeywords: string[]
+  servicesDescription?: string
+  icpKeywords?: string[]
+  useWorkspaceIcp?: boolean
 }): Promise<string[]> {
-  const { prompt, servicesDescription, icpKeywords } = params
+  const {
+    prompt,
+    servicesDescription = '',
+    icpKeywords = [],
+    useWorkspaceIcp = false,
+  } = params
 
   try {
     const text = await completePrompt({
-      system: `You turn a sales operator's targeting brief into concise company-event search queries.
+      system: `You turn a sales operator's targeting brief into concise recent-company-news search queries.
 Return 3 to 5 short search queries as a JSON array of strings.
-Each query should be broad enough to find candidates, but specific enough to reflect the prompt and ICP.`,
-      prompt: `Seller context: ${servicesDescription}
+Each query should be broad enough to find candidates, but specific enough to reflect the targeting brief.
+When the brief is broad, generate event-biased variants likely to surface target companies in news, such as funding, launch, hiring, partnership, or expansion angles.
+Only use seller context and ICP details when explicitly supplied as additional narrowing context.`,
+      prompt: `${useWorkspaceIcp ? `Seller context: ${servicesDescription}
 ICP keywords: ${icpKeywords.join(', ') || 'None'}
-Targeting brief: ${prompt}
+` : ''}Targeting brief: ${prompt}
 
 Return queries suitable for Google News or broad company-event search.`,
       maxTokens: 180,
@@ -399,6 +407,59 @@ Return queries suitable for Google News or broad company-event search.`,
     return queries.length > 0 ? queries : [prompt]
   } catch {
     return [prompt]
+  }
+}
+
+export async function scoreExploreCandidate(params: {
+  prompt: string
+  companyName: string
+  signalType: string
+  signalSummary: string
+  workspaceContext?: string | null
+}): Promise<{ score: number; reason: string }> {
+  const {
+    prompt,
+    companyName,
+    signalType,
+    signalSummary,
+    workspaceContext,
+  } = params
+
+  try {
+    const text = await completePrompt({
+      system: `You evaluate whether a company and event match a user's discovery brief.
+Score 1-10 based on match quality to the targeting brief.
+- 8-10: strong direct match to the brief
+- 5-7: decent or plausible match
+- 1-4: weak match or mostly irrelevant
+
+If extra workspace context is provided, use it as a secondary narrowing filter.
+If no workspace context is provided, ignore seller product fit entirely and judge only against the targeting brief.
+
+Return ONLY valid JSON: {"score": <int>, "reason": "<one sentence>"}`,
+      prompt: `Targeting brief: ${prompt}
+${workspaceContext ? `Additional workspace ICP context: ${workspaceContext}` : 'Additional workspace ICP context: none'}
+
+Candidate company: ${companyName}
+Event type: ${signalType}
+Event summary: ${signalSummary}`,
+      maxTokens: 220,
+      timeoutMs: 25_000,
+    })
+
+    const parsed = parseJsonObject(text)
+    if (!parsed) return { score: 5, reason: 'Could not assess prompt match.' }
+
+    const score = typeof parsed.score === 'number'
+      ? Math.max(1, Math.min(10, Math.round(parsed.score)))
+      : 5
+    const reason = typeof parsed.reason === 'string' && parsed.reason.trim()
+      ? parsed.reason.trim()
+      : 'Could not assess prompt match.'
+
+    return { score, reason }
+  } catch {
+    return { score: 5, reason: 'Could not assess prompt match.' }
   }
 }
 
