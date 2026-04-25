@@ -410,6 +410,122 @@ Return queries suitable for Google News or broad company-event search.`,
   }
 }
 
+export interface ExploreLeadSuggestion {
+  company_name: string
+  company_domain: string | null
+  signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
+  headline: string
+  summary: string
+  relevance_reason: string
+  relevance_score: number
+}
+
+export interface ExploreLeadGenerationResult {
+  ok: boolean
+  rejection_reason: string | null
+  leads: ExploreLeadSuggestion[]
+}
+
+export async function generateExploreLeads(params: {
+  prompt: string
+  sellerProfileDescription?: string | null
+  workspaceIcpContext?: string | null
+  useWorkspaceIcp?: boolean
+}): Promise<ExploreLeadGenerationResult> {
+  const {
+    prompt,
+    sellerProfileDescription = '',
+    workspaceIcpContext = '',
+    useWorkspaceIcp = false,
+  } = params
+
+  try {
+    const text = await completePrompt({
+      system: `You handle prompted account discovery for a B2B outbound product.
+First decide whether the user's request is actually for lead generation or account targeting.
+
+Rules:
+- Reject prompts that are unrelated to finding target accounts or lead generation.
+- Examples to reject: coding help, math, general advice, personal writing, random brainstorming unrelated to target accounts, support requests unrelated to prospect discovery.
+- Accept prompts that ask for companies, account lists, target segments, buyer groups, industries, startup sets, or outreach targets.
+- Prefer real companies when reasonably likely.
+- Do not return placeholders or obviously fake names.
+- Keep summaries and reasons concise.
+- Use one of these signal types only: funding, acquisition, expansion, regulation, hiring.
+- If the user asks broadly, optimize for useful targets, not strict seller-product fit.
+- Always consider the seller profile description as background context for what they sell.
+- Only use workspace ICP context as a narrowing filter when it is explicitly provided as narrowing guidance.
+- If a company domain is uncertain, return null.
+
+Return ONLY valid JSON, no markdown.`,
+      prompt: `Targeting prompt: ${prompt}
+Seller profile description: ${sellerProfileDescription || 'None provided'}
+${useWorkspaceIcp && workspaceIcpContext ? `Workspace ICP context: ${workspaceIcpContext}` : 'Workspace ICP context: none'}
+
+Return a JSON object with:
+- ok: boolean
+- rejection_reason: string | null
+- leads: array
+
+If ok is true, leads should contain 8 to 12 items and each item must have:
+- company_name: string
+- company_domain: string | null
+- signal_type: "funding" | "acquisition" | "expansion" | "regulation" | "hiring"
+- headline: string
+- summary: string
+- relevance_reason: string
+- relevance_score: integer 1-10
+
+If ok is false, leads must be [] and rejection_reason must explain why the prompt is outside lead generation scope.
+
+The headline and summary should read like a lead rationale, not a news citation.`,
+      maxTokens: 1400,
+      timeoutMs: 35_000,
+      temperature: 0.3,
+    })
+
+    const parsed = parseJsonObject(text)
+    if (!parsed) {
+      return {
+        ok: false,
+        rejection_reason: 'Could not interpret this request as a lead-generation prompt.',
+        leads: [],
+      }
+    }
+
+    const ok = parsed.ok === true
+    const rejectionReason = typeof parsed.rejection_reason === 'string' && parsed.rejection_reason.trim()
+      ? parsed.rejection_reason.trim()
+      : null
+    const rawLeads = Array.isArray(parsed.leads) ? parsed.leads : []
+
+    const leads = rawLeads
+      .map(item => normalizeExploreLeadSuggestion(item))
+      .filter((item): item is ExploreLeadSuggestion => item !== null)
+      .slice(0, 12)
+
+    if (!ok) {
+      return {
+        ok: false,
+        rejection_reason: rejectionReason ?? 'This prompt is outside the scope of lead generation.',
+        leads: [],
+      }
+    }
+
+    return {
+      ok: true,
+      rejection_reason: null,
+      leads,
+    }
+  } catch {
+    return {
+      ok: false,
+      rejection_reason: 'Could not generate leads for this prompt right now.',
+      leads: [],
+    }
+  }
+}
+
 export async function scoreExploreCandidate(params: {
   prompt: string
   companyName: string
@@ -461,6 +577,49 @@ Event summary: ${signalSummary}`,
   } catch {
     return { score: 5, reason: 'Could not assess prompt match.' }
   }
+}
+
+function normalizeExploreLeadSuggestion(input: unknown): ExploreLeadSuggestion | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null
+  const row = input as Record<string, unknown>
+
+  const companyName = typeof row.company_name === 'string' ? row.company_name.trim() : ''
+  const headline = typeof row.headline === 'string' ? row.headline.trim() : ''
+  const summary = typeof row.summary === 'string' ? row.summary.trim() : ''
+  const reason = typeof row.relevance_reason === 'string' ? row.relevance_reason.trim() : ''
+  const rawType = typeof row.signal_type === 'string' ? row.signal_type.trim().toLowerCase() : ''
+  const signalType = normalizeSignalType(rawType)
+
+  if (!companyName || !headline || !summary || !reason || !signalType) return null
+
+  const companyDomain = normalizeOptionalDomain(
+    typeof row.company_domain === 'string' ? row.company_domain : null,
+  )
+  const relevanceScore = typeof row.relevance_score === 'number'
+    ? Math.max(1, Math.min(10, Math.round(row.relevance_score)))
+    : 6
+
+  return {
+    company_name: companyName,
+    company_domain: companyDomain,
+    signal_type: signalType,
+    headline,
+    summary,
+    relevance_reason: reason,
+    relevance_score: relevanceScore,
+  }
+}
+
+function normalizeOptionalDomain(value: string | null): string | null {
+  if (!value) return null
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '')
+
+  return normalized && normalized.includes('.') ? normalized : null
 }
 
 const SIGNAL_ANGLE: Record<string, string> = {
