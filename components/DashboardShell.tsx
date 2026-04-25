@@ -66,6 +66,24 @@ interface OpsSummary {
   lead_diagnostics: LeadDiagnostic[]
 }
 
+interface ExploreRun {
+  id: string
+  prompt: string
+  icp_hint: string | null
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  source_type: 'google_news_rss'
+  status_message: string | null
+  queries: string[]
+  items_total: number
+  items_processed: number
+  inserted_count: number
+  skipped_count: number
+  error_message: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+}
+
 const VIEW_TITLES: Record<View, string> = {
   feed:      'Signal Feed',
   explore:   'Explore',
@@ -588,13 +606,72 @@ function ExplorePanel({
   icpKeywords: string[]
   onOpenCrmTab: () => void
 }) {
+  const router = useRouter()
   const [prompt, setPrompt] = useState('')
   const [icpHint, setIcpHint] = useState(icpKeywords.slice(0, 4).join(', '))
   const [searching, setSearching] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [runs, setRuns] = useState<ExploreRun[]>([])
+  const [runsLoading, setRunsLoading] = useState(true)
+  const [sourceSummary, setSourceSummary] = useState('')
+  const [clockMs, setClockMs] = useState(() => Date.now())
+  const activeRunRef = useRef<string | null>(null)
+
+  const loadRuns = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setRunsLoading(true)
+    try {
+      const res = await fetch('/api/explore', { cache: 'no-store' })
+      const data = await res.json().catch(() => null) as {
+        runs?: ExploreRun[]
+        source_summary?: string
+      } | null
+      setRuns(data?.runs ?? [])
+      setSourceSummary(data?.source_summary ?? '')
+    } finally {
+      if (!options?.silent) setRunsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadRuns()
+  }, [loadRuns])
+
+  const activeRun = useMemo(
+    () => runs.find(run => run.status === 'queued' || run.status === 'running') ?? null,
+    [runs],
+  )
+  const latestRun = runs[0] ?? null
+
+  useEffect(() => {
+    if (!activeRun) return
+    const interval = window.setInterval(() => {
+      void loadRuns({ silent: true })
+    }, 2000)
+    return () => window.clearInterval(interval)
+  }, [activeRun, loadRuns])
+
+  useEffect(() => {
+    if (!activeRun) return
+    const interval = window.setInterval(() => setClockMs(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [activeRun])
+
+  useEffect(() => {
+    if (activeRun) {
+      activeRunRef.current = activeRun.id
+      if (!prompt.trim()) setPrompt(activeRun.prompt)
+      if (!icpHint.trim() && activeRun.icp_hint) setIcpHint(activeRun.icp_hint)
+      return
+    }
+
+    if (activeRunRef.current) {
+      activeRunRef.current = null
+      router.refresh()
+    }
+  }, [activeRun, prompt, icpHint, router])
 
   async function runSearch() {
-    if (!prompt.trim()) return
+    if (!prompt.trim() || activeRun) return
     setSearching(true)
     setMessage(null)
     try {
@@ -603,12 +680,24 @@ function ExplorePanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, icp_hint: icpHint }),
       })
-      const data = await res.json() as { error?: string; inserted?: number; skipped?: number }
-      setMessage(
-        data.error
-          ? data.error
-          : `Added ${data.inserted ?? 0} explore leads${typeof data.skipped === 'number' ? `, skipped ${data.skipped}` : ''}.`,
-      )
+      const data = await res.json().catch(() => null) as {
+        error?: string
+        run?: ExploreRun
+      } | null
+
+      if (!res.ok) {
+        if (data?.run) {
+          setRuns(prev => [data.run!, ...prev.filter(run => run.id !== data.run!.id)])
+        }
+        setMessage(data?.error ?? 'Explore search failed.')
+        return
+      }
+
+      if (data?.run) {
+        setRuns(prev => [data.run!, ...prev.filter(run => run.id !== data.run!.id)])
+      }
+      setMessage('Search started. This run will keep updating even if you reload.')
+      void loadRuns({ silent: true })
     } finally {
       setSearching(false)
     }
@@ -629,42 +718,51 @@ function ExplorePanel({
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
               placeholder="Example: Fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
-              className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+              disabled={Boolean(activeRun)}
+              className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
             />
             <input
               value={icpHint}
               onChange={e => setIcpHint(e.target.value)}
               placeholder="Optional ICP hints, for example: Series B, RevOps owner, US healthcare"
-              className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+              disabled={Boolean(activeRun)}
+              className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
             />
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={runSearch}
-                disabled={searching || !prompt.trim()}
+                disabled={searching || !prompt.trim() || Boolean(activeRun)}
                 className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50"
               >
-                {searching ? 'Searching…' : 'Run search'}
+                {searching ? 'Starting…' : activeRun ? 'Search running…' : 'Run search'}
               </button>
               {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
             </div>
+            {activeRun && (
+              <p className="text-[11px] text-[var(--color-text-4)]">
+                One explore search runs at a time per workspace so results stay attributable to a single query.
+              </p>
+            )}
           </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-          <InsightCard
-            eyebrow="Search framing"
-            title="Give the model a buyer thesis, not just a market."
-            body="Mention the trigger, the segment, and the operator you want. You will get cleaner results than broad category prompts."
-          />
-          <InsightCard
-            eyebrow="CRM handoff"
-            title="Explore is for discovery. CRM is for activation."
-            body="When a search surfaces strong accounts, export them as CSV or push them into your connected CRM directly from this feed."
-            actionLabel="Open CRM tab"
-            onAction={onOpenCrmTab}
+          <ExploreRunCard run={activeRun ?? latestRun} loading={runsLoading} clockMs={clockMs} />
+          <ExploreSourceCard
+            summary={sourceSummary}
+            onOpenCrmTab={onOpenCrmTab}
           />
         </div>
       </div>
+
+      <ExploreRunHistory
+        runs={runs}
+        loading={runsLoading}
+        onReuseRun={run => {
+          setPrompt(run.prompt)
+          setIcpHint(run.icp_hint ?? '')
+        }}
+      />
 
       <div className="card border border-[var(--color-line-1)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,246,240,0.88))]">
         <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line-1)]">
@@ -759,6 +857,220 @@ function CrmWorkspacePanel({
   )
 }
 
+function ExploreRunCard({
+  run,
+  loading,
+  clockMs,
+}: {
+  run: ExploreRun | null
+  loading: boolean
+  clockMs: number
+}) {
+  if (loading && !run) {
+    return (
+      <div className="card bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,242,234,0.88))]">
+        <div className="px-5 py-4 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Search Status</p>
+          <p className="text-[12.5px] text-[var(--color-text-3)]">Loading recent explore runs…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!run) {
+    return (
+      <div className="card bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,242,234,0.88))]">
+        <div className="px-5 py-4 space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Search Status</p>
+          <h3 className="text-[15px] font-medium tracking-tight text-[var(--color-text-1)]">No explore searches yet</h3>
+          <p className="text-[12.5px] leading-relaxed text-[var(--color-text-3)]">
+            Start with a targeting prompt and Bombsell will keep a durable run history here.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const progressPct = run.items_total > 0
+    ? Math.min(100, Math.round((run.items_processed / run.items_total) * 100))
+    : run.status === 'completed'
+      ? 100
+      : 10
+
+  return (
+    <div className="card bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,242,234,0.88))]">
+      <div className="px-5 py-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Search Status</p>
+            <h3 className="text-[15px] font-medium tracking-tight text-[var(--color-text-1)] mt-1">Latest prompted-discovery run</h3>
+          </div>
+          <RunStatusPill status={run.status} />
+        </div>
+        <p className="text-[12.5px] leading-relaxed text-[var(--color-text-3)] line-clamp-3">
+          {run.prompt}
+        </p>
+        <div className="space-y-2">
+          <div className="h-2 overflow-hidden rounded-full bg-[var(--color-ink-2)]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-accent-hi)] transition-all"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--color-text-4)]">
+            <span>{run.status_message ?? statusLabel(run.status)}</span>
+            <span>{formatRunMeta(run, clockMs)}</span>
+          </div>
+        </div>
+        {run.queries.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {run.queries.map(query => (
+              <span
+                key={`${run.id}-${query}`}
+                className="rounded-full border border-[var(--color-line-1)] bg-white px-2.5 py-1 text-[10.5px] text-[var(--color-text-3)]"
+              >
+                {query}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <StatBadge label="Inserted" value={run.inserted_count} />
+          <StatBadge label="Skipped" value={run.skipped_count} />
+          {run.items_total > 0 && <StatBadge label="Reviewed" value={`${run.items_processed}/${run.items_total}`} />}
+        </div>
+        {run.error_message && (
+          <p className="text-[11px] text-[var(--color-sig-regulation)]">{run.error_message}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ExploreSourceCard({
+  summary,
+  onOpenCrmTab,
+}: {
+  summary: string
+  onOpenCrmTab: () => void
+}) {
+  return (
+    <div className="card bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(240,245,242,0.9))]">
+      <div className="px-5 py-4 space-y-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Where This Feed Comes From</p>
+        <div className="space-y-1.5">
+          <h3 className="text-[15px] font-medium tracking-tight text-[var(--color-text-1)]">Explore is a sourced search, not a live trigger feed.</h3>
+          <p className="text-[12.5px] leading-relaxed text-[var(--color-text-3)]">
+            {summary || 'Explore searches Google News RSS from the last 30 days using your prompt and ICP context, extracts candidate companies from the articles, and only keeps the records that score well enough against your workspace.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-[var(--color-line-1)] bg-white px-2.5 py-1 text-[10.5px] text-[var(--color-text-3)]">Source: Google News RSS</span>
+          <span className="rounded-full border border-[var(--color-line-1)] bg-white px-2.5 py-1 text-[10.5px] text-[var(--color-text-3)]">Window: last 30 days</span>
+        </div>
+        <button
+          onClick={onOpenCrmTab}
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]"
+        >
+          Explore is for discovery. Open CRM for activation.
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ExploreRunHistory({
+  runs,
+  loading,
+  onReuseRun,
+}: {
+  runs: ExploreRun[]
+  loading: boolean
+  onReuseRun: (run: ExploreRun) => void
+}) {
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Recent Explore Searches</h3>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+          Reload-safe history for prompted-discovery runs and their outcomes.
+        </p>
+      </div>
+      <div className="px-5 py-3">
+        {loading && runs.length === 0 ? (
+          <p className="text-[12px] text-[var(--color-text-4)]">Loading run history…</p>
+        ) : runs.length === 0 ? (
+          <p className="text-[12px] text-[var(--color-text-4)]">No saved runs yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {runs.map(run => (
+              <button
+                key={run.id}
+                onClick={() => onReuseRun(run)}
+                className="flex w-full items-start justify-between gap-4 rounded-xl border border-[var(--color-line-1)] bg-white px-3 py-3 text-left transition-colors hover:bg-[var(--color-ink-2)]"
+              >
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-medium text-[var(--color-text-1)] line-clamp-2">
+                    {run.prompt}
+                  </p>
+                  <p className="mt-1 text-[11px] text-[var(--color-text-4)]">
+                    {formatAbsoluteDate(run.created_at)}
+                    {run.queries.length > 0 ? ` · ${run.queries.length} queries` : ''}
+                    {run.items_total > 0 ? ` · ${run.items_total} results reviewed` : ''}
+                  </p>
+                </div>
+                <div className="shrink-0 flex items-center gap-2">
+                  <span className="text-[11px] text-[var(--color-text-4)] tabular-nums">
+                    +{run.inserted_count}
+                  </span>
+                  <RunStatusPill status={run.status} compact />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RunStatusPill({
+  status,
+  compact = false,
+}: {
+  status: ExploreRun['status']
+  compact?: boolean
+}) {
+  const classes =
+    status === 'completed'
+      ? 'border-[var(--color-accent)]/25 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+      : status === 'failed'
+        ? 'border-[var(--color-sig-regulation)]/20 bg-[color:rgba(217,69,69,0.08)] text-[var(--color-sig-regulation)]'
+        : 'border-[var(--color-line-1)] bg-[var(--color-ink-2)] text-[var(--color-text-2)]'
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border ${compact ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1 text-[10.5px]'} font-medium ${classes}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${
+        status === 'completed'
+          ? 'bg-[var(--color-accent)]'
+          : status === 'failed'
+            ? 'bg-[var(--color-sig-regulation)]'
+            : 'bg-[var(--color-text-4)]/70'
+      }`} />
+      {statusLabel(status)}
+    </span>
+  )
+}
+
+function StatBadge({ label, value }: { label: string; value: string | number }) {
+  return (
+    <span className="rounded-full border border-[var(--color-line-1)] bg-white px-2.5 py-1 text-[10.5px] text-[var(--color-text-3)]">
+      <span className="text-[var(--color-text-4)]">{label}</span>{' '}
+      <span className="font-medium text-[var(--color-text-2)] tabular-nums">{value}</span>
+    </span>
+  )
+}
+
 function InsightCard({
   eyebrow,
   title,
@@ -814,6 +1126,52 @@ function StatusPill({
       <span>{active ? activeLabel : idleLabel}</span>
     </div>
   )
+}
+
+function statusLabel(status: ExploreRun['status']) {
+  if (status === 'queued') return 'Queued'
+  if (status === 'running') return 'Running'
+  if (status === 'completed') return 'Completed'
+  return 'Failed'
+}
+
+function formatRunMeta(run: ExploreRun, nowMs: number) {
+  if (run.status === 'running' || run.status === 'queued') {
+    const since = run.started_at ?? run.created_at
+    return `Elapsed ${formatDuration(nowMs - new Date(since).getTime())}`
+  }
+
+  if (run.completed_at && (run.started_at ?? run.created_at)) {
+    return `Took ${formatDuration(new Date(run.completed_at).getTime() - new Date(run.started_at ?? run.created_at).getTime())}`
+  }
+
+  return formatAbsoluteDate(run.created_at)
+}
+
+function formatDuration(ms: number) {
+  const safeMs = Math.max(0, ms)
+  const totalSeconds = Math.floor(safeMs / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60)
+    const remainingMinutes = minutes % 60
+    return `${hours}h ${remainingMinutes}m`
+  }
+
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+function formatAbsoluteDate(value: string | null) {
+  if (!value) return 'Unknown time'
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
 interface ClientAccountSummary {
