@@ -66,6 +66,13 @@ interface OpsSummary {
   lead_diagnostics: LeadDiagnostic[]
 }
 
+const EXPLORE_PROGRESS_STEPS = [
+  'Sending your targeting brief.',
+  'Generating target accounts from your brief.',
+  'Shaping lead records for the explore feed.',
+  'Finalizing and saving results.',
+]
+
 const VIEW_TITLES: Record<View, string> = {
   feed:      'Signal Feed',
   explore:   'Explore',
@@ -588,103 +595,150 @@ function ExplorePanel({
   icpKeywords: string[]
   onOpenCrmTab: () => void
 }) {
+  const router = useRouter()
   const [prompt, setPrompt] = useState('')
   const [icpHint, setIcpHint] = useState(icpKeywords.slice(0, 4).join(', '))
   const [searching, setSearching] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [lastRunSummary, setLastRunSummary] = useState<{
+    inserted: number
+    skipped: number
+    generated: number
+    durationMs: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (!searching) {
+      setElapsedSeconds(0)
+      return
+    }
+
+    const startedAt = Date.now()
+    const interval = window.setInterval(() => {
+      setElapsedSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)))
+    }, 1000)
+
+    return () => window.clearInterval(interval)
+  }, [searching])
 
   async function runSearch() {
     if (!prompt.trim()) return
     setSearching(true)
     setMessage(null)
+    setLastRunSummary(null)
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 65_000)
+
     try {
       const res = await fetch('/api/explore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ prompt, icp_hint: icpHint }),
       })
       const data = await res.json().catch(() => null) as {
         error?: string
+        ok?: boolean
         inserted?: number
         skipped?: number
+        generated?: number
         message?: string
+        duration_ms?: number
       } | null
 
       if (!res.ok) {
-        setMessage(data?.error ?? 'Explore search failed.')
+        setMessage(data?.error ?? data?.message ?? 'Explore search failed.')
         return
       }
 
+      const durationMs = typeof data?.duration_ms === 'number'
+        ? data.duration_ms
+        : Math.max(1, elapsedSeconds) * 1000
+
+      setLastRunSummary({
+        inserted: data?.inserted ?? 0,
+        skipped: data?.skipped ?? 0,
+        generated: data?.generated ?? 0,
+        durationMs,
+      })
       setMessage(
         data?.message
           ?? `Added ${data?.inserted ?? 0} explore leads${typeof data?.skipped === 'number' ? `, skipped ${data.skipped}` : ''}.`,
       )
+      router.refresh()
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        setMessage('Explore search took too long to respond. Try a tighter prompt and run it again.')
+        return
+      }
+
+      setMessage('Explore search failed before the server responded.')
     } finally {
+      window.clearTimeout(timeoutId)
       setSearching(false)
     }
   }
 
+  const progressStep = EXPLORE_PROGRESS_STEPS[Math.min(Math.floor(elapsedSeconds / 8), EXPLORE_PROGRESS_STEPS.length - 1)]
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.9fr)]">
-        <div className="card divide-y divide-[var(--color-line-1)]">
-          <div className="px-5 py-4">
-            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Prompted Discovery</h2>
-            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Describe the accounts, roles, and themes you want to pursue. Bombsell uses your brief plus your profile description to generate an explore-only target list.
-            </p>
-          </div>
-          <div className="px-5 py-4 space-y-3">
-            <textarea
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              placeholder="Example: Fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
-              disabled={searching}
-              className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
-            />
-            <input
-              value={icpHint}
-              onChange={e => setIcpHint(e.target.value)}
-              placeholder="Optional ICP hints, for example: Series B, RevOps owner, US healthcare"
-              disabled={searching}
-              className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={runSearch}
-                disabled={searching || !prompt.trim()}
-                className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50"
-              >
-                {searching ? 'Generating…' : 'Run search'}
-              </button>
-              {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
-            </div>
-          </div>
+      <div className="card divide-y divide-[var(--color-line-1)]">
+        <div className="px-5 py-4">
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Prompted Discovery</h2>
+          <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+            Describe the accounts, roles, and themes you want to pursue. Bombsell uses your brief plus your profile description to build an explore-only target list.
+          </p>
         </div>
-
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-          <InsightCard
-            eyebrow="How It Works"
-            title="Your brief becomes a direct target list."
-            body="Explore uses your prompt plus your profile description to generate target accounts in the same lead format as the rest of the product, then drops the strongest suggestions into this feed."
+        <div className="px-5 py-4 space-y-3">
+          <textarea
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            placeholder="Example: Fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
+            disabled={searching}
+            className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
           />
-          <InsightCard
-            eyebrow="ICP Handling"
-            title="Broad prompts stay broad unless you explicitly narrow them."
-            body="Workspace ICP only comes into play when you mention fit, ICP, or add an ICP hint. Otherwise Explore optimizes for useful prompt matches first."
+          <input
+            value={icpHint}
+            onChange={e => setIcpHint(e.target.value)}
+            placeholder="Optional ICP hints, for example: Series B, RevOps owner, US healthcare"
+            disabled={searching}
+            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
           />
-          <InsightCard
-            eyebrow="Prompt Scope"
-            title="Explore only accepts lead-generation requests."
-            body="Prompts that are unrelated to finding companies, target accounts, or outreach opportunities are rejected with a clear reason instead of generating irrelevant results."
-          />
-          <InsightCard
-            eyebrow="CRM handoff"
-            title="Explore is for discovery. CRM is for activation."
-            body="When a search surfaces strong accounts, export them as CSV or push them into your connected CRM directly from this feed."
-            actionLabel="Open CRM tab"
-            onAction={onOpenCrmTab}
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={runSearch}
+              disabled={searching || !prompt.trim()}
+              className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50"
+            >
+              {searching ? 'Searching…' : 'Run search'}
+            </button>
+            {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
+          </div>
+          {searching && (
+            <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-4)]">
+                  Search in progress
+                </p>
+                <p className="text-[11px] text-[var(--color-text-4)]">
+                  Elapsed {elapsedSeconds}s
+                </p>
+              </div>
+              <p className="mt-2 text-sm text-[var(--color-text-2)]">{progressStep}</p>
+              <p className="mt-1 text-[11px] text-[var(--color-text-4)]">
+                Keep this tab open while results are generated and saved to the explore feed.
+              </p>
+            </div>
+          )}
+          {!searching && lastRunSummary && (
+            <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11px] text-[var(--color-text-4)]">
+              Last run finished in {Math.max(1, Math.round(lastRunSummary.durationMs / 1000))}s.
+              {' '}Generated {lastRunSummary.generated} candidate{lastRunSummary.generated === 1 ? '' : 's'},
+              {' '}added {lastRunSummary.inserted}, skipped {lastRunSummary.skipped}.
+            </div>
+          )}
         </div>
       </div>
 
@@ -693,12 +747,8 @@ function ExplorePanel({
           <div>
             <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Explore Results</h3>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Model-generated target accounts based on your prompts and optional ICP hints.
+              Target accounts generated from your prompt and optional ICP hints.
             </p>
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-white px-3 py-1.5 text-[11px] text-[var(--color-text-3)]">
-            <span className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />
-            Separate from the live signal feed
           </div>
         </div>
         <LeadFeed

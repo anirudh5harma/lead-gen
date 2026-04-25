@@ -7,6 +7,7 @@ import { shouldUseWorkspaceIcp } from '@/lib/explore'
 const MAX_RESULTS = 12
 
 export async function POST(request: Request) {
+  const startedAt = Date.now()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -61,6 +62,8 @@ export async function POST(request: Request) {
       ok: false,
       inserted: 0,
       skipped: 0,
+      generated: 0,
+      duration_ms: Date.now() - startedAt,
       message: generation.rejection_reason ?? 'This prompt is outside the scope of lead generation.',
     }, { status: 400 })
   }
@@ -72,6 +75,8 @@ export async function POST(request: Request) {
       ok: true,
       inserted: 0,
       skipped: 0,
+      generated: 0,
+      duration_ms: Date.now() - startedAt,
       message: 'No lead suggestions were generated for this prompt.',
     })
   }
@@ -154,8 +159,10 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
+    generated: suggestions.length,
     inserted,
     skipped,
+    duration_ms: Date.now() - startedAt,
     message: inserted > 0
       ? `Added ${inserted} explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : ' directly from the prompt.'}`
       : 'No new explore leads were added.',
