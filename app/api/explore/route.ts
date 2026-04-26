@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { generateExploreLeads } from '@/lib/deepseek'
 import { shouldUseWorkspaceIcp } from '@/lib/explore'
@@ -9,7 +9,7 @@ const MAX_RESULTS = 12
 export async function POST(request: Request) {
   const startedAt = Date.now()
   const supabase = await createClient()
-  const service = await createServiceClient()
+  const admin = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       index,
     })
 
-    const { data: signal, error: signalError } = await service
+    const { data: signal, error: signalError } = await admin
       .from('signals')
       .upsert({
         company_name: suggestion.company_name,
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
       continue
     }
 
-    const { data: existingLead } = await service
+    const { data: existingLead } = await admin
       .from('leads')
       .select('id')
       .eq('user_id', user.id)
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
       continue
     }
 
-    const { error: leadError } = await service
+    const { error: leadError } = await admin
       .from('leads')
       .insert({
         user_id: user.id,
