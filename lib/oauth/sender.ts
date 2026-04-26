@@ -57,6 +57,7 @@ export async function pickSenderAccount(
   userId:       string,
   supabase:     SupabaseClient,
   preferEmail?: string | null,
+  preferAccountId?: string | null,
 ): Promise<ConnectedAccount | null> {
   if (preferEmail) {
     const { data } = await supabase
@@ -64,6 +65,17 @@ export async function pickSenderAccount(
       .select('id, provider, email, display_name, access_token, refresh_token, token_expires_at')
       .eq('user_id', userId)
       .eq('email', preferEmail)
+      .eq('is_active', true)
+      .single()
+    return data as ConnectedAccount | null
+  }
+
+  if (preferAccountId) {
+    const { data } = await supabase
+      .from('connected_accounts')
+      .select('id, provider, email, display_name, access_token, refresh_token, token_expires_at')
+      .eq('user_id', userId)
+      .eq('id', preferAccountId)
       .eq('is_active', true)
       .single()
     return data as ConnectedAccount | null
@@ -95,10 +107,11 @@ export async function sendWithConnectedAccount(params: {
   inReplyTo?:    string | null
   gmailThreadId?: string | null
   preferEmail?:  string | null
+  preferAccountId?: string | null
 }): Promise<SendResult | null> {
-  const { userId, supabase, to, subject, body, fromName, inReplyTo, gmailThreadId, preferEmail } = params
+  const { userId, supabase, to, subject, body, fromName, inReplyTo, gmailThreadId, preferEmail, preferAccountId } = params
 
-  const account = await pickSenderAccount(userId, supabase, preferEmail)
+  const account = await pickSenderAccount(userId, supabase, preferEmail, preferAccountId)
   if (!account) return null
 
   const accessToken  = await getValidAccessToken(account, supabase)

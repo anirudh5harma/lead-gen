@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { normalizeAutoSendPolicy, policyKey } from '@/lib/auto-send-policies'
 import { getPlanLimits, type PlanTier } from '@/lib/plan'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
           .from('scheduled_followups')
           .select(`
             id, user_id, lead_id, scheduled_for,
-            leads(target_company, contact_email, status, message_id, from_email, gmail_thread_id, client_id),
+            leads(target_company, contact_email, contact_verified, status, message_id, from_email, gmail_thread_id, client_id, origin, relevance_score, created_at),
             outreach_sequences(followup_subject, followup_body)
           `)
           .in('id', claimedIds)
@@ -65,37 +66,54 @@ export async function GET(request: Request) {
     }
 
     const userIds = [...new Set(pending.map(p => p.user_id))]
-    const { data: profiles } = await supabase
-      .from('user_profiles')
-      .select('user_id, plan, auto_send_enabled, company_name, services_description, calendly_url')
-      .in('user_id', userIds)
-
     const clientIds = pending
       .map(item => ((item.leads as { client_id?: string | null } | null)?.client_id ?? null))
       .filter((id): id is string => Boolean(id))
-    const { data: clientProfiles } = clientIds.length > 0
-      ? await supabase
-          .from('client_accounts')
-          .select('id, name, services_description, calendly_url')
-          .in('id', clientIds)
-      : { data: [] }
+    const [profilesRes, policiesRes, clientProfilesRes] = await Promise.all([
+      supabase
+        .from('user_profiles')
+        .select('user_id, plan, company_name, services_description, calendly_url')
+        .in('user_id', userIds),
+      supabase
+        .from('auto_send_policies')
+        .select('user_id, client_id, enabled, connected_account_id, target_origins, require_verified_contact, min_relevance_score, max_lead_age_days')
+        .in('user_id', userIds),
+      clientIds.length > 0
+        ? await supabase
+            .from('client_accounts')
+            .select('id, name, services_description, calendly_url')
+            .in('id', clientIds)
+        : { data: [] },
+    ])
+
+    const profiles = profilesRes.data
+    const clientProfiles = clientProfilesRes.data
 
     const quotaMap: Record<string, {
       plan: PlanTier
-      autoSend: boolean
       profile: { company_name?: string | null; services_description?: string | null; calendly_url?: string | null }
     }> = {}
     for (const p of (profiles ?? [])) {
       const plan = (p.plan ?? 'free') as PlanTier
       quotaMap[p.user_id] = {
         plan,
-        autoSend: p.auto_send_enabled ?? false,
         profile: {
           company_name: (p as { company_name?: string | null }).company_name ?? null,
           services_description: (p as { services_description?: string | null }).services_description ?? null,
           calendly_url: (p as { calendly_url?: string | null }).calendly_url ?? null,
         },
       }
+    }
+    const policyMap = new Map<string, ReturnType<typeof normalizeAutoSendPolicy>>()
+    for (const row of (policiesRes.data ?? [])) {
+      const normalized = normalizeAutoSendPolicy(row)
+      policyMap.set(
+        policyKey(
+          row.user_id as string,
+          (row as { client_id?: string | null }).client_id ?? null,
+        ),
+        normalized,
+      )
     }
     const clientProfileMap = new Map(
       (clientProfiles ?? []).map(profile => [
@@ -119,15 +137,14 @@ export async function GET(request: Request) {
         await releaseClaim(supabase, item.id, claimToken)
         continue
       }
-      if (!quota.autoSend) {
-        await releaseClaim(supabase, item.id, claimToken)
-        continue
-      }
-
       const lead = item.leads as unknown as {
         contact_email?: string; target_company: string; status?: string
         message_id?: string | null; from_email?: string | null; gmail_thread_id?: string | null
         client_id?: string | null
+        origin?: 'live' | 'explore' | 'crm_import' | null
+        relevance_score?: number | null
+        contact_verified?: boolean | null
+        created_at?: string | null
       } | null
       const seq = item.outreach_sequences as unknown as {
         followup_subject: string; followup_body: string
@@ -136,6 +153,31 @@ export async function GET(request: Request) {
       if (!lead?.contact_email) {
         await releaseClaim(supabase, item.id, claimToken)
         continue
+      }
+
+      const policy = policyMap.get(policyKey(item.user_id, lead.client_id ?? null))
+      if (!policy?.enabled) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
+      if (!policy.target_origins.includes((lead.origin ?? 'live') as 'live' | 'explore' | 'crm_import')) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
+      if ((lead.relevance_score ?? 0) < policy.min_relevance_score) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
+      if (policy.require_verified_contact && lead.contact_verified !== true) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
+      if (lead.created_at) {
+        const ageMs = Date.now() - new Date(lead.created_at).getTime()
+        if (ageMs > policy.max_lead_age_days * 24 * 60 * 60 * 1000) {
+          await releaseClaim(supabase, item.id, claimToken)
+          continue
+        }
       }
 
     // Fall back to a generic follow-up template when pre-generation didn't complete
@@ -180,6 +222,7 @@ export async function GET(request: Request) {
           inReplyTo,
           gmailThreadId,
           preferEmail:   lead.from_email ?? null,
+          preferAccountId: lead.from_email ? null : policy.connected_account_id,
         })
 
         if (!result) {

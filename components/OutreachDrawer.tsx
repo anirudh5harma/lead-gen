@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import StakeholderList, { type Stakeholder } from './StakeholderList'
 import type { Lead } from './LeadFeed'
 
@@ -180,7 +181,8 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
     // Don't close or mark as sent — user must confirm via "Mark as" buttons after sending from Gmail
   }
 
-  const sig = Array.isArray(lead.signals) ? lead.signals[0] : lead.signals
+  const sig = normalizeLeadFeedSnapshot(lead.feed_snapshot)
+    ?? (Array.isArray(lead.signals) ? lead.signals[0] : lead.signals)
   const sigType = sig?.signal_type ?? ''
   const sigMeta = SIGNAL_META[sigType]
   const canSendDirect = plan === 'pro' || plan === 'max'

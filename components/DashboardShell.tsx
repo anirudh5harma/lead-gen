@@ -26,7 +26,6 @@ interface UserProfile {
   plan?: string
   leads_used_this_month?: number
   slack_webhook_url?: string | null
-  auto_send_enabled?: boolean
   allow_lead_overage?: boolean
   active_client_id?: string | null
 }
@@ -64,6 +63,13 @@ interface OpsSummary {
     active_sending_accounts: number
   }
   lead_diagnostics: LeadDiagnostic[]
+}
+
+interface AutoSendAccount {
+  id: string
+  provider: 'gmail' | 'outlook'
+  email: string
+  display_name?: string | null
 }
 
 const EXPLORE_PROGRESS_STEPS = [
@@ -301,6 +307,11 @@ const PLAN_LABELS: Record<string, { label: string; color: string; price: string 
   max:  { label: 'Max',  color: 'text-[var(--color-sig-funding)]', price: '$250/mo' },
 }
 const PLAN_LIMITS: Record<string, number> = { free: 15, pro: 300, max: 1500 }
+const AUTO_SEND_FEED_OPTIONS: Array<{ key: 'live' | 'explore' | 'crm_import'; label: string; description: string }> = [
+  { key: 'live', label: 'Live Signal Feed', description: 'Auto-send follow-ups for live signal-driven leads.' },
+  { key: 'explore', label: 'Explore Feed', description: 'Auto-send follow-ups for prompted discovery leads.' },
+  { key: 'crm_import', label: 'CRM Feed', description: 'Auto-send follow-ups for CRM-imported prospects.' },
+]
 
 function SettingsPanel({
   profile,
@@ -317,22 +328,90 @@ function SettingsPanel({
   const used = profile.leads_used_this_month ?? 0
   const pct = limit === Infinity ? 0 : Math.min(100, (used / limit) * 100)
 
-  const [autoSend, setAutoSend] = useState(profile.auto_send_enabled ?? false)
+  const [autoSend, setAutoSend] = useState(false)
   const [autoSendSaving, setAutoSendSaving] = useState(false)
+  const [autoSendLoaded, setAutoSendLoaded] = useState(false)
+  const [autoSendMsg, setAutoSendMsg] = useState<string | null>(null)
+  const [autoSendAccounts, setAutoSendAccounts] = useState<AutoSendAccount[]>([])
+  const [autoSendAccountId, setAutoSendAccountId] = useState<string | null>(null)
+  const [autoSendFeeds, setAutoSendFeeds] = useState<Array<'live' | 'explore' | 'crm_import'>>(['live', 'explore', 'crm_import'])
+  const [autoSendRequireVerified, setAutoSendRequireVerified] = useState(false)
+  const [autoSendMinScore, setAutoSendMinScore] = useState(1)
+  const [autoSendMaxAge, setAutoSendMaxAge] = useState(30)
 
-  const toggleAutoSend = useCallback(async (enabled: boolean) => {
+  useEffect(() => {
+    if (plan !== 'pro' && plan !== 'max') return
+
+    let cancelled = false
+    fetch('/api/settings/auto-send', { cache: 'no-store' })
+      .then(async res => {
+        const data = await res.json().catch(() => null) as {
+          error?: string
+          policy?: {
+            enabled?: boolean
+            connected_account_id?: string | null
+            target_origins?: Array<'live' | 'explore' | 'crm_import'>
+            require_verified_contact?: boolean
+            min_relevance_score?: number
+            max_lead_age_days?: number
+          }
+          accounts?: AutoSendAccount[]
+        } | null
+        if (cancelled || !data) return
+        if (!res.ok) {
+          setAutoSendMsg(data.error ?? 'Failed to load feed automation settings.')
+          setAutoSendLoaded(true)
+          return
+        }
+        setAutoSend(Boolean(data.policy?.enabled))
+        setAutoSendAccountId(data.policy?.connected_account_id ?? null)
+        setAutoSendFeeds(data.policy?.target_origins?.length ? data.policy.target_origins : ['live', 'explore', 'crm_import'])
+        setAutoSendRequireVerified(Boolean(data.policy?.require_verified_contact))
+        setAutoSendMinScore(data.policy?.min_relevance_score ?? 1)
+        setAutoSendMaxAge(data.policy?.max_lead_age_days ?? 30)
+        setAutoSendAccounts(data.accounts ?? [])
+        setAutoSendLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAutoSendMsg('Failed to load feed automation settings.')
+          setAutoSendLoaded(true)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [plan])
+
+  const saveAutoSend = useCallback(async () => {
     setAutoSendSaving(true)
-    setAutoSend(enabled)
+    setAutoSendMsg(null)
     try {
-      await fetch('/api/settings/auto-send', {
+      const res = await fetch('/api/settings/auto-send', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ auto_send_enabled: enabled }),
+        body: JSON.stringify({
+          enabled: autoSend,
+          connected_account_id: autoSendAccountId,
+          target_origins: autoSendFeeds,
+          require_verified_contact: autoSendRequireVerified,
+          min_relevance_score: autoSendMinScore,
+          max_lead_age_days: autoSendMaxAge,
+        }),
       })
+      const data = await res.json().catch(() => null) as { error?: string } | null
+      if (!res.ok) {
+        setAutoSendMsg(data?.error ?? 'Failed to save feed automation settings.')
+        return
+      }
+      setAutoSendMsg('Feed automation saved')
+    } catch {
+      setAutoSendMsg('Failed to save feed automation settings.')
     } finally {
       setAutoSendSaving(false)
     }
-  }, [])
+  }, [autoSend, autoSendAccountId, autoSendFeeds, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge])
 
   const [slackUrl, setSlackUrl] = useState(profile.slack_webhook_url ?? '')
   const [slackSaving, setSlackSaving] = useState(false)
@@ -469,16 +548,16 @@ function SettingsPanel({
         <div className="card divide-y divide-[var(--color-line-1)]">
           <div className="px-5 py-4 flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Auto-send Follow-ups</h2>
+              <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Feed Automation</h2>
               <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-                When on, a follow-up email is sent automatically ~3 days after the initial outreach if no reply is detected.
+                Choose which feeds are eligible for automatic follow-up sending after the initial outreach goes out and no reply is detected.
               </p>
             </div>
             <button
               role="switch"
               aria-checked={autoSend}
-              disabled={autoSendSaving}
-              onClick={() => toggleAutoSend(!autoSend)}
+              disabled={autoSendSaving || !autoSendLoaded}
+              onClick={() => setAutoSend(enabled => !enabled)}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
                 autoSend ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
               }`}
@@ -489,6 +568,114 @@ function SettingsPanel({
                 }`}
               />
             </button>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[var(--color-text-1)]">Sending inbox</span>
+                <select
+                  value={autoSendAccountId ?? ''}
+                  onChange={e => setAutoSendAccountId(e.target.value || null)}
+                  className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+                >
+                  <option value="">Any active inbox</option>
+                  {autoSendAccounts.map(account => (
+                    <option key={account.id} value={account.id}>
+                      {(account.display_name || account.email)} · {account.provider}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-[var(--color-text-1)]">Min score</span>
+                  <select
+                    value={autoSendMinScore}
+                    onChange={e => setAutoSendMinScore(Number(e.target.value))}
+                    className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+                  >
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map(score => (
+                      <option key={score} value={score}>{score}+</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-[var(--color-text-1)]">Max age</span>
+                  <select
+                    value={autoSendMaxAge}
+                    onChange={e => setAutoSendMaxAge(Number(e.target.value))}
+                    className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+                  >
+                    {[7, 14, 30, 60, 90].map(days => (
+                      <option key={days} value={days}>{days} days</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Eligible feeds</p>
+              <div className="grid gap-2">
+                {AUTO_SEND_FEED_OPTIONS.map(option => {
+                  const checked = autoSendFeeds.includes(option.key)
+                  return (
+                    <label key={option.key} className="flex items-start gap-3 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setAutoSendFeeds(prev =>
+                          checked
+                            ? prev.filter(feed => feed !== option.key)
+                            : [...prev, option.key]
+                        )}
+                        className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
+                      />
+                      <span>
+                        <span className="block text-[12.5px] font-medium text-[var(--color-text-1)]">{option.label}</span>
+                        <span className="block text-[11px] text-[var(--color-text-4)] mt-0.5">{option.description}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+
+            <label className="flex items-start justify-between gap-4 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
+              <span>
+                <span className="block text-[12.5px] font-medium text-[var(--color-text-1)]">Require verified contacts</span>
+                <span className="block text-[11px] text-[var(--color-text-4)] mt-0.5">
+                  Only auto-send follow-ups when the contact has been verified during enrichment.
+                </span>
+              </span>
+              <button
+                role="switch"
+                aria-checked={autoSendRequireVerified}
+                onClick={() => setAutoSendRequireVerified(value => !value)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none ${
+                  autoSendRequireVerified ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-1)] border-[var(--color-line-2)]'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${
+                    autoSendRequireVerified ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </label>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] text-[var(--color-text-4)]">
+                {autoSendMsg ?? 'Auto-follow-up uses the same lead record across all feeds; the selected feeds only control eligibility.'}
+              </div>
+              <button
+                onClick={saveAutoSend}
+                disabled={autoSendSaving || !autoSendLoaded || autoSendFeeds.length === 0}
+                className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50"
+              >
+                {autoSendSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
           </div>
           <PendingFollowupsPanel />
         </div>

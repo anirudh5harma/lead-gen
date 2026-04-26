@@ -2,25 +2,24 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import {
+  normalizeLeadFeedSnapshot,
+  type LeadFeedSnapshot,
+  type LeadOrigin,
+  type LeadSourceKind,
+} from '@/lib/lead-sources'
 import OutreachDrawer from './OutreachDrawer'
 import LeadCard, { type SignalType, type LeadStatus, type LeadCardLead } from './LeadCard'
 import SignalTimeline from './SignalTimeline'
 
-export interface SignalRow {
-  signal_type: string
-  headline: string
-  summary: string | null
-  funding_amount: string | null
-  source_url: string | null
-  published_at: string | null
-  source_name?: string | null
-  company_domain?: string | null
-}
+export type SignalRow = LeadFeedSnapshot
 
 export interface Lead {
   id: string
   client_id?: string | null
-  origin?: 'live' | 'explore' | 'crm_import'
+  origin?: LeadOrigin
+  source_kind?: LeadSourceKind | null
+  source_record_id?: string | null
   target_company: string
   company_domain?: string | null
   relevance_score: number
@@ -32,7 +31,11 @@ export interface Lead {
   sent_at?: string | null
   replied_at?: string | null
   booked_at?: string | null
-  signals: SignalRow | SignalRow[] | null
+  contact_email?: string | null
+  contact_name?: string | null
+  contact_title?: string | null
+  feed_snapshot?: LeadFeedSnapshot | null
+  signals?: SignalRow | SignalRow[] | null
 }
 
 interface WatchlistItem {
@@ -66,7 +69,9 @@ const SIGNAL_TABS: { key: 'all' | SignalType; label: string }[] = [
 ]
 
 function getSignal(lead: Lead): SignalRow | null {
-  return Array.isArray(lead.signals) ? lead.signals[0] ?? null : lead.signals
+  const snapshot = normalizeLeadFeedSnapshot(lead.feed_snapshot)
+  if (snapshot) return snapshot
+  return Array.isArray(lead.signals) ? lead.signals[0] ?? null : lead.signals ?? null
 }
 
 function isSignalType(v: string): v is SignalType {
@@ -160,8 +165,7 @@ export default function LeadFeed({
 
           const { data } = await supabase
             .from('leads')
-            .select(`id, client_id, origin, target_company, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at,
-              signals(signal_type, headline, summary, funding_amount, source_url, source_name, published_at, company_domain)`)
+            .select(`id, client_id, origin, source_kind, source_record_id, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, contact_email, contact_name, contact_title, feed_snapshot`)
             .eq('id', payload.new.id)
             .single()
           if (data) {

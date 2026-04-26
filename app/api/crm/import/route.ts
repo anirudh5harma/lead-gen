@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { buildCrmLeadFeedSnapshot } from '@/lib/lead-sources'
 import {
   buildCrmImportLeadReason,
   buildCrmImportSignal,
@@ -33,8 +34,24 @@ export async function POST(request: Request) {
 
   const provider = normalizeCrmProvider(setting.provider)
   const now = new Date().toISOString()
+  const { data: batch } = await supabase
+    .from('crm_import_batches')
+    .insert({
+      user_id: setting.user_id,
+      client_id: setting.client_id,
+      provider,
+      import_secret: key,
+      record_count: records.length,
+    })
+    .select('id')
+    .single()
+
+  const batchId = batch?.id ?? null
   let imported = 0
   let skipped = 0
+  let duplicates = 0
+  let sourceErrors = 0
+  let leadErrors = 0
 
   for (const rawRecord of records) {
     const record = mapCrmImportRecord(provider, rawRecord)
@@ -43,23 +60,38 @@ export async function POST(request: Request) {
       continue
     }
 
-    const signal = buildCrmImportSignal({ provider, record })
-    const { data: savedSignal, error: signalError } = await supabase
-      .from('signals')
-      .upsert({
-        company_name: record.companyName,
-        company_domain: record.companyDomain,
-        signal_type: signal.signalType,
-        headline: signal.headline,
-        summary: signal.summary,
-        source_url: signal.sourceUrl,
-        source_name: 'crm_import',
-        published_at: now,
-      }, { onConflict: 'source_url' })
-      .select('id')
-      .single()
+    const recordKey = buildCrmRecordKey({
+      userId: setting.user_id,
+      clientId: setting.client_id,
+      provider,
+      externalId: record.externalId,
+      companyName: record.companyName,
+      contactEmail: record.contactEmail,
+    })
 
-    if (signalError || !savedSignal) {
+    const { data: savedRecord, error: recordError } = await saveCrmImportRecord(supabase, {
+      batch_id: batchId,
+      user_id: setting.user_id,
+      client_id: setting.client_id,
+      provider,
+      record_key: recordKey,
+      external_id: record.externalId,
+      company_name: record.companyName,
+      company_domain: record.companyDomain,
+      contact_email: record.contactEmail,
+      contact_name: record.contactName,
+      contact_title: record.contactTitle,
+      crm_status: record.crmStatus,
+      owner_name: record.ownerName,
+      lead_source: record.leadSource,
+      notes: record.notes,
+      raw_payload: record.raw,
+      updated_at: now,
+    })
+
+    if (recordError || !savedRecord) {
+      sourceErrors++
+      if (recordError) console.error('[crm-import] source record save error:', recordError.message)
       skipped++
       continue
     }
@@ -68,23 +100,38 @@ export async function POST(request: Request) {
       .from('leads')
       .select('id')
       .eq('user_id', setting.user_id)
-      .eq('signal_id', savedSignal.id)
-      .eq('origin', 'crm_import')
+      .eq('source_kind', 'crm_record')
+      .eq('source_record_id', savedRecord.id)
       .maybeSingle()
 
     if (existingLead) {
+      duplicates++
       skipped++
       continue
     }
 
+    const signal = buildCrmImportSignal({ provider, record })
     const leadMatch = buildCrmImportLeadReason({ provider, record })
+    const snapshot = buildCrmLeadFeedSnapshot({
+      headline: signal.headline,
+      summary: signal.summary,
+      companyDomain: record.companyDomain,
+      provider,
+      crmStatus: record.crmStatus,
+      ownerName: record.ownerName,
+      leadSource: record.leadSource,
+      publishedAt: now,
+    })
+
     const { error: leadError } = await supabase
       .from('leads')
       .insert({
         user_id: setting.user_id,
         client_id: setting.client_id,
-        signal_id: savedSignal.id,
+        signal_id: null,
         origin: 'crm_import',
+        source_kind: 'crm_record',
+        source_record_id: savedRecord.id,
         target_company: record.companyName,
         company_domain: record.companyDomain,
         relevance_score: leadMatch.score,
@@ -95,6 +142,7 @@ export async function POST(request: Request) {
         contact_email: record.contactEmail,
         contact_name: record.contactName,
         contact_title: record.contactTitle,
+        feed_snapshot: snapshot,
         match_debug: {
           matched_via: 'crm_import',
           provider,
@@ -103,11 +151,15 @@ export async function POST(request: Request) {
           owner_name: record.ownerName,
           lead_source: record.leadSource,
           import_key: key,
+          batch_id: batchId,
+          source_kind: 'crm_record',
           raw: record.raw,
         },
       })
 
     if (leadError) {
+      leadErrors++
+      console.error('[crm-import] lead insert error:', leadError.message)
       skipped++
       continue
     }
@@ -115,11 +167,24 @@ export async function POST(request: Request) {
     imported++
   }
 
+  if (batchId) {
+    await supabase
+      .from('crm_import_batches')
+      .update({
+        imported_count: imported,
+        skipped_count: skipped,
+      })
+      .eq('id', batchId)
+  }
+
   return NextResponse.json({
     ok: true,
     provider,
     imported,
     skipped,
+    duplicates,
+    source_errors: sourceErrors,
+    lead_errors: leadErrors,
   })
 }
 
@@ -132,4 +197,83 @@ function normalizeRecords(body: unknown): unknown[] {
   if (Array.isArray(payload.items)) return payload.items
   if (payload.record) return [payload.record]
   return [payload]
+}
+
+function buildCrmRecordKey(params: {
+  userId: string
+  clientId: string | null
+  provider: string
+  externalId?: string | null
+  companyName: string
+  contactEmail?: string | null
+}) {
+  return [
+    'crm-import',
+    params.userId,
+    params.clientId ?? 'workspace-none',
+    params.provider,
+    params.externalId || params.contactEmail || params.companyName,
+  ]
+    .join(':')
+    .toLowerCase()
+    .replace(/[^a-z0-9:._@-]+/g, '-')
+}
+
+async function saveCrmImportRecord(
+  supabase: ReturnType<typeof createAdminClient>,
+  payload: {
+    batch_id: string | null
+    user_id: string
+    client_id: string | null
+    provider: string
+    record_key: string
+    external_id?: string | null
+    company_name: string
+    company_domain?: string | null
+    contact_email?: string | null
+    contact_name?: string | null
+    contact_title?: string | null
+    crm_status?: string | null
+    owner_name?: string | null
+    lead_source?: string | null
+    notes?: string | null
+    raw_payload: unknown
+    updated_at: string
+  },
+) {
+  const { data: existing, error: existingError } = await supabase
+    .from('crm_import_records')
+    .select('id')
+    .eq('record_key', payload.record_key)
+    .maybeSingle()
+
+  if (existingError) return { data: null, error: existingError }
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('crm_import_records')
+      .update(payload)
+      .eq('id', existing.id)
+      .select('id')
+      .single()
+    return { data, error }
+  }
+
+  const inserted = await supabase
+    .from('crm_import_records')
+    .insert(payload)
+    .select('id')
+    .single()
+
+  if (!inserted.error) return inserted
+
+  if (inserted.error.code === '23505') {
+    return await supabase
+      .from('crm_import_records')
+      .select('id')
+      .eq('record_key', payload.record_key)
+      .single()
+  }
+
+  return inserted
 }

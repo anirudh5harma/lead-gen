@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { draftFollowUpEmail } from '@/lib/deepseek'
+import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
 
 export async function POST(request: Request) {
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
   // Lead + signal
   const { data: lead } = await supabase
     .from('leads')
-    .select('target_company, relevance_reason, client_id, signals(signal_type, summary)')
+    .select('target_company, relevance_reason, client_id, feed_snapshot')
     .eq('id', leadId)
     .eq('user_id', user.id)
     .single()
@@ -63,9 +64,7 @@ export async function POST(request: Request) {
     getDefaultSequenceTemplate(supabase, user.id, lead?.client_id ?? null),
   ])
 
-  type SignalRow = { signal_type: string; summary: string }
-  const signalRaw = lead.signals as unknown as SignalRow | SignalRow[] | null
-  const signal = Array.isArray(signalRaw) ? signalRaw[0] ?? null : signalRaw
+  const signal = normalizeLeadFeedSnapshot((lead as { feed_snapshot?: unknown }).feed_snapshot ?? null)
 
   // Primary stakeholder name for personalisation
   const stakeholders = Array.isArray(originalDraft.stakeholders)

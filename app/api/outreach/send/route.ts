@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { canUseConnectedSending, getPlanLimits, type PlanTier } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/deepseek'
+import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-context'
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
       clientProfile,
     })
 
-    const result = await sendWithConnectedAccount({
+        const result = await sendWithConnectedAccount({
       userId:   user.id,
       supabase,
       to,
@@ -165,13 +166,11 @@ async function pregenerateFollowup(
 
   const [draftRes, leadSigRes] = await Promise.all([
     supabase.from('outreach_drafts').select('subject, body, stakeholders').eq('lead_id', leadId).single(),
-    supabase.from('leads').select('target_company, relevance_reason, signals(signal_type, summary)').eq('id', leadId).single(),
+    supabase.from('leads').select('target_company, relevance_reason, feed_snapshot').eq('id', leadId).single(),
   ])
   if (!draftRes.data || !leadSigRes.data) return
 
-  type SigRow = { signal_type: string; summary: string }
-  const sigRaw = leadSigRes.data.signals as unknown as SigRow | SigRow[] | null
-  const signal = Array.isArray(sigRaw) ? sigRaw[0] ?? null : sigRaw
+  const signal = normalizeLeadFeedSnapshot((leadSigRes.data as { feed_snapshot?: unknown }).feed_snapshot ?? null)
   const stks   = Array.isArray(draftRes.data.stakeholders)
     ? (draftRes.data.stakeholders as Array<{ name?: string }>)
     : []

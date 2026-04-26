@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { generateExploreLeads } from '@/lib/deepseek'
 import { shouldUseWorkspaceIcp } from '@/lib/explore'
+import { buildExploreLeadFeedSnapshot, type LeadSignalType } from '@/lib/lead-sources'
 
 const MAX_RESULTS = 12
 
@@ -51,6 +52,23 @@ export async function POST(request: Request) {
       ].filter(Boolean).join('\n')
     : ''
 
+  const { data: run } = await admin
+    .from('explore_runs')
+    .insert({
+      user_id: user.id,
+      client_id: activeClientId,
+      prompt,
+      icp_hint: icpHint || null,
+      seller_profile_snapshot: servicesDescription || null,
+      workspace_icp_snapshot: workspaceIcpContext || null,
+      used_workspace_icp: useWorkspaceIcp,
+      status: 'running',
+    })
+    .select('id')
+    .single()
+
+  const runId = run?.id ?? null
+
   const generation = await generateExploreLeads({
     prompt,
     sellerProfileDescription: servicesDescription,
@@ -59,6 +77,17 @@ export async function POST(request: Request) {
   })
 
   if (!generation.ok) {
+    if (runId) {
+      await admin
+        .from('explore_runs')
+        .update({
+          status: 'failed',
+          error_message: generation.rejection_reason ?? 'Prompt generation failed.',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', runId)
+    }
+
     return NextResponse.json({
       ok: false,
       inserted: 0,
@@ -69,9 +98,22 @@ export async function POST(request: Request) {
     }, { status: generation.failure_kind === 'invalid_prompt' ? 400 : 502 })
   }
 
-  const suggestions = generation.leads
+  const suggestions = generation.leads.slice(0, MAX_RESULTS)
 
   if (suggestions.length === 0) {
+    if (runId) {
+      await admin
+        .from('explore_runs')
+        .update({
+          status: 'completed',
+          generated_count: 0,
+          inserted_count: 0,
+          skipped_count: 0,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', runId)
+    }
+
     return NextResponse.json({
       ok: true,
       inserted: 0,
@@ -86,34 +128,42 @@ export async function POST(request: Request) {
   let inserted = 0
   let skipped = 0
   let duplicates = 0
-  let signalErrors = 0
+  let sourceErrors = 0
   let leadErrors = 0
 
-  for (const [index, suggestion] of suggestions.slice(0, MAX_RESULTS).entries()) {
-    const sourceUrl = buildExploreSourceUrl({
-      prompt,
+  for (const suggestion of suggestions) {
+    const resultKey = buildExploreResultKey({
+      userId: user.id,
+      clientId: activeClientId,
       companyName: suggestion.company_name,
-      index,
+      companyDomain: suggestion.company_domain,
     })
 
-    const { data: signal, error: signalError } = await admin
-      .from('signals')
-      .upsert({
-        company_name: suggestion.company_name,
-        company_domain: suggestion.company_domain,
-        signal_type: suggestion.signal_type,
-        headline: suggestion.headline,
-        summary: suggestion.summary,
-        source_url: sourceUrl,
-        source_name: 'explore_generated',
-        published_at: now,
-      }, { onConflict: 'source_url' })
-      .select('id')
-      .single()
+    const { data: target, error: targetError } = await saveExploreTarget(admin, {
+      run_id: runId,
+      user_id: user.id,
+      client_id: activeClientId,
+      result_key: resultKey,
+      company_name: suggestion.company_name,
+      company_domain: suggestion.company_domain,
+      signal_type: suggestion.signal_type,
+      headline: suggestion.headline,
+      summary: suggestion.summary,
+      relevance_reason: suggestion.relevance_reason,
+      relevance_score: suggestion.relevance_score,
+      prompt,
+      icp_hint: icpHint || null,
+      source_payload: {
+        prompt,
+        icp_hint: icpHint || null,
+        used_workspace_icp: useWorkspaceIcp,
+      },
+      updated_at: now,
+    })
 
-    if (signalError || !signal) {
-      signalErrors++
-      if (signalError) console.error('[explore] signal upsert error:', signalError.message)
+    if (targetError || !target) {
+      sourceErrors++
+      if (targetError) console.error('[explore] explore target save error:', targetError.message)
       skipped++
       continue
     }
@@ -122,8 +172,8 @@ export async function POST(request: Request) {
       .from('leads')
       .select('id')
       .eq('user_id', user.id)
-      .eq('signal_id', signal.id)
-      .eq('origin', 'explore')
+      .eq('source_kind', 'explore_target')
+      .eq('source_record_id', target.id)
       .maybeSingle()
 
     if (existingLead) {
@@ -132,13 +182,28 @@ export async function POST(request: Request) {
       continue
     }
 
+    const snapshot = buildExploreLeadFeedSnapshot({
+      signalType: suggestion.signal_type as LeadSignalType,
+      headline: suggestion.headline,
+      summary: suggestion.summary,
+      companyDomain: suggestion.company_domain,
+      prompt,
+      icpHint: icpHint || null,
+      usedWorkspaceIcp: useWorkspaceIcp,
+      sourceUrl: `explore://target/${target.id}`,
+      sourceName: 'explore_generated',
+      publishedAt: now,
+    })
+
     const { error: leadError } = await admin
       .from('leads')
       .insert({
         user_id: user.id,
         client_id: activeClientId,
-        signal_id: signal.id,
+        signal_id: null,
         origin: 'explore',
+        source_kind: 'explore_target',
+        source_record_id: target.id,
         target_company: suggestion.company_name,
         company_domain: suggestion.company_domain,
         relevance_score: suggestion.relevance_score,
@@ -146,13 +211,14 @@ export async function POST(request: Request) {
         status: 'new',
         is_unlocked: false,
         unlocked_at: null,
+        feed_snapshot: snapshot,
         match_debug: {
           matched_via: 'explore_generation',
           prompt,
           icp_hint: icpHint || null,
           used_workspace_icp: useWorkspaceIcp,
-          source_name: 'explore_generated',
-          generation_mode: 'generated',
+          run_id: runId,
+          source_kind: 'explore_target',
         },
       })
 
@@ -166,34 +232,105 @@ export async function POST(request: Request) {
     inserted++
   }
 
+  if (runId) {
+    await admin
+      .from('explore_runs')
+      .update({
+        status: 'completed',
+        generated_count: suggestions.length,
+        inserted_count: inserted,
+        skipped_count: skipped,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', runId)
+  }
+
   return NextResponse.json({
     ok: true,
     generated: suggestions.length,
     inserted,
     skipped,
     duplicates,
-    signal_errors: signalErrors,
+    source_errors: sourceErrors,
     lead_errors: leadErrors,
     duration_ms: Date.now() - startedAt,
     message: inserted > 0
       ? `Added ${inserted} explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : ' directly from the prompt.'}`
-      : duplicates > 0 && signalErrors === 0 && leadErrors === 0
+      : duplicates > 0 && sourceErrors === 0 && leadErrors === 0
           ? `Found ${duplicates} duplicate explore ${duplicates === 1 ? 'lead' : 'leads'} and added no new ones.`
           : 'No new explore leads were added due to save errors.',
   })
 }
 
-function buildExploreSourceUrl(params: {
-  prompt: string
+function buildExploreResultKey(params: {
+  userId: string
+  clientId: string | null
   companyName: string
-  index: number
+  companyDomain: string | null
 }) {
-  return `explore://generated/${slugify(params.companyName)}:${slugify(params.prompt).slice(0, 60)}:${params.index}`
+  return [
+    'explore',
+    params.userId,
+    params.clientId ?? 'workspace-none',
+    (params.companyDomain || params.companyName).trim().toLowerCase(),
+  ]
+    .join(':')
+    .replace(/[^a-z0-9:.-]+/g, '-')
 }
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+async function saveExploreTarget(
+  admin: ReturnType<typeof createAdminClient>,
+  payload: {
+    run_id: string | null
+    user_id: string
+    client_id: string | null
+    result_key: string
+    company_name: string
+    company_domain: string | null
+    signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring'
+    headline: string
+    summary: string
+    relevance_reason: string
+    relevance_score: number
+    prompt: string
+    icp_hint: string | null
+    source_payload: Record<string, unknown>
+    updated_at: string
+  },
+) {
+  const { data: existing, error: existingError } = await admin
+    .from('explore_targets')
+    .select('id')
+    .eq('result_key', payload.result_key)
+    .maybeSingle()
+
+  if (existingError) return { data: null, error: existingError }
+
+  if (existing) {
+    const { data, error } = await admin
+      .from('explore_targets')
+      .update(payload)
+      .eq('id', existing.id)
+      .select('id')
+      .single()
+    return { data, error }
+  }
+
+  const inserted = await admin
+    .from('explore_targets')
+    .insert(payload)
+    .select('id')
+    .single()
+
+  if (!inserted.error) return inserted
+
+  if (inserted.error.code === '23505') {
+    return await admin
+      .from('explore_targets')
+      .select('id')
+      .eq('result_key', payload.result_key)
+      .single()
+  }
+
+  return inserted
 }

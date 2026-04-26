@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
+import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import {
   buildCrmExportCsv,
   buildCrmExportFilename,
@@ -35,7 +36,7 @@ async function loadExportContext(request: Request) {
       contact_name, contact_title,
       relevance_score, relevance_reason, status,
       created_at, sent_at, replied_at, booked_at,
-      signals(signal_type, headline, summary)
+      feed_snapshot
     `)
     .eq('user_id', user.id)
     .neq('status', 'dismissed')
@@ -48,7 +49,7 @@ async function loadExportContext(request: Request) {
     ? leads
     .filter(lead => ((lead as { origin?: string | null }).origin ?? 'live') === expectedOrigin)
     .map(lead => {
-      const sig = Array.isArray(lead.signals) ? lead.signals[0] : lead.signals
+      const sig = normalizeLeadFeedSnapshot((lead as { feed_snapshot?: unknown }).feed_snapshot ?? null)
       return buildCrmExportRecord({
         company: lead.target_company,
         domain: (lead as { company_domain?: string | null }).company_domain ?? '',

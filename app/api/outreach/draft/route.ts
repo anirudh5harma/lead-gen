@@ -4,6 +4,7 @@ import { draftOutreachEmail } from '@/lib/deepseek'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { enrichCompany } from '@/lib/email-finder/enrich'
 import { scrapeSignalArticle } from '@/lib/email-finder/firecrawl'
+import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import type { Stakeholder } from '../../../api/contacts/find/route'
 import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
 import { resolveOutreachContext } from '@/lib/outreach-context'
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
   const [leadRes, profileRes] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, client_id, is_unlocked, target_company, relevance_reason, contact_email, contact_name, contact_title, signals (signal_type, summary, company_domain, headline, funding_amount, published_at, source_url)')
+      .select('id, client_id, is_unlocked, target_company, company_domain, relevance_reason, contact_email, contact_name, contact_title, feed_snapshot')
       .eq('id', leadId)
       .eq('user_id', user.id)
       .single(),
@@ -89,20 +90,14 @@ export async function POST(request: Request) {
     getDefaultSequenceTemplate(supabase, user.id, clientId),
   ])
 
-  type SignalRow = {
-    signal_type: string; summary: string; company_domain: string | null
-    headline: string | null; funding_amount: string | null
-    published_at: string | null; source_url: string | null
-  }
-  const signalRaw = lead.signals as unknown as SignalRow | SignalRow[] | null
-  const signal = Array.isArray(signalRaw) ? signalRaw[0] ?? null : signalRaw
+  const signal = normalizeLeadFeedSnapshot((lead as { feed_snapshot?: unknown }).feed_snapshot ?? null)
 
   // Use the cached multi-contact enrichment path so the drawer can show 3-4 ranked contacts.
   let stakeholders: Stakeholder[] = []
   const serviceClient = await createServiceClient()
   const { contact, contacts, resolvedDomain } = await enrichCompany(
     lead.target_company,
-    signal?.company_domain ?? null,
+    signal?.company_domain ?? lead.company_domain ?? null,
     serviceClient,
     {
       servicesDescription: outreachContextDescription(profile, clientProfile),
@@ -138,7 +133,7 @@ export async function POST(request: Request) {
       contact_verified:    contact.verified,
       contact_enriched_at: new Date().toISOString(),
     }
-    if (resolvedDomain && !signal?.company_domain) backfill.company_domain = resolvedDomain
+    if (resolvedDomain && !signal?.company_domain && !lead.company_domain) backfill.company_domain = resolvedDomain
     await serviceClient.from('leads').update(backfill).eq('id', leadId)
   }
 

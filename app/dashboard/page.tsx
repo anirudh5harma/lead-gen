@@ -34,7 +34,7 @@ export default async function DashboardPage() {
   // Migration-004 fields — may not exist yet; use defaults if the query errors.
   const { data: extProfile } = await supabase
     .from('user_profiles')
-    .select('plan, leads_used_this_month, slack_webhook_url, auto_send_enabled, allow_lead_overage')
+    .select('plan, leads_used_this_month, slack_webhook_url, allow_lead_overage')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -45,7 +45,6 @@ export default async function DashboardPage() {
   const plan             = (extProfile as { plan?: string } | null)?.plan ?? 'free'
   const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
-  const autoSendEnabled  = (extProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? false
   const allowLeadOverage = (extProfile as { allow_lead_overage?: boolean } | null)?.allow_lead_overage ?? false
 
   // Initial leads (server-rendered)
@@ -55,6 +54,8 @@ export default async function DashboardPage() {
       id,
       client_id,
       origin,
+      source_kind,
+      source_record_id,
       target_company,
       company_domain,
       relevance_score,
@@ -66,16 +67,10 @@ export default async function DashboardPage() {
       sent_at,
       replied_at,
       booked_at,
-      signals (
-        signal_type,
-        headline,
-        summary,
-        funding_amount,
-        source_url,
-        source_name,
-        published_at,
-        company_domain
-      )
+      contact_email,
+      contact_name,
+      contact_title,
+      feed_snapshot
     `)
     .eq('user_id', user.id)
     .match(activeClientId ? { client_id: activeClientId } : {})
@@ -105,7 +100,6 @@ export default async function DashboardPage() {
         plan: plan,
         leads_used_this_month: leadsUsed,
         slack_webhook_url: slackWebhookUrl,
-        auto_send_enabled: autoSendEnabled,
         allow_lead_overage: allowLeadOverage,
         active_client_id: activeClientId,
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,

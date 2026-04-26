@@ -8,6 +8,7 @@ import { recordLeadOverage } from '@/lib/dodo'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { sendSlackAlert } from '@/lib/slack'
 import { sendFirstLeadEmail } from '@/lib/resend'
+import { buildLiveLeadFeedSnapshot } from '@/lib/lead-sources'
 import { buildFeedbackMaps, sortQueueRowsByFeedback, getFeedbackWindowStart } from '@/lib/ranking-feedback'
 
 export const dynamic = 'force-dynamic'
@@ -73,7 +74,7 @@ async function runDelivery(request: Request) {
         queue_status,
         next_delivery_at,
         attempt_count,
-        signals(signal_type, headline, summary)
+        signals(signal_type, headline, summary, funding_amount, source_url, source_name, published_at, company_domain)
       `)
       .eq('queue_status', 'pending')
       .lte('next_delivery_at', nowIso)
@@ -259,6 +260,9 @@ async function runDelivery(request: Request) {
           user_id: userId,
           client_id: row.client_id,
           signal_id: row.signal_id,
+          origin: 'live',
+          source_kind: 'live_signal',
+          source_record_id: row.signal_id,
           target_company: row.target_company,
           company_domain: row.company_domain ?? null,
           relevance_score: row.relevance_score,
@@ -267,6 +271,16 @@ async function runDelivery(request: Request) {
           is_unlocked: isUnlockedLead,
           unlocked_at: isUnlockedLead ? nowIso : null,
           dedupe_key: row.dedupe_key,
+          feed_snapshot: buildLiveLeadFeedSnapshot({
+            signal_type: signalType,
+            headline: signalHeadline ?? `${row.target_company} matched your live signal feed`,
+            summary: signalSummary ?? row.relevance_reason,
+            funding_amount: (signalRow as { funding_amount?: string | null } | null)?.funding_amount ?? null,
+            source_url: (signalRow as { source_url?: string | null } | null)?.source_url ?? null,
+            source_name: (signalRow as { source_name?: string | null } | null)?.source_name ?? 'live_signal',
+            published_at: (signalRow as { published_at?: string | null } | null)?.published_at ?? nowIso,
+            company_domain: (signalRow as { company_domain?: string | null } | null)?.company_domain ?? row.company_domain ?? null,
+          }),
           match_debug: row.match_debug,
         }).select('id').single()
 
