@@ -12,6 +12,9 @@ interface PromptOptions {
   responseFormat?: {
     type: 'text' | 'json_object'
   }
+  thinking?: {
+    type: 'enabled' | 'disabled'
+  }
 }
 
 interface DeepSeekResponse {
@@ -29,6 +32,7 @@ export async function completePrompt({
   timeoutMs,
   temperature = 0.2,
   responseFormat,
+  thinking,
 }: PromptOptions): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY
   if (!apiKey) {
@@ -52,6 +56,7 @@ export async function completePrompt({
       max_tokens: maxTokens,
       temperature,
       ...(responseFormat ? { response_format: responseFormat } : {}),
+      ...(thinking ? { thinking } : {}),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   })
@@ -523,46 +528,60 @@ Return ONLY valid JSON, no markdown.`,
       timeoutMs: 35_000,
       temperature: 0.3,
       responseFormat: { type: 'json_object' },
+      thinking: { type: 'disabled' },
     })
 
     let parsed: unknown | null = null
+    let lastError: unknown = null
+    let lastRawText = ''
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const text = await requestLeadPayload()
-      parsed = parseJsonValue(text)
-      if (parsed) break
-    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const text = await requestLeadPayload()
+        lastRawText = text
+        parsed = parseJsonValue(text)
+        if (!parsed) continue
 
-    if (!parsed) {
-      return {
-        ok: false,
-        failure_kind: 'generation_error',
-        rejection_reason: 'Could not generate lead suggestions for this prompt right now.',
-        leads: [],
+        const candidateRawLeads = Array.isArray(parsed)
+          ? parsed
+          : (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            !Array.isArray(parsed) &&
+            Array.isArray((parsed as Record<string, unknown>).leads)
+          )
+              ? (parsed as Record<string, unknown>).leads as unknown[]
+              : []
+
+        const candidateLeads = candidateRawLeads
+          .map(item => normalizeExploreLeadSuggestion(item))
+          .filter((item): item is ExploreLeadSuggestion => item !== null)
+          .slice(0, 12)
+
+        if (candidateLeads.length > 0) {
+          return {
+            ok: true,
+            failure_kind: null,
+            rejection_reason: null,
+            leads: candidateLeads,
+          }
+        }
+      } catch (error) {
+        lastError = error
       }
     }
 
-    const rawLeads = Array.isArray(parsed)
-      ? parsed
-      : (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        !Array.isArray(parsed) &&
-        Array.isArray((parsed as Record<string, unknown>).leads)
-      )
-          ? (parsed as Record<string, unknown>).leads as unknown[]
-          : []
-
-    const leads = rawLeads
-      .map(item => normalizeExploreLeadSuggestion(item))
-      .filter((item): item is ExploreLeadSuggestion => item !== null)
-      .slice(0, 12)
+    if (lastError) {
+      console.error('[explore] generation error:', lastError)
+    } else if (lastRawText) {
+      console.error('[explore] unreadable generation payload:', lastRawText.slice(0, 1000))
+    }
 
     return {
-      ok: true,
-      failure_kind: null,
-      rejection_reason: null,
-      leads,
+      ok: false,
+      failure_kind: 'generation_error',
+      rejection_reason: 'Could not generate lead suggestions for this prompt right now.',
+      leads: [],
     }
   } catch {
     return {
