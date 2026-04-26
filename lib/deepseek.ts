@@ -9,6 +9,9 @@ interface PromptOptions {
   maxTokens: number
   timeoutMs: number
   temperature?: number
+  responseFormat?: {
+    type: 'text' | 'json_object'
+  }
 }
 
 interface DeepSeekResponse {
@@ -25,6 +28,7 @@ export async function completePrompt({
   maxTokens,
   timeoutMs,
   temperature = 0.2,
+  responseFormat,
 }: PromptOptions): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY
   if (!apiKey) {
@@ -47,6 +51,7 @@ export async function completePrompt({
       messages,
       max_tokens: maxTokens,
       temperature,
+      ...(responseFormat ? { response_format: responseFormat } : {}),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   })
@@ -472,7 +477,33 @@ export async function generateExploreLeads(params: {
   }
 
   try {
-    const text = await completePrompt({
+    const buildPrompt = () => `Targeting prompt: ${prompt}
+Seller profile description: ${sellerProfileDescription || 'None provided'}
+${useWorkspaceIcp && workspaceIcpContext ? `Workspace ICP context: ${workspaceIcpContext}` : 'Workspace ICP context: none'}
+
+Return a JSON object in exactly this shape:
+{
+  "leads": [
+    {
+      "company_name": "Example Company",
+      "company_domain": "example.com",
+      "signal_type": "funding",
+      "headline": "Example Company is a strong target for this search",
+      "summary": "One concise sentence explaining why this company belongs in the result set.",
+      "relevance_reason": "One concise sentence about fit to the prompt.",
+      "relevance_score": 8
+    }
+  ]
+}
+
+Requirements:
+- Include 8 to 12 leads.
+- Use only these signal types: "funding", "acquisition", "expansion", "regulation", "hiring".
+- The headline and summary should read like a lead rationale, not a news citation.
+- Use null for company_domain if uncertain.
+- Do not include any keys other than "leads" and the lead fields shown above.`
+
+    const requestLeadPayload = async () => completePrompt({
       system: `You handle prompted account discovery for a B2B outbound product.
 Generate plausible target accounts from the user's targeting brief.
 
@@ -487,29 +518,21 @@ Rules:
 - If a company domain is uncertain, return null.
 
 Return ONLY valid JSON, no markdown.`,
-      prompt: `Targeting prompt: ${prompt}
-Seller profile description: ${sellerProfileDescription || 'None provided'}
-${useWorkspaceIcp && workspaceIcpContext ? `Workspace ICP context: ${workspaceIcpContext}` : 'Workspace ICP context: none'}
-
-Return a JSON object with:
-- leads: array
-
-Leads should contain 8 to 12 items and each item must have:
-- company_name: string
-- company_domain: string | null
-- signal_type: "funding" | "acquisition" | "expansion" | "regulation" | "hiring"
-- headline: string
-- summary: string
-- relevance_reason: string
-- relevance_score: integer 1-10
-
-The headline and summary should read like a lead rationale, not a news citation.`,
+      prompt: buildPrompt(),
       maxTokens: 1400,
       timeoutMs: 35_000,
       temperature: 0.3,
+      responseFormat: { type: 'json_object' },
     })
 
-    const parsed = parseJsonValue(text)
+    let parsed: unknown | null = null
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const text = await requestLeadPayload()
+      parsed = parseJsonValue(text)
+      if (parsed) break
+    }
+
     if (!parsed) {
       return {
         ok: false,
