@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { generateExploreLeads } from '@/lib/deepseek'
 import { shouldUseWorkspaceIcp } from '@/lib/explore'
@@ -9,6 +9,7 @@ const MAX_RESULTS = 12
 export async function POST(request: Request) {
   const startedAt = Date.now()
   const supabase = await createClient()
+  const service = await createServiceClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -84,6 +85,9 @@ export async function POST(request: Request) {
   const now = new Date().toISOString()
   let inserted = 0
   let skipped = 0
+  let duplicates = 0
+  let signalErrors = 0
+  let leadErrors = 0
 
   for (const [index, suggestion] of suggestions.slice(0, MAX_RESULTS).entries()) {
     const sourceUrl = buildExploreSourceUrl({
@@ -92,7 +96,7 @@ export async function POST(request: Request) {
       index,
     })
 
-    const { data: signal, error: signalError } = await supabase
+    const { data: signal, error: signalError } = await service
       .from('signals')
       .upsert({
         company_name: suggestion.company_name,
@@ -108,11 +112,13 @@ export async function POST(request: Request) {
       .single()
 
     if (signalError || !signal) {
+      signalErrors++
+      if (signalError) console.error('[explore] signal upsert error:', signalError.message)
       skipped++
       continue
     }
 
-    const { data: existingLead } = await supabase
+    const { data: existingLead } = await service
       .from('leads')
       .select('id')
       .eq('user_id', user.id)
@@ -121,11 +127,12 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (existingLead) {
+      duplicates++
       skipped++
       continue
     }
 
-    const { error: leadError } = await supabase
+    const { error: leadError } = await service
       .from('leads')
       .insert({
         user_id: user.id,
@@ -150,6 +157,8 @@ export async function POST(request: Request) {
       })
 
     if (leadError) {
+      leadErrors++
+      console.error('[explore] lead insert error:', leadError.message)
       skipped++
       continue
     }
@@ -162,10 +171,15 @@ export async function POST(request: Request) {
     generated: suggestions.length,
     inserted,
     skipped,
+    duplicates,
+    signal_errors: signalErrors,
+    lead_errors: leadErrors,
     duration_ms: Date.now() - startedAt,
     message: inserted > 0
       ? `Added ${inserted} explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : ' directly from the prompt.'}`
-      : 'No new explore leads were added.',
+      : duplicates > 0 && signalErrors === 0 && leadErrors === 0
+          ? `Found ${duplicates} duplicate explore ${duplicates === 1 ? 'lead' : 'leads'} and added no new ones.`
+          : 'No new explore leads were added due to save errors.',
   })
 }
 
