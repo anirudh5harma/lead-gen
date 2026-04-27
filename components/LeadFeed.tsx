@@ -352,6 +352,7 @@ export default function LeadFeed({
 
   const selectedCount = selectedLeadIds.length
   const allVisibleSelected = filteredLeads.length > 0 && filteredLeads.every(lead => selectedLeadIds.includes(lead.id))
+  const visibleLeadIds = useMemo(() => filteredLeads.map(lead => lead.id), [filteredLeads])
 
   const effectiveSelectedId = useMemo(() => {
     if (selectedId && filteredLeads.some(l => l.id === selectedId)) return selectedId
@@ -377,8 +378,14 @@ export default function LeadFeed({
   const handleExport = useCallback(async (mode: 'csv' | 'crm', leadIds?: string[]) => {
     setExportOpen(false)
 
+    const exportLeadIds = leadIds ?? visibleLeadIds
+    if (exportLeadIds.length === 0) {
+      setToast('No leads in the current view to export.')
+      return
+    }
+
     const params = new URLSearchParams({ feed: exportFeed })
-    for (const leadId of (leadIds ?? [])) {
+    for (const leadId of exportLeadIds) {
       params.append('lead_id', leadId)
     }
 
@@ -389,10 +396,10 @@ export default function LeadFeed({
         leadIds?.length
           ? `Exporting ${leadIds.length} selected ${leadIds.length === 1 ? 'lead' : 'leads'} to CSV`
           : exportFeed === 'explore'
-            ? 'Explore CSV export started'
+            ? `Exporting ${exportLeadIds.length} visible explore ${exportLeadIds.length === 1 ? 'lead' : 'leads'} to CSV`
             : exportFeed === 'crm_import'
-              ? 'CRM feed CSV export started'
-              : 'Signal CSV export started',
+              ? `Exporting ${exportLeadIds.length} visible CRM ${exportLeadIds.length === 1 ? 'lead' : 'leads'} to CSV`
+              : `Exporting ${exportLeadIds.length} visible signal ${exportLeadIds.length === 1 ? 'lead' : 'leads'} to CSV`,
       )
       window.setTimeout(() => setExporting(null), 500)
       return
@@ -432,7 +439,7 @@ export default function LeadFeed({
     } finally {
       setExporting(null)
     }
-  }, [exportFeed, onOpenCrmTab])
+  }, [exportFeed, onOpenCrmTab, visibleLeadIds])
 
   const runBulkAction = useCallback(async (action: 'dismiss' | 'delete') => {
     if (selectedLeadIds.length === 0) return

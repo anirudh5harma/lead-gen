@@ -72,6 +72,7 @@ export async function POST(request: Request) {
     recordCount: records.length,
   })
   let imported = 0
+  let updated = 0
   let skipped = 0
   let duplicates = 0
   let sourceErrors = 0
@@ -128,12 +129,6 @@ export async function POST(request: Request) {
       .eq('source_record_id', savedRecord.id)
       .maybeSingle()
 
-    if (existingLead) {
-      duplicates++
-      skipped++
-      continue
-    }
-
     const signal = buildCrmImportSignal({ provider, record })
     const leadMatch = buildCrmImportLeadReason({ provider, record })
     const snapshot = buildCrmLeadFeedSnapshot({
@@ -147,41 +142,64 @@ export async function POST(request: Request) {
       publishedAt: now,
     })
 
+    const leadPayload = {
+      client_id: setting.client_id,
+      feed_session_id: batchId,
+      feed_session_label: sessionLabel,
+      feed_session_started_at: now,
+      target_company: record.companyName,
+      company_domain: record.companyDomain,
+      relevance_score: leadMatch.score,
+      relevance_reason: leadMatch.reason,
+      is_unlocked: true,
+      unlocked_at: now,
+      contact_email: record.contactEmail,
+      contact_name: record.contactName,
+      contact_title: record.contactTitle,
+      feed_snapshot: snapshot,
+      match_debug: {
+        matched_via: 'crm_import',
+        provider,
+        external_id: record.externalId,
+        crm_status: record.crmStatus,
+        owner_name: record.ownerName,
+        lead_source: record.leadSource,
+        import_key: key,
+        batch_id: batchId,
+        source_kind: 'crm_record',
+        raw: record.raw,
+      },
+    }
+
+    if (existingLead) {
+      const { error: updateLeadError } = await supabase
+        .from('leads')
+        .update(leadPayload)
+        .eq('id', existingLead.id)
+        .eq('user_id', setting.user_id)
+
+      if (updateLeadError) {
+        leadErrors++
+        console.error('[crm-import] lead update error:', updateLeadError.message)
+        skipped++
+        continue
+      }
+
+      duplicates++
+      updated++
+      continue
+    }
+
     const { error: leadError } = await supabase
       .from('leads')
       .insert({
         user_id: setting.user_id,
-        client_id: setting.client_id,
         signal_id: null,
         origin: 'crm_import',
-        feed_session_id: batchId,
-        feed_session_label: sessionLabel,
-        feed_session_started_at: now,
         source_kind: 'crm_record',
         source_record_id: savedRecord.id,
-        target_company: record.companyName,
-        company_domain: record.companyDomain,
-        relevance_score: leadMatch.score,
-        relevance_reason: leadMatch.reason,
         status: 'new',
-        is_unlocked: true,
-        unlocked_at: now,
-        contact_email: record.contactEmail,
-        contact_name: record.contactName,
-        contact_title: record.contactTitle,
-        feed_snapshot: snapshot,
-        match_debug: {
-          matched_via: 'crm_import',
-          provider,
-          external_id: record.externalId,
-          crm_status: record.crmStatus,
-          owner_name: record.ownerName,
-          lead_source: record.leadSource,
-          import_key: key,
-          batch_id: batchId,
-          source_kind: 'crm_record',
-          raw: record.raw,
-        },
+        ...leadPayload,
       })
 
     if (leadError) {
@@ -198,7 +216,7 @@ export async function POST(request: Request) {
     await supabase
       .from('crm_import_batches')
       .update({
-        imported_count: imported,
+        imported_count: imported + updated,
         skipped_count: skipped,
       })
       .eq('id', batchId)
@@ -208,6 +226,7 @@ export async function POST(request: Request) {
     ok: true,
     provider,
     imported,
+    updated,
     skipped,
     duplicates,
     source_errors: sourceErrors,

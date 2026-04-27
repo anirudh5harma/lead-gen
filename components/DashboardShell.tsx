@@ -1257,6 +1257,14 @@ function CrmSyncPanel() {
   const [importEnabled, setImportEnabled] = useState(false)
   const [importUrl, setImportUrl] = useState('')
   const [copiedImportUrl, setCopiedImportUrl] = useState(false)
+  const [isEditing, setIsEditing] = useState(true)
+  const [savedConfig, setSavedConfig] = useState<{
+    provider: string
+    webhookUrl: string
+    enabled: boolean
+    importEnabled: boolean
+    importUrl: string
+  } | null>(null)
   const [providers, setProviders] = useState<Array<{
     id: string
     label: string
@@ -1290,11 +1298,20 @@ function CrmSyncPanel() {
         }>
       }>)
       .then(data => {
-        setProvider(data.provider ?? 'webhook')
-        setWebhookUrl(data.webhook_url ?? '')
-        setEnabled(Boolean(data.enabled))
-        setImportEnabled(Boolean(data.import_enabled))
-        setImportUrl(data.import_url ?? '')
+        const nextConfig = {
+          provider: data.provider ?? 'webhook',
+          webhookUrl: data.webhook_url ?? '',
+          enabled: Boolean(data.enabled),
+          importEnabled: Boolean(data.import_enabled),
+          importUrl: data.import_url ?? '',
+        }
+        setProvider(nextConfig.provider)
+        setWebhookUrl(nextConfig.webhookUrl)
+        setEnabled(nextConfig.enabled)
+        setImportEnabled(nextConfig.importEnabled)
+        setImportUrl(nextConfig.importUrl)
+        setSavedConfig(nextConfig)
+        setIsEditing(!hasCrmConnection(nextConfig))
         setProviders(data.providers ?? [])
         setLoaded(true)
       })
@@ -1328,13 +1345,41 @@ function CrmSyncPanel() {
           import_enabled: importEnabled,
         }),
       })
-      const data = await res.json() as { error?: string; import_url?: string }
-      if (data.import_url) setImportUrl(data.import_url)
-      setMessage(data.error ?? 'Saved')
+      const data = await res.json() as {
+        error?: string
+        provider?: string
+        webhook_url?: string
+        enabled?: boolean
+        import_enabled?: boolean
+        import_url?: string
+      }
+      if (!res.ok || data.error) {
+        setMessage(data.error ?? 'Failed to save CRM sync')
+        return
+      }
+      const nextConfig = {
+        provider: data.provider ?? provider,
+        webhookUrl: data.webhook_url ?? webhookUrl,
+        enabled: typeof data.enabled === 'boolean' ? data.enabled : enabled,
+        importEnabled: typeof data.import_enabled === 'boolean' ? data.import_enabled : importEnabled,
+        importUrl: data.import_url ?? importUrl,
+      }
+      setProvider(nextConfig.provider)
+      setWebhookUrl(nextConfig.webhookUrl)
+      setEnabled(nextConfig.enabled)
+      setImportEnabled(nextConfig.importEnabled)
+      setImportUrl(nextConfig.importUrl)
+      setSavedConfig(nextConfig)
+      setMessage('CRM connection saved')
+      if (hasCrmConnection(nextConfig)) setIsEditing(false)
     } finally {
       setSaving(false)
     }
   }
+
+  const isConnected = savedConfig ? hasCrmConnection(savedConfig) : false
+  const outboundDestination = savedConfig?.webhookUrl ? summarizeUrl(savedConfig.webhookUrl) : 'Not configured'
+  const providerLabel = selectedProvider?.label ?? provider
 
   return (
     <div className="card divide-y divide-[var(--color-line-1)]">
@@ -1342,64 +1387,150 @@ function CrmSyncPanel() {
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
           <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-            Export leads and ingest CRM-held targets into this outreach feed.
+            Two separate workflows: export Bombsell leads to your CRM, or import CRM-held targets into the CRM Outreach Feed.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusPill active={enabled} activeLabel="Outbound on" idleLabel="Outbound off" />
           <StatusPill active={importEnabled} activeLabel="Imports on" idleLabel="Imports off" />
+          {isConnected && !isEditing && (
+            <button
+              onClick={() => {
+                setMessage(null)
+                setIsEditing(true)
+              }}
+              className="rounded-full btn-primary px-3 py-1.5 text-[11px] font-medium"
+            >
+              Edit
+            </button>
+          )}
         </div>
       </div>
       <div className="px-5 py-3 space-y-3">
-        <div className="grid gap-2 lg:grid-cols-[150px_minmax(220px,1fr)_minmax(220px,1fr)_auto]">
-          <select
-            aria-label="CRM provider"
-            value={provider}
-            onChange={e => setProvider(e.target.value)}
-            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
-          >
-            {providers.map(item => (
-              <option key={item.id} value={item.id}>{item.label}</option>
-            ))}
-          </select>
-          <input
-            type="url"
-            value={webhookUrl}
-            onChange={e => setWebhookUrl(e.target.value)}
-            placeholder="Outbound CRM webhook URL"
-            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
-          />
-          <div className="flex h-9 min-w-0 rounded-lg border border-[var(--color-line-2)] bg-white">
-            <input
-              readOnly
-              value={importUrl}
-              placeholder="Import URL appears after save"
-              className="min-w-0 flex-1 rounded-l-lg px-3 text-[12px] text-[var(--color-text-2)]"
+        {!isEditing && isConnected ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <CrmWorkflowSummary
+              eyebrow="Export workflow"
+              title="Bombsell to CRM"
+              status={savedConfig?.enabled ? 'Connected' : 'Off'}
+              body={`Push selected or visible feed leads to ${providerLabel} via ${outboundDestination}. Export actions live in Signal, Explore, and CRM feeds.`}
             />
-            <button
-              onClick={copyImportUrl}
-              disabled={!importUrl}
-              className="shrink-0 border-l border-[var(--color-line-2)] px-3 text-[11px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
-            >
-              {copiedImportUrl ? 'Copied' : 'Copy'}
-            </button>
+            <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import workflow</p>
+                  <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">CRM to Bombsell</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
+                    Send CRM records to this URL. Each batch appears as a session in the CRM Outreach Feed.
+                  </p>
+                </div>
+                <StatusPill active={Boolean(savedConfig?.importEnabled)} activeLabel="On" idleLabel="Off" />
+              </div>
+              <div className="mt-3 flex h-9 min-w-0 rounded-lg border border-[var(--color-line-2)] bg-[var(--color-ink-2)]">
+                <input
+                  readOnly
+                  value={savedConfig?.importUrl ?? ''}
+                  className="min-w-0 flex-1 rounded-l-lg bg-transparent px-3 text-[12px] text-[var(--color-text-2)]"
+                />
+                <button
+                  onClick={copyImportUrl}
+                  disabled={!importUrl}
+                  className="shrink-0 border-l border-[var(--color-line-2)] bg-white px-3 text-[11px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
+                >
+                  {copiedImportUrl ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
           </div>
-          <button onClick={save} disabled={!loaded || saving} className="h-9 whitespace-nowrap rounded-full btn-primary px-3.5 text-xs disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        ) : (
+          <>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Export workflow</p>
+                <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Bombsell to CRM</h3>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
+                  Used by Export to CRM buttons in each feed. Bombsell POSTs the exact selected or visible working set to your endpoint.
+                </p>
+                <input
+                  type="url"
+                  value={webhookUrl}
+                  onChange={e => setWebhookUrl(e.target.value)}
+                  placeholder="Outbound CRM webhook URL"
+                  className="mt-3 w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+                />
+                <label className="mt-3 flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+                  <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+                  Enable exports to CRM
+                </label>
+              </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
-              <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
-              Push events outbound
-            </label>
-            <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
-              <input type="checkbox" checked={importEnabled} onChange={e => setImportEnabled(e.target.checked)} />
-              Accept CRM imports
-            </label>
-          </div>
+              <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import workflow</p>
+                <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">CRM to Bombsell</h3>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
+                  Use this URL in your CRM automation to create or refresh records in the CRM Outreach Feed, grouped by import session.
+                </p>
+                <div className="mt-3 flex h-9 min-w-0 rounded-lg border border-[var(--color-line-2)] bg-[var(--color-ink-2)]">
+                  <input
+                    readOnly
+                    value={importUrl}
+                    placeholder="Import URL appears after save"
+                    className="min-w-0 flex-1 rounded-l-lg bg-transparent px-3 text-[12px] text-[var(--color-text-2)]"
+                  />
+                  <button
+                    onClick={copyImportUrl}
+                    disabled={!importUrl}
+                    className="shrink-0 border-l border-[var(--color-line-2)] bg-white px-3 text-[11px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
+                  >
+                    {copiedImportUrl ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <label className="mt-3 flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+                  <input type="checkbox" checked={importEnabled} onChange={e => setImportEnabled(e.target.checked)} />
+                  Enable CRM imports
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+                <span>Provider</span>
+                <select
+                  aria-label="CRM provider"
+                  value={provider}
+                  onChange={e => setProvider(e.target.value)}
+                  className="h-9 min-w-36 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] text-[var(--color-text-1)]"
+                >
+                  {providers.map(item => (
+                    <option key={item.id} value={item.id}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button onClick={save} disabled={!loaded || saving} className="h-9 whitespace-nowrap rounded-full btn-primary px-3.5 text-xs disabled:opacity-50">
+                {saving ? 'Saving…' : isConnected ? 'Update connection' : 'Save connection'}
+              </button>
+              {isConnected && (
+                <button
+                  onClick={() => {
+                    if (!savedConfig) return
+                    setProvider(savedConfig.provider)
+                    setWebhookUrl(savedConfig.webhookUrl)
+                    setEnabled(savedConfig.enabled)
+                    setImportEnabled(savedConfig.importEnabled)
+                    setImportUrl(savedConfig.importUrl)
+                    setMessage(null)
+                    setIsEditing(false)
+                  }}
+                  className="h-9 rounded-full border border-[var(--color-line-2)] bg-white px-3.5 text-xs font-medium text-[var(--color-text-2)]"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <button
             onClick={() => setShowMapping(value => !value)}
             className="text-[11px] font-medium text-[var(--color-text-3)] hover:text-[var(--color-text-1)]"
@@ -1445,6 +1576,51 @@ function CrmSyncPanel() {
         )}
         {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
       </div>
+    </div>
+  )
+}
+
+function hasCrmConnection(config: {
+  webhookUrl: string
+  enabled: boolean
+  importEnabled: boolean
+  importUrl: string
+}) {
+  return (config.enabled && Boolean(config.webhookUrl)) || (config.importEnabled && Boolean(config.importUrl))
+}
+
+function summarizeUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    return url.hostname
+  } catch {
+    return value || 'Not configured'
+  }
+}
+
+function CrmWorkflowSummary({
+  eyebrow,
+  title,
+  status,
+  body,
+}: {
+  eyebrow: string
+  title: string
+  status: string
+  body: string
+}) {
+  return (
+    <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{eyebrow}</p>
+          <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">{title}</h3>
+        </div>
+        <span className="rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[10px] font-medium text-[var(--color-text-3)]">
+          {status}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-3)]">{body}</p>
     </div>
   )
 }
