@@ -101,7 +101,7 @@ async function runDelivery(request: Request) {
     const [userSettingsRows, recentUnlockedRows, recentDeliveredRows, feedbackLeadRows, existingLeadRows] = await Promise.all([
       supabase
         .from('user_profiles')
-        .select('user_id, plan, slack_webhook_url, lead_credit_balance')
+        .select('user_id, plan, slack_webhook_url, slack_min_score, lead_credit_balance')
         .in('user_id', userIds),
       supabase
         .from('leads')
@@ -141,12 +141,14 @@ async function runDelivery(request: Request) {
     const userSettingsMap = new Map<string, {
       plan: PlanTier
       slackWebhookUrl: string | null
+      slackMinScore: number
       creditBalance: number
     }>()
     for (const row of (userSettingsRows.data ?? [])) {
       userSettingsMap.set(row.user_id, {
         plan: normalizePlanTier(row.plan),
         slackWebhookUrl: row.slack_webhook_url ?? null,
+        slackMinScore: normalizeSlackMinScore(row.slack_min_score),
         creditBalance: row.lead_credit_balance ?? 0,
       })
     }
@@ -185,6 +187,7 @@ async function runDelivery(request: Request) {
       const settings = userSettingsMap.get(userId) ?? {
         plan: 'free' as PlanTier,
         slackWebhookUrl: null,
+        slackMinScore: 7,
         creditBalance: 0,
       }
 
@@ -350,7 +353,7 @@ async function runDelivery(request: Request) {
           },
         }).catch(() => {})
 
-        if (planLimits.slack && settings.slackWebhookUrl && row.relevance_score >= 7) {
+        if (planLimits.slack && settings.slackWebhookUrl && row.relevance_score >= settings.slackMinScore) {
           sendSlackAlert(
             settings.slackWebhookUrl,
             row.target_company,
@@ -384,6 +387,16 @@ async function runDelivery(request: Request) {
     console.error('[deliver-leads]', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+function normalizeSlackMinScore(value: unknown): number {
+  const score = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : 7
+  if (!Number.isFinite(score)) return 7
+  return Math.max(1, Math.min(10, Math.round(score)))
 }
 
 async function rescheduleQueueRow(

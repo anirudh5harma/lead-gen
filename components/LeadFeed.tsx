@@ -534,7 +534,7 @@ export default function LeadFeed({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
         {hideSignalTabs ? (
           <div />
         ) : (
@@ -627,7 +627,7 @@ export default function LeadFeed({
       </div>
 
       {selectedCount > 0 && (
-        <div className="mx-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)] px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)] px-4 py-3">
           <p className="text-[12px] text-[var(--color-text-1)]">
             {selectedCount} {selectedCount === 1 ? 'lead selected' : 'leads selected'}
           </p>
@@ -671,7 +671,7 @@ export default function LeadFeed({
       )}
 
       {hasSessionHistory ? (
-        <div className="grid gap-4 px-5 pb-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="grid gap-4 pb-5 lg:grid-cols-[220px_minmax(0,1fr)]">
           <SessionHistoryRail
             sessions={sessionOptions}
             activeSessionId={effectiveSessionFilter}
@@ -681,7 +681,7 @@ export default function LeadFeed({
           <div className="min-w-0">{leadList}</div>
         </div>
       ) : (
-        <div className="px-5 pb-5">{leadList}</div>
+        <div className="pb-5">{leadList}</div>
       )}
 
       {toast && (

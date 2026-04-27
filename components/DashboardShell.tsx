@@ -27,6 +27,7 @@ interface UserProfile {
   leads_used_this_month?: number
   lead_credit_balance?: number
   slack_webhook_url?: string | null
+  slack_min_score?: number | null
   active_client_id?: string | null
 }
 
@@ -238,7 +239,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               />
             )}
             {activeView === 'watchlist' && (
-              <div className="max-w-3xl space-y-4">
+              <div className="space-y-4">
                 <p className="text-[12.5px] text-[var(--color-text-3)]">
                   Any signal from a watched company bypasses the relevance filter.
                 </p>
@@ -386,6 +387,7 @@ function SettingsPanel({
   }, [autoSend, autoSendAccountId, autoSendFeeds, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge])
 
   const [slackUrl, setSlackUrl] = useState(profile.slack_webhook_url ?? '')
+  const [slackMinScore, setSlackMinScore] = useState(profile.slack_min_score ?? 7)
   const [slackSaving, setSlackSaving] = useState(false)
   const [slackMsg, setSlackMsg] = useState<string | null>(null)
   const [creditCheckoutAmount, setCreditCheckoutAmount] = useState<number | null>(null)
@@ -398,7 +400,10 @@ function SettingsPanel({
       const res = await fetch('/api/settings/slack-webhook', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slack_webhook_url: slackUrl || null }),
+        body: JSON.stringify({
+          slack_webhook_url: slackUrl || null,
+          slack_min_score: slackMinScore,
+        }),
       })
       const data = await res.json() as { error?: string }
       setSlackMsg(data.error ? `Error: ${data.error}` : 'Saved')
@@ -407,7 +412,7 @@ function SettingsPanel({
     } finally {
       setSlackSaving(false)
     }
-  }, [slackUrl])
+  }, [slackMinScore, slackUrl])
 
   const startCreditCheckout = useCallback(async (amountDollars: number) => {
     setCreditCheckoutAmount(amountDollars)
@@ -690,28 +695,40 @@ function SettingsPanel({
         </div>
       </div>
 
-      <SequenceTemplatesPanel />
-
-      {/* Blocked companies */}
-      <BlockedCompaniesPanel />
-
       {/* Slack (Pro only) */}
       {plan === 'pro' && (
         <div className="card divide-y divide-[var(--color-line-1)]">
           <div className="px-5 py-4">
             <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Slack Alerts</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Get notified in Slack when a high-relevance signal (score 7+/10) is detected.
+              Get notified in Slack when a signal reaches your selected relevance score.
             </p>
           </div>
           <div className="px-5 py-4 space-y-3">
-            <input
-              type="url"
-              placeholder="https://hooks.slack.com/services/..."
-              value={slackUrl}
-              onChange={e => setSlackUrl(e.target.value)}
-              className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
-            />
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_150px]">
+              <input
+                type="url"
+                placeholder="https://hooks.slack.com/services/..."
+                value={slackUrl}
+                onChange={e => setSlackUrl(e.target.value)}
+                className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] transition-colors"
+              />
+              <label className="space-y-1">
+                <span className="sr-only">Slack alert threshold</span>
+                <select
+                  value={slackMinScore}
+                  onChange={e => setSlackMinScore(Number(e.target.value))}
+                  className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+                >
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map(score => (
+                    <option key={score} value={score}>Score {score}+</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="text-[11px] text-[var(--color-text-4)]">
+              Slack alerts will send for live signal-feed leads with relevance score {slackMinScore}+.
+            </p>
             <div className="flex items-center gap-3">
               <button
                 onClick={saveSlack}
@@ -729,6 +746,11 @@ function SettingsPanel({
           </div>
         </div>
       )}
+
+      <SequenceTemplatesPanel />
+
+      {/* Blocked companies */}
+      <BlockedCompaniesPanel />
     </div>
   )
 }
@@ -1247,6 +1269,7 @@ function CrmSyncPanel() {
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [showMapping, setShowMapping] = useState(false)
 
   useEffect(() => {
     fetch('/api/settings/crm-sync')
@@ -1315,22 +1338,22 @@ function CrmSyncPanel() {
 
   return (
     <div className="card divide-y divide-[var(--color-line-1)]">
-      <div className="px-5 py-4">
-        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
-        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          CRM sync is available on every plan. Connect one outbound destination for feed exports and event sync, then ingest CRM-held targets into a dedicated outreach feed.
-        </p>
-      </div>
-      <div className="px-5 py-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
+          <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+            Export leads and ingest CRM-held targets into this outreach feed.
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
-          <StatusPill active={enabled} activeLabel="Outbound connected" idleLabel="Outbound off" />
+          <StatusPill active={enabled} activeLabel="Outbound on" idleLabel="Outbound off" />
           <StatusPill active={importEnabled} activeLabel="Imports on" idleLabel="Imports off" />
         </div>
-        <label className="block space-y-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">
-            Provider
-          </span>
+      </div>
+      <div className="px-5 py-3 space-y-3">
+        <div className="grid gap-2 lg:grid-cols-[150px_minmax(220px,1fr)_minmax(220px,1fr)_auto]">
           <select
+            aria-label="CRM provider"
             value={provider}
             onChange={e => setProvider(e.target.value)}
             className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
@@ -1339,46 +1362,53 @@ function CrmSyncPanel() {
               <option key={item.id} value={item.id}>{item.label}</option>
             ))}
           </select>
-        </label>
-        <input
-          type="url"
-          value={webhookUrl}
-          onChange={e => setWebhookUrl(e.target.value)}
-          placeholder="https://your-outbound-crm-sync-endpoint.example.com"
-          className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
-        />
-        <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
-          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
-          Push lead created, sent, replied, and booked events outbound
-        </label>
-        <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
-          <input type="checkbox" checked={importEnabled} onChange={e => setImportEnabled(e.target.checked)} />
-          Accept CRM imports into the CRM outreach feed
-        </label>
-        <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3 space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import URL</p>
+          <input
+            type="url"
+            value={webhookUrl}
+            onChange={e => setWebhookUrl(e.target.value)}
+            placeholder="Outbound CRM webhook URL"
+            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px]"
+          />
+          <div className="flex h-9 min-w-0 rounded-lg border border-[var(--color-line-2)] bg-white">
+            <input
+              readOnly
+              value={importUrl}
+              placeholder="Import URL appears after save"
+              className="min-w-0 flex-1 rounded-l-lg px-3 text-[12px] text-[var(--color-text-2)]"
+            />
             <button
               onClick={copyImportUrl}
               disabled={!importUrl}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-2)] bg-white px-2.5 py-1 text-[10px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
+              className="shrink-0 border-l border-[var(--color-line-2)] px-3 text-[11px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
             >
               {copiedImportUrl ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <input
-            readOnly
-            value={importUrl}
-            className="w-full h-9 px-3 rounded-lg bg-white border border-[var(--color-line-2)] text-[12px] text-[var(--color-text-2)]"
-          />
-          <p className="text-[11px] text-[var(--color-text-4)]">
-            Send CRM workflow payloads to this URL. Imported accounts land in the CRM Outreach Feed and do not consume signal-feed lead quota.
-          </p>
+          <button onClick={save} disabled={!loaded || saving} className="h-9 whitespace-nowrap rounded-full btn-primary px-3.5 text-xs disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
-        <button onClick={save} disabled={!loaded || saving} className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50">
-          {saving ? 'Saving…' : 'Save CRM sync'}
-        </button>
-        {selectedProvider && (
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+              <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+              Push events outbound
+            </label>
+            <label className="flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+              <input type="checkbox" checked={importEnabled} onChange={e => setImportEnabled(e.target.checked)} />
+              Accept CRM imports
+            </label>
+          </div>
+          <button
+            onClick={() => setShowMapping(value => !value)}
+            className="text-[11px] font-medium text-[var(--color-text-3)] hover:text-[var(--color-text-1)]"
+          >
+            {showMapping ? 'Hide mapping' : 'Show mapping'}
+          </button>
+        </div>
+
+        {selectedProvider && showMapping && (
           <div className="rounded-xl border border-[var(--color-line-1)] bg-white px-3 py-3 space-y-3">
             <div>
               <p className="text-xs font-medium text-[var(--color-text-1)]">{selectedProvider.label} mapping</p>

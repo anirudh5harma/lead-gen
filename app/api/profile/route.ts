@@ -65,7 +65,7 @@ export async function POST(request: Request) {
 
   const { data: existingProfile } = await supabase
     .from('user_profiles')
-    .select('active_client_id, plan, leads_used_this_month, leads_reset_at, slack_webhook_url, auto_send_enabled')
+    .select('active_client_id, plan, leads_used_this_month, leads_reset_at, slack_webhook_url, slack_min_score, auto_send_enabled')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -130,6 +130,7 @@ export async function POST(request: Request) {
     leads_used_this_month: (existingProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0,
     leads_reset_at: (existingProfile as { leads_reset_at?: string } | null)?.leads_reset_at ?? new Date().toISOString(),
     slack_webhook_url: (existingProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null,
+    slack_min_score: (existingProfile as { slack_min_score?: number | null } | null)?.slack_min_score ?? 7,
     auto_send_enabled: (existingProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? false,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' })

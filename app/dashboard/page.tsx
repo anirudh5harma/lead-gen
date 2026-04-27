@@ -35,7 +35,7 @@ export default async function DashboardPage() {
   // Migration-004 fields — may not exist yet; use defaults if the query errors.
   const { data: extProfile } = await supabase
     .from('user_profiles')
-    .select('plan, leads_used_this_month, lead_credit_balance, slack_webhook_url')
+    .select('plan, leads_used_this_month, lead_credit_balance, slack_webhook_url, slack_min_score')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -47,6 +47,7 @@ export default async function DashboardPage() {
   const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const leadCredits      = (extProfile as { lead_credit_balance?: number } | null)?.lead_credit_balance ?? 0
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
+  const slackMinScore    = (extProfile as { slack_min_score?: number | null } | null)?.slack_min_score ?? 7
 
   // Initial leads (server-rendered)
   const { data: leads } = await supabase
@@ -105,6 +106,7 @@ export default async function DashboardPage() {
         leads_used_this_month: leadsUsed,
         lead_credit_balance: leadCredits,
         slack_webhook_url: slackWebhookUrl,
+        slack_min_score: slackMinScore,
         active_client_id: activeClientId,
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
       }}
