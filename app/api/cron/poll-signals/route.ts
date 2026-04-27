@@ -25,12 +25,14 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const QUERY_BATCH_SIZE = 5
-const MAX_CANDIDATES_PER_RUN = 100
-const PROCESS_BATCH_SIZE = 4
+const MAX_CANDIDATES_PER_RUN = 180
+const PROCESS_BATCH_SIZE = 5
 const EXTRACT_TIMEOUT_MS = 12_000
-const MONITORED_COMPANY_LIMIT = 140
-const JOB_BOARD_COMPANY_LIMIT = 120
-const JOB_BOARD_BATCH_SIZE = 12
+const MONITORED_COMPANY_LIMIT = 220
+const JOB_BOARD_COMPANY_LIMIT = 160
+const JOB_BOARD_BATCH_SIZE = 16
+const MATCH_TRIGGER_TIMEOUT_MS = 150_000
+const DELIVERY_TRIGGER_TIMEOUT_MS = 90_000
 
 const EVENT_KEYWORDS: Record<string, RegExp> = {
   funding: /\b(raise[sd]?|funding|financing|series [a-z]|seed round|venture capital|investment)\b/i,
@@ -358,18 +360,29 @@ async function runPoll(request: Request) {
 
   // ── 4. Kick off lead matching ─────────────────────────────────────
   let matchTriggered = false
+  let matchResult: DownstreamTriggerResult | null = null
+  let deliveryTriggered = false
+  let deliveryResult: DownstreamTriggerResult | null = null
   if (inserted > 0) {
     await markMonitoredCompanySignalsByKey(supabase, insertedCompanies)
     matchTriggered = true
-    fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/leads/match`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
-    }).catch(err => {
-      console.error('[poll-signals] lead match trigger failed:', err)
-    })
+    matchResult = await triggerDownstreamCron(request.url, '/api/leads/match', MATCH_TRIGGER_TIMEOUT_MS)
+
+    if (matchResult.ok) {
+      deliveryTriggered = true
+      deliveryResult = await triggerDownstreamCron(request.url, '/api/cron/deliver-leads', DELIVERY_TRIGGER_TIMEOUT_MS)
+    }
   }
 
-  const payload = { inserted, skipped, stats, match_triggered: matchTriggered }
+  const payload = {
+    inserted,
+    skipped,
+    stats,
+    match_triggered: matchTriggered,
+    match_result: matchResult,
+    delivery_triggered: deliveryTriggered,
+    delivery_result: deliveryResult,
+  }
   console.log('[poll-signals] stats', { inserted, skipped, ...stats, match_triggered: matchTriggered })
   await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
   return NextResponse.json(payload)
@@ -378,6 +391,40 @@ async function runPoll(request: Request) {
     await finishCronRun(supabase, runId, { status: 'error', errorMessage: message })
     console.error('[poll-signals]', message)
     return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+interface DownstreamTriggerResult {
+  ok: boolean
+  status?: number
+  error?: string
+  body?: unknown
+}
+
+async function triggerDownstreamCron(
+  requestUrl: string,
+  path: string,
+  timeoutMs: number,
+): Promise<DownstreamTriggerResult> {
+  const secret = process.env.CRON_SECRET
+  if (!secret) return { ok: false, error: 'CRON_SECRET is not configured' }
+
+  const url = new URL(path, requestUrl)
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${secret}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const body = await response.json().catch(() => null)
+    if (!response.ok) {
+      console.error(`[poll-signals] downstream ${path} failed:`, response.status, body)
+    }
+    return { ok: response.ok, status: response.status, body }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[poll-signals] downstream ${path} trigger error:`, message)
+    return { ok: false, error: message }
   }
 }
 

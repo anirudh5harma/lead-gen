@@ -31,11 +31,11 @@ Leads are quota-limited at feed-ingestion time, not at send time. Follow-ups do 
 
 Cron schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/vercel.json:1).
 
-- `/api/cron/poll-signals`: hourly, top-of-hour.
-- `/api/leads/match`: hourly at `:10` to populate the delivery backlog.
-- `/api/cron/deliver-leads`: hourly at `:20` to batch queued leads into user feeds.
-- `/api/cron/send-followups`: hourly at `:25`.
-- `/api/cron/enrich-contacts`: every 2 hours at `:20`.
+- `/api/cron/poll-signals`: hourly, top-of-hour. When new signals are inserted, it opportunistically triggers matching and delivery so the live feed is not blocked on the next scheduled cron.
+- `/api/leads/match`: hourly at `:10` as a fallback/backfill to populate the delivery backlog.
+- `/api/cron/deliver-leads`: hourly at `:20` as a fallback/backfill to batch queued leads into user feeds.
+- `/api/cron/send-followups`: every 2 hours at `:30`.
+- `/api/cron/enrich-contacts`: every 2 hours at `:25`.
 - `/api/cron/renew-inbox-watches`: daily.
 
 Each cron now writes a row into `cron_runs`, which powers the in-app diagnostics view.

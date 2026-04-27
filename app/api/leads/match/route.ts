@@ -21,14 +21,14 @@ import {
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const DEFAULT_SIMILARITY_THRESHOLD = 0.32
+const DEFAULT_SIMILARITY_THRESHOLD = 0.3
 const KEYWORD_MATCH_SIMILARITY_DISCOUNT = 0.08
 const DEFAULT_SCORE_THRESHOLD = 6
 const DEDUPE_WINDOW_HOURS = 72
-const RECENT_SIGNAL_LIMIT = 750
-const ANN_CANDIDATE_LIMIT = 24
-const PROFILE_CANDIDATE_LIMIT = 18
-const LLM_RERANK_LIMIT = 8
+const RECENT_SIGNAL_LIMIT = 1200
+const ANN_CANDIDATE_LIMIT = 40
+const PROFILE_CANDIDATE_LIMIT = 30
+const LLM_RERANK_LIMIT = 12
 const ANN_SIMILARITY_FLOOR = 0.18
 
 function isAuthorized(request: Request): boolean {
@@ -408,7 +408,14 @@ async function runMatch(request: Request) {
         } catch (error) {
           stats.llm_errors++
           if (stats.llm_errors === 1) console.error('scoreLeadRelevance error:', (error as Error).message)
-          continue
+          const fallback = fallbackLeadScore({
+            isWatchlisted: candidate.isWatchlisted === true,
+            keywordMatched: candidate.keywordMatched === true,
+            similarity: candidate.similarity,
+          })
+          if (!fallback) continue
+          score = fallback.score
+          reason = fallback.reason
         }
 
         const minScore = (profile.min_relevance_score as number | null) ?? DEFAULT_SCORE_THRESHOLD
@@ -481,4 +488,33 @@ async function runMatch(request: Request) {
     console.error('[match-leads]', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+function fallbackLeadScore(params: {
+  isWatchlisted: boolean
+  keywordMatched: boolean
+  similarity: number | null | undefined
+}): { score: number; reason: string } | null {
+  if (params.isWatchlisted) {
+    return {
+      score: 7,
+      reason: 'Matched a watchlisted company. AI relevance scoring was unavailable, so this lead was admitted with a conservative watchlist score.',
+    }
+  }
+
+  if (params.keywordMatched) {
+    return {
+      score: 6,
+      reason: 'Matched ICP keywords in a recent buying signal. AI relevance scoring was unavailable, so this lead was admitted at the default relevance threshold.',
+    }
+  }
+
+  if (typeof params.similarity === 'number' && params.similarity >= 0.42) {
+    return {
+      score: 6,
+      reason: 'Strong semantic fit against the workspace ICP. AI relevance scoring was unavailable, so this lead was admitted at the default relevance threshold.',
+    }
+  }
+
+  return null
 }

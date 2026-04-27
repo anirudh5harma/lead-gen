@@ -10,11 +10,11 @@ export interface CompanySeed {
 }
 
 const USER_AGENT = 'Mozilla/5.0 (compatible; Bombsell/1.0)'
-const GDELT_MAX_RECORDS = 25
-const HN_STORY_LIMIT = 80
-const COMPANY_FEED_COMPANY_LIMIT = 120
-const COMPANY_FEEDS_PER_COMPANY = 8
-const MONITORED_NEWS_COMPANY_LIMIT = 24
+const GDELT_MAX_RECORDS = 40
+const HN_STORY_LIMIT = 120
+const COMPANY_FEED_COMPANY_LIMIT = 160
+const COMPANY_FEEDS_PER_COMPANY = 12
+const MONITORED_NEWS_COMPANY_LIMIT = 48
 
 const GDELT_QUERIES = [
   '(startup OR company) (raises OR funding OR "Series A" OR "seed round")',
@@ -202,7 +202,7 @@ export async function fetchMonitoredCompanyNewsItems(companies: CompanySeed[]): 
 
   const results = await Promise.allSettled(
     scopedCompanies.map(async company => {
-      const query = `"${company.name}" (funding OR acquisition OR merger OR hiring OR partnership OR integration OR launch OR expansion OR compliance OR "new office")`
+      const query = `"${company.name}" (funding OR raises OR acquisition OR merger OR hiring OR appoints OR partnership OR integration OR launch OR expansion OR compliance OR "new office" OR "SOC 2" OR "ISO 27001")`
       const items = await fetchRSSItems(query)
       return items.map(item => ({
         ...item,
@@ -231,26 +231,7 @@ export async function fetchCompanyOwnedItems(companies: CompanySeed[]): Promise<
       const resolvedDomain = domain ?? websiteDomain
       if (!resolvedDomain) return []
 
-      const feedUrls = [
-        `https://${resolvedDomain}/feed`,
-        `https://${resolvedDomain}/feed.xml`,
-        `https://${resolvedDomain}/atom.xml`,
-        `https://${resolvedDomain}/rss.xml`,
-        `https://${resolvedDomain}/blog/feed`,
-        `https://${resolvedDomain}/blog/rss.xml`,
-        `https://${resolvedDomain}/blog/index.xml`,
-        `https://${resolvedDomain}/news/rss.xml`,
-        `https://${resolvedDomain}/news/feed`,
-        `https://${resolvedDomain}/newsroom/feed`,
-        `https://${resolvedDomain}/newsroom/rss.xml`,
-        `https://${resolvedDomain}/press/rss.xml`,
-        `https://${resolvedDomain}/changelog.xml`,
-        `https://${resolvedDomain}/changelog/feed`,
-        `https://${resolvedDomain}/release-notes.xml`,
-        `https://${resolvedDomain}/releases/feed`,
-        `https://${resolvedDomain}/updates/feed`,
-        `https://${resolvedDomain}/resources/rss.xml`,
-      ].slice(0, COMPANY_FEEDS_PER_COMPANY)
+      const feedUrls = buildCompanyFeedUrls(resolvedDomain).slice(0, COMPANY_FEEDS_PER_COMPANY)
 
       const feedResults = await Promise.allSettled(
         feedUrls.map(url => fetchRSSFromUrl(url, 'company_owned', { quiet: true, timeoutMs: 5000 }))
@@ -267,6 +248,29 @@ export async function fetchCompanyOwnedItems(companies: CompanySeed[]): Promise<
   )
 
   return flattenSettled(results)
+}
+
+function buildCompanyFeedUrls(domain: string): string[] {
+  return [
+    `https://${domain}/feed`,
+    `https://${domain}/rss.xml`,
+    `https://${domain}/atom.xml`,
+    `https://${domain}/feed.xml`,
+    `https://${domain}/blog/feed`,
+    `https://${domain}/blog/rss.xml`,
+    `https://${domain}/news/feed`,
+    `https://${domain}/news/rss.xml`,
+    `https://${domain}/newsroom/feed`,
+    `https://${domain}/newsroom/rss.xml`,
+    `https://${domain}/press/rss.xml`,
+    `https://${domain}/changelog.xml`,
+    `https://${domain}/changelog/feed`,
+    `https://${domain}/release-notes.xml`,
+    `https://${domain}/releases/feed`,
+    `https://${domain}/updates/feed`,
+    `https://${domain}/resources/rss.xml`,
+    `https://${domain}/blog/index.xml`,
+  ]
 }
 
 function flattenSettled<T>(results: Array<PromiseSettledResult<T[]>>): T[] {

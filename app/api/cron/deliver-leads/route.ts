@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-const DUE_QUEUE_LIMIT = 1200
+const DUE_QUEUE_LIMIT = 1800
 
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`

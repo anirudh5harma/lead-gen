@@ -246,8 +246,8 @@ export async function fetchMonitoredCompaniesForPolling(
     .select('client_id, company_name, company_domain, website_url, priority_score, is_watchlist, last_polled_at, last_seeded_at')
     .or(`is_watchlist.eq.true,last_seeded_at.gte.${activeCutoff}`)
     .order('is_watchlist', { ascending: false })
-    .order('priority_score', { ascending: false })
     .order('last_polled_at', { ascending: true, nullsFirst: true })
+    .order('priority_score', { ascending: false })
     .limit(limit)
 
   if (error) {

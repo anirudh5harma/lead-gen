@@ -49,10 +49,7 @@ export default async function DashboardPage() {
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
   const slackMinScore    = (extProfile as { slack_min_score?: number | null } | null)?.slack_min_score ?? 7
 
-  // Initial leads (server-rendered)
-  const { data: leads } = await supabase
-    .from('leads')
-    .select(`
+  const leadSelect = `
       id,
       client_id,
       origin,
@@ -76,11 +73,46 @@ export default async function DashboardPage() {
       contact_name,
       contact_title,
       feed_snapshot
-    `)
-    .eq('user_id', user.id)
-    .match(activeClientId ? { client_id: activeClientId } : {})
-    .order('created_at', { ascending: false })
-    .limit(200)
+    `
+
+  const leadBaseFilter = activeClientId ? { client_id: activeClientId } : {}
+
+  // Initial leads are loaded per origin so large Explore/CRM batches do not
+  // evict live-signal rows from the server-rendered feed.
+  const [liveLeadsResult, exploreLeadsResult, crmLeadsResult] = await Promise.all([
+    supabase
+      .from('leads')
+      .select(leadSelect)
+      .eq('user_id', user.id)
+      .match(leadBaseFilter)
+      .eq('origin', 'live')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('leads')
+      .select(leadSelect)
+      .eq('user_id', user.id)
+      .match(leadBaseFilter)
+      .eq('origin', 'explore')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('leads')
+      .select(leadSelect)
+      .eq('user_id', user.id)
+      .match(leadBaseFilter)
+      .eq('origin', 'crm_import')
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ])
+
+  const leads = [
+    ...(liveLeadsResult.data ?? []),
+    ...(exploreLeadsResult.data ?? []),
+    ...(crmLeadsResult.data ?? []),
+  ].sort((a, b) => (
+    new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+  ))
 
   // Watchlist
   const { data: watchlist } = await supabase
@@ -90,7 +122,7 @@ export default async function DashboardPage() {
     .match(activeClientId ? { client_id: activeClientId } : {})
     .order('created_at', { ascending: false })
 
-  const typedLeads = (leads ?? []) as unknown as Lead[]
+  const typedLeads = leads as unknown as Lead[]
 
   return (
     <DashboardShell
