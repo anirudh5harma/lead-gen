@@ -1,5 +1,6 @@
 'use client'
 
+import type { ChangeEvent, FormEvent } from 'react'
 import { useState, useEffect } from 'react'
 
 interface WatchlistCompany {
@@ -15,8 +16,10 @@ export default function WatchlistManager() {
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [form, setForm] = useState({ company_name: '', company_domain: '', notes: '' })
   const [error, setError] = useState<string | null>(null)
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/watchlist')
@@ -25,7 +28,7 @@ export default function WatchlistManager() {
       .catch(() => setLoading(false))
   }, [])
 
-  async function addCompany(e: React.FormEvent) {
+  async function addCompany(e: FormEvent) {
     e.preventDefault()
     if (!form.company_name.trim()) return
     setAdding(true)
@@ -50,6 +53,49 @@ export default function WatchlistManager() {
     setAdding(false)
   }
 
+  async function uploadCsv(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    setUploading(true)
+    setError(null)
+    setUploadMsg(null)
+
+    try {
+      const text = await file.text()
+      const companies = parseWatchlistCsv(text)
+      if (companies.length === 0) {
+        setError('No company rows found. Use columns like company_name and company_domain, or name,domain.')
+        return
+      }
+
+      const res = await fetch('/api/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companies }),
+      })
+      const data = await res.json().catch(() => null) as {
+        companies?: WatchlistCompany[]
+        inserted?: number
+        skipped?: number
+        error?: string
+      } | null
+
+      if (!res.ok) {
+        setError(data?.error || 'Failed to upload watchlist CSV')
+        return
+      }
+
+      setCompanies(prev => mergeCompanies(data?.companies ?? [], prev))
+      setUploadMsg(`Imported ${data?.inserted ?? data?.companies?.length ?? 0} companies${data?.skipped ? `, skipped ${data.skipped}` : ''}.`)
+    } catch {
+      setError('Failed to read watchlist CSV')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function removeCompany(id: string) {
     const res = await fetch('/api/watchlist', {
       method: 'DELETE',
@@ -62,7 +108,7 @@ export default function WatchlistManager() {
   }
 
   return (
-    <div className="card">
+    <div className="card bg-white">
       {/* Header */}
       <button
         onClick={() => setOpen(o => !o)}
@@ -117,6 +163,28 @@ export default function WatchlistManager() {
             </button>
           </form>
 
+          <div className="rounded-xl border border-dashed border-[var(--color-line-2)] bg-white px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-[var(--color-text-1)]">Upload CSV</p>
+                <p className="mt-0.5 text-[11px] text-[var(--color-text-4)]">
+                  Supports company_name/company and company_domain/domain columns.
+                </p>
+              </div>
+              <label className="inline-flex h-8 cursor-pointer items-center rounded-full border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-medium text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]">
+                {uploading ? 'Uploading…' : 'Choose CSV'}
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={uploadCsv}
+                  disabled={uploading}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+            {uploadMsg && <p className="mt-2 text-[11px] text-[var(--color-sig-funding)]">{uploadMsg}</p>}
+          </div>
+
           {error && <p className="text-xs text-[var(--color-sig-regulation)]">{error}</p>}
 
           {/* Company list */}
@@ -165,4 +233,103 @@ export default function WatchlistManager() {
       )}
     </div>
   )
+}
+
+function parseWatchlistCsv(text: string): Array<{ company_name: string; company_domain?: string }> {
+  const rows = parseCsvRows(text).filter(row => row.some(cell => cell.trim()))
+  if (rows.length === 0) return []
+
+  const headers = rows[0].map(cell => normalizeHeader(cell))
+  const hasHeader = headers.some(header => ['company_name', 'company', 'name', 'company_domain', 'domain', 'website'].includes(header))
+  const dataRows = hasHeader ? rows.slice(1) : rows
+  const companyIndex = hasHeader
+    ? firstIndex(headers, ['company_name', 'company', 'name', 'account', 'account_name'])
+    : 0
+  const domainIndex = hasHeader
+    ? firstIndex(headers, ['company_domain', 'domain', 'website', 'url'])
+    : 1
+
+  if (companyIndex < 0) return []
+
+  const seen = new Set<string>()
+  const companies: Array<{ company_name: string; company_domain?: string }> = []
+
+  for (const row of dataRows) {
+    const companyName = row[companyIndex]?.trim()
+    if (!companyName) continue
+    const companyDomain = normalizeDomain(row[domainIndex]?.trim() ?? '')
+    const key = `${companyName.toLowerCase()}|${companyDomain}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    companies.push({
+      company_name: companyName,
+      ...(companyDomain ? { company_domain: companyDomain } : {}),
+    })
+  }
+
+  return companies.slice(0, 500)
+}
+
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let inQuotes = false
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]
+    const next = text[i + 1]
+
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"'
+      i += 1
+    } else if (char === '"') {
+      inQuotes = !inQuotes
+    } else if (char === ',' && !inQuotes) {
+      row.push(cell)
+      cell = ''
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i += 1
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ''
+    } else {
+      cell += char
+    }
+  }
+
+  row.push(cell)
+  rows.push(row)
+  return rows
+}
+
+function normalizeHeader(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function firstIndex(values: string[], candidates: string[]): number {
+  return candidates.map(candidate => values.indexOf(candidate)).find(index => index >= 0) ?? -1
+}
+
+function normalizeDomain(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .replace(/[,\s]+$/, '')
+}
+
+function mergeCompanies(incoming: WatchlistCompany[], current: WatchlistCompany[]): WatchlistCompany[] {
+  const seen = new Set<string>()
+  const merged: WatchlistCompany[] = []
+  for (const company of [...incoming, ...current]) {
+    const key = `${company.company_name.toLowerCase()}|${company.company_domain ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(company)
+  }
+  return merged
 }

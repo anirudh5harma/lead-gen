@@ -37,34 +37,6 @@ interface Props {
   watchlist: WatchlistItem[]
 }
 
-interface LeadDiagnostic {
-  id: string
-  target_company: string
-  relevance_score: number
-  status: string
-  created_at: string
-  match_debug: {
-    client_name?: string
-    matched_via?: string
-    similarity?: number | null
-    min_relevance_score?: number
-  } | null
-  signal: {
-    signal_type?: string
-    headline?: string
-  } | null
-}
-
-interface OpsSummary {
-  counts: {
-    user_leads_last_24h: number
-    pending_enrichment: number
-    pending_followups: number
-    active_sending_accounts: number
-  }
-  lead_diagnostics: LeadDiagnostic[]
-}
-
 interface AutoSendAccount {
   id: string
   provider: 'gmail' | 'outlook'
@@ -196,6 +168,12 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 </svg>
                 Upgrade
               </Link>
+              <button
+                onClick={() => setActiveView('settings')}
+                className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-primary text-[12.5px] font-medium items-center gap-1.5"
+              >
+                Add credits
+              </button>
               <LogoutButton />
             </div>
           </div>
@@ -247,7 +225,6 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 watchlist={watchlist}
                 activeClientId={userProfile.active_client_id ?? null}
                 plan={plan as 'free' | 'pro'}
-                icpKeywords={userProfile.icp_keywords ?? []}
                 onOpenCrmTab={() => setActiveView('crm')}
               />
             )}
@@ -261,7 +238,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               />
             )}
             {activeView === 'watchlist' && (
-              <div className="max-w-2xl space-y-4">
+              <div className="max-w-3xl space-y-4">
                 <p className="text-[12.5px] text-[var(--color-text-3)]">
                   Any signal from a watched company bypasses the relevance filter.
                 </p>
@@ -496,52 +473,35 @@ function SettingsPanel({
             <ManageBillingButton />
           )}
         </div>
-        {plan === 'pro' && (
-          <div className="px-5 py-4 border-t border-[var(--color-line-1)]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-medium text-[var(--color-text-1)]">Lead credits</p>
-                <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-                  Credits unlock leads after your included monthly quota is used. Each $1 adds 4 lead unlocks.
-                </p>
-              </div>
-              <span className="shrink-0 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent-ring)]">
-                {leadCreditBalance} credits
-              </span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {CREDIT_TOP_UPS.map(option => (
-                <button
-                  key={option.amount}
-                  onClick={() => startCreditCheckout(option.amount)}
-                  disabled={creditCheckoutAmount !== null}
-                  className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-2 text-left transition-colors hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-accent-bg)] disabled:opacity-50"
-                >
-                  <span className="block text-[12px] font-semibold text-[var(--color-text-1)]">${option.amount}</span>
-                  <span className="block text-[11px] text-[var(--color-text-4)]">{option.credits} unlocks</span>
-                </button>
-              ))}
-            </div>
-            {creditCheckoutMsg && (
-              <p className="mt-2 text-[11px] text-[var(--color-sig-regulation)]">{creditCheckoutMsg}</p>
-            )}
-          </div>
-        )}
-        {plan === 'free' && (
-          <div className="px-5 py-4 border-t border-[var(--color-line-1)]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-medium text-[var(--color-text-1)]">Lead credits</p>
+        <div className="px-5 py-4 border-t border-[var(--color-line-1)]">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Add lead credits</p>
               <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-                  Upgrade to Pro to top up prepaid lead credits after using your free unlocks.
+                Credits unlock leads after your included quota is used. Each $1 adds 4 lead unlocks.
               </p>
-              </div>
-              <span className="shrink-0 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-3)]">
-                {leadCreditBalance} credits
-              </span>
             </div>
+            <span className="shrink-0 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent-ring)]">
+              {leadCreditBalance} credits
+            </span>
           </div>
-        )}
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {CREDIT_TOP_UPS.map(option => (
+              <button
+                key={option.amount}
+                onClick={() => startCreditCheckout(option.amount)}
+                disabled={creditCheckoutAmount !== null}
+                className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-2 text-left transition-colors hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-accent-bg)] disabled:opacity-50"
+              >
+                <span className="block text-[12px] font-semibold text-[var(--color-text-1)]">${option.amount}</span>
+                <span className="block text-[11px] text-[var(--color-text-4)]">{option.credits} unlocks</span>
+              </button>
+            ))}
+          </div>
+          {creditCheckoutMsg && (
+            <p className="mt-2 text-[11px] text-[var(--color-sig-regulation)]">{creditCheckoutMsg}</p>
+          )}
+        </div>
       </div>
 
       {/* Connected sending accounts — not available on free plan */}
@@ -735,8 +695,6 @@ function SettingsPanel({
       {/* Blocked companies */}
       <BlockedCompaniesPanel />
 
-      <PipelineDiagnosticsPanel />
-
       {/* Slack (Pro only) */}
       {plan === 'pro' && (
         <div className="card divide-y divide-[var(--color-line-1)]">
@@ -775,250 +733,12 @@ function SettingsPanel({
   )
 }
 
-function FeedAutomationCard({
-  plan,
-  focusOrigin,
-}: {
-  plan: 'free' | 'pro'
-  focusOrigin: 'explore' | 'crm_import'
-}) {
-  const [loaded, setLoaded] = useState(false)
-  const [enabled, setEnabled] = useState(false)
-  const [connectedAccountId, setConnectedAccountId] = useState<string | null>(null)
-  const [targetOrigins, setTargetOrigins] = useState<Array<'live' | 'explore' | 'crm_import'>>(
-    focusOrigin === 'explore' ? ['explore'] : ['crm_import'],
-  )
-  const [requireVerified, setRequireVerified] = useState(false)
-  const [minScore, setMinScore] = useState(1)
-  const [maxAgeDays, setMaxAgeDays] = useState(30)
-  const [accounts, setAccounts] = useState<AutoSendAccount[]>([])
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (plan !== 'pro') return
-
-    let cancelled = false
-    fetch('/api/settings/auto-send', { cache: 'no-store' })
-      .then(async res => {
-        const data = await res.json().catch(() => null) as {
-          error?: string
-          policy?: {
-            enabled?: boolean
-            connected_account_id?: string | null
-            target_origins?: Array<'live' | 'explore' | 'crm_import'>
-            require_verified_contact?: boolean
-            min_relevance_score?: number
-            max_lead_age_days?: number
-          }
-          accounts?: AutoSendAccount[]
-        } | null
-        if (cancelled || !data) return
-        if (!res.ok) {
-          setMessage(data.error ?? 'Failed to load feed automation settings.')
-          setLoaded(true)
-          return
-        }
-        setEnabled(Boolean(data.policy?.enabled))
-        setConnectedAccountId(data.policy?.connected_account_id ?? null)
-        setTargetOrigins(data.policy?.target_origins?.length ? data.policy.target_origins : [focusOrigin])
-        setRequireVerified(Boolean(data.policy?.require_verified_contact))
-        setMinScore(data.policy?.min_relevance_score ?? 1)
-        setMaxAgeDays(data.policy?.max_lead_age_days ?? 30)
-        setAccounts(data.accounts ?? [])
-        setLoaded(true)
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMessage('Failed to load feed automation settings.')
-          setLoaded(true)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [focusOrigin, plan])
-
-  const toggleOrigin = useCallback((origin: 'live' | 'explore' | 'crm_import') => {
-    setTargetOrigins(prev => {
-      if (prev.includes(origin)) {
-        if (prev.length === 1) return prev
-        return prev.filter(item => item !== origin)
-      }
-      return [...prev, origin]
-    })
-  }, [])
-
-  const savePolicy = useCallback(async () => {
-    if (plan !== 'pro') return
-    setSaving(true)
-    setMessage(null)
-    try {
-      const res = await fetch('/api/settings/auto-send', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          enabled,
-          connected_account_id: connectedAccountId,
-          target_origins: targetOrigins,
-          require_verified_contact: requireVerified,
-          min_relevance_score: minScore,
-          max_lead_age_days: maxAgeDays,
-        }),
-      })
-      const data = await res.json().catch(() => null) as { error?: string } | null
-      setMessage(res.ok ? 'Automation saved' : data?.error ?? 'Failed to save automation.')
-    } catch {
-      setMessage('Failed to save automation.')
-    } finally {
-      setSaving(false)
-    }
-  }, [connectedAccountId, enabled, maxAgeDays, minScore, plan, requireVerified, targetOrigins])
-
-  const title = focusOrigin === 'explore' ? 'Explore automation' : 'CRM automation'
-  const description = focusOrigin === 'explore'
-    ? 'Auto-send can run on Explore, Signal Feed, and CRM Feed. Configure the feeds you want this workspace to sequence automatically.'
-    : 'Keep CRM imports in their own lane or include Explore and Signal Feed in the same automation policy.'
-
-  return (
-    <div className="card divide-y divide-[var(--color-line-1)]">
-      <div className="px-5 py-4">
-        <h3 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h3>
-        <p className="text-xs text-[var(--color-text-4)] mt-0.5">{description}</p>
-      </div>
-      {plan !== 'pro' ? (
-        <div className="px-5 py-4 flex items-center justify-between gap-3">
-          <p className="text-xs text-[var(--color-text-3)]">
-            Upgrade to Pro to auto-send from selected feed lanes.
-          </p>
-          <Link href="/pricing" className="inline-flex rounded-full btn-primary px-3 py-1.5 text-xs font-medium">
-            Upgrade
-          </Link>
-        </div>
-      ) : (
-        <div className="px-5 py-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <StatusPill
-              active={enabled}
-              activeLabel="Automation live"
-              idleLabel="Automation paused"
-            />
-            <label className="inline-flex items-center gap-2 text-xs text-[var(--color-text-2)]">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={e => setEnabled(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
-              />
-              Enable auto-send
-            </label>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-1.5 text-xs text-[var(--color-text-3)]">
-              <span>Sending inbox</span>
-              <select
-                value={connectedAccountId ?? ''}
-                onChange={e => setConnectedAccountId(e.target.value || null)}
-                className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
-              >
-                <option value="">Auto-pick connected inbox</option>
-                {accounts.map(account => (
-                  <option key={account.id} value={account.id}>
-                    {account.display_name || account.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1.5 text-xs text-[var(--color-text-3)]">
-                <span>Min score</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={minScore}
-                  onChange={e => setMinScore(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-                  className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
-                />
-              </label>
-              <label className="space-y-1.5 text-xs text-[var(--color-text-3)]">
-                <span>Max age</span>
-                <select
-                  value={maxAgeDays}
-                  onChange={e => setMaxAgeDays(Number(e.target.value) || 30)}
-                  className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
-                >
-                  <option value={7}>7 days</option>
-                  <option value={14}>14 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={60}>60 days</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">
-              Feed scope
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {AUTO_SEND_FEED_OPTIONS.map(option => {
-                const active = targetOrigins.includes(option.key)
-                return (
-                  <button
-                    key={option.key}
-                    onClick={() => toggleOrigin(option.key)}
-                    className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                      active
-                        ? 'border-[var(--color-accent)]/30 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
-                        : 'border-[var(--color-line-2)] bg-white text-[var(--color-text-3)]'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                )
-              })}
-            </div>
-            <label className="inline-flex items-center gap-2 text-xs text-[var(--color-text-2)]">
-              <input
-                type="checkbox"
-                checked={requireVerified}
-                onChange={e => setRequireVerified(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
-              />
-              Verified contacts only
-            </label>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={savePolicy}
-              disabled={!loaded || saving}
-              className="inline-flex rounded-full btn-primary px-3.5 py-1.5 text-xs font-medium disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save automation'}
-            </button>
-            {message && (
-              <span className={`text-xs ${message === 'Automation saved' ? 'text-[var(--color-sig-funding)]' : 'text-[var(--color-sig-regulation)]'}`}>
-                {message}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function ExplorePanel({
   initialLeads,
   userId,
   watchlist,
   activeClientId,
   plan,
-  icpKeywords,
   onOpenCrmTab,
 }: {
   initialLeads: Lead[]
@@ -1026,12 +746,10 @@ function ExplorePanel({
   watchlist: WatchlistItem[]
   activeClientId: string | null
   plan: 'free' | 'pro'
-  icpKeywords: string[]
   onOpenCrmTab: () => void
 }) {
   const router = useRouter()
   const [prompt, setPrompt] = useState('')
-  const [icpHint, setIcpHint] = useState(icpKeywords.slice(0, 4).join(', '))
   const [searching, setSearching] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -1070,7 +788,7 @@ function ExplorePanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify({ prompt, icp_hint: icpHint }),
+        body: JSON.stringify({ prompt }),
       })
       const data = await res.json().catch(() => null) as {
         error?: string
@@ -1125,7 +843,7 @@ function ExplorePanel({
         <div className="px-5 py-4">
           <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Prompted Discovery</h2>
           <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-            Describe the accounts, roles, and themes you want to pursue. Bombsell uses your brief plus your profile description to build an explore-only target list.
+            Describe the accounts, roles, and themes you want to pursue. Bombsell uses your brief and workspace profile to build an explore-only target list.
           </p>
         </div>
         <div className="px-5 py-4 space-y-3">
@@ -1135,13 +853,6 @@ function ExplorePanel({
             placeholder="Example: Find 50 fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
             disabled={searching}
             className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
-          />
-          <input
-            value={icpHint}
-            onChange={e => setIcpHint(e.target.value)}
-            placeholder="Optional ICP hints, for example: Series B, RevOps owner, US healthcare"
-            disabled={searching}
-            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
           />
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -1185,12 +896,9 @@ function ExplorePanel({
           <div>
             <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Explore Results</h3>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Target accounts generated from your prompt and optional ICP hints.
+              Target accounts generated from your prompted discovery runs.
             </p>
           </div>
-        </div>
-        <div className="px-5 pt-4">
-          <FeedAutomationCard plan={plan} focusOrigin="explore" />
         </div>
         <LeadFeed
           initialLeads={initialLeads}
@@ -1225,21 +933,7 @@ function CrmWorkspacePanel({
 }) {
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.85fr)]">
-        <CrmSyncPanel />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-          <InsightCard
-            eyebrow="Inbound CRM"
-            title="Import known accounts into a separate outreach lane."
-            body="Imported CRM records do not pollute the live signal feed. They land here with CRM context so reps can work them independently."
-          />
-          <InsightCard
-            eyebrow="Outbound CRM"
-            title="Push feed exports back into your system of record."
-            body="Use Export -> CRM from Signal Feed or Explore after your outbound webhook is connected. Bombsell will send the current feed as a normalized batch."
-          />
-        </div>
-      </div>
+      <CrmSyncPanel />
 
       <div className="card border border-[var(--color-line-1)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(243,248,246,0.9))]">
         <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line-1)]">
@@ -1254,9 +948,6 @@ function CrmWorkspacePanel({
             Separate from signal quota
           </div>
         </div>
-        <div className="px-5 pt-4">
-          <FeedAutomationCard plan={plan} focusOrigin="crm_import" />
-        </div>
         <LeadFeed
           initialLeads={initialLeads}
           userId={userId}
@@ -1270,42 +961,6 @@ function CrmWorkspacePanel({
           emptyTitle="No CRM prospects imported yet"
           emptyBody="Enable CRM imports here, then send records into Bombsell to create an outreach-ready CRM feed."
         />
-      </div>
-    </div>
-  )
-}
-
-function InsightCard({
-  eyebrow,
-  title,
-  body,
-  actionLabel,
-  onAction,
-}: {
-  eyebrow: string
-  title: string
-  body: string
-  actionLabel?: string
-  onAction?: () => void
-}) {
-  return (
-    <div className="card bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(246,242,234,0.88))]">
-      <div className="px-5 py-4 space-y-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">
-          {eyebrow}
-        </p>
-        <div className="space-y-1.5">
-          <h3 className="text-[15px] font-medium tracking-tight text-[var(--color-text-1)]">{title}</h3>
-          <p className="text-[12.5px] leading-relaxed text-[var(--color-text-3)]">{body}</p>
-        </div>
-        {actionLabel && onAction && (
-          <button
-            onClick={onAction}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]"
-          >
-            {actionLabel}
-          </button>
-        )}
       </div>
     </div>
   )
@@ -1764,110 +1419,6 @@ function CrmSyncPanel() {
   )
 }
 
-function PipelineDiagnosticsPanel() {
-  const [summary, setSummary] = useState<OpsSummary | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch('/api/ops/summary')
-      .then(async response => {
-        if (!response.ok) {
-          throw new Error('Failed to load diagnostics')
-        }
-        return response.json() as Promise<OpsSummary>
-      })
-      .then(data => setSummary(data))
-      .catch(() => setSummary(null))
-      .finally(() => setLoading(false))
-  }, [])
-
-  const counts = summary?.counts
-
-  return (
-    <div className="card divide-y divide-[var(--color-line-1)]">
-      <div className="px-5 py-4">
-        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Pipeline Diagnostics</h2>
-        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          Recent pipeline counts and the latest match explanations for your feed.
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="px-5 py-5 text-xs text-[var(--color-text-4)]">Loading diagnostics…</div>
-      ) : !summary ? (
-        <div className="px-5 py-5 text-xs text-[var(--color-sig-regulation)]">
-          Diagnostics are temporarily unavailable.
-        </div>
-      ) : (
-        <>
-          <div className="px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-            <DiagStat label="Your leads · 24h" value={String(counts?.user_leads_last_24h ?? 0)} />
-            <DiagStat label="Pending enrichment" value={String(counts?.pending_enrichment ?? 0)} />
-            <DiagStat label="Due follow-ups" value={String(counts?.pending_followups ?? 0)} />
-            <DiagStat label="Active inboxes" value={String(counts?.active_sending_accounts ?? 0)} />
-          </div>
-
-          <div className="px-5 py-4 space-y-3">
-            <h3 className="text-xs font-semibold text-[var(--color-text-1)] uppercase tracking-[0.14em]">Recent Match Explanations</h3>
-            <div className="space-y-2">
-              {summary.lead_diagnostics.length === 0 ? (
-                <p className="text-xs text-[var(--color-text-4)]">No recent match diagnostics available yet.</p>
-              ) : (
-                summary.lead_diagnostics.map(lead => (
-                  <div key={lead.id} className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-xs font-medium text-[var(--color-text-1)]">{lead.target_company}</p>
-                        <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">
-                          {lead.signal?.signal_type ?? 'signal'} · score {lead.relevance_score} · {lead.status}
-                        </p>
-                      </div>
-                      <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
-                        {lead.match_debug?.matched_via ?? 'matched'}
-                      </span>
-                    </div>
-                    {lead.signal?.headline && (
-                      <p className="text-[11px] text-[var(--color-text-2)] mt-2 line-clamp-2">
-                        {lead.signal.headline}
-                      </p>
-                    )}
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {lead.match_debug?.client_name && (
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
-                          workspace: {lead.match_debug.client_name}
-                        </span>
-                      )}
-                      {typeof lead.match_debug?.similarity === 'number' && (
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
-                          similarity: {lead.match_debug.similarity.toFixed(2)}
-                        </span>
-                      )}
-                      {typeof lead.match_debug?.min_relevance_score === 'number' && (
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-white border border-[var(--color-line-1)] text-[var(--color-text-3)]">
-                          min score: {lead.match_debug.min_relevance_score}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-function DiagStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60 px-3 py-3">
-      <p className="text-[11px] text-[var(--color-text-4)]">{label}</p>
-      <p className="text-lg font-medium text-[var(--color-text-1)] mt-1">{value}</p>
-    </div>
-  )
-}
-
 function ManageBillingButton() {
   const [loading, setLoading] = useState(false)
 
@@ -2159,7 +1710,7 @@ function BlockedCompaniesPanel() {
   }, [])
 
   return (
-    <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-2)] divide-y divide-[var(--color-line-1)]">
+    <div className="rounded-lg border border-[var(--color-line-1)] bg-white divide-y divide-[var(--color-line-1)]">
       <div className="px-5 py-4 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Blocked Companies</h2>

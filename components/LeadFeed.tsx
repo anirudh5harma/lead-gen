@@ -352,7 +352,6 @@ export default function LeadFeed({
 
   const selectedCount = selectedLeadIds.length
   const allVisibleSelected = filteredLeads.length > 0 && filteredLeads.every(lead => selectedLeadIds.includes(lead.id))
-  const activeSession = sessionOptions.find(option => option.id === effectiveSessionFilter) ?? null
 
   const effectiveSelectedId = useMemo(() => {
     if (selectedId && filteredLeads.some(l => l.id === selectedId)) return selectedId
@@ -473,6 +472,65 @@ export default function LeadFeed({
     }
   }, [selectedLeadIds])
 
+  const hasSessionHistory = origin !== 'live' && sessionOptions.length > 0
+  const leadList = filteredLeads.length === 0 ? (
+    <EmptyState title={emptyTitle} body={emptyBody} />
+  ) : (
+    <div className="card overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60">
+            <th className="py-3 pl-5 pr-1">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleVisibleSelections}
+                className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
+                aria-label="Select all visible leads"
+              />
+            </th>
+            {['#', 'Company', 'Signal', 'Score', 'Status', 'Time', ''].map((h, i) => (
+              <th
+                key={i}
+                className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-3)] text-left py-3 px-3 last:pr-4 whitespace-nowrap"
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filteredLeads.map((lead, i) => {
+            const card = toCardLead(lead)
+            if (!card) return null
+            const domain = card.company_domain ?? lead.company_domain ?? undefined
+            const watched =
+              watchlistLookup.has(lead.target_company.toLowerCase()) ||
+              (domain ? watchlistLookup.has(domain.toLowerCase()) : false)
+            return (
+              <LeadCard
+                key={lead.id}
+                lead={card}
+                rowIndex={i + 1}
+                isSelected={effectiveSelectedId === lead.id}
+                isChecked={selectedLeadIds.includes(lead.id)}
+                actionBusy={unlockingLeadId === lead.id}
+                onSelect={() => setSelectedId(lead.id)}
+                onToggleChecked={() => toggleLeadSelection(lead.id)}
+                onDraftOutreach={() => openDraft(lead)}
+                onStatusChange={(id, status) => updateStatus(id, status)}
+                onOpenTimeline={(name, d) => setTimelineFor({ name, domain: d })}
+                onDelete={deleteLead}
+                onBlock={(id, name, domain) => blockCompany(id, name, domain)}
+                isWatchlisted={watched}
+              />
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -568,58 +626,6 @@ export default function LeadFeed({
         </div>
       </div>
 
-      {origin !== 'live' && sessionOptions.length > 0 && (
-        <div className="mx-5 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/70 px-4 py-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">
-                Feed sessions
-              </p>
-              <p className="mt-1 text-[12px] text-[var(--color-text-2)]">
-                {activeSession
-                  ? `${activeSession.label} · ${activeSession.leadCount} ${activeSession.leadCount === 1 ? 'lead' : 'leads'}`
-                  : `Showing ${sessionOptions.length} saved session${sessionOptions.length === 1 ? '' : 's'}`}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setSessionFilter('all')}
-                className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                  sessionFilter === 'all'
-                    ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
-                    : 'border border-[var(--color-line-2)] bg-transparent text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'
-                }`}
-              >
-                All sessions
-              </button>
-              <button
-                onClick={() => setSessionFilter('latest')}
-                className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                  sessionFilter === 'latest'
-                    ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
-                    : 'border border-[var(--color-line-2)] bg-transparent text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'
-                }`}
-              >
-                Latest session
-              </button>
-              {sessionOptions.slice(0, 6).map(option => (
-                <button
-                  key={option.id}
-                  onClick={() => setSessionFilter(option.id)}
-                  className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                    effectiveSessionFilter === option.id && sessionFilter !== 'all'
-                      ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
-                      : 'border border-[var(--color-line-2)] bg-transparent text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {selectedCount > 0 && (
         <div className="mx-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)] px-4 py-3">
           <p className="text-[12px] text-[var(--color-text-1)]">
@@ -664,65 +670,18 @@ export default function LeadFeed({
         </div>
       )}
 
-      {/* Table */}
-      {filteredLeads.length === 0 ? (
-        <div className="px-5 pb-5">
-          <EmptyState title={emptyTitle} body={emptyBody} />
+      {hasSessionHistory ? (
+        <div className="grid gap-4 px-5 pb-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <SessionHistoryRail
+            sessions={sessionOptions}
+            activeSessionId={effectiveSessionFilter}
+            selectedFilter={sessionFilter}
+            onSelect={setSessionFilter}
+          />
+          <div className="min-w-0">{leadList}</div>
         </div>
       ) : (
-        <div className="card mx-5 mb-5 overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60">
-                <th className="py-3 pl-5 pr-1">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={toggleVisibleSelections}
-                    className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
-                    aria-label="Select all visible leads"
-                  />
-                </th>
-                {['#', 'Company', 'Signal', 'Score', 'Status', 'Time', ''].map((h, i) => (
-                  <th
-                    key={i}
-                    className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-3)] text-left py-3 px-3 last:pr-4 whitespace-nowrap"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredLeads.map((lead, i) => {
-                const card = toCardLead(lead)
-                if (!card) return null
-                const domain = card.company_domain ?? lead.company_domain ?? undefined
-                const watched =
-                  watchlistLookup.has(lead.target_company.toLowerCase()) ||
-                  (domain ? watchlistLookup.has(domain.toLowerCase()) : false)
-                return (
-                  <LeadCard
-                    key={lead.id}
-                    lead={card}
-                    rowIndex={i + 1}
-                    isSelected={effectiveSelectedId === lead.id}
-                    isChecked={selectedLeadIds.includes(lead.id)}
-                    actionBusy={unlockingLeadId === lead.id}
-                    onSelect={() => setSelectedId(lead.id)}
-                    onToggleChecked={() => toggleLeadSelection(lead.id)}
-                    onDraftOutreach={() => openDraft(lead)}
-                    onStatusChange={(id, status) => updateStatus(id, status)}
-                    onOpenTimeline={(name, d) => setTimelineFor({ name, domain: d })}
-                    onDelete={deleteLead}
-                    onBlock={(id, name, domain) => blockCompany(id, name, domain)}
-                    isWatchlisted={watched}
-                  />
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <div className="px-5 pb-5">{leadList}</div>
       )}
 
       {toast && (
@@ -762,6 +721,78 @@ export default function LeadFeed({
         />
       )}
     </div>
+  )
+}
+
+function SessionHistoryRail({
+  sessions,
+  activeSessionId,
+  selectedFilter,
+  onSelect,
+}: {
+  sessions: FeedSessionOption[]
+  activeSessionId: string
+  selectedFilter: string
+  onSelect: (filter: string) => void
+}) {
+  return (
+    <aside className="card h-fit overflow-hidden lg:sticky lg:top-20">
+      <div className="border-b border-[var(--color-line-1)] px-3 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">
+          Feed sessions
+        </p>
+      </div>
+      <div className="max-h-[calc(100vh-190px)] space-y-1 overflow-y-auto p-2">
+        <SessionHistoryButton
+          label="Latest session"
+          detail="Most recent run"
+          active={selectedFilter === 'latest'}
+          onClick={() => onSelect('latest')}
+        />
+        <SessionHistoryButton
+          label="All sessions"
+          detail={`${sessions.length} saved`}
+          active={selectedFilter === 'all'}
+          onClick={() => onSelect('all')}
+        />
+        <div className="my-2 h-px bg-[var(--color-line-1)]" />
+        {sessions.map(option => (
+          <SessionHistoryButton
+            key={option.id}
+            label={option.label}
+            detail={`${option.leadCount} ${option.leadCount === 1 ? 'lead' : 'leads'} · ${formatSessionStamp(option.startedAt)}`}
+            active={selectedFilter !== 'all' && activeSessionId === option.id}
+            onClick={() => onSelect(option.id)}
+          />
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+function SessionHistoryButton({
+  label,
+  detail,
+  active,
+  onClick,
+}: {
+  label: string
+  detail: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`block w-full rounded-xl px-3 py-2 text-left transition-colors ${
+        active
+          ? 'bg-[var(--color-ink-2)] text-[var(--color-text-1)] shadow-[inset_3px_0_0_var(--color-accent)]'
+          : 'text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]'
+      }`}
+    >
+      <span className="block truncate text-[12px] font-medium">{label}</span>
+      <span className="mt-0.5 block truncate text-[10.5px] text-[var(--color-text-4)]">{detail}</span>
+    </button>
   )
 }
 
