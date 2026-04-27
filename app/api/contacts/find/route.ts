@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const { companyName, companyDomain, servicesDescription, signalType } = await request.json()
   if (!companyName) return NextResponse.json({ error: 'companyName required' }, { status: 400 })
 
-  const rl = await checkRateLimit(`contacts:${user.id}`, 20, 3600)
+  const rl = await checkRateLimit(`contacts:${user.id}`, 20, 3600, { failClosed: true })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Too many contact lookups. Limit is 20 per hour.' },

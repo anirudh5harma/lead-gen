@@ -27,14 +27,6 @@ export async function POST(request: Request) {
   const { leadId } = await request.json()
   if (!leadId) return NextResponse.json({ error: 'leadId required' }, { status: 400 })
 
-  const rl = await checkRateLimit(`draft:${user.id}`, 15, 3600)
-  if (!rl.allowed) {
-    return NextResponse.json(
-      { error: 'Too many draft requests. Limit is 15 per hour.' },
-      { status: 429, headers: { 'Retry-After': '3600' } }
-    )
-  }
-
   // Fetch lead + signal, and user profile separately (no direct FK from leads → user_profiles)
   const [leadRes, profileRes] = await Promise.all([
     supabase
@@ -67,6 +59,14 @@ export async function POST(request: Request) {
 
   if (existingDraft) {
     return NextResponse.json(existingDraft)
+  }
+
+  const rl = await checkRateLimit(`draft:${user.id}`, 15, 3600, { failClosed: true })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many draft requests. Limit is 15 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } }
+    )
   }
 
   const lead = leadRes.data as typeof leadRes.data & {

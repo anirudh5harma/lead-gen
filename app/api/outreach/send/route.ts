@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     )
   }
 
-  const rl = await checkRateLimit(`send:${user.id}`, 5, 3600)
+  const rl = await checkRateLimit(`send:${user.id}`, 5, 3600, { failClosed: true })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Too many sends. Limit is 5 per hour.' },

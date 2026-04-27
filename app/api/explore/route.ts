@@ -5,6 +5,8 @@ import { generateExploreLeads, type ExploreLeadSuggestion } from '@/lib/deepseek
 import { shouldUseWorkspaceIcp } from '@/lib/explore'
 import { buildFeedSessionLabel } from '@/lib/feed-sessions'
 import { buildExploreLeadFeedSnapshot, type LeadSignalType } from '@/lib/lead-sources'
+import { normalizePlanTier } from '@/lib/plan'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -13,6 +15,21 @@ export const maxDuration = 300
 const DEFAULT_RESULTS = 12
 const MAX_RESULTS = 100
 const MAX_GENERATION_BATCH_SIZE = 25
+const MAX_PROMPT_LENGTH = 1500
+const MAX_ICP_HINT_LENGTH = 300
+
+const EXPLORE_LIMITS = {
+  free: {
+    maxResults: 25,
+    perHour: 5,
+    perDay: 20,
+  },
+  pro: {
+    maxResults: 100,
+    perHour: 30,
+    perDay: 200,
+  },
+} as const
 
 export async function POST(request: Request) {
   const startedAt = Date.now()
@@ -27,16 +44,19 @@ export async function POST(request: Request) {
   } | null
 
   const prompt = body?.prompt?.trim() ?? ''
-  const icpHint = body?.icp_hint?.trim() ?? ''
+  const icpHint = (body?.icp_hint?.trim() ?? '').slice(0, MAX_ICP_HINT_LENGTH)
   if (prompt.length < 8) {
     return NextResponse.json({ error: 'Add a more specific targeting prompt.' }, { status: 400 })
+  }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    return NextResponse.json({ error: `Prompt is too long. Keep prompted discovery under ${MAX_PROMPT_LENGTH} characters.` }, { status: 400 })
   }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
   const [{ data: profile }, { data: clientProfile }] = await Promise.all([
     supabase
       .from('user_profiles')
-      .select('services_description, icp_keywords')
+      .select('services_description, icp_keywords, plan')
       .eq('user_id', user.id)
       .single(),
     activeClientId
@@ -48,6 +68,23 @@ export async function POST(request: Request) {
           .maybeSingle()
       : Promise.resolve({ data: null }),
   ])
+
+  const plan = normalizePlanTier(profile?.plan)
+  const exploreLimits = EXPLORE_LIMITS[plan]
+  const hourlyLimit = await checkRateLimit(`explore:${user.id}:hour`, exploreLimits.perHour, 3600, { failClosed: true })
+  if (!hourlyLimit.allowed) {
+    return NextResponse.json(
+      { error: `Too many prompted discovery runs. Limit is ${exploreLimits.perHour} per hour.` },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    )
+  }
+  const dailyLimit = await checkRateLimit(`explore:${user.id}:day`, exploreLimits.perDay, 86_400, { failClosed: true })
+  if (!dailyLimit.allowed) {
+    return NextResponse.json(
+      { error: `Daily prompted discovery limit reached. Limit is ${exploreLimits.perDay} runs per day.` },
+      { status: 429, headers: { 'Retry-After': '86400' } },
+    )
+  }
 
   const servicesDescription = clientProfile?.services_description || profile?.services_description || ''
   const icpKeywords = (clientProfile?.icp_keywords ?? profile?.icp_keywords ?? []) as string[]
@@ -77,7 +114,7 @@ export async function POST(request: Request) {
   const runId = run?.id ?? null
 
   const requestedCount = extractRequestedLeadCount(prompt) ?? DEFAULT_RESULTS
-  const targetCount = Math.max(1, Math.min(MAX_RESULTS, requestedCount))
+  const targetCount = Math.max(1, Math.min(MAX_RESULTS, exploreLimits.maxResults, requestedCount))
   const generatedLeads: ExploreLeadSuggestion[] = []
   let generationFailure: Awaited<ReturnType<typeof generateExploreLeads>> | null = null
   const excludedCompanies = new Set<string>()

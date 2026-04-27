@@ -8,8 +8,17 @@ import {
   mapCrmImportRecord,
   normalizeCrmProvider,
 } from '@/lib/crm-sync'
+import { checkRateLimit } from '@/lib/rate-limit'
+
+const MAX_CRM_IMPORT_RECORDS = 50
+const MAX_CRM_IMPORT_BODY_BYTES = 1_000_000
 
 export async function POST(request: Request) {
+  const contentLength = Number(request.headers.get('content-length') ?? 0)
+  if (Number.isFinite(contentLength) && contentLength > MAX_CRM_IMPORT_BODY_BYTES) {
+    return NextResponse.json({ error: 'CRM import payload is too large.' }, { status: 413 })
+  }
+
   const { searchParams } = new URL(request.url)
   const key = searchParams.get('key')
   if (!key) {
@@ -27,8 +36,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'CRM import is not enabled for this key' }, { status: 401 })
   }
 
+  const rl = await checkRateLimit(`crm-import:${key}`, 60, 3600, { failClosed: true, supabase })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many CRM import requests for this workspace. Limit is 60 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    )
+  }
+
   const body = await request.json().catch(() => null)
-  const records = normalizeRecords(body).slice(0, 50)
+  const records = normalizeRecords(body).slice(0, MAX_CRM_IMPORT_RECORDS)
   if (records.length === 0) {
     return NextResponse.json({ error: 'No CRM records found in payload' }, { status: 400 })
   }

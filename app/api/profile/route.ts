@@ -4,6 +4,9 @@ import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { extractICPKeywords } from '@/lib/deepseek'
 import { resolveServicesDescription } from '@/lib/company-profile'
 import { syncMonitoredAccountsFromWorkspaceSources } from '@/lib/monitored-accounts'
+import { checkRateLimit } from '@/lib/rate-limit'
+
+const MAX_PROFILE_FIELD_LENGTH = 3000
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -38,6 +41,23 @@ export async function POST(request: Request) {
 
   if (!companyName || !industryName || targetIndustries.length === 0) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+  if (
+    companyName.length > 200 ||
+    industryName.length > 200 ||
+    targetIndustries.join(',').length > 1000 ||
+    (typeof services_description === 'string' && services_description.length > MAX_PROFILE_FIELD_LENGTH) ||
+    (typeof website_url === 'string' && website_url.length > 500)
+  ) {
+    return NextResponse.json({ error: 'Profile fields exceed maximum length.' }, { status: 400 })
+  }
+
+  const rl = await checkRateLimit(`profile:${user.id}`, 10, 3600, { failClosed: true })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many profile updates. Limit is 10 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    )
   }
 
   const resolvedDescription = await resolveServicesDescription({

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { draftFollowUpEmail } from '@/lib/deepseek'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -20,6 +21,14 @@ export async function POST(request: Request) {
     .single()
 
   if (existing) return NextResponse.json(existing)
+
+  const rl = await checkRateLimit(`followup:${user.id}`, 10, 3600, { failClosed: true })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many follow-up draft requests. Limit is 10 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    )
+  }
 
   // Need the original draft to reference
   const { data: originalDraft } = await supabase

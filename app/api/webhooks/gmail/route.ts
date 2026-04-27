@@ -6,6 +6,22 @@ import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
 type AccountRow = ConnectedAccount & { gmail_history_id: string | null; user_id: string }
 
 export async function POST(request: Request) {
+  const configuredSecret = process.env.GMAIL_WEBHOOK_SECRET
+  if (!configuredSecret && process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Gmail webhook secret is not configured.' }, { status: 503 })
+  }
+
+  if (configuredSecret) {
+    const { searchParams } = new URL(request.url)
+    const suppliedSecret =
+      request.headers.get('x-bombsell-webhook-secret') ??
+      searchParams.get('token')
+
+    if (suppliedSecret !== configuredSecret) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
+
   let body: unknown
   try { body = await request.json() } catch { return NextResponse.json({ ok: true }) }
 
