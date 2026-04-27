@@ -15,7 +15,7 @@ import { normalizeLeadCompanyKey } from '../lead-dedupe'
 const CACHE_TTL_DAYS = 30
 const VALIDATION_CACHE_TTL_DAYS = 90
 const RETRY_AFTER_DAYS = 21
-const PLAN_PRIORITY: Record<string, number> = { max: 0, pro: 1, free: 2 }
+const PLAN_PRIORITY: Record<string, number> = { pro: 0, free: 1 }
 const MAX_CONTACTS_PER_COMPANY = 4
 const TARGET_SAFE_CONTACTS = 3
 const MIN_SAFE_CONTACTS = 2

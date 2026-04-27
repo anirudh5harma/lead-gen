@@ -25,8 +25,8 @@ interface UserProfile {
   email?: string
   plan?: string
   leads_used_this_month?: number
+  lead_credit_balance?: number
   slack_webhook_url?: string | null
-  allow_lead_overage?: boolean
   active_client_id?: string | null
 }
 
@@ -108,7 +108,6 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
 
   const [dismissed80,   setDismissed80]   = useState(false)
   const [dismissedOver, setDismissedOver] = useState(false)
-  const [overageEnabled, setOverageEnabled] = useState(userProfile.allow_lead_overage ?? false)
 
   useEffect(() => {
     if (window.location.search.includes('view=')) {
@@ -209,7 +208,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               <div className="space-y-4">
                 {usagePct >= 80 && usagePct < 100 && !dismissed80 && (
                   <UsageWarningBanner
-                    plan={plan as 'free' | 'pro' | 'max'}
+                    plan={plan as 'free' | 'pro'}
                     used={used}
                     limit={planLimit}
                     onDismiss={() => setDismissed80(true)}
@@ -221,13 +220,11 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                     onDismiss={() => setDismissedOver(true)}
                   />
                 )}
-                {usagePct >= 100 && plan !== 'free' && !dismissedOver && !overageEnabled && (
+                {usagePct >= 100 && plan !== 'free' && !dismissedOver && (
                   <OverLimitModal
-                    plan={plan as 'free' | 'pro' | 'max'}
+                    plan={plan as 'free' | 'pro'}
                     used={used}
                     limit={planLimit}
-                    overageEnabled={overageEnabled}
-                    onEnableOverage={() => setOverageEnabled(true)}
                     onDismiss={() => setDismissedOver(true)}
                   />
                 )}
@@ -236,7 +233,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                   userId={userId}
                   watchlist={watchlist}
                   activeClientId={userProfile.active_client_id ?? null}
-                  plan={plan as 'free' | 'pro' | 'max'}
+                  plan={plan as 'free' | 'pro'}
                   origin="live"
                   exportFeed="signal"
                   onOpenCrmTab={() => setActiveView('crm')}
@@ -249,7 +246,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 userId={userId}
                 watchlist={watchlist}
                 activeClientId={userProfile.active_client_id ?? null}
-                plan={plan as 'free' | 'pro' | 'max'}
+                plan={plan as 'free' | 'pro'}
                 icpKeywords={userProfile.icp_keywords ?? []}
                 onOpenCrmTab={() => setActiveView('crm')}
               />
@@ -260,7 +257,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 userId={userId}
                 watchlist={watchlist}
                 activeClientId={userProfile.active_client_id ?? null}
-                plan={plan as 'free' | 'pro' | 'max'}
+                plan={plan as 'free' | 'pro'}
               />
             )}
             {activeView === 'watchlist' && (
@@ -272,11 +269,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               </div>
             )}
             {activeView === 'settings' && (
-              <SettingsPanel
-                profile={userProfile}
-                overageEnabled={overageEnabled}
-                onOverageChange={setOverageEnabled}
-              />
+              <SettingsPanel profile={userProfile} />
             )}
           </div>
         </main>
@@ -303,10 +296,15 @@ function MetricChip({ value, label, accent = false }: { value: number; label: st
 
 const PLAN_LABELS: Record<string, { label: string; color: string; price: string }> = {
   free: { label: 'Free', color: 'text-[var(--color-text-4)]',    price: '$0' },
-  pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$100/mo' },
-  max:  { label: 'Max',  color: 'text-[var(--color-sig-funding)]', price: '$250/mo' },
+  pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$129/mo' },
 }
-const PLAN_LIMITS: Record<string, number> = { free: 15, pro: 300, max: 1500 }
+const PLAN_LIMITS: Record<string, number> = { free: 15, pro: 500 }
+const CREDIT_TOP_UPS = [
+  { amount: 5, credits: 20 },
+  { amount: 20, credits: 80 },
+  { amount: 50, credits: 200 },
+  { amount: 100, credits: 400 },
+]
 const AUTO_SEND_FEED_OPTIONS: Array<{ key: 'live' | 'explore' | 'crm_import'; label: string; description: string }> = [
   { key: 'live', label: 'Live Signal Feed', description: 'Auto-send follow-ups for live signal-driven leads.' },
   { key: 'explore', label: 'Explore Feed', description: 'Auto-send follow-ups for prompted discovery leads.' },
@@ -315,17 +313,14 @@ const AUTO_SEND_FEED_OPTIONS: Array<{ key: 'live' | 'explore' | 'crm_import'; la
 
 function SettingsPanel({
   profile,
-  overageEnabled,
-  onOverageChange,
 }: {
   profile: UserProfile
-  overageEnabled: boolean
-  onOverageChange: (enabled: boolean) => void
 }) {
   const plan = profile.plan ?? 'free'
   const planMeta = PLAN_LABELS[plan] ?? PLAN_LABELS.free
   const limit = PLAN_LIMITS[plan] ?? 15
   const used = profile.leads_used_this_month ?? 0
+  const leadCreditBalance = profile.lead_credit_balance ?? 0
   const pct = limit === Infinity ? 0 : Math.min(100, (used / limit) * 100)
 
   const [autoSend, setAutoSend] = useState(false)
@@ -340,7 +335,7 @@ function SettingsPanel({
   const [autoSendMaxAge, setAutoSendMaxAge] = useState(30)
 
   useEffect(() => {
-    if (plan !== 'pro' && plan !== 'max') return
+    if (plan !== 'pro') return
 
     let cancelled = false
     fetch('/api/settings/auto-send', { cache: 'no-store' })
@@ -416,8 +411,8 @@ function SettingsPanel({
   const [slackUrl, setSlackUrl] = useState(profile.slack_webhook_url ?? '')
   const [slackSaving, setSlackSaving] = useState(false)
   const [slackMsg, setSlackMsg] = useState<string | null>(null)
-  const [overageSaving, setOverageSaving] = useState(false)
-  const [overageMsg, setOverageMsg] = useState<string | null>(null)
+  const [creditCheckoutAmount, setCreditCheckoutAmount] = useState<number | null>(null)
+  const [creditCheckoutMsg, setCreditCheckoutMsg] = useState<string | null>(null)
 
   const saveSlack = useCallback(async () => {
     setSlackSaving(true)
@@ -437,28 +432,27 @@ function SettingsPanel({
     }
   }, [slackUrl])
 
-  const toggleLeadOverage = useCallback(async (enabled: boolean) => {
-    setOverageSaving(true)
-    setOverageMsg(null)
+  const startCreditCheckout = useCallback(async (amountDollars: number) => {
+    setCreditCheckoutAmount(amountDollars)
+    setCreditCheckoutMsg(null)
     try {
-      const res = await fetch('/api/settings/lead-overage', {
-        method: 'PATCH',
+      const res = await fetch('/api/billing/credits/checkout', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allow_lead_overage: enabled }),
+        body: JSON.stringify({ amount_dollars: amountDollars }),
       })
-      const data = await res.json() as { error?: string; allow_lead_overage?: boolean }
-      if (!res.ok) {
-        setOverageMsg(data.error ?? 'Failed to update')
+      const data = await res.json().catch(() => null) as { url?: string; error?: string } | null
+      if (!res.ok || !data?.url) {
+        setCreditCheckoutMsg(data?.error ?? 'Unable to start credit checkout.')
         return
       }
-      onOverageChange(Boolean(data.allow_lead_overage))
-      setOverageMsg(enabled ? 'Overages enabled' : 'Overages disabled')
+      window.location.assign(data.url)
     } catch {
-      setOverageMsg('Failed to update')
+      setCreditCheckoutMsg('Unable to start credit checkout.')
     } finally {
-      setOverageSaving(false)
+      setCreditCheckoutAmount(null)
     }
-  }, [onOverageChange])
+  }, [])
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -502,34 +496,50 @@ function SettingsPanel({
             <ManageBillingButton />
           )}
         </div>
-        {(plan === 'pro' || plan === 'max') && (
-          <div className="px-5 py-4 flex items-center justify-between gap-4 border-t border-[var(--color-line-1)]">
-            <div>
-              <p className="text-xs font-medium text-[var(--color-text-1)]">Lead overages</p>
-              <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-                When enabled, Bombsell keeps adding leads beyond your plan limit at $0.50 per extra lead.
-              </p>
-              {overageMsg && (
-                <p className={`text-[11px] mt-1 ${overageMsg.includes('Failed') ? 'text-[var(--color-sig-regulation)]' : 'text-[var(--color-text-3)]'}`}>
-                  {overageMsg}
+        {plan === 'pro' && (
+          <div className="px-5 py-4 border-t border-[var(--color-line-1)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium text-[var(--color-text-1)]">Lead credits</p>
+                <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+                  Credits unlock leads after your included monthly quota is used. Each $1 adds 4 lead unlocks.
                 </p>
-              )}
+              </div>
+              <span className="shrink-0 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent-ring)]">
+                {leadCreditBalance} credits
+              </span>
             </div>
-            <button
-              role="switch"
-              aria-checked={overageEnabled}
-              disabled={overageSaving}
-              onClick={() => toggleLeadOverage(!overageEnabled)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
-                overageEnabled ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${
-                  overageEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {CREDIT_TOP_UPS.map(option => (
+                <button
+                  key={option.amount}
+                  onClick={() => startCreditCheckout(option.amount)}
+                  disabled={creditCheckoutAmount !== null}
+                  className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-2 text-left transition-colors hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-accent-bg)] disabled:opacity-50"
+                >
+                  <span className="block text-[12px] font-semibold text-[var(--color-text-1)]">${option.amount}</span>
+                  <span className="block text-[11px] text-[var(--color-text-4)]">{option.credits} unlocks</span>
+                </button>
+              ))}
+            </div>
+            {creditCheckoutMsg && (
+              <p className="mt-2 text-[11px] text-[var(--color-sig-regulation)]">{creditCheckoutMsg}</p>
+            )}
+          </div>
+        )}
+        {plan === 'free' && (
+          <div className="px-5 py-4 border-t border-[var(--color-line-1)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium text-[var(--color-text-1)]">Lead credits</p>
+              <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+                  Upgrade to Pro to top up prepaid lead credits after using your free unlocks.
+              </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-3)]">
+                {leadCreditBalance} credits
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -537,14 +547,14 @@ function SettingsPanel({
       {/* Connected sending accounts — not available on free plan */}
       {plan !== 'free' && <ConnectedAccountsPanel />}
 
-      {plan === 'max' ? (
+      {plan === 'pro' ? (
         <ClientWorkspacePanel activeClientId={profile.active_client_id ?? null} />
       ) : (
         <ClientWorkspaceUpgradeCard />
       )}
 
-      {/* Auto-send toggle (Pro / Max only) */}
-      {(plan === 'pro' || plan === 'max') && (
+      {/* Auto-send toggle (Pro only) */}
+      {plan === 'pro' && (
         <div className="card divide-y divide-[var(--color-line-1)]">
           <div className="px-5 py-4 flex items-center justify-between gap-4">
             <div>
@@ -727,8 +737,8 @@ function SettingsPanel({
 
       <PipelineDiagnosticsPanel />
 
-      {/* Slack (Max only) */}
-      {plan === 'max' && (
+      {/* Slack (Pro only) */}
+      {plan === 'pro' && (
         <div className="card divide-y divide-[var(--color-line-1)]">
           <div className="px-5 py-4">
             <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Slack Alerts</h2>
@@ -765,6 +775,243 @@ function SettingsPanel({
   )
 }
 
+function FeedAutomationCard({
+  plan,
+  focusOrigin,
+}: {
+  plan: 'free' | 'pro'
+  focusOrigin: 'explore' | 'crm_import'
+}) {
+  const [loaded, setLoaded] = useState(false)
+  const [enabled, setEnabled] = useState(false)
+  const [connectedAccountId, setConnectedAccountId] = useState<string | null>(null)
+  const [targetOrigins, setTargetOrigins] = useState<Array<'live' | 'explore' | 'crm_import'>>(
+    focusOrigin === 'explore' ? ['explore'] : ['crm_import'],
+  )
+  const [requireVerified, setRequireVerified] = useState(false)
+  const [minScore, setMinScore] = useState(1)
+  const [maxAgeDays, setMaxAgeDays] = useState(30)
+  const [accounts, setAccounts] = useState<AutoSendAccount[]>([])
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (plan !== 'pro') return
+
+    let cancelled = false
+    fetch('/api/settings/auto-send', { cache: 'no-store' })
+      .then(async res => {
+        const data = await res.json().catch(() => null) as {
+          error?: string
+          policy?: {
+            enabled?: boolean
+            connected_account_id?: string | null
+            target_origins?: Array<'live' | 'explore' | 'crm_import'>
+            require_verified_contact?: boolean
+            min_relevance_score?: number
+            max_lead_age_days?: number
+          }
+          accounts?: AutoSendAccount[]
+        } | null
+        if (cancelled || !data) return
+        if (!res.ok) {
+          setMessage(data.error ?? 'Failed to load feed automation settings.')
+          setLoaded(true)
+          return
+        }
+        setEnabled(Boolean(data.policy?.enabled))
+        setConnectedAccountId(data.policy?.connected_account_id ?? null)
+        setTargetOrigins(data.policy?.target_origins?.length ? data.policy.target_origins : [focusOrigin])
+        setRequireVerified(Boolean(data.policy?.require_verified_contact))
+        setMinScore(data.policy?.min_relevance_score ?? 1)
+        setMaxAgeDays(data.policy?.max_lead_age_days ?? 30)
+        setAccounts(data.accounts ?? [])
+        setLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMessage('Failed to load feed automation settings.')
+          setLoaded(true)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [focusOrigin, plan])
+
+  const toggleOrigin = useCallback((origin: 'live' | 'explore' | 'crm_import') => {
+    setTargetOrigins(prev => {
+      if (prev.includes(origin)) {
+        if (prev.length === 1) return prev
+        return prev.filter(item => item !== origin)
+      }
+      return [...prev, origin]
+    })
+  }, [])
+
+  const savePolicy = useCallback(async () => {
+    if (plan !== 'pro') return
+    setSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/settings/auto-send', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled,
+          connected_account_id: connectedAccountId,
+          target_origins: targetOrigins,
+          require_verified_contact: requireVerified,
+          min_relevance_score: minScore,
+          max_lead_age_days: maxAgeDays,
+        }),
+      })
+      const data = await res.json().catch(() => null) as { error?: string } | null
+      setMessage(res.ok ? 'Automation saved' : data?.error ?? 'Failed to save automation.')
+    } catch {
+      setMessage('Failed to save automation.')
+    } finally {
+      setSaving(false)
+    }
+  }, [connectedAccountId, enabled, maxAgeDays, minScore, plan, requireVerified, targetOrigins])
+
+  const title = focusOrigin === 'explore' ? 'Explore automation' : 'CRM automation'
+  const description = focusOrigin === 'explore'
+    ? 'Auto-send can run on Explore, Signal Feed, and CRM Feed. Configure the feeds you want this workspace to sequence automatically.'
+    : 'Keep CRM imports in their own lane or include Explore and Signal Feed in the same automation policy.'
+
+  return (
+    <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="px-5 py-4">
+        <h3 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h3>
+        <p className="text-xs text-[var(--color-text-4)] mt-0.5">{description}</p>
+      </div>
+      {plan !== 'pro' ? (
+        <div className="px-5 py-4 flex items-center justify-between gap-3">
+          <p className="text-xs text-[var(--color-text-3)]">
+            Upgrade to Pro to auto-send from selected feed lanes.
+          </p>
+          <Link href="/pricing" className="inline-flex rounded-full btn-primary px-3 py-1.5 text-xs font-medium">
+            Upgrade
+          </Link>
+        </div>
+      ) : (
+        <div className="px-5 py-4 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <StatusPill
+              active={enabled}
+              activeLabel="Automation live"
+              idleLabel="Automation paused"
+            />
+            <label className="inline-flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={e => setEnabled(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
+              />
+              Enable auto-send
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1.5 text-xs text-[var(--color-text-3)]">
+              <span>Sending inbox</span>
+              <select
+                value={connectedAccountId ?? ''}
+                onChange={e => setConnectedAccountId(e.target.value || null)}
+                className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+              >
+                <option value="">Auto-pick connected inbox</option>
+                {accounts.map(account => (
+                  <option key={account.id} value={account.id}>
+                    {account.display_name || account.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1.5 text-xs text-[var(--color-text-3)]">
+                <span>Min score</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={minScore}
+                  onChange={e => setMinScore(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                  className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+                />
+              </label>
+              <label className="space-y-1.5 text-xs text-[var(--color-text-3)]">
+                <span>Max age</span>
+                <select
+                  value={maxAgeDays}
+                  onChange={e => setMaxAgeDays(Number(e.target.value) || 30)}
+                  className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={60}>60 days</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">
+              Feed scope
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {AUTO_SEND_FEED_OPTIONS.map(option => {
+                const active = targetOrigins.includes(option.key)
+                return (
+                  <button
+                    key={option.key}
+                    onClick={() => toggleOrigin(option.key)}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                      active
+                        ? 'border-[var(--color-accent)]/30 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+                        : 'border-[var(--color-line-2)] bg-white text-[var(--color-text-3)]'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+            <label className="inline-flex items-center gap-2 text-xs text-[var(--color-text-2)]">
+              <input
+                type="checkbox"
+                checked={requireVerified}
+                onChange={e => setRequireVerified(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
+              />
+              Verified contacts only
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={savePolicy}
+              disabled={!loaded || saving}
+              className="inline-flex rounded-full btn-primary px-3.5 py-1.5 text-xs font-medium disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save automation'}
+            </button>
+            {message && (
+              <span className={`text-xs ${message === 'Automation saved' ? 'text-[var(--color-sig-funding)]' : 'text-[var(--color-sig-regulation)]'}`}>
+                {message}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ExplorePanel({
   initialLeads,
   userId,
@@ -778,7 +1025,7 @@ function ExplorePanel({
   userId: string
   watchlist: WatchlistItem[]
   activeClientId: string | null
-  plan: 'free' | 'pro' | 'max'
+  plan: 'free' | 'pro'
   icpKeywords: string[]
   onOpenCrmTab: () => void
 }) {
@@ -793,6 +1040,7 @@ function ExplorePanel({
     skipped: number
     generated: number
     durationMs: number
+    requested?: number
   } | null>(null)
 
   useEffect(() => {
@@ -815,7 +1063,7 @@ function ExplorePanel({
     setMessage(null)
     setLastRunSummary(null)
     const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 65_000)
+    const timeoutId = window.setTimeout(() => controller.abort(), 180_000)
 
     try {
       const res = await fetch('/api/explore', {
@@ -830,6 +1078,7 @@ function ExplorePanel({
         inserted?: number
         skipped?: number
         generated?: number
+        requested?: number
         message?: string
         duration_ms?: number
       } | null
@@ -847,6 +1096,7 @@ function ExplorePanel({
         inserted: data?.inserted ?? 0,
         skipped: data?.skipped ?? 0,
         generated: data?.generated ?? 0,
+        requested: data?.requested,
         durationMs,
       })
       setMessage(
@@ -882,7 +1132,7 @@ function ExplorePanel({
           <textarea
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
-            placeholder="Example: Fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
+            placeholder="Example: Find 50 fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
             disabled={searching}
             className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
           />
@@ -922,6 +1172,7 @@ function ExplorePanel({
           {!searching && lastRunSummary && (
             <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11px] text-[var(--color-text-4)]">
               Last run finished in {Math.max(1, Math.round(lastRunSummary.durationMs / 1000))}s.
+              {typeof lastRunSummary.requested === 'number' && <> Requested {lastRunSummary.requested}.</>}
               {' '}Generated {lastRunSummary.generated} candidate{lastRunSummary.generated === 1 ? '' : 's'},
               {' '}added {lastRunSummary.inserted}, skipped {lastRunSummary.skipped}.
             </div>
@@ -937,6 +1188,9 @@ function ExplorePanel({
               Target accounts generated from your prompt and optional ICP hints.
             </p>
           </div>
+        </div>
+        <div className="px-5 pt-4">
+          <FeedAutomationCard plan={plan} focusOrigin="explore" />
         </div>
         <LeadFeed
           initialLeads={initialLeads}
@@ -967,7 +1221,7 @@ function CrmWorkspacePanel({
   userId: string
   watchlist: WatchlistItem[]
   activeClientId: string | null
-  plan: 'free' | 'pro' | 'max'
+  plan: 'free' | 'pro'
 }) {
   return (
     <div className="space-y-4">
@@ -999,6 +1253,9 @@ function CrmWorkspacePanel({
             <span className="h-2 w-2 rounded-full bg-[var(--color-sig-funding)]" />
             Separate from signal quota
           </div>
+        </div>
+        <div className="px-5 pt-4">
+          <FeedAutomationCard plan={plan} focusOrigin="crm_import" />
         </div>
         <LeadFeed
           initialLeads={initialLeads}
@@ -1091,13 +1348,13 @@ function ClientWorkspaceUpgradeCard() {
       </div>
       <div className="px-5 py-4 flex items-center justify-between gap-4">
         <p className="text-xs text-[var(--color-text-3)]">
-          Available on the Max plan only.
+          Available on the Pro plan.
         </p>
         <Link
           href="/pricing"
           className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
         >
-          Upgrade to Max
+          Upgrade to Pro
         </Link>
       </div>
     </div>
@@ -1771,7 +2028,7 @@ function ConnectedAccountsPanel() {
         google_failed:    'Google connection failed — please try again.',
         microsoft_failed: 'Microsoft connection failed — please try again.',
         invalid_state:    'Invalid OAuth state — please try again.',
-        plan_required:    'Sending account connections are available on Pro and Max.',
+        plan_required:    'Sending account connections are available on Pro.',
       }
       showBanner('err', msgs[error] ?? 'Connection failed.')
     }
@@ -1959,7 +2216,7 @@ function UsageWarningBanner({
   limit,
   onDismiss,
 }: {
-  plan: 'free' | 'pro' | 'max'
+  plan: 'free' | 'pro'
   used: number
   limit: number
   onDismiss: () => void
@@ -2021,58 +2278,13 @@ function OverLimitModal({
   plan,
   used,
   limit,
-  overageEnabled,
-  onEnableOverage,
   onDismiss,
 }: {
-  plan: 'free' | 'pro' | 'max'
+  plan: 'free' | 'pro'
   used: number
   limit: number
-  overageEnabled: boolean
-  onEnableOverage: () => void
   onDismiss: () => void
 }) {
-  const [upgrading, setUpgrading] = useState(false)
-  const [enabling, setEnabling] = useState(false)
-  const [upgradeError, setUpgradeError] = useState<string | null>(null)
-
-  async function upgradeToMax() {
-    setUpgrading(true)
-    setUpgradeError(null)
-    try {
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: 'max' }),
-      })
-      const data = await res.json() as { url?: string; error?: string }
-      if (data.url) {
-        window.location.href = data.url
-        return
-      }
-      setUpgradeError(data.error || 'Unable to start checkout right now.')
-    } finally {
-      setUpgrading(false)
-    }
-  }
-
-  async function enableOverages() {
-    setEnabling(true)
-    try {
-      const res = await fetch('/api/settings/lead-overage', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allow_lead_overage: true }),
-      })
-      if (res.ok) {
-        onEnableOverage()
-        onDismiss()
-      }
-    } finally {
-      setEnabling(false)
-    }
-  }
-
   return (
     <>
       {/* Backdrop */}
@@ -2097,10 +2309,7 @@ function OverLimitModal({
                 <>You&rsquo;ve used all {limit} free lead unlocks this period. You can still browse matched signals in preview mode, or upgrade to unlock more contacts and drafts.</>
               )}
               {plan === 'pro' && (
-                <>You&rsquo;ve used all {limit} Pro leads in your current 30-day window. You can keep the feed running with <strong className="text-[var(--color-text-1)]">$0.50 per extra lead</strong>, or upgrade to Max for 1,500 leads/mo.</>
-              )}
-              {plan === 'max' && (
-                <>You&rsquo;ve used all {limit} Max leads in your current 30-day window. You can keep the feed running with <strong className="text-[var(--color-text-1)]">$0.50 per extra lead</strong>, billed automatically at month end.</>
+                <>You&rsquo;ve used all {limit} Pro leads in your current 30-day window. Additional unlocks now draw from your prepaid lead credit balance.</>
               )}
             </p>
           </div>
@@ -2124,7 +2333,7 @@ function OverLimitModal({
                   href="/pricing"
                   className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center"
                 >
-                  Upgrade to Pro or Max
+                  Upgrade to Pro
                 </Link>
                 <button
                   onClick={onDismiss}
@@ -2138,38 +2347,11 @@ function OverLimitModal({
             {plan === 'pro' && (
               <>
                 <button
-                  onClick={upgradeToMax}
-                  disabled={upgrading}
-                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center disabled:opacity-60"
+                  onClick={onDismiss}
+                  className="h-10 rounded-full btn-primary text-[13px] flex items-center justify-center"
                 >
-                  {upgrading ? 'Redirecting…' : 'Upgrade to Max — 1,500 leads/mo'}
+                  Got it
                 </button>
-                <button
-                  onClick={enableOverages}
-                  disabled={enabling || overageEnabled}
-                  className="h-10 rounded-full btn-ghost text-[13px] flex items-center justify-center gap-2"
-                >
-                  {enabling ? 'Enabling…' : overageEnabled ? 'Overages already enabled' : 'Continue with $0.50/lead overages'}
-                  <span className="text-[11px] text-[var(--color-text-4)]">billed month end</span>
-                </button>
-                {upgradeError && (
-                  <p className="rounded-lg border border-[var(--color-sig-regulation)]/20 bg-[var(--color-sig-regulation-bg)] px-3 py-2 text-xs text-[var(--color-sig-regulation)]">
-                    {upgradeError}
-                  </p>
-                )}
-              </>
-            )}
-
-            {plan === 'max' && (
-              <>
-                <button
-                  onClick={enableOverages}
-                  disabled={enabling || overageEnabled}
-                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center disabled:opacity-60"
-                >
-                  {enabling ? 'Enabling…' : overageEnabled ? 'Overages already enabled' : 'Continue with $0.50/lead overages'}
-                </button>
-                <p className="text-center text-[11px] text-[var(--color-text-4)]">Charged automatically at month end</p>
               </>
             )}
           </div>

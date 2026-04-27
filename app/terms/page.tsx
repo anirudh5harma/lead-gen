@@ -25,7 +25,7 @@ const sections = [
   {
     title: 'Subscriptions, Limits, and Payments',
     paragraphs: [
-      'Paid plans renew automatically until cancelled. Fees are charged according to the plan, billing cycle, and any overage terms you accepted at checkout or in-product.',
+      'Paid plans renew automatically until cancelled. Fees are charged according to the plan, billing cycle, and any prepaid credit or top-up terms you accepted at checkout or in-product.',
       'Feature access, lead quotas, client workspace limits, and sending limits are tied to your current plan. If you downgrade or your subscription ends, Bombsell may restrict access to paid-only functionality or reduce workspace capacity to match your active plan.',
     ],
   },

@@ -1,25 +1,25 @@
 import type { PlanTier } from '@/lib/plan'
 
-export type LeadQuotaDecision = 'reserve' | 'overage' | 'preview' | 'blocked'
+export type LeadQuotaDecision = 'reserve' | 'credit' | 'preview' | 'blocked'
 
 export function resolveLeadQuotaDecision(params: {
   used: number
   monthlyLimit: number
-  allowLeadOverage: boolean
+  creditBalance?: number
   plan: PlanTier
 }): LeadQuotaDecision {
-  const { used, monthlyLimit, allowLeadOverage, plan } = params
+  const { used, monthlyLimit, creditBalance = 0, plan } = params
 
   if (used < monthlyLimit) {
     return 'reserve'
   }
 
-  if (plan === 'free') {
-    return 'preview'
+  if (creditBalance > 0) {
+    return 'credit'
   }
 
-  if (allowLeadOverage) {
-    return 'overage'
+  if (plan === 'free') {
+    return 'preview'
   }
 
   return 'blocked'

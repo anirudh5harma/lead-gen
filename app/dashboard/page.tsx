@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardShell from '@/components/DashboardShell'
 import type { Lead } from '@/components/LeadFeed'
+import { normalizePlanTier } from '@/lib/plan'
 
 export const revalidate = 0
 
@@ -34,7 +35,7 @@ export default async function DashboardPage() {
   // Migration-004 fields — may not exist yet; use defaults if the query errors.
   const { data: extProfile } = await supabase
     .from('user_profiles')
-    .select('plan, leads_used_this_month, slack_webhook_url, allow_lead_overage')
+    .select('plan, leads_used_this_month, lead_credit_balance, slack_webhook_url')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -42,10 +43,10 @@ export default async function DashboardPage() {
     p_user_id: user.id,
   })
 
-  const plan             = (extProfile as { plan?: string } | null)?.plan ?? 'free'
+  const plan             = normalizePlanTier((extProfile as { plan?: string } | null)?.plan)
   const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
+  const leadCredits      = (extProfile as { lead_credit_balance?: number } | null)?.lead_credit_balance ?? 0
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
-  const allowLeadOverage = (extProfile as { allow_lead_overage?: boolean } | null)?.allow_lead_overage ?? false
 
   // Initial leads (server-rendered)
   const { data: leads } = await supabase
@@ -56,6 +57,9 @@ export default async function DashboardPage() {
       origin,
       source_kind,
       source_record_id,
+      feed_session_id,
+      feed_session_label,
+      feed_session_started_at,
       target_company,
       company_domain,
       relevance_score,
@@ -99,8 +103,8 @@ export default async function DashboardPage() {
         email: user.email,
         plan: plan,
         leads_used_this_month: leadsUsed,
+        lead_credit_balance: leadCredits,
         slack_webhook_url: slackWebhookUrl,
-        allow_lead_overage: allowLeadOverage,
         active_client_id: activeClientId,
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
       }}

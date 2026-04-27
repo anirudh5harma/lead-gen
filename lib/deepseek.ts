@@ -463,12 +463,16 @@ export async function generateExploreLeads(params: {
   sellerProfileDescription?: string | null
   workspaceIcpContext?: string | null
   useWorkspaceIcp?: boolean
+  count?: number
+  excludeCompanies?: string[]
 }): Promise<ExploreLeadGenerationResult> {
   const {
     prompt,
     sellerProfileDescription = '',
     workspaceIcpContext = '',
     useWorkspaceIcp = false,
+    count = 12,
+    excludeCompanies = [],
   } = params
   const promptAssessment = assessExplorePrompt(prompt)
 
@@ -482,9 +486,15 @@ export async function generateExploreLeads(params: {
   }
 
   try {
+    const requestedCount = Math.max(1, Math.min(30, Math.round(count)))
+    const excludedContext = excludeCompanies.length > 0
+      ? `Already generated companies to avoid: ${excludeCompanies.slice(0, 80).join(', ')}`
+      : 'Already generated companies to avoid: none'
+
     const buildPrompt = () => `Targeting prompt: ${prompt}
 Seller profile description: ${sellerProfileDescription || 'None provided'}
 ${useWorkspaceIcp && workspaceIcpContext ? `Workspace ICP context: ${workspaceIcpContext}` : 'Workspace ICP context: none'}
+${excludedContext}
 
 Return a JSON object in exactly this shape:
 {
@@ -502,7 +512,8 @@ Return a JSON object in exactly this shape:
 }
 
 Requirements:
-- Include 8 to 12 leads.
+- Include exactly ${requestedCount} leads.
+- Do not include companies listed in "Already generated companies to avoid".
 - Use only these signal types: "funding", "acquisition", "expansion", "regulation", "hiring".
 - The headline and summary should read like a lead rationale, not a news citation.
 - Use null for company_domain if uncertain.
@@ -524,7 +535,7 @@ Rules:
 
 Return ONLY valid JSON, no markdown.`,
       prompt: buildPrompt(),
-      maxTokens: 1400,
+      maxTokens: Math.min(6000, 650 + requestedCount * 260),
       timeoutMs: 35_000,
       temperature: 0.3,
       responseFormat: { type: 'json_object' },
@@ -556,7 +567,7 @@ Return ONLY valid JSON, no markdown.`,
         const candidateLeads = candidateRawLeads
           .map(item => normalizeExploreLeadSuggestion(item))
           .filter((item): item is ExploreLeadSuggestion => item !== null)
-          .slice(0, 12)
+          .slice(0, requestedCount)
 
         if (candidateLeads.length > 0) {
           return {

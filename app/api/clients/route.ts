@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
-import type { PlanTier } from '@/lib/plan'
+import { normalizePlanTier } from '@/lib/plan'
 
 export async function GET() {
   const supabase = await createClient()
@@ -23,9 +23,9 @@ export async function GET() {
   ])
 
   if (clientsErr) return NextResponse.json({ error: clientsErr.message }, { status: 500 })
-  const plan = ((profile as { plan?: string | null } | null)?.plan ?? 'free') as PlanTier
+  const plan = normalizePlanTier((profile as { plan?: string | null } | null)?.plan)
   const activeClientId = (profile as { active_client_id?: string | null; plan?: string | null } | null)?.active_client_id ?? null
-  const canManageMultiple = plan === 'max'
+  const canManageMultiple = plan === 'pro'
   const accessPlan = buildWorkspaceAccessPlan({
     plan,
     activeClientId,
@@ -55,8 +55,8 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (((profile as { plan?: string | null } | null)?.plan ?? 'free') !== 'max') {
-    return NextResponse.json({ error: 'Multiple client workspaces are available on the Max plan.' }, { status: 403 })
+  if (normalizePlanTier((profile as { plan?: string | null } | null)?.plan) !== 'pro') {
+    return NextResponse.json({ error: 'Multiple client workspaces are available on the Pro plan.' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => null) as { name?: string } | null
@@ -96,8 +96,8 @@ export async function PATCH(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (((profile as { plan?: string | null } | null)?.plan ?? 'free') !== 'max') {
-    return NextResponse.json({ error: 'Multiple client workspaces are available on the Max plan.' }, { status: 403 })
+  if (normalizePlanTier((profile as { plan?: string | null } | null)?.plan) !== 'pro') {
+    return NextResponse.json({ error: 'Multiple client workspaces are available on the Pro plan.' }, { status: 403 })
   }
 
   const body = await request.json().catch(() => null) as { activeClientId?: string } | null

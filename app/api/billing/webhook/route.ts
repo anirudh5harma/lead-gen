@@ -3,15 +3,18 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { planFromProductId } from '@/lib/dodo'
 import { Webhook } from 'standardwebhooks'
 import { syncWorkspaceAccessForPlan } from '@/lib/client-workspaces'
+import { addLeadCreditsForPayment } from '@/lib/lead-credits'
 
 export const runtime = 'nodejs'
 
 interface DodoWebhookPayload {
   type: string
   data: {
-    subscription_id: string
-    product_id: string
-    status: string
+    subscription_id?: string
+    product_id?: string
+    payment_id?: string
+    total_amount?: number
+    status?: string
     next_billing_date?: string
     customer: {
       customer_id: string
@@ -51,20 +54,45 @@ export async function POST(request: Request) {
   const supabase = await createServiceClient()
   const { type, data } = event
 
+  if (type === 'payment.succeeded' && data.metadata?.purchase_type === 'lead_credits') {
+    const userId = data.metadata.user_id
+    const paymentId = data.payment_id
+    const credits = Number(data.metadata.credits)
+    const amountDollars = Number(data.metadata.amount_dollars)
+
+    if (!userId || !paymentId || !Number.isFinite(credits) || credits <= 0) {
+      console.warn('[dodo webhook] Invalid lead credit payment metadata', data.metadata)
+      return NextResponse.json({ ok: true })
+    }
+
+    await addLeadCreditsForPayment(supabase, {
+      userId,
+      paymentId,
+      credits: Math.floor(credits),
+      amountDollars: Number.isFinite(amountDollars) ? amountDollars : (data.total_amount ?? 0) / 100,
+      metadata: {
+        dodo_customer_id: data.customer?.customer_id,
+        dodo_total_amount: data.total_amount ?? null,
+      },
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
   if (
     type === 'subscription.created' ||
     type === 'subscription.active' ||
     type === 'subscription.updated' ||
     type === 'subscription.plan_changed'
   ) {
-    const plan = planFromProductId(data.product_id)
+    const plan = planFromProductId(data.product_id ?? '')
     let userId = data.metadata?.user_id
 
     if (!userId) {
       const { data: existingSub } = await supabase
         .from('subscriptions')
         .select('user_id')
-        .eq('dodo_subscription_id', data.subscription_id)
+        .eq('dodo_subscription_id', data.subscription_id ?? '')
         .maybeSingle()
       userId = existingSub?.user_id
     }
@@ -79,20 +107,14 @@ export async function POST(request: Request) {
       dodo_customer_id:     data.customer.customer_id,
       dodo_subscription_id: data.subscription_id,
       plan,
-      status:               data.status,
+      status:               data.status ?? type,
       next_billing_date:    data.next_billing_date ?? null,
-      ...(plan !== 'max'
-        ? {
-            workspace_downgrade_warning_sent_at: null,
-            workspace_downgrade_warning_cycle_at: null,
-          }
-        : {}),
+      workspace_downgrade_warning_sent_at: null,
+      workspace_downgrade_warning_cycle_at: null,
       updated_at:           new Date().toISOString(),
     }, { onConflict: 'user_id' })
 
-    const profileUpdate: Record<string, unknown> = { plan }
-    if (plan === 'free') profileUpdate.allow_lead_overage = false
-    await supabase.from('user_profiles').update(profileUpdate).eq('user_id', userId)
+    await supabase.from('user_profiles').update({ plan }).eq('user_id', userId)
     await syncWorkspaceAccessForPlan(supabase, userId, plan)
   }
 
@@ -100,22 +122,21 @@ export async function POST(request: Request) {
     const { data: record } = await supabase
       .from('subscriptions')
       .select('user_id')
-      .eq('dodo_subscription_id', data.subscription_id)
+      .eq('dodo_subscription_id', data.subscription_id ?? '')
       .maybeSingle()
 
     if (record?.user_id) {
       await supabase.from('user_profiles').update({
         plan: 'free',
-        allow_lead_overage: false,
       }).eq('user_id', record.user_id)
       await syncWorkspaceAccessForPlan(supabase, record.user_id, 'free')
       await supabase.from('subscriptions').update({
         plan:       'free',
-        status:     data.status,
+        status:     data.status ?? type,
         workspace_downgrade_warning_sent_at: null,
         workspace_downgrade_warning_cycle_at: null,
         updated_at: new Date().toISOString(),
-      }).eq('dodo_subscription_id', data.subscription_id)
+      }).eq('dodo_subscription_id', data.subscription_id ?? '')
     }
   }
 

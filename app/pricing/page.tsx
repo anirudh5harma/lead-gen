@@ -16,10 +16,10 @@ const PLANS = [
     features: [
       'Unlimited signal previews',
       '15 lead unlocks / month',
-      'Draft + send via Gmail',
+      'Personalized outreach drafts',
       'CRM sync and exports',
       '1 workspace',
-      'Hyper-personalized outreach',
+      'Manual Gmail/copy handoff',
     ],
     cta: 'Get started',
     highlight: false,
@@ -27,36 +27,22 @@ const PLANS = [
   {
     id: 'pro' as const,
     name: 'Pro',
-    price: '$100',
+    price: '$129',
     period: '/ month',
     description: 'For active solopreneurs.',
     features: [
-      'Upto 300 leads / month',
-      '1 workspace',
+      'Up to 500 leads / month',
+      'Multiple client workspaces',
       'CRM sync and exports',
       'Auto-send Gmail/Outlook',
       'Automated follow-ups',
       'Reply detection',
+      'Slack signal alerts',
+      'Priority enrichment queue',
+      'Prepaid lead credit top-ups',
       'Everything in Free',
     ],
     cta: 'Upgrade to Pro',
-    highlight: false,
-  },
-  {
-    id: 'max' as const,
-    name: 'Max',
-    price: '$250',
-    period: '/ month',
-    description: 'For teams and agencies that move fast.',
-    features: [
-      'Unlimited leads / month',
-      'Multiple client workspaces',
-      'Per-client targeting and templates',
-      'Slack signal alerts',
-      'Priority enrichment queue',
-      'Everything in Pro',
-    ],
-    cta: 'Upgrade to Max',
     highlight: true,
   },
 ]
@@ -64,15 +50,15 @@ const PLANS = [
 const FAQS = [
   {
     q: 'Do follow-ups count against my lead quota?',
-    a: 'No. Your monthly lead quota only controls how many new leads enter your feed in a rolling 30-day window. Follow-ups are included on Pro and Max and do not consume additional lead quota.',
+    a: 'No. Your monthly lead quota only controls how many new leads enter your feed in a rolling 30-day window. Follow-ups are included on Pro and do not consume additional lead quota.',
   },
   {
     q: 'What happens when I hit my limit?',
-    a: 'Free users can keep browsing all matched signals, but only 15 leads per rolling 30-day window can be fully unlocked with contacts and drafts. Pro and Max can either stop at the limit or keep the feed running by opting into $0.50 per extra lead.',
+    a: 'Free users can keep browsing all matched signals, but only 15 leads per rolling 30-day window can be fully unlocked with contacts and drafts. Pro includes 500 leads monthly and can top up prepaid lead credits when more unlocks are needed.',
   },
   {
     q: 'Which plan includes client workspaces?',
-    a: 'Max. CRM sync and exports are available on every plan, but Max is the tier that unlocks multiple client workspaces with separate targeting, templates, and feed views.',
+    a: 'Pro. CRM sync and exports are available on every plan, but Pro unlocks multiple client workspaces with separate targeting, templates, and feed views.',
   },
   {
     q: 'Can I cancel or change plans anytime?',
@@ -89,7 +75,7 @@ const FAQS = [
 ]
 
 export default function PricingPage() {
-  const [loading, setLoading] = useState<'pro' | 'max' | null>(null)
+  const [loading, setLoading] = useState<'pro' | null>(null)
   const [isSignedIn, setIsSignedIn] = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const router = useRouter()
@@ -100,7 +86,7 @@ export default function PricingPage() {
     })
   }, [])
 
-  async function startCheckout(plan: 'pro' | 'max') {
+  async function startCheckout(plan: 'pro') {
     setLoading(plan)
     setCheckoutError(null)
     try {
@@ -154,7 +140,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-5 fade-in-stagger">
+        <div className="w-full max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-5 fade-in-stagger">
           {PLANS.map(plan => (
             <div
               key={plan.id}

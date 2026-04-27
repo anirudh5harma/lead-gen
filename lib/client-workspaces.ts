@@ -49,7 +49,7 @@ export function buildWorkspaceAccessPlan({
     }
   }
 
-  if (plan === 'max') {
+  if (plan === 'pro') {
     return {
       visibleClientIds: activeClients.length > 0
         ? activeClients.map(client => client.id)

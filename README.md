@@ -6,11 +6,12 @@ Bombsell ingests public buying signals, matches them against user or client ICPs
 
 ## Product Model
 
-- `Free`: 10 leads per rolling 30 days, single workspace, manual send via Gmail/copy handoff.
-- `Pro`: 300 leads per rolling 30 days, single workspace, connected inbox sending, automated follow-ups, reply detection.
-- `Max`: 1,500 leads per rolling 30 days, multiple client workspaces, Slack alerts, priority enrichment.
+- `Free`: 15 lead unlocks per rolling 30 days, single workspace, manual Gmail/copy handoff.
+- `Pro`: 500 leads per rolling 30 days, multiple client workspaces, connected inbox sending, automated follow-ups, reply detection, Slack alerts, priority enrichment, and prepaid lead-credit top-ups.
 
 CRM sync and CRM export are available on every plan. CRM-imported outreach records land in a separate feed and do not consume signal-feed lead quota.
+
+Lead credits are prepaid top-ups. By default, each $1 adds 4 additional lead unlocks after the included monthly quota is exhausted; configure `LEAD_CREDITS_PER_DOLLAR` to change the conversion rate.
 
 Leads are quota-limited at feed-ingestion time, not at send time. Follow-ups do not consume lead quota.
 
@@ -19,11 +20,12 @@ Leads are quota-limited at feed-ingestion time, not at send time. Follow-ups do 
 1. `poll-signals` fetches Google News and press-wire candidates, expands monitored-account coverage with owned-feed and monitored-company news discovery, shortlists them, extracts structured signals, clusters near-duplicate events, embeds them, and inserts into `signals`.
 2. `monitored_accounts` is refreshed from watchlists, recent delivered leads, and queued matches so account-centric monitoring survives across cron runs.
 3. `leads/match` uses pgvector candidate retrieval plus watchlist/keyword prefilters, then LLM-reranks only a bounded top slice before queueing matched opportunities in `lead_delivery_queue`.
-4. `deliver-leads` drains that backlog hourly into `leads`, pacing delivery by plan limits, recent volume, queue depth, and historical engagement feedback.
-5. `enrich-contacts` backfills contact emails via cache plus provider waterfall, with staged ZeroBounce validation and validation-result caching to control credit burn while still targeting 2-3 usable contacts per company.
-6. Users draft or send outreach from the feed.
-7. `send-followups` sends pre-generated follow-ups for paid plans when no reply has been detected.
-8. Gmail/Outlook webhooks mark replies and stop scheduled follow-ups.
+4. `deliver-leads` drains that backlog hourly into `leads`, using included monthly quota first and prepaid lead credits after quota is exhausted.
+5. Explore searches and CRM imports are stored as separate feed sessions so users can export, automate, and work each batch independently.
+6. `enrich-contacts` backfills contact emails via cache plus provider waterfall, with staged ZeroBounce validation and validation-result caching to control credit burn while still targeting 2-3 usable contacts per company.
+7. Users draft or send outreach from the feed.
+8. `send-followups` sends pre-generated follow-ups for paid plans when no reply has been detected.
+9. Gmail/Outlook webhooks mark replies and stop scheduled follow-ups.
 
 ## Cron Jobs
 
@@ -35,7 +37,6 @@ Cron schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/ver
 - `/api/cron/send-followups`: hourly at `:25`.
 - `/api/cron/enrich-contacts`: every 2 hours at `:20`.
 - `/api/cron/renew-inbox-watches`: daily.
-- `/api/cron/notify-workspace-downgrade`: daily.
 
 Each cron now writes a row into `cron_runs`, which powers the in-app diagnostics view.
 
@@ -62,6 +63,7 @@ Ranking is now adaptive:
 - Node.js 22+
 - Supabase project with migrations applied
 - Environment variables for Supabase, DeepSeek, Dodo, Resend, Gmail, Outlook, FullEnrich, Hunter, ZeroBounce, and cron auth
+- `DODO_PRODUCT_LEAD_CREDITS` must point to a one-time/pay-what-you-want Dodo product used for lead-credit top-ups.
 
 ### Install and run
 
@@ -106,11 +108,11 @@ Apply migrations before deploying code that depends on them.
 
 ## Operational Notes
 
-- Non-Max users are restricted to a single visible workspace.
-- When a user downgrades below Max, extra workspaces are archived and archived workspace CRM sync is disabled.
+- Free users are restricted to a single visible workspace.
+- When a user downgrades to Free, extra workspaces are archived and archived workspace CRM sync is disabled.
 - Matching only considers eligible, non-archived workspaces, so hidden workspaces cannot consume quota.
 - Draft/send/follow-up logic now resolves sender context from the lead's `client_id` first, then falls back to the user profile.
-- CRM sync is available on every plan. Only multi-workspace CRM partitioning remains Max-specific because multiple client workspaces are still a Max feature.
+- CRM sync is available on every plan. Multi-workspace CRM partitioning is available on Pro because multiple client workspaces are a Pro feature.
 
 ## Diagnostics
 

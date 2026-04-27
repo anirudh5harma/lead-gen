@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
-import { generateExploreLeads } from '@/lib/deepseek'
+import { generateExploreLeads, type ExploreLeadSuggestion } from '@/lib/deepseek'
 import { shouldUseWorkspaceIcp } from '@/lib/explore'
+import { buildFeedSessionLabel } from '@/lib/feed-sessions'
 import { buildExploreLeadFeedSnapshot, type LeadSignalType } from '@/lib/lead-sources'
 
-const MAX_RESULTS = 12
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 300
+
+const DEFAULT_RESULTS = 12
+const MAX_RESULTS = 100
+const MAX_GENERATION_BATCH_SIZE = 25
 
 export async function POST(request: Request) {
   const startedAt = Date.now()
@@ -69,20 +76,48 @@ export async function POST(request: Request) {
 
   const runId = run?.id ?? null
 
-  const generation = await generateExploreLeads({
-    prompt,
-    sellerProfileDescription: servicesDescription,
-    workspaceIcpContext,
-    useWorkspaceIcp,
-  })
+  const requestedCount = extractRequestedLeadCount(prompt) ?? DEFAULT_RESULTS
+  const targetCount = Math.max(1, Math.min(MAX_RESULTS, requestedCount))
+  const generatedLeads: ExploreLeadSuggestion[] = []
+  let generationFailure: Awaited<ReturnType<typeof generateExploreLeads>> | null = null
+  const excludedCompanies = new Set<string>()
 
-  if (!generation.ok) {
+  while (generatedLeads.length < targetCount) {
+    const remaining = targetCount - generatedLeads.length
+    const generation = await generateExploreLeads({
+      prompt,
+      sellerProfileDescription: servicesDescription,
+      workspaceIcpContext,
+      useWorkspaceIcp,
+      count: Math.min(MAX_GENERATION_BATCH_SIZE, remaining),
+      excludeCompanies: [...excludedCompanies],
+    })
+
+    if (!generation.ok) {
+      generationFailure = generation
+      break
+    }
+
+    let addedThisBatch = 0
+    for (const lead of generation.leads) {
+      const key = normalizeExploreCompanyKey(lead.company_name, lead.company_domain)
+      if (excludedCompanies.has(key)) continue
+      excludedCompanies.add(key)
+      generatedLeads.push(lead)
+      addedThisBatch++
+      if (generatedLeads.length >= targetCount) break
+    }
+
+    if (addedThisBatch === 0 || generation.leads.length === 0) break
+  }
+
+  if (generatedLeads.length === 0 && generationFailure) {
     if (runId) {
       await admin
         .from('explore_runs')
         .update({
           status: 'failed',
-          error_message: generation.rejection_reason ?? 'Prompt generation failed.',
+          error_message: generationFailure.rejection_reason ?? 'Prompt generation failed.',
           completed_at: new Date().toISOString(),
         })
         .eq('id', runId)
@@ -94,11 +129,12 @@ export async function POST(request: Request) {
       skipped: 0,
       generated: 0,
       duration_ms: Date.now() - startedAt,
-      message: generation.rejection_reason ?? 'This prompt is outside the scope of lead generation.',
-    }, { status: generation.failure_kind === 'invalid_prompt' ? 400 : 502 })
+      requested: targetCount,
+      message: generationFailure.rejection_reason ?? 'This prompt is outside the scope of lead generation.',
+    }, { status: generationFailure.failure_kind === 'invalid_prompt' ? 400 : 502 })
   }
 
-  const suggestions = generation.leads.slice(0, MAX_RESULTS)
+  const suggestions = generatedLeads.slice(0, targetCount)
 
   if (suggestions.length === 0) {
     if (runId) {
@@ -119,12 +155,18 @@ export async function POST(request: Request) {
       inserted: 0,
       skipped: 0,
       generated: 0,
+      requested: targetCount,
       duration_ms: Date.now() - startedAt,
       message: 'No lead suggestions were generated for this prompt.',
     })
   }
 
   const now = new Date().toISOString()
+  const sessionLabel = buildFeedSessionLabel({
+    origin: 'explore',
+    startedAt: now,
+    prompt,
+  })
   let inserted = 0
   let skipped = 0
   let duplicates = 0
@@ -202,6 +244,9 @@ export async function POST(request: Request) {
         client_id: activeClientId,
         signal_id: null,
         origin: 'explore',
+        feed_session_id: runId,
+        feed_session_label: sessionLabel,
+        feed_session_started_at: now,
         source_kind: 'explore_target',
         source_record_id: target.id,
         target_company: suggestion.company_name,
@@ -237,7 +282,7 @@ export async function POST(request: Request) {
       .from('explore_runs')
       .update({
         status: 'completed',
-        generated_count: suggestions.length,
+      generated_count: suggestions.length,
         inserted_count: inserted,
         skipped_count: skipped,
         completed_at: new Date().toISOString(),
@@ -248,6 +293,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     generated: suggestions.length,
+    requested: targetCount,
     inserted,
     skipped,
     duplicates,
@@ -255,11 +301,31 @@ export async function POST(request: Request) {
     lead_errors: leadErrors,
     duration_ms: Date.now() - startedAt,
     message: inserted > 0
-      ? `Added ${inserted} explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : ' directly from the prompt.'}`
+      ? `Added ${inserted} of ${targetCount} requested explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : ' directly from the prompt.'}`
       : duplicates > 0 && sourceErrors === 0 && leadErrors === 0
           ? `Found ${duplicates} duplicate explore ${duplicates === 1 ? 'lead' : 'leads'} and added no new ones.`
           : 'No new explore leads were added due to save errors.',
   })
+}
+
+function extractRequestedLeadCount(prompt: string): number | null {
+  const explicit = prompt.match(/\b(\d{1,3})\s*(?:leads?|companies|accounts|prospects|targets)\b/i)
+  const fallback = prompt.match(/\b(?:find|give|generate|return|show|source|get)\s+(\d{1,3})\b/i)
+  const raw = explicit?.[1] ?? fallback?.[1]
+  if (!raw) return null
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) return null
+  return Math.round(value)
+}
+
+function normalizeExploreCompanyKey(companyName: string, companyDomain: string | null): string {
+  return (companyDomain || companyName)
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '')
+    .replace(/[^a-z0-9.-]+/g, '-')
 }
 
 function buildExploreResultKey(params: {

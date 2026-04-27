@@ -83,7 +83,6 @@ export interface InternalOpsSummary {
       runs: number
       delivered: number
       preview_delivered: number
-      overage_delivered: number
       feedback_reordered: number
     }
   }
@@ -310,13 +309,11 @@ export async function getInternalOpsSummary(
         runs: 0,
         delivered: 0,
         preview_delivered: 0,
-        overage_delivered: 0,
         feedback_reordered: 0,
       }, metric => ({
         runs: 1,
         delivered: num(metric.delivered),
         preview_delivered: num(metric.preview_delivered),
-        overage_delivered: num(metric.overage_delivered),
         feedback_reordered: num(metric.feedback_reordered),
       })),
     },

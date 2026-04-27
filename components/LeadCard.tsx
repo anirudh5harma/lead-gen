@@ -29,8 +29,10 @@ export interface LeadCardProps {
   lead: LeadCardLead
   rowIndex: number
   isSelected: boolean
+  isChecked?: boolean
   actionBusy?: boolean
   onSelect: () => void
+  onToggleChecked?: () => void
   onDraftOutreach: (leadId: string) => void
   onStatusChange: (leadId: string, status: string) => void
   onOpenTimeline: (companyName: string, companyDomain?: string) => void
@@ -74,8 +76,10 @@ export default function LeadCard({
   lead,
   rowIndex,
   isSelected,
+  isChecked = false,
   actionBusy = false,
   onSelect,
+  onToggleChecked,
   onDraftOutreach,
   onStatusChange,
   onOpenTimeline,
@@ -116,8 +120,19 @@ export default function LeadCard({
           : 'hover:bg-[var(--color-ink-2)]'}
       `}
     >
+      <td className="w-8 pl-5 pr-1 py-3.5">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onClick={e => e.stopPropagation()}
+          onChange={() => onToggleChecked?.()}
+          className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
+          aria-label={`Select ${lead.target_company}`}
+        />
+      </td>
+
       {/* # */}
-      <td className="w-8 pl-5 pr-2 py-3.5">
+      <td className="w-8 pl-2 pr-2 py-3.5">
         <span className="text-[11px] font-mono text-[var(--color-text-4)]">{rowIndex}</span>
       </td>
 

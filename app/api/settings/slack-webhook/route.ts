@@ -8,8 +8,8 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { plan } = await getUserPlan(user.id)
-  if (plan !== 'max') {
-    return NextResponse.json({ error: 'Slack integration requires the Max plan.' }, { status: 403 })
+  if (plan !== 'pro') {
+    return NextResponse.json({ error: 'Slack integration requires the Pro plan.' }, { status: 403 })
   }
 
   let body: unknown

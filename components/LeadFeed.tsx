@@ -20,6 +20,9 @@ export interface Lead {
   origin?: LeadOrigin
   source_kind?: LeadSourceKind | null
   source_record_id?: string | null
+  feed_session_id?: string | null
+  feed_session_label?: string | null
+  feed_session_started_at?: string | null
   target_company: string
   company_domain?: string | null
   relevance_score: number
@@ -49,7 +52,7 @@ interface Props {
   userId: string
   watchlist?: WatchlistItem[]
   activeClientId?: string | null
-  plan?: 'free' | 'pro' | 'max'
+  plan?: 'free' | 'pro'
   origin?: 'live' | 'explore' | 'crm_import'
   hideSignalTabs?: boolean
   searchPlaceholder?: string
@@ -57,6 +60,13 @@ interface Props {
   emptyBody?: string
   exportFeed?: 'signal' | 'explore' | 'crm_import'
   onOpenCrmTab?: () => void
+}
+
+interface FeedSessionOption {
+  id: string
+  label: string
+  startedAt: string
+  leadCount: number
 }
 
 const SIGNAL_TABS: { key: 'all' | SignalType; label: string }[] = [
@@ -80,6 +90,15 @@ function isSignalType(v: string): v is SignalType {
 
 function isLeadStatus(v: string): v is LeadStatus {
   return ['new', 'viewed', 'drafted', 'sent', 'replied', 'booked', 'dismissed'].includes(v)
+}
+
+function formatSessionStamp(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(iso))
 }
 
 function toCardLead(lead: Lead): LeadCardLead | null {
@@ -131,6 +150,9 @@ export default function LeadFeed({
   const [sortBy, setSortBy] = useState<'newest' | 'top_score'>('newest')
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState<'csv' | 'crm' | null>(null)
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
+  const [sessionFilter, setSessionFilter] = useState<string>('latest')
+  const [bulkActionBusy, setBulkActionBusy] = useState<'dismiss' | 'delete' | null>(null)
 
   const watchlistLookup = useMemo(() => {
     const s = new Set<string>()
@@ -144,6 +166,46 @@ export default function LeadFeed({
   useEffect(() => {
     setLeads(initialLeads)
   }, [initialLeads])
+
+  const sessionOptions = useMemo<FeedSessionOption[]>(() => {
+    if (origin === 'live') return []
+
+    const sessionMap = new Map<string, FeedSessionOption>()
+    for (const lead of leads) {
+      if ((lead.origin ?? 'live') !== origin || lead.status === 'dismissed') continue
+      const sessionId = lead.feed_session_id ?? `fallback:${lead.id}`
+      const startedAt = lead.feed_session_started_at ?? lead.created_at
+      const existing = sessionMap.get(sessionId)
+      if (existing) {
+        existing.leadCount += 1
+        if (new Date(startedAt).getTime() > new Date(existing.startedAt).getTime()) {
+          existing.startedAt = startedAt
+        }
+        continue
+      }
+      sessionMap.set(sessionId, {
+        id: sessionId,
+        label: lead.feed_session_label ?? `Session · ${formatSessionStamp(startedAt)}`,
+        startedAt,
+        leadCount: 1,
+      })
+    }
+
+    return [...sessionMap.values()].sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    )
+  }, [leads, origin])
+
+  useEffect(() => {
+    if (origin === 'live') return
+    if (sessionFilter !== 'all' && sessionFilter !== 'latest' && !sessionOptions.some(option => option.id === sessionFilter)) {
+      setSessionFilter('latest')
+    }
+  }, [origin, sessionFilter, sessionOptions])
+
+  useEffect(() => {
+    setSelectedLeadIds(prev => prev.filter(id => leads.some(lead => lead.id === id)))
+  }, [leads])
 
   useEffect(() => {
     const supabase = createClient()
@@ -165,7 +227,7 @@ export default function LeadFeed({
 
           const { data } = await supabase
             .from('leads')
-            .select(`id, client_id, origin, source_kind, source_record_id, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, contact_email, contact_name, contact_title, feed_snapshot`)
+            .select(`id, client_id, origin, source_kind, source_record_id, feed_session_id, feed_session_label, feed_session_started_at, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, contact_email, contact_name, contact_title, feed_snapshot`)
             .eq('id', payload.new.id)
             .single()
           if (data) {
@@ -263,8 +325,15 @@ export default function LeadFeed({
     setActiveLead({ ...lead, is_unlocked: true, unlocked_at: lead.unlocked_at ?? new Date().toISOString() })
   }, [unlockLead, updateStatus])
 
+  const effectiveSessionFilter = sessionFilter === 'latest'
+    ? (sessionOptions[0]?.id ?? 'all')
+    : sessionFilter
+
   const filteredLeads = useMemo(() => {
     let result = leads.filter(l => (l.origin ?? 'live') === origin && l.status !== 'dismissed')
+    if (effectiveSessionFilter !== 'all') {
+      result = result.filter(l => (l.feed_session_id ?? `fallback:${l.id}`) === effectiveSessionFilter)
+    }
     if (filterSignal !== 'all') result = result.filter(l => getSignal(l)?.signal_type === filterSignal)
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -279,22 +348,53 @@ export default function LeadFeed({
         ? b.relevance_score - a.relevance_score
         : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
-  }, [leads, filterSignal, search, sortBy, origin])
+  }, [effectiveSessionFilter, leads, filterSignal, search, sortBy, origin])
+
+  const selectedCount = selectedLeadIds.length
+  const allVisibleSelected = filteredLeads.length > 0 && filteredLeads.every(lead => selectedLeadIds.includes(lead.id))
+  const activeSession = sessionOptions.find(option => option.id === effectiveSessionFilter) ?? null
 
   const effectiveSelectedId = useMemo(() => {
     if (selectedId && filteredLeads.some(l => l.id === selectedId)) return selectedId
     return filteredLeads[0]?.id ?? null
   }, [filteredLeads, selectedId])
 
-  const handleExport = useCallback(async (mode: 'csv' | 'crm') => {
+  const toggleLeadSelection = useCallback((leadId: string) => {
+    setSelectedLeadIds(prev =>
+      prev.includes(leadId)
+        ? prev.filter(id => id !== leadId)
+        : [...prev, leadId],
+    )
+  }, [])
+
+  const toggleVisibleSelections = useCallback(() => {
+    if (allVisibleSelected) {
+      setSelectedLeadIds(prev => prev.filter(id => !filteredLeads.some(lead => lead.id === id)))
+      return
+    }
+    setSelectedLeadIds(prev => [...new Set([...prev, ...filteredLeads.map(lead => lead.id)])])
+  }, [allVisibleSelected, filteredLeads])
+
+  const handleExport = useCallback(async (mode: 'csv' | 'crm', leadIds?: string[]) => {
     setExportOpen(false)
 
     const params = new URLSearchParams({ feed: exportFeed })
+    for (const leadId of (leadIds ?? [])) {
+      params.append('lead_id', leadId)
+    }
 
     if (mode === 'csv') {
       setExporting('csv')
       window.location.href = `/api/export/crm?${params.toString()}`
-      setToast(exportFeed === 'explore' ? 'Explore CSV export started' : exportFeed === 'crm_import' ? 'CRM feed CSV export started' : 'Signal CSV export started')
+      setToast(
+        leadIds?.length
+          ? `Exporting ${leadIds.length} selected ${leadIds.length === 1 ? 'lead' : 'leads'} to CSV`
+          : exportFeed === 'explore'
+            ? 'Explore CSV export started'
+            : exportFeed === 'crm_import'
+              ? 'CRM feed CSV export started'
+              : 'Signal CSV export started',
+      )
       window.setTimeout(() => setExporting(null), 500)
       return
     }
@@ -334,6 +434,44 @@ export default function LeadFeed({
       setExporting(null)
     }
   }, [exportFeed, onOpenCrmTab])
+
+  const runBulkAction = useCallback(async (action: 'dismiss' | 'delete') => {
+    if (selectedLeadIds.length === 0) return
+    setBulkActionBusy(action)
+    try {
+      const res = await fetch('/api/leads/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          action === 'delete'
+            ? { action: 'delete', lead_ids: selectedLeadIds }
+            : { action: 'status', status: 'dismissed', lead_ids: selectedLeadIds },
+        ),
+      })
+      const data = await res.json().catch(() => null) as { error?: string } | null
+      if (!res.ok) {
+        setToast(data?.error ?? 'Bulk action failed')
+        return
+      }
+
+      if (action === 'delete') {
+        setLeads(prev => prev.filter(lead => !selectedLeadIds.includes(lead.id)))
+        setToast(`Deleted ${selectedLeadIds.length} ${selectedLeadIds.length === 1 ? 'lead' : 'leads'}`)
+      } else {
+        setLeads(prev => prev.map(lead => (
+          selectedLeadIds.includes(lead.id)
+            ? { ...lead, status: 'dismissed' }
+            : lead
+        )))
+        setToast(`Dismissed ${selectedLeadIds.length} ${selectedLeadIds.length === 1 ? 'lead' : 'leads'}`)
+      }
+      setSelectedLeadIds([])
+    } catch {
+      setToast('Bulk action failed')
+    } finally {
+      setBulkActionBusy(null)
+    }
+  }, [selectedLeadIds])
 
   return (
     <div className="space-y-4">
@@ -430,6 +568,102 @@ export default function LeadFeed({
         </div>
       </div>
 
+      {origin !== 'live' && sessionOptions.length > 0 && (
+        <div className="mx-5 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/70 px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">
+                Feed sessions
+              </p>
+              <p className="mt-1 text-[12px] text-[var(--color-text-2)]">
+                {activeSession
+                  ? `${activeSession.label} · ${activeSession.leadCount} ${activeSession.leadCount === 1 ? 'lead' : 'leads'}`
+                  : `Showing ${sessionOptions.length} saved session${sessionOptions.length === 1 ? '' : 's'}`}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setSessionFilter('all')}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                  sessionFilter === 'all'
+                    ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+                    : 'border border-[var(--color-line-2)] bg-transparent text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'
+                }`}
+              >
+                All sessions
+              </button>
+              <button
+                onClick={() => setSessionFilter('latest')}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                  sessionFilter === 'latest'
+                    ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+                    : 'border border-[var(--color-line-2)] bg-transparent text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'
+                }`}
+              >
+                Latest session
+              </button>
+              {sessionOptions.slice(0, 6).map(option => (
+                <button
+                  key={option.id}
+                  onClick={() => setSessionFilter(option.id)}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                    effectiveSessionFilter === option.id && sessionFilter !== 'all'
+                      ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+                      : 'border border-[var(--color-line-2)] bg-transparent text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedCount > 0 && (
+        <div className="mx-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)] px-4 py-3">
+          <p className="text-[12px] text-[var(--color-text-1)]">
+            {selectedCount} {selectedCount === 1 ? 'lead selected' : 'leads selected'}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => handleExport('csv', selectedLeadIds)}
+              disabled={exporting !== null}
+              className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] disabled:opacity-50"
+            >
+              Export CSV
+            </button>
+            <button
+              onClick={() => handleExport('crm', selectedLeadIds)}
+              disabled={exporting !== null}
+              className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] disabled:opacity-50"
+            >
+              Push to CRM
+            </button>
+            <button
+              onClick={() => runBulkAction('dismiss')}
+              disabled={bulkActionBusy !== null}
+              className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] disabled:opacity-50"
+            >
+              {bulkActionBusy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}
+            </button>
+            <button
+              onClick={() => runBulkAction('delete')}
+              disabled={bulkActionBusy !== null}
+              className="rounded-full border border-[var(--color-sig-regulation)]/20 bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-sig-regulation)] disabled:opacity-50"
+            >
+              {bulkActionBusy === 'delete' ? 'Deleting…' : 'Delete'}
+            </button>
+            <button
+              onClick={() => setSelectedLeadIds([])}
+              className="rounded-full px-2 py-1.5 text-[11px] font-medium text-[var(--color-text-3)]"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       {filteredLeads.length === 0 ? (
         <div className="px-5 pb-5">
@@ -440,10 +674,19 @@ export default function LeadFeed({
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60">
+                <th className="py-3 pl-5 pr-1">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleVisibleSelections}
+                    className="h-3.5 w-3.5 rounded border-[var(--color-line-2)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]/30"
+                    aria-label="Select all visible leads"
+                  />
+                </th>
                 {['#', 'Company', 'Signal', 'Score', 'Status', 'Time', ''].map((h, i) => (
                   <th
                     key={i}
-                    className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-3)] text-left py-3 px-3 first:pl-5 last:pr-4 whitespace-nowrap"
+                    className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-3)] text-left py-3 px-3 last:pr-4 whitespace-nowrap"
                   >
                     {h}
                   </th>
@@ -464,8 +707,10 @@ export default function LeadFeed({
                     lead={card}
                     rowIndex={i + 1}
                     isSelected={effectiveSelectedId === lead.id}
+                    isChecked={selectedLeadIds.includes(lead.id)}
                     actionBusy={unlockingLeadId === lead.id}
                     onSelect={() => setSelectedId(lead.id)}
+                    onToggleChecked={() => toggleLeadSelection(lead.id)}
                     onDraftOutreach={() => openDraft(lead)}
                     onStatusChange={(id, status) => updateStatus(id, status)}
                     onOpenTimeline={(name, d) => setTimelineFor({ name, domain: d })}

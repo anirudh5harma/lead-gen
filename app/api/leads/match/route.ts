@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { scoreLeadRelevance } from '@/lib/deepseek'
-import { type PlanTier } from '@/lib/plan'
+import { normalizePlanTier, type PlanTier } from '@/lib/plan'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
@@ -94,7 +94,7 @@ async function runMatch(request: Request) {
     }>()
     for (const row of (userSettings ?? [])) {
       userSettingsMap.set(row.user_id, {
-        plan: (row.plan ?? 'free') as PlanTier,
+        plan: normalizePlanTier(row.plan),
         activeClientId: row.active_client_id ?? null,
       })
     }

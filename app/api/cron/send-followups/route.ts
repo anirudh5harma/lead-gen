@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizeAutoSendPolicy, policyKey } from '@/lib/auto-send-policies'
-import { getPlanLimits, type PlanTier } from '@/lib/plan'
+import { getPlanLimits, normalizePlanTier, type PlanTier } from '@/lib/plan'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { resolveOutreachContext } from '@/lib/outreach-context'
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
       profile: { company_name?: string | null; services_description?: string | null; calendly_url?: string | null }
     }> = {}
     for (const p of (profiles ?? [])) {
-      const plan = (p.plan ?? 'free') as PlanTier
+      const plan = normalizePlanTier(p.plan)
       quotaMap[p.user_id] = {
         plan,
         profile: {

@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   }
 
   const plan = (body as { plan?: string }).plan
-  if (plan !== 'pro' && plan !== 'max') {
-    return NextResponse.json({ error: 'plan must be "pro" or "max"' }, { status: 400 })
+  if (plan !== 'pro') {
+    return NextResponse.json({ error: 'plan must be "pro"' }, { status: 400 })
   }
 
   const productId = PRODUCT_IDS[plan]
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       environment: config.environment,
       hasApiKey: config.hasApiKey,
       hasProProduct: config.hasProProduct,
-      hasMaxProduct: config.hasMaxProduct,
+      hasLeadCreditsProduct: config.hasLeadCreditsProduct,
       hasBusinessId: config.hasBusinessId,
     })
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { canUseConnectedSending, getPlanLimits, type PlanTier } from '@/lib/plan'
+import { canUseConnectedSending, getPlanLimits, normalizePlanTier } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/deepseek'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
@@ -49,11 +49,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unlock this lead first before sending outreach.' }, { status: 403 })
   }
 
-  const userPlan = (profileRes.data?.plan ?? 'free') as PlanTier
+  const userPlan = normalizePlanTier(profileRes.data?.plan)
   const planLimits = getPlanLimits(userPlan)
   if (!canUseConnectedSending(userPlan)) {
     return NextResponse.json(
-      { error: 'Direct Gmail/Outlook sending is available on Pro and Max. Free users can open Gmail or copy the draft from the outreach drawer.' },
+      { error: 'Direct Gmail/Outlook sending is available on Pro. Free users can open Gmail or copy the draft from the outreach drawer.' },
       { status: 403 }
     )
   }
@@ -63,14 +63,6 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: 'Too many sends. Limit is 5 per hour.' },
       { status: 429, headers: { 'Retry-After': '3600' } }
-    )
-  }
-
-  const dailyRl = await checkRateLimit(`daily:${user.id}`, planLimits.sends_per_day, 86400)
-  if (!dailyRl.allowed) {
-    return NextResponse.json(
-      { error: `You've reached your daily send limit (${planLimits.sends_per_day}/day). Try again tomorrow.` },
-      { status: 429, headers: { 'Retry-After': '86400' } }
     )
   }
 

@@ -26,6 +26,11 @@ async function loadExportContext(request: Request) {
         ? 'explore'
         : 'signal'
   const workspaceName = searchParams.get('workspace') ?? ''
+  const selectedLeadIds = searchParams
+    .getAll('lead_id')
+    .flatMap(value => value.split(','))
+    .map(value => value.trim())
+    .filter(Boolean)
   const expectedOrigin = feed === 'crm_import' ? 'crm_import' : feed === 'explore' ? 'explore' : 'live'
 
   let query = supabase
@@ -43,6 +48,7 @@ async function loadExportContext(request: Request) {
     .order('created_at', { ascending: false })
 
   query = activeClientId ? query.eq('client_id', activeClientId) : query.is('client_id', null)
+  if (selectedLeadIds.length > 0) query = query.in('id', selectedLeadIds)
   const { data: leads } = await query
 
   const records = leads
@@ -77,6 +83,7 @@ async function loadExportContext(request: Request) {
     activeClientId,
     provider,
     feed,
+    selectedLeadIds,
     records,
     csv: buildCrmExportCsv(provider, records),
   }

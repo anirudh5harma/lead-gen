@@ -44,9 +44,9 @@ export function computeDeliveryAllowance(params: {
   plan: PlanTier
   monthlyLimit: number
   used: number
+  creditBalance?: number
   pendingCount: number
   deliveredLast24h: number
-  allowLeadOverage: boolean
 }): number {
   if (params.pendingCount <= 0) return 0
 
@@ -58,18 +58,10 @@ export function computeDeliveryAllowance(params: {
   }
 
   const remainingQuota = Math.max(0, params.monthlyLimit - params.used)
-  if (!params.allowLeadOverage && remainingQuota <= 0) return 0
+  const availableUnlocks = remainingQuota + Math.max(0, params.creditBalance ?? 0)
+  if (availableUnlocks <= 0) return 0
 
-  const baseDaily = Math.max(4, Math.ceil(params.monthlyLimit / 30))
-  const backlogDaily = Math.max(baseDaily, Math.ceil(params.pendingCount / 24))
-  const targetDaily = params.allowLeadOverage
-    ? backlogDaily
-    : Math.min(backlogDaily, remainingQuota)
-
-  const remainingToday = Math.max(0, targetDaily - params.deliveredLast24h)
-  if (remainingToday <= 0) return 0
-
-  return Math.min(25, Math.max(1, Math.ceil(remainingToday / DELIVERY_DAY_SLICES)))
+  return Math.min(params.pendingCount, availableUnlocks)
 }
 
 export function nextQuotaRetryAt(date = new Date()): string {

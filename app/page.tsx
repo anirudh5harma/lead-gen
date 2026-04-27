@@ -177,7 +177,7 @@ export default function LoginPage() {
               Start free. Upgrade when it <span className="font-serif italic">converts.</span>
             </h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl mx-auto">
             {TIERS.map(tier => (
               <div
                 key={tier.name}
@@ -279,7 +279,7 @@ const STEPS = [
   },
   {
     title: 'Drafted. Sent. Tracked.',
-    body: 'Every signal lands with a polished outreach draft. Pro and Max add connected inbox sending, a 3-day follow-up, and reply detection.',
+    body: 'Every signal lands with a polished outreach draft. Pro adds connected inbox sending, a 3-day follow-up, and reply detection.',
     icon: <IconSend />,
   },
 ]
@@ -295,11 +295,11 @@ const FEATURES = [
   },
   {
     title: 'Automated follow-ups',
-    body: "Pro and Max can auto-send a 3-day follow-up if they don't reply. Reply detection pauses the sequence instantly when they do.",
+    body: "Pro can auto-send a 3-day follow-up if they don't reply. Reply detection pauses the sequence instantly when they do.",
   },
   {
     title: 'CRM-ready exports',
-    body: 'Every plan gets CRM-ready exports and sync workflows. Max adds multi-client workspaces, Slack alerts, and the priority queue for teams.',
+    body: 'Every plan gets CRM-ready exports and sync workflows. Pro adds multi-client workspaces, Slack alerts, and the priority queue.',
   },
 ]
 
@@ -314,18 +314,10 @@ const TIERS = [
   },
   {
     name: 'Pro',
-    price: '$100',
+    price: '$129',
     period: '/ month',
-    perks: ['Upto 300 leads / month', 'CRM sync and exports', 'Auto-send', '3-day follow-ups', 'Reply detection'],
+    perks: ['Up to 500 leads / month', 'CRM sync and exports', 'Auto-send', '3-day follow-ups', 'Reply detection', 'Multi-client workspaces', 'Slack alerts', 'Credit top-ups'],
     cta: 'Upgrade to Pro',
-    highlight: false,
-  },
-  {
-    name: 'Max',
-    price: '$250',
-    period: '/ month',
-    perks: ['Unlimited leads / month', 'Multi-client workspaces', 'Slack alerts', 'Priority queue'],
-    cta: 'Upgrade to Max',
     highlight: true,
   },
 ]

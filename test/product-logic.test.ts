@@ -14,6 +14,7 @@ import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
+import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
 import {
   assessExplorePrompt,
   buildExploreSearchTerms,
@@ -23,9 +24,9 @@ import {
   shouldUseWorkspaceIcp,
 } from '../lib/explore.ts'
 
-test('non-max plans only keep the active workspace visible', () => {
+test('free plan only keeps the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
-    plan: 'pro',
+    plan: 'free',
     activeClientId: 'client_b',
     clients: [
       { id: 'client_a', is_archived: false, created_at: '2026-04-20T00:00:00.000Z' },
@@ -38,7 +39,7 @@ test('non-max plans only keep the active workspace visible', () => {
   assert.deepEqual(plan.archiveClientIds, ['client_a'])
 })
 
-test('non-max plans fall back to the oldest available workspace when active is missing', () => {
+test('free plan falls back to the oldest available workspace when active is missing', () => {
   const plan = buildWorkspaceAccessPlan({
     plan: 'free',
     activeClientId: null,
@@ -52,9 +53,9 @@ test('non-max plans fall back to the oldest available workspace when active is m
   assert.equal(plan.keepClientId, 'client_a')
 })
 
-test('max plan keeps every unarchived workspace visible', () => {
+test('pro plan keeps every unarchived workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
-    plan: 'max',
+    plan: 'pro',
     activeClientId: 'client_b',
     clients: [
       { id: 'client_a', is_archived: false, created_at: '2026-04-20T00:00:00.000Z' },
@@ -103,27 +104,38 @@ test('outreach context falls back cleanly when no client profile exists', () => 
   assert.equal(context.calendlyUrl, null)
 })
 
-test('lead quota decision previews free over-limit leads and allows paid overage', () => {
+test('lead quota decision previews free over-limit leads and blocks paid users without credits', () => {
   assert.equal(resolveLeadQuotaDecision({
     used: 10,
     monthlyLimit: 10,
-    allowLeadOverage: true,
     plan: 'free',
   }), 'preview')
 
   assert.equal(resolveLeadQuotaDecision({
-    used: 300,
-    monthlyLimit: 300,
-    allowLeadOverage: true,
+    used: 10,
+    monthlyLimit: 10,
+    creditBalance: 3,
+    plan: 'free',
+  }), 'credit')
+
+  assert.equal(resolveLeadQuotaDecision({
+    used: 500,
+    monthlyLimit: 500,
     plan: 'pro',
-  }), 'overage')
+  }), 'blocked')
+
+  assert.equal(resolveLeadQuotaDecision({
+    used: 500,
+    monthlyLimit: 500,
+    creditBalance: 1,
+    plan: 'pro',
+  }), 'credit')
 })
 
 test('lead quota decision reserves quota when still under limit', () => {
   assert.equal(resolveLeadQuotaDecision({
     used: 9,
     monthlyLimit: 10,
-    allowLeadOverage: false,
     plan: 'free',
   }), 'reserve')
 })
@@ -260,6 +272,23 @@ test('crm export records build CRM-safe notes and split contact names', () => {
   assert.match(record.crmNote, /Recent funding/)
 })
 
+test('feed session labels summarize explore prompts and crm imports clearly', () => {
+  const exploreLabel = buildFeedSessionLabel({
+    origin: 'explore',
+    startedAt: '2026-04-27T10:00:00.000Z',
+    prompt: 'Find 50 healthcare compliance startups selling into community banks and regional lenders',
+  })
+  const crmLabel = buildFeedSessionLabel({
+    origin: 'crm_import',
+    startedAt: '2026-04-27T10:00:00.000Z',
+    provider: 'hubspot',
+    recordCount: 24,
+  })
+
+  assert.match(exploreLabel, /^Explore · Find 50 healthcare compliance startups/)
+  assert.match(crmLabel, /^Hubspot import · 24 records · /)
+})
+
 test('explore only applies workspace icp when the user explicitly asks for it', () => {
   assert.equal(shouldUseWorkspaceIcp({
     prompt: 'find some early stage AI startups for me',
@@ -340,24 +369,23 @@ test('explore source scoring favors press release items with matching topical te
   assert.equal(nonMatching, 0)
 })
 
-test('delivery allowance scales with paid backlog but respects recent daily volume', () => {
+test('delivery allowance for paid plans has no daily cap and respects quota plus credits', () => {
   assert.equal(computeDeliveryAllowance({
     plan: 'pro',
-    monthlyLimit: 300,
+    monthlyLimit: 500,
     used: 120,
     pendingCount: 96,
     deliveredLast24h: 2,
-    allowLeadOverage: false,
-  }), 1)
+  }), 96)
 
   assert.equal(computeDeliveryAllowance({
-    plan: 'max',
-    monthlyLimit: 1500,
-    used: 400,
-    pendingCount: 360,
-    deliveredLast24h: 8,
-    allowLeadOverage: true,
-  }), 6)
+    plan: 'pro',
+    monthlyLimit: 500,
+    used: 500,
+    creditBalance: 25,
+    pendingCount: 1200,
+    deliveredLast24h: 0,
+  }), 25)
 })
 
 test('delivery allowance lets free users receive preview batches', () => {
@@ -367,7 +395,6 @@ test('delivery allowance lets free users receive preview batches', () => {
     used: 15,
     pendingCount: 48,
     deliveredLast24h: 0,
-    allowLeadOverage: false,
   }), 1)
 })
 

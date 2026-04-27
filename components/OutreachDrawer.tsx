@@ -8,7 +8,7 @@ import type { Lead } from './LeadFeed'
 
 interface Props {
   lead: Lead
-  plan?: 'free' | 'pro' | 'max'
+  plan?: 'free' | 'pro'
   onClose: () => void
   onEmailSent: () => void
   onStatusChange?: (status: string) => void
@@ -137,7 +137,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
   async function sendEmail() {
     if (!draft) return
     if (plan === 'free') {
-      setSendError('Direct inbox sending is available on Pro and Max. Use Gmail or Copy on Free.')
+      setSendError('Direct inbox sending is available on Pro. Use Gmail or Copy on Free.')
       return
     }
     const recipient = draft.stakeholders.find(s => s.email)
@@ -185,7 +185,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
     ?? (Array.isArray(lead.signals) ? lead.signals[0] : lead.signals)
   const sigType = sig?.signal_type ?? ''
   const sigMeta = SIGNAL_META[sigType]
-  const canSendDirect = plan === 'pro' || plan === 'max'
+  const canSendDirect = plan === 'pro'
 
   const drawer = (
     <>
@@ -372,7 +372,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
 
             {!canSendDirect && (
               <p className="text-xs text-[var(--color-text-4)] bg-[var(--color-ink-2)] border border-[var(--color-line-1)] rounded-lg px-3 py-2">
-                Free includes personalized drafts. Upgrade to Pro or Max for one-click Gmail/Outlook sending, follow-ups, and reply detection.
+                Free includes personalized drafts. Upgrade to Pro for one-click Gmail/Outlook sending, follow-ups, and reply detection.
               </p>
             )}
 

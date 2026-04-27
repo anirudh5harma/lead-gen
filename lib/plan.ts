@@ -1,10 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 
-export type PlanTier = 'free' | 'pro' | 'max'
+export type PlanTier = 'free' | 'pro'
 
 export interface PlanLimits {
   leads_per_month: number
-  sends_per_day: number
   auto_send: boolean
   followups: boolean
   reply_detection: boolean
@@ -15,31 +14,24 @@ export interface PlanLimits {
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
     leads_per_month: 15,
-    sends_per_day: 2,
     auto_send: false,
     followups: false,
     reply_detection: false,
-    crm_export: false,
+    crm_export: true,
     slack: false,
   },
   pro: {
-    leads_per_month: 300,
-    sends_per_day: 15,
-    auto_send: true,
-    followups: true,
-    reply_detection: true,
-    crm_export: false,
-    slack: false,
-  },
-  max: {
-    leads_per_month: 1500,
-    sends_per_day: 60,
+    leads_per_month: 500,
     auto_send: true,
     followups: true,
     reply_detection: true,
     crm_export: true,
     slack: true,
   },
+}
+
+export function normalizePlanTier(plan: string | null | undefined): PlanTier {
+  return plan === 'pro' ? 'pro' : 'free'
 }
 
 export async function getUserPlan(userId: string): Promise<{ plan: PlanTier; used: number; limit: number }> {
@@ -52,7 +44,7 @@ export async function getUserPlan(userId: string): Promise<{ plan: PlanTier; use
 
   if (!data) return { plan: 'free', used: 0, limit: PLAN_LIMITS.free.leads_per_month }
 
-  const plan = (data.plan ?? 'free') as PlanTier
+  const plan = normalizePlanTier(data.plan)
   const resetAt = new Date(data.leads_reset_at)
   const now = new Date()
   const windowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -87,5 +79,5 @@ export function getPlanLimits(plan: PlanTier): PlanLimits {
 }
 
 export function canUseConnectedSending(plan: string | null | undefined): boolean {
-  return plan === 'pro' || plan === 'max'
+  return normalizePlanTier(plan) === 'pro'
 }

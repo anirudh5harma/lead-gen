@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { buildFeedSessionLabel } from '@/lib/feed-sessions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { buildCrmLeadFeedSnapshot } from '@/lib/lead-sources'
 import {
@@ -47,6 +48,12 @@ export async function POST(request: Request) {
     .single()
 
   const batchId = batch?.id ?? null
+  const sessionLabel = buildFeedSessionLabel({
+    origin: 'crm_import',
+    startedAt: now,
+    provider,
+    recordCount: records.length,
+  })
   let imported = 0
   let skipped = 0
   let duplicates = 0
@@ -130,6 +137,9 @@ export async function POST(request: Request) {
         client_id: setting.client_id,
         signal_id: null,
         origin: 'crm_import',
+        feed_session_id: batchId,
+        feed_session_label: sessionLabel,
+        feed_session_started_at: now,
         source_kind: 'crm_record',
         source_record_id: savedRecord.id,
         target_company: record.companyName,
