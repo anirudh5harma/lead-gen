@@ -656,6 +656,7 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
     .from('leads')
     .select('id, target_company, company_domain, user_id, relevance_score')
     .is('contact_email', null)
+    .eq('is_unlocked', true)
     .neq('status', 'dismissed')
     .or(`contact_enriched_at.is.null,contact_enriched_at.lt.${retryAfter}`)
     .limit(batchSize)

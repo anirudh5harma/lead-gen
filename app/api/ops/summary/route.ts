@@ -26,6 +26,7 @@ export async function GET() {
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .is('contact_email', null)
+      .eq('is_unlocked', true)
       .neq('status', 'dismissed'),
     supabase
       .from('scheduled_followups')
