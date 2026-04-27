@@ -14,7 +14,11 @@ const GDELT_MAX_RECORDS = 40
 const HN_STORY_LIMIT = 120
 const COMPANY_FEED_COMPANY_LIMIT = 160
 const COMPANY_FEEDS_PER_COMPANY = 12
-const MONITORED_NEWS_COMPANY_LIMIT = 48
+const MONITORED_NEWS_COMPANY_LIMIT = 40
+const HN_ITEM_CONCURRENCY = 12
+const MONITORED_NEWS_CONCURRENCY = 5
+const COMPANY_OWNED_CONCURRENCY = 8
+const COMPANY_FEED_CONCURRENCY = 3
 
 const GDELT_QUERIES = [
   '(startup OR company) (raises OR funding OR "Series A" OR "seed round")',
@@ -109,8 +113,7 @@ export async function fetchHackerNewsItems(): Promise<RSSItem[]> {
     if (!idsRes.ok) return []
 
     const ids = ((await idsRes.json()) as number[]).slice(0, HN_STORY_LIMIT)
-    const itemResults = await Promise.allSettled(
-      ids.map(async id => {
+    const items = await mapWithConcurrency(ids, HN_ITEM_CONCURRENCY, async id => {
         const itemRes = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, {
           signal: AbortSignal.timeout(4000),
           headers: { 'User-Agent': USER_AGENT },
@@ -118,12 +121,10 @@ export async function fetchHackerNewsItems(): Promise<RSSItem[]> {
         })
         if (!itemRes.ok) return null
         return (await itemRes.json()) as HackerNewsItem | null
-      })
+      },
     )
 
-    return itemResults
-      .filter((result): result is PromiseFulfilledResult<HackerNewsItem | null> => result.status === 'fulfilled')
-      .map(result => result.value)
+    return items
       .filter((item): item is HackerNewsItem => Boolean(item?.title && item.url && item.type === 'story'))
       .filter(item => HN_SIGNAL_PATTERN.test(item.title ?? ''))
       .map(item => ({
@@ -200,19 +201,21 @@ export async function fetchMonitoredCompanyNewsItems(companies: CompanySeed[]): 
   const scopedCompanies = uniqueCompanies(companies)
     .slice(0, MONITORED_NEWS_COMPANY_LIMIT)
 
-  const results = await Promise.allSettled(
-    scopedCompanies.map(async company => {
-      const query = `"${company.name}" (funding OR raises OR acquisition OR merger OR hiring OR appoints OR partnership OR integration OR launch OR expansion OR compliance OR "new office" OR "SOC 2" OR "ISO 27001")`
-      const items = await fetchRSSItems(query)
+  const results = await mapWithConcurrency(
+    scopedCompanies,
+    MONITORED_NEWS_CONCURRENCY,
+    async company => {
+      const query = `"${company.name}" (funding OR acquisition OR hiring OR launch OR expansion OR partnership OR compliance)`
+      const items = await fetchRSSItems(query, '3d', { quiet: true, timeoutMs: 9000 })
       return items.map(item => ({
         ...item,
         source: 'google_news_company',
         title: titleWithCompany(company.name, item.title),
       }))
-    })
+    },
   )
 
-  return flattenSettled(results)
+  return results.flat()
 }
 
 /**
@@ -224,8 +227,10 @@ export async function fetchCompanyOwnedItems(companies: CompanySeed[]): Promise<
     .filter(company => company.domain || company.websiteUrl)
     .slice(0, COMPANY_FEED_COMPANY_LIMIT)
 
-  const results = await Promise.allSettled(
-    scopedCompanies.map(async company => {
+  const results = await mapWithConcurrency(
+    scopedCompanies,
+    COMPANY_OWNED_CONCURRENCY,
+    async company => {
       const domain = normalizeDomain(company.domain)
       const websiteDomain = normalizeDomain(company.websiteUrl ?? null)
       const resolvedDomain = domain ?? websiteDomain
@@ -233,21 +238,23 @@ export async function fetchCompanyOwnedItems(companies: CompanySeed[]): Promise<
 
       const feedUrls = buildCompanyFeedUrls(resolvedDomain).slice(0, COMPANY_FEEDS_PER_COMPANY)
 
-      const feedResults = await Promise.allSettled(
-        feedUrls.map(url => fetchRSSFromUrl(url, 'company_owned', { quiet: true, timeoutMs: 5000 }))
+      const feedResults = await mapWithConcurrency(
+        feedUrls,
+        COMPANY_FEED_CONCURRENCY,
+        url => fetchRSSFromUrl(url, 'company_owned', { quiet: true, timeoutMs: 4500 }),
       )
 
-      return flattenSettled(feedResults)
+      return feedResults.flat()
         .filter(item => COMPANY_OWNED_SIGNAL_PATTERN.test(`${item.title} ${item.description}`))
         .map(item => ({
           ...item,
           title: titleWithCompany(company.name, item.title),
           description: item.description || `Owned update from ${company.name}`,
         }))
-    })
+    },
   )
 
-  return flattenSettled(results)
+  return results.flat()
 }
 
 function buildCompanyFeedUrls(domain: string): string[] {
@@ -275,6 +282,31 @@ function buildCompanyFeedUrls(domain: string): string[] {
 
 function flattenSettled<T>(results: Array<PromiseSettledResult<T[]>>): T[] {
   return results.flatMap(result => result.status === 'fulfilled' ? result.value : [])
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = []
+  let nextIndex = 0
+  const workerCount = Math.min(Math.max(1, concurrency), items.length)
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      try {
+        results[index] = await mapper(items[index], index)
+      } catch (error) {
+        console.error('[signal-sources] source worker failed:', error instanceof Error ? error.message : String(error))
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  return results.filter((result): result is R => result !== undefined)
 }
 
 function parseGdeltDate(value?: string): string | null {

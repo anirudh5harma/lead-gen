@@ -203,21 +203,25 @@ function decodeEntities(str: string): string {
 /**
  * Fetches and parses a Google News RSS feed for a keyword query.
  */
-export async function fetchRSSItems(query: string, when = '7d'): Promise<RSSItem[]> {
+export async function fetchRSSItems(
+  query: string,
+  when = '7d',
+  options: RSSFetchOptions = {},
+): Promise<RSSItem[]> {
   const url = buildGoogleNewsUrl(query, when)
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 10000),
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Bombsell/1.0)' },
       next: { revalidate: 0 },
     })
     if (!res.ok) {
-      console.error(`Google News RSS failed for "${query}": ${res.status}`)
+      if (!options.quiet) console.error(`Google News RSS failed for "${query}": ${res.status}`)
       return []
     }
     return await parseRSSXML(await res.text(), 'google_news')
   } catch (e) {
-    console.error(`Google News fetch error for "${query}":`, (e as Error).message)
+    logFetchError(`Google News fetch error for "${query}"`, e, options.quiet)
     return []
   }
 }
@@ -242,7 +246,22 @@ export async function fetchRSSFromUrl(
     }
     return await parseRSSXML(await res.text(), source)
   } catch (e) {
-    if (!options.quiet) console.error(`RSS fetch error (${source}):`, (e as Error).message)
+    logFetchError(`RSS fetch error (${source})`, e, options.quiet)
     return []
   }
+}
+
+function logFetchError(label: string, error: unknown, quiet?: boolean) {
+  if (quiet) return
+  const message = error instanceof Error ? error.message : String(error)
+  if (isTimeoutError(error, message)) {
+    console.warn(`${label}: timeout`)
+    return
+  }
+  console.error(`${label}:`, message)
+}
+
+function isTimeoutError(error: unknown, message: string): boolean {
+  if (error instanceof DOMException && error.name === 'TimeoutError') return true
+  return /aborted|timeout|timed out/i.test(message)
 }
