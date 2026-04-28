@@ -16,7 +16,6 @@ export async function OPTIONS() {
 export async function POST(request: Request) {
   const body = await readTokenRequest(request)
   if (!body) {
-    logTokenFailure('unreadable_body', request, {})
     return oauthError('invalid_request', 400, 'Token requests must be form-encoded or JSON.')
   }
 
@@ -27,20 +26,12 @@ export async function POST(request: Request) {
   const verifier = body.code_verifier
 
   if (grantType !== 'authorization_code') {
-    logTokenFailure('unsupported_grant_type', request, { grantType })
     return oauthError('unsupported_grant_type')
   }
   if (!code || !verifier) {
-    logTokenFailure('missing_code_or_verifier', request, {
-      hasCode: Boolean(code),
-      hasVerifier: Boolean(verifier),
-      hasClientId: Boolean(suppliedClientId),
-      hasRedirectUri: Boolean(suppliedRedirectUri),
-    })
     return oauthError('invalid_request', 400, 'Missing code or code_verifier.')
   }
   if (suppliedRedirectUri && !safeRedirectUri(suppliedRedirectUri)) {
-    logTokenFailure('invalid_redirect_uri', request, { hasClientId: Boolean(suppliedClientId) })
     return oauthError('invalid_grant', 400, 'Invalid redirect_uri.')
   }
 
@@ -58,35 +49,20 @@ export async function POST(request: Request) {
     return oauthError('server_error', 500)
   }
   if (!codeRow || codeRow.used_at) {
-    logTokenFailure('invalid_or_used_code', request, {
-      hasCodeRow: Boolean(codeRow),
-      used: Boolean(codeRow?.used_at),
-      hasClientId: Boolean(suppliedClientId),
-      hasRedirectUri: Boolean(suppliedRedirectUri),
-    })
     return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
   }
 
   const clientId = suppliedClientId || codeRow.client_id
   if (clientId !== codeRow.client_id) {
-    logTokenFailure('client_mismatch', request, {
-      suppliedClientId: maskClientId(suppliedClientId),
-      codeClientId: maskClientId(codeRow.client_id),
-    })
     return oauthError('invalid_grant', 400, 'Client does not match authorization code.')
   }
 
   const redirectUri = suppliedRedirectUri || codeRow.redirect_uri
   if (safeRedirectUri(redirectUri) !== safeRedirectUri(codeRow.redirect_uri)) {
-    logTokenFailure('redirect_mismatch', request, {
-      clientId: maskClientId(clientId),
-      hasRedirectUri: Boolean(suppliedRedirectUri),
-    })
     return oauthError('invalid_grant', 400, 'Redirect URI does not match authorization code.')
   }
 
   if (codeRow.code_challenge_method !== 'S256' || pkceS256(verifier) !== codeRow.code_challenge) {
-    logTokenFailure('pkce_mismatch', request, { clientId: maskClientId(clientId) })
     return oauthError('invalid_grant', 400, 'PKCE verifier does not match the authorization request.')
   }
 
@@ -105,7 +81,6 @@ export async function POST(request: Request) {
     return oauthError('server_error', 500)
   }
   if (!usedCode) {
-    logTokenFailure('consume_race', request, { clientId: maskClientId(clientId) })
     return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
   }
 
@@ -205,20 +180,6 @@ function clientIdFromBasicAuth(header: string | null): string {
   } catch {
     return ''
   }
-}
-
-function logTokenFailure(reason: string, request: Request, details: Record<string, unknown>) {
-  console.error('MCP OAuth token exchange rejected', {
-    reason,
-    contentType: request.headers.get('content-type') ?? null,
-    userAgent: request.headers.get('user-agent') ?? null,
-    ...details,
-  })
-}
-
-function maskClientId(clientId: string | null | undefined): string | null {
-  if (!clientId) return null
-  return `${clientId.slice(0, 10)}...${clientId.slice(-6)}`
 }
 
 function oauthError(error: string, status = 400, errorDescription?: string): Response {
