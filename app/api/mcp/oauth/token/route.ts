@@ -14,18 +14,20 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: Request) {
-  const form = await request.formData().catch(() => null)
-  if (!form) return oauthError('invalid_request')
+  const body = await readTokenRequest(request)
+  if (!body) return oauthError('invalid_request', 400, 'Token requests must be form-encoded or JSON.')
 
-  const grantType = formValue(form, 'grant_type')
-  const code = formValue(form, 'code')
-  const redirectUri = formValue(form, 'redirect_uri')
-  const clientId = formValue(form, 'client_id')
-  const verifier = formValue(form, 'code_verifier')
+  const grantType = body.grant_type
+  const code = body.code
+  const redirectUri = body.redirect_uri
+  const clientId = body.client_id || clientIdFromBasicAuth(request.headers.get('authorization'))
+  const verifier = body.code_verifier
 
   if (grantType !== 'authorization_code') return oauthError('unsupported_grant_type')
-  if (!code || !redirectUri || !clientId || !verifier) return oauthError('invalid_request')
-  if (!safeRedirectUri(redirectUri)) return oauthError('invalid_grant')
+  if (!code || !redirectUri || !clientId || !verifier) {
+    return oauthError('invalid_request', 400, 'Missing code, redirect_uri, client_id, or code_verifier.')
+  }
+  if (!safeRedirectUri(redirectUri)) return oauthError('invalid_grant', 400, 'Invalid redirect_uri.')
 
   const service = createAdminClient()
   const nowIso = new Date().toISOString()
@@ -38,21 +40,30 @@ export async function POST(request: Request) {
     .gt('expires_at', nowIso)
     .maybeSingle()
 
-  if (error || !codeRow || codeRow.used_at) return oauthError('invalid_grant')
+  if (error) {
+    console.error('MCP OAuth code lookup failed', { clientId, error })
+    return oauthError('server_error', 500)
+  }
+  if (!codeRow || codeRow.used_at) return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
   if (codeRow.code_challenge_method !== 'S256' || pkceS256(verifier) !== codeRow.code_challenge) {
-    return oauthError('invalid_grant')
+    return oauthError('invalid_grant', 400, 'PKCE verifier does not match the authorization request.')
   }
 
   const accessToken = `mcp_${randomToken(32)}`
   const expiresAt = new Date(Date.now() + MCP_ACCESS_TOKEN_TTL_SECONDS * 1000).toISOString()
-  const { error: markUsedError, count } = await service
+  const { data: usedCode, error: markUsedError } = await service
     .from('mcp_oauth_codes')
     .update({ used_at: nowIso }, { count: 'exact' })
+    .select('code_hash')
     .eq('code_hash', codeRow.code_hash)
     .is('used_at', null)
+    .maybeSingle()
 
-  if (markUsedError) return oauthError('server_error', 500)
-  if (count !== 1) return oauthError('invalid_grant')
+  if (markUsedError) {
+    console.error('MCP OAuth code consume failed', { clientId, error: markUsedError })
+    return oauthError('server_error', 500)
+  }
+  if (!usedCode) return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
 
   const { error: tokenError } = await service
     .from('mcp_oauth_tokens')
@@ -64,7 +75,10 @@ export async function POST(request: Request) {
       expires_at: expiresAt,
     })
 
-  if (tokenError) return oauthError('server_error', 500)
+  if (tokenError) {
+    console.error('MCP OAuth token insert failed', { clientId, userId: codeRow.user_id, error: tokenError })
+    return oauthError('server_error', 500)
+  }
 
   return Response.json({
     access_token: accessToken,
@@ -74,13 +88,64 @@ export async function POST(request: Request) {
   }, { headers: corsHeaders() })
 }
 
+interface TokenRequestBody {
+  grant_type: string
+  code: string
+  redirect_uri: string
+  client_id: string
+  code_verifier: string
+}
+
+async function readTokenRequest(request: Request): Promise<TokenRequestBody | null> {
+  const contentType = request.headers.get('content-type')?.toLowerCase() ?? ''
+
+  if (contentType.includes('application/json')) {
+    const json = await request.json().catch(() => null) as Record<string, unknown> | null
+    if (!json) return null
+    return {
+      grant_type: stringValue(json.grant_type),
+      code: stringValue(json.code),
+      redirect_uri: stringValue(json.redirect_uri),
+      client_id: stringValue(json.client_id),
+      code_verifier: stringValue(json.code_verifier),
+    }
+  }
+
+  const form = await request.formData().catch(() => null)
+  if (!form) return null
+  return {
+    grant_type: formValue(form, 'grant_type'),
+    code: formValue(form, 'code'),
+    redirect_uri: formValue(form, 'redirect_uri'),
+    client_id: formValue(form, 'client_id'),
+    code_verifier: formValue(form, 'code_verifier'),
+  }
+}
+
 function formValue(form: FormData, key: string): string {
   const value = form.get(key)
   return typeof value === 'string' ? value : ''
 }
 
-function oauthError(error: string, status = 400): Response {
-  return Response.json({ error }, { status, headers: corsHeaders() })
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function clientIdFromBasicAuth(header: string | null): string {
+  if (!header?.startsWith('Basic ')) return ''
+  try {
+    const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8')
+    return decoded.split(':', 1)[0] ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function oauthError(error: string, status = 400, errorDescription?: string): Response {
+  return Response.json({
+    error,
+    ...(errorDescription ? { error_description: errorDescription } : {}),
+  }, { status, headers: corsHeaders() })
 }
 
 function corsHeaders() {

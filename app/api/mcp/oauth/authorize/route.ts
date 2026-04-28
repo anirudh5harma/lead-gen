@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   const redirect = new URL(params.redirect_uri)
   redirect.searchParams.set('code', code)
   if (params.state) redirect.searchParams.set('state', params.state)
-  return NextResponse.redirect(redirect.toString())
+  return NextResponse.redirect(redirect.toString(), 303)
 }
 
 async function validateAuthorizeParams(params: AuthorizeParams): Promise<
