@@ -1,4 +1,5 @@
 import { normalizeEmailAddress, sanitizeHeaderValue } from '@/lib/email-safety'
+import { normalizeMessageId } from '@/lib/oauth/message-id'
 
 const MICROSOFT_AUTH_URL  = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize'
 const MICROSOFT_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
@@ -84,6 +85,7 @@ export async function sendViaOutlook(params: {
   const safeSubject = sanitizeHeaderValue(subject)
   const safeFromName = sanitizeHeaderValue(fromName)
   const safeInReplyTo = inReplyTo ? sanitizeHeaderValue(inReplyTo) : null
+  const sentAfterMs = Date.now() - 10_000
 
   const internetMessageHeaders = [
     { name: 'List-Unsubscribe',      value: `<${unsubLink}>` },
@@ -120,19 +122,40 @@ export async function sendViaOutlook(params: {
   try {
     const sentRes = await fetch(
       `${GRAPH_API}/me/mailFolders/SentItems/messages` +
-      `?$orderby=sentDateTime desc&$top=1&$select=internetMessageId,conversationId`,
+      `?$orderby=sentDateTime desc&$top=10&$select=internetMessageId,conversationId,subject,toRecipients,sentDateTime`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     )
     if (sentRes.ok) {
       const sentData = await sentRes.json() as {
-        value?: Array<{ internetMessageId?: string; conversationId?: string }>
+        value?: Array<{
+          internetMessageId?: string
+          conversationId?: string
+          subject?: string
+          sentDateTime?: string
+          toRecipients?: Array<{ emailAddress?: { address?: string } }>
+        }>
       }
-      const item = sentData.value?.[0]
+      const item = (sentData.value ?? []).find(candidate => {
+        const sentAt = candidate.sentDateTime ? new Date(candidate.sentDateTime).getTime() : 0
+        const recipients = candidate.toRecipients ?? []
+        return candidate.subject === safeSubject &&
+          sentAt >= sentAfterMs &&
+          recipients.some(recipient => sameEmail(recipient.emailAddress?.address, safeTo))
+      }) ?? sentData.value?.[0]
       if (item?.internetMessageId && item?.conversationId) {
-        return { messageId: item.internetMessageId, threadId: item.conversationId }
+        return { messageId: normalizeMessageId(item.internetMessageId) ?? item.internetMessageId, threadId: item.conversationId }
       }
     }
   } catch { /* fall through */ }
 
   return { messageId: `outlook_${fromEmail}_${Date.now()}`, threadId: null }
+}
+
+function sameEmail(value: string | null | undefined, expected: string): boolean {
+  if (!value) return false
+  try {
+    return normalizeEmailAddress(value) === expected
+  } catch {
+    return false
+  }
 }

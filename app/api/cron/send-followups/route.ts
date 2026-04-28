@@ -5,6 +5,7 @@ import { getPlanLimits, normalizePlanTier, type PlanTier } from '@/lib/plan'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { resolveOutreachContext } from '@/lib/outreach-context'
+import { messageIdHeader } from '@/lib/oauth/message-id'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -204,7 +205,7 @@ export async function GET(request: Request) {
     // For Outlook, gmail_thread_id stores the conversationId — not directly usable as inReplyTo,
     // but the outlook webhook will handle reply detection via conversationId.
       const gmailThreadId = lead.gmail_thread_id ?? null
-      const inReplyTo     = lead.message_id ? `<${lead.message_id}>` : null
+      const inReplyTo     = messageIdHeader(lead.message_id)
       const clientProfile = lead.client_id ? clientProfileMap.get(lead.client_id) ?? null : null
       const outreachContext = resolveOutreachContext({
         userProfile: quota.profile,

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getNewInboxMessages } from '@/lib/oauth/gmail-watch'
 import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
+import { normalizeMessageId } from '@/lib/oauth/message-id'
+import { canUseConnectedSending } from '@/lib/plan'
 
 type AccountRow = ConnectedAccount & { gmail_history_id: string | null; user_id: string }
 
@@ -55,6 +57,12 @@ export async function POST(request: Request) {
   if (!account) return NextResponse.json({ ok: true })
 
   const acc = account as AccountRow
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('plan')
+    .eq('user_id', acc.user_id)
+    .maybeSingle()
+  if (!canUseConnectedSending(profile?.plan)) return NextResponse.json({ ok: true })
 
   // Always advance the stored historyId so we don't reprocess on the next notification
   const startHistoryId = acc.gmail_history_id ?? newHistoryId
@@ -88,7 +96,8 @@ export async function POST(request: Request) {
 
     // Fallback: match by In-Reply-To header → message_id stored on lead
     if (!lead && msg.inReplyTo) {
-      const raw = msg.inReplyTo.replace(/^<|>$/g, '')
+      const raw = normalizeMessageId(msg.inReplyTo)
+      if (!raw) continue
       const { data: byMsgId } = await supabase
         .from('leads')
         .select('id, status')

@@ -68,7 +68,7 @@ export async function pickSenderAccount(
       .eq('email', preferEmail)
       .eq('is_active', true)
       .single()
-    return data as ConnectedAccount | null
+    if (data) return data as ConnectedAccount
   }
 
   if (preferAccountId) {
@@ -79,7 +79,7 @@ export async function pickSenderAccount(
       .eq('id', preferAccountId)
       .eq('is_active', true)
       .single()
-    return data as ConnectedAccount | null
+    if (data) return data as ConnectedAccount
   }
 
   const { data } = await supabase

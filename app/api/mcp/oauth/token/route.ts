@@ -15,19 +15,34 @@ export async function OPTIONS() {
 
 export async function POST(request: Request) {
   const body = await readTokenRequest(request)
-  if (!body) return oauthError('invalid_request', 400, 'Token requests must be form-encoded or JSON.')
+  if (!body) {
+    logTokenFailure('unreadable_body', request, {})
+    return oauthError('invalid_request', 400, 'Token requests must be form-encoded or JSON.')
+  }
 
   const grantType = body.grant_type
   const code = body.code
-  const redirectUri = body.redirect_uri
-  const clientId = body.client_id || clientIdFromBasicAuth(request.headers.get('authorization'))
+  const suppliedRedirectUri = body.redirect_uri
+  const suppliedClientId = body.client_id || clientIdFromBasicAuth(request.headers.get('authorization'))
   const verifier = body.code_verifier
 
-  if (grantType !== 'authorization_code') return oauthError('unsupported_grant_type')
-  if (!code || !redirectUri || !clientId || !verifier) {
-    return oauthError('invalid_request', 400, 'Missing code, redirect_uri, client_id, or code_verifier.')
+  if (grantType !== 'authorization_code') {
+    logTokenFailure('unsupported_grant_type', request, { grantType })
+    return oauthError('unsupported_grant_type')
   }
-  if (!safeRedirectUri(redirectUri)) return oauthError('invalid_grant', 400, 'Invalid redirect_uri.')
+  if (!code || !verifier) {
+    logTokenFailure('missing_code_or_verifier', request, {
+      hasCode: Boolean(code),
+      hasVerifier: Boolean(verifier),
+      hasClientId: Boolean(suppliedClientId),
+      hasRedirectUri: Boolean(suppliedRedirectUri),
+    })
+    return oauthError('invalid_request', 400, 'Missing code or code_verifier.')
+  }
+  if (suppliedRedirectUri && !safeRedirectUri(suppliedRedirectUri)) {
+    logTokenFailure('invalid_redirect_uri', request, { hasClientId: Boolean(suppliedClientId) })
+    return oauthError('invalid_grant', 400, 'Invalid redirect_uri.')
+  }
 
   const service = createAdminClient()
   const nowIso = new Date().toISOString()
@@ -35,17 +50,43 @@ export async function POST(request: Request) {
     .from('mcp_oauth_codes')
     .select('code_hash, client_id, user_id, redirect_uri, code_challenge, code_challenge_method, scope, expires_at, used_at')
     .eq('code_hash', tokenHash(code))
-    .eq('client_id', clientId)
-    .eq('redirect_uri', redirectUri)
     .gt('expires_at', nowIso)
     .maybeSingle()
 
   if (error) {
-    console.error('MCP OAuth code lookup failed', { clientId, error })
+    console.error('MCP OAuth code lookup failed', { clientId: suppliedClientId || null, error })
     return oauthError('server_error', 500)
   }
-  if (!codeRow || codeRow.used_at) return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
+  if (!codeRow || codeRow.used_at) {
+    logTokenFailure('invalid_or_used_code', request, {
+      hasCodeRow: Boolean(codeRow),
+      used: Boolean(codeRow?.used_at),
+      hasClientId: Boolean(suppliedClientId),
+      hasRedirectUri: Boolean(suppliedRedirectUri),
+    })
+    return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
+  }
+
+  const clientId = suppliedClientId || codeRow.client_id
+  if (clientId !== codeRow.client_id) {
+    logTokenFailure('client_mismatch', request, {
+      suppliedClientId: maskClientId(suppliedClientId),
+      codeClientId: maskClientId(codeRow.client_id),
+    })
+    return oauthError('invalid_grant', 400, 'Client does not match authorization code.')
+  }
+
+  const redirectUri = suppliedRedirectUri || codeRow.redirect_uri
+  if (safeRedirectUri(redirectUri) !== safeRedirectUri(codeRow.redirect_uri)) {
+    logTokenFailure('redirect_mismatch', request, {
+      clientId: maskClientId(clientId),
+      hasRedirectUri: Boolean(suppliedRedirectUri),
+    })
+    return oauthError('invalid_grant', 400, 'Redirect URI does not match authorization code.')
+  }
+
   if (codeRow.code_challenge_method !== 'S256' || pkceS256(verifier) !== codeRow.code_challenge) {
+    logTokenFailure('pkce_mismatch', request, { clientId: maskClientId(clientId) })
     return oauthError('invalid_grant', 400, 'PKCE verifier does not match the authorization request.')
   }
 
@@ -63,7 +104,10 @@ export async function POST(request: Request) {
     console.error('MCP OAuth code consume failed', { clientId, error: markUsedError })
     return oauthError('server_error', 500)
   }
-  if (!usedCode) return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
+  if (!usedCode) {
+    logTokenFailure('consume_race', request, { clientId: maskClientId(clientId) })
+    return oauthError('invalid_grant', 400, 'Authorization code is invalid, expired, or already used.')
+  }
 
   const { error: tokenError } = await service
     .from('mcp_oauth_tokens')
@@ -111,6 +155,16 @@ async function readTokenRequest(request: Request): Promise<TokenRequestBody | nu
     }
   }
 
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    const text = await request.text().catch(() => '')
+    return tokenBodyFromUrlEncoded(text)
+  }
+
+  if (!contentType) {
+    const text = await request.text().catch(() => '')
+    return tokenBodyFromUrlEncoded(text)
+  }
+
   const form = await request.formData().catch(() => null)
   if (!form) return null
   return {
@@ -119,6 +173,18 @@ async function readTokenRequest(request: Request): Promise<TokenRequestBody | nu
     redirect_uri: formValue(form, 'redirect_uri'),
     client_id: formValue(form, 'client_id'),
     code_verifier: formValue(form, 'code_verifier'),
+  }
+}
+
+function tokenBodyFromUrlEncoded(text: string): TokenRequestBody | null {
+  if (!text.trim()) return null
+  const params = new URLSearchParams(text)
+  return {
+    grant_type: params.get('grant_type') ?? '',
+    code: params.get('code') ?? '',
+    redirect_uri: params.get('redirect_uri') ?? '',
+    client_id: params.get('client_id') ?? '',
+    code_verifier: params.get('code_verifier') ?? '',
   }
 }
 
@@ -132,13 +198,27 @@ function stringValue(value: unknown): string {
 }
 
 function clientIdFromBasicAuth(header: string | null): string {
-  if (!header?.startsWith('Basic ')) return ''
+  if (!header?.toLowerCase().startsWith('basic ')) return ''
   try {
-    const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8')
+    const decoded = Buffer.from(header.slice(header.indexOf(' ') + 1), 'base64').toString('utf8')
     return decoded.split(':', 1)[0] ?? ''
   } catch {
     return ''
   }
+}
+
+function logTokenFailure(reason: string, request: Request, details: Record<string, unknown>) {
+  console.error('MCP OAuth token exchange rejected', {
+    reason,
+    contentType: request.headers.get('content-type') ?? null,
+    userAgent: request.headers.get('user-agent') ?? null,
+    ...details,
+  })
+}
+
+function maskClientId(clientId: string | null | undefined): string | null {
+  if (!clientId) return null
+  return `${clientId.slice(0, 10)}...${clientId.slice(-6)}`
 }
 
 function oauthError(error: string, status = 400, errorDescription?: string): Response {

@@ -26,7 +26,9 @@ export function verifyOAuthState(state: string): string | null {
 }
 
 function sign(payload: string): string {
-  return createHmac('sha256', process.env.CRON_SECRET ?? '')
+  const secret = process.env.OAUTH_STATE_SECRET || process.env.CRON_SECRET
+  if (!secret) throw new Error('OAUTH_STATE_SECRET or CRON_SECRET must be configured')
+  return createHmac('sha256', secret)
     .update(payload)
     .digest('base64url')
 }
