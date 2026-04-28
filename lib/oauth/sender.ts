@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { refreshGoogleToken, sendViaGmail } from './google'
 import { refreshMicrosoftToken, sendViaOutlook } from './microsoft'
 import { signUnsubscribeToken } from '@/lib/unsubscribe'
+import { normalizeEmailAddress, sanitizeHeaderValue } from '@/lib/email-safety'
 
 const UNSUBSCRIBE_BASE = `${process.env.NEXT_PUBLIC_APP_URL}/api/outreach/unsubscribe`
 
@@ -110,14 +111,17 @@ export async function sendWithConnectedAccount(params: {
   preferAccountId?: string | null
 }): Promise<SendResult | null> {
   const { userId, supabase, to, subject, body, fromName, inReplyTo, gmailThreadId, preferEmail, preferAccountId } = params
+  const recipient = normalizeEmailAddress(to)
+  const safeSubject = sanitizeHeaderValue(subject)
+  const safeFromName = sanitizeHeaderValue(fromName)
 
   const account = await pickSenderAccount(userId, supabase, preferEmail, preferAccountId)
   if (!account) return null
 
   const accessToken  = await getValidAccessToken(account, supabase)
-  const unsubLink    = await unsubscribeUrl(to)
+  const unsubLink    = await unsubscribeUrl(recipient)
   const bodyWithFooter = `${body}\n\n---\nTo unsubscribe, visit: ${unsubLink}`
-  const displayName  = fromName || account.display_name || account.email
+  const displayName  = safeFromName || account.display_name || account.email
 
   let result: SendResult
 
@@ -126,7 +130,8 @@ export async function sendWithConnectedAccount(params: {
       accessToken,
       fromEmail:  account.email,
       fromName:   displayName,
-      to, subject,
+      to:         recipient,
+      subject:    safeSubject,
       body:       bodyWithFooter,
       inReplyTo:  inReplyTo ?? null,
       threadId:   gmailThreadId ?? null,
@@ -138,7 +143,8 @@ export async function sendWithConnectedAccount(params: {
       accessToken,
       fromEmail:  account.email,
       fromName:   displayName,
-      to, subject,
+      to:         recipient,
+      subject:    safeSubject,
       body:       bodyWithFooter,
       inReplyTo:  inReplyTo ?? null,
       unsubLink,

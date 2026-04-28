@@ -9,6 +9,7 @@ import {
   type CrmExportFeed,
   normalizeCrmProvider,
 } from '@/lib/crm-sync'
+import { postJsonWebhook } from '@/lib/http-safety'
 
 async function loadExportContext(request: Request) {
   const supabase = await createClient()
@@ -124,18 +125,21 @@ export async function POST(request: Request) {
   }
 
   const provider = normalizeCrmProvider(row.provider ?? context.provider)
-  const response = await fetch(row.webhook_url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  let response: Response
+  try {
+    response = await postJsonWebhook(row.webhook_url, {
       event: 'feed.export',
       occurred_at: new Date().toISOString(),
       provider,
       feed: context.feed,
       exported_count: context.records.length,
       records: context.records,
-    }),
-  })
+    })
+  } catch (error) {
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : 'CRM export failed',
+    }, { status: 502 })
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => '')

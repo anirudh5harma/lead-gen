@@ -6,6 +6,7 @@ import {
   CRM_PROVIDER_PRESETS,
   normalizeCrmProvider,
 } from '@/lib/crm-sync'
+import { normalizeOutboundWebhookUrl } from '@/lib/http-safety'
 
 export async function GET() {
   const supabase = await createClient()
@@ -96,9 +97,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'enabled and import_enabled must be provided' }, { status: 400 })
   }
 
-  const webhookUrl = typeof body.webhook_url === 'string' ? body.webhook_url.trim() : ''
+  const rawWebhookUrl = typeof body.webhook_url === 'string' ? body.webhook_url.trim() : ''
+  const webhookUrl = rawWebhookUrl ? normalizeOutboundWebhookUrl(rawWebhookUrl) : ''
   if (body.enabled && !webhookUrl) {
-    return NextResponse.json({ error: 'webhook_url required when enabling CRM sync' }, { status: 400 })
+    return NextResponse.json({ error: 'A valid HTTPS outbound webhook URL is required when enabling CRM export.' }, { status: 400 })
+  }
+  if (rawWebhookUrl && !webhookUrl) {
+    return NextResponse.json({ error: 'CRM webhook URL must be HTTPS and cannot point to localhost or private network addresses.' }, { status: 400 })
   }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)

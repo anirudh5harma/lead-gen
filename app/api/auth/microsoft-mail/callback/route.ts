@@ -4,6 +4,7 @@ import { exchangeMicrosoftCode } from '@/lib/oauth/microsoft'
 import { createOutlookSubscription } from '@/lib/oauth/outlook-watch'
 import { canUseConnectedSending } from '@/lib/plan'
 import { randomUUID } from 'crypto'
+import { verifyOAuthState } from '@/lib/oauth/state'
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL!
 
@@ -17,12 +18,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=microsoft_denied`)
   }
 
-  let userId: string
-  try {
-    const decoded = JSON.parse(Buffer.from(state, 'base64url').toString()) as { userId?: string }
-    if (!decoded.userId) throw new Error('missing userId')
-    userId = decoded.userId
-  } catch {
+  const userId = verifyOAuthState(state)
+  if (!userId) {
     return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=invalid_state`)
   }
 

@@ -2,11 +2,20 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { computeLeadCreditsForDollars, normalizeCreditTopUpAmount } from '@/lib/lead-credits'
 import { createLeadCreditCheckoutUrl, getDodoConfigSummary } from '@/lib/dodo'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const rl = await checkRateLimit(`billing-credits:${user.id}`, 10, 3600, { failClosed: true })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many checkout attempts. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    )
+  }
 
   const body = await request.json().catch(() => null) as { amount_dollars?: unknown } | null
   const amountDollars = normalizeCreditTopUpAmount(body?.amount_dollars)

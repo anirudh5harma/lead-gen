@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { exchangeGoogleCode } from '@/lib/oauth/google'
 import { startGmailWatch } from '@/lib/oauth/gmail-watch'
 import { canUseConnectedSending } from '@/lib/plan'
+import { verifyOAuthState } from '@/lib/oauth/state'
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL!
 
@@ -16,12 +17,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=google_denied`)
   }
 
-  let userId: string
-  try {
-    const decoded = JSON.parse(Buffer.from(state, 'base64url').toString()) as { userId?: string }
-    if (!decoded.userId) throw new Error('missing userId')
-    userId = decoded.userId
-  } catch {
+  const userId = verifyOAuthState(state)
+  if (!userId) {
     return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=invalid_state`)
   }
 

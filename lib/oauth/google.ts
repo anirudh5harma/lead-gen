@@ -1,3 +1,5 @@
+import { formatMailboxHeader, normalizeEmailAddress, sanitizeHeaderValue } from '@/lib/email-safety'
+
 const GOOGLE_AUTH_URL  = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const GMAIL_API        = 'https://gmail.googleapis.com/gmail/v1'
@@ -90,15 +92,19 @@ export async function sendViaGmail(params: {
   unsubLink:   string
 }): Promise<GmailSendResult> {
   const { accessToken, fromEmail, fromName, to, subject, body, inReplyTo, threadId, unsubLink } = params
+  const safeFrom = formatMailboxHeader(fromName, fromEmail)
+  const safeTo = normalizeEmailAddress(to)
+  const safeSubject = sanitizeHeaderValue(subject)
+  const safeInReplyTo = inReplyTo ? sanitizeHeaderValue(inReplyTo) : null
 
   const headerLines = [
-    `From: ${fromName} <${fromEmail}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
+    `From: ${safeFrom}`,
+    `To: ${safeTo}`,
+    `Subject: ${safeSubject}`,
     'Content-Type: text/plain; charset=utf-8',
     `List-Unsubscribe: <${unsubLink}>`,
     'List-Unsubscribe-Post: List-Unsubscribe=One-Click',
-    ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`, `References: ${inReplyTo}`] : []),
+    ...(safeInReplyTo ? [`In-Reply-To: ${safeInReplyTo}`, `References: ${safeInReplyTo}`] : []),
   ]
 
   const raw = Buffer.from(`${headerLines.join('\r\n')}\r\n\r\n${body}`).toString('base64url')

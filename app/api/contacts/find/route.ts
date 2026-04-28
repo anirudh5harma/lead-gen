@@ -16,8 +16,26 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { companyName, companyDomain, servicesDescription, signalType } = await request.json()
-  if (!companyName) return NextResponse.json({ error: 'companyName required' }, { status: 400 })
+  const body = await request.json().catch(() => null) as {
+    leadId?: unknown
+    servicesDescription?: unknown
+    signalType?: unknown
+  } | null
+  const leadId = typeof body?.leadId === 'string' ? body.leadId.trim() : ''
+  if (!leadId) return NextResponse.json({ error: 'leadId required' }, { status: 400 })
+
+  const { data: lead, error: leadError } = await supabase
+    .from('leads')
+    .select('id, target_company, company_domain, is_unlocked')
+    .eq('id', leadId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (leadError) return NextResponse.json({ error: leadError.message }, { status: 500 })
+  if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+  if (!lead.is_unlocked) {
+    return NextResponse.json({ error: 'Unlock this lead before looking up contacts.' }, { status: 403 })
+  }
 
   const rl = await checkRateLimit(`contacts:${user.id}`, 20, 3600, { failClosed: true })
   if (!rl.allowed) {
@@ -28,9 +46,9 @@ export async function POST(request: Request) {
   }
 
   const serviceClient = await createServiceClient()
-  const result = await enrichCompany(companyName, companyDomain ?? null, serviceClient, {
-    servicesDescription: typeof servicesDescription === 'string' ? servicesDescription : null,
-    signalType: typeof signalType === 'string' ? signalType : null,
+  const result = await enrichCompany(lead.target_company, lead.company_domain ?? null, serviceClient, {
+    servicesDescription: typeof body?.servicesDescription === 'string' ? body.servicesDescription : null,
+    signalType: typeof body?.signalType === 'string' ? body.signalType : null,
     maxContacts: 4,
   })
 

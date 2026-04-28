@@ -19,6 +19,7 @@ interface McpContext {
   token: string
   userId: string
   supabase: SupabaseClient
+  scopes: Set<string>
 }
 
 export async function OPTIONS() {
@@ -284,12 +285,12 @@ async function authenticateMcpRequest(request: Request): Promise<McpContext | nu
   const supabase = createAdminClient()
 
   if (staticToken && staticUserId && token === staticToken) {
-    return { token, userId: staticUserId, supabase }
+    return { token, userId: staticUserId, supabase, scopes: defaultScopes() }
   }
 
   const mcpToken = await validateMcpAccessToken(supabase, token)
   if (mcpToken) {
-    return { token, userId: mcpToken.userId, supabase }
+    return { token, userId: mcpToken.userId, supabase, scopes: parseScopes(mcpToken.scope) }
   }
 
   const authClient = createSupabaseClient(
@@ -300,7 +301,7 @@ async function authenticateMcpRequest(request: Request): Promise<McpContext | nu
   const { data, error } = await authClient.auth.getUser(token)
   if (error || !data.user) return null
 
-  return { token, userId: data.user.id, supabase }
+  return { token, userId: data.user.id, supabase, scopes: defaultScopes() }
 }
 
 async function getGtmContext(ctx: McpContext) {
@@ -377,6 +378,7 @@ async function getLead(ctx: McpContext, args: { lead_id: string }) {
 }
 
 async function updateLeadStatus(ctx: McpContext, args: { lead_id: string; status: LeadStatus }) {
+  requireScope(ctx, 'bombsell:write:safe')
   const updates: Record<string, unknown> = { status: args.status }
   const now = new Date().toISOString()
   if (args.status === 'sent') updates.sent_at = now
@@ -419,6 +421,7 @@ async function addWatchlistCompany(ctx: McpContext, args: {
   notes?: string
   client_id?: string
 }) {
+  requireScope(ctx, 'bombsell:write:safe')
   const clientId = await resolveClientId(ctx, optionalString(args.client_id))
 
   const { data, error } = await ctx.supabase
@@ -605,5 +608,19 @@ function corsHeaders() {
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, MCP-Protocol-Version, mcp-session-id, Last-Event-ID',
     'Access-Control-Expose-Headers': 'MCP-Protocol-Version, mcp-session-id',
+  }
+}
+
+function defaultScopes(): Set<string> {
+  return new Set(['bombsell:read', 'bombsell:write:safe'])
+}
+
+function parseScopes(scope: string | null): Set<string> {
+  return new Set((scope ?? 'bombsell:read').split(/\s+/).filter(Boolean))
+}
+
+function requireScope(ctx: McpContext, scope: string): void {
+  if (!ctx.scopes.has(scope)) {
+    throw new Error(`Missing required MCP scope: ${scope}`)
   }
 }

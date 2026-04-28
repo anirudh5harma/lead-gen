@@ -86,6 +86,10 @@ export async function POST(request: Request) {
     type === 'subscription.plan_changed'
   ) {
     const plan = planFromProductId(data.product_id ?? '')
+    if (!plan) {
+      console.warn('[dodo webhook] Ignoring subscription event for unknown product', data.product_id)
+      return NextResponse.json({ ok: true })
+    }
     let userId = data.metadata?.user_id
 
     if (!userId) {

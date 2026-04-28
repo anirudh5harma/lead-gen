@@ -22,9 +22,9 @@ export const PRODUCT_IDS = {
   leadCredits: cleanEnvValue(process.env.DODO_PRODUCT_LEAD_CREDITS),
 }
 
-export function planFromProductId(productId: string): 'pro' | 'free' {
+export function planFromProductId(productId: string): 'pro' | null {
   if (productId === PRODUCT_IDS.pro) return 'pro'
-  return 'free'
+  return null
 }
 
 export async function createCheckoutUrl(

@@ -164,10 +164,8 @@ export async function POST(request: Request) {
         crm_status: record.crmStatus,
         owner_name: record.ownerName,
         lead_source: record.leadSource,
-        import_key: key,
         batch_id: batchId,
         source_kind: 'crm_record',
-        raw: record.raw,
       },
     }
 

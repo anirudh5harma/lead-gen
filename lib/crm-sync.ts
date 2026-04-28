@@ -1,3 +1,5 @@
+import { postJsonWebhook } from './http-safety.ts'
+
 export type CrmProvider = 'webhook' | 'hubspot' | 'salesforce' | 'pipedrive' | 'zoho'
 export type CrmExportFeed = 'signal' | 'explore' | 'crm_import'
 
@@ -276,7 +278,8 @@ export function buildCrmExportCsv(provider: unknown, records: CrmExportRecord[])
 }
 
 function escapeCsv(value: string): string {
-  return value.replace(/"/g, '""')
+  const safeValue = /^[=+\-@]/.test(value) ? `'${value}` : value
+  return safeValue.replace(/"/g, '""')
 }
 
 function scoreToRating(score: string): string {
@@ -529,15 +532,11 @@ export async function emitCrmLeadEvent(params: {
   const row = setting as { provider?: string | null; webhook_url?: string | null } | null
   if (!row?.webhook_url) return
 
-  await fetch(row.webhook_url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      event: eventType,
-      occurred_at: new Date().toISOString(),
-      client_id: clientId,
-      provider: normalizeCrmProvider(row.provider),
-      ...payload,
-    }),
+  await postJsonWebhook(row.webhook_url, {
+    event: eventType,
+    occurred_at: new Date().toISOString(),
+    client_id: clientId,
+    provider: normalizeCrmProvider(row.provider),
+    ...payload,
   })
 }

@@ -1,3 +1,5 @@
+import { normalizeEmailAddress, sanitizeHeaderValue } from '@/lib/email-safety'
+
 const MICROSOFT_AUTH_URL  = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize'
 const MICROSOFT_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
 const GRAPH_API           = 'https://graph.microsoft.com/v1.0'
@@ -78,13 +80,17 @@ export async function sendViaOutlook(params: {
   unsubLink:   string
 }): Promise<{ messageId: string; threadId: string | null }> {
   const { accessToken, fromEmail, fromName, to, subject, body, inReplyTo, unsubLink } = params
+  const safeTo = normalizeEmailAddress(to)
+  const safeSubject = sanitizeHeaderValue(subject)
+  const safeFromName = sanitizeHeaderValue(fromName)
+  const safeInReplyTo = inReplyTo ? sanitizeHeaderValue(inReplyTo) : null
 
   const internetMessageHeaders = [
     { name: 'List-Unsubscribe',      value: `<${unsubLink}>` },
     { name: 'List-Unsubscribe-Post', value: 'List-Unsubscribe=One-Click' },
-    ...(inReplyTo ? [
-      { name: 'In-Reply-To', value: inReplyTo },
-      { name: 'References',  value: inReplyTo },
+    ...(safeInReplyTo ? [
+      { name: 'In-Reply-To', value: safeInReplyTo },
+      { name: 'References',  value: safeInReplyTo },
     ] : []),
   ]
 
@@ -93,10 +99,10 @@ export async function sendViaOutlook(params: {
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message: {
-        subject,
+        subject: safeSubject,
         body:           { contentType: 'Text', content: body },
-        toRecipients:   [{ emailAddress: { address: to } }],
-        from:           { emailAddress: { name: fromName, address: fromEmail } },
+        toRecipients:   [{ emailAddress: { address: safeTo } }],
+        from:           { emailAddress: { name: safeFromName, address: normalizeEmailAddress(fromEmail) } },
         internetMessageHeaders,
       },
       saveToSentItems: true,
