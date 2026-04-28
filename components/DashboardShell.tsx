@@ -79,15 +79,71 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   const used      = userProfile.leads_used_this_month ?? 0
   const planLimit = PLAN_LIMITS[plan] ?? 15
   const usagePct  = planLimit > 0 ? (used / planLimit) * 100 : 0
+  const [leadCreditBalance, setLeadCreditBalance] = useState(userProfile.lead_credit_balance ?? 0)
+  const displayProfile = useMemo(() => ({
+    ...userProfile,
+    lead_credit_balance: leadCreditBalance,
+  }), [leadCreditBalance, userProfile])
 
   const [dismissed80,   setDismissed80]   = useState(false)
   const [dismissedOver, setDismissedOver] = useState(false)
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const paymentId =
+      params.get('payment_id') ??
+      params.get('paymentId') ??
+      params.get('dodo_payment_id') ??
+      ''
+    const checkoutSessionId =
+      params.get('checkout_session_id') ??
+      params.get('checkout_session') ??
+      params.get('session_id') ??
+      params.get('checkout_id') ??
+      ''
+    const isCreditReturn = params.get('credits') === '1'
+
+    if (isCreditReturn && (paymentId || checkoutSessionId)) {
+      let cancelled = false
+      ;(async () => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const res = await fetch('/api/billing/credits/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              payment_id: paymentId || undefined,
+              checkout_session_id: checkoutSessionId || undefined,
+            }),
+          }).catch(() => null)
+
+          const data = await res?.json().catch(() => null) as {
+            balance?: number
+            pending?: boolean
+          } | null
+
+          if (cancelled) return
+          if (res?.ok && typeof data?.balance === 'number') {
+            setLeadCreditBalance(data.balance)
+            router.refresh()
+            break
+          }
+          if (res && !data?.pending && res.status !== 409) break
+          await new Promise(resolve => setTimeout(resolve, 1500))
+        }
+
+        if (!cancelled) {
+          window.history.replaceState({}, '', window.location.pathname)
+        }
+      })()
+      return () => {
+        cancelled = true
+      }
+    }
+
     if (window.location.search.includes('view=')) {
       window.history.replaceState({}, '', window.location.pathname)
     }
-  }, [])
+  }, [router])
 
   const [mountedAtMs] = useState(() => Date.now())
 
@@ -162,6 +218,16 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0A8.003 8.003 0 014.582 15M19.419 15H15" />
                 </svg>
               </button>
+              {activeView === 'feed' && (
+                <button
+                  onClick={() => setActiveView('settings')}
+                  className="hidden sm:inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] transition-colors"
+                  title="Lead credit balance"
+                >
+                  <span className="tabular-nums text-[var(--color-accent-ring)]">{leadCreditBalance}</span>
+                  <span>credits</span>
+                </button>
+              )}
               <Link
                 href="/pricing"
                 className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-ghost text-[12.5px] font-medium items-center gap-1.5"
@@ -218,6 +284,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                   origin="live"
                   exportFeed="signal"
                   onOpenCrmTab={() => setActiveView('crm')}
+                  onLeadCreditConsumed={() => setLeadCreditBalance(balance => Math.max(0, balance - 1))}
                 />
               </div>
             )}
@@ -252,7 +319,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               </div>
             )}
             {activeView === 'settings' && (
-              <SettingsPanel profile={userProfile} />
+              <SettingsPanel profile={displayProfile} />
             )}
           </div>
         </main>

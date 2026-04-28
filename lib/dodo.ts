@@ -22,6 +22,22 @@ export const PRODUCT_IDS = {
   leadCredits: cleanEnvValue(process.env.DODO_PRODUCT_LEAD_CREDITS),
 }
 
+export interface DodoPaymentDetails {
+  payment_id?: string | null
+  status?: string | null
+  currency?: string | null
+  total_amount?: number | null
+  metadata?: Record<string, string> | null
+  customer?: {
+    customer_id?: string | null
+    email?: string | null
+  } | null
+  product_cart?: Array<{
+    product_id?: string | null
+    quantity?: number | null
+  }> | null
+}
+
 export function planFromProductId(productId: string): 'pro' | null {
   if (productId === PRODUCT_IDS.pro) return 'pro'
   return null
@@ -60,6 +76,7 @@ export async function createLeadCreditCheckoutUrl(params: {
       amount: params.amountDollars * 100,
     }],
     return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?view=settings&credits=1`,
+    feature_flags: { redirect_immediately: true },
     customer: { email: params.userEmail, name: params.userName },
     metadata: {
       purchase_type: 'lead_credits',
@@ -69,6 +86,22 @@ export async function createLeadCreditCheckoutUrl(params: {
     },
   })
   return (session as unknown as { checkout_url: string }).checkout_url
+}
+
+export async function retrieveDodoPayment(paymentId: string): Promise<DodoPaymentDetails> {
+  return await getDodoClient().payments.retrieve(paymentId) as DodoPaymentDetails
+}
+
+export async function retrieveDodoCheckoutSession(sessionId: string): Promise<{
+  id?: string
+  payment_id?: string | null
+  payment_status?: string | null
+}> {
+  return await getDodoClient().checkoutSessions.retrieve(sessionId) as {
+    id?: string
+    payment_id?: string | null
+    payment_status?: string | null
+  }
 }
 
 export function getPortalUrl(): string {

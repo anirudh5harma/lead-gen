@@ -60,6 +60,7 @@ interface Props {
   emptyBody?: string
   exportFeed?: 'signal' | 'explore' | 'crm_import'
   onOpenCrmTab?: () => void
+  onLeadCreditConsumed?: () => void
 }
 
 interface FeedSessionOption {
@@ -138,6 +139,7 @@ export default function LeadFeed({
   emptyBody = 'Check back in an hour or refine your targeting in Settings.',
   exportFeed = origin === 'explore' ? 'explore' : origin === 'crm_import' ? 'crm_import' : 'signal',
   onOpenCrmTab,
+  onLeadCreditConsumed,
 }: Props) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
@@ -300,7 +302,7 @@ export default function LeadFeed({
     setUnlockingLeadId(lead.id)
     try {
       const res = await fetch(`/api/leads/${lead.id}/unlock`, { method: 'POST' })
-      const data = await res.json().catch(() => ({})) as { unlockedAt?: string; error?: string }
+      const data = await res.json().catch(() => ({})) as { unlockedAt?: string; error?: string; usedCredit?: boolean }
       if (!res.ok) {
         setToast(data.error || 'Unable to unlock this lead right now.')
         return false
@@ -310,11 +312,12 @@ export default function LeadFeed({
           ? { ...item, is_unlocked: true, unlocked_at: data.unlockedAt ?? new Date().toISOString() }
           : item
       ))
+      if (data.usedCredit) onLeadCreditConsumed?.()
       return true
     } finally {
       setUnlockingLeadId(null)
     }
-  }, [])
+  }, [onLeadCreditConsumed])
 
   const openDraft = useCallback(async (lead: Lead) => {
     if (lead.is_unlocked === false) {
