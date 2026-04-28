@@ -14,6 +14,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.0",
+    "@vercel/analytics": "^2.0.1",
     "dodopayments": "^2.28.2",
     "next": "^16.2.4",
     "react": "19.2.4",

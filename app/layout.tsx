@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import { validateEnv } from "@/lib/env";
+import { Analytics } from "@vercel/analytics/next"
 
 if (typeof window === 'undefined') {
   validateEnv();
@@ -43,6 +44,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-[var(--color-ink-1)] text-[var(--color-text-1)]">
         {children}
+        <Analytics />
       </body>
     </html>
   );
