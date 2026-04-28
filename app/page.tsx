@@ -14,10 +14,16 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
     const supabase = createClient()
+    const params = new URLSearchParams(window.location.search)
+    const next = params.get('next')
+    const callback = new URL('/auth/callback', window.location.origin)
+    if (next?.startsWith('/') && !next.startsWith('//')) {
+      callback.searchParams.set('next', next)
+    }
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        redirectTo: callback.toString(),
         queryParams: { access_type: 'offline', prompt: 'consent' },
       },
     })

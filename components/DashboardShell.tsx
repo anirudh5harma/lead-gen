@@ -284,50 +284,12 @@ function McpPanel() {
   const [copied, setCopied] = useState<string | null>(null)
 
   const endpoint = `${origin}/api/mcp`
-  const clientConfig = `{
-  "mcpServers": {
-    "bombsell": {
-      "url": "${endpoint}",
-      "headers": {
-        "Authorization": "Bearer <SUPABASE_USER_ACCESS_TOKEN>"
-      }
-    }
-  }
-}`
-  const serverConfig = `{
-  "mcpServers": {
-    "bombsell": {
-      "url": "${endpoint}",
-      "headers": {
-        "Authorization": "Bearer <MCP_API_TOKEN>"
-      }
-    }
-  }
-}`
-  const testCall = `curl -X POST "${endpoint}" \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer <TOKEN>" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'`
-  const codexCli = `export BOMBSELL_MCP_TOKEN="<TOKEN>"
+  const codexCli = `codex mcp add bombsell --url ${endpoint}
 
-codex mcp add bombsell \\
-  --url ${endpoint} \\
-  --bearer-token-env-var BOMBSELL_MCP_TOKEN`
+codex mcp login bombsell \\
+  --scopes bombsell:read,bombsell:write:safe`
   const claudeCli = `claude mcp add --transport http bombsell \\
-  ${endpoint} \\
-  --header "Authorization: Bearer <TOKEN>"`
-  const stdioProxy = `{
-  "mcpServers": {
-    "bombsell": {
-      "command": "npm",
-      "args": ["run", "mcp:stdio"],
-      "env": {
-        "BOMBSELL_MCP_URL": "${endpoint}",
-        "BOMBSELL_MCP_TOKEN": "<TOKEN>"
-      }
-    }
-  }
-}`
+  ${endpoint}`
 
   async function copy(value: string, key: string) {
     await navigator.clipboard.writeText(value)
@@ -348,85 +310,17 @@ codex mcp add bombsell \\
               Connect agent frameworks to Bombsell.
             </h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-              The MCP server lets agents read your GTM profile, lead feed, watchlist, feed sessions, and signal timelines. Agents can also update lead status or add watchlist companies, without sending emails, unlocking leads, or spending enrichment credits.
+              Bombsell MCP lets Claude, Codex, and other agent clients read your GTM profile, lead feed, watchlist, feed sessions, and signal timelines. Setup uses browser OAuth, so users sign in and approve access without copying API tokens.
             </p>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <McpInfoCard
-          title="Endpoint"
-          body="Use this deployed endpoint from MCP-compatible clients."
-          value={endpoint}
-          onCopy={() => copy(endpoint, 'endpoint')}
-          copied={copied === 'endpoint'}
-        />
-        <McpInfoCard
-          title="Auth"
-          body="Use a Supabase user token, or configure a server token for controlled agents."
-          value="Bearer <TOKEN>"
-        />
-        <McpInfoCard
-          title="Safety"
-          body="Read-heavy by default. No send, unlock, enrichment, or credit-burning tools are exposed."
-          value="Safe actions only"
-        />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <section className="card overflow-hidden">
-          <div className="border-b border-[var(--color-line-1)] px-5 py-4">
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">What Agents Can Do</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">Current product state exposed through MCP tools and resources.</p>
-          </div>
-          <div className="grid gap-3 p-5 sm:grid-cols-2">
-            {[
-              ['Context', 'Read workspace ICP, active client, plan, and GTM guidance.'],
-              ['Leads', 'List and inspect live, Explore, and CRM-imported opportunities.'],
-              ['Workflow state', 'Mark leads viewed, drafted, sent, replied, booked, or dismissed.'],
-              ['Watchlist', 'Read watched accounts and add companies for priority monitoring.'],
-              ['Sessions', 'Inspect Explore and CRM feed sessions.'],
-              ['Signals', 'Search public signal history for any company.'],
-            ].map(([title, body]) => (
-              <div key={title} className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/45 p-4">
-                <p className="text-[12.5px] font-semibold text-[var(--color-text-1)]">{title}</p>
-                <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-3)]">{body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="card overflow-hidden">
-          <div className="border-b border-[var(--color-line-1)] px-5 py-4">
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Setup</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">Pick the auth mode that matches your agent runtime.</p>
-          </div>
-          <div className="space-y-3 p-5">
-            <McpStep
-              number="1"
-              title="User-scoped agents"
-              body="Pass the signed-in Supabase access token as the bearer token. The MCP server scopes every read/write to that user."
-            />
-            <McpStep
-              number="2"
-              title="Server-to-server agents"
-              body="Set MCP_API_TOKEN and MCP_USER_ID in Vercel. Agents use MCP_API_TOKEN, and all calls are scoped to MCP_USER_ID."
-            />
-            <McpStep
-              number="3"
-              title="Connect your client"
-              body="Use /api/mcp as a Streamable HTTP MCP endpoint. Start with tools/list, then call list_leads or get_gtm_context."
-            />
-          </div>
-        </section>
-      </div>
-
       <section className="card overflow-hidden">
         <div className="border-b border-[var(--color-line-1)] px-5 py-4">
-          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">CLI Setup</h3>
+          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Setup From CLI</h3>
           <p className="mt-1 text-xs text-[var(--color-text-4)]">
-            Use your Supabase user access token, or your configured MCP_API_TOKEN for server-scoped agents.
+            Add Bombsell once, then approve access in the browser with your Bombsell account.
           </p>
         </div>
         <div className="grid gap-4 p-5 lg:grid-cols-2">
@@ -447,85 +341,26 @@ codex mcp add bombsell \\
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <McpCodeBlock
-          title="Client Config · User Token"
-          description="Use this when your agent acts on behalf of a signed-in user."
-          code={clientConfig}
-          copied={copied === 'client'}
-          onCopy={() => copy(clientConfig, 'client')}
-        />
-        <McpCodeBlock
-          title="Client Config · Server Token"
-          description="Use this for internal agents after MCP_API_TOKEN and MCP_USER_ID are configured."
-          code={serverConfig}
-          copied={copied === 'server'}
-          onCopy={() => copy(serverConfig, 'server')}
-        />
-      </div>
-
-      <McpCodeBlock
-        title="Smoke Test"
-        description="Verify the endpoint returns the available MCP tools."
-        code={testCall}
-        copied={copied === 'curl'}
-        onCopy={() => copy(testCall, 'curl')}
-      />
-
-      <McpCodeBlock
-        title="Local Stdio Proxy"
-        description="Use this for MCP clients that only spawn local stdio servers."
-        code={stdioProxy}
-        copied={copied === 'stdio'}
-        onCopy={() => copy(stdioProxy, 'stdio')}
-      />
-    </div>
-  )
-}
-
-function McpInfoCard({
-  title,
-  body,
-  value,
-  onCopy,
-  copied,
-}: {
-  title: string
-  body: string
-  value: string
-  onCopy?: () => void
-  copied?: boolean
-}) {
-  return (
-    <div className="card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{title}</p>
-          <p className="mt-1 text-[12.5px] leading-5 text-[var(--color-text-3)]">{body}</p>
+      <section className="card overflow-hidden">
+        <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Available To Agents</h3>
         </div>
-        {onCopy && (
-          <button onClick={onCopy} className="rounded-full border border-[var(--color-line-2)] px-2.5 py-1 text-[11px] text-[var(--color-text-2)]">
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        )}
-      </div>
-      <p className="mt-4 truncate rounded-xl bg-[var(--color-ink-2)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-1)]">
-        {value}
-      </p>
-    </div>
-  )
-}
-
-function McpStep({ number, title, body }: { number: string; title: string; body: string }) {
-  return (
-    <div className="flex gap-3 rounded-2xl border border-[var(--color-line-1)] bg-white p-3">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-ink-2)] text-[11px] font-semibold text-[var(--color-text-2)]">
-        {number}
-      </span>
-      <div>
-        <p className="text-[12.5px] font-semibold text-[var(--color-text-1)]">{title}</p>
-        <p className="mt-0.5 text-[11.5px] leading-5 text-[var(--color-text-3)]">{body}</p>
-      </div>
+        <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ['Context', 'Workspace ICP and active client.'],
+            ['Leads', 'Live, Explore, and CRM-imported leads.'],
+            ['Workflow', 'Safe lead status updates.'],
+            ['Watchlist', 'Read and add watched companies.'],
+            ['Sessions', 'Explore and CRM feed sessions.'],
+            ['Signals', 'Company signal timelines.'],
+          ].map(([title, body]) => (
+            <div key={title} className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/45 p-4">
+              <p className="text-[12.5px] font-semibold text-[var(--color-text-1)]">{title}</p>
+              <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-3)]">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }

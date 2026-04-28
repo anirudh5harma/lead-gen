@@ -32,8 +32,17 @@ Leads are quota-limited at feed-ingestion time, not at send time. Follow-ups do 
 Bombsell exposes the current product state to agent frameworks through an official MCP Streamable HTTP endpoint:
 
 - Endpoint: `POST /api/mcp`
-- Primary auth: `Authorization: Bearer <Supabase user access token>`
-- Optional server-to-server auth: set `MCP_API_TOKEN` and `MCP_USER_ID`, then call with `Authorization: Bearer <MCP_API_TOKEN>`
+- Primary auth: OAuth browser flow with dynamic client registration and PKCE
+- Discovery: `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
+
+CLI setup:
+
+```bash
+codex mcp add bombsell --url https://your-domain.com/api/mcp
+codex mcp login bombsell --scopes bombsell:read,bombsell:write:safe
+
+claude mcp add --transport http bombsell https://your-domain.com/api/mcp
+```
 
 Available MCP tools:
 
@@ -52,14 +61,6 @@ MCP resources:
 - `bombsell://leads/recent`
 - `bombsell://watchlist`
 - `bombsell://feed-sessions`
-
-For clients that only support local stdio MCP servers, use the proxy:
-
-```bash
-BOMBSELL_MCP_URL="https://your-domain.com/api/mcp" \
-BOMBSELL_MCP_TOKEN="<TOKEN>" \
-npm run mcp:stdio
-```
 
 ## Cron Jobs
 

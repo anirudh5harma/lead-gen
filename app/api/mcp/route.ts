@@ -4,6 +4,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import * as z from 'zod/v4'
 import { createAdminClient } from '@/lib/supabase/server'
 import { buildLiveLeadFeedSnapshot } from '@/lib/lead-sources'
+import { protectedResourceMetadataUrl, validateMcpAccessToken } from '@/lib/mcp-oauth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -65,7 +66,13 @@ async function handleMcpRequest(request: Request): Promise<Response> {
       jsonrpc: '2.0',
       id: null,
       error: { code: -32001, message: 'Unauthorized' },
-    }, { status: 401, headers: corsHeaders() })
+    }, {
+      status: 401,
+      headers: {
+        ...corsHeaders(),
+        'WWW-Authenticate': `Bearer resource_metadata="${protectedResourceMetadataUrl(request)}"`,
+      },
+    })
   }
 
   const server = createBombsellMcpServer(ctx)
@@ -278,6 +285,11 @@ async function authenticateMcpRequest(request: Request): Promise<McpContext | nu
 
   if (staticToken && staticUserId && token === staticToken) {
     return { token, userId: staticUserId, supabase }
+  }
+
+  const mcpToken = await validateMcpAccessToken(supabase, token)
+  if (mcpToken) {
+    return { token, userId: mcpToken.userId, supabase }
   }
 
   const authClient = createSupabaseClient(
