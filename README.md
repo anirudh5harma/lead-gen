@@ -27,6 +27,40 @@ Leads are quota-limited at feed-ingestion time, not at send time. Follow-ups do 
 8. `send-followups` sends pre-generated follow-ups for paid plans when no reply has been detected.
 9. Gmail/Outlook webhooks mark replies and stop scheduled follow-ups.
 
+## MCP Server
+
+Bombsell exposes the current product state to agent frameworks through an official MCP Streamable HTTP endpoint:
+
+- Endpoint: `POST /api/mcp`
+- Primary auth: `Authorization: Bearer <Supabase user access token>`
+- Optional server-to-server auth: set `MCP_API_TOKEN` and `MCP_USER_ID`, then call with `Authorization: Bearer <MCP_API_TOKEN>`
+
+Available MCP tools:
+
+- `get_gtm_context`: workspace profile, active client, ICP, and agent guidance
+- `list_leads`: recent live, Explore, and CRM-imported leads
+- `get_lead`: full lead context including feed snapshot and match debug
+- `update_lead_status`: mark a lead as viewed, drafted, sent, replied, booked, or dismissed
+- `list_watchlist`: current watchlisted companies
+- `add_watchlist_company`: add a company to the watchlist
+- `list_feed_sessions`: session history for feed workflows
+- `search_signal_timeline`: public signal history for a company
+
+MCP resources:
+
+- `bombsell://workspace/profile`
+- `bombsell://leads/recent`
+- `bombsell://watchlist`
+- `bombsell://feed-sessions`
+
+For clients that only support local stdio MCP servers, use the proxy:
+
+```bash
+BOMBSELL_MCP_URL="https://your-domain.com/api/mcp" \
+BOMBSELL_MCP_TOKEN="<TOKEN>" \
+npm run mcp:stdio
+```
+
 ## Cron Jobs
 
 Cron schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/vercel.json:1).
