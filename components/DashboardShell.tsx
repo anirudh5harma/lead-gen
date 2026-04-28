@@ -307,10 +307,10 @@ codex mcp login bombsell \\
               Agent-ready GTM context
             </span>
             <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[var(--color-text-1)]">
-              Connect agent frameworks to Bombsell.
+              Bombsell for Codex and Claude.
             </h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-              Bombsell MCP lets Claude, Codex, and other agent clients read your GTM profile, lead feed, watchlist, feed sessions, and signal timelines. Setup uses browser OAuth, so users sign in and approve access without copying API tokens.
+              Connect Bombsell to Codex CLI or Claude Code so your coding agents can inspect GTM context, review leads, update safe workflow state, and add watchlist companies. Setup uses browser OAuth, so users approve access without copying API tokens.
             </p>
           </div>
         </div>
@@ -379,7 +379,7 @@ function McpCodeBlock({
   onCopy: () => void
 }) {
   return (
-    <section className="card overflow-hidden">
+    <section className="card flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-[var(--color-line-1)] px-5 py-4">
         <div>
           <h3 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h3>
@@ -389,7 +389,7 @@ function McpCodeBlock({
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <pre className="overflow-x-auto bg-[var(--color-ink-2)] p-5 text-[11.5px] leading-5 text-[var(--color-text-1)]">
+      <pre className="min-h-0 flex-1 overflow-x-auto bg-[var(--color-ink-2)] p-5 text-[11.5px] leading-5 text-[var(--color-text-1)]">
         <code>{code}</code>
       </pre>
     </section>
