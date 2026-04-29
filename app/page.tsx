@@ -374,7 +374,7 @@ const TIERS = [
   {
     name: 'Enterprise OS',
     price: 'Custom',
-    period: 'managed GTM infra',
+    period: '',
     perks: ['Managed revenue workflows', 'Enterprise CRM governance', 'Custom agent playbooks', 'Dedicated signal sources', 'Operator-in-the-loop execution', 'Security and audit controls'],
     cta: 'Talk to us',
     href: 'mailto:team@bombsell.com?subject=Enterprise%20Revenue%20OS',

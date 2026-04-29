@@ -29,7 +29,7 @@ const PLANS = [
     name: 'Pro',
     price: '$99',
     period: '/ month',
-    description: 'For active solopreneurs.',
+    description: 'For solopreneurs, B2B founders and SDRs',
     features: [
       'Up to 500 leads / month',
       'Multiple client workspaces',
@@ -46,8 +46,8 @@ const PLANS = [
     id: 'enterprise' as const,
     name: 'Enterprise OS',
     price: 'Custom',
-    period: 'managed GTM infra',
-    description: 'For teams that need Bombsell as their revenue operating layer.',
+    period: '',
+    description: 'For teams looking to scale with revenue intelligence',
     features: [
       'Managed revenue workflows',
       'Enterprise CRM governance',
