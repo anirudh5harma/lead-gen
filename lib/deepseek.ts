@@ -808,6 +808,7 @@ Body must use \\n\\n between paragraphs.`,
  */
 export async function draftOutreachEmail(params: {
   senderCompany: string
+  senderWebsiteUrl?: string | null
   servicesDescription: string
   stakeholderName: string
   stakeholderTitle: string
@@ -822,7 +823,7 @@ export async function draftOutreachEmail(params: {
   customInstructions?: string | null
 }): Promise<{ subject: string; body: string }> {
   const {
-    senderCompany, servicesDescription, stakeholderName, stakeholderTitle,
+    senderCompany, senderWebsiteUrl, servicesDescription, stakeholderName, stakeholderTitle,
     targetCompany, signalType, signalSummary,
     headline, fundingAmount, signalAgeLabel, articleContext,
     calendlyUrl, customInstructions,
@@ -845,13 +846,17 @@ export async function draftOutreachEmail(params: {
   const articleBlock = articleContext
     ? `Article intelligence:\n${articleContext}`
     : ''
+  const senderIntro = senderWebsiteUrl
+    ? `[${senderCompany}](${senderWebsiteUrl})`
+    : senderCompany
+  const paragraphPattern = pickParagraphPattern(signalType, targetCompany, senderIntro, servicesDescription, signalSummary)
 
   try {
     const text = await completePrompt({
-      prompt: `You are writing a B2B sales email. Be direct, sharp, and specific.
+      prompt: `You are writing a high-quality B2B sales email. Be specific, useful, and grounded in the trigger event.
 
 Context:
-Sender: ${senderCompany}
+Sender: ${senderIntro}
 What they offer: ${servicesDescription}
 
 Recipient: ${firstName} (${stakeholderTitle}) at ${targetCompany}
@@ -865,17 +870,24 @@ ${customInstructions || 'None'}
 Strategic angle:
 ${angle}
 
+Use this paragraph pattern for THIS email:
+${paragraphPattern}
+
 Email construction rules:
 - Subject line: choose the strongest option for this situation, max 9 words
-- Body: 3 paragraphs plus closing
-- Paragraph 1: interrupt plus insight
-- Paragraph 2: connect the offer to the situation
-- Paragraph 3: add proof or specificity
+- Body: exactly 4 short paragraphs separated by blank lines
+- Paragraph 1: clear context from the trigger event, not a generic "companies at this stage" line
+- Paragraph 2: one concrete implication for ${stakeholderTitle || 'the recipient'} at ${targetCompany}
+- Paragraph 3: the proposition, using ${senderIntro} once as the sender name${senderWebsiteUrl ? ' with the markdown link intact' : ''}
+- Paragraph 4: one low-friction CTA
 - ${ctaInstruction}
 
 Tone:
 - Human, direct, slightly informal
 - Zero corporate speak
+- No generic frames like "most companies at this stage", "specific wall", "usual breakage", "streamline operations", or "unlock growth"
+- Do not reuse stock openers; make the first sentence unique to the trigger
+- No fabricated metrics, customers, or claims
 - First name only for recipient
 - Do not use long dash punctuation
 
@@ -885,15 +897,138 @@ Return ONLY this JSON:
 The body must use \\n\\n between paragraphs.`,
       maxTokens: 1000,
       timeoutMs: 60_000,
+      temperature: 0.55,
     })
 
-    return sanitizeGeneratedEmail(JSON.parse(stripCodeFences(text)))
+    return normalizeOutreachEmail(
+      sanitizeGeneratedEmail(JSON.parse(stripCodeFences(text))),
+      {
+        firstName,
+        senderCompany,
+        senderWebsiteUrl,
+        senderIntro,
+        servicesDescription,
+        targetCompany,
+        signalType,
+        signalSummary,
+        calendlyUrl,
+      },
+    )
   } catch {
-    return sanitizeGeneratedEmail({
+    return normalizeOutreachEmail(sanitizeGeneratedEmail({
       subject: `${targetCompany}'s ${signalType}: a thought`,
-      body: `${firstName}, most companies at this stage of ${signalType} hit a specific wall around this problem faster than expected. ${senderCompany} helps teams in that situation avoid the usual breakage by ${servicesDescription.split('.')[0].toLowerCase()}.\n\nWorth a 15-minute call to see if it is relevant?`,
+      body: `${firstName}, noticed ${targetCompany} ${signalSummary ? signalSummary.toLowerCase() : `had a recent ${signalType} signal`}. That usually creates a short window where the team is deciding which revenue workflows need to change.\n\nFor someone in ${stakeholderTitle || 'your seat'}, the risk is not missing the signal, it is letting the follow-through get scattered across CRM notes, inboxes, and manual research.\n\n${senderIntro} helps teams turn those account signals into verified contacts, context-rich outreach, CRM updates, and agent-ready next steps without adding another dashboard to babysit.\n\nWorth a quick 15-minute look to see if this is relevant for ${targetCompany}${calendlyUrl ? `? ${calendlyUrl}` : '?'}`,
+    }), {
+      firstName,
+      senderCompany,
+      senderWebsiteUrl,
+      senderIntro,
+      servicesDescription,
+      targetCompany,
+      signalType,
+      signalSummary,
+      calendlyUrl,
     })
   }
+}
+
+function pickParagraphPattern(
+  signalType: string,
+  targetCompany: string,
+  senderIntro: string,
+  servicesDescription: string,
+  signalSummary: string,
+): string {
+  const offer = servicesDescription.split(/[.!?]/)[0]?.trim() || 'your GTM workflow'
+  const summary = signalSummary || `the recent ${signalType} signal`
+  const patterns = [
+    `P1: "${targetCompany}" trigger context in one sentence, then why timing matters.
+P2: Operational implication created by "${summary}".
+P3: Introduce ${senderIntro} through one concrete workflow tied to "${offer}".
+P4: Ask for a 15-minute look.`,
+    `P1: Start with the business event, not congratulations.
+P2: Name the likely internal pressure this creates for the recipient's role.
+P3: Explain the proposition as a before/after workflow, not a feature list.
+P4: Soft question with one clear next step.`,
+    `P1: Mention the trigger and one plausible downstream decision.
+P2: Point out the cost of handling that decision manually.
+P3: Position ${senderIntro} as the operating layer for that specific motion.
+P4: Low-pressure call ask.`,
+  ]
+  const seed = `${targetCompany}:${signalType}:${summary}`.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  return patterns[seed % patterns.length]
+}
+
+function normalizeOutreachEmail(
+  email: { subject: string; body: string },
+  context: {
+    firstName: string
+    senderCompany: string
+    senderWebsiteUrl?: string | null
+    senderIntro: string
+    servicesDescription: string
+    targetCompany: string
+    signalType: string
+    signalSummary: string
+    calendlyUrl?: string | null
+  },
+): { subject: string; body: string } {
+  const paragraphs = email.body
+    .split(/\n{2,}/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+
+  let body = email.body
+  if (paragraphs.length < 4) {
+    body = fallbackOutreachBody(context)
+  } else if (paragraphs.length > 4) {
+    body = [
+      paragraphs[0],
+      paragraphs[1],
+      paragraphs.slice(2, -1).join(' '),
+      paragraphs[paragraphs.length - 1],
+    ].join('\n\n')
+  }
+
+  if (context.senderWebsiteUrl && !body.includes(`](${context.senderWebsiteUrl})`)) {
+    body = body.replace(
+      new RegExp(`\\b${escapeRegExp(context.senderCompany)}\\b`),
+      `[${context.senderCompany}](${context.senderWebsiteUrl})`,
+    )
+  }
+
+  return sanitizeGeneratedEmail({
+    subject: email.subject || `${context.targetCompany} ${context.signalType}`,
+    body,
+  })
+}
+
+function fallbackOutreachBody(context: {
+  firstName: string
+  senderIntro: string
+  servicesDescription: string
+  targetCompany: string
+  signalType: string
+  signalSummary: string
+  calendlyUrl?: string | null
+}): string {
+  const trigger = context.signalSummary || `the recent ${context.signalType} signal`
+  const offer = describeFallbackOffer(context.servicesDescription)
+  return `${context.firstName}, noticed ${context.targetCompany} around ${trigger.toLowerCase()}. That kind of moment usually creates a short window where priorities shift and teams decide what needs attention now.\n\nThe hard part is turning that priority into a practical next step without adding more manual work or pulling the team away from the core plan.\n\n${context.senderIntro} helps teams with ${offer}, which may be relevant if this is becoming an active focus for ${context.targetCompany}.\n\nWorth a quick 15-minute look to see if this should be on your radar${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}` 
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function describeFallbackOffer(servicesDescription: string): string {
+  const cleaned = servicesDescription
+    .replace(/\s+/g, ' ')
+    .replace(/^we\s+(help|build|provide|offer)\s+/i, '')
+    .trim()
+  const firstSentence = cleaned.split(/[.!?]/)[0]?.trim()
+  if (!firstSentence) return 'solving this kind of operational problem'
+  return firstSentence.charAt(0).toLowerCase() + firstSentence.slice(1)
 }
 
 function sanitizeGeneratedEmail(value: unknown): { subject: string; body: string } {

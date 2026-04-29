@@ -31,13 +31,13 @@ export async function POST(request: Request) {
   const [leadRes, profileRes] = await Promise.all([
     supabase
       .from('leads')
-      .select('id, client_id, is_unlocked, target_company, company_domain, relevance_reason, contact_email, contact_name, contact_title, feed_snapshot')
+      .select('id, client_id, is_unlocked, target_company, company_domain, relevance_reason, contact_email, contact_name, contact_title, contact_verified, feed_snapshot')
       .eq('id', leadId)
       .eq('user_id', user.id)
       .single(),
     supabase
       .from('user_profiles')
-      .select('company_name, services_description, calendly_url')
+      .select('company_name, website_url, services_description, calendly_url')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -73,6 +73,7 @@ export async function POST(request: Request) {
     contact_email?: string | null
     contact_name?: string | null
     contact_title?: string | null
+    contact_verified?: boolean | null
     client_id?: string | null
   }
   const profile = profileRes.data
@@ -82,7 +83,7 @@ export async function POST(request: Request) {
     clientId
       ? supabase
           .from('client_accounts')
-          .select('name, services_description, calendly_url')
+          .select('name, website_url, services_description, calendly_url')
           .eq('id', clientId)
           .eq('user_id', user.id)
           .maybeSingle()
@@ -106,20 +107,21 @@ export async function POST(request: Request) {
     },
   )
 
-  if (contacts.length > 0) {
-    stakeholders = contacts.map(item => ({
+  const verifiedContacts = contacts.filter(item => item.verified)
+  if (verifiedContacts.length > 0) {
+    stakeholders = verifiedContacts.map(item => ({
       name: item.name,
       title: item.title || 'Decision Maker',
       email: item.email,
-      confidence: item.verified ? 'high' : item.zb_status === 'catch-all' ? 'medium' : 'low',
+      confidence: 'high',
       source: item.source,
     }))
-  } else if (lead.contact_email && lead.contact_name) {
+  } else if (lead.contact_email && lead.contact_name && lead.contact_verified === true) {
     stakeholders = [{
       name: lead.contact_name,
       title: lead.contact_title ?? 'Decision Maker',
       email: lead.contact_email,
-      confidence: 'medium',
+      confidence: 'high',
       source: 'hunter',
     }]
   }
@@ -153,6 +155,7 @@ export async function POST(request: Request) {
 
   const { subject, body } = await draftOutreachEmail({
     senderCompany:       outreachContext.senderCompany,
+    senderWebsiteUrl:    outreachContext.websiteUrl,
     servicesDescription: outreachContext.servicesDescription,
     stakeholderName:     primaryStakeholder.name,
     stakeholderTitle:    primaryStakeholder.title,

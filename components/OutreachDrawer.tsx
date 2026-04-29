@@ -62,6 +62,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
   const [sendError, setSendError] = useState<string | null>(null)
   const [followupCancelling, setFollowupCancelling] = useState(false)
   const [followupCancelled, setFollowupCancelled] = useState(false)
+  const hasVerifiedContacts = Boolean(draft?.stakeholders.length)
 
   useEffect(() => {
     setMounted(true)
@@ -280,13 +281,21 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
         {/* Body */}
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {loading && (
-            <div className="space-y-3">
-              <div className="h-3 rounded w-1/3 skeleton" />
-              <div className="h-10 rounded skeleton" />
-              <div className="h-3 rounded w-1/4 mt-4 skeleton" />
-              <div className="h-32 rounded skeleton" />
-              <div className="h-3 rounded w-1/4 mt-4 skeleton" />
-              <div className="h-16 rounded skeleton" />
+            <div className="min-h-[360px] grid place-items-center">
+              <div className="w-full max-w-sm rounded-3xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-5 py-6 text-center shadow-sm">
+                <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-white border border-[var(--color-line-1)]">
+                  <span className="h-5 w-5 rounded-full border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] animate-spin" />
+                </div>
+                <p className="text-sm font-medium text-[var(--color-text-1)]">Generating outreach draft</p>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-4)]">
+                  Pulling signal context, ranked contacts, and your offer into a 4-paragraph email.
+                </p>
+                <div className="mt-5 space-y-2">
+                  <div className="h-2 rounded-full skeleton" />
+                  <div className="h-2 rounded-full skeleton w-5/6 mx-auto" />
+                  <div className="h-2 rounded-full skeleton w-2/3 mx-auto" />
+                </div>
+              </div>
             </div>
           )}
 
@@ -319,7 +328,9 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-medium text-[var(--color-text-4)] uppercase tracking-widest">
-                  Send to · {draft.stakeholders.length} contact{draft.stakeholders.length !== 1 ? 's' : ''} found
+                  {hasVerifiedContacts
+                    ? `Send to · ${draft.stakeholders.length} contact${draft.stakeholders.length !== 1 ? 's' : ''} found`
+                    : 'Send to'}
                 </label>
                 <StakeholderList stakeholders={draft.stakeholders} />
               </div>
@@ -381,7 +392,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
               {canSendDirect ? (
                 <button
                   onClick={sendEmail}
-                  disabled={sendState === 'sending' || sendState === 'success'}
+                  disabled={!hasVerifiedContacts || sendState === 'sending' || sendState === 'success'}
                   className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full disabled:opacity-60 disabled:cursor-not-allowed text-sm"
                 >
                   {sendState === 'sending' && (
@@ -392,6 +403,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
               ) : (
                 <button
                   onClick={openInGmail}
+                  disabled={!hasVerifiedContacts}
                   className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full text-sm"
                 >
                   <GmailIcon />
@@ -401,8 +413,9 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
               {canSendDirect && (
                 <button
                   onClick={openInGmail}
+                  disabled={!hasVerifiedContacts}
                   title="Open in Gmail instead"
-                  className="btn-ghost flex items-center justify-center gap-1.5 h-10 px-3 rounded-full text-xs"
+                  className="btn-ghost flex items-center justify-center gap-1.5 h-10 px-3 rounded-full text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <GmailIcon />
                   <span className="hidden sm:inline">Gmail</span>

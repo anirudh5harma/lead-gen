@@ -32,7 +32,7 @@ export default function StakeholderList({ stakeholders }: { stakeholders: Stakeh
   if (stakeholders.length === 0) {
     return (
       <div className="text-xs text-[var(--color-text-4)] py-4 text-center border border-dashed border-[var(--color-line-1)] rounded-md">
-        No contacts found for this company.
+        Oops, no verified contacts right now.
       </div>
     )
   }
