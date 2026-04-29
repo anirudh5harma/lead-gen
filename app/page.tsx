@@ -5,10 +5,12 @@ import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
 import Image from 'next/image'
 import MarketingNavbar from '@/components/MarketingNavbar'
+import { useSectionReveal } from '@/hooks/use-section-reveal'
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useSectionReveal()
 
   async function signInWithGoogle() {
     setLoading(true)
@@ -42,7 +44,7 @@ export default function LoginPage() {
 
       <main className="relative z-10 flex-1">
         {/* Hero */}
-        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 pt-20 md:pt-28 pb-16 md:pb-20 grid grid-cols-1 lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-16 items-center">
+        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-20 md:pt-28 pb-16 md:pb-20 grid grid-cols-1 lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-16 items-center">
           <div className="space-y-8 fade-in">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--color-line-2)] bg-white text-[11px] text-[var(--color-text-2)] shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] pulse-dot" />
@@ -104,7 +106,7 @@ export default function LoginPage() {
         </section>
 
         {/* Trust strip */}
-        <section className="border-y border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
+        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
           <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-3)] mr-4">
               Built for the teams replacing GTM bloat
@@ -116,7 +118,7 @@ export default function LoginPage() {
         </section>
 
         {/* How it works */}
-        <section id="how" className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
+        <section id="how" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
           <div className="max-w-2xl mb-16">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">How it works</p>
             <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
@@ -146,7 +148,7 @@ export default function LoginPage() {
         </section>
 
         {/* Feature strip */}
-        <section id="features" className="bg-[var(--color-ink-2)]/50 border-y border-[var(--color-line-1)]">
+        <section id="features" className="section-reveal reveal-from-right bg-[var(--color-ink-2)]/50 border-y border-[var(--color-line-1)]">
           <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32 grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-12 lg:gap-20 items-center">
             <div>
               <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Revenue OS</p>
@@ -175,7 +177,7 @@ export default function LoginPage() {
         </section>
 
         {/* Enterprise vision */}
-        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 pt-24 md:pt-32">
+        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-24 md:pt-32">
           <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
             <div className="sticky top-24">
               <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Where this is going</p>
@@ -202,7 +204,7 @@ export default function LoginPage() {
         </section>
 
         {/* Pricing teaser */}
-        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
+        <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
           <div className="text-center max-w-2xl mx-auto mb-12">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Pricing</p>
             <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
@@ -249,7 +251,7 @@ export default function LoginPage() {
         </section>
 
         {/* Final CTA */}
-        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 pb-24">
+        <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 pb-24">
           <div className="relative card overflow-hidden p-10 md:p-16 text-center">
             <div aria-hidden className="absolute inset-0 pointer-events-none">
               <div className="blob blob-1" style={{ width: 420, height: 420, top: -140, left: '50%', transform: 'translateX(-50%)', opacity: 0.7 }} />

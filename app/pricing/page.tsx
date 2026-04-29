@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+import { useSectionReveal } from '@/hooks/use-section-reveal'
 
 const PLANS = [
   {
@@ -94,6 +95,7 @@ export default function PricingPage() {
   const [isSignedIn, setIsSignedIn] = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const router = useRouter()
+  useSectionReveal()
 
   useEffect(() => {
     createClient().auth.getSession().then(({ data }) => {
@@ -144,7 +146,7 @@ export default function PricingPage() {
       </nav>
 
       <main className="relative z-10 flex-1 flex flex-col items-center px-6 md:px-8 pt-20 md:pt-28 pb-24">
-        <div className="text-center mb-16 space-y-4 max-w-2xl fade-in">
+        <div className="section-reveal reveal-from-bottom text-center mb-16 space-y-4 max-w-2xl fade-in">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pricing</p>
           <h1 className="text-4xl md:text-6xl font-medium text-[var(--color-text-1)] tracking-[-0.02em] leading-[1.02]">
             Simple pricing.<br />
@@ -155,7 +157,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-5 fade-in-stagger">
+        <div className="section-reveal reveal-from-bottom w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-5 fade-in-stagger">
           {PLANS.map(plan => (
             <div
               key={plan.id}
@@ -238,7 +240,7 @@ export default function PricingPage() {
           </p>
         )}
 
-        <section className="w-full max-w-3xl mt-28">
+        <section className="section-reveal reveal-from-bottom w-full max-w-3xl mt-28">
           <div className="text-center mb-12 space-y-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Questions</p>
             <h2 className="text-3xl md:text-4xl font-medium tracking-[-0.02em] text-[var(--color-text-1)] leading-[1.05]">
