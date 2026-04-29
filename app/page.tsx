@@ -175,7 +175,7 @@ export default function LoginPage() {
         </section>
 
         {/* Enterprise vision */}
-        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
+        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 pt-24 md:pt-32">
           <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
             <div className="sticky top-24">
               <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Where this is going</p>
