@@ -6,6 +6,7 @@ import { resolveServicesDescription } from '@/lib/company-profile'
 import { syncMonitoredAccountsFromWorkspaceSources } from '@/lib/monitored-accounts'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { grantStarterLeadCredits } from '@/lib/lead-credits'
+import { buildIcpKeywords } from '@/lib/icp'
 
 const MAX_PROFILE_FIELD_LENGTH = 3000
 
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
 
   const {
     company_name, industry, target_industries, services_description,
-    website_url, calendly_url, target_signal_types, min_relevance_score,
+    website_url, calendly_url, target_signal_types, min_relevance_score, icp_keywords,
   } = body as Record<string, unknown>
 
   const companyName = typeof company_name === 'string' ? company_name.trim() : ''
@@ -79,14 +80,19 @@ export async function POST(request: Request) {
   const websiteUrl = resolvedDescription.websiteUrl
 
   // ICP keywords and embeddings are both optional — don't let model/API failures block onboarding.
-  const [icp_keywords, embedding] = await Promise.all([
+  const [generatedIcpKeywords, embedding] = await Promise.all([
     extractICPKeywords(servicesDescription).catch(() => [] as string[]),
     embed(`${companyName} ${servicesDescription} targets: ${targetIndustries.join(', ')}`).catch(() => null as number[] | null),
   ])
+  const normalizedIcpKeywords = buildIcpKeywords({
+    explicitKeywords: icp_keywords,
+    generatedKeywords: generatedIcpKeywords,
+    targetIndustries,
+  })
 
   const { data: existingProfile } = await supabase
     .from('user_profiles')
-    .select('active_client_id, plan, leads_used_this_month, leads_reset_at, slack_webhook_url, slack_min_score, auto_send_enabled')
+    .select('active_client_id, plan, leads_used_this_month, leads_reset_at, slack_webhook_url, slack_min_score, auto_send_enabled, automation_mode')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -104,7 +110,7 @@ export async function POST(request: Request) {
         calendly_url: typeof calendly_url === 'string' && calendly_url.trim() ? calendly_url.trim() : null,
         target_signal_types: target_signal_types || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
         min_relevance_score: typeof min_relevance_score === 'number' ? min_relevance_score : 6,
-        icp_keywords,
+        icp_keywords: normalizedIcpKeywords,
         profile_embedding: embedding ? toVectorLiteral(embedding) : null,
       })
       .eq('id', activeClientId)
@@ -122,7 +128,7 @@ export async function POST(request: Request) {
         calendly_url: typeof calendly_url === 'string' && calendly_url.trim() ? calendly_url.trim() : null,
         target_signal_types: target_signal_types || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
         min_relevance_score: typeof min_relevance_score === 'number' ? min_relevance_score : 6,
-        icp_keywords,
+        icp_keywords: normalizedIcpKeywords,
         profile_embedding: embedding ? toVectorLiteral(embedding) : null,
       })
       .select('id')
@@ -144,7 +150,7 @@ export async function POST(request: Request) {
     calendly_url: typeof calendly_url === 'string' && calendly_url.trim() ? calendly_url.trim() : null,
     target_signal_types: target_signal_types || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
     min_relevance_score: typeof min_relevance_score === 'number' ? min_relevance_score : 6,
-    icp_keywords,
+    icp_keywords: normalizedIcpKeywords,
     profile_embedding: embedding ? toVectorLiteral(embedding) : null,
     active_client_id: activeClientId,
     plan: 'free',
@@ -153,6 +159,7 @@ export async function POST(request: Request) {
     slack_webhook_url: (existingProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null,
     slack_min_score: (existingProfile as { slack_min_score?: number | null } | null)?.slack_min_score ?? 7,
     auto_send_enabled: (existingProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? false,
+    automation_mode: (existingProfile as { automation_mode?: string | null } | null)?.automation_mode ?? 'autopilot',
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' })
 
@@ -167,6 +174,24 @@ export async function POST(request: Request) {
     } catch (creditError) {
       console.error('[profile] starter credit grant failed:', creditError)
     }
+
+    const { error: policyError } = await supabase.from('auto_send_policies').insert({
+      user_id: user.id,
+      client_id: activeClientId,
+      enabled: true,
+      connected_account_id: null,
+      target_origins: ['live'],
+      target_explore_session_ids: [],
+      require_verified_contact: true,
+      min_relevance_score: 7,
+      max_lead_age_days: 30,
+      daily_send_limit: 10,
+      min_minutes_between_sends: 30,
+      last_started_at: new Date().toISOString(),
+      started_notification_sent_at: null,
+      completed_notification_sent_at: null,
+    })
+    if (policyError) console.error('[profile] default live autopilot policy failed:', policyError)
   }
 
   syncMonitoredAccountsFromWorkspaceSources(service).catch(syncError => {

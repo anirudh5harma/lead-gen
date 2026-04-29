@@ -117,7 +117,11 @@ export async function PATCH(request: Request) {
     )
   }
 
-  const targetOrigins = sanitizeAutoSendOrigins(body.target_origins)
+  const targetOrigins = body.enabled
+    ? sanitizeAutoSendOrigins(body.target_origins)
+    : Array.isArray(body.target_origins)
+      ? body.target_origins.filter((origin): origin is 'live' | 'explore' => origin === 'live' || origin === 'explore')
+      : []
   const targetExploreSessionIds = sanitizeSessionIds(body.target_explore_session_ids)
   const requireVerifiedContact = body.require_verified_contact === true
   const minRelevanceScore = normalizePolicyScore(body.min_relevance_score)

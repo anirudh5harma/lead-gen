@@ -22,6 +22,7 @@ interface UserProfile {
   services_description: string
   website_url?: string | null
   icp_keywords: string[] | null
+  target_industries?: string[] | null
   email?: string
   plan?: string
   leads_used_this_month?: number
@@ -70,7 +71,7 @@ const VIEW_TITLES: Record<View, string> = {
   feed:      'Signal Feed',
   explore:   'Explore',
   crm:       'CRM',
-  automation: 'Automation',
+  automation: 'Explore Automation',
   mcp:       'MCP',
   watchlist: 'Watchlist',
   settings:  'Settings',
@@ -192,11 +193,11 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userI
                 {VIEW_TITLES[activeView]}
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
-                {activeView === 'command' && 'Your GTM agents, outcomes, replies, approvals, and booked meetings'}
+                {activeView === 'command' && 'Supervise live-signal autopilot, outcomes, replies, and booked meetings'}
                 {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
                 {activeView === 'explore' && 'Prompt-driven lead discovery based on who you want to target next'}
                 {activeView === 'crm' && 'Stage leads from Signal and Explore, then push them to your configured CRM'}
-                {activeView === 'automation' && 'Connect an inbox and safely automate outbound from signal or selected Explore sessions'}
+                {activeView === 'automation' && 'Configure targeted Explore-session automation and sending inboxes'}
                 {activeView === 'mcp' && 'Let agent frameworks consume your GTM context and lead workflows'}
                 {activeView === 'watchlist' && 'Companies you follow bypass relevance filtering'}
                 {activeView === 'settings' && 'Billing, targeting, Slack alerts, templates, and blocked companies'}
@@ -400,7 +401,7 @@ function CommandCenter({
         return
       }
       setAutopilot(prev => prev ? { ...prev, mode, policy: { ...(prev.policy ?? {}), enabled: mode === 'autopilot' } } : data)
-      setAutopilotMessage(mode === 'autopilot' ? 'Autopilot started. Bombsell will run safely in the background.' : 'Approve-first mode saved.')
+      setAutopilotMessage(mode === 'autopilot' ? 'Live autopilot is on. Bombsell will run safely in the background.' : 'Live autopilot paused. Explore automation can still run if configured.')
     } catch {
       setAutopilotMessage('Unable to start autopilot.')
     } finally {
@@ -419,14 +420,14 @@ function CommandCenter({
               Bombsell is running your outbound engine.
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/76">
-              Your agents research accounts, validate fit, prepare outreach, send safely from your inbox, stop on replies, and surface only outcomes that need attention.
+              Command Center is the control room for live-signal autopilot: agents unlock high-fit leads with credits, find verified contacts, send safely, stop on replies, and surface booked-meeting outcomes.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               <button onClick={() => startAutopilot('autopilot')} disabled={autopilotBusy || (autopilot ? !autopilot.ready : false)} className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#17231e] disabled:opacity-50">
-                {autopilot?.mode === 'autopilot' ? 'Autopilot running' : 'Start autopilot'}
+                {autopilot?.mode === 'autopilot' ? 'Live autopilot on' : 'Turn on live autopilot'}
               </button>
               <button onClick={() => startAutopilot('approve_first')} disabled={autopilotBusy} className="rounded-full border border-white/25 px-4 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50">
-                Approve first
+                Pause live autopilot
               </button>
             </div>
             {autopilotMessage && <p className="mt-3 text-xs text-white/75">{autopilotMessage}</p>}
@@ -530,7 +531,7 @@ function AutopilotLaunchPanel({
   const checklist = status?.readiness ?? [
     { key: 'profile', label: 'Offer and company profile', done: Boolean(profile.company_name && profile.services_description), action: 'Edit onboarding' },
     { key: 'website', label: 'Website for personalization', done: Boolean(profile.website_url), action: 'Add website' },
-    { key: 'icp', label: 'ICP keywords', done: Boolean(profile.icp_keywords?.length), action: 'Tune ICP' },
+    { key: 'icp', label: 'ICP targets', done: Boolean(profile.icp_keywords?.length || profile.target_industries?.length), action: 'Tune ICP' },
     { key: 'inbox', label: 'Connected Gmail or Outlook', done: false, action: 'Connect inbox' },
     { key: 'credits', label: 'Lead unlock credits', done: (profile.lead_credit_balance ?? 0) > 0, action: 'Add credits' },
   ]
@@ -548,9 +549,9 @@ function AutopilotLaunchPanel({
         <div className="border-b border-[var(--color-line-1)] px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Launch Autopilot</h3>
+              <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Live Signal Autopilot</h3>
               <p className="mt-1 text-xs text-[var(--color-text-4)]">
-                One setup flow. Bombsell handles research, fit, verified contacts, outreach, follow-ups, and replies.
+                Default-on workflow for live buying signals. Explore campaigns are configured in the Explore Automation tab.
               </p>
             </div>
             <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
@@ -593,18 +594,18 @@ function AutopilotLaunchPanel({
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Launch readiness</p>
         <p className="mt-2 text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">{completed}/{checklist.length}</p>
         <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-          Autopilot uses conservative defaults: verified contacts only, score 7+, 10 sends/day, and 30 minutes between sends.
+          Live autopilot uses conservative defaults: high-fit live signals, verified contacts only, credits on unlock, 10 sends/day, and 30 minutes between sends.
         </p>
         <div className="mt-4 grid gap-2">
           <button onClick={onStartAutopilot} disabled={busy || !ready} className="rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50">
-            {mode === 'autopilot' ? 'Autopilot running' : 'Start autonomous GTM'}
+            {mode === 'autopilot' ? 'Live autopilot running' : 'Turn on live autopilot'}
           </button>
           <button onClick={onApproveFirst} disabled={busy} className="rounded-full border border-[var(--color-line-2)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-text-1)] disabled:opacity-50">
-            Keep approval before sending
+            Pause live autopilot
           </button>
           {!ready && (
             <p className="text-[11px] leading-5 text-[var(--color-text-4)]">
-              Finish the checklist to unlock autonomous sending.
+              Finish the checklist so live autopilot can send safely.
             </p>
           )}
         </div>
@@ -861,11 +862,6 @@ const CREDIT_TOP_UPS = [
   { amount: 50, credits: 200 },
   { amount: 100, credits: 400 },
 ]
-const AUTO_SEND_FEED_OPTIONS: Array<{ key: 'live' | 'explore'; label: string; description: string }> = [
-  { key: 'live', label: 'Continuous Signal Feed', description: 'Safely send newly unlocked live-signal leads as they become eligible.' },
-  { key: 'explore', label: 'Selected Explore Sessions', description: 'Automate only the targeted Explore sessions you select below.' },
-]
-
 interface ExploreAutomationSession {
   id: string
   label: string
@@ -875,12 +871,12 @@ interface ExploreAutomationSession {
 
 function AutomationPanel() {
   const [autoSend, setAutoSend] = useState(false)
+  const [liveAutopilotOn, setLiveAutopilotOn] = useState(false)
   const [autoSendSaving, setAutoSendSaving] = useState(false)
   const [autoSendLoaded, setAutoSendLoaded] = useState(false)
   const [autoSendMsg, setAutoSendMsg] = useState<string | null>(null)
   const [autoSendAccounts, setAutoSendAccounts] = useState<AutoSendAccount[]>([])
   const [autoSendAccountId, setAutoSendAccountId] = useState<string | null>(null)
-  const [autoSendFeeds, setAutoSendFeeds] = useState<Array<'live' | 'explore'>>(['live'])
   const [selectedExploreSessions, setSelectedExploreSessions] = useState<string[]>([])
   const [exploreSessions, setExploreSessions] = useState<ExploreAutomationSession[]>([])
   const [autoSendRequireVerified, setAutoSendRequireVerified] = useState(true)
@@ -915,9 +911,10 @@ function AutomationPanel() {
           setAutoSendLoaded(true)
           return
         }
-        setAutoSend(Boolean(data.policy?.enabled))
+        const origins = data.policy?.target_origins ?? []
+        setLiveAutopilotOn(Boolean(data.policy?.enabled && origins.includes('live')))
+        setAutoSend(Boolean(data.policy?.enabled && origins.includes('explore')))
         setAutoSendAccountId(data.policy?.connected_account_id ?? null)
-        setAutoSendFeeds(data.policy?.target_origins?.length ? data.policy.target_origins : ['live'])
         setSelectedExploreSessions(data.policy?.target_explore_session_ids ?? [])
         setAutoSendRequireVerified(data.policy?.require_verified_contact !== false)
         setAutoSendMinScore(data.policy?.min_relevance_score ?? 7)
@@ -948,9 +945,12 @@ function AutomationPanel() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          enabled: autoSend,
+          enabled: liveAutopilotOn || autoSend,
           connected_account_id: autoSendAccountId,
-          target_origins: autoSendFeeds,
+          target_origins: [
+            ...(liveAutopilotOn ? ['live' as const] : []),
+            ...(autoSend ? ['explore' as const] : []),
+          ],
           target_explore_session_ids: selectedExploreSessions,
           require_verified_contact: autoSendRequireVerified,
           min_relevance_score: autoSendMinScore,
@@ -964,13 +964,13 @@ function AutomationPanel() {
         setAutoSendMsg(data?.error ?? 'Failed to save feed automation settings.')
         return
       }
-      setAutoSendMsg('Feed automation saved')
+      setAutoSendMsg('Explore automation saved')
     } catch {
-      setAutoSendMsg('Failed to save feed automation settings.')
+      setAutoSendMsg('Failed to save Explore automation settings.')
     } finally {
       setAutoSendSaving(false)
     }
-  }, [autoSend, autoSendAccountId, autoSendFeeds, selectedExploreSessions, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge, dailySendLimit, sendSpacing])
+  }, [autoSend, liveAutopilotOn, autoSendAccountId, selectedExploreSessions, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge, dailySendLimit, sendSpacing])
 
   return (
     <div className="max-w-4xl space-y-4">
@@ -979,9 +979,9 @@ function AutomationPanel() {
       <div className="card divide-y divide-[var(--color-line-1)]">
         <div className="px-5 py-4 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Outbound Automation</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Explore Automation</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Sends only unlocked leads with verified contacts, unsub/bounce checks, daily caps, and mailbox pacing.
+              Custom automation for selected Explore sessions. Live-signal autopilot is controlled from Command Center.
             </p>
           </div>
           <button
@@ -1031,24 +1031,13 @@ function AutomationPanel() {
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[var(--color-text-1)]">Automation source</p>
-              {AUTO_SEND_FEED_OPTIONS.map(option => {
-                const checked = autoSendFeeds.includes(option.key)
-                return (
-                  <label key={option.key} className="flex items-start gap-3 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => setAutoSendFeeds(prev => checked ? prev.filter(feed => feed !== option.key) : [...prev, option.key])}
-                      className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
-                    />
-                    <span>
-                      <span className="block text-[12.5px] font-medium text-[var(--color-text-1)]">{option.label}</span>
-                      <span className="block text-[11px] text-[var(--color-text-4)] mt-0.5">{option.description}</span>
-                    </span>
-                  </label>
-                )
-              })}
+              <p className="text-xs font-medium text-[var(--color-text-1)]">What this tab controls</p>
+              <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
+                <p className="text-[12.5px] font-medium text-[var(--color-text-1)]">Selected Explore Sessions</p>
+                <p className="mt-0.5 text-[11px] leading-5 text-[var(--color-text-4)]">
+                  Use this for targeted lead sets you generated from prompts. Live-signal autopilot stays {liveAutopilotOn ? 'on' : 'off'} and is managed from Command Center.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1063,7 +1052,7 @@ function AutomationPanel() {
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={!autoSendFeeds.includes('explore')}
+                        disabled={!autoSend}
                         onChange={() => setSelectedExploreSessions(prev => checked ? prev.filter(id => id !== session.id) : [...prev, session.id])}
                         className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
                       />
@@ -1101,13 +1090,13 @@ function AutomationPanel() {
           </div>
 
           <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11.5px] leading-5 text-[var(--color-text-3)]">
-            Bombsell will not auto-unlock leads, scrape contacts during automation, send to unverified contacts, send to unsubscribed or bounced recipients, or exceed the configured cap and spacing. Start and completion confirmations are sent to your account email.
+            Explore automation uses the same safety rules as live autopilot: credits are spent only on lead unlocks, verified contacts are required, unsubscribed and bounced recipients are skipped, and daily cap plus spacing are enforced.
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] text-[var(--color-text-4)]">{autoSendMsg ?? 'Save with automation on to start the process.'}</div>
-            <button onClick={saveAutoSend} disabled={autoSendSaving || !autoSendLoaded || autoSendFeeds.length === 0} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
-              {autoSendSaving ? 'Saving…' : autoSend ? 'Start / update automation' : 'Save disabled'}
+            <div className="text-[11px] text-[var(--color-text-4)]">{autoSendMsg ?? 'Turn on Explore automation after selecting at least one session.'}</div>
+            <button onClick={saveAutoSend} disabled={autoSendSaving || !autoSendLoaded || (autoSend && selectedExploreSessions.length === 0)} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
+              {autoSendSaving ? 'Saving…' : autoSend ? 'Start / update Explore automation' : 'Save Explore automation off'}
             </button>
           </div>
         </div>

@@ -136,6 +136,7 @@ export default function OnboardingPage() {
     target_industries: [] as IndustryValue[],
     services_description: '',
     calendly_url: '',
+    icp_keywords: [] as string[],
     target_signal_types: ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'] as string[],
     min_relevance_score: 6,
   })
@@ -152,7 +153,7 @@ export default function OnboardingPage() {
       const { data: profile } = await supabase
         .from('user_profiles')
         .select(
-          'company_name, industry, website_url, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score, active_client_id',
+          'company_name, industry, website_url, target_industries, services_description, calendly_url, icp_keywords, target_signal_types, min_relevance_score, active_client_id',
         )
         .eq('user_id', user.id)
         .single()
@@ -161,7 +162,7 @@ export default function OnboardingPage() {
       const { data: clientProfile } = activeClientId
         ? await supabase
             .from('client_accounts')
-            .select('name, industry, website_url, target_industries, services_description, calendly_url, target_signal_types, min_relevance_score')
+            .select('name, industry, website_url, target_industries, services_description, calendly_url, icp_keywords, target_signal_types, min_relevance_score')
             .eq('id', activeClientId)
             .eq('user_id', user.id)
             .maybeSingle()
@@ -178,6 +179,7 @@ export default function OnboardingPage() {
           target_industries:    ((effectiveProfile as { target_industries?: IndustryValue[] }).target_industries) || [],
           services_description: (effectiveProfile as { services_description?: string }).services_description || '',
           calendly_url:         (effectiveProfile as { calendly_url?: string }).calendly_url || '',
+          icp_keywords:         (effectiveProfile as { icp_keywords?: string[] }).icp_keywords || [],
           target_signal_types:  (effectiveProfile as { target_signal_types?: string[] }).target_signal_types || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
           min_relevance_score:  (effectiveProfile as { min_relevance_score?: number }).min_relevance_score || 6,
         })
@@ -202,6 +204,17 @@ export default function OnboardingPage() {
       target_signal_types: f.target_signal_types.includes(val)
         ? f.target_signal_types.filter((s) => s !== val)
         : [...f.target_signal_types, val],
+    }))
+  }
+
+  function setIcpKeywordsFromText(value: string) {
+    setForm((f) => ({
+      ...f,
+      icp_keywords: value
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean)
+        .slice(0, 16),
     }))
   }
 
@@ -337,6 +350,7 @@ export default function OnboardingPage() {
             <StepTargeting
               form={form}
               toggleTargetIndustry={toggleTargetIndustry}
+              setIcpKeywordsFromText={setIcpKeywordsFromText}
             />
           )}
           {step === 2 && (
@@ -472,6 +486,7 @@ interface StepFormProps {
     target_industries: IndustryValue[]
     services_description: string
     calendly_url: string
+    icp_keywords: string[]
     target_signal_types: string[]
     min_relevance_score: number
   }
@@ -579,9 +594,11 @@ function StepCompany({ form, setForm }: StepFormProps) {
 function StepTargeting({
   form,
   toggleTargetIndustry,
+  setIcpKeywordsFromText,
 }: {
   form: StepFormProps['form']
   toggleTargetIndustry: (v: IndustryValue) => void
+  setIcpKeywordsFromText: (value: string) => void
 }) {
   return (
     <div className="card p-7 space-y-5">
@@ -625,6 +642,22 @@ function StepTargeting({
       <p className="text-[11px] text-[var(--color-text-4)] pt-2">
         Selected: <span className="text-[var(--color-text-2)]">{form.target_industries.length}</span>
       </p>
+
+      <div className="space-y-1.5 border-t border-[var(--color-line-1)] pt-4">
+        <label className="text-xs font-medium text-[var(--color-text-3)] uppercase tracking-wider">
+          ICP keywords <span className="text-[var(--color-text-4)] normal-case font-normal">(optional)</span>
+        </label>
+        <textarea
+          rows={3}
+          placeholder="Example: seed-stage SaaS, RevOps, B2B marketplaces, compliance-heavy fintech"
+          value={form.icp_keywords.join(', ')}
+          onChange={(event) => setIcpKeywordsFromText(event.target.value)}
+          className="w-full px-4 py-3 rounded-xl bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[var(--color-text-1)] placeholder-[var(--color-text-4)] text-sm focus:outline-none focus:border-[var(--color-accent)] focus:bg-white focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-all resize-none leading-relaxed"
+        />
+        <p className="text-[11px] text-[var(--color-text-4)]">
+          Selected industries already count as ICP. Add comma-separated keywords only if you want sharper targeting.
+        </p>
+      </div>
     </div>
   )
 }

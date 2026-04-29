@@ -13,6 +13,7 @@ import { extractBearerToken, isInternalOpsBearerToken, isInternalOpsEmailAllowed
 import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
 import { buildBookingReplyBody, classifyReplyIntent, shouldAutoSendBookingLink } from '../lib/reply-intelligence.ts'
+import { buildIcpKeywords } from '../lib/icp.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
@@ -780,4 +781,20 @@ test('booking reply body includes the user booking link without fabricating slot
   })
   assert.match(body, /https:\/\/calendly\.com\/acme\/15min/)
   assert.match(body, /send over two times/i)
+})
+
+test('icp keywords include explicit terms and selected target industries', () => {
+  const keywords = buildIcpKeywords({
+    explicitKeywords: 'seed-stage SaaS, RevOps',
+    generatedKeywords: ['pipeline automation', 'RevOps'],
+    targetIndustries: ['fintech', 'data_ai'],
+  })
+
+  assert.deepEqual(keywords, [
+    'seed-stage SaaS',
+    'RevOps',
+    'pipeline automation',
+    'FinTech',
+    'Data and AI',
+  ])
 })
