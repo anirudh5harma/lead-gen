@@ -3,14 +3,50 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 
+type NavId = 'command' | 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'
+
 export interface SidebarProps {
   companyName: string
   userEmail?: string
-  activeView: 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'
-  onNavigate: (view: 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings') => void
+  activeView: NavId
+  onNavigate: (view: NavId) => void
 }
 
-const NAV: { id: 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'; label: string; icon: React.ReactNode }[] = [
+const CORE_NAV: { id: NavId; label: string; icon: React.ReactNode }[] = [
+  {
+    id: 'command',
+    label: 'Command',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 14l4-4 4 4 8-8" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 20h16" />
+      </svg>
+    ),
+  },
+  {
+    id: 'automation',
+    label: 'Autopilot',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6v6l4 2" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-2.64-6.36" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 4v5h-5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    ),
+  },
+]
+
+const ADVANCED_NAV: { id: NavId; label: string; icon: React.ReactNode }[] = [
   {
     id: 'feed',
     label: 'Signal Feed',
@@ -41,17 +77,6 @@ const NAV: { id: 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist'
     ),
   },
   {
-    id: 'automation',
-    label: 'Automation',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6v6l4 2" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-2.64-6.36" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 4v5h-5" />
-      </svg>
-    ),
-  },
-  {
     id: 'mcp',
     label: 'MCP',
     icon: (
@@ -71,21 +96,12 @@ const NAV: { id: 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist'
       </svg>
     ),
   },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
-  },
 ]
 
 export default function Sidebar({ companyName, userEmail, activeView, onNavigate }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(() => ADVANCED_NAV.some(item => item.id === activeView))
 
   useEffect(() => {
     function onResize() {
@@ -95,8 +111,31 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  const activeIsAdvanced = ADVANCED_NAV.some(item => item.id === activeView)
   const initial = (companyName || userEmail || 'U').charAt(0).toUpperCase()
   const widthClass = collapsed ? 'md:w-16' : 'md:w-[232px]'
+  const renderNavItem = (item: { id: NavId; label: string; icon: React.ReactNode }) => {
+    const active = activeView === item.id
+    return (
+      <button
+        key={item.id}
+        onClick={() => { onNavigate(item.id); setMobileOpen(false) }}
+        title={collapsed ? item.label : undefined}
+        className={`
+          w-full flex items-center h-9 rounded-lg text-[13px] font-medium transition-colors
+          ${collapsed ? 'justify-center gap-0 px-0' : 'gap-2.5 px-2.5'}
+          ${active
+            ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+            : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-2)]'}
+        `}
+      >
+        <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>
+          {item.icon}
+        </span>
+        {!collapsed && <span>{item.label}</span>}
+      </button>
+    )
+  }
 
   const inner = (
     <div className="flex flex-col h-full">
@@ -132,31 +171,35 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
       <nav className="flex-1 px-2.5 pt-4 pb-2 space-y-0.5 overflow-y-auto">
         {!collapsed && (
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)] px-2.5 pb-2.5">
-            Workspace
+            Core
           </p>
         )}
-        {NAV.map(item => {
-          const active = activeView === item.id
-          return (
+        {CORE_NAV.map(renderNavItem)}
+
+        <div className={`${collapsed ? 'pt-2' : 'pt-5'}`}>
+          {!collapsed ? (
             <button
-              key={item.id}
-              onClick={() => { onNavigate(item.id); setMobileOpen(false) }}
-              title={collapsed ? item.label : undefined}
-              className={`
-                w-full flex items-center h-9 rounded-lg text-[13px] font-medium transition-colors
-                ${collapsed ? 'justify-center gap-0 px-0' : 'gap-2.5 px-2.5'}
-                ${active
-                  ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
-                  : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-2)]'}
-              `}
+              type="button"
+              onClick={() => setAdvancedOpen(open => !open)}
+              className="w-full flex items-center justify-between px-2.5 pb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)] hover:text-[var(--color-text-2)] transition-colors"
             >
-              <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>
-                {item.icon}
-              </span>
-              {!collapsed && <span>{item.label}</span>}
+              <span>Advanced</span>
+              <svg
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                className={`transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
-          )
-        })}
+          ) : (
+            <div className="h-px bg-[var(--color-line-1)] mx-2 mb-2" />
+          )}
+          {(collapsed || advancedOpen || activeIsAdvanced) && ADVANCED_NAV.map(renderNavItem)}
+        </div>
       </nav>
 
       {/* User */}

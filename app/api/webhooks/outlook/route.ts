@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { fetchOutlookMessageMeta } from '@/lib/oauth/outlook-watch'
 import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
 import { normalizeMessageId } from '@/lib/oauth/message-id'
+import { processInboundReply } from '@/lib/reply-agent'
 
 type AccountRow = ConnectedAccount & {
   user_id:               string
@@ -26,7 +27,6 @@ export async function POST(request: Request) {
   if (!Array.isArray(notifications) || !notifications.length) return NextResponse.json({ ok: true })
 
   const supabase = await createServiceClient()
-  const now      = new Date().toISOString()
 
   for (const note of notifications) {
     const n = note as {
@@ -57,13 +57,20 @@ export async function POST(request: Request) {
     const meta = await fetchOutlookMessageMeta(accessToken, messageId)
     if (!meta) continue
 
-    let lead: { id: string; status: string } | null = null
+    let lead: {
+      id: string
+      status: string
+      client_id?: string | null
+      target_company?: string | null
+      from_email?: string | null
+      booking_reply_sent_at?: string | null
+    } | null = null
 
     // Primary match: same Outlook conversation as the original outreach
     if (meta.conversationId) {
       const { data: byConv } = await supabase
         .from('leads')
-        .select('id, status')
+        .select('id, status, client_id, target_company, from_email, booking_reply_sent_at')
         .eq('user_id', acc.user_id)
         .eq('gmail_thread_id', meta.conversationId)  // column reused for Outlook conversationId
         .eq('status', 'sent')
@@ -77,7 +84,7 @@ export async function POST(request: Request) {
       if (raw) {
         const { data: byMsgId } = await supabase
           .from('leads')
-          .select('id, status')
+          .select('id, status, client_id, target_company, from_email, booking_reply_sent_at')
           .eq('user_id', acc.user_id)
           .eq('message_id', raw)
           .eq('status', 'sent')
@@ -88,15 +95,20 @@ export async function POST(request: Request) {
 
     if (!lead) continue
 
-    await supabase.from('leads').update({ status: 'replied', replied_at: now }).eq('id', lead.id)
-    await supabase.from('scheduled_followups')
-      .update({
-        sent_at: now,
-        processing_started_at: null,
-        processing_token: null,
-      })
-      .eq('lead_id', lead.id)
-      .is('sent_at', null)
+    await processInboundReply({
+      supabase,
+      userId: acc.user_id,
+      lead,
+      accountEmail: acc.email,
+      message: {
+        provider: 'outlook',
+        from: meta.from,
+        subject: meta.subject,
+        text: meta.bodyPreview,
+        messageId: meta.internetMessageId,
+        threadId: meta.conversationId,
+      },
+    })
   }
 
   // Graph requires a 202 to acknowledge

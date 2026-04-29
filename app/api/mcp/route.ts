@@ -400,7 +400,7 @@ async function getGtmContext(ctx: McpContext) {
     active_client: activeClient,
     clients: clients ?? [],
     guidance: [
-      'Use list_leads for current signal, explore, and CRM-queued opportunities.',
+      'Use list_leads for current signal, explore, CRM-queued opportunities, reply intent, and booked-meeting outcomes.',
       'Use update_lead_status only when the user or calling workflow has decided the lead state should change.',
       'Use configure_automation to set safe outbound automation after the user has connected Gmail or Outlook.',
       'Use queue_leads_for_crm to stage reviewed Signal or Explore leads into the CRM export feed.',
@@ -421,7 +421,7 @@ async function listLeads(ctx: McpContext, args: {
 
   let query = ctx.supabase
     .from('leads')
-    .select('id, client_id, origin, source_kind, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, created_at, sent_at, replied_at, booked_at, contact_email, contact_name, contact_title, feed_session_id, feed_session_label, feed_session_started_at, feed_snapshot, match_debug')
+    .select('id, client_id, origin, source_kind, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, created_at, sent_at, replied_at, booked_at, reply_intent, reply_summary, reply_received_at, meeting_detected_at, booking_reply_sent_at, contact_email, contact_name, contact_title, feed_session_id, feed_session_label, feed_session_started_at, feed_snapshot, match_debug')
     .eq('user_id', ctx.userId)
     .order('created_at', { ascending: false })
     .limit(limit)
@@ -440,7 +440,7 @@ async function listLeads(ctx: McpContext, args: {
 async function getLead(ctx: McpContext, args: { lead_id: string }) {
   const { data, error } = await ctx.supabase
     .from('leads')
-    .select('id, client_id, origin, source_kind, source_record_id, signal_id, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, contact_email, contact_name, contact_title, feed_session_id, feed_session_label, feed_session_started_at, feed_snapshot, match_debug')
+    .select('id, client_id, origin, source_kind, source_record_id, signal_id, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, reply_intent, reply_summary, reply_body_snippet, reply_received_at, meeting_detected_at, booking_reply_sent_at, contact_email, contact_name, contact_title, feed_session_id, feed_session_label, feed_session_started_at, feed_snapshot, match_debug')
     .eq('user_id', ctx.userId)
     .eq('id', args.lead_id)
     .maybeSingle()
@@ -661,13 +661,36 @@ async function configureAutomation(ctx: McpContext, args: {
     ...(args.enabled ? { last_started_at: new Date().toISOString(), completed_notification_sent_at: null } : {}),
   }
 
-  const { data, error } = await ctx.supabase
-    .from('auto_send_policies')
-    .upsert(payload, { onConflict: clientId ? 'user_id,client_id' : 'user_id' })
-    .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
-    .single()
-  if (error) throw new Error(error.message)
-  return { ok: true, policy: data }
+  const existingQuery = clientId
+    ? ctx.supabase
+        .from('auto_send_policies')
+        .select('id')
+        .eq('user_id', ctx.userId)
+        .eq('client_id', clientId)
+        .maybeSingle()
+    : ctx.supabase
+        .from('auto_send_policies')
+        .select('id')
+        .eq('user_id', ctx.userId)
+        .is('client_id', null)
+        .maybeSingle()
+  const { data: existing, error: existingError } = await existingQuery
+  if (existingError) throw new Error(existingError.message)
+
+  const response = existing
+    ? await ctx.supabase
+        .from('auto_send_policies')
+        .update(payload)
+        .eq('id', existing.id)
+        .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
+        .single()
+    : await ctx.supabase
+        .from('auto_send_policies')
+        .insert(payload)
+        .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
+        .single()
+  if (response.error) throw new Error(response.error.message)
+  return { ok: true, policy: response.data }
 }
 
 async function queueLeadsForCrm(ctx: McpContext, args: { lead_ids: string[]; client_id?: string }) {

@@ -12,6 +12,7 @@ import { buildFeedbackMaps, computeCandidateFeedbackBoost, computeLeadFeedbackSc
 import { extractBearerToken, isInternalOpsBearerToken, isInternalOpsEmailAllowed } from '../lib/internal-ops-auth.ts'
 import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
+import { buildBookingReplyBody, classifyReplyIntent, shouldAutoSendBookingLink } from '../lib/reply-intelligence.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
@@ -749,4 +750,34 @@ test('unverified candidates are only treated as safe when zerobounce is disabled
     zeroBounceEnabled: false,
     resolutionMethod: 'pattern',
   }), false)
+})
+
+test('reply intent classifier detects meeting and booking outcomes', () => {
+  const meeting = classifyReplyIntent({
+    subject: 'Re: data ops',
+    text: 'This looks relevant. Can you send over your calendar link so we can book a quick call next week?',
+  })
+  assert.equal(meeting.intent, 'meeting_requested')
+  assert.equal(shouldAutoSendBookingLink(meeting), true)
+
+  const booked = classifyReplyIntent({
+    subject: 'Re: data ops',
+    text: 'Booked a slot for Thursday and sent a calendar invite.',
+  })
+  assert.equal(booked.intent, 'meeting_booked')
+
+  const noThanks = classifyReplyIntent({
+    subject: 'Re: data ops',
+    text: 'No thanks, not a fit for us right now.',
+  })
+  assert.equal(noThanks.intent, 'not_interested')
+})
+
+test('booking reply body includes the user booking link without fabricating slots', () => {
+  const body = buildBookingReplyBody({
+    calendlyUrl: 'https://calendly.com/acme/15min',
+    senderCompany: 'Acme',
+  })
+  assert.match(body, /https:\/\/calendly\.com\/acme\/15min/)
+  assert.match(body, /send over two times/i)
 })

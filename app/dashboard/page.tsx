@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   // Core fields — these exist from migration 001. Used to gate the onboarding redirect.
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('company_name, website_url, services_description, icp_keywords, active_client_id')
+    .select('company_name, website_url, services_description, icp_keywords, active_client_id, automation_mode')
     .eq('user_id', user.id)
     .single()
 
@@ -67,6 +67,12 @@ export default async function DashboardPage() {
       sent_at,
       replied_at,
       booked_at,
+      reply_intent,
+      reply_summary,
+      reply_body_snippet,
+      reply_received_at,
+      meeting_detected_at,
+      booking_reply_sent_at,
       contact_email,
       contact_name,
       contact_title,
@@ -77,7 +83,7 @@ export default async function DashboardPage() {
 
   // Initial leads are loaded per origin so large Explore/CRM batches do not
   // evict live-signal rows from the server-rendered feed.
-  const [liveLeadsResult, exploreLeadsResult, crmLeadsResult] = await Promise.all([
+  const [liveLeadsResult, exploreLeadsResult, crmLeadsResult, agentEventsResult] = await Promise.all([
     supabase
       .from('leads')
       .select(leadSelect)
@@ -102,6 +108,13 @@ export default async function DashboardPage() {
       .eq('origin', 'crm_import')
       .order('created_at', { ascending: false })
       .limit(200),
+    supabase
+      .from('agent_events')
+      .select('id, agent_name, event_type, status, title, body, lead_id, created_at')
+      .eq('user_id', user.id)
+      .match(leadBaseFilter)
+      .order('created_at', { ascending: false })
+      .limit(80),
   ])
 
   const leads = [
@@ -125,6 +138,7 @@ export default async function DashboardPage() {
   return (
     <DashboardShell
       initialLeads={typedLeads}
+      initialAgentEvents={(agentEventsResult.data ?? []) as never}
       userId={user.id}
       userProfile={{
         company_name: profile.company_name,
@@ -138,6 +152,7 @@ export default async function DashboardPage() {
         slack_webhook_url: slackWebhookUrl,
         slack_min_score: slackMinScore,
         active_client_id: activeClientId,
+        automation_mode: (profile as { automation_mode?: 'research_only' | 'approve_first' | 'autopilot' | null }).automation_mode ?? 'approve_first',
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
       }}
       watchlist={watchlist ?? []}

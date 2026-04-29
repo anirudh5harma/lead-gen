@@ -27,9 +27,12 @@ export async function stopGmailWatch(accessToken: string): Promise<void> {
 }
 
 export interface GmailInboxMessage {
-  id:       string
-  threadId: string
-  from:     string
+  id:        string
+  threadId:  string
+  from:      string
+  subject:   string | null
+  snippet:   string
+  messageId: string | null
   inReplyTo: string | null
 }
 
@@ -65,14 +68,22 @@ export async function getNewInboxMessages(
     added.map(async ({ id, threadId }) => {
       const msgRes = await fetch(
         `${GMAIL_API}/users/me/messages/${id}?format=metadata` +
-        `&metadataHeaders=In-Reply-To&metadataHeaders=From`,
+        `&metadataHeaders=In-Reply-To&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Message-ID`,
         { headers: { Authorization: `Bearer ${accessToken}` } },
       )
       if (!msgRes.ok) return null
-      const msg = await msgRes.json() as { payload?: { headers?: Array<{ name: string; value: string }> } }
+      const msg = await msgRes.json() as { snippet?: string; payload?: { headers?: Array<{ name: string; value: string }> } }
       const hdrs = msg.payload?.headers ?? []
       const get  = (name: string) => hdrs.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? null
-      return { id, threadId, from: get('From') ?? '', inReplyTo: get('In-Reply-To') } as GmailInboxMessage
+      return {
+        id,
+        threadId,
+        from: get('From') ?? '',
+        subject: get('Subject'),
+        snippet: msg.snippet ?? '',
+        messageId: get('Message-ID'),
+        inReplyTo: get('In-Reply-To'),
+      } as GmailInboxMessage
     }),
   )
 

@@ -5,6 +5,7 @@ import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { resolveOutreachContext } from '@/lib/outreach-context'
 import { messageIdHeader } from '@/lib/oauth/message-id'
+import { recordAgentEvent } from '@/lib/agent-events'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -230,6 +231,21 @@ export async function GET(request: Request) {
             gmail_thread_id: result.threadId ?? lead.gmail_thread_id,
           }).eq('id', item.lead_id)
         }
+        await recordAgentEvent(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          agentName: 'followup',
+          eventType: 'followup_sent',
+          status: 'completed',
+          title: `Sent follow-up to ${lead.target_company}`,
+          body: `Follow-up sent from ${result.fromEmail}.`,
+          metadata: {
+            provider: result.provider,
+            message_id: result.messageId,
+            thread_id: result.threadId,
+          },
+        })
         sent++
       } catch (err) {
         console.error(`[send-followups] failed for lead ${item.lead_id}:`, err)

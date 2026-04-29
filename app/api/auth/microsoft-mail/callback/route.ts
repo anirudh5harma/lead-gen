@@ -14,12 +14,12 @@ export async function GET(request: Request) {
   const error = searchParams.get('error')
 
   if (error || !code || !state) {
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=microsoft_denied`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_error=microsoft_denied`)
   }
 
   const userId = verifyOAuthState(state)
   if (!userId) {
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=invalid_state`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_error=invalid_state`)
   }
 
   try {
@@ -56,9 +56,9 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_connected=outlook`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_connected=outlook`)
   } catch (err) {
     console.error('[microsoft-mail/callback]', err)
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=microsoft_failed`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_error=microsoft_failed`)
   }
 }

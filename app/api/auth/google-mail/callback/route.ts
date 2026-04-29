@@ -13,12 +13,12 @@ export async function GET(request: Request) {
   const error = searchParams.get('error')
 
   if (error || !code || !state) {
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=google_denied`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_error=google_denied`)
   }
 
   const userId = verifyOAuthState(state)
   if (!userId) {
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=invalid_state`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_error=invalid_state`)
   }
 
   try {
@@ -50,9 +50,9 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_connected=gmail`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_connected=gmail`)
   } catch (err) {
     console.error('[google-mail/callback]', err)
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=google_failed`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=automation&ca_error=google_failed`)
   }
 }

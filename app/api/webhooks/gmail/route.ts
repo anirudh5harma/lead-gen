@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { getNewInboxMessages } from '@/lib/oauth/gmail-watch'
 import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
 import { normalizeMessageId } from '@/lib/oauth/message-id'
+import { processInboundReply } from '@/lib/reply-agent'
 
 type AccountRow = ConnectedAccount & { gmail_history_id: string | null; user_id: string }
 
@@ -68,18 +69,23 @@ export async function POST(request: Request) {
   const accessToken = await getValidAccessToken(acc, supabase)
   const { messages } = await getNewInboxMessages(accessToken, startHistoryId)
 
-  const now = new Date().toISOString()
-
   for (const msg of messages) {
     // Ignore messages sent by the account itself (e.g. sent mail appearing in INBOX)
     if (msg.from.toLowerCase().includes(emailAddress.toLowerCase())) continue
 
-    let lead: { id: string; status: string } | null = null
+    let lead: {
+      id: string
+      status: string
+      client_id?: string | null
+      target_company?: string | null
+      from_email?: string | null
+      booking_reply_sent_at?: string | null
+    } | null = null
 
     // Primary match: same Gmail thread as the original outreach
     const { data: byThread } = await supabase
       .from('leads')
-      .select('id, status')
+      .select('id, status, client_id, target_company, from_email, booking_reply_sent_at')
       .eq('user_id', acc.user_id)
       .eq('gmail_thread_id', msg.threadId)
       .eq('status', 'sent')
@@ -92,7 +98,7 @@ export async function POST(request: Request) {
       if (!raw) continue
       const { data: byMsgId } = await supabase
         .from('leads')
-        .select('id, status')
+        .select('id, status, client_id, target_company, from_email, booking_reply_sent_at')
         .eq('user_id', acc.user_id)
         .eq('message_id', raw)
         .eq('status', 'sent')
@@ -102,15 +108,20 @@ export async function POST(request: Request) {
 
     if (!lead) continue
 
-    await supabase.from('leads').update({ status: 'replied', replied_at: now }).eq('id', lead.id)
-    await supabase.from('scheduled_followups')
-      .update({
-        sent_at: now,
-        processing_started_at: null,
-        processing_token: null,
-      })
-      .eq('lead_id', lead.id)
-      .is('sent_at', null)
+    await processInboundReply({
+      supabase,
+      userId: acc.user_id,
+      lead,
+      accountEmail: acc.email,
+      message: {
+        provider: 'gmail',
+        from: msg.from,
+        subject: msg.subject,
+        text: msg.snippet,
+        messageId: msg.messageId,
+        threadId: msg.threadId,
+      },
+    })
   }
 
   return NextResponse.json({ ok: true })

@@ -8,7 +8,7 @@ import Sidebar from './Sidebar'
 import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
 
-type View = 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'
+type View = 'command' | 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'
 
 interface WatchlistItem {
   id: string
@@ -29,13 +29,26 @@ interface UserProfile {
   slack_webhook_url?: string | null
   slack_min_score?: number | null
   active_client_id?: string | null
+  automation_mode?: 'research_only' | 'approve_first' | 'autopilot'
 }
 
 interface Props {
   initialLeads: Lead[]
+  initialAgentEvents: AgentEvent[]
   userId: string
   userProfile: UserProfile
   watchlist: WatchlistItem[]
+}
+
+interface AgentEvent {
+  id: string
+  agent_name: string
+  event_type: string
+  status: 'planned' | 'running' | 'completed' | 'skipped' | 'blocked' | 'failed' | 'needs_approval'
+  title: string
+  body: string | null
+  lead_id: string | null
+  created_at: string
 }
 
 interface AutoSendAccount {
@@ -53,6 +66,7 @@ const EXPLORE_PROGRESS_STEPS = [
 ]
 
 const VIEW_TITLES: Record<View, string> = {
+  command:   'Command Center',
   feed:      'Signal Feed',
   explore:   'Explore',
   crm:       'CRM',
@@ -62,16 +76,16 @@ const VIEW_TITLES: Record<View, string> = {
   settings:  'Settings',
 }
 
-export default function DashboardShell({ initialLeads, userId, userProfile, watchlist }: Props) {
+export default function DashboardShell({ initialLeads, initialAgentEvents, userId, userProfile, watchlist }: Props) {
   const [activeView, setActiveView] = useState<View>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const requestedView = params.get('view')
-      if (requestedView === 'feed' || requestedView === 'explore' || requestedView === 'crm' || requestedView === 'automation' || requestedView === 'mcp' || requestedView === 'watchlist' || requestedView === 'settings') {
+      if (requestedView === 'command' || requestedView === 'feed' || requestedView === 'explore' || requestedView === 'crm' || requestedView === 'automation' || requestedView === 'mcp' || requestedView === 'watchlist' || requestedView === 'settings') {
         return requestedView
       }
     }
-    return 'feed'
+    return 'command'
   })
   const [isRefreshing, startTransition] = useTransition()
   const router = useRouter()
@@ -151,6 +165,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
       signals: recent.length,
       drafted: recent.filter(l => ['drafted', 'sent', 'replied', 'booked'].includes(l.status)).length,
       sent:    recent.filter(l => Boolean(l.sent_at)).length,
+      replied: initialLeads.filter(l => Boolean(l.replied_at)).length,
       booked:  recent.filter(l => Boolean(l.booked_at)).length,
     }
   }, [initialLeads, mountedAtMs])
@@ -177,6 +192,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 {VIEW_TITLES[activeView]}
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
+                {activeView === 'command' && 'Your GTM agents, outcomes, replies, approvals, and booked meetings'}
                 {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
                 {activeView === 'explore' && 'Prompt-driven lead discovery based on who you want to target next'}
                 {activeView === 'crm' && 'Stage leads from Signal and Explore, then push them to your configured CRM'}
@@ -188,6 +204,13 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
             </div>
 
             {/* Inline metrics */}
+            {activeView === 'command' && (
+              <div className="hidden lg:flex items-center gap-2 ml-6">
+                <MetricChip value={metrics.sent} label="Sent" />
+                <MetricChip value={metrics.replied} label="Replies" />
+                <MetricChip value={metrics.booked} label="Booked" accent />
+              </div>
+            )}
             {activeView === 'feed' && (
               <div className="hidden lg:flex items-center gap-2 ml-6">
                 <MetricChip value={metrics.signals} label="Signals" />
@@ -213,7 +236,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0A8.003 8.003 0 014.582 15M19.419 15H15" />
                 </svg>
               </button>
-              {activeView === 'feed' && (
+              {(activeView === 'feed' || activeView === 'command') && (
                 <button
                   onClick={() => setActiveView('settings')}
                   className="hidden sm:inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] transition-colors"
@@ -234,9 +257,17 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
           </div>
         </header>
 
-        {/* View content */}
+            {/* View content */}
         <main className="flex-1 px-6 py-6 pb-20 overflow-auto">
           <div className="max-w-6xl mx-auto fade-in">
+            {activeView === 'command' && (
+              <CommandCenter
+                leads={initialLeads}
+                events={initialAgentEvents}
+                profile={displayProfile}
+                onNavigate={setActiveView}
+              />
+            )}
             {activeView === 'feed' && (
               <div className="space-y-4">
                 <LeadFeed
@@ -309,6 +340,400 @@ function MetricChip({ value, label, accent = false }: { value: number; label: st
       <span className="text-[11px] text-[var(--color-text-3)]">{label}</span>
     </div>
   )
+}
+
+function CommandCenter({
+  leads,
+  events,
+  profile,
+  onNavigate,
+}: {
+  leads: Lead[]
+  events: AgentEvent[]
+  profile: UserProfile
+  onNavigate: (view: View) => void
+}) {
+  const [autopilot, setAutopilot] = useState<AutopilotStatus | null>(null)
+  const [autopilotBusy, setAutopilotBusy] = useState(false)
+  const [autopilotMessage, setAutopilotMessage] = useState<string | null>(null)
+  const [now] = useState(() => Date.now())
+  const [todayKey] = useState(() => new Date().toISOString().slice(0, 10))
+  const lastSevenDays = now - 7 * 24 * 60 * 60 * 1000
+  const recentLeads = leads.filter(lead => new Date(lead.created_at).getTime() >= lastSevenDays)
+  const sent = leads.filter(lead => Boolean(lead.sent_at)).sort(sortByLatestOutcome)
+  const replies = leads.filter(lead => lead.status === 'replied' || Boolean(lead.replied_at)).sort(sortByLatestOutcome)
+  const booked = leads.filter(lead => lead.status === 'booked' || Boolean(lead.booked_at)).sort(sortByLatestOutcome)
+  const approvals = leads
+    .filter(lead => lead.status === 'drafted' || (lead.is_unlocked === true && Boolean(lead.contact_email) && !lead.sent_at))
+    .sort(sortByLatestOutcome)
+  const activeEvents = events.slice(0, 12)
+  const sentToday = sent.filter(lead => lead.sent_at && lead.sent_at.slice(0, 10) === todayKey).length
+  const replyRate = sent.length > 0 ? Math.round((replies.length / sent.length) * 100) : 0
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/autopilot', { cache: 'no-store' })
+      .then(res => res.json() as Promise<AutopilotStatus>)
+      .then(data => { if (!cancelled) setAutopilot(data) })
+      .catch(() => { if (!cancelled) setAutopilotMessage('Unable to load autopilot status.') })
+    return () => { cancelled = true }
+  }, [])
+
+  const startAutopilot = useCallback(async (mode: 'approve_first' | 'autopilot') => {
+    setAutopilotBusy(true)
+    setAutopilotMessage(null)
+    try {
+      const res = await fetch('/api/autopilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      })
+      const data = await res.json().catch(() => null) as (AutopilotStatus & { error?: string }) | null
+      if (!res.ok) {
+        setAutopilotMessage(data?.error ?? 'Unable to start autopilot.')
+        const readiness = data?.readiness
+        if (readiness) {
+          setAutopilot(prev => prev
+            ? { ...prev, readiness, ready: readiness.every(item => item.done) }
+            : data)
+        }
+        return
+      }
+      setAutopilot(prev => prev ? { ...prev, mode, policy: { ...(prev.policy ?? {}), enabled: mode === 'autopilot' } } : data)
+      setAutopilotMessage(mode === 'autopilot' ? 'Autopilot started. Bombsell will run safely in the background.' : 'Approve-first mode saved.')
+    } catch {
+      setAutopilotMessage('Unable to start autopilot.')
+    } finally {
+      setAutopilotBusy(false)
+    }
+  }, [])
+
+  return (
+    <div className="space-y-5">
+      <section className="overflow-hidden rounded-[2rem] border border-[var(--color-line-1)] bg-[linear-gradient(135deg,#17231e,#31473a_52%,#c15f3c)] text-white shadow-[0_28px_80px_-44px_#1b2b24]">
+        <div className="relative px-6 py-7 sm:px-8">
+          <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative max-w-3xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">Agentic GTM autopilot</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight">
+              Bombsell is running your outbound engine.
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/76">
+              Your agents research accounts, validate fit, prepare outreach, send safely from your inbox, stop on replies, and surface only outcomes that need attention.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button onClick={() => startAutopilot('autopilot')} disabled={autopilotBusy || (autopilot ? !autopilot.ready : false)} className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#17231e] disabled:opacity-50">
+                {autopilot?.mode === 'autopilot' ? 'Autopilot running' : 'Start autopilot'}
+              </button>
+              <button onClick={() => startAutopilot('approve_first')} disabled={autopilotBusy} className="rounded-full border border-white/25 px-4 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50">
+                Approve first
+              </button>
+            </div>
+            {autopilotMessage && <p className="mt-3 text-xs text-white/75">{autopilotMessage}</p>}
+          </div>
+        </div>
+      </section>
+
+      <AutopilotLaunchPanel
+        profile={profile}
+        status={autopilot}
+        busy={autopilotBusy}
+        onStartAutopilot={() => startAutopilot('autopilot')}
+        onApproveFirst={() => startAutopilot('approve_first')}
+        onNavigate={onNavigate}
+      />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <OutcomeCard label="Sent today" value={sentToday} detail={`${sent.length} total sent`} tone="neutral" />
+        <OutcomeCard label="Replies" value={replies.length} detail={`${replyRate}% reply rate`} tone="reply" />
+        <OutcomeCard label="Booked" value={booked.length} detail="Meetings marked booked" tone="booked" />
+        <OutcomeCard label="Needs approval" value={approvals.length} detail="Drafts or ready leads" tone="approval" />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_380px]">
+        <section className="card overflow-hidden">
+          <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Revenue Inbox</h3>
+            <p className="mt-1 text-xs text-[var(--color-text-4)]">
+              The only lists founders should need: approvals, sent mail, replies, and booked meetings.
+            </p>
+          </div>
+          <div className="grid divide-y divide-[var(--color-line-1)] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+            <OutcomeList title="Needs Approval" empty="No leads waiting for approval." leads={approvals.slice(0, 6)} badge="Review" />
+            <OutcomeList title="Replies" empty="No replies yet." leads={replies.slice(0, 6)} badge="Reply" showReplyIntent />
+          </div>
+          <div className="grid divide-y divide-[var(--color-line-1)] border-t border-[var(--color-line-1)] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+            <OutcomeList title="Outbox" empty="No sent emails yet." leads={sent.slice(0, 6)} badge="Sent" />
+            <OutcomeList title="Booked" empty="No booked meetings yet." leads={booked.slice(0, 6)} badge="Booked" showReplyIntent />
+          </div>
+        </section>
+
+        <section className="card overflow-hidden">
+          <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Agent Activity</h3>
+            <p className="mt-1 text-xs text-[var(--color-text-4)]">
+              Auditable trail of what the agents did and why.
+            </p>
+          </div>
+          {activeEvents.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm font-medium text-[var(--color-text-1)]">No agent events yet</p>
+              <p className="mt-1 text-xs text-[var(--color-text-4)]">Events will appear as automation sends, replies, follow-ups, and decisions happen.</p>
+            </div>
+          ) : (
+            <div className="max-h-[620px] divide-y divide-[var(--color-line-1)] overflow-y-auto">
+              {activeEvents.map(event => (
+                <AgentEventRow key={event.id} event={event} />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        <AgentSystemCard title="Research Agent" body={`${recentLeads.length} recent accounts monitored and scored against your workspace context.`} />
+        <AgentSystemCard title="Safety Agent" body="Verified-only sending, unsubscribe suppression, bounce checks, daily caps, and inbox pacing are enforced before sends." />
+        <AgentSystemCard title="Reply Agent" body="Replies stop follow-ups and move accounts into the revenue inbox for founder attention." />
+      </section>
+    </div>
+  )
+}
+
+interface AutopilotStatus {
+  mode?: 'research_only' | 'approve_first' | 'autopilot'
+  ready?: boolean
+  readiness?: Array<{ key: string; label: string; done: boolean; action: string }>
+  connected_accounts?: Array<{ id: string; email: string; provider: string }>
+  policy?: { enabled?: boolean } | null
+  counts?: { ready: number; sent: number; replied: number; booked: number }
+  error?: string
+}
+
+function AutopilotLaunchPanel({
+  profile,
+  status,
+  busy,
+  onStartAutopilot,
+  onApproveFirst,
+  onNavigate,
+}: {
+  profile: UserProfile
+  status: AutopilotStatus | null
+  busy: boolean
+  onStartAutopilot: () => void
+  onApproveFirst: () => void
+  onNavigate: (view: View) => void
+}) {
+  const router = useRouter()
+  const mode = status?.mode ?? profile.automation_mode ?? 'approve_first'
+  const ready = status?.ready ?? false
+  const checklist = status?.readiness ?? [
+    { key: 'profile', label: 'Offer and company profile', done: Boolean(profile.company_name && profile.services_description), action: 'Edit onboarding' },
+    { key: 'website', label: 'Website for personalization', done: Boolean(profile.website_url), action: 'Add website' },
+    { key: 'icp', label: 'ICP keywords', done: Boolean(profile.icp_keywords?.length), action: 'Tune ICP' },
+    { key: 'inbox', label: 'Connected Gmail or Outlook', done: false, action: 'Connect inbox' },
+    { key: 'credits', label: 'Lead unlock credits', done: (profile.lead_credit_balance ?? 0) > 0, action: 'Add credits' },
+  ]
+  const completed = checklist.filter(item => item.done).length
+
+  function routeFor(item: { key: string }) {
+    if (item.key === 'inbox') onNavigate('automation')
+    else if (item.key === 'credits') onNavigate('settings')
+    else router.push('/onboarding')
+  }
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="card overflow-hidden">
+        <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Launch Autopilot</h3>
+              <p className="mt-1 text-xs text-[var(--color-text-4)]">
+                One setup flow. Bombsell handles research, fit, verified contacts, outreach, follow-ups, and replies.
+              </p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+              mode === 'autopilot'
+                ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+                : 'bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
+            }`}>
+              {mode === 'autopilot' ? 'Autopilot on' : mode === 'approve_first' ? 'Approve first' : 'Research only'}
+            </span>
+          </div>
+        </div>
+        <div className="grid gap-3 p-5 md:grid-cols-2">
+          {checklist.map(item => (
+            <button
+              key={item.key}
+              onClick={() => !item.done && routeFor(item)}
+              className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
+                item.done
+                  ? 'border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)]'
+                  : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
+                  item.done ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-ink-2)] text-[var(--color-text-4)]'
+                }`}>
+                  {item.done ? '✓' : '•'}
+                </span>
+                <span>
+                  <span className="block text-[12.5px] font-semibold text-[var(--color-text-1)]">{item.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-[var(--color-text-4)]">{item.done ? 'Ready' : item.action}</span>
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Launch readiness</p>
+        <p className="mt-2 text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">{completed}/{checklist.length}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+          Autopilot uses conservative defaults: verified contacts only, score 7+, 10 sends/day, and 30 minutes between sends.
+        </p>
+        <div className="mt-4 grid gap-2">
+          <button onClick={onStartAutopilot} disabled={busy || !ready} className="rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50">
+            {mode === 'autopilot' ? 'Autopilot running' : 'Start autonomous GTM'}
+          </button>
+          <button onClick={onApproveFirst} disabled={busy} className="rounded-full border border-[var(--color-line-2)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-text-1)] disabled:opacity-50">
+            Keep approval before sending
+          </button>
+          {!ready && (
+            <p className="text-[11px] leading-5 text-[var(--color-text-4)]">
+              Finish the checklist to unlock autonomous sending.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function OutcomeCard({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string
+  value: number
+  detail: string
+  tone: 'neutral' | 'reply' | 'booked' | 'approval'
+}) {
+  const toneClass = {
+    neutral: 'bg-white',
+    reply: 'bg-[var(--color-accent-bg)]',
+    booked: 'bg-[#e1f1e4]',
+    approval: 'bg-[#fff4df]',
+  }[tone]
+
+  return (
+    <div className={`rounded-3xl border border-[var(--color-line-1)] ${toneClass} px-5 py-4`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{label}</p>
+      <p className="mt-2 text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">{value}</p>
+      <p className="mt-1 text-xs text-[var(--color-text-3)]">{detail}</p>
+    </div>
+  )
+}
+
+function OutcomeList({
+  title,
+  empty,
+  leads,
+  badge,
+  showReplyIntent = false,
+}: {
+  title: string
+  empty: string
+  leads: Lead[]
+  badge: string
+  showReplyIntent?: boolean
+}) {
+  return (
+    <div className="min-h-[260px] px-5 py-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{title}</h4>
+        <span className="rounded-full border border-[var(--color-line-1)] bg-white px-2 py-0.5 text-[10px] text-[var(--color-text-3)]">
+          {leads.length}
+        </span>
+      </div>
+      {leads.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-[var(--color-line-2)] px-4 py-6 text-center text-xs text-[var(--color-text-4)]">{empty}</p>
+      ) : (
+        <div className="space-y-2">
+          {leads.map(lead => (
+            <div key={`${title}-${lead.id}`} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[12.5px] font-semibold text-[var(--color-text-1)]">{lead.target_company}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-4)]">
+                    {showReplyIntent && lead.reply_summary
+                      ? lead.reply_summary
+                      : lead.contact_email || lead.relevance_reason || 'No contact yet'}
+                  </p>
+                  {showReplyIntent && lead.reply_intent && (
+                    <p className="mt-1 text-[10.5px] font-medium uppercase tracking-[0.12em] text-[var(--color-accent-ring)]">
+                      {lead.reply_intent.replace(/_/g, ' ')}
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-3)]">{badge}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AgentEventRow({ event }: { event: AgentEvent }) {
+  const statusColor = event.status === 'completed'
+    ? 'bg-[var(--color-sig-funding)]'
+    : event.status === 'failed' || event.status === 'blocked'
+      ? 'bg-[var(--color-sig-regulation)]'
+      : event.status === 'needs_approval'
+        ? 'bg-[#d99622]'
+        : 'bg-[var(--color-accent)]'
+
+  return (
+    <div className="px-5 py-3">
+      <div className="flex gap-3">
+        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${statusColor}`} />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[12.5px] font-semibold text-[var(--color-text-1)]">{event.title}</p>
+            <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-4)]">
+              {event.agent_name}
+            </span>
+          </div>
+          {event.body && <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-3)]">{event.body}</p>}
+          <p className="mt-1 text-[10.5px] text-[var(--color-text-4)]">{new Date(event.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AgentSystemCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-3xl border border-[var(--color-line-1)] bg-white px-5 py-4">
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">{title}</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">{body}</p>
+    </div>
+  )
+}
+
+function sortByLatestOutcome(a: Lead, b: Lead) {
+  return outcomeTime(b) - outcomeTime(a)
+}
+
+function outcomeTime(lead: Lead): number {
+  return new Date(lead.booked_at ?? lead.replied_at ?? lead.sent_at ?? lead.created_at).getTime()
 }
 
 function McpPanel() {

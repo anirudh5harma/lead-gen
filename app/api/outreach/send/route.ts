@@ -6,6 +6,7 @@ import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-context'
+import { recordAgentEvent } from '@/lib/agent-events'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -61,8 +62,32 @@ export async function POST(request: Request) {
     supabase.from('bounced_emails').select('reason').eq('email', to.toLowerCase()).maybeSingle(),
   ])
 
-  if (unsubRes.data) return NextResponse.json({ error: 'This recipient has unsubscribed.' }, { status: 422 })
-  if (bounceRes.data) return NextResponse.json({ error: `Cannot send to this address (${bounceRes.data.reason}).` }, { status: 422 })
+  if (unsubRes.data) {
+    await recordAgentEvent(supabase, {
+      userId: user.id,
+      clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+      leadId,
+      agentName: 'safety',
+      eventType: 'recipient_unsubscribed',
+      status: 'blocked',
+      title: 'Send blocked: recipient unsubscribed',
+      body: `Bombsell did not send to ${to}.`,
+    })
+    return NextResponse.json({ error: 'This recipient has unsubscribed.' }, { status: 422 })
+  }
+  if (bounceRes.data) {
+    await recordAgentEvent(supabase, {
+      userId: user.id,
+      clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+      leadId,
+      agentName: 'safety',
+      eventType: 'recipient_bounced',
+      status: 'blocked',
+      title: 'Send blocked: recipient bounced',
+      body: `Bombsell did not send to ${to}.`,
+    })
+    return NextResponse.json({ error: `Cannot send to this address (${bounceRes.data.reason}).` }, { status: 422 })
+  }
 
   try {
     const clientId = (leadRes.data as { client_id?: string | null }).client_id ?? null
@@ -89,8 +114,18 @@ export async function POST(request: Request) {
     })
 
     if (!result) {
+      await recordAgentEvent(supabase, {
+        userId: user.id,
+        clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+        leadId,
+        agentName: 'safety',
+        eventType: 'send_blocked',
+        status: 'blocked',
+        title: 'Send blocked: no connected inbox',
+        body: 'Connect Gmail or Outlook before sending outreach.',
+      })
       return NextResponse.json(
-        { error: 'No sending account connected. Go to Settings → Sending Accounts to connect Gmail or Outlook.' },
+        { error: 'No sending account connected. Go to Automation → Sending Accounts to connect Gmail or Outlook.' },
         { status: 503 }
       )
     }
@@ -127,6 +162,22 @@ export async function POST(request: Request) {
         console.error('[outreach/send] follow-up pre-generation failed:', err)
       )
     }
+
+    await recordAgentEvent(supabase, {
+      userId: user.id,
+      clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+      leadId,
+      agentName: isFollowUp ? 'followup' : 'sending',
+      eventType: isFollowUp ? 'followup_sent' : 'email_sent',
+      status: 'completed',
+      title: `${isFollowUp ? 'Sent follow-up' : 'Sent outreach'} to ${(leadRes.data as { target_company?: string }).target_company ?? 'lead'}`,
+      body: `Sent from ${result.fromEmail} to ${to}.`,
+      metadata: {
+        provider: result.provider,
+        message_id: result.messageId,
+        thread_id: result.threadId,
+      },
+    })
 
     return NextResponse.json({ success: true, messageId: result.messageId, fromEmail: result.fromEmail })
   } catch (err) {

@@ -57,6 +57,10 @@ export async function deleteOutlookSubscription(params: {
 export interface OutlookMessageMeta {
   conversationId: string
   inReplyTo:      string | null
+  internetMessageId: string | null
+  subject: string | null
+  bodyPreview: string
+  from: string
 }
 
 export async function fetchOutlookMessageMeta(
@@ -64,18 +68,29 @@ export async function fetchOutlookMessageMeta(
   messageId:   string,
 ): Promise<OutlookMessageMeta | null> {
   const res = await fetch(
-    `${GRAPH_API}/me/messages/${messageId}?$select=conversationId,internetMessageHeaders`,
+    `${GRAPH_API}/me/messages/${messageId}?$select=conversationId,internetMessageId,subject,bodyPreview,from,internetMessageHeaders`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   )
   if (!res.ok) return null
   const data = await res.json() as {
     conversationId?: string
+    internetMessageId?: string
+    subject?: string
+    bodyPreview?: string
+    from?: { emailAddress?: { address?: string; name?: string } }
     internetMessageHeaders?: Array<{ name: string; value: string }>
   }
 
   const hdrs    = data.internetMessageHeaders ?? []
   const inReplyTo = hdrs.find(h => h.name.toLowerCase() === 'in-reply-to')?.value ?? null
-  return { conversationId: data.conversationId ?? '', inReplyTo }
+  return {
+    conversationId: data.conversationId ?? '',
+    inReplyTo,
+    internetMessageId: data.internetMessageId ?? null,
+    subject: data.subject ?? null,
+    bodyPreview: data.bodyPreview ?? '',
+    from: data.from?.emailAddress?.address ?? '',
+  }
 }
 
 /** Fetch the most recently sent item to get its real RFC 2822 message-id and conversationId. */

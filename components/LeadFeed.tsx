@@ -34,6 +34,12 @@ export interface Lead {
   sent_at?: string | null
   replied_at?: string | null
   booked_at?: string | null
+  reply_intent?: 'not_interested' | 'out_of_office' | 'neutral' | 'interested' | 'meeting_requested' | 'meeting_booked' | null
+  reply_summary?: string | null
+  reply_body_snippet?: string | null
+  reply_received_at?: string | null
+  meeting_detected_at?: string | null
+  booking_reply_sent_at?: string | null
   contact_email?: string | null
   contact_name?: string | null
   contact_title?: string | null
@@ -229,7 +235,7 @@ export default function LeadFeed({
 
           const { data } = await supabase
             .from('leads')
-            .select(`id, client_id, origin, source_kind, source_record_id, feed_session_id, feed_session_label, feed_session_started_at, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, contact_email, contact_name, contact_title, feed_snapshot`)
+            .select(`id, client_id, origin, source_kind, source_record_id, feed_session_id, feed_session_label, feed_session_started_at, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, reply_intent, reply_summary, reply_body_snippet, reply_received_at, meeting_detected_at, booking_reply_sent_at, contact_email, contact_name, contact_title, feed_snapshot`)
             .eq('id', payload.new.id)
             .single()
           if (data) {

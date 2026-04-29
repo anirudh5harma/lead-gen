@@ -8,6 +8,7 @@ import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import type { Stakeholder } from '../../../api/contacts/find/route'
 import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
 import { resolveOutreachContext } from '@/lib/outreach-context'
+import { recordAgentEvent } from '@/lib/agent-events'
 
 function signalAgeLabel(publishedAt: string | null): string | null {
   if (!publishedAt) return null
@@ -188,6 +189,22 @@ export async function POST(request: Request) {
     // Return in-memory draft even if save fails
     return NextResponse.json({ subject, body, stakeholders })
   }
+
+  await recordAgentEvent(supabase, {
+    userId: user.id,
+    clientId,
+    leadId,
+    agentName: 'message',
+    eventType: 'draft_ready',
+    status: 'needs_approval',
+    title: `Draft ready for ${lead.target_company}`,
+    body: stakeholders.length > 0
+      ? `Prepared outreach for ${stakeholders[0]?.name || 'a verified contact'} at ${lead.target_company}.`
+      : `Prepared outreach for ${lead.target_company}.`,
+    metadata: {
+      verified_contacts: stakeholders.length,
+    },
+  })
 
   return NextResponse.json(draft)
 }

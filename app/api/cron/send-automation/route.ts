@@ -3,11 +3,14 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { normalizeAutoSendPolicy } from '@/lib/auto-send-policies'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { draftOutreachEmail } from '@/lib/deepseek'
+import { enrichCompany } from '@/lib/email-finder/enrich'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
+import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
 import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
 import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-context'
 import { sendAutomationLifecycleEmail } from '@/lib/resend'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
+import { finishAgentRun, recordAgentEvent, startAgentRun } from '@/lib/agent-events'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -15,6 +18,7 @@ export const maxDuration = 300
 
 const MAX_POLICIES_PER_RUN = 30
 const MAX_SENDS_PER_POLICY_RUN = 3
+const MAX_AUTOPILOT_UNLOCKS_PER_POLICY_RUN = 3
 const AUTOMATION_STATUSES = ['new', 'viewed', 'drafted']
 
 function isAuthorized(request: Request): boolean {
@@ -47,8 +51,30 @@ export async function GET(request: Request) {
       const policy = normalizeAutoSendPolicy(row)
       const userId = row.user_id as string
       const clientId = (row as { client_id?: string | null }).client_id ?? null
+      const agentRunId = await startAgentRun(supabase, {
+        userId,
+        clientId,
+        agentName: 'sending',
+        runType: 'outbound_automation',
+        input: {
+          origins: policy.target_origins,
+          daily_send_limit: policy.daily_send_limit,
+          min_relevance_score: policy.min_relevance_score,
+        },
+      })
       const activeAccount = await oldestEligibleAccount(supabase, userId, policy.connected_account_id)
       if (!activeAccount) {
+        await recordAgentEvent(supabase, {
+          userId,
+          clientId,
+          runId: agentRunId,
+          agentName: 'safety',
+          eventType: 'automation_blocked',
+          status: 'blocked',
+          title: 'Automation paused: no active inbox',
+          body: 'Connect Gmail or Outlook before Bombsell can send from your mailbox.',
+        })
+        await finishAgentRun(supabase, { runId: agentRunId, status: 'completed', output: { sent: 0, reason: 'no_active_inbox' } })
         skipped++
         continue
       }
@@ -56,6 +82,17 @@ export async function GET(request: Request) {
       if (activeAccount.last_used_at) {
         const lastUsedMs = new Date(activeAccount.last_used_at).getTime()
         if (Date.now() - lastUsedMs < policy.min_minutes_between_sends * 60_000) {
+          await recordAgentEvent(supabase, {
+            userId,
+            clientId,
+            runId: agentRunId,
+            agentName: 'safety',
+            eventType: 'mailbox_pacing',
+            status: 'skipped',
+            title: 'Mailbox pacing held a send',
+            body: `Bombsell waited because the selected inbox was used less than ${policy.min_minutes_between_sends} minutes ago.`,
+          })
+          await finishAgentRun(supabase, { runId: agentRunId, status: 'completed', output: { sent: 0, reason: 'mailbox_pacing' } })
           skipped++
           continue
         }
@@ -64,9 +101,28 @@ export async function GET(request: Request) {
       const sentToday = await countSendsToday(supabase, userId, clientId)
       const remainingToday = Math.max(0, policy.daily_send_limit - sentToday)
       if (remainingToday <= 0) {
+        await recordAgentEvent(supabase, {
+          userId,
+          clientId,
+          runId: agentRunId,
+          agentName: 'safety',
+          eventType: 'daily_cap_reached',
+          status: 'skipped',
+          title: 'Daily sending cap reached',
+          body: `Bombsell stopped sending after reaching the ${policy.daily_send_limit}/day cap.`,
+        })
+        await finishAgentRun(supabase, { runId: agentRunId, status: 'completed', output: { sent: 0, reason: 'daily_cap' } })
         skipped++
         continue
       }
+
+      const prepared = await prepareAutopilotLeads(supabase, {
+        userId,
+        clientId,
+        runId: agentRunId,
+        policy,
+        limit: Math.min(MAX_AUTOPILOT_UNLOCKS_PER_POLICY_RUN, remainingToday),
+      })
 
       const leads = await loadEligibleAutomationLeads(supabase, {
         userId,
@@ -79,6 +135,7 @@ export async function GET(request: Request) {
         const didSend = await sendAutomationLead(supabase, {
           userId,
           clientId,
+          runId: agentRunId,
           lead,
           connectedAccountId: policy.connected_account_id,
         })
@@ -98,6 +155,16 @@ export async function GET(request: Request) {
           completed++
         }
       }
+
+      await finishAgentRun(supabase, {
+        runId: agentRunId,
+        status: 'completed',
+        output: {
+          attempted: leads.length,
+          unlocked: prepared.unlocked,
+          enriched: prepared.enriched,
+        },
+      })
     }
 
     const payload = { sent, skipped, completed }
@@ -184,12 +251,202 @@ async function loadEligibleAutomationLeads(
   }).slice(0, params.limit)
 }
 
+async function prepareAutopilotLeads(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  params: {
+    userId: string
+    clientId: string | null
+    runId: string | null
+    policy: ReturnType<typeof normalizeAutoSendPolicy>
+    limit: number
+  },
+): Promise<{ unlocked: number; enriched: number; skipped: number }> {
+  if (params.limit <= 0) return { unlocked: 0, enriched: 0, skipped: 0 }
+
+  const minCreatedAt = new Date(Date.now() - params.policy.max_lead_age_days * 24 * 60 * 60 * 1000).toISOString()
+  let query = supabase
+    .from('leads')
+    .select('id, client_id, origin, target_company, company_domain, relevance_score, relevance_reason, status, feed_session_id, feed_snapshot')
+    .eq('user_id', params.userId)
+    .eq('is_unlocked', false)
+    .in('origin', params.policy.target_origins)
+    .in('status', AUTOMATION_STATUSES)
+    .gte('relevance_score', params.policy.min_relevance_score)
+    .gte('created_at', minCreatedAt)
+    .order('relevance_score', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(Math.max(1, params.limit * 3))
+
+  query = params.clientId ? query.eq('client_id', params.clientId) : query.is('client_id', null)
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+
+  const candidates = (data ?? []).filter(lead => {
+    const origin = (lead as { origin?: string | null }).origin ?? 'live'
+    if (origin !== 'explore') return true
+    const sessionIds = params.policy.target_explore_session_ids
+    if (sessionIds.length === 0) return false
+    return sessionIds.includes((lead as { feed_session_id?: string | null }).feed_session_id ?? '')
+  }).slice(0, params.limit)
+
+  if (candidates.length === 0) return { unlocked: 0, enriched: 0, skipped: 0 }
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('services_description')
+    .eq('user_id', params.userId)
+    .maybeSingle()
+
+  let unlocked = 0
+  let enriched = 0
+  let skipped = 0
+  const now = new Date().toISOString()
+
+  for (const lead of candidates) {
+    let usedCredit = false
+    try {
+      usedCredit = await consumeLeadCredit(supabase, {
+        userId: params.userId,
+        leadId: lead.id as string,
+        metadata: { source: 'autopilot_unlock' },
+      })
+    } catch (creditError) {
+      await recordAgentEvent(supabase, {
+        userId: params.userId,
+        clientId: params.clientId,
+        runId: params.runId,
+        leadId: lead.id as string,
+        agentName: 'safety',
+        eventType: 'autopilot_unlock_failed',
+        status: 'blocked',
+        title: `Autopilot could not unlock ${lead.target_company}`,
+        body: creditError instanceof Error ? creditError.message : 'Unable to consume a lead credit.',
+      })
+      skipped++
+      continue
+    }
+
+    if (!usedCredit) {
+      await recordAgentEvent(supabase, {
+        userId: params.userId,
+        clientId: params.clientId,
+        runId: params.runId,
+        leadId: lead.id as string,
+        agentName: 'safety',
+        eventType: 'autopilot_no_credits',
+        status: 'blocked',
+        title: 'Autopilot paused: no lead credits',
+        body: 'Add credits so Bombsell can unlock high-fit leads before enrichment and sending.',
+      })
+      skipped++
+      break
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('leads')
+      .update({ is_unlocked: true, unlocked_at: now })
+      .eq('id', lead.id as string)
+      .eq('user_id', params.userId)
+      .eq('is_unlocked', false)
+      .select('id')
+      .maybeSingle()
+
+    if (updateError || !updated) {
+      await refundLeadCredit(supabase, {
+        userId: params.userId,
+        leadId: lead.id as string,
+        metadata: { source: 'autopilot_unlock_update_failed' },
+      }).catch(() => {})
+      skipped++
+      continue
+    }
+
+    unlocked++
+    await recordAgentEvent(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      runId: params.runId,
+      leadId: lead.id as string,
+      agentName: 'contact',
+      eventType: 'lead_unlocked',
+      status: 'running',
+      title: `Autopilot unlocked ${lead.target_company}`,
+      body: 'Bombsell used one lead credit and started verified-contact discovery.',
+      metadata: { relevance_score: lead.relevance_score },
+    })
+
+    const signal = normalizeLeadFeedSnapshot((lead as { feed_snapshot?: unknown }).feed_snapshot ?? null)
+    const result = await enrichCompany(
+      lead.target_company as string,
+      (signal?.company_domain ?? lead.company_domain ?? null) as string | null,
+      supabase,
+      {
+        servicesDescription: (profile as { services_description?: string | null } | null)?.services_description ?? null,
+        signalType: signal?.signal_type ?? null,
+        maxContacts: 4,
+      },
+    )
+    const topContact = result.contact
+    const baseUpdate: Record<string, unknown> = { contact_enriched_at: new Date().toISOString() }
+    if (result.resolvedDomain) baseUpdate.company_domain = result.resolvedDomain
+
+    if (topContact) {
+      await supabase.from('leads').update({
+        ...baseUpdate,
+        contact_email: topContact.email.toLowerCase(),
+        contact_name: topContact.name || null,
+        contact_title: topContact.title || null,
+        contact_source: topContact.source,
+        contact_verified: topContact.verified,
+      }).eq('id', lead.id as string).eq('user_id', params.userId)
+      enriched++
+
+      await recordAgentEvent(supabase, {
+        userId: params.userId,
+        clientId: params.clientId,
+        runId: params.runId,
+        leadId: lead.id as string,
+        agentName: 'contact',
+        eventType: topContact.verified ? 'verified_contact_found' : 'contact_found_unverified',
+        status: topContact.verified ? 'completed' : 'blocked',
+        title: topContact.verified
+          ? `Verified contact found for ${lead.target_company}`
+          : `Contact found but not verified for ${lead.target_company}`,
+        body: topContact.verified
+          ? `Bombsell found ${topContact.email.toLowerCase()} and queued the lead for safe sending.`
+          : 'Bombsell will not send until a verified contact is available.',
+        metadata: {
+          source: topContact.source,
+          from_cache: result.fromCache,
+        },
+      })
+    } else {
+      await supabase.from('leads').update(baseUpdate).eq('id', lead.id as string).eq('user_id', params.userId)
+      await recordAgentEvent(supabase, {
+        userId: params.userId,
+        clientId: params.clientId,
+        runId: params.runId,
+        leadId: lead.id as string,
+        agentName: 'contact',
+        eventType: 'no_verified_contact',
+        status: 'blocked',
+        title: `No verified contact found for ${lead.target_company}`,
+        body: 'Bombsell unlocked the lead but did not send because no safe recipient was found.',
+        metadata: { from_cache: result.fromCache },
+      })
+    }
+  }
+
+  return { unlocked, enriched, skipped }
+}
+
 async function sendAutomationLead(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   params: {
     userId: string
     clientId: string | null
     lead: Record<string, unknown>
+    runId: string | null
     connectedAccountId: string | null
   },
 ): Promise<boolean> {
@@ -200,7 +457,21 @@ async function sendAutomationLead(
     supabase.from('unsubscribed_emails').select('id').eq('email', to).maybeSingle(),
     supabase.from('bounced_emails').select('id').eq('email', to).maybeSingle(),
   ])
-  if (unsubRes.data || bounceRes.data) return false
+  if (unsubRes.data || bounceRes.data) {
+    await recordAgentEvent(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      runId: params.runId,
+      leadId: params.lead.id as string,
+      agentName: 'safety',
+      eventType: unsubRes.data ? 'recipient_unsubscribed' : 'recipient_bounced',
+      status: 'blocked',
+      title: `Skipped ${params.lead.target_company}: unsafe recipient`,
+      body: unsubRes.data ? 'The recipient has unsubscribed.' : 'The recipient previously bounced.',
+      metadata: { to },
+    })
+    return false
+  }
 
   const [{ data: profile }, { data: clientProfile }, template] = await Promise.all([
     supabase
@@ -264,6 +535,23 @@ async function sendAutomationLead(
     },
     { onConflict: 'lead_id' },
   )
+
+  await recordAgentEvent(supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
+    runId: params.runId,
+    leadId: params.lead.id as string,
+    agentName: 'sending',
+    eventType: 'email_sent',
+    status: 'completed',
+    title: `Sent outreach to ${params.lead.target_company}`,
+    body: `Sent from ${result.fromEmail} to ${to}. Follow-up was scheduled automatically.`,
+    metadata: {
+      provider: result.provider,
+      message_id: result.messageId,
+      thread_id: result.threadId,
+    },
+  })
 
   return true
 }
