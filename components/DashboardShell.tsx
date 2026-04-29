@@ -8,7 +8,7 @@ import Sidebar from './Sidebar'
 import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
 
-type View = 'feed' | 'explore' | 'crm' | 'mcp' | 'watchlist' | 'settings'
+type View = 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'
 
 interface WatchlistItem {
   id: string
@@ -56,6 +56,7 @@ const VIEW_TITLES: Record<View, string> = {
   feed:      'Signal Feed',
   explore:   'Explore',
   crm:       'CRM',
+  automation: 'Automation',
   mcp:       'MCP',
   watchlist: 'Watchlist',
   settings:  'Settings',
@@ -66,7 +67,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const requestedView = params.get('view')
-      if (requestedView === 'feed' || requestedView === 'explore' || requestedView === 'crm' || requestedView === 'mcp' || requestedView === 'watchlist' || requestedView === 'settings') {
+      if (requestedView === 'feed' || requestedView === 'explore' || requestedView === 'crm' || requestedView === 'automation' || requestedView === 'mcp' || requestedView === 'watchlist' || requestedView === 'settings') {
         return requestedView
       }
     }
@@ -178,10 +179,11 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
                 {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
                 {activeView === 'explore' && 'Prompt-driven lead discovery based on who you want to target next'}
-                {activeView === 'crm' && 'Connect your CRM, import outreach targets, and push exports back out'}
+                {activeView === 'crm' && 'Stage leads from Signal and Explore, then push them to your configured CRM'}
+                {activeView === 'automation' && 'Connect an inbox and safely automate outbound from signal or selected Explore sessions'}
                 {activeView === 'mcp' && 'Let agent frameworks consume your GTM context and lead workflows'}
                 {activeView === 'watchlist' && 'Companies you follow bypass relevance filtering'}
-                {activeView === 'settings' && 'Billing, targeting, automations, and diagnostics'}
+                {activeView === 'settings' && 'Billing, targeting, Slack alerts, templates, and blocked companies'}
               </p>
             </div>
 
@@ -268,6 +270,9 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 activeClientId={userProfile.active_client_id ?? null}
                 plan="free"
               />
+            )}
+            {activeView === 'automation' && (
+              <AutomationPanel />
             )}
             {activeView === 'mcp' && (
               <McpPanel />
@@ -377,7 +382,7 @@ codex mcp login bombsell \\
         <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
           {[
             ['Context', 'Workspace ICP and active client.'],
-            ['Leads', 'Live, Explore, and CRM-imported leads.'],
+            ['Leads', 'Live, Explore, and CRM-queued leads.'],
             ['Workflow', 'Safe lead status updates.'],
             ['Watchlist', 'Read and add watched companies.'],
             ['Sessions', 'Explore and CRM feed sessions.'],
@@ -431,29 +436,33 @@ const CREDIT_TOP_UPS = [
   { amount: 50, credits: 200 },
   { amount: 100, credits: 400 },
 ]
-const AUTO_SEND_FEED_OPTIONS: Array<{ key: 'live' | 'explore' | 'crm_import'; label: string; description: string }> = [
-  { key: 'live', label: 'Live Signal Feed', description: 'Auto-send follow-ups for live signal-driven leads.' },
-  { key: 'explore', label: 'Explore Feed', description: 'Auto-send follow-ups for prompted discovery leads.' },
-  { key: 'crm_import', label: 'CRM Feed', description: 'Auto-send follow-ups for CRM-imported prospects.' },
+const AUTO_SEND_FEED_OPTIONS: Array<{ key: 'live' | 'explore'; label: string; description: string }> = [
+  { key: 'live', label: 'Continuous Signal Feed', description: 'Safely send newly unlocked live-signal leads as they become eligible.' },
+  { key: 'explore', label: 'Selected Explore Sessions', description: 'Automate only the targeted Explore sessions you select below.' },
 ]
 
-function SettingsPanel({
-  profile,
-}: {
-  profile: UserProfile
-}) {
-  const leadCreditBalance = profile.lead_credit_balance ?? 0
+interface ExploreAutomationSession {
+  id: string
+  label: string
+  started_at: string
+  lead_count: number
+}
 
+function AutomationPanel() {
   const [autoSend, setAutoSend] = useState(false)
   const [autoSendSaving, setAutoSendSaving] = useState(false)
   const [autoSendLoaded, setAutoSendLoaded] = useState(false)
   const [autoSendMsg, setAutoSendMsg] = useState<string | null>(null)
   const [autoSendAccounts, setAutoSendAccounts] = useState<AutoSendAccount[]>([])
   const [autoSendAccountId, setAutoSendAccountId] = useState<string | null>(null)
-  const [autoSendFeeds, setAutoSendFeeds] = useState<Array<'live' | 'explore' | 'crm_import'>>(['live', 'explore', 'crm_import'])
-  const [autoSendRequireVerified, setAutoSendRequireVerified] = useState(false)
-  const [autoSendMinScore, setAutoSendMinScore] = useState(1)
+  const [autoSendFeeds, setAutoSendFeeds] = useState<Array<'live' | 'explore'>>(['live'])
+  const [selectedExploreSessions, setSelectedExploreSessions] = useState<string[]>([])
+  const [exploreSessions, setExploreSessions] = useState<ExploreAutomationSession[]>([])
+  const [autoSendRequireVerified, setAutoSendRequireVerified] = useState(true)
+  const [autoSendMinScore, setAutoSendMinScore] = useState(7)
   const [autoSendMaxAge, setAutoSendMaxAge] = useState(30)
+  const [dailySendLimit, setDailySendLimit] = useState(10)
+  const [sendSpacing, setSendSpacing] = useState(15)
 
   useEffect(() => {
     let cancelled = false
@@ -464,12 +473,16 @@ function SettingsPanel({
           policy?: {
             enabled?: boolean
             connected_account_id?: string | null
-            target_origins?: Array<'live' | 'explore' | 'crm_import'>
+            target_origins?: Array<'live' | 'explore'>
+            target_explore_session_ids?: string[]
             require_verified_contact?: boolean
             min_relevance_score?: number
             max_lead_age_days?: number
+            daily_send_limit?: number
+            min_minutes_between_sends?: number
           }
           accounts?: AutoSendAccount[]
+          explore_sessions?: ExploreAutomationSession[]
         } | null
         if (cancelled || !data) return
         if (!res.ok) {
@@ -479,11 +492,15 @@ function SettingsPanel({
         }
         setAutoSend(Boolean(data.policy?.enabled))
         setAutoSendAccountId(data.policy?.connected_account_id ?? null)
-        setAutoSendFeeds(data.policy?.target_origins?.length ? data.policy.target_origins : ['live', 'explore', 'crm_import'])
-        setAutoSendRequireVerified(Boolean(data.policy?.require_verified_contact))
-        setAutoSendMinScore(data.policy?.min_relevance_score ?? 1)
+        setAutoSendFeeds(data.policy?.target_origins?.length ? data.policy.target_origins : ['live'])
+        setSelectedExploreSessions(data.policy?.target_explore_session_ids ?? [])
+        setAutoSendRequireVerified(data.policy?.require_verified_contact !== false)
+        setAutoSendMinScore(data.policy?.min_relevance_score ?? 7)
         setAutoSendMaxAge(data.policy?.max_lead_age_days ?? 30)
+        setDailySendLimit(data.policy?.daily_send_limit ?? 10)
+        setSendSpacing(data.policy?.min_minutes_between_sends ?? 15)
         setAutoSendAccounts(data.accounts ?? [])
+        setExploreSessions(data.explore_sessions ?? [])
         setAutoSendLoaded(true)
       })
       .catch(() => {
@@ -509,9 +526,12 @@ function SettingsPanel({
           enabled: autoSend,
           connected_account_id: autoSendAccountId,
           target_origins: autoSendFeeds,
+          target_explore_session_ids: selectedExploreSessions,
           require_verified_contact: autoSendRequireVerified,
           min_relevance_score: autoSendMinScore,
           max_lead_age_days: autoSendMaxAge,
+          daily_send_limit: dailySendLimit,
+          min_minutes_between_sends: sendSpacing,
         }),
       })
       const data = await res.json().catch(() => null) as { error?: string } | null
@@ -525,7 +545,159 @@ function SettingsPanel({
     } finally {
       setAutoSendSaving(false)
     }
-  }, [autoSend, autoSendAccountId, autoSendFeeds, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge])
+  }, [autoSend, autoSendAccountId, autoSendFeeds, selectedExploreSessions, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge, dailySendLimit, sendSpacing])
+
+  return (
+    <div className="max-w-4xl space-y-4">
+      <ConnectedAccountsPanel />
+
+      <div className="card divide-y divide-[var(--color-line-1)]">
+        <div className="px-5 py-4 flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Outbound Automation</h2>
+            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+              Sends only unlocked leads with verified contacts, unsub/bounce checks, daily caps, and mailbox pacing.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={autoSend}
+            disabled={autoSendSaving || !autoSendLoaded}
+            onClick={() => setAutoSend(enabled => !enabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
+              autoSend ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
+            }`}
+          >
+            <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${autoSend ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-5">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--color-text-1)]">Sending inbox</span>
+              <select
+                value={autoSendAccountId ?? ''}
+                onChange={e => setAutoSendAccountId(e.target.value || null)}
+                className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
+              >
+                <option value="">Least recently used active inbox</option>
+                {autoSendAccounts.map(account => (
+                  <option key={account.id} value={account.id}>
+                    {(account.display_name || account.email)} · {account.provider}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[var(--color-text-1)]">Daily cap</span>
+                <select value={dailySendLimit} onChange={e => setDailySendLimit(Number(e.target.value))} className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px]">
+                  {[5, 10, 15, 20, 30, 50].map(value => <option key={value} value={value}>{value}/day</option>)}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[var(--color-text-1)]">Send spacing</span>
+                <select value={sendSpacing} onChange={e => setSendSpacing(Number(e.target.value))} className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px]">
+                  {[15, 30, 60, 120, 240].map(value => <option key={value} value={value}>{value} min</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Automation source</p>
+              {AUTO_SEND_FEED_OPTIONS.map(option => {
+                const checked = autoSendFeeds.includes(option.key)
+                return (
+                  <label key={option.key} className="flex items-start gap-3 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setAutoSendFeeds(prev => checked ? prev.filter(feed => feed !== option.key) : [...prev, option.key])}
+                      className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
+                    />
+                    <span>
+                      <span className="block text-[12.5px] font-medium text-[var(--color-text-1)]">{option.label}</span>
+                      <span className="block text-[11px] text-[var(--color-text-4)] mt-0.5">{option.description}</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Explore sessions</p>
+              <div className="max-h-48 overflow-y-auto rounded-2xl border border-[var(--color-line-1)] bg-white p-2">
+                {exploreSessions.length === 0 ? (
+                  <p className="px-2 py-3 text-[11px] text-[var(--color-text-4)]">No Explore sessions yet.</p>
+                ) : exploreSessions.map(session => {
+                  const checked = selectedExploreSessions.includes(session.id)
+                  return (
+                    <label key={session.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-[var(--color-ink-2)]">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!autoSendFeeds.includes('explore')}
+                        onChange={() => setSelectedExploreSessions(prev => checked ? prev.filter(id => id !== session.id) : [...prev, session.id])}
+                        className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-[12px] font-medium text-[var(--color-text-1)]">{session.label}</span>
+                        <span className="block text-[10.5px] text-[var(--color-text-4)]">{session.lead_count} leads · {new Date(session.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--color-text-1)]">Min score</span>
+              <select value={autoSendMinScore} onChange={e => setAutoSendMinScore(Number(e.target.value))} className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px]">
+                {Array.from({ length: 10 }, (_, index) => index + 1).map(score => <option key={score} value={score}>{score}+</option>)}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[var(--color-text-1)]">Max lead age</span>
+              <select value={autoSendMaxAge} onChange={e => setAutoSendMaxAge(Number(e.target.value))} className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px]">
+                {[7, 14, 30, 60, 90].map(days => <option key={days} value={days}>{days} days</option>)}
+              </select>
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
+              <span>
+                <span className="block text-[12px] font-medium text-[var(--color-text-1)]">Verified only</span>
+                <span className="block text-[10.5px] text-[var(--color-text-4)]">Always enforced by automation.</span>
+              </span>
+              <input type="checkbox" checked={autoSendRequireVerified} onChange={e => setAutoSendRequireVerified(e.target.checked)} />
+            </label>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11.5px] leading-5 text-[var(--color-text-3)]">
+            Bombsell will not auto-unlock leads, scrape contacts during automation, send to unverified contacts, send to unsubscribed or bounced recipients, or exceed the configured cap and spacing. Start and completion confirmations are sent to your account email.
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] text-[var(--color-text-4)]">{autoSendMsg ?? 'Save with automation on to start the process.'}</div>
+            <button onClick={saveAutoSend} disabled={autoSendSaving || !autoSendLoaded || autoSendFeeds.length === 0} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
+              {autoSendSaving ? 'Saving…' : autoSend ? 'Start / update automation' : 'Save disabled'}
+            </button>
+          </div>
+        </div>
+        <PendingFollowupsPanel />
+      </div>
+    </div>
+  )
+}
+
+function SettingsPanel({
+  profile,
+}: {
+  profile: UserProfile
+}) {
+  const leadCreditBalance = profile.lead_credit_balance ?? 0
 
   const [slackUrl, setSlackUrl] = useState(profile.slack_webhook_url ?? '')
   const [slackMinScore, setSlackMinScore] = useState(profile.slack_min_score ?? 7)
@@ -621,144 +793,7 @@ function SettingsPanel({
         </div>
       </div>
 
-      <ConnectedAccountsPanel />
-
       <ClientWorkspacePanel activeClientId={profile.active_client_id ?? null} />
-
-      <div className="card divide-y divide-[var(--color-line-1)]">
-          <div className="px-5 py-4 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Feed Automation</h2>
-              <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-                Choose which feeds are eligible for automatic follow-up sending after the initial outreach goes out and no reply is detected.
-              </p>
-            </div>
-            <button
-              role="switch"
-              aria-checked={autoSend}
-              disabled={autoSendSaving || !autoSendLoaded}
-              onClick={() => setAutoSend(enabled => !enabled)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
-                autoSend ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${
-                  autoSend ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-          <div className="px-5 py-4 space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-medium text-[var(--color-text-1)]">Sending inbox</span>
-                <select
-                  value={autoSendAccountId ?? ''}
-                  onChange={e => setAutoSendAccountId(e.target.value || null)}
-                  className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
-                >
-                  <option value="">Any active inbox</option>
-                  {autoSendAccounts.map(account => (
-                    <option key={account.id} value={account.id}>
-                      {(account.display_name || account.email)} · {account.provider}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-[var(--color-text-1)]">Min score</span>
-                  <select
-                    value={autoSendMinScore}
-                    onChange={e => setAutoSendMinScore(Number(e.target.value))}
-                    className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
-                  >
-                    {Array.from({ length: 10 }, (_, index) => index + 1).map(score => (
-                      <option key={score} value={score}>{score}+</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium text-[var(--color-text-1)]">Max age</span>
-                  <select
-                    value={autoSendMaxAge}
-                    onChange={e => setAutoSendMaxAge(Number(e.target.value))}
-                    className="w-full h-9 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12.5px] text-[var(--color-text-1)]"
-                  >
-                    {[7, 14, 30, 60, 90].map(days => (
-                      <option key={days} value={days}>{days} days</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-[var(--color-text-1)]">Eligible feeds</p>
-              <div className="grid gap-2">
-                {AUTO_SEND_FEED_OPTIONS.map(option => {
-                  const checked = autoSendFeeds.includes(option.key)
-                  return (
-                    <label key={option.key} className="flex items-start gap-3 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => setAutoSendFeeds(prev =>
-                          checked
-                            ? prev.filter(feed => feed !== option.key)
-                            : [...prev, option.key]
-                        )}
-                        className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
-                      />
-                      <span>
-                        <span className="block text-[12.5px] font-medium text-[var(--color-text-1)]">{option.label}</span>
-                        <span className="block text-[11px] text-[var(--color-text-4)] mt-0.5">{option.description}</span>
-                      </span>
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-
-            <label className="flex items-start justify-between gap-4 rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
-              <span>
-                <span className="block text-[12.5px] font-medium text-[var(--color-text-1)]">Require verified contacts</span>
-                <span className="block text-[11px] text-[var(--color-text-4)] mt-0.5">
-                  Only auto-send follow-ups when the contact has been verified during enrichment.
-                </span>
-              </span>
-              <button
-                role="switch"
-                aria-checked={autoSendRequireVerified}
-                onClick={() => setAutoSendRequireVerified(value => !value)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none ${
-                  autoSendRequireVerified ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-1)] border-[var(--color-line-2)]'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${
-                    autoSendRequireVerified ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </label>
-
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[11px] text-[var(--color-text-4)]">
-                {autoSendMsg ?? 'Auto-follow-up uses the same lead record across all feeds; the selected feeds only control eligibility.'}
-              </div>
-              <button
-                onClick={saveAutoSend}
-                disabled={autoSendSaving || !autoSendLoaded || autoSendFeeds.length === 0}
-                className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50"
-              >
-                {autoSendSaving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
-        <PendingFollowupsPanel />
-      </div>
 
       {/* Targeting */}
       <div className="card divide-y divide-[var(--color-line-1)]">
@@ -1061,14 +1096,14 @@ function CrmWorkspacePanel({
       <div className="card border border-[var(--color-line-1)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(243,248,246,0.9))]">
         <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line-1)]">
           <div>
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Outreach Feed</h3>
+            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Export Feed</h3>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Imported CRM records that are ready for outbound sequencing and manual follow-up.
+              Leads staged from Signal or Explore. Review this queue, then push the working set to your configured CRM.
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-white px-3 py-1.5 text-[11px] text-[var(--color-text-3)]">
             <span className="h-2 w-2 rounded-full bg-[var(--color-sig-funding)]" />
-            Imported feed
+            Export queue
           </div>
         </div>
         <LeadFeed
@@ -1081,8 +1116,8 @@ function CrmWorkspacePanel({
           exportFeed="crm_import"
           hideSignalTabs
           searchPlaceholder="Search CRM prospects…"
-          emptyTitle="No CRM prospects imported yet"
-          emptyBody="Enable CRM imports here, then send records into Bombsell to create an outreach-ready CRM feed."
+          emptyTitle="No CRM queue leads yet"
+          emptyBody="Select leads in Signal Feed or Explore and add them to the CRM feed before exporting to your CRM."
         />
       </div>
     </div>
@@ -1331,16 +1366,11 @@ function CrmSyncPanel() {
   const [provider, setProvider] = useState('webhook')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [enabled, setEnabled] = useState(false)
-  const [importEnabled, setImportEnabled] = useState(false)
-  const [importUrl, setImportUrl] = useState('')
-  const [copiedImportUrl, setCopiedImportUrl] = useState(false)
   const [isEditing, setIsEditing] = useState(true)
   const [savedConfig, setSavedConfig] = useState<{
     provider: string
     webhookUrl: string
     enabled: boolean
-    importEnabled: boolean
-    importUrl: string
   } | null>(null)
   const [providers, setProviders] = useState<Array<{
     id: string
@@ -1362,8 +1392,6 @@ function CrmSyncPanel() {
         provider?: string
         webhook_url?: string
         enabled?: boolean
-        import_enabled?: boolean
-        import_url?: string
         providers?: Array<{
           id: string
           label: string
@@ -1379,14 +1407,10 @@ function CrmSyncPanel() {
           provider: data.provider ?? 'webhook',
           webhookUrl: data.webhook_url ?? '',
           enabled: Boolean(data.enabled),
-          importEnabled: Boolean(data.import_enabled),
-          importUrl: data.import_url ?? '',
         }
         setProvider(nextConfig.provider)
         setWebhookUrl(nextConfig.webhookUrl)
         setEnabled(nextConfig.enabled)
-        setImportEnabled(nextConfig.importEnabled)
-        setImportUrl(nextConfig.importUrl)
         setSavedConfig(nextConfig)
         setIsEditing(!hasCrmConnection(nextConfig))
         setProviders(data.providers ?? [])
@@ -1396,17 +1420,6 @@ function CrmSyncPanel() {
   }, [])
 
   const selectedProvider = providers.find(item => item.id === provider) ?? providers[0] ?? null
-
-  async function copyImportUrl() {
-    if (!importUrl) return
-    try {
-      await navigator.clipboard.writeText(importUrl)
-      setCopiedImportUrl(true)
-      window.setTimeout(() => setCopiedImportUrl(false), 1500)
-    } catch {
-      setCopiedImportUrl(false)
-    }
-  }
 
   async function save() {
     setSaving(true)
@@ -1419,7 +1432,6 @@ function CrmSyncPanel() {
           provider,
           webhook_url: webhookUrl,
           enabled,
-          import_enabled: importEnabled,
         }),
       })
       const data = await res.json() as {
@@ -1427,8 +1439,6 @@ function CrmSyncPanel() {
         provider?: string
         webhook_url?: string
         enabled?: boolean
-        import_enabled?: boolean
-        import_url?: string
       }
       if (!res.ok || data.error) {
         setMessage(data.error ?? 'Failed to save CRM sync')
@@ -1438,14 +1448,10 @@ function CrmSyncPanel() {
         provider: data.provider ?? provider,
         webhookUrl: data.webhook_url ?? webhookUrl,
         enabled: typeof data.enabled === 'boolean' ? data.enabled : enabled,
-        importEnabled: typeof data.import_enabled === 'boolean' ? data.import_enabled : importEnabled,
-        importUrl: data.import_url ?? importUrl,
       }
       setProvider(nextConfig.provider)
       setWebhookUrl(nextConfig.webhookUrl)
       setEnabled(nextConfig.enabled)
-      setImportEnabled(nextConfig.importEnabled)
-      setImportUrl(nextConfig.importUrl)
       setSavedConfig(nextConfig)
       setMessage('CRM connection saved')
       if (hasCrmConnection(nextConfig)) setIsEditing(false)
@@ -1464,12 +1470,11 @@ function CrmSyncPanel() {
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
           <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-            Two separate workflows: export Bombsell leads to your CRM, or import CRM-held targets into the CRM Outreach Feed.
+            Connect an outbound CRM endpoint. Signal and Explore leads can be staged into the CRM feed, then exported together.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <StatusPill active={enabled} activeLabel="Outbound on" idleLabel="Outbound off" />
-          <StatusPill active={importEnabled} activeLabel="Imports on" idleLabel="Imports off" />
+          <StatusPill active={enabled} activeLabel="Export connected" idleLabel="Export off" />
           {isConnected && !isEditing && (
             <button
               onClick={() => {
@@ -1485,48 +1490,22 @@ function CrmSyncPanel() {
       </div>
       <div className="px-5 py-3 space-y-3">
         {!isEditing && isConnected ? (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3">
             <CrmWorkflowSummary
               eyebrow="Export workflow"
-              title="Bombsell to CRM"
+              title="CRM queue to your CRM"
               status={savedConfig?.enabled ? 'Connected' : 'Off'}
-              body={`Push selected or visible feed leads to ${providerLabel} via ${outboundDestination}. Export actions live in Signal, Explore, and CRM feeds.`}
+              body={`Selected Signal and Explore leads first land in the CRM feed. From there, push the reviewed queue to ${providerLabel} via ${outboundDestination}.`}
             />
-            <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import workflow</p>
-                  <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">CRM to Bombsell</h3>
-                  <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
-                    Send CRM records to this URL. Each batch appears as a session in the CRM Outreach Feed.
-                  </p>
-                </div>
-                <StatusPill active={Boolean(savedConfig?.importEnabled)} activeLabel="On" idleLabel="Off" />
-              </div>
-              <div className="mt-3 flex h-9 min-w-0 rounded-lg border border-[var(--color-line-2)] bg-[var(--color-ink-2)]">
-                <input
-                  readOnly
-                  value={savedConfig?.importUrl ?? ''}
-                  className="min-w-0 flex-1 rounded-l-lg bg-transparent px-3 text-[12px] text-[var(--color-text-2)]"
-                />
-                <button
-                  onClick={copyImportUrl}
-                  disabled={!importUrl}
-                  className="shrink-0 border-l border-[var(--color-line-2)] bg-white px-3 text-[11px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
-                >
-                  {copiedImportUrl ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
           </div>
         ) : (
           <>
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-3">
               <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Export workflow</p>
-                <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Bombsell to CRM</h3>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Connection</p>
+                <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">CRM export endpoint</h3>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
-                  Used by Export to CRM buttons in each feed. Bombsell POSTs the exact selected or visible working set to your endpoint.
+                  Bombsell POSTs selected CRM feed records to this endpoint. Keep imports off for now; leads enter this feed only when users stage them from Signal or Explore.
                 </p>
                 <input
                   type="url"
@@ -1538,33 +1517,6 @@ function CrmSyncPanel() {
                 <label className="mt-3 flex items-center gap-2 text-xs text-[var(--color-text-2)]">
                   <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
                   Enable exports to CRM
-                </label>
-              </div>
-
-              <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Import workflow</p>
-                <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">CRM to Bombsell</h3>
-                <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
-                  Use this URL in your CRM automation to create or refresh records in the CRM Outreach Feed, grouped by import session.
-                </p>
-                <div className="mt-3 flex h-9 min-w-0 rounded-lg border border-[var(--color-line-2)] bg-[var(--color-ink-2)]">
-                  <input
-                    readOnly
-                    value={importUrl}
-                    placeholder="Import URL appears after save"
-                    className="min-w-0 flex-1 rounded-l-lg bg-transparent px-3 text-[12px] text-[var(--color-text-2)]"
-                  />
-                  <button
-                    onClick={copyImportUrl}
-                    disabled={!importUrl}
-                    className="shrink-0 border-l border-[var(--color-line-2)] bg-white px-3 text-[11px] font-medium text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] disabled:opacity-50"
-                  >
-                    {copiedImportUrl ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <label className="mt-3 flex items-center gap-2 text-xs text-[var(--color-text-2)]">
-                  <input type="checkbox" checked={importEnabled} onChange={e => setImportEnabled(e.target.checked)} />
-                  Enable CRM imports
                 </label>
               </div>
             </div>
@@ -1593,8 +1545,6 @@ function CrmSyncPanel() {
                     setProvider(savedConfig.provider)
                     setWebhookUrl(savedConfig.webhookUrl)
                     setEnabled(savedConfig.enabled)
-                    setImportEnabled(savedConfig.importEnabled)
-                    setImportUrl(savedConfig.importUrl)
                     setMessage(null)
                     setIsEditing(false)
                   }}
@@ -1622,32 +1572,19 @@ function CrmSyncPanel() {
               <p className="text-xs font-medium text-[var(--color-text-1)]">{selectedProvider.label} mapping</p>
               <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">{selectedProvider.exportDescription}</p>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)] mb-2">Export fields</p>
-                <div className="space-y-1.5">
-                  {selectedProvider.exportFields.map(field => (
-                    <div key={`${field.ourField}-${field.crmField}`} className="flex items-start justify-between gap-3 text-[11px]">
-                      <span className="text-[var(--color-text-2)]">{field.ourField}</span>
-                      <span className="text-[var(--color-text-4)] text-right">{field.crmField}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)] mb-2">Import fields</p>
-                <div className="space-y-1.5">
-                  {selectedProvider.importFields.map(field => (
-                    <div key={`${field.ourField}-${field.crmField}`} className="flex items-start justify-between gap-3 text-[11px]">
-                      <span className="text-[var(--color-text-2)]">{field.ourField}{field.required ? ' *' : ''}</span>
-                      <span className="text-[var(--color-text-4)] text-right">{field.crmField}</span>
-                    </div>
-                  ))}
-                </div>
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)] mb-2">Export fields</p>
+              <div className="space-y-1.5">
+                {selectedProvider.exportFields.map(field => (
+                  <div key={`${field.ourField}-${field.crmField}`} className="flex items-start justify-between gap-3 text-[11px]">
+                    <span className="text-[var(--color-text-2)]">{field.ourField}</span>
+                    <span className="text-[var(--color-text-4)] text-right">{field.crmField}</span>
+                  </div>
+                ))}
               </div>
             </div>
             <p className="text-[11px] text-[var(--color-text-4)]">
-              Export actions now live on Signal Feed and Explore so reps can push the exact working set they are reviewing.
+              Signal and Explore feed actions add records to the CRM feed first. The CRM feed action pushes the reviewed queue to your provider.
             </p>
           </div>
         )}
@@ -1660,10 +1597,8 @@ function CrmSyncPanel() {
 function hasCrmConnection(config: {
   webhookUrl: string
   enabled: boolean
-  importEnabled: boolean
-  importUrl: string
 }) {
-  return (config.enabled && Boolean(config.webhookUrl)) || (config.importEnabled && Boolean(config.importUrl))
+  return config.enabled && Boolean(config.webhookUrl)
 }
 
 function summarizeUrl(value: string): string {

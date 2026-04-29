@@ -5,6 +5,14 @@ import * as z from 'zod/v4'
 import { createAdminClient } from '@/lib/supabase/server'
 import { buildLiveLeadFeedSnapshot } from '@/lib/lead-sources'
 import { protectedResourceMetadataUrl, validateMcpAccessToken } from '@/lib/mcp-oauth'
+import {
+  normalizeDailySendLimit,
+  normalizePolicyAge,
+  normalizePolicyScore,
+  normalizeSendSpacing,
+  sanitizeAutoSendOrigins,
+  sanitizeSessionIds,
+} from '@/lib/auto-send-policies'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -47,6 +55,9 @@ export async function GET(request: Request) {
       'list_watchlist',
       'add_watchlist_company',
       'list_feed_sessions',
+      'get_automation_settings',
+      'configure_automation',
+      'queue_leads_for_crm',
       'search_signal_timeline',
     ],
   }, { headers: corsHeaders() })
@@ -118,7 +129,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
     'list_leads',
     {
       title: 'List Leads',
-      description: 'List recent Bombsell leads across live signals, Explore results, or CRM imports. Defaults to the active workspace.',
+      description: 'List recent Bombsell leads across live signals, Explore results, or CRM-queued records. Defaults to the active workspace.',
       inputSchema: {
         origin: z.enum(VALID_ORIGINS).optional().describe('Optional feed origin filter.'),
         status: z.enum(VALID_LEAD_STATUSES).optional().describe('Optional lead status filter.'),
@@ -211,7 +222,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
     'list_feed_sessions',
     {
       title: 'List Feed Sessions',
-      description: 'List feed sessions for Explore and CRM imports, plus live-feed grouping metadata when available.',
+      description: 'List feed sessions for Explore and CRM queue records, plus live-feed grouping metadata when available.',
       inputSchema: {
         origin: z.enum(VALID_ORIGINS).optional().describe('Optional feed origin filter.'),
         client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
@@ -240,6 +251,67 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
       },
     },
     async args => jsonToolResult(await searchSignalTimeline(ctx, args)),
+  )
+
+  server.registerTool(
+    'get_automation_settings',
+    {
+      title: 'Get Automation Settings',
+      description: 'Return outbound automation policy, connected sending accounts, and Explore sessions for the active workspace.',
+      inputSchema: {
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await getAutomationSettings(ctx, args)),
+  )
+
+  server.registerTool(
+    'configure_automation',
+    {
+      title: 'Configure Automation',
+      description: 'Safely configure outbound automation. Automation sends only unlocked leads with verified contacts, unsub/bounce checks, daily caps, and mailbox pacing.',
+      inputSchema: {
+        enabled: z.boolean().describe('Turn automation on or off.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+        connected_account_id: z.string().optional().describe('Optional connected Gmail/Outlook account id. Defaults to least recently used active inbox.'),
+        target_origins: z.array(z.enum(['live', 'explore'])).optional().describe('Sources to automate. Use live for continuous Signal Feed and explore for selected Explore sessions.'),
+        target_explore_session_ids: z.array(z.string()).optional().describe('Explore session ids to automate when target_origins includes explore.'),
+        min_relevance_score: z.number().min(1).max(10).optional().describe('Minimum lead score. Default 7.'),
+        max_lead_age_days: z.number().min(1).max(365).optional().describe('Maximum age of eligible leads. Default 30.'),
+        daily_send_limit: z.number().min(1).max(50).optional().describe('Maximum initial outreach sends per UTC day. Default 10.'),
+        min_minutes_between_sends: z.number().min(5).max(1440).optional().describe('Minimum pacing between sends. Default 15 minutes.'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await configureAutomation(ctx, args)),
+  )
+
+  server.registerTool(
+    'queue_leads_for_crm',
+    {
+      title: 'Queue Leads For CRM',
+      description: 'Stage selected Signal or Explore leads into the CRM export feed. This does not call the external CRM; users can review and export the CRM feed later.',
+      inputSchema: {
+        lead_ids: z.array(z.string()).min(1).max(100).describe('Lead ids to stage.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await queueLeadsForCrm(ctx, args)),
   )
 
   registerJsonResource(server, 'workspace-profile', 'bombsell://workspace/profile', 'Workspace GTM profile', 'Current user profile, active client workspace, ICP, and agent guidance.', () => getGtmContext(ctx))
@@ -328,8 +400,10 @@ async function getGtmContext(ctx: McpContext) {
     active_client: activeClient,
     clients: clients ?? [],
     guidance: [
-      'Use list_leads for current signal, explore, and CRM-imported opportunities.',
+      'Use list_leads for current signal, explore, and CRM-queued opportunities.',
       'Use update_lead_status only when the user or calling workflow has decided the lead state should change.',
+      'Use configure_automation to set safe outbound automation after the user has connected Gmail or Outlook.',
+      'Use queue_leads_for_crm to stage reviewed Signal or Explore leads into the CRM export feed.',
       'Do not generate outreach for locked leads through MCP; use the Bombsell UI/API unlock flow first.',
     ],
   }
@@ -495,6 +569,179 @@ async function listFeedSessions(ctx: McpContext, args: {
       new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
     )),
   }
+}
+
+async function getAutomationSettings(ctx: McpContext, args: { client_id?: string }) {
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const [policyRes, accountsRes, sessions] = await Promise.all([
+    automationPolicyQuery(ctx, clientId)
+      .maybeSingle(),
+    ctx.supabase
+      .from('connected_accounts')
+      .select('id, provider, email, display_name, is_active, last_used_at, created_at')
+      .eq('user_id', ctx.userId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true }),
+    listFeedSessions(ctx, { client_id: clientId ?? undefined, origin: 'explore', limit: 250 }),
+  ])
+
+  if (policyRes.error) throw new Error(policyRes.error.message)
+  if (accountsRes.error) throw new Error(accountsRes.error.message)
+
+  return {
+    policy: policyRes.data ?? null,
+    connected_accounts: accountsRes.data ?? [],
+    explore_sessions: sessions.sessions,
+    safeguards: [
+      'Automation sends only unlocked leads.',
+      'Automation requires verified contact_email.',
+      'Unsubscribed and bounced recipients are skipped.',
+      'Daily caps and mailbox pacing are enforced by the cron worker.',
+    ],
+  }
+}
+
+async function configureAutomation(ctx: McpContext, args: {
+  enabled: boolean
+  client_id?: string
+  connected_account_id?: string
+  target_origins?: unknown
+  target_explore_session_ids?: unknown
+  min_relevance_score?: number
+  max_lead_age_days?: number
+  daily_send_limit?: number
+  min_minutes_between_sends?: number
+}) {
+  requireScope(ctx, 'bombsell:write:safe')
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const origins = sanitizeAutoSendOrigins(args.target_origins)
+  const sessionIds = sanitizeSessionIds(args.target_explore_session_ids)
+  if (args.enabled && origins.includes('explore') && !origins.includes('live') && sessionIds.length === 0) {
+    throw new Error('Select at least one Explore session or include live automation.')
+  }
+
+  const connectedAccountId = optionalString(args.connected_account_id)
+  if (connectedAccountId) {
+    const { data, error } = await ctx.supabase
+      .from('connected_accounts')
+      .select('id')
+      .eq('user_id', ctx.userId)
+      .eq('id', connectedAccountId)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!data) throw new Error('connected_account_id is not accessible')
+  }
+
+  if (args.enabled) {
+    let accountQuery = ctx.supabase
+      .from('connected_accounts')
+      .select('id')
+      .eq('user_id', ctx.userId)
+      .eq('is_active', true)
+      .limit(1)
+    if (connectedAccountId) accountQuery = accountQuery.eq('id', connectedAccountId)
+    const { data, error } = await accountQuery
+    if (error) throw new Error(error.message)
+    if (!data?.length) throw new Error('Connect Gmail or Outlook before starting automation.')
+  }
+
+  const payload = {
+    user_id: ctx.userId,
+    client_id: clientId,
+    enabled: args.enabled,
+    connected_account_id: connectedAccountId,
+    target_origins: origins,
+    target_explore_session_ids: sessionIds,
+    require_verified_contact: true,
+    min_relevance_score: normalizePolicyScore(args.min_relevance_score ?? 7),
+    max_lead_age_days: normalizePolicyAge(args.max_lead_age_days),
+    daily_send_limit: normalizeDailySendLimit(args.daily_send_limit),
+    min_minutes_between_sends: normalizeSendSpacing(args.min_minutes_between_sends),
+    ...(args.enabled ? { last_started_at: new Date().toISOString(), completed_notification_sent_at: null } : {}),
+  }
+
+  const { data, error } = await ctx.supabase
+    .from('auto_send_policies')
+    .upsert(payload, { onConflict: clientId ? 'user_id,client_id' : 'user_id' })
+    .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
+    .single()
+  if (error) throw new Error(error.message)
+  return { ok: true, policy: data }
+}
+
+async function queueLeadsForCrm(ctx: McpContext, args: { lead_ids: string[]; client_id?: string }) {
+  requireScope(ctx, 'bombsell:write:safe')
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const leadIds = sanitizeSessionIds(args.lead_ids).slice(0, 100)
+  if (leadIds.length === 0) throw new Error('lead_ids must include valid UUIDs')
+
+  let leadQuery = ctx.supabase
+    .from('leads')
+    .select('id, client_id, origin, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, contact_email, contact_name, contact_title, contact_verified, feed_snapshot')
+    .eq('user_id', ctx.userId)
+    .in('id', leadIds)
+    .in('origin', ['live', 'explore'])
+    .neq('status', 'dismissed')
+  leadQuery = clientId ? leadQuery.eq('client_id', clientId) : leadQuery.is('client_id', null)
+  const { data: leads, error } = await leadQuery
+  if (error) throw new Error(error.message)
+  if (!leads?.length) return { ok: true, queued: 0, skipped: leadIds.length }
+
+  let existingQuery = ctx.supabase
+    .from('leads')
+    .select('source_record_id')
+    .eq('user_id', ctx.userId)
+    .eq('origin', 'crm_import')
+    .eq('source_kind', 'crm_record')
+    .in('source_record_id', leads.map(lead => lead.id))
+  existingQuery = clientId ? existingQuery.eq('client_id', clientId) : existingQuery.is('client_id', null)
+  const { data: existingRows } = await existingQuery
+  const existingSourceIds = new Set((existingRows ?? []).map(row => row.source_record_id).filter(Boolean))
+  const now = new Date().toISOString()
+  const sessionId = crypto.randomUUID()
+  const rows = leads
+    .filter(lead => !existingSourceIds.has(lead.id))
+    .map(lead => ({
+      user_id: ctx.userId,
+      client_id: clientId,
+      signal_id: null,
+      origin: 'crm_import',
+      source_kind: 'crm_record',
+      source_record_id: lead.id,
+      feed_session_id: sessionId,
+      feed_session_label: 'CRM queue',
+      feed_session_started_at: now,
+      target_company: lead.target_company,
+      company_domain: lead.company_domain,
+      relevance_score: lead.relevance_score,
+      relevance_reason: lead.relevance_reason,
+      status: 'new',
+      is_unlocked: lead.is_unlocked === true,
+      unlocked_at: lead.unlocked_at,
+      contact_email: lead.contact_email,
+      contact_name: lead.contact_name,
+      contact_title: lead.contact_title,
+      contact_verified: (lead as { contact_verified?: boolean | null }).contact_verified ?? null,
+      feed_snapshot: lead.feed_snapshot,
+      match_debug: { queued_for_crm: true, source_lead_id: lead.id, source_origin: lead.origin },
+    }))
+
+  if (rows.length > 0) {
+    const inserted = await ctx.supabase.from('leads').insert(rows)
+    if (inserted.error) throw new Error(inserted.error.message)
+  }
+
+  return { ok: true, queued: rows.length, skipped: leads.length - rows.length, session_id: sessionId }
+}
+
+function automationPolicyQuery(ctx: McpContext, clientId: string | null) {
+  let query = ctx.supabase
+    .from('auto_send_policies')
+    .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends, last_started_at, last_completed_at')
+    .eq('user_id', ctx.userId)
+  query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
+  return query
 }
 
 async function searchSignalTimeline(ctx: McpContext, args: { company_name: string; limit?: number }) {

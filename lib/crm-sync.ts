@@ -260,7 +260,7 @@ export function buildCrmExportFilename(provider: unknown, feed: CrmExportFeed): 
   const preset = getCrmProviderPreset(provider)
   const suffix =
     feed === 'crm_import'
-      ? 'crm-imports'
+      ? 'crm-queue'
       : feed === 'explore'
         ? 'explore-feed'
         : 'signal-feed'

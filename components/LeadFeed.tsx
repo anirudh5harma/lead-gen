@@ -133,7 +133,7 @@ export default function LeadFeed({
   activeClientId = null,
   plan = 'free',
   origin = 'live',
-  hideSignalTabs = false,
+  hideSignalTabs = origin !== 'live',
   searchPlaceholder = 'Search signals…',
   emptyTitle = 'No signals matched your ICP',
   emptyBody = 'Check back in an hour or refine your targeting in Settings.',
@@ -234,7 +234,7 @@ export default function LeadFeed({
             .single()
           if (data) {
             setLeads(prev => [data as unknown as Lead, ...prev])
-            setToast(origin === 'explore' ? 'New explore result added' : origin === 'crm_import' ? 'New CRM prospect imported' : 'New signal detected')
+            setToast(origin === 'explore' ? 'New explore result added' : origin === 'crm_import' ? 'New CRM queue lead added' : 'New signal detected')
           }
         }
       )
@@ -408,6 +408,34 @@ export default function LeadFeed({
       return
     }
 
+    if (exportFeed !== 'crm_import') {
+      setExporting('crm')
+      try {
+        const res = await fetch('/api/crm/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_ids: exportLeadIds }),
+        })
+        const data = await res.json().catch(() => null) as {
+          queued?: number
+          skipped?: number
+          error?: string
+          message?: string
+        } | null
+        if (!res.ok) {
+          setToast(data?.error ?? 'Failed to add leads to CRM queue')
+          return
+        }
+        setToast(data?.message ?? `Added ${data?.queued ?? 0} ${data?.queued === 1 ? 'lead' : 'leads'} to CRM queue`)
+        onOpenCrmTab?.()
+      } catch {
+        setToast('Failed to add leads to CRM queue')
+      } finally {
+        setExporting(null)
+      }
+      return
+    }
+
     setExporting('crm')
     try {
       const settingsRes = await fetch('/api/settings/crm-sync', { cache: 'no-store' })
@@ -576,7 +604,7 @@ export default function LeadFeed({
               <svg className="h-3.5 w-3.5 text-[var(--color-accent-ring)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M12 16V4m0 12l-4-4m4 4l4-4M4 20h16" />
               </svg>
-              {exporting === 'csv' ? 'Exporting CSV…' : exporting === 'crm' ? 'Pushing to CRM…' : 'Export'}
+              {exporting === 'csv' ? 'Exporting CSV…' : exporting === 'crm' ? (exportFeed === 'crm_import' ? 'Pushing to CRM…' : 'Adding to CRM…') : 'Export'}
               <svg className="h-3.5 w-3.5 text-[var(--color-text-3)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M6 9l6 6 6-6" />
               </svg>
@@ -595,8 +623,8 @@ export default function LeadFeed({
                   onClick={() => handleExport('crm')}
                   className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[12px] text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]"
                 >
-                  <span>CRM</span>
-                  <span className="text-[10px] text-[var(--color-text-4)]">Push live</span>
+                  <span>{exportFeed === 'crm_import' ? 'CRM' : 'CRM feed'}</span>
+                  <span className="text-[10px] text-[var(--color-text-4)]">{exportFeed === 'crm_import' ? 'Push live' : 'Stage'}</span>
                 </button>
               </div>
             )}
@@ -654,7 +682,7 @@ export default function LeadFeed({
               disabled={exporting !== null}
               className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] disabled:opacity-50"
             >
-              Push to CRM
+              {exportFeed === 'crm_import' ? 'Push to CRM' : 'Add to CRM feed'}
             </button>
             <button
               onClick={() => runBulkAction('dismiss')}

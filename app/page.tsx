@@ -302,7 +302,7 @@ export default function LoginPage() {
 const STEPS = [
   {
     title: 'Ingest the market',
-    body: 'Bombsell listens for buying moments across funding, hiring, product, expansion, regulation, CRM imports, and watched accounts.',
+    body: 'Bombsell listens for buying moments across funding, hiring, product, expansion, regulation, CRM queues, and watched accounts.',
     icon: <IconRadar />,
   },
   {
@@ -320,7 +320,7 @@ const STEPS = [
 const FEATURES = [
   {
     title: 'Signal intelligence layer',
-    body: 'Live company signals, prompt discovery, CRM imports, and watchlists feed one ranked revenue timeline.',
+    body: 'Live company signals, prompt discovery, CRM export queues, and watchlists feed one ranked revenue timeline.',
   },
   {
     title: 'Workflow execution layer',
