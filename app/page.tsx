@@ -57,7 +57,7 @@ export default function LoginPage() {
             </h1>
 
             <p className="text-[17px] leading-[1.55] text-[var(--color-text-2)] max-w-[540px]">
-              Bombsell turns buying signals, CRM context, inbox workflows, and agent actions into one operating layer for revenue. Start self-serve; scale toward an AI-native service company that runs GTM execution for enterprises.
+              Bombsell turns buying signals, CRM context, inbox workflows, and agent actions into one operating layer for revenue.
             </p>
 
             <div className="flex items-center gap-3 flex-wrap">
@@ -347,13 +347,8 @@ const VISION_LAYERS = [
   },
   {
     title: 'Enterprise workflow orchestration',
-    stage: 'Build',
-    body: 'Move from dashboards to governed workflows: account routing, approvals, enrichment budgets, compliance controls, CRM writebacks, and SLA-backed automation.',
-  },
-  {
-    title: 'AI-native service company',
     stage: 'Scale',
-    body: 'Package Bombsell with human operators and agent playbooks so enterprises buy outcomes: pipeline creation, market monitoring, expansion plays, and RevOps execution.',
+    body: 'Move from dashboards to governed workflows: account routing, approvals, enrichment budgets, compliance controls, CRM writebacks, and SLA-backed automation.',
   },
 ]
 
@@ -362,7 +357,7 @@ const TIERS = [
     name: 'Self-serve',
     price: '$0',
     period: 'forever',
-    perks: ['15 lead unlocks / month', 'AI prompt discovery', 'CRM sync and exports', 'Agent-ready MCP access'],
+    perks: ['15 lead unlocks for free', 'AI prompt discovery', 'CRM sync and exports', 'Agent-ready MCP access'],
     cta: 'Get started',
     href: '#',
     highlight: false,

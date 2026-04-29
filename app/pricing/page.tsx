@@ -14,7 +14,7 @@ const PLANS = [
     period: 'forever',
     description: 'Try the core signal feed.',
     features: [
-      '15 lead unlocks / month',
+      '15 lead unlocks for free',
       'AI prompt discovery',
       'Personalized outreach drafts',
       'Verified contact emails',
