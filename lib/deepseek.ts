@@ -846,9 +846,8 @@ export async function draftOutreachEmail(params: {
   const articleBlock = articleContext
     ? `Article intelligence:\n${articleContext}`
     : ''
-  const senderIntro = senderWebsiteUrl
-    ? `[${senderCompany}](${senderWebsiteUrl})`
-    : senderCompany
+  const senderIntro = senderCompany
+  const senderWebsiteText = senderWebsiteUrl ? `${senderCompany} website: ${senderWebsiteUrl}` : 'No sender website available.'
   const paragraphPattern = pickParagraphPattern(signalType, targetCompany, senderIntro, servicesDescription, signalSummary)
 
   try {
@@ -857,6 +856,7 @@ export async function draftOutreachEmail(params: {
 
 Context:
 Sender: ${senderIntro}
+${senderWebsiteText}
 What they offer: ${servicesDescription}
 
 Recipient: ${firstName} (${stakeholderTitle}) at ${targetCompany}
@@ -878,7 +878,7 @@ Email construction rules:
 - Body: exactly 4 short paragraphs separated by blank lines
 - Paragraph 1: clear context from the trigger event, not a generic "companies at this stage" line
 - Paragraph 2: one concrete implication for ${stakeholderTitle || 'the recipient'} at ${targetCompany}
-- Paragraph 3: the proposition, using ${senderIntro} once as the sender name${senderWebsiteUrl ? ' with the markdown link intact' : ''}
+- Paragraph 3: the proposition, using ${senderIntro} once as the sender name${senderWebsiteUrl ? ` and include ${senderWebsiteUrl} in plain text if useful` : ''}
 - Paragraph 4: one low-friction CTA
 - ${ctaInstruction}
 
@@ -888,6 +888,8 @@ Tone:
 - No generic frames like "most companies at this stage", "specific wall", "usual breakage", "streamline operations", or "unlock growth"
 - Do not reuse stock openers; make the first sentence unique to the trigger
 - No fabricated metrics, customers, or claims
+- Do not use markdown links or square brackets anywhere
+- The subject must not contain the recipient's first name or full name
 - First name only for recipient
 - Do not use long dash punctuation
 
@@ -908,6 +910,7 @@ The body must use \\n\\n between paragraphs.`,
         senderWebsiteUrl,
         senderIntro,
         servicesDescription,
+        stakeholderName,
         targetCompany,
         signalType,
         signalSummary,
@@ -917,9 +920,18 @@ The body must use \\n\\n between paragraphs.`,
   } catch {
     return normalizeOutreachEmail(sanitizeGeneratedEmail({
       subject: `${targetCompany}'s ${signalType}: a thought`,
-      body: `${firstName}, noticed ${targetCompany} ${signalSummary ? signalSummary.toLowerCase() : `had a recent ${signalType} signal`}. That usually creates a short window where the team is deciding which revenue workflows need to change.\n\nFor someone in ${stakeholderTitle || 'your seat'}, the risk is not missing the signal, it is letting the follow-through get scattered across CRM notes, inboxes, and manual research.\n\n${senderIntro} helps teams turn those account signals into verified contacts, context-rich outreach, CRM updates, and agent-ready next steps without adding another dashboard to babysit.\n\nWorth a quick 15-minute look to see if this is relevant for ${targetCompany}${calendlyUrl ? `? ${calendlyUrl}` : '?'}`,
+      body: fallbackOutreachBody({
+        firstName,
+        senderIntro,
+        servicesDescription,
+        targetCompany,
+        signalType,
+        signalSummary,
+        calendlyUrl,
+      }),
     }), {
       firstName,
+      stakeholderName,
       senderCompany,
       senderWebsiteUrl,
       senderIntro,
@@ -963,6 +975,7 @@ function normalizeOutreachEmail(
   email: { subject: string; body: string },
   context: {
     firstName: string
+    stakeholderName: string
     senderCompany: string
     senderWebsiteUrl?: string | null
     senderIntro: string
@@ -990,15 +1003,10 @@ function normalizeOutreachEmail(
     ].join('\n\n')
   }
 
-  if (context.senderWebsiteUrl && !body.includes(`](${context.senderWebsiteUrl})`)) {
-    body = body.replace(
-      new RegExp(`\\b${escapeRegExp(context.senderCompany)}\\b`),
-      `[${context.senderCompany}](${context.senderWebsiteUrl})`,
-    )
-  }
+  body = stripMarkdownLinks(body)
 
   return sanitizeGeneratedEmail({
-    subject: email.subject || `${context.targetCompany} ${context.signalType}`,
+    subject: sanitizeSubject(email.subject || `${context.targetCompany} ${context.signalType}`, context),
     body,
   })
 }
@@ -1019,6 +1027,32 @@ function fallbackOutreachBody(context: {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function stripMarkdownLinks(value: string): string {
+  return value.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+}
+
+function sanitizeSubject(
+  subject: string,
+  context: { firstName: string; stakeholderName: string; targetCompany: string; signalType: string },
+): string {
+  let cleaned = stripMarkdownLinks(subject)
+  const names = [
+    context.stakeholderName,
+    context.firstName,
+  ]
+    .map(name => name.trim())
+    .filter(Boolean)
+
+  for (const name of names) {
+    cleaned = cleaned
+      .replace(new RegExp(`\\b${escapeRegExp(name)}\\b[:,\\s-]*`, 'gi'), '')
+      .replace(new RegExp(`[:,\\s-]*\\b${escapeRegExp(name)}\\b`, 'gi'), '')
+  }
+
+  cleaned = cleaned.replace(/\s{2,}/g, ' ').trim()
+  return cleaned || `${context.targetCompany} ${context.signalType}`
 }
 
 function describeFallbackOffer(servicesDescription: string): string {
