@@ -46,19 +46,18 @@ export default function LoginPage() {
           <div className="space-y-8 fade-in">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--color-line-2)] bg-white text-[11px] text-[var(--color-text-2)] shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] pulse-dot" />
-              Live signals · updated every hour
+              AI-native GTM infra · self-serve today, enterprise OS next
             </div>
 
             <h1 className="text-[44px] md:text-[68px] leading-[0.98] tracking-[-0.02em] text-[var(--color-text-1)] font-medium">
-              Sell at the
-              <span className="font-serif italic text-gradient"> moment</span>{' '}
-              {/* <span className="font-serif italic text-[var(--color-text-1)]">a</span> */}
+              The revenue
+              <span className="font-serif italic text-gradient"> OS</span>{' '}
               <br />
-              <span>it matters.</span>
+              <span>for AI-native teams.</span>
             </h1>
 
             <p className="text-[17px] leading-[1.55] text-[var(--color-text-2)] max-w-[540px]">
-              Bombsell helps you reach prospects at the exact moment they’re most likely to respond—with emails that actually feel human.
+              Bombsell turns buying signals, CRM context, inbox workflows, and agent actions into one operating layer for revenue. Start self-serve; scale toward an AI-native service company that runs GTM execution for enterprises.
             </p>
 
             <div className="flex items-center gap-3 flex-wrap">
@@ -78,7 +77,7 @@ export default function LoginPage() {
                 href="#how"
                 className="h-12 px-6 rounded-full btn-ghost text-[14px] flex items-center"
               >
-                See how it works
+                See the operating layer
               </a>
             </div>
 
@@ -90,13 +89,13 @@ export default function LoginPage() {
 
             <div className="flex items-center gap-5 text-[12px] text-[var(--color-text-3)]">
               <span className="inline-flex items-center gap-1.5">
-                <CheckMark /> Free tier · unlimited previews
+                <CheckMark /> Free self-serve workspace
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <CheckMark /> No credit card
+                <CheckMark /> Agent-ready with MCP
               </span>
               <span className="hidden sm:inline-flex items-center gap-1.5">
-                <CheckMark /> Cancel anytime
+                <CheckMark /> CRM, inbox, Slack workflows
               </span>
             </div>
           </div>
@@ -108,9 +107,9 @@ export default function LoginPage() {
         <section className="border-y border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
           <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-3)] mr-4">
-              Trusted by founders at
+              Built for the teams replacing GTM bloat
             </p>
-            {['Y Combinator', 'a16z', 'Sequoia', 'First Round', 'Initialized', 'South Park Commons'].map(f => (
+            {['Revenue intelligence', 'Signal mining', 'CRM automation', 'Inbox execution', 'Agent workflows', 'RevOps services'].map(f => (
               <span key={f} className="text-[13px] text-[var(--color-text-2)] font-medium">{f}</span>
             ))}
           </div>
@@ -121,7 +120,7 @@ export default function LoginPage() {
           <div className="max-w-2xl mb-16">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">How it works</p>
             <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
-              Three steps from <span className="font-serif italic">noise</span> to booked meetings.
+              From scattered GTM data to <span className="font-serif italic">revenue action.</span>
             </h2>
           </div>
 
@@ -150,10 +149,10 @@ export default function LoginPage() {
         <section id="features" className="bg-[var(--color-ink-2)]/50 border-y border-[var(--color-line-1)]">
           <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32 grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-12 lg:gap-20 items-center">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">What you get</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Revenue OS</p>
               <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05] mb-8">
-                Every tool your outbound<br />
-                actually <span className="font-serif italic">needs.</span>
+                One layer for signals,<br />
+                workflows, and <span className="font-serif italic">agents.</span>
               </h2>
               <ul className="space-y-4">
                 {FEATURES.map(f => (
@@ -175,15 +174,42 @@ export default function LoginPage() {
           </div>
         </section>
 
+        {/* Enterprise vision */}
+        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
+          <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
+            <div className="sticky top-24">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Where this is going</p>
+              <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
+                An AI-native service company for <span className="font-serif italic">enterprise GTM.</span>
+              </h2>
+              <p className="text-[15px] leading-[1.65] text-[var(--color-text-2)] mt-5 max-w-md">
+                The free plan is the productized entry point. The larger ambition is managed revenue infrastructure: agents, operators, data, and workflows that enterprises can plug into instead of stitching together another stack.
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              {VISION_LAYERS.map(layer => (
+                <div key={layer.title} className="card p-6 grid gap-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <h3 className="text-[16px] font-medium text-[var(--color-text-1)] tracking-tight">{layer.title}</h3>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-4)]">{layer.stage}</span>
+                  </div>
+                  <p className="text-[13.5px] leading-[1.6] text-[var(--color-text-2)]">{layer.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* Pricing teaser */}
         <section className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
           <div className="text-center max-w-2xl mx-auto mb-12">
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Pricing</p>
             <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
-              Start free. Upgrade when it <span className="font-serif italic">converts.</span>
+              Self-serve first. Enterprise when GTM needs an <span className="font-serif italic">operating system.</span>
             </h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
             {TIERS.map(tier => (
               <div
                 key={tier.name}
@@ -211,8 +237,8 @@ export default function LoginPage() {
                   ))}
                 </ul>
                 <a
-                  href={tier.highlight || tier.name !== 'Free' ? '/pricing' : '#'}
-                  onClick={tier.name === 'Free' ? signInWithGoogle : undefined}
+                  href={tier.href}
+                  onClick={tier.name === 'Self-serve' ? signInWithGoogle : undefined}
                   className={`h-10 rounded-full text-[13px] font-medium flex items-center justify-center ${tier.highlight ? 'btn-primary' : 'btn-ghost'}`}
                 >
                   {tier.cta}
@@ -230,11 +256,10 @@ export default function LoginPage() {
             </div>
             <div className="relative space-y-6 max-w-xl mx-auto">
               <h3 className="text-3xl md:text-5xl font-medium tracking-[-0.02em] text-[var(--color-text-1)] leading-[1.05]">
-                Stop guessing <span className="font-serif italic text-gradient">who&rsquo;s ready.</span>
+                Build the GTM layer your <span className="font-serif italic text-gradient">AI agents can operate.</span>
               </h3>
               <p className="text-[15px] text-[var(--color-text-2)]">
-                Your next ten customers are announcing themselves today.
-                Bombsell finds them before your competitors do.
+                Start by finding high-intent leads. Scale into a revenue OS that watches the market, syncs the CRM, triggers workflows, and lets humans and agents act from the same context.
               </p>
               <button
                 onClick={signInWithGoogle}
@@ -244,7 +269,7 @@ export default function LoginPage() {
                 <GoogleIconSmall /> Continue with Google
               </button>
               <p className="text-[12px] text-[var(--color-text-4)]">
-                Free forever · No card required · Takes 60 seconds
+                Free self-serve workspace · No card required · Enterprise workflows by design
               </p>
             </div>
           </div>
@@ -274,57 +299,91 @@ export default function LoginPage() {
 
 const STEPS = [
   {
-    title: 'We listen for buying moments',
-    body: 'Every hour we ingest funding rounds, new leadership hires, product launches, and geo expansions from across the web.',
+    title: 'Ingest the market',
+    body: 'Bombsell listens for buying moments across funding, hiring, product, expansion, regulation, CRM imports, and watched accounts.',
     icon: <IconRadar />,
   },
   {
-    title: 'Bombsell scores every signal',
-    body: 'Only the top relevance signals matched to your ICP make it into your feed. No noise, no dozens of dashboards to babysit.',
+    title: 'Map signals to revenue context',
+    body: 'Each signal is scored against your ICP, workspace context, CRM records, and account history so the feed becomes a decision layer.',
     icon: <IconSpark />,
   },
   {
-    title: 'Drafted. Sent. Tracked.',
-    body: 'Every signal lands with a polished outreach draft. Pro adds connected inbox sending, a 3-day follow-up, and reply detection.',
+    title: 'Trigger human and agent workflows',
+    body: 'Draft outreach, sync CRM, alert Slack, schedule follow-ups, and expose the same GTM context to Codex and Claude through MCP.',
     icon: <IconSend />,
   },
 ]
 
 const FEATURES = [
   {
-    title: 'Verified contacts, not guesses',
-    body: 'Our comprehensive pipeline ensures every contact is verified and every email is safe to send. No more 30% bounce rates.',
+    title: 'Signal intelligence layer',
+    body: 'Live company signals, prompt discovery, CRM imports, and watchlists feed one ranked revenue timeline.',
   },
   {
-    title: 'Hyper personalized emails',
-    body: "Each email is personalized to the signal context, the company's recent news and your offering intent.",
+    title: 'Workflow execution layer',
+    body: 'Generate outreach, send through Gmail or Outlook, pause on replies, and sync status changes back to your CRM workflows.',
   },
   {
-    title: 'Automated follow-ups',
-    body: "Pro can auto-send a 3-day follow-up if they don't reply. Reply detection pauses the sequence instantly when they do.",
+    title: 'Agent consumption layer',
+    body: 'MCP lets Codex, Claude, and future GTM agents inspect leads, update safe workflow state, and operate from Bombsell context.',
   },
   {
-    title: 'CRM-ready exports',
-    body: 'Every plan gets CRM-ready exports and sync workflows. Pro adds multi-client workspaces, Slack alerts, and the priority queue.',
+    title: 'Service-ready infrastructure',
+    body: 'Multi-workspace, Slack alerts, credit top-ups, CRM sync, and audit-friendly workflows create the base for managed enterprise GTM.',
+  },
+]
+
+const VISION_LAYERS = [
+  {
+    title: 'Self-serve GTM workspace',
+    stage: 'Now',
+    body: 'Founders, small teams, and agents use Bombsell to discover companies, unlock leads, draft outreach, export CRM records, and work from live feed sessions.',
+  },
+  {
+    title: 'Revenue intelligence graph',
+    stage: 'Next',
+    body: 'Unify signals, accounts, contacts, CRM events, outreach outcomes, enrichment history, and intent feedback into a durable graph that learns what converts.',
+  },
+  {
+    title: 'Enterprise workflow orchestration',
+    stage: 'Build',
+    body: 'Move from dashboards to governed workflows: account routing, approvals, enrichment budgets, compliance controls, CRM writebacks, and SLA-backed automation.',
+  },
+  {
+    title: 'AI-native service company',
+    stage: 'Scale',
+    body: 'Package Bombsell with human operators and agent playbooks so enterprises buy outcomes: pipeline creation, market monitoring, expansion plays, and RevOps execution.',
   },
 ]
 
 const TIERS = [
   {
-    name: 'Free',
+    name: 'Self-serve',
     price: '$0',
     period: 'forever',
-    perks: ['15 lead unlocks / month', 'AI prompt discovery', 'CRM sync and exports', 'Hyper-personalized outreach'],
+    perks: ['15 lead unlocks / month', 'AI prompt discovery', 'CRM sync and exports', 'Agent-ready MCP access'],
     cta: 'Get started',
+    href: '#',
     highlight: false,
   },
   {
     name: 'Pro',
     price: '$129',
     period: '/ month',
-    perks: ['500 leads / month', 'Auto-send with Gmail/Outlook', '3-day follow-ups', 'Reply detection', 'Multi-client workspaces', 'Slack alerts'],
+    perks: ['500 leads / month', 'Gmail/Outlook execution', 'Reply-aware follow-ups', 'Multi-client workspaces', 'Slack alerts', 'Priority revenue workflows'],
     cta: 'Upgrade to Pro',
+    href: '/pricing',
     highlight: true,
+  },
+  {
+    name: 'Enterprise OS',
+    price: 'Custom',
+    period: 'managed GTM infra',
+    perks: ['Managed revenue workflows', 'Enterprise CRM governance', 'Custom agent playbooks', 'Dedicated signal sources', 'Operator-in-the-loop execution', 'Security and audit controls'],
+    cta: 'Talk to us',
+    href: 'mailto:team@bombsell.com?subject=Enterprise%20Revenue%20OS',
+    highlight: false,
   },
 ]
 
@@ -338,7 +397,7 @@ function ProductPreview() {
       {/* Floating stat card */}
       <div className="absolute -top-4 -left-4 z-20 card px-3 py-2 flex items-center gap-2 fade-in">
         <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-sig-funding)]" />
-        <span className="text-[11px] font-medium text-[var(--color-text-1)]">+12 leads today</span>
+        <span className="text-[11px] font-medium text-[var(--color-text-1)]">+12 signal-matched accounts</span>
       </div>
 
       {/* Floating reply card */}
@@ -348,7 +407,7 @@ function ProductPreview() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </span>
-        <span className="text-[11px] font-medium text-[var(--color-text-1)]">2 replies this week</span>
+        <span className="text-[11px] font-medium text-[var(--color-text-1)]">3 workflows triggered</span>
       </div>
 
       <div className="card overflow-hidden shadow-[0_24px_80px_-24px_#c15f3c33]">
@@ -357,15 +416,15 @@ function ProductPreview() {
           <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/70" />
           <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/70" />
           <span className="w-2.5 h-2.5 rounded-full bg-[#27c93f]/70" />
-          <span className="ml-3 text-[11px] text-[var(--color-text-3)] font-mono">bombsell.app / signals</span>
+          <span className="ml-3 text-[11px] text-[var(--color-text-3)] font-mono">bombsell.app / revenue-os</span>
         </div>
 
         {/* toolbar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-line-1)]">
           <div className="flex items-center gap-2">
-            <span className="pill chip-funding">● Funding</span>
-            <span className="pill chip-hiring">● Hiring</span>
-            <span className="pill chip-expansion">● Expansion</span>
+            <span className="pill chip-funding">● Signals</span>
+            <span className="pill chip-hiring">● CRM</span>
+            <span className="pill chip-expansion">● Agents</span>
           </div>
           <span className="text-[11px] text-[var(--color-text-3)] font-mono">4 / 12</span>
         </div>
@@ -403,11 +462,11 @@ function ProductPreview() {
         {/* sticky action bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
           <p className="text-[11px] text-[var(--color-text-3)]">
-            <span className="kbd">⌘</span> <span className="kbd">K</span>
-            <span className="ml-2">Command menu</span>
+            <span className="kbd">MCP</span>
+            <span className="ml-2">Codex and Claude ready</span>
           </p>
           <span aria-hidden className="h-7 px-3 rounded-full btn-primary text-[11px] font-medium inline-flex items-center gap-1.5 pointer-events-none cursor-default select-none">
-            Draft outreach →
+            Trigger workflow →
           </span>
         </div>
       </div>
