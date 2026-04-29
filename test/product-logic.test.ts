@@ -24,7 +24,7 @@ import {
   shouldUseWorkspaceIcp,
 } from '../lib/explore.ts'
 
-test('free plan only keeps the active workspace visible', () => {
+test('free workspace keeps every unarchived client visible', () => {
   const plan = buildWorkspaceAccessPlan({
     plan: 'free',
     activeClientId: 'client_b',
@@ -34,12 +34,12 @@ test('free plan only keeps the active workspace visible', () => {
     ],
   })
 
-  assert.deepEqual(plan.visibleClientIds, ['client_b'])
+  assert.deepEqual(plan.visibleClientIds, ['client_a', 'client_b'])
   assert.equal(plan.keepClientId, 'client_b')
-  assert.deepEqual(plan.archiveClientIds, ['client_a'])
+  assert.deepEqual(plan.archiveClientIds, [])
 })
 
-test('free plan falls back to the oldest available workspace when active is missing', () => {
+test('free workspace falls back to the oldest available workspace when active is missing', () => {
   const plan = buildWorkspaceAccessPlan({
     plan: 'free',
     activeClientId: null,
@@ -49,24 +49,23 @@ test('free plan falls back to the oldest available workspace when active is miss
     ],
   })
 
-  assert.deepEqual(plan.visibleClientIds, ['client_a'])
+  assert.deepEqual(plan.visibleClientIds, ['client_a', 'client_b'])
   assert.equal(plan.keepClientId, 'client_a')
 })
 
-test('pro plan keeps every unarchived workspace visible', () => {
+test('archived workspace is unarchived when it is the only available workspace', () => {
   const plan = buildWorkspaceAccessPlan({
-    plan: 'pro',
-    activeClientId: 'client_b',
+    plan: 'free',
+    activeClientId: 'client_c',
     clients: [
-      { id: 'client_a', is_archived: false, created_at: '2026-04-20T00:00:00.000Z' },
-      { id: 'client_b', is_archived: false, created_at: '2026-04-21T00:00:00.000Z' },
       { id: 'client_c', is_archived: true, created_at: '2026-04-22T00:00:00.000Z' },
     ],
   })
 
-  assert.deepEqual(plan.visibleClientIds, ['client_a', 'client_b'])
-  assert.equal(plan.keepClientId, 'client_b')
+  assert.deepEqual(plan.visibleClientIds, ['client_c'])
+  assert.equal(plan.keepClientId, 'client_c')
   assert.deepEqual(plan.archiveClientIds, [])
+  assert.deepEqual(plan.unarchiveClientIds, ['client_c'])
 })
 
 test('outreach context prefers client branding and falls back to user branding', () => {
@@ -104,40 +103,24 @@ test('outreach context falls back cleanly when no client profile exists', () => 
   assert.equal(context.calendlyUrl, null)
 })
 
-test('lead quota decision previews free over-limit leads and blocks paid users without credits', () => {
+test('lead quota decision only depends on credit availability in PAYG mode', () => {
   assert.equal(resolveLeadQuotaDecision({
     used: 10,
     monthlyLimit: 10,
-    plan: 'free',
   }), 'preview')
 
   assert.equal(resolveLeadQuotaDecision({
     used: 10,
     monthlyLimit: 10,
     creditBalance: 3,
-    plan: 'free',
-  }), 'credit')
-
-  assert.equal(resolveLeadQuotaDecision({
-    used: 500,
-    monthlyLimit: 500,
-    plan: 'pro',
-  }), 'blocked')
-
-  assert.equal(resolveLeadQuotaDecision({
-    used: 500,
-    monthlyLimit: 500,
-    creditBalance: 1,
-    plan: 'pro',
   }), 'credit')
 })
 
-test('lead quota decision reserves quota when still under limit', () => {
+test('lead quota decision does not reserve bundled unlocks in PAYG mode', () => {
   assert.equal(resolveLeadQuotaDecision({
     used: 9,
     monthlyLimit: 10,
-    plan: 'free',
-  }), 'reserve')
+  }), 'preview')
 })
 
 test('follow-up scheduling stays exactly three days out by default', () => {
@@ -369,33 +352,23 @@ test('explore source scoring favors press release items with matching topical te
   assert.equal(nonMatching, 0)
 })
 
-test('delivery allowance for paid plans has no daily cap and respects quota plus credits', () => {
+test('delivery allowance keeps a bounded daily flow for locked PAYG leads', () => {
   assert.equal(computeDeliveryAllowance({
-    plan: 'pro',
-    monthlyLimit: 500,
-    used: 120,
     pendingCount: 96,
     deliveredLast24h: 2,
-  }), 96)
+  }), 3)
 
   assert.equal(computeDeliveryAllowance({
-    plan: 'pro',
-    monthlyLimit: 500,
-    used: 500,
-    creditBalance: 25,
     pendingCount: 1200,
     deliveredLast24h: 0,
-  }), 25)
+  }), 12)
 })
 
-test('delivery allowance lets free users receive preview batches', () => {
+test('delivery allowance pauses once the daily target is reached', () => {
   assert.equal(computeDeliveryAllowance({
-    plan: 'free',
-    monthlyLimit: 15,
-    used: 15,
     pendingCount: 48,
-    deliveredLast24h: 0,
-  }), 1)
+    deliveredLast24h: 16,
+  }), 0)
 })
 
 test('monitored account keys normalize across website and domain variants', () => {

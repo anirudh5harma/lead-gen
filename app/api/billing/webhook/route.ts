@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { planFromProductId } from '@/lib/dodo'
 import { Webhook } from 'standardwebhooks'
-import { syncWorkspaceAccessForPlan } from '@/lib/client-workspaces'
 import { addLeadCreditsForPayment } from '@/lib/lead-credits'
 
 export const runtime = 'nodejs'
@@ -77,71 +75,6 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({ ok: true })
-  }
-
-  if (
-    type === 'subscription.created' ||
-    type === 'subscription.active' ||
-    type === 'subscription.updated' ||
-    type === 'subscription.plan_changed'
-  ) {
-    const plan = planFromProductId(data.product_id ?? '')
-    if (!plan) {
-      console.warn('[dodo webhook] Ignoring subscription event for unknown product', data.product_id)
-      return NextResponse.json({ ok: true })
-    }
-    let userId = data.metadata?.user_id
-
-    if (!userId) {
-      const { data: existingSub } = await supabase
-        .from('subscriptions')
-        .select('user_id')
-        .eq('dodo_subscription_id', data.subscription_id ?? '')
-        .maybeSingle()
-      userId = existingSub?.user_id
-    }
-
-    if (!userId) {
-      console.warn('[dodo webhook] Missing user_id in metadata for', data.subscription_id)
-      return NextResponse.json({ ok: true })
-    }
-
-    await supabase.from('subscriptions').upsert({
-      user_id:              userId,
-      dodo_customer_id:     data.customer.customer_id,
-      dodo_subscription_id: data.subscription_id,
-      plan,
-      status:               data.status ?? type,
-      next_billing_date:    data.next_billing_date ?? null,
-      workspace_downgrade_warning_sent_at: null,
-      workspace_downgrade_warning_cycle_at: null,
-      updated_at:           new Date().toISOString(),
-    }, { onConflict: 'user_id' })
-
-    await supabase.from('user_profiles').update({ plan }).eq('user_id', userId)
-    await syncWorkspaceAccessForPlan(supabase, userId, plan)
-  }
-
-  if (type === 'subscription.cancelled' || type === 'subscription.expired') {
-    const { data: record } = await supabase
-      .from('subscriptions')
-      .select('user_id')
-      .eq('dodo_subscription_id', data.subscription_id ?? '')
-      .maybeSingle()
-
-    if (record?.user_id) {
-      await supabase.from('user_profiles').update({
-        plan: 'free',
-      }).eq('user_id', record.user_id)
-      await syncWorkspaceAccessForPlan(supabase, record.user_id, 'free')
-      await supabase.from('subscriptions').update({
-        plan:       'free',
-        status:     data.status ?? type,
-        workspace_downgrade_warning_sent_at: null,
-        workspace_downgrade_warning_cycle_at: null,
-        updated_at: new Date().toISOString(),
-      }).eq('dodo_subscription_id', data.subscription_id ?? '')
-    }
   }
 
   return NextResponse.json({ ok: true })

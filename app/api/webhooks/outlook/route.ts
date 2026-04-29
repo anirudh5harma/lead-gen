@@ -3,7 +3,6 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { fetchOutlookMessageMeta } from '@/lib/oauth/outlook-watch'
 import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
 import { normalizeMessageId } from '@/lib/oauth/message-id'
-import { canUseConnectedSending } from '@/lib/plan'
 
 type AccountRow = ConnectedAccount & {
   user_id:               string
@@ -28,7 +27,6 @@ export async function POST(request: Request) {
 
   const supabase = await createServiceClient()
   const now      = new Date().toISOString()
-  const planCache = new Map<string, boolean>()
 
   for (const note of notifications) {
     const n = note as {
@@ -51,17 +49,6 @@ export async function POST(request: Request) {
 
     if (!account) continue
     const acc = account as AccountRow
-    let canProcess = planCache.get(acc.user_id)
-    if (canProcess === undefined) {
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('plan')
-        .eq('user_id', acc.user_id)
-        .maybeSingle()
-      canProcess = canUseConnectedSending(profile?.plan)
-      planCache.set(acc.user_id, canProcess)
-    }
-    if (!canProcess) continue
 
     // Validate clientState to confirm this notification is for our subscription
     if (acc.outlook_client_state && n.clientState !== acc.outlook_client_state) continue

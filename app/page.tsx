@@ -211,7 +211,7 @@ export default function LoginPage() {
               Self-serve first. Enterprise when GTM needs an <span className="font-serif italic">operating system.</span>
             </h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto">
             {TIERS.map(tier => (
               <div
                 key={tier.name}
@@ -359,18 +359,9 @@ const TIERS = [
     name: 'Self-serve',
     price: '$0',
     period: 'forever',
-    perks: ['15 lead unlocks for free', 'AI prompt discovery', 'CRM sync and exports', 'Agent-ready MCP access'],
+    perks: ['20 starter lead credits', 'All self-serve features included', 'CRM, inbox, Slack, and MCP access', 'Top up credits when you unlock more leads'],
     cta: 'Get started',
     href: '#',
-    highlight: false,
-  },
-  {
-    name: 'Pro',
-    price: '$99',
-    period: '/ month',
-    perks: ['500 leads / month', 'Gmail/Outlook execution', 'Reply-aware follow-ups', 'Multi-client workspaces', 'Slack alerts', 'Priority revenue workflows'],
-    cta: 'Upgrade to Pro',
-    href: '/pricing',
     highlight: true,
   },
   {

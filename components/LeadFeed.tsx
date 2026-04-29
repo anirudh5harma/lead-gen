@@ -52,7 +52,7 @@ interface Props {
   userId: string
   watchlist?: WatchlistItem[]
   activeClientId?: string | null
-  plan?: 'free' | 'pro'
+  plan?: 'free'
   origin?: 'live' | 'explore' | 'crm_import'
   hideSignalTabs?: boolean
   searchPlaceholder?: string

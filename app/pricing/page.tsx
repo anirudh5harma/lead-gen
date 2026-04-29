@@ -13,34 +13,17 @@ const PLANS = [
     name: 'Free',
     price: '$0',
     period: 'forever',
-    description: 'Try the core signal feed.',
+    description: 'Full self-serve access with 20 starter lead-unlock credits.',
     features: [
-      '15 lead unlocks for free',
+      '20 starter lead unlock credits',
       'AI prompt discovery',
       'Personalized outreach drafts',
       'Verified contact emails',
-      'CRM sync and exports',
-      'Manual Send/Export',
+      'CRM sync, imports, and exports',
+      'Gmail/Outlook sending',
+      'Slack alerts and MCP access',
     ],
     cta: 'Get started',
-    highlight: false,
-  },
-  {
-    id: 'pro' as const,
-    name: 'Pro',
-    price: '$99',
-    period: '/ month',
-    description: 'For solopreneurs, B2B founders and SDRs',
-    features: [
-      'Up to 500 leads / month',
-      'Multiple client workspaces',
-      'Auto-send Gmail/Outlook',
-      'Reply detection and follow-ups',
-      'Slack signal alerts',
-      'Priority enrichment queue',
-      'Everything in Free',
-    ],
-    cta: 'Upgrade to Pro',
     highlight: true,
   },
   {
@@ -65,20 +48,20 @@ const PLANS = [
 
 const FAQS = [
   {
-    q: 'Do follow-ups count against my lead quota?',
-    a: 'No. Your monthly lead quota only controls how many new leads enter your feed in a rolling 30-day window. Follow-ups are included on Pro and do not consume additional lead quota.',
+    q: 'What do credits pay for?',
+    a: 'Credits are charged only when you unlock a lead. Browsing feeds, connecting CRM, setting up Slack, using MCP, and managing watchlists do not consume credits.',
   },
   {
-    q: 'What happens when I hit my limit?',
-    a: 'Free users can keep browsing all matched signals, but only 15 leads per rolling 30-day window can be fully unlocked with contacts and drafts. Pro includes 500 leads monthly and can top up prepaid lead credits when more unlocks are needed.',
+    q: 'What happens when I run out of credits?',
+    a: 'You can keep using the product and browsing matched leads, but you need to top up credits before unlocking more contacts and outreach drafts.',
   },
   {
-    q: 'Which plan includes client workspaces?',
-    a: 'Pro. CRM sync and exports are available on every plan, but Pro unlocks multiple client workspaces with separate targeting, templates, and feed views.',
+    q: 'Which features are included for free?',
+    a: 'All self-serve features are available: live signal feed, prompt discovery, watchlists, CRM workflows, Gmail/Outlook sending, Slack alerts, and MCP access.',
   },
   {
-    q: 'Can I cancel or change plans anytime?',
-    a: 'Yes. Upgrades take effect immediately; downgrades apply at the end of the billing period. No contracts.',
+    q: 'When should I talk to Bombsell?',
+    a: 'Use Enterprise OS when you need managed revenue workflows, custom signal sources, governance, security reviews, or operator-in-the-loop execution.',
   },
   {
     q: 'Where do signals come from?',
@@ -91,9 +74,8 @@ const FAQS = [
 ]
 
 export default function PricingPage() {
-  const [loading, setLoading] = useState<'pro' | null>(null)
   const [isSignedIn, setIsSignedIn] = useState(false)
-  const [checkoutError, setCheckoutError] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(false)
   const router = useRouter()
   useSectionReveal()
 
@@ -103,26 +85,23 @@ export default function PricingPage() {
     })
   }, [])
 
-  async function startCheckout(plan: 'pro') {
-    setLoading(plan)
-    setCheckoutError(null)
-    try {
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
-      })
-      const data = await res.json() as { url?: string; error?: string }
-      if (data.url) {
-        window.location.assign(data.url)
-      } else {
-        setCheckoutError(data.error || 'Unable to start checkout right now.')
-        setLoading(null)
-      }
-    } catch {
-      setCheckoutError('Unable to start checkout right now.')
-      setLoading(null)
+  async function startFree() {
+    if (isSignedIn) {
+      router.push('/dashboard')
+      return
     }
+
+    setAuthLoading(true)
+    const supabase = createClient()
+    const callback = new URL('/auth/callback', window.location.origin)
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: callback.toString(),
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    })
+    if (error) setAuthLoading(false)
   }
 
   return (
@@ -153,11 +132,11 @@ export default function PricingPage() {
             <span className="font-serif italic text-gradient">Outsized outcomes.</span>
           </h1>
           <p className="text-[16px] text-[var(--color-text-2)] max-w-lg mx-auto leading-relaxed">
-            Start free. Upgrade when signals start converting into pipeline.
+            Start free with 20 unlock credits. Top up only when you need more leads.
           </p>
         </div>
 
-        <div className="section-reveal reveal-from-bottom w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-5 fade-in-stagger">
+        <div className="section-reveal reveal-from-bottom w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-5 fade-in-stagger">
           {PLANS.map(plan => (
             <div
               key={plan.id}
@@ -199,46 +178,27 @@ export default function PricingPage() {
 
               {plan.id === 'free' ? (
                 <button
-                  onClick={() => router.push('/dashboard')}
-                  className="w-full h-11 rounded-full btn-ghost text-[13.5px] font-medium"
+                  onClick={startFree}
+                  disabled={authLoading}
+                  className="w-full h-11 rounded-full btn-primary text-[13.5px] font-medium disabled:opacity-60"
                 >
-                  {plan.cta}
+                  {authLoading ? 'Redirecting…' : plan.cta}
                 </button>
-              ) : plan.id === 'enterprise' ? (
+              ) : (
                 <a
                   href={plan.href}
                   className="w-full h-11 rounded-full btn-ghost text-[13.5px] font-medium inline-flex items-center justify-center"
                 >
                   {plan.cta}
                 </a>
-              ) : (
-                <button
-                  onClick={() => startCheckout(plan.id)}
-                  disabled={loading === plan.id}
-                  className={`w-full h-11 rounded-full text-[13.5px] font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                    plan.highlight ? 'btn-primary' : 'btn-ghost'
-                  }`}
-                >
-                  {loading === plan.id ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Redirecting…
-                    </span>
-                  ) : plan.cta}
-                </button>
               )}
             </div>
           ))}
         </div>
 
         <p className="mt-12 text-[12px] text-[var(--color-text-3)]">
-          All plans include Google OAuth · SSL · 99.9% uptime · Cancel anytime
+          Self-serve is free to start · Credits are prepaid · Enterprise is custom
         </p>
-        {checkoutError && (
-          <p className="mt-4 rounded-lg border border-[var(--color-sig-regulation)]/20 bg-[var(--color-sig-regulation-bg)] px-4 py-3 text-[13px] text-[var(--color-sig-regulation)]">
-            {checkoutError}
-          </p>
-        )}
 
         <section className="section-reveal reveal-from-bottom w-full max-w-3xl mt-28">
           <div className="text-center mb-12 space-y-3">

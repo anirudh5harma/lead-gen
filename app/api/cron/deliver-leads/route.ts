@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient, createServiceClient } from '@/lib/supabase/server'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
-import { getPlanLimits, normalizePlanTier, type PlanTier } from '@/lib/plan'
-import { resolveLeadQuotaDecision } from '@/lib/lead-quota'
 import { computeDeliveryAllowance, nextQuotaRetryAt } from '@/lib/lead-delivery'
-import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { sendSlackAlert } from '@/lib/slack'
 import { sendFirstLeadEmail } from '@/lib/resend'
@@ -40,7 +37,6 @@ async function runDelivery(request: Request) {
   try {
     const nowIso = new Date().toISOString()
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
 
     const { data: expiredRows, error: expireError } = await supabase
       .from('lead_delivery_queue')
@@ -98,16 +94,10 @@ async function runDelivery(request: Request) {
 
     const userIds = [...new Set(dueRows.map(row => row.user_id))]
     const clientIds = [...new Set(dueRows.map(row => row.client_id))]
-    const [userSettingsRows, recentUnlockedRows, recentDeliveredRows, feedbackLeadRows, existingLeadRows] = await Promise.all([
+    const [userSettingsRows, recentDeliveredRows, feedbackLeadRows, existingLeadRows] = await Promise.all([
       supabase
         .from('user_profiles')
-        .select('user_id, plan, slack_webhook_url, slack_min_score, lead_credit_balance')
-        .in('user_id', userIds),
-      supabase
-        .from('leads')
-        .select('user_id')
-        .eq('is_unlocked', true)
-        .gte('unlocked_at', thirtyDaysAgo)
+        .select('user_id, slack_webhook_url, slack_min_score')
         .in('user_id', userIds),
       supabase
         .from('leads')
@@ -139,23 +129,14 @@ async function runDelivery(request: Request) {
     }>)
 
     const userSettingsMap = new Map<string, {
-      plan: PlanTier
       slackWebhookUrl: string | null
       slackMinScore: number
-      creditBalance: number
     }>()
     for (const row of (userSettingsRows.data ?? [])) {
       userSettingsMap.set(row.user_id, {
-        plan: normalizePlanTier(row.plan),
         slackWebhookUrl: row.slack_webhook_url ?? null,
         slackMinScore: normalizeSlackMinScore(row.slack_min_score),
-        creditBalance: row.lead_credit_balance ?? 0,
       })
-    }
-
-    const unlockedUsage = new Map<string, number>()
-    for (const row of (recentUnlockedRows.data ?? [])) {
-      unlockedUsage.set(row.user_id, (unlockedUsage.get(row.user_id) ?? 0) + 1)
     }
 
     const deliveredLast24h = new Map<string, number>()
@@ -185,18 +166,11 @@ async function runDelivery(request: Request) {
 
     for (const [userId, rows] of rowsByUser.entries()) {
       const settings = userSettingsMap.get(userId) ?? {
-        plan: 'free' as PlanTier,
         slackWebhookUrl: null,
         slackMinScore: 7,
-        creditBalance: 0,
       }
 
-      const planLimits = getPlanLimits(settings.plan)
       const allowance = computeDeliveryAllowance({
-        plan: settings.plan,
-        monthlyLimit: planLimits.leads_per_month,
-        used: unlockedUsage.get(userId) ?? 0,
-        creditBalance: settings.creditBalance,
         pendingCount: rows.length,
         deliveredLast24h: deliveredLast24h.get(userId) ?? 0,
       })
@@ -208,61 +182,7 @@ async function runDelivery(request: Request) {
 
       for (const rankedRow of rankedRows.slice(0, allowance)) {
         const row = rankedRow
-        const used = unlockedUsage.get(userId) ?? 0
-        const quotaDecision = resolveLeadQuotaDecision({
-          used,
-          monthlyLimit: planLimits.leads_per_month,
-          creditBalance: settings.creditBalance,
-          plan: settings.plan,
-        })
-
-        let reservedQuota = false
-        let usedCredit = false
-        let isUnlockedLead = true
-
-        if (quotaDecision === 'reserve') {
-          const { data: quotaReserved, error: quotaErr } = await supabase.rpc('consume_lead_quota', {
-            p_user_id: userId,
-            p_limit: planLimits.leads_per_month,
-          })
-          if (quotaErr) {
-            console.error('[deliver-leads] consume quota error:', quotaErr.message)
-            stats.insert_errors++
-            continue
-          }
-
-          if (quotaReserved) {
-            reservedQuota = true
-          } else {
-            usedCredit = await consumeLeadCredit(supabase, {
-              userId,
-              metadata: { source: 'deliver_leads_race_fallback', queue_id: row.id, plan: settings.plan },
-            })
-            if (!usedCredit && settings.plan === 'free') {
-              isUnlockedLead = false
-            } else if (!usedCredit) {
-              stats.quota_blocked++
-              await rescheduleQueueRow(supabase, row.id, row.attempt_count, nextQuotaRetryAt())
-              continue
-            }
-          }
-        } else if (quotaDecision === 'credit') {
-          usedCredit = await consumeLeadCredit(supabase, {
-            userId,
-            metadata: { source: 'deliver_leads', queue_id: row.id, plan: settings.plan },
-          })
-          if (!usedCredit) {
-            stats.quota_blocked++
-            await rescheduleQueueRow(supabase, row.id, row.attempt_count, nextQuotaRetryAt())
-            continue
-          }
-        } else if (quotaDecision === 'preview') {
-          isUnlockedLead = false
-        } else {
-          stats.quota_blocked++
-          await rescheduleQueueRow(supabase, row.id, row.attempt_count, nextQuotaRetryAt())
-          continue
-        }
+        const isUnlockedLead = false
 
         const signalRow = Array.isArray(row.signals) ? row.signals[0] : row.signals
         const signalType = (signalRow as { signal_type?: string } | null)?.signal_type ?? 'funding'
@@ -298,16 +218,6 @@ async function runDelivery(request: Request) {
         }).select('id').single()
 
         if (error || !inserted) {
-          if (reservedQuota) {
-            await supabase.rpc('refund_lead_quota', { p_user_id: userId })
-          }
-          if (usedCredit) {
-            await refundLeadCredit(supabase, {
-              userId,
-              metadata: { source: 'deliver_leads_insert_failed', queue_id: row.id, plan: settings.plan },
-            }).catch(() => {})
-          }
-
           if (error?.code === '23505') {
             stats.duplicate++
             await markQueueDuplicate(supabase, row.id, row.attempt_count)
@@ -319,14 +229,7 @@ async function runDelivery(request: Request) {
           continue
         }
 
-        if (isUnlockedLead) {
-          unlockedUsage.set(userId, used + 1)
-          if (usedCredit) {
-            settings.creditBalance = Math.max(0, settings.creditBalance - 1)
-          }
-        } else {
-          stats.preview_delivered++
-        }
+        stats.preview_delivered++
         deliveredLast24h.set(userId, (deliveredLast24h.get(userId) ?? 0) + 1)
         stats.delivered++
 
@@ -353,7 +256,7 @@ async function runDelivery(request: Request) {
           },
         }).catch(() => {})
 
-        if (planLimits.slack && settings.slackWebhookUrl && row.relevance_score >= settings.slackMinScore) {
+        if (settings.slackWebhookUrl && row.relevance_score >= settings.slackMinScore) {
           sendSlackAlert(
             settings.slackWebhookUrl,
             row.target_company,

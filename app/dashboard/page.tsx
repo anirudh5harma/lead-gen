@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardShell from '@/components/DashboardShell'
 import type { Lead } from '@/components/LeadFeed'
-import { normalizePlanTier } from '@/lib/plan'
 
 export const revalidate = 0
 
@@ -43,7 +42,6 @@ export default async function DashboardPage() {
     p_user_id: user.id,
   })
 
-  const plan             = normalizePlanTier((extProfile as { plan?: string } | null)?.plan)
   const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const leadCredits      = (extProfile as { lead_credit_balance?: number } | null)?.lead_credit_balance ?? 0
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
@@ -134,7 +132,7 @@ export default async function DashboardPage() {
         website_url: (clientProfile as { website_url?: string | null } | null)?.website_url ?? (profile as { website_url?: string | null }).website_url ?? null,
         icp_keywords: (clientProfile as { icp_keywords?: string[] | null } | null)?.icp_keywords ?? profile.icp_keywords,
         email: user.email,
-        plan: plan,
+        plan: 'free',
         leads_used_this_month: leadsUsed,
         lead_credit_balance: leadCredits,
         slack_webhook_url: slackWebhookUrl,

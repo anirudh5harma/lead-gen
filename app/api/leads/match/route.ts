@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { scoreLeadRelevance } from '@/lib/deepseek'
-import { normalizePlanTier, type PlanTier } from '@/lib/plan'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
@@ -85,16 +84,14 @@ async function runMatch(request: Request) {
     const userIds = [...new Set(profiles.map(profile => profile.user_id))]
     const { data: userSettings } = await supabase
       .from('user_profiles')
-      .select('user_id, plan, active_client_id')
+      .select('user_id, active_client_id')
       .in('user_id', userIds)
 
     const userSettingsMap = new Map<string, {
-      plan: PlanTier
       activeClientId: string | null
     }>()
     for (const row of (userSettings ?? [])) {
       userSettingsMap.set(row.user_id, {
-        plan: normalizePlanTier(row.plan),
         activeClientId: row.active_client_id ?? null,
       })
     }
@@ -108,12 +105,11 @@ async function runMatch(request: Request) {
 
     const eligibleProfiles = Array.from(profilesByUser.entries()).flatMap(([userId, userProfiles]) => {
       const settings = userSettingsMap.get(userId) ?? {
-        plan: 'free' as PlanTier,
         activeClientId: null,
       }
 
       const accessPlan = buildWorkspaceAccessPlan({
-        plan: settings.plan,
+        plan: 'free',
         activeClientId: settings.activeClientId,
         clients: userProfiles.map(profile => ({
           id: profile.id,

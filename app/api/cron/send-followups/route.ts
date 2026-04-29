@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizeAutoSendPolicy, policyKey } from '@/lib/auto-send-policies'
-import { getPlanLimits, normalizePlanTier, type PlanTier } from '@/lib/plan'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { resolveOutreachContext } from '@/lib/outreach-context'
@@ -73,7 +72,7 @@ export async function GET(request: Request) {
     const [profilesRes, policiesRes, clientProfilesRes] = await Promise.all([
       supabase
         .from('user_profiles')
-        .select('user_id, plan, company_name, services_description, calendly_url')
+        .select('user_id, company_name, services_description, calendly_url')
         .in('user_id', userIds),
       supabase
         .from('auto_send_policies')
@@ -90,14 +89,11 @@ export async function GET(request: Request) {
     const profiles = profilesRes.data
     const clientProfiles = clientProfilesRes.data
 
-    const quotaMap: Record<string, {
-      plan: PlanTier
+    const profileMap: Record<string, {
       profile: { company_name?: string | null; services_description?: string | null; calendly_url?: string | null }
     }> = {}
     for (const p of (profiles ?? [])) {
-      const plan = normalizePlanTier(p.plan)
-      quotaMap[p.user_id] = {
-        plan,
+      profileMap[p.user_id] = {
         profile: {
           company_name: (p as { company_name?: string | null }).company_name ?? null,
           services_description: (p as { services_description?: string | null }).services_description ?? null,
@@ -129,12 +125,8 @@ export async function GET(request: Request) {
 
     let sent = 0
     for (const item of pending) {
-      const quota = quotaMap[item.user_id]
-      if (!quota) {
-        await releaseClaim(supabase, item.id, claimToken)
-        continue
-      }
-      if (!getPlanLimits(quota.plan).followups) {
+      const profileRecord = profileMap[item.user_id]
+      if (!profileRecord) {
         await releaseClaim(supabase, item.id, claimToken)
         continue
       }
@@ -208,7 +200,7 @@ export async function GET(request: Request) {
       const inReplyTo     = messageIdHeader(lead.message_id)
       const clientProfile = lead.client_id ? clientProfileMap.get(lead.client_id) ?? null : null
       const outreachContext = resolveOutreachContext({
-        userProfile: quota.profile,
+        userProfile: profileRecord.profile,
         clientProfile,
       })
 

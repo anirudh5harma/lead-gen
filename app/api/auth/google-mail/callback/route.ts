@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { exchangeGoogleCode } from '@/lib/oauth/google'
 import { startGmailWatch } from '@/lib/oauth/gmail-watch'
-import { canUseConnectedSending } from '@/lib/plan'
 import { verifyOAuthState } from '@/lib/oauth/state'
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL!
@@ -24,15 +23,6 @@ export async function GET(request: Request) {
 
   try {
     const supabase = await createServiceClient()
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('plan')
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (!canUseConnectedSending(profile?.plan)) {
-      return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=plan_required`)
-    }
-
     const tokens  = await exchangeGoogleCode(code)
 
     // Upsert the account first so we have an ID to update

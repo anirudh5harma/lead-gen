@@ -29,7 +29,6 @@ function sortClientsByCreatedAt(clients: ClientWorkspaceRow[]): ClientWorkspaceR
 }
 
 export function buildWorkspaceAccessPlan({
-  plan,
   activeClientId,
   clients,
 }: WorkspaceAccessInput): WorkspaceAccessPlan {
@@ -49,23 +48,12 @@ export function buildWorkspaceAccessPlan({
     }
   }
 
-  if (plan === 'pro') {
-    return {
-      visibleClientIds: activeClients.length > 0
-        ? activeClients.map(client => client.id)
-        : [keepClient.id],
-      keepClientId: keepClient.id,
-      archiveClientIds: [],
-      unarchiveClientIds: keepClient.is_archived ? [keepClient.id] : [],
-    }
-  }
-
   return {
-    visibleClientIds: [keepClient.id],
+    visibleClientIds: activeClients.length > 0
+      ? activeClients.map(client => client.id)
+      : [keepClient.id],
     keepClientId: keepClient.id,
-    archiveClientIds: activeClients
-      .filter(client => client.id !== keepClient.id)
-      .map(client => client.id),
+    archiveClientIds: [],
     unarchiveClientIds: keepClient.is_archived ? [keepClient.id] : [],
   }
 }

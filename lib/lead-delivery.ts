@@ -1,7 +1,5 @@
-import type { PlanTier } from '@/lib/plan'
-
 const DEDUPE_WINDOW_HOURS = 72
-const DELIVERY_DAY_SLICES = 8
+const DELIVERY_DAY_SLICES = 6
 
 const SOURCE_PRIORITY: Record<string, number> = {
   company_owned: 42,
@@ -41,27 +39,15 @@ export function computeQueuePriority(params: {
 }
 
 export function computeDeliveryAllowance(params: {
-  plan: PlanTier
-  monthlyLimit: number
-  used: number
-  creditBalance?: number
   pendingCount: number
   deliveredLast24h: number
 }): number {
   if (params.pendingCount <= 0) return 0
 
-  if (params.plan === 'free') {
-    const targetDaily = Math.max(8, Math.ceil(params.pendingCount / 12))
-    const remainingToday = Math.max(0, targetDaily - params.deliveredLast24h)
-    if (remainingToday <= 0) return 0
-    return Math.min(6, Math.max(1, Math.ceil(remainingToday / DELIVERY_DAY_SLICES)))
-  }
-
-  const remainingQuota = Math.max(0, params.monthlyLimit - params.used)
-  const availableUnlocks = remainingQuota + Math.max(0, params.creditBalance ?? 0)
-  if (availableUnlocks <= 0) return 0
-
-  return Math.min(params.pendingCount, availableUnlocks)
+  const targetDaily = Math.min(80, Math.max(16, Math.ceil(params.pendingCount / 6)))
+  const remainingToday = Math.max(0, targetDaily - params.deliveredLast24h)
+  if (remainingToday <= 0) return 0
+  return Math.min(12, Math.max(1, Math.ceil(remainingToday / DELIVERY_DAY_SLICES)))
 }
 
 export function nextQuotaRetryAt(date = new Date()): string {

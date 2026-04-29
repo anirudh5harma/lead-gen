@@ -15,7 +15,6 @@ import { normalizeLeadCompanyKey } from '../lead-dedupe'
 const CACHE_TTL_DAYS = 30
 const VALIDATION_CACHE_TTL_DAYS = 90
 const RETRY_AFTER_DAYS = 21
-const PLAN_PRIORITY: Record<string, number> = { pro: 0, free: 1 }
 const MAX_CONTACTS_PER_COMPANY = 4
 const TARGET_SAFE_CONTACTS = 3
 const MIN_SAFE_CONTACTS = 2
@@ -682,19 +681,7 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
     }
   }
 
-  const userIds = [...new Set(leads.map(lead => lead.user_id))]
-  const { data: profiles } = await supabase
-    .from('user_profiles')
-    .select('user_id, plan')
-    .in('user_id', userIds)
-
-  const planMap: Record<string, string> = {}
-  for (const profile of profiles ?? []) planMap[profile.user_id] = profile.plan ?? 'free'
-
   leads.sort((a, b) => {
-    const pa = PLAN_PRIORITY[planMap[a.user_id]] ?? 2
-    const pb = PLAN_PRIORITY[planMap[b.user_id]] ?? 2
-    if (pa !== pb) return pa - pb
     return (b.relevance_score ?? 0) - (a.relevance_score ?? 0)
   })
 

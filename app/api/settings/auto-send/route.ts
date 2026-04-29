@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getUserPlan, getPlanLimits } from '@/lib/plan'
 import { getActiveClientContext } from '@/lib/client-context'
 import {
   normalizeAutoSendPolicy,
@@ -50,11 +49,6 @@ export async function PATCH(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { plan } = await getUserPlan(user.id)
-  if (!getPlanLimits(plan).auto_send) {
-    return NextResponse.json({ error: 'Auto-send is not available on your plan.' }, { status: 403 })
-  }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
   const body = await request.json().catch(() => null) as {

@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 const DEFAULT_CREDITS_PER_DOLLAR = 4
 
 export const CREDIT_TOP_UP_AMOUNTS = [5, 20, 50, 100] as const
+export const STARTER_LEAD_CREDITS = 20
 
 export function getLeadCreditsPerDollar(): number {
   const configured = Number(process.env.LEAD_CREDITS_PER_DOLLAR)
@@ -49,6 +50,21 @@ export async function addLeadCreditsForPayment(
       credits_per_dollar: getLeadCreditsPerDollar(),
       ...(params.metadata ?? {}),
     },
+  })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
+
+export async function grantStarterLeadCredits(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('add_lead_credits', {
+    p_user_id: userId,
+    p_credits: STARTER_LEAD_CREDITS,
+    p_external_id: `starter:${userId}`,
+    p_reason: 'starter',
+    p_metadata: { source: 'signup' },
   })
   if (error) throw new Error(error.message)
   return Number(data ?? 0)

@@ -24,24 +24,6 @@ export async function GET(request: Request) {
   const pubsubTopic  = process.env.GOOGLE_PUBSUB_TOPIC
   const renewedGmail: string[] = []
   const renewedOutlook: string[] = []
-  const { data: proProfiles, error: profileError } = await supabase
-    .from('user_profiles')
-    .select('user_id')
-    .eq('plan', 'pro')
-
-  if (profileError) throw new Error(profileError.message)
-  const proUserIds = (proProfiles ?? [])
-    .map(profile => profile.user_id as string | null)
-    .filter((userId): userId is string => Boolean(userId))
-
-  if (proUserIds.length === 0) {
-    const payload = { renewedGmail, renewedOutlook }
-    await finishCronRun(supabase, runId, { status: 'success', metrics: {
-      renewed_gmail: 0,
-      renewed_outlook: 0,
-    } })
-    return NextResponse.json(payload)
-  }
 
   // Renew all active Gmail accounts (watch expires in 7 days; renew daily = always fresh)
   if (pubsubTopic) {
@@ -50,7 +32,6 @@ export async function GET(request: Request) {
       .select('id, user_id, provider, email, display_name, access_token, refresh_token, token_expires_at')
       .eq('provider', 'gmail')
       .eq('is_active', true)
-      .in('user_id', proUserIds)
 
     for (const acc of (gmailAccounts ?? [])) {
       try {
@@ -73,7 +54,6 @@ export async function GET(request: Request) {
     .select('id, user_id, provider, email, display_name, access_token, refresh_token, token_expires_at, outlook_subscription_id')
     .eq('provider', 'outlook')
     .eq('is_active', true)
-    .in('user_id', proUserIds)
     .lte('outlook_subscription_exp', twelveHoursFromNow)
     .not('outlook_subscription_id', 'is', null)
 

@@ -75,18 +75,11 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
   const [isRefreshing, startTransition] = useTransition()
   const router = useRouter()
 
-  const plan      = userProfile.plan ?? 'free'
-  const used      = userProfile.leads_used_this_month ?? 0
-  const planLimit = PLAN_LIMITS[plan] ?? 15
-  const usagePct  = planLimit > 0 ? (used / planLimit) * 100 : 0
   const [leadCreditBalance, setLeadCreditBalance] = useState(userProfile.lead_credit_balance ?? 0)
   const displayProfile = useMemo(() => ({
     ...userProfile,
     lead_credit_balance: leadCreditBalance,
   }), [leadCreditBalance, userProfile])
-
-  const [dismissed80,   setDismissed80]   = useState(false)
-  const [dismissedOver, setDismissedOver] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -228,15 +221,6 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                   <span>credits</span>
                 </button>
               )}
-              <Link
-                href="/pricing"
-                className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-ghost text-[12.5px] font-medium items-center gap-1.5"
-              >
-                <svg className="w-3.5 h-3.5 text-[var(--color-accent)]" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Upgrade
-              </Link>
               <button
                 onClick={() => setActiveView('settings')}
                 className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-primary text-[12.5px] font-medium items-center gap-1.5"
@@ -253,34 +237,12 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
           <div className="max-w-6xl mx-auto fade-in">
             {activeView === 'feed' && (
               <div className="space-y-4">
-                {usagePct >= 80 && usagePct < 100 && !dismissed80 && (
-                  <UsageWarningBanner
-                    plan={plan as 'free' | 'pro'}
-                    used={used}
-                    limit={planLimit}
-                    onDismiss={() => setDismissed80(true)}
-                  />
-                )}
-                {usagePct >= 100 && plan === 'free' && !dismissedOver && (
-                  <FreePreviewBanner
-                    limit={planLimit}
-                    onDismiss={() => setDismissedOver(true)}
-                  />
-                )}
-                {usagePct >= 100 && plan !== 'free' && !dismissedOver && (
-                  <OverLimitModal
-                    plan={plan as 'free' | 'pro'}
-                    used={used}
-                    limit={planLimit}
-                    onDismiss={() => setDismissedOver(true)}
-                  />
-                )}
                 <LeadFeed
                   initialLeads={initialLeads}
                   userId={userId}
                   watchlist={watchlist}
                   activeClientId={userProfile.active_client_id ?? null}
-                  plan={plan as 'free' | 'pro'}
+                  plan="free"
                   origin="live"
                   exportFeed="signal"
                   onOpenCrmTab={() => setActiveView('crm')}
@@ -294,7 +256,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 userId={userId}
                 watchlist={watchlist}
                 activeClientId={userProfile.active_client_id ?? null}
-                plan={plan as 'free' | 'pro'}
+                plan="free"
                 onOpenCrmTab={() => setActiveView('crm')}
               />
             )}
@@ -304,7 +266,7 @@ export default function DashboardShell({ initialLeads, userId, userProfile, watc
                 userId={userId}
                 watchlist={watchlist}
                 activeClientId={userProfile.active_client_id ?? null}
-                plan={plan as 'free' | 'pro'}
+                plan="free"
               />
             )}
             {activeView === 'mcp' && (
@@ -463,11 +425,6 @@ function McpCodeBlock({
   )
 }
 
-const PLAN_LABELS: Record<string, { label: string; color: string; price: string }> = {
-  free: { label: 'Free', color: 'text-[var(--color-text-4)]',    price: '$0' },
-  pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$99/mo' },
-}
-const PLAN_LIMITS: Record<string, number> = { free: 15, pro: 500 }
 const CREDIT_TOP_UPS = [
   { amount: 5, credits: 20 },
   { amount: 20, credits: 80 },
@@ -485,12 +442,7 @@ function SettingsPanel({
 }: {
   profile: UserProfile
 }) {
-  const plan = profile.plan ?? 'free'
-  const planMeta = PLAN_LABELS[plan] ?? PLAN_LABELS.free
-  const limit = PLAN_LIMITS[plan] ?? 15
-  const used = profile.leads_used_this_month ?? 0
   const leadCreditBalance = profile.lead_credit_balance ?? 0
-  const pct = limit === Infinity ? 0 : Math.min(100, (used / limit) * 100)
 
   const [autoSend, setAutoSend] = useState(false)
   const [autoSendSaving, setAutoSendSaving] = useState(false)
@@ -504,8 +456,6 @@ function SettingsPanel({
   const [autoSendMaxAge, setAutoSendMaxAge] = useState(30)
 
   useEffect(() => {
-    if (plan !== 'pro') return
-
     let cancelled = false
     fetch('/api/settings/auto-send', { cache: 'no-store' })
       .then(async res => {
@@ -546,7 +496,7 @@ function SettingsPanel({
     return () => {
       cancelled = true
     }
-  }, [plan])
+  }, [])
 
   const saveAutoSend = useCallback(async () => {
     setAutoSendSaving(true)
@@ -629,52 +579,23 @@ function SettingsPanel({
 
   return (
     <div className="max-w-2xl space-y-4">
-      {/* Plan card */}
+      {/* Credits card */}
       <div className="card divide-y divide-[var(--color-line-1)]">
         <div className="px-5 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Plan</h2>
-            <p className="text-xs text-[var(--color-text-4)] mt-0.5">Your current subscription.</p>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Credits</h2>
+            <p className="text-xs text-[var(--color-text-4)] mt-0.5">All product features are available. Credits are used only when you unlock leads.</p>
           </div>
-          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] ${planMeta.color}`}>
-            {planMeta.label}
+          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] text-[var(--color-accent-ring)]">
+            PAYG
           </span>
-        </div>
-        <div className="px-5 py-4 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[var(--color-text-3)]">Leads · 30 days</span>
-            <span className="text-[var(--color-text-2)] tabular-nums">
-              {used} / {limit === Infinity ? '∞' : limit}
-            </span>
-          </div>
-          {limit !== Infinity && (
-            <div className="h-2 rounded-full bg-[var(--color-ink-2)] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-accent-hi)] transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          )}
-        </div>
-        <div className="px-5 py-4 flex items-center gap-3">
-          {plan === 'free' && (
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
-            >
-              Upgrade
-            </Link>
-          )}
-          {plan !== 'free' && (
-            <ManageBillingButton />
-          )}
         </div>
         <div className="px-5 py-4 border-t border-[var(--color-line-1)]">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-medium text-[var(--color-text-1)]">Add lead credits</p>
               <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-                Credits unlock leads after your included quota is used. Each $1 adds 4 lead unlocks.
+                Every lead unlock costs 1 credit. New workspaces start with 20 credits. Each $1 adds 4 lead unlocks.
               </p>
             </div>
             <span className="shrink-0 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent-ring)]">
@@ -700,18 +621,11 @@ function SettingsPanel({
         </div>
       </div>
 
-      {/* Connected sending accounts — not available on free plan */}
-      {plan !== 'free' && <ConnectedAccountsPanel />}
+      <ConnectedAccountsPanel />
 
-      {plan === 'pro' ? (
-        <ClientWorkspacePanel activeClientId={profile.active_client_id ?? null} />
-      ) : (
-        <ClientWorkspaceUpgradeCard />
-      )}
+      <ClientWorkspacePanel activeClientId={profile.active_client_id ?? null} />
 
-      {/* Auto-send toggle (Pro only) */}
-      {plan === 'pro' && (
-        <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="card divide-y divide-[var(--color-line-1)]">
           <div className="px-5 py-4 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Feed Automation</h2>
@@ -843,9 +757,8 @@ function SettingsPanel({
               </button>
             </div>
           </div>
-          <PendingFollowupsPanel />
-        </div>
-      )}
+        <PendingFollowupsPanel />
+      </div>
 
       {/* Targeting */}
       <div className="card divide-y divide-[var(--color-line-1)]">
@@ -886,9 +799,7 @@ function SettingsPanel({
         </div>
       </div>
 
-      {/* Slack (Pro only) */}
-      {plan === 'pro' && (
-        <div className="card divide-y divide-[var(--color-line-1)]">
+      <div className="card divide-y divide-[var(--color-line-1)]">
           <div className="px-5 py-4">
             <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Slack Alerts</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
@@ -935,8 +846,7 @@ function SettingsPanel({
               )}
             </div>
           </div>
-        </div>
-      )}
+      </div>
 
       <SequenceTemplatesPanel />
 
@@ -958,7 +868,7 @@ function ExplorePanel({
   userId: string
   watchlist: WatchlistItem[]
   activeClientId: string | null
-  plan: 'free' | 'pro'
+  plan: 'free'
   onOpenCrmTab: () => void
 }) {
   const router = useRouter()
@@ -1142,7 +1052,7 @@ function CrmWorkspacePanel({
   userId: string
   watchlist: WatchlistItem[]
   activeClientId: string | null
-  plan: 'free' | 'pro'
+  plan: 'free'
 }) {
   return (
     <div className="space-y-4">
@@ -1158,7 +1068,7 @@ function CrmWorkspacePanel({
           </div>
           <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-white px-3 py-1.5 text-[11px] text-[var(--color-text-3)]">
             <span className="h-2 w-2 rounded-full bg-[var(--color-sig-funding)]" />
-            Separate from signal quota
+            Imported feed
           </div>
         </div>
         <LeadFeed
@@ -1203,30 +1113,6 @@ function StatusPill({
 interface ClientAccountSummary {
   id: string
   name: string
-}
-
-function ClientWorkspaceUpgradeCard() {
-  return (
-    <div className="card divide-y divide-[var(--color-line-1)]">
-      <div className="px-5 py-4">
-        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Client Workspaces</h2>
-        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          Keep separate feeds, targeting, templates, and CRM sync for each client or business line.
-        </p>
-      </div>
-      <div className="px-5 py-4 flex items-center justify-between gap-4">
-        <p className="text-xs text-[var(--color-text-3)]">
-          Available on the Pro plan.
-        </p>
-        <Link
-          href="/pricing"
-          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-primary transition-colors"
-        >
-          Upgrade to Pro
-        </Link>
-      </div>
-    </div>
-  )
 }
 
 function ClientWorkspacePanel({ activeClientId }: { activeClientId: string | null }) {
@@ -1816,31 +1702,6 @@ function CrmWorkflowSummary({
   )
 }
 
-function ManageBillingButton() {
-  const [loading, setLoading] = useState(false)
-
-  async function openPortal() {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/billing/portal', { method: 'POST' })
-      const data = await res.json() as { url?: string }
-      if (data.url) window.location.href = data.url
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <button
-      onClick={openPortal}
-      disabled={loading}
-      className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full btn-ghost disabled:opacity-50"
-    >
-      {loading ? 'Loading…' : 'Manage billing'}
-    </button>
-  )
-}
-
 function LogoutButton() {
   const [loading, setLoading] = useState(false)
 
@@ -1976,7 +1837,7 @@ function ConnectedAccountsPanel() {
         google_failed:    'Google connection failed — please try again.',
         microsoft_failed: 'Microsoft connection failed — please try again.',
         invalid_state:    'Invalid OAuth state — please try again.',
-        plan_required:    'Sending account connections are available on Pro.',
+        plan_required:    'Sending account connections are available on every workspace. Please try again.',
       }
       showBanner('err', msgs[error] ?? 'Connection failed.')
     }
@@ -2153,158 +2014,5 @@ function BlockedCompaniesPanel() {
         )
       )}
     </div>
-  )
-}
-
-// ── Usage warning banner (80–99%) ─────────────────────────────────────────────
-
-function UsageWarningBanner({
-  plan,
-  used,
-  limit,
-  onDismiss,
-}: {
-  plan: 'free' | 'pro'
-  used: number
-  limit: number
-  onDismiss: () => void
-}) {
-  const pct = Math.round((used / limit) * 100)
-  return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800">
-      <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-      </svg>
-      <p className="text-[13px] flex-1">
-        <span className="font-medium">{pct}% of your monthly limit used</span>
-        {' '}— {used} of {limit} {plan === 'free' ? 'lead unlocks' : 'leads'} this period.{' '}
-        <Link href="/pricing" className="underline underline-offset-2 hover:text-amber-900 transition-colors">Upgrade</Link>
-        {' '}to avoid interruptions.
-      </p>
-      <button
-        onClick={onDismiss}
-        className="shrink-0 text-amber-500 hover:text-amber-700 transition-colors"
-        aria-label="Dismiss"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-  )
-}
-
-function FreePreviewBanner({ limit, onDismiss }: { limit: number; onDismiss: () => void }) {
-  return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--color-line-1)] bg-white text-[var(--color-text-2)]">
-      <svg className="w-4 h-4 shrink-0 text-[var(--color-accent)]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-      <p className="text-[13px] flex-1">
-        <span className="font-medium text-[var(--color-text-1)]">You’ve used all {limit} free lead unlocks.</span>
-        {' '}You can still browse every matched signal in preview mode. Upgrade to unlock more contacts and drafts.
-      </p>
-      <Link href="/pricing" className="shrink-0 h-8 px-3 rounded-full btn-primary text-[12px] font-medium inline-flex items-center">
-        Upgrade
-      </Link>
-      <button
-        onClick={onDismiss}
-        className="shrink-0 text-[var(--color-text-4)] hover:text-[var(--color-text-1)] transition-colors"
-        aria-label="Dismiss"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-  )
-}
-
-// ── Over-limit modal (100%+) ──────────────────────────────────────────────────
-
-function OverLimitModal({
-  plan,
-  used,
-  limit,
-  onDismiss,
-}: {
-  plan: 'free' | 'pro'
-  used: number
-  limit: number
-  onDismiss: () => void
-}) {
-  return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" />
-
-      {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-md card p-7 space-y-5 shadow-2xl">
-          {/* Icon */}
-          <div className="w-11 h-11 rounded-xl bg-[var(--color-sig-regulation-bg)] border border-[var(--color-sig-regulation)]/20 flex items-center justify-center">
-            <svg className="w-5 h-5 text-[var(--color-sig-regulation)]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-          </div>
-
-          <div className="space-y-1.5">
-            <h2 className="text-[17px] font-semibold text-[var(--color-text-1)] tracking-tight">
-              {plan === 'free' ? 'Free limit reached' : 'Monthly limit reached'}
-            </h2>
-            <p className="text-[13px] text-[var(--color-text-3)] leading-relaxed">
-              {plan === 'free' && (
-                <>You&rsquo;ve used all {limit} free lead unlocks this period. You can still browse matched signals in preview mode, or upgrade to unlock more contacts and drafts.</>
-              )}
-              {plan === 'pro' && (
-                <>You&rsquo;ve used all {limit} Pro leads in your current 30-day window. Additional unlocks now draw from your prepaid lead credit balance.</>
-              )}
-            </p>
-          </div>
-
-          {/* Usage bar */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-[11px] text-[var(--color-text-4)]">
-              <span>{used} used</span>
-              <span>{limit} limit</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-[var(--color-ink-2)] overflow-hidden">
-              <div className="h-full rounded-full bg-[var(--color-sig-regulation)]" style={{ width: '100%' }} />
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col gap-2 pt-1">
-            {plan === 'free' && (
-              <>
-                <Link
-                  href="/pricing"
-                  className="h-10 rounded-full btn-primary text-[13px] font-medium flex items-center justify-center"
-                >
-                  Upgrade to Pro
-                </Link>
-                <button
-                  onClick={onDismiss}
-                  className="h-10 rounded-full btn-ghost text-[13px] flex items-center justify-center"
-                >
-                  Maybe later
-                </button>
-              </>
-            )}
-
-            {plan === 'pro' && (
-              <>
-                <button
-                  onClick={onDismiss}
-                  className="h-10 rounded-full btn-primary text-[13px] flex items-center justify-center"
-                >
-                  Got it
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </>
   )
 }

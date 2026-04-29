@@ -5,7 +5,6 @@ import { generateExploreLeads, type ExploreLeadSuggestion } from '@/lib/deepseek
 import { shouldUseWorkspaceIcp } from '@/lib/explore'
 import { buildFeedSessionLabel } from '@/lib/feed-sessions'
 import { buildExploreLeadFeedSnapshot, type LeadSignalType } from '@/lib/lead-sources'
-import { normalizePlanTier } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
@@ -19,16 +18,9 @@ const MAX_PROMPT_LENGTH = 1500
 const MAX_ICP_HINT_LENGTH = 300
 
 const EXPLORE_LIMITS = {
-  free: {
-    maxResults: 25,
-    perHour: 5,
-    perDay: 20,
-  },
-  pro: {
-    maxResults: 100,
-    perHour: 30,
-    perDay: 200,
-  },
+  maxResults: 50,
+  perHour: 10,
+  perDay: 50,
 } as const
 
 export async function POST(request: Request) {
@@ -56,7 +48,7 @@ export async function POST(request: Request) {
   const [{ data: profile }, { data: clientProfile }] = await Promise.all([
     supabase
       .from('user_profiles')
-      .select('services_description, icp_keywords, plan')
+      .select('services_description, icp_keywords')
       .eq('user_id', user.id)
       .single(),
     activeClientId
@@ -69,19 +61,17 @@ export async function POST(request: Request) {
       : Promise.resolve({ data: null }),
   ])
 
-  const plan = normalizePlanTier(profile?.plan)
-  const exploreLimits = EXPLORE_LIMITS[plan]
-  const hourlyLimit = await checkRateLimit(`explore:${user.id}:hour`, exploreLimits.perHour, 3600, { failClosed: true })
+  const hourlyLimit = await checkRateLimit(`explore:${user.id}:hour`, EXPLORE_LIMITS.perHour, 3600, { failClosed: true })
   if (!hourlyLimit.allowed) {
     return NextResponse.json(
-      { error: `Too many prompted discovery runs. Limit is ${exploreLimits.perHour} per hour.` },
+      { error: `Too many prompted discovery runs. Limit is ${EXPLORE_LIMITS.perHour} per hour.` },
       { status: 429, headers: { 'Retry-After': '3600' } },
     )
   }
-  const dailyLimit = await checkRateLimit(`explore:${user.id}:day`, exploreLimits.perDay, 86_400, { failClosed: true })
+  const dailyLimit = await checkRateLimit(`explore:${user.id}:day`, EXPLORE_LIMITS.perDay, 86_400, { failClosed: true })
   if (!dailyLimit.allowed) {
     return NextResponse.json(
-      { error: `Daily prompted discovery limit reached. Limit is ${exploreLimits.perDay} runs per day.` },
+      { error: `Daily prompted discovery limit reached. Limit is ${EXPLORE_LIMITS.perDay} runs per day.` },
       { status: 429, headers: { 'Retry-After': '86400' } },
     )
   }
@@ -114,7 +104,7 @@ export async function POST(request: Request) {
   const runId = run?.id ?? null
 
   const requestedCount = extractRequestedLeadCount(prompt) ?? DEFAULT_RESULTS
-  const targetCount = Math.max(1, Math.min(MAX_RESULTS, exploreLimits.maxResults, requestedCount))
+  const targetCount = Math.max(1, Math.min(MAX_RESULTS, EXPLORE_LIMITS.maxResults, requestedCount))
   const generatedLeads: ExploreLeadSuggestion[] = []
   let generationFailure: Awaited<ReturnType<typeof generateExploreLeads>> | null = null
   const excludedCompanies = new Set<string>()

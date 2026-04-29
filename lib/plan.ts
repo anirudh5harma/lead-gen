@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 
-export type PlanTier = 'free' | 'pro'
+export type PlanTier = 'free'
 
 export interface PlanLimits {
   leads_per_month: number
@@ -13,15 +13,7 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
-    leads_per_month: 15,
-    auto_send: false,
-    followups: false,
-    reply_detection: false,
-    crm_export: true,
-    slack: false,
-  },
-  pro: {
-    leads_per_month: 500,
+    leads_per_month: Number.MAX_SAFE_INTEGER,
     auto_send: true,
     followups: true,
     reply_detection: true,
@@ -31,7 +23,8 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
 }
 
 export function normalizePlanTier(plan: string | null | undefined): PlanTier {
-  return plan === 'pro' ? 'pro' : 'free'
+  void plan
+  return 'free'
 }
 
 export async function getUserPlan(userId: string): Promise<{ plan: PlanTier; used: number; limit: number }> {
@@ -76,8 +69,4 @@ export async function incrementSendCount(userId: string): Promise<void> {
 
 export function getPlanLimits(plan: PlanTier): PlanLimits {
   return PLAN_LIMITS[plan]
-}
-
-export function canUseConnectedSending(plan: string | null | undefined): boolean {
-  return normalizePlanTier(plan) === 'pro'
 }

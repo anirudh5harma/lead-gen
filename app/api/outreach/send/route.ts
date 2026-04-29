@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { canUseConnectedSending, getPlanLimits, normalizePlanTier } from '@/lib/plan'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { draftFollowUpEmail } from '@/lib/deepseek'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
@@ -41,21 +40,12 @@ export async function POST(request: Request) {
 
   const [leadRes, profileRes] = await Promise.all([
     supabase.from('leads').select('id, status, is_unlocked, client_id, target_company').eq('id', leadId).eq('user_id', user.id).single(),
-    supabase.from('user_profiles').select('company_name, services_description, calendly_url, plan').eq('user_id', user.id).single(),
+    supabase.from('user_profiles').select('company_name, services_description, calendly_url').eq('user_id', user.id).single(),
   ])
 
   if (!leadRes.data) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
   if (!leadRes.data.is_unlocked) {
     return NextResponse.json({ error: 'Unlock this lead first before sending outreach.' }, { status: 403 })
-  }
-
-  const userPlan = normalizePlanTier(profileRes.data?.plan)
-  const planLimits = getPlanLimits(userPlan)
-  if (!canUseConnectedSending(userPlan)) {
-    return NextResponse.json(
-      { error: 'Direct Gmail/Outlook sending is available on Pro. Free users can open Gmail or copy the draft from the outreach drawer.' },
-      { status: 403 }
-    )
   }
 
   const rl = await checkRateLimit(`send:${user.id}`, 5, 3600, { failClosed: true })
@@ -126,7 +116,7 @@ export async function POST(request: Request) {
       },
     }).catch(() => {})
 
-    if (planLimits.followups && !isFollowUp) {
+    if (!isFollowUp) {
       const followAt = scheduleFollowupAt()
       await supabase.from('scheduled_followups').upsert(
         { user_id: user.id, lead_id: leadId, scheduled_for: followAt },

@@ -5,6 +5,7 @@ import { extractICPKeywords } from '@/lib/deepseek'
 import { resolveServicesDescription } from '@/lib/company-profile'
 import { syncMonitoredAccountsFromWorkspaceSources } from '@/lib/monitored-accounts'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { grantStarterLeadCredits } from '@/lib/lead-credits'
 
 const MAX_PROFILE_FIELD_LENGTH = 3000
 
@@ -146,7 +147,7 @@ export async function POST(request: Request) {
     icp_keywords,
     profile_embedding: embedding ? toVectorLiteral(embedding) : null,
     active_client_id: activeClientId,
-    plan: (existingProfile as { plan?: string } | null)?.plan ?? 'free',
+    plan: 'free',
     leads_used_this_month: (existingProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0,
     leads_reset_at: (existingProfile as { leads_reset_at?: string } | null)?.leads_reset_at ?? new Date().toISOString(),
     slack_webhook_url: (existingProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null,
@@ -158,6 +159,14 @@ export async function POST(request: Request) {
   if (error) {
     console.error('Profile save error:', error)
     return NextResponse.json({ error: 'Failed to save profile' }, { status: 500 })
+  }
+
+  if (!existingProfile) {
+    try {
+      await grantStarterLeadCredits(service, user.id)
+    } catch (creditError) {
+      console.error('[profile] starter credit grant failed:', creditError)
+    }
   }
 
   syncMonitoredAccountsFromWorkspaceSources(service).catch(syncError => {

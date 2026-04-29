@@ -18,7 +18,6 @@ function getDodoClient(): DodoPayments {
 }
 
 export const PRODUCT_IDS = {
-  pro: cleanEnvValue(process.env.DODO_PRODUCT_PRO),
   leadCredits: cleanEnvValue(process.env.DODO_PRODUCT_LEAD_CREDITS),
 }
 
@@ -36,26 +35,6 @@ export interface DodoPaymentDetails {
     product_id?: string | null
     quantity?: number | null
   }> | null
-}
-
-export function planFromProductId(productId: string): 'pro' | null {
-  if (productId === PRODUCT_IDS.pro) return 'pro'
-  return null
-}
-
-export async function createCheckoutUrl(
-  userEmail: string,
-  userName: string,
-  productId: string,
-  userId: string,
-): Promise<string> {
-  const session = await getDodoClient().checkoutSessions.create({
-    product_cart: [{ product_id: productId, quantity: 1 }],
-    return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?upgraded=1`,
-    customer: { email: userEmail, name: userName },
-    metadata: { user_id: userId },
-  })
-  return (session as unknown as { checkout_url: string }).checkout_url
 }
 
 export async function createLeadCreditCheckoutUrl(params: {
@@ -116,14 +95,12 @@ export function getPortalUrl(): string {
 export function getDodoConfigSummary(): {
   environment: DodoEnvironment
   hasApiKey: boolean
-  hasProProduct: boolean
   hasLeadCreditsProduct: boolean
   hasBusinessId: boolean
 } {
   return {
     environment: getDodoEnvironment(),
     hasApiKey: Boolean(cleanEnvValue(process.env.DODO_API_KEY)),
-    hasProProduct: Boolean(PRODUCT_IDS.pro),
     hasLeadCreditsProduct: Boolean(PRODUCT_IDS.leadCredits),
     hasBusinessId: Boolean(cleanEnvValue(process.env.DODO_BUSINESS_ID)),
   }

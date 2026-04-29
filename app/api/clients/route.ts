@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
-import { normalizePlanTier } from '@/lib/plan'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function GET() {
   const supabase = await createClient()
@@ -17,17 +17,15 @@ export async function GET() {
       .order('created_at', { ascending: true }),
     supabase
       .from('user_profiles')
-      .select('active_client_id, plan')
+      .select('active_client_id')
       .eq('user_id', user.id)
       .maybeSingle(),
   ])
 
   if (clientsErr) return NextResponse.json({ error: clientsErr.message }, { status: 500 })
-  const plan = normalizePlanTier((profile as { plan?: string | null } | null)?.plan)
-  const activeClientId = (profile as { active_client_id?: string | null; plan?: string | null } | null)?.active_client_id ?? null
-  const canManageMultiple = plan === 'pro'
+  const activeClientId = (profile as { active_client_id?: string | null } | null)?.active_client_id ?? null
   const accessPlan = buildWorkspaceAccessPlan({
-    plan,
+    plan: 'free',
     activeClientId,
     clients: (clients ?? []).map(client => ({
       id: client.id,
@@ -40,7 +38,7 @@ export async function GET() {
   return NextResponse.json({
     clients: visibleClients,
     activeClientId: accessPlan.keepClientId,
-    canManageMultiple,
+    canManageMultiple: true,
   })
 }
 
@@ -49,14 +47,12 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('plan')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (normalizePlanTier((profile as { plan?: string | null } | null)?.plan) !== 'pro') {
-    return NextResponse.json({ error: 'Multiple client workspaces are available on the Pro plan.' }, { status: 403 })
+  const rl = await checkRateLimit(`clients:create:${user.id}`, 20, 3600, { failClosed: true })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many workspace changes. Please try again later.' },
+      { status: 429, headers: { 'Retry-After': '3600' } },
+    )
   }
 
   const body = await request.json().catch(() => null) as { name?: string } | null
@@ -89,16 +85,6 @@ export async function PATCH(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('plan')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (normalizePlanTier((profile as { plan?: string | null } | null)?.plan) !== 'pro') {
-    return NextResponse.json({ error: 'Multiple client workspaces are available on the Pro plan.' }, { status: 403 })
-  }
 
   const body = await request.json().catch(() => null) as { activeClientId?: string } | null
   const activeClientId = body?.activeClientId

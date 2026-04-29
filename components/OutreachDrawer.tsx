@@ -8,7 +8,7 @@ import type { Lead } from './LeadFeed'
 
 interface Props {
   lead: Lead
-  plan?: 'free' | 'pro'
+  plan?: 'free'
   onClose: () => void
   onEmailSent: () => void
   onStatusChange?: (status: string) => void
@@ -49,7 +49,7 @@ const SIGNAL_META: Record<string, { label: string; color: string }> = {
   crm_import:  { label: 'CRM Import',  color: 'var(--color-accent)' },
 }
 
-export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSent, onStatusChange, onDraftCreated }: Props) {
+export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusChange, onDraftCreated }: Props) {
   const [mounted, setMounted]   = useState(false)
   const [draft, setDraft]       = useState<Draft | null>(null)
   const [followUp, setFollowUp] = useState<FollowUp | null>(null)
@@ -137,10 +137,6 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
 
   async function sendEmail() {
     if (!draft) return
-    if (plan === 'free') {
-      setSendError('Direct inbox sending is available on Pro. Use Gmail or Copy on Free.')
-      return
-    }
     const recipient = draft.stakeholders.find(s => s.email)
     if (!recipient?.email) {
       setSendError('No email address found for any contact.')
@@ -186,7 +182,6 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
     ?? (Array.isArray(lead.signals) ? lead.signals[0] : lead.signals)
   const sigType = sig?.signal_type ?? ''
   const sigMeta = SIGNAL_META[sigType]
-  const canSendDirect = plan === 'pro'
 
   const drawer = (
     <>
@@ -381,54 +376,27 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
               </p>
             )}
 
-            {!canSendDirect && (
-              <p className="text-xs text-[var(--color-text-4)] bg-[var(--color-ink-2)] border border-[var(--color-line-1)] rounded-lg px-3 py-2">
-                Free includes personalized drafts. Upgrade to Pro for one-click Gmail/Outlook sending, follow-ups, and reply detection.
-              </p>
-            )}
-
             {/* Primary actions */}
             <div className="flex items-center gap-2">
-              {canSendDirect ? (
-                <button
-                  onClick={sendEmail}
-                  disabled={!hasVerifiedContacts || sendState === 'sending' || sendState === 'success'}
-                  className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full disabled:opacity-60 disabled:cursor-not-allowed text-sm"
-                >
-                  {sendState === 'sending' && (
-                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  )}
-                  {sendState === 'success' ? 'Sent' : sendState === 'sending' ? 'Sending…' : 'Send Email'}
-                </button>
-              ) : (
-                <button
-                  onClick={openInGmail}
-                  disabled={!hasVerifiedContacts}
-                  className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full text-sm"
-                >
-                  <GmailIcon />
-                  Open in Gmail
-                </button>
-              )}
-              {canSendDirect && (
-                <button
-                  onClick={openInGmail}
-                  disabled={!hasVerifiedContacts}
-                  title="Open in Gmail instead"
-                  className="btn-ghost flex items-center justify-center gap-1.5 h-10 px-3 rounded-full text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <GmailIcon />
-                  <span className="hidden sm:inline">Gmail</span>
-                </button>
-              )}
-              {!canSendDirect && (
-                <a
-                  href="/pricing"
-                  className="btn-ghost h-10 px-3 rounded-full text-xs font-medium inline-flex items-center"
-                >
-                  Upgrade
-                </a>
-              )}
+              <button
+                onClick={sendEmail}
+                disabled={!hasVerifiedContacts || sendState === 'sending' || sendState === 'success'}
+                className="btn-primary flex-1 flex items-center justify-center gap-2 h-10 rounded-full disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+              >
+                {sendState === 'sending' && (
+                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                )}
+                {sendState === 'success' ? 'Sent' : sendState === 'sending' ? 'Sending…' : 'Send Email'}
+              </button>
+              <button
+                onClick={openInGmail}
+                disabled={!hasVerifiedContacts}
+                title="Open in Gmail instead"
+                className="btn-ghost flex items-center justify-center gap-1.5 h-10 px-3 rounded-full text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <GmailIcon />
+                <span className="hidden sm:inline">Gmail</span>
+              </button>
               <button
                 onClick={copyFullEmail}
                 className="btn-ghost h-10 px-3 rounded-full text-xs font-medium"
@@ -453,7 +421,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
             </div>
 
             {/* Per-lead follow-up cancellation */}
-            {canSendDirect && lead.status === 'sent' && !followupCancelled && (
+            {lead.status === 'sent' && !followupCancelled && (
               <div className="flex items-center justify-between pt-1 border-t border-[var(--color-line-1)]">
                 <span className="text-[11px] text-[var(--color-text-4)]">Auto follow-up in ~3 days</span>
                 <button
@@ -465,7 +433,7 @@ export default function OutreachDrawer({ lead, plan = 'free', onClose, onEmailSe
                 </button>
               </div>
             )}
-            {canSendDirect && followupCancelled && (
+            {followupCancelled && (
               <p className="text-[11px] text-[var(--color-text-4)] pt-1 border-t border-[var(--color-line-1)]">
                 Auto follow-up cancelled.
               </p>
