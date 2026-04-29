@@ -27,7 +27,7 @@ const PLANS = [
   {
     id: 'pro' as const,
     name: 'Pro',
-    price: '$129',
+    price: '$99',
     period: '/ month',
     description: 'For active solopreneurs.',
     features: [
@@ -41,6 +41,24 @@ const PLANS = [
     ],
     cta: 'Upgrade to Pro',
     highlight: true,
+  },
+  {
+    id: 'enterprise' as const,
+    name: 'Enterprise OS',
+    price: 'Custom',
+    period: 'managed GTM infra',
+    description: 'For teams that need Bombsell as their revenue operating layer.',
+    features: [
+      'Managed revenue workflows',
+      'Enterprise CRM governance',
+      'Custom agent playbooks',
+      'Dedicated signal sources',
+      'Operator-in-the-loop execution',
+      'Security and audit controls',
+    ],
+    cta: 'Talk to us',
+    highlight: false,
+    href: 'mailto:team@bombsell.com?subject=Enterprise%20Revenue%20OS',
   },
 ]
 
@@ -137,7 +155,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        <div className="w-full max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-5 fade-in-stagger">
+        <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-5 fade-in-stagger">
           {PLANS.map(plan => (
             <div
               key={plan.id}
@@ -184,6 +202,13 @@ export default function PricingPage() {
                 >
                   {plan.cta}
                 </button>
+              ) : plan.id === 'enterprise' ? (
+                <a
+                  href={plan.href}
+                  className="w-full h-11 rounded-full btn-ghost text-[13.5px] font-medium inline-flex items-center justify-center"
+                >
+                  {plan.cta}
+                </a>
               ) : (
                 <button
                   onClick={() => startCheckout(plan.id)}

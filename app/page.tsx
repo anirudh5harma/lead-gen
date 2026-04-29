@@ -364,7 +364,7 @@ const TIERS = [
   },
   {
     name: 'Pro',
-    price: '$129',
+    price: '$99',
     period: '/ month',
     perks: ['500 leads / month', 'Gmail/Outlook execution', 'Reply-aware follow-ups', 'Multi-client workspaces', 'Slack alerts', 'Priority revenue workflows'],
     cta: 'Upgrade to Pro',

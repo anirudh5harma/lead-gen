@@ -465,7 +465,7 @@ function McpCodeBlock({
 
 const PLAN_LABELS: Record<string, { label: string; color: string; price: string }> = {
   free: { label: 'Free', color: 'text-[var(--color-text-4)]',    price: '$0' },
-  pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$129/mo' },
+  pro:  { label: 'Pro',  color: 'text-[var(--color-accent-ring)]', price: '$99/mo' },
 }
 const PLAN_LIMITS: Record<string, number> = { free: 15, pro: 500 }
 const CREDIT_TOP_UPS = [
