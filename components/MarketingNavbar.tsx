@@ -45,8 +45,8 @@ export default function MarketingNavbar({ homeAnchors = false }: { homeAnchors?:
             <span className="text-[15px] font-medium text-[var(--color-text-1)] tracking-tight">Bombsell</span>
           </Link>
           <div className="hidden md:flex items-center gap-6 text-[13px] text-[var(--color-text-2)]">
-            <a href={howHref} className="hover:text-[var(--color-text-1)] transition-colors">How it works</a>
-            <a href={featuresHref} className="hover:text-[var(--color-text-1)] transition-colors">Features</a>
+            <a href={howHref} className="hover:text-[var(--color-text-1)] transition-colors">Platform</a>
+            <a href={featuresHref} className="hover:text-[var(--color-text-1)] transition-colors">Differentiation</a>
             <Link href="/pricing" className="hover:text-[var(--color-text-1)] transition-colors">Pricing</Link>
           </div>
         </div>

@@ -34,35 +34,29 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden paper">
-      {/* Ambient cream blobs */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
-        <div className="blob blob-1" style={{ width: 600, height: 600, top: -180, left: -120 }} />
-        <div className="blob blob-2" style={{ width: 500, height: 500, top: 100, right: -160 }} />
-      </div>
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[620px] bg-[linear-gradient(180deg,#fffaf2_0%,#faf9f5_62%,transparent_100%)]" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 dot-grid opacity-35" />
 
       <MarketingNavbar homeAnchors />
 
       <main className="relative z-10 flex-1">
-        {/* Hero */}
-        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-20 md:pt-28 pb-16 md:pb-20 grid grid-cols-1 lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-16 items-center">
-          <div className="space-y-8 fade-in">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--color-line-2)] bg-white text-[11px] text-[var(--color-text-2)] shadow-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] pulse-dot" />
-              AI-native GTM infra · self-serve today, enterprise OS next
+        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-16 md:pt-24 pb-14 md:pb-20 grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-10 lg:gap-16 items-center">
+          <div className="space-y-7 fade-in">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1 text-[11px] text-[var(--color-text-2)] shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] pulse-dot" />
+              Built for modern GTM teams and their agents
             </div>
 
-            <h1 className="text-[44px] md:text-[68px] leading-[0.98] tracking-[-0.02em] text-[var(--color-text-1)] font-medium">
-              The revenue
-              <span className="font-serif italic text-gradient"> OS</span>{' '}
-              <br />
-              <span>for AI-native teams.</span>
-            </h1>
+            <div className="space-y-5">
+              <h1 className="max-w-[680px] text-[46px] md:text-[74px] leading-[0.96] tracking-[-0.02em] text-[var(--color-text-1)] font-medium">
+                AI-native GTM Infrastructure
+              </h1>
+              <p className="max-w-[560px] text-[17px] leading-[1.6] text-[var(--color-text-2)]">
+                Bombsell watches your market, keeps account context fresh, and turns high-intent moments into safe work for reps, operators, and AI agents.
+              </p>
+            </div>
 
-            <p className="text-[17px] leading-[1.55] text-[var(--color-text-2)] max-w-[540px]">
-              Bombsell turns buying signals, CRM context, inbox workflows, and agent actions into one operating layer for revenue.
-            </p>
-
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={signInWithGoogle}
                 disabled={loading}
@@ -73,212 +67,140 @@ export default function LoginPage() {
                 ) : (
                   <GoogleIconSmall />
                 )}
-                {loading ? 'Redirecting…' : 'Start free with Google'}
+                {loading ? 'Redirecting...' : 'Start free'}
               </button>
-              <a
-                href="#how"
-                className="h-12 px-6 rounded-full btn-ghost text-[14px] flex items-center"
-              >
-                See the operating layer
+              <a href="#platform" className="h-12 px-6 rounded-full btn-ghost text-[14px] flex items-center">
+                See how it works
               </a>
             </div>
 
             {error && (
-              <p className="text-xs text-[var(--color-sig-regulation)] bg-[var(--color-sig-regulation-bg)] border border-[var(--color-sig-regulation)]/20 rounded-lg px-3 py-2 max-w-sm">
+              <p className="max-w-sm rounded-lg border border-[var(--color-sig-regulation)]/20 bg-[var(--color-sig-regulation-bg)] px-3 py-2 text-xs text-[var(--color-sig-regulation)]">
                 {error}
               </p>
             )}
 
-            <div className="flex items-center gap-5 text-[12px] text-[var(--color-text-3)]">
-              <span className="inline-flex items-center gap-1.5">
-                <CheckMark /> Free self-serve workspace
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <CheckMark /> Agent-ready with MCP
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1.5">
-                <CheckMark /> CRM, inbox, Slack workflows
-              </span>
+            <div className="grid max-w-xl grid-cols-1 gap-2 text-[12px] text-[var(--color-text-3)] sm:grid-cols-3">
+              {['Work inbox', 'Safe outbound', 'Agent-ready'].map(item => (
+                <span key={item} className="inline-flex items-center gap-1.5">
+                  <CheckMark /> {item}
+                </span>
+              ))}
             </div>
           </div>
 
           <ProductPreview />
         </section>
 
-        {/* Trust strip */}
-        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
-          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-3)] mr-4">
-              Built for the teams replacing GTM bloat
-            </p>
-            {['Revenue intelligence', 'Signal mining', 'CRM automation', 'Inbox execution', 'Agent workflows', 'RevOps services'].map(f => (
-              <span key={f} className="text-[13px] text-[var(--color-text-2)] font-medium">{f}</span>
-            ))}
-          </div>
-        </section>
-
-        {/* How it works */}
-        <section id="how" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
-          <div className="max-w-2xl mb-16">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">How it works</p>
-            <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
-              From scattered GTM data to <span className="font-serif italic">revenue action.</span>
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 fade-in-stagger">
-            {STEPS.map((step, i) => (
-              <div
-                key={step.title}
-                className="card p-7 flex flex-col gap-4 hover:shadow-md transition-shadow relative overflow-hidden"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center">
-                    {step.icon}
-                  </div>
-                  <span className="text-[11px] font-mono text-[var(--color-text-4)]">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
+        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-white/45">
+          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {LOOP.map(item => (
+              <div key={item.title} className="flex items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-bg)] text-[12px] font-semibold text-[var(--color-accent-ring)]">
+                  {item.step}
+                </span>
+                <div>
+                  <p className="text-[13px] font-medium text-[var(--color-text-1)]">{item.title}</p>
+                  <p className="text-[11.5px] text-[var(--color-text-4)]">{item.body}</p>
                 </div>
-                <h3 className="text-[17px] font-medium text-[var(--color-text-1)] tracking-tight">{step.title}</h3>
-                <p className="text-[13.5px] leading-[1.55] text-[var(--color-text-2)]">{step.body}</p>
               </div>
             ))}
           </div>
         </section>
 
-        {/* Feature strip */}
-        <section id="features" className="section-reveal reveal-from-right bg-[var(--color-ink-2)]/50 border-y border-[var(--color-line-1)]">
-          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32 grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-12 lg:gap-20 items-center">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Revenue OS</p>
-              <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05] mb-8">
-                One layer for signals,<br />
-                workflows, and <span className="font-serif italic">agents.</span>
-              </h2>
-              <ul className="space-y-4">
-                {FEATURES.map(f => (
-                  <li key={f.title} className="flex items-start gap-3 max-w-md">
-                    <span className="mt-0.5 w-5 h-5 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center shrink-0">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </span>
-                    <div>
-                      <p className="text-[14px] font-medium text-[var(--color-text-1)]">{f.title}</p>
-                      <p className="text-[13px] text-[var(--color-text-2)] leading-[1.5] mt-0.5">{f.body}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <EmailPreview />
+        <section id="platform" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28">
+          <div className="mb-12 max-w-2xl">
+            <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-accent)]">What it does</p>
+            <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
+              One unified workspace for everything your GTM agents handle.
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            {PLATFORM.map(item => (
+              <div key={item.title} className="card p-6">
+                <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-ink-2)] text-[var(--color-accent-ring)]">
+                  {item.icon}
+                </div>
+                <h3 className="text-[17px] font-medium tracking-tight text-[var(--color-text-1)]">{item.title}</h3>
+                <p className="mt-2 text-[13.5px] leading-6 text-[var(--color-text-2)]">{item.body}</p>
+              </div>
+            ))}
           </div>
         </section>
 
-        {/* Enterprise vision */}
-        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-24 md:pt-32">
-          <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-10 lg:gap-16 items-start">
-            <div className="sticky top-24">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Where this is going</p>
-              <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
-                An AI-native service company for <span className="font-serif italic">enterprise GTM.</span>
+        <section id="features" className="section-reveal reveal-from-right border-y border-[var(--color-line-1)] bg-[var(--color-ink-2)]/45">
+          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28 grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-12 lg:gap-16 items-center">
+            <div>
+              <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-accent)]">Why it is different</p>
+              <h2 className="max-w-xl text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
+                Built to be trusted before it is fully autonomous.
               </h2>
-              <p className="text-[15px] leading-[1.65] text-[var(--color-text-2)] mt-5 max-w-md">
-                The free plan is the productized entry point. The larger ambition is managed revenue infrastructure: agents, operators, data, and workflows that enterprises can plug into instead of stitching together another stack.
+              <p className="mt-5 max-w-md text-[15px] leading-7 text-[var(--color-text-2)]">
+                Bombsell does not hide the work. You can see what changed, why an action is recommended, and what guardrails were applied before anything moves.
               </p>
             </div>
 
-            <div className="grid gap-4">
-              {VISION_LAYERS.map(layer => (
-                <div key={layer.title} className="card p-6 grid gap-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <h3 className="text-[16px] font-medium text-[var(--color-text-1)] tracking-tight">{layer.title}</h3>
-                    <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-4)]">{layer.stage}</span>
+            <div className="grid gap-3">
+              {DIFFERENTIATORS.map(item => (
+                <div key={item.title} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-5 py-4">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-1 h-2 w-2 rounded-full bg-[var(--color-accent)]" />
+                    <div>
+                      <h3 className="text-[14px] font-medium text-[var(--color-text-1)]">{item.title}</h3>
+                      <p className="mt-1 text-[13px] leading-6 text-[var(--color-text-2)]">{item.body}</p>
+                    </div>
                   </div>
-                  <p className="text-[13.5px] leading-[1.6] text-[var(--color-text-2)]">{layer.body}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Pricing teaser */}
-        <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium mb-4">Pricing</p>
-            <h2 className="text-4xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.05]">
-              Self-serve first. Enterprise when GTM needs an <span className="font-serif italic">operating system.</span>
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto">
-            {TIERS.map(tier => (
-              <div
-                key={tier.name}
-                className={`card p-7 flex flex-col gap-5 relative ${tier.highlight ? 'ring-1 ring-[var(--color-accent)]/40 shadow-[0_20px_60px_-20px_var(--color-accent-glow)]' : ''}`}
-              >
-                {tier.highlight && (
-                  <span className="absolute -top-2.5 left-7 text-[10px] font-semibold uppercase tracking-[0.14em] px-2.5 py-1 rounded-full bg-[var(--color-accent)] text-white">
-                    Popular
-                  </span>
-                )}
-                <div>
-                  <p className="text-[13px] text-[var(--color-text-3)] font-medium">{tier.name}</p>
-                  <div className="flex items-baseline gap-1 mt-2">
-                    <span className="text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">{tier.price}</span>
-                    <span className="text-[12px] text-[var(--color-text-4)]">{tier.period}</span>
-                  </div>
-                </div>
-                <div className="hairline" />
-                <ul className="space-y-2 text-[13px] text-[var(--color-text-2)] flex-1">
-                  {tier.perks.map(p => (
-                    <li key={p} className="flex items-start gap-2">
-                      <span className="text-[var(--color-accent-ring)] mt-0.5">✓</span>
-                      <span>{p}</span>
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  href={tier.href}
-                  onClick={tier.name === 'Self-serve' ? signInWithGoogle : undefined}
-                  className={`h-10 rounded-full text-[13px] font-medium flex items-center justify-center ${tier.highlight ? 'btn-primary' : 'btn-ghost'}`}
-                >
-                  {tier.cta}
-                </a>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Final CTA */}
-        <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 pb-24">
-          <div className="relative card overflow-hidden p-10 md:p-16 text-center">
-            <div aria-hidden className="absolute inset-0 pointer-events-none">
-              <div className="blob blob-1" style={{ width: 420, height: 420, top: -140, left: '50%', transform: 'translateX(-50%)', opacity: 0.7 }} />
-            </div>
-            <div className="relative space-y-6 max-w-xl mx-auto">
-              <h3 className="text-3xl md:text-5xl font-medium tracking-[-0.02em] text-[var(--color-text-1)] leading-[1.05]">
-                Build the GTM layer your <span className="font-serif italic text-gradient">AI agents can operate.</span>
-              </h3>
-              <p className="text-[15px] text-[var(--color-text-2)]">
-                Start by finding high-intent leads. Scale into a revenue OS that watches the market, syncs the CRM, triggers workflows, and lets humans and agents act from the same context.
+        <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_0.75fr]">
+            <div className="card p-8 md:p-10">
+              <p className="mb-4 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-accent)]">Launch offer</p>
+              <h2 className="max-w-2xl text-3xl md:text-5xl tracking-[-0.02em] text-[var(--color-text-1)] font-medium leading-[1.08]">
+                Start with a self-serve workspace. Scale into managed GTM infrastructure.
+              </h2>
+              <p className="mt-5 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+                Connect an inbox, define your ICP, watch accounts, review agent work, and let Bombsell handle the repetitive GTM motion with guardrails.
               </p>
               <button
                 onClick={signInWithGoogle}
                 disabled={loading}
-                className="h-12 px-7 rounded-full btn-primary text-[14px] font-medium inline-flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+                className="mt-7 h-12 px-7 rounded-full btn-primary text-[14px] font-medium inline-flex items-center gap-2 disabled:opacity-60 cursor-pointer"
               >
                 <GoogleIconSmall /> Continue with Google
               </button>
-              <p className="text-[12px] text-[var(--color-text-4)]">
-                Free self-serve workspace · No card required · Enterprise workflows by design
-              </p>
+            </div>
+
+            <div className="card p-7 flex flex-col justify-between">
+              <div>
+                <p className="text-[13px] font-medium text-[var(--color-text-3)]">Self-serve</p>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-4xl font-semibold tracking-tight text-[var(--color-text-1)]">$0</span>
+                  <span className="text-[12px] text-[var(--color-text-4)]">forever</span>
+                </div>
+                <div className="hairline my-5" />
+                <ul className="space-y-2 text-[13px] text-[var(--color-text-2)]">
+                  {['20 starter lead credits', 'Work inbox and account context', 'Gmail, CRM, Slack, and MCP access', 'Top up when you need more leads'].map(perk => (
+                    <li key={perk} className="flex items-start gap-2">
+                      <span className="mt-0.5 text-[var(--color-accent-ring)]">✓</span>
+                      <span>{perk}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Link href="/pricing" className="mt-7 h-10 rounded-full btn-ghost text-[13px] font-medium flex items-center justify-center">
+                View pricing
+              </Link>
             </div>
           </div>
         </section>
       </main>
 
-      {/* Footer */}
       <footer className="relative z-10 border-t border-[var(--color-line-1)]">
         <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-8 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
@@ -286,7 +208,7 @@ export default function LoginPage() {
             <span className="text-xs text-[var(--color-text-3)]">© {new Date().getFullYear()} Bombsell</span>
           </div>
           <div className="flex items-center gap-6 text-[12px] text-[var(--color-text-3)]">
-            <a href="/pricing" className="hover:text-[var(--color-text-1)] transition-colors">Pricing</a>
+            <Link href="/pricing" className="hover:text-[var(--color-text-1)] transition-colors">Pricing</Link>
             <Link href="/privacy" className="hover:text-[var(--color-text-1)] transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-[var(--color-text-1)] transition-colors">Terms</Link>
             <a href="mailto:team@bombsell.com" className="hover:text-[var(--color-text-1)] transition-colors">Contact</a>
@@ -297,208 +219,95 @@ export default function LoginPage() {
   )
 }
 
-// ── Data ─────────────────────────────────────────────────────────────
+const LOOP = [
+  { step: '1', title: 'Find', body: 'Spot accounts in motion' },
+  { step: '2', title: 'Understand', body: 'Keep context fresh' },
+  { step: '3', title: 'Act', body: 'Move work safely' },
+  { step: '4', title: 'Learn', body: 'Improve with outcomes' },
+]
 
-const STEPS = [
+const PLATFORM = [
   {
-    title: 'Ingest the market',
-    body: 'Bombsell listens for buying moments across funding, hiring, product, expansion, regulation, CRM queues, and watched accounts.',
+    title: 'Know which accounts matter',
+    body: 'Bombsell watches signals, watched accounts, and CRM context so your team sees the right accounts at the right moment.',
     icon: <IconRadar />,
   },
   {
-    title: 'Map signals to revenue context',
-    body: 'Each signal is scored against your ICP, workspace context, CRM records, and account history so the feed becomes a decision layer.',
+    title: 'Turn context into work',
+    body: 'Replies, approvals, follow-ups, CRM updates, and blocked actions land in one work inbox instead of scattered tools.',
     icon: <IconSpark />,
   },
   {
-    title: 'Trigger human and agent workflows',
-    body: 'Draft outreach, sync CRM, alert Slack, schedule follow-ups, and expose the same GTM context to Codex and Claude through MCP.',
+    title: 'Let agents operate safely',
+    body: 'Connect inboxes and tools, then let agents help with GTM work under clear approvals, pacing, and suppression rules.',
     icon: <IconSend />,
   },
 ]
 
-const FEATURES = [
+const DIFFERENTIATORS = [
   {
-    title: 'Signal intelligence layer',
-    body: 'Live company signals, prompt discovery, CRM export queues, and watchlists feed one ranked revenue timeline.',
+    title: 'A work inbox, not another feed',
+    body: 'The product focuses attention on what needs action: approve, reply, recover, export, or let automation continue.',
   },
   {
-    title: 'Workflow execution layer',
-    body: 'Generate outreach, send through connected inboxes, pause on replies, and sync status changes back to your CRM workflows.',
+    title: 'Clear guardrails for outbound',
+    body: 'Verified contacts, unsubscribes, bounce checks, daily caps, spacing, and inbox rotation are part of the product.',
   },
   {
-    title: 'Agent consumption layer',
-    body: 'MCP lets Codex, Claude, and future GTM agents inspect leads, update safe workflow state, and operate from Bombsell context.',
-  },
-  {
-    title: 'Service-ready infrastructure',
-    body: 'Multi-workspace, Slack alerts, credit top-ups, CRM sync, and audit-friendly workflows create the base for managed enterprise GTM.',
+    title: 'Context your agents can use',
+    body: 'Bombsell keeps GTM context accessible to your team, your tools, and AI agents through the app and MCP.',
   },
 ]
-
-const VISION_LAYERS = [
-  {
-    title: 'Self-serve GTM workspace',
-    stage: 'Now',
-    body: 'Founders, small teams, and agents use Bombsell to discover companies, unlock leads, draft outreach, export CRM records, and work from live feed sessions.',
-  },
-  {
-    title: 'Revenue intelligence graph',
-    stage: 'Next',
-    body: 'Unify signals, accounts, contacts, CRM events, outreach outcomes, enrichment history, and intent feedback into a durable graph that learns what converts.',
-  },
-  {
-    title: 'Enterprise workflow orchestration',
-    stage: 'Scale',
-    body: 'Move from dashboards to governed workflows: account routing, approvals, enrichment budgets, compliance controls, CRM writebacks, and SLA-backed automation.',
-  },
-]
-
-const TIERS = [
-  {
-    name: 'Self-serve',
-    price: '$0',
-    period: 'forever',
-    perks: ['20 starter lead credits', 'All self-serve features included', 'CRM, inbox, Slack, and MCP access', 'Top up credits when you unlock more leads'],
-    cta: 'Get started',
-    href: '#',
-    highlight: true,
-  },
-  {
-    name: 'Enterprise OS',
-    price: 'Custom',
-    period: '',
-    perks: ['Managed revenue workflows', 'Enterprise CRM governance', 'Custom agent playbooks', 'Dedicated signal sources', 'Operator-in-the-loop execution', 'Security and audit controls'],
-    cta: 'Talk to us',
-    href: 'mailto:team@bombsell.com?subject=Enterprise%20Revenue%20OS',
-    highlight: false,
-  },
-]
-
-// ── Components ───────────────────────────────────────────────────────
 
 function ProductPreview() {
   return (
     <div className="relative fade-in">
-      <div aria-hidden className="absolute -inset-10 -z-10 blob blob-2" style={{ opacity: 0.5 }} />
-
-      {/* Floating stat card */}
-      <div className="absolute -top-4 -left-4 z-20 card px-3 py-2 flex items-center gap-2 fade-in">
-        <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-sig-funding)]" />
-        <span className="text-[11px] font-medium text-[var(--color-text-1)]">+12 signal-matched accounts</span>
-      </div>
-
-      {/* Floating reply card */}
-      <div className="absolute -bottom-4 -right-3 z-20 card px-3 py-2 flex items-center gap-2 fade-in">
-        <span className="w-5 h-5 rounded-full bg-[var(--color-sig-funding-bg)] text-[var(--color-sig-funding)] flex items-center justify-center">
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </span>
-        <span className="text-[11px] font-medium text-[var(--color-text-1)]">3 workflows triggered</span>
-      </div>
-
-      <div className="card overflow-hidden shadow-[0_24px_80px_-24px_#c15f3c33]">
-        {/* window chrome */}
-        <div className="flex items-center gap-2 px-4 h-10 border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/70" />
-          <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/70" />
-          <span className="w-2.5 h-2.5 rounded-full bg-[#27c93f]/70" />
-          <span className="ml-3 text-[11px] text-[var(--color-text-3)] font-mono">bombsell.app / revenue-os</span>
-        </div>
-
-        {/* toolbar */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-line-1)]">
+      <div className="absolute -inset-4 -z-10 rounded-[32px] bg-[linear-gradient(135deg,#fff6ee,#f3e7d8)] opacity-80" />
+      <div className="card overflow-hidden shadow-[0_28px_90px_-42px_#1d2b4f55]">
+        <div className="flex items-center justify-between border-b border-[var(--color-line-1)] bg-white px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="pill chip-funding">● Signals</span>
-            <span className="pill chip-hiring">● CRM</span>
-            <span className="pill chip-expansion">● Agents</span>
+            <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]/70" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]/70" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]/70" />
           </div>
-          <span className="text-[11px] text-[var(--color-text-3)] font-mono">4 / 12</span>
+          <span className="text-[11px] text-[var(--color-text-4)]">Work Inbox</span>
         </div>
 
-        {/* feed rows */}
-        <div className="divide-y divide-[var(--color-line-1)]">
+        <div className="grid border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/50 p-4 sm:grid-cols-3 gap-2">
           {[
-            { tone: 'funding',     company: 'Acme Robotics', headline: 'Closes $40M Series B',    detail: 'Benchmark · 2h',  score: 92 },
-            { tone: 'hiring',      company: 'TechFlow',      headline: 'Hires VP Engineering',    detail: 'ex-Stripe · 5h',   score: 84 },
-            { tone: 'expansion',   company: 'BuildBase',     headline: 'Opens EU HQ in Berlin',   detail: '40 roles · 1d',    score: 78 },
-            { tone: 'acquisition', company: 'Northwind Labs',headline: 'Acquires Drift analytics',detail: 'undisclosed · 2d', score: 71 },
-          ].map((row, i) => (
-            <div
-              key={row.company}
-              className={`px-4 py-3 flex items-center gap-3 ${i === 0 ? 'bg-[var(--color-accent-soft)]' : ''}`}
-            >
-              <span className={`pill chip-${row.tone} text-[10px] px-1.5`}>●</span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="text-[13px] font-medium text-[var(--color-text-1)] truncate">{row.company}</p>
-                  <span className="text-[12px] text-[var(--color-text-3)] truncate">· {row.headline}</span>
-                </div>
-                <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">{row.detail}</p>
-              </div>
-              <div className="shrink-0 flex items-center gap-1.5">
-                <div className="w-10 h-1 rounded-full bg-[var(--color-ink-3)] overflow-hidden">
-                  <div className="h-full bg-[var(--color-accent)]" style={{ width: `${row.score}%` }} />
-                </div>
-                <span className="text-[11px] font-mono text-[var(--color-text-1)] tabular-nums w-6 text-right">{row.score}</span>
-              </div>
+            ['Open work', '18'],
+            ['Replies', '7'],
+            ['Booked', '3'],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-[var(--color-line-1)] bg-white px-3 py-3">
+              <p className="text-2xl font-semibold tracking-tight text-[var(--color-text-1)]">{value}</p>
+              <p className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
             </div>
           ))}
         </div>
 
-        {/* sticky action bar */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
-          <p className="text-[11px] text-[var(--color-text-3)]">
-            <span className="kbd">MCP</span>
-            <span className="ml-2">Codex and Claude ready</span>
-          </p>
-          <span aria-hidden className="h-7 px-3 rounded-full btn-primary text-[11px] font-medium inline-flex items-center gap-1.5 pointer-events-none cursor-default select-none">
-            Trigger workflow →
-          </span>
+        <div className="divide-y divide-[var(--color-line-1)]">
+          {[
+            { tag: 'Approve', company: 'Acme Robotics', body: 'Series B signal matched your ICP. Verified contact found.', tone: 'chip-funding' },
+            { tag: 'Reply', company: 'Northwind Labs', body: 'Buyer asked for pricing and implementation timeline.', tone: 'chip-acquisition' },
+            { tag: 'Blocked', company: 'TechFlow', body: 'Send paused by suppression policy. Needs review.', tone: 'chip-regulation' },
+            { tag: 'Export', company: 'BuildBase', body: 'Account ready for CRM handoff with context attached.', tone: 'chip-expansion' },
+          ].map(item => (
+            <div key={item.company} className="flex items-start gap-3 px-4 py-4">
+              <span className={`pill ${item.tone} shrink-0`}>{item.tag}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-medium text-[var(--color-text-1)]">{item.company}</p>
+                <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-[var(--color-text-3)]">{item.body}</p>
+              </div>
+              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--color-accent)]" />
+            </div>
+          ))}
         </div>
-      </div>
-    </div>
-  )
-}
 
-function EmailPreview() {
-  return (
-    <div className="card overflow-hidden relative">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/60">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center text-[11px] font-semibold">A</div>
-          <span className="text-[12px] font-medium text-[var(--color-text-1)]">Ari @ Acme</span>
-          <span className="text-[11px] text-[var(--color-text-4)]">ari@acme.com</span>
+        <div className="flex items-center justify-between border-t border-[var(--color-line-1)] bg-[var(--color-ink-2)]/45 px-4 py-3">
+          <p className="text-[11px] text-[var(--color-text-3)]">Context, guardrails, and next steps in one place.</p>
+          <span className="rounded-full bg-[var(--color-accent)] px-3 py-1.5 text-[11px] font-medium text-white">Running</span>
         </div>
-        <span className="pill chip-funding">Ready to send</span>
-      </div>
-
-      <div className="px-5 py-4 space-y-3 text-[13.5px] leading-[1.6] text-[var(--color-text-1)]">
-        <p className="text-[12px] text-[var(--color-text-4)]">
-          Subject: <span className="text-[var(--color-text-2)]">Congrats on the $40M — a thought on your post-raise hiring loop</span>
-        </p>
-        <p>Hey Ari —</p>
-        <p>
-          Saw the Benchmark-led Series B yesterday. Impressive round,
-          especially the industrial-automation angle.
-        </p>
-        <p>
-          A handful of hardware scale-ups we work with used{' '}
-          <span className="underline decoration-[var(--color-accent)] decoration-2 underline-offset-2">[our tool]</span>{' '}
-          to cut their post-raise hiring loop by 40% — mostly by automating
-          the scheduling and feedback intake. Feels relevant given you&rsquo;re
-          probably about to 3x the team.
-        </p>
-        <p>Worth a 15-min swap next week?</p>
-        <p className="text-[var(--color-text-3)]">— Jamie</p>
-      </div>
-
-      <div className="flex items-center gap-2 px-5 py-3 border-t border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40">
-        <span aria-hidden className="h-8 px-3 rounded-full btn-primary text-[12px] font-medium inline-flex items-center pointer-events-none cursor-default select-none">Send</span>
-        <span aria-hidden className="h-8 px-3 rounded-full btn-ghost text-[12px] inline-flex items-center pointer-events-none cursor-default select-none">Edit</span>
-        <span aria-hidden className="h-8 px-3 rounded-full btn-ghost text-[12px] inline-flex items-center pointer-events-none cursor-default select-none">Regenerate</span>
-        <span className="ml-auto text-[11px] text-[var(--color-text-3)]">Auto follow-up in 3 days</span>
       </div>
     </div>
   )
@@ -545,6 +354,7 @@ function IconRadar() {
     </svg>
   )
 }
+
 function IconSpark() {
   return (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -553,6 +363,7 @@ function IconSpark() {
     </svg>
   )
 }
+
 function IconSend() {
   return (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">

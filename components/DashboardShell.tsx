@@ -103,9 +103,28 @@ interface AutoSendAccount {
   display_name?: string | null
 }
 
+interface GtmWorkItem {
+  id: string
+  type: string
+  status: 'open' | 'blocked' | 'waiting' | 'completed'
+  priority: number
+  title: string
+  body: string
+  account_name: string
+  account_domain: string | null
+  lead_id: string | null
+  account_id: string | null
+  workflow_run_id: string | null
+  policy_decision_id: string | null
+  action_label: string
+  source: string
+  created_at: string
+  account_state_url: string | null
+}
+
 const VIEW_TITLES: Record<View, string> = {
-  command:   'Live Autopilot',
-  automation: 'Workflow Control',
+  command:   'Work Inbox',
+  automation: 'Workflow Runtime',
   mcp:       'Agent API',
   settings:  'Settings',
 }
@@ -226,9 +245,9 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userP
                 {VIEW_TITLES[activeView]}
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
-                {activeView === 'command' && 'Live signal automation, outcomes, replies, and booked meetings'}
-                {activeView === 'automation' && 'Workflow policies, selected sources, inbox rotation, and follow-up pacing'}
-                {activeView === 'mcp' && 'API and MCP access for external agents and GTM infrastructure clients'}
+                {activeView === 'command' && 'AI-native GTM Infrastructure: account work, memory, workflows, and safe execution'}
+                {activeView === 'automation' && 'Durable workflow policies, source selection, inbox rotation, and pacing'}
+                {activeView === 'mcp' && 'Programmable account state, work items, memory, and safe GTM tools'}
                 {activeView === 'settings' && 'Memory inputs, integrations, inboxes, policies, credits, and guardrails'}
               </p>
             </div>
@@ -321,6 +340,15 @@ function MetricChip({ value, label, accent = false }: { value: number; label: st
   )
 }
 
+function MiniStat({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--color-line-1)] bg-white px-3 py-3">
+      <p className="text-xl font-semibold tracking-tight text-[var(--color-text-1)]">{value}</p>
+      <p className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
+    </div>
+  )
+}
+
 function CommandCenter({
   leads,
   events,
@@ -337,6 +365,8 @@ function CommandCenter({
   const [autopilotMessage, setAutopilotMessage] = useState<string | null>(null)
   const [opsSnapshot, setOpsSnapshot] = useState<GtmOpsSnapshot | null>(null)
   const [opsError, setOpsError] = useState<string | null>(null)
+  const [workItems, setWorkItems] = useState<GtmWorkItem[]>([])
+  const [workItemsError, setWorkItemsError] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
   const [todayKey] = useState(() => new Date().toISOString().slice(0, 10))
   const lastSevenDays = now - 7 * 24 * 60 * 60 * 1000
@@ -347,7 +377,7 @@ function CommandCenter({
   const approvals = leads
     .filter(lead => lead.status === 'drafted' || (lead.is_unlocked === true && Boolean(lead.contact_email) && !lead.sent_at))
     .sort(sortByLatestOutcome)
-  const activeEvents = events.slice(0, 12)
+  const activeEvents = events
   const sentToday = sent.filter(lead => lead.sent_at && lead.sent_at.slice(0, 10) === todayKey).length
   const replyRate = sent.length > 0 ? Math.round((replies.length / sent.length) * 100) : 0
 
@@ -378,6 +408,24 @@ function CommandCenter({
     return () => { cancelled = true }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/gtm/work-items?limit=30', { cache: 'no-store' })
+      .then(async res => {
+        const data = await res.json().catch(() => null) as { work_items?: GtmWorkItem[]; error?: string } | null
+        if (cancelled) return
+        if (!res.ok || !data) {
+          setWorkItemsError(data?.error ?? 'Unable to load work items.')
+          return
+        }
+        setWorkItems(data.work_items ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setWorkItemsError('Unable to load work items.')
+      })
+    return () => { cancelled = true }
+  }, [])
+
   const startAutopilot = useCallback(async (mode: 'approve_first' | 'autopilot') => {
     setAutopilotBusy(true)
     setAutopilotMessage(null)
@@ -399,7 +447,7 @@ function CommandCenter({
         return
       }
       setAutopilot(prev => prev ? { ...prev, mode, policy: { ...(prev.policy ?? {}), enabled: mode === 'autopilot' } } : data)
-      setAutopilotMessage(mode === 'autopilot' ? 'Live autopilot is on. Bombsell will run safely in the background.' : 'Live autopilot paused. Batch workflows can still run if configured.')
+      setAutopilotMessage(mode === 'autopilot' ? 'Live Autopilot is on.' : 'Live Autopilot is paused.')
     } catch {
       setAutopilotMessage('Unable to start autopilot.')
     } finally {
@@ -409,6 +457,27 @@ function CommandCenter({
 
   return (
     <div className="space-y-4">
+      <section className="overflow-hidden rounded-[18px] border border-[var(--color-line-1)] bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_42%,#f6eee7_100%)] shadow-[0_18px_60px_-40px_#1d2b4f44]">
+        <div className="grid gap-6 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div>
+            <span className="inline-flex rounded-full border border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-accent-ring)]">
+              AI-native GTM Infrastructure
+            </span>
+            <h2 className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-[var(--color-text-1)]">
+              Find the right accounts. Move the work safely.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-3)]">
+              Live Autopilot monitors signals, prepares work, and respects your inbox and approval guardrails.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-[var(--color-line-1)] bg-white/75 p-3">
+            <MiniStat label="Open work" value={workItems.filter(item => item.status === 'open').length} />
+            <MiniStat label="Blocked" value={workItems.filter(item => item.status === 'blocked').length} />
+            <MiniStat label="Memory" value={opsSnapshot?.memories.length ?? 0} />
+          </div>
+        </div>
+      </section>
+
       <LiveAutopilotControl
         profile={profile}
         status={autopilot}
@@ -429,36 +498,9 @@ function CommandCenter({
       <GtmInfrastructureTrace snapshot={opsSnapshot} error={opsError} />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_380px]">
-        <section className="card overflow-hidden">
-          <div className="border-b border-[var(--color-line-1)] px-5 py-4">
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Revenue Inbox</h3>
-          </div>
-          <div className="grid divide-y divide-[var(--color-line-1)] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
-            <OutcomeList title="Needs Approval" empty="No leads waiting for approval." leads={approvals.slice(0, 6)} badge="Review" />
-            <OutcomeList title="Replies" empty="No replies yet." leads={replies.slice(0, 6)} badge="Reply" showReplyIntent />
-          </div>
-          <div className="grid divide-y divide-[var(--color-line-1)] border-t border-[var(--color-line-1)] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
-            <OutcomeList title="Outbox" empty="No sent emails yet." leads={sent.slice(0, 6)} badge="Sent" />
-            <OutcomeList title="Booked" empty="No booked meetings yet." leads={booked.slice(0, 6)} badge="Booked" showReplyIntent />
-          </div>
-        </section>
+        <WorkInboxPanel items={workItems} error={workItemsError} fallbackApprovals={approvals.slice(0, 4)} />
 
-        <section className="card overflow-hidden">
-          <div className="border-b border-[var(--color-line-1)] px-5 py-4">
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Agent Activity</h3>
-          </div>
-          {activeEvents.length === 0 ? (
-            <div className="px-5 py-8 text-center">
-              <p className="text-sm font-medium text-[var(--color-text-1)]">No agent events yet</p>
-            </div>
-          ) : (
-            <div className="max-h-[620px] divide-y divide-[var(--color-line-1)] overflow-y-auto">
-              {activeEvents.map(event => (
-                <AgentEventRow key={event.id} event={event} />
-              ))}
-            </div>
-          )}
-        </section>
+        <ObservatoryPanel snapshot={opsSnapshot} workItems={workItems} events={activeEvents} />
       </div>
 
       <p className="text-[11px] text-[var(--color-text-4)]">
@@ -466,6 +508,206 @@ function CommandCenter({
       </p>
     </div>
   )
+}
+
+function WorkInboxPanel({
+  items,
+  error,
+  fallbackApprovals,
+}: {
+  items: GtmWorkItem[]
+  error: string | null
+  fallbackApprovals: Lead[]
+}) {
+  const [openItemId, setOpenItemId] = useState<string | null>(null)
+  const [busyItemId, setBusyItemId] = useState<string | null>(null)
+  const [itemMessage, setItemMessage] = useState<string | null>(null)
+  const [hiddenItemIds, setHiddenItemIds] = useState<Set<string>>(() => new Set())
+  const visibleItems = items.length > 0
+    ? items
+    : fallbackApprovals.map(lead => ({
+        id: `fallback:${lead.id}`,
+        type: 'needs_approval',
+        status: 'open' as const,
+        priority: lead.relevance_score ?? 0,
+        title: `Approve outreach for ${lead.target_company}`,
+        body: lead.contact_email ?? lead.relevance_reason ?? 'Ready for review.',
+        account_name: lead.target_company,
+        account_domain: lead.company_domain ?? null,
+        lead_id: lead.id,
+        account_id: null,
+        workflow_run_id: null,
+        policy_decision_id: null,
+        action_label: 'Approve send',
+        source: lead.origin ?? 'lead',
+        created_at: lead.created_at,
+        account_state_url: null,
+      }))
+  const displayItems = visibleItems.filter(item => !hiddenItemIds.has(item.id))
+  const openItem = displayItems.find(item => item.id === openItemId) ?? null
+
+  async function updateLeadStatus(item: GtmWorkItem, status: 'viewed' | 'booked' | 'dismissed') {
+    if (!item.lead_id) return
+    setBusyItemId(item.id)
+    setItemMessage(null)
+    try {
+      const res = await fetch(`/api/leads/${item.lead_id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const data = await res.json().catch(() => null) as { error?: string } | null
+      if (!res.ok) {
+        setItemMessage(data?.error ?? 'Unable to update item.')
+        return
+      }
+      setItemMessage(status === 'dismissed' ? 'Item dismissed.' : status === 'booked' ? 'Marked booked.' : 'Marked viewed.')
+      setHiddenItemIds(prev => new Set(prev).add(item.id))
+      setOpenItemId(null)
+    } catch {
+      setItemMessage('Unable to update item.')
+    } finally {
+      setBusyItemId(null)
+    }
+  }
+
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line-1)] px-5 py-4">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Agent Work Inbox</h3>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">Approvals, replies, booked meetings, policy blocks, and workflow recovery.</p>
+        </div>
+        <MetricChip value={displayItems.length} label="Items" accent={displayItems.some(item => item.status === 'blocked')} />
+      </div>
+      {itemMessage && <div className="border-b border-[var(--color-line-1)] px-5 py-2 text-[11px] text-[var(--color-text-3)]">{itemMessage}</div>}
+      {error ? (
+        <div className="px-5 py-4 text-xs text-[var(--color-sig-regulation)]">{error}</div>
+      ) : displayItems.length === 0 ? (
+        <div className="px-5 py-12 text-center">
+          <p className="text-sm font-medium text-[var(--color-text-1)]">No open work items</p>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">The next signal, reply, policy block, or workflow run will appear here.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-[var(--color-line-1)]">
+          {displayItems.slice(0, 10).map(item => (
+            <div key={item.id}>
+              <button
+                type="button"
+                onClick={() => setOpenItemId(prev => prev === item.id ? null : item.id)}
+                className="grid w-full gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--color-ink-2)]/50 lg:grid-cols-[1fr_auto]"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${workStatusClass(item.status)}`}>
+                      {item.status}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-4)]">{item.type.replace(/_/g, ' ')}</span>
+                  </div>
+                  <p className="mt-2 truncate text-[13px] font-semibold text-[var(--color-text-1)]">{item.title}</p>
+                  <p className="mt-1 line-clamp-2 text-[11.5px] leading-5 text-[var(--color-text-3)]">{item.body}</p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10.5px] text-[var(--color-text-4)]">
+                    <span>{item.account_name}</span>
+                    {item.account_domain && <span>{item.account_domain}</span>}
+                    <span>{new Date(item.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 lg:justify-end">
+                  <span className="rounded-full border border-[var(--color-line-1)] bg-white px-2 py-1 text-[10px] text-[var(--color-text-4)]">
+                    P{Math.round(item.priority)}
+                  </span>
+                  <span className="rounded-full bg-[var(--color-ink-2)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-2)]">
+                    {openItemId === item.id ? 'Close' : item.action_label}
+                  </span>
+                </div>
+              </button>
+              {openItem?.id === item.id && (
+                <div className="border-t border-[var(--color-line-1)] bg-[var(--color-ink-2)]/45 px-5 py-4">
+                  <div className="grid gap-3 text-[11.5px] text-[var(--color-text-3)] sm:grid-cols-2">
+                    <p><span className="font-medium text-[var(--color-text-1)]">Source:</span> {item.source}</p>
+                    <p><span className="font-medium text-[var(--color-text-1)]">Account:</span> {item.account_name}</p>
+                    {item.workflow_run_id && <p><span className="font-medium text-[var(--color-text-1)]">Workflow:</span> {item.workflow_run_id.slice(0, 8)}</p>}
+                    {item.policy_decision_id && <p><span className="font-medium text-[var(--color-text-1)]">Policy:</span> {item.policy_decision_id.slice(0, 8)}</p>}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {item.lead_id && (
+                      <button onClick={() => updateLeadStatus(item, 'viewed')} disabled={busyItemId === item.id} className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] disabled:opacity-50">
+                        Mark viewed
+                      </button>
+                    )}
+                    {item.lead_id && item.type === 'reply_detected' && (
+                      <button onClick={() => updateLeadStatus(item, 'booked')} disabled={busyItemId === item.id} className="rounded-full btn-primary px-3 py-1.5 text-[11px] font-medium disabled:opacity-50">
+                        Mark booked
+                      </button>
+                    )}
+                    {item.lead_id && (
+                      <button onClick={() => updateLeadStatus(item, 'dismissed')} disabled={busyItemId === item.id} className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-sig-regulation)] disabled:opacity-50">
+                        Dismiss
+                      </button>
+                    )}
+                    {item.account_state_url && (
+                      <a href={item.account_state_url} target="_blank" rel="noreferrer" className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)]">
+                        Account state
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ObservatoryPanel({
+  snapshot,
+  workItems,
+  events,
+}: {
+  snapshot: GtmOpsSnapshot | null
+  workItems: GtmWorkItem[]
+  events: AgentEvent[]
+}) {
+  const running = (snapshot?.workflow_runs ?? []).filter(run => run.status === 'running' || run.status === 'waiting').length
+  const failed = (snapshot?.workflow_runs ?? []).filter(run => run.status === 'failed').length
+  const blocked = workItems.filter(item => item.status === 'blocked').length
+  const memories = snapshot?.memories.length ?? 0
+
+  return (
+    <section className="card flex max-h-[720px] min-h-0 flex-col overflow-hidden">
+      <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+        <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Observatory</h3>
+        <p className="mt-1 text-xs text-[var(--color-text-4)]">Workflow health, memory freshness, and execution risk.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 p-4">
+        <MiniStat value={running} label="Running" />
+        <MiniStat value={failed} label="Failed" />
+        <MiniStat value={blocked} label="Blocked" />
+        <MiniStat value={memories} label="Memories" />
+      </div>
+      <div className="border-t border-[var(--color-line-1)] px-5 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Recent Agent Events</p>
+      </div>
+      {events.length === 0 ? (
+        <div className="px-5 py-8 text-center text-xs text-[var(--color-text-4)]">No agent events yet.</div>
+      ) : (
+        <div className="min-h-0 flex-1 divide-y divide-[var(--color-line-1)] overflow-y-auto pb-6">
+          {events.map(event => (
+            <AgentEventRow key={event.id} event={event} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function workStatusClass(status: GtmWorkItem['status']): string {
+  if (status === 'blocked') return 'bg-red-50 text-red-600'
+  if (status === 'completed') return 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+  if (status === 'waiting') return 'bg-[#fff4df] text-[#936014]'
+  return 'bg-[var(--color-ink-2)] text-[var(--color-text-2)]'
 }
 
 function GtmInfrastructureTrace({ snapshot, error }: { snapshot: GtmOpsSnapshot | null; error: string | null }) {
@@ -610,8 +852,11 @@ function LiveAutopilotControl({
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Live Autopilot</p>
               <h2 className="mt-1 text-xl font-semibold tracking-tight text-[var(--color-text-1)]">
-                {mode === 'autopilot' ? 'Running live signals' : 'Paused'}
+                {mode === 'autopilot' ? 'Running' : 'Paused'}
               </h2>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--color-text-3)]">
+                Monitors live signals, prepares account work, and sends only within your guardrails.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button onClick={onStartAutopilot} disabled={busy || !ready} className="rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50">
@@ -667,57 +912,6 @@ function OutcomeCard({
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{label}</p>
       <p className="mt-2 text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">{value}</p>
       <p className="mt-1 text-xs text-[var(--color-text-3)]">{detail}</p>
-    </div>
-  )
-}
-
-function OutcomeList({
-  title,
-  empty,
-  leads,
-  badge,
-  showReplyIntent = false,
-}: {
-  title: string
-  empty: string
-  leads: Lead[]
-  badge: string
-  showReplyIntent?: boolean
-}) {
-  return (
-    <div className="min-h-[260px] px-5 py-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{title}</h4>
-        <span className="rounded-full border border-[var(--color-line-1)] bg-white px-2 py-0.5 text-[10px] text-[var(--color-text-3)]">
-          {leads.length}
-        </span>
-      </div>
-      {leads.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-[var(--color-line-2)] px-4 py-6 text-center text-xs text-[var(--color-text-4)]">{empty}</p>
-      ) : (
-        <div className="space-y-2">
-          {leads.map(lead => (
-            <div key={`${title}-${lead.id}`} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[12.5px] font-semibold text-[var(--color-text-1)]">{lead.target_company}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-4)]">
-                    {showReplyIntent && lead.reply_summary
-                      ? lead.reply_summary
-                      : lead.contact_email || lead.relevance_reason || 'No contact yet'}
-                  </p>
-                  {showReplyIntent && lead.reply_intent && (
-                    <p className="mt-1 text-[10.5px] font-medium uppercase tracking-[0.12em] text-[var(--color-accent-ring)]">
-                      {lead.reply_intent.replace(/_/g, ' ')}
-                    </p>
-                  )}
-                </div>
-                <span className="shrink-0 rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10px] text-[var(--color-text-3)]">{badge}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
@@ -791,7 +985,7 @@ codex mcp login bombsell \\
               Bombsell for Codex and Claude.
             </h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-              Connect Bombsell to Codex CLI or Claude Code so your coding agents can inspect GTM context, read account work, update safe workflow state, and add watched accounts. Setup uses browser OAuth, so users approve access without copying API tokens.
+              Connect Bombsell to Codex CLI or Claude Code so your coding agents can inspect GTM context, read account work, update safe workflow state, and add watched accounts. Setup uses browser OAuth.
             </p>
           </div>
         </div>

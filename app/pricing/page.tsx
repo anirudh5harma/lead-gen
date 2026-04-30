@@ -10,66 +10,65 @@ import { useSectionReveal } from '@/hooks/use-section-reveal'
 const PLANS = [
   {
     id: 'free' as const,
-    name: 'Free',
+    name: 'Self-serve',
     price: '$0',
     period: 'forever',
-    description: 'Full self-serve access with 20 starter lead-unlock credits.',
+    description: 'A complete workspace for experiencing our true AI-native GTM infrastructure.',
     features: [
-      '20 starter lead unlock credits',
-      'AI prompt discovery',
-      'Personalized outreach drafts',
-      'Verified contact emails',
-      'CRM sync, imports, and exports',
-      'Connected inbox sending',
-      'Slack alerts and MCP access',
+      '20 starter lead credits',
+      'Live Autopilot and Work Inbox',
+      'Gmail and Outlook connectors',
+      'CRM export and Slack alerts',
+      'MCP access',
+      'Top up credits as needed',
     ],
     cta: 'Get started',
     highlight: true,
   },
   {
     id: 'enterprise' as const,
-    name: 'Enterprise OS',
+    name: 'Managed Infrastructure',
     price: 'Custom',
     period: '',
-    description: 'For teams looking to scale with revenue intelligence',
+    description: 'For teams that want Bombsell to run governed GTM workflows with stronger controls.',
     features: [
-      'Managed revenue workflows',
+      'Managed GTM workflow design',
+      'Custom account agents and playbooks',
       'Enterprise CRM governance',
-      'Custom agent playbooks',
-      'Dedicated signal sources',
+      'Dedicated source connectors',
       'Operator-in-the-loop execution',
-      'Security and audit controls',
+      'Security reviews and audit controls',
     ],
     cta: 'Talk to us',
     highlight: false,
-    href: 'mailto:team@bombsell.com?subject=Enterprise%20Revenue%20OS',
+    href: 'mailto:team@bombsell.com?subject=Managed%20GTM%20Infrastructure',
   },
 ]
 
 const FAQS = [
   {
     q: 'What do credits pay for?',
-    a: 'Credits are charged only when you unlock a lead. Browsing feeds, connecting CRM, setting up Slack, using MCP, and managing watchlists do not consume credits.',
+    a: 'Credits are used when Bombsell unlocks a lead/contact. Monitoring accounts, reviewing work items, using MCP, connecting inboxes, and managing settings do not consume credits.',
   },
   {
     q: 'What happens when I run out of credits?',
-    a: 'You can keep using the product and browsing matched leads, but you need to top up credits before unlocking more contacts and outreach drafts.',
+    a: 'Your workspace still works, but new contact unlocks pause until you top up. Existing memories, workflows, CRM exports, and account context remain available.',
   },
   {
-    q: 'Which features are included for free?',
-    a: 'All self-serve features are available: live signal feed, prompt discovery, watchlists, CRM workflows, connected inbox sending, Slack alerts, and MCP access.',
+    q: 'What is included in self-serve?',
+    a: 'Live Autopilot, Work Inbox, watched accounts, connected inboxes, CRM export queue, Slack alerts, GTM memory, and Agent API/MCP access.',
   },
   {
     q: 'When should I talk to Bombsell?',
-    a: 'Use Enterprise OS when you need managed revenue workflows, custom signal sources, governance, security reviews, or operator-in-the-loop execution.',
+    a: 'Talk to us when you want custom account agents, governed CRM workflows, dedicated data sources, security review, or an operator-in-the-loop motion.',
   },
   {
-    q: 'Where do signals come from?',
-    a: 'Google News, press wires, and public job boards — refreshed every hour. Every signal is scored against your ICP and product positioning by Bombsell before it reaches your feed.',
+    q: 'Is this a sales engagement tool?',
+    a: 'Not exactly. Bombsell includes safe outbound, but the product is broader: account context, GTM memory, agent work, workflow controls, and execution guardrails.',
   },
   {
-    q: 'How do you verify contact emails?',
-    a: "We run a multi-stage waterfall — then cross-check every address with ZeroBounce before it ever reaches you. Emails that bounce or generate complaints are permanently suppressed.",
+    q: 'How is outbound kept safe?',
+    a: 'Automation uses connected inboxes, pacing, daily caps, verified contacts, unsubscribe checks, bounce suppression, reply-stop behavior, and approval modes.',
   },
 ]
 
@@ -128,11 +127,11 @@ export default function PricingPage() {
         <div className="section-reveal reveal-from-bottom text-center mb-16 space-y-4 max-w-2xl fade-in">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pricing</p>
           <h1 className="text-4xl md:text-6xl font-medium text-[var(--color-text-1)] tracking-[-0.02em] leading-[1.02]">
-            Simple pricing.<br />
-            <span className="font-serif italic text-gradient">Outsized outcomes.</span>
+            Start self-serve.<br />
+            <span className="font-serif italic text-gradient">Scale with us.</span>
           </h1>
           <p className="text-[16px] text-[var(--color-text-2)] max-w-lg mx-auto leading-relaxed">
-            Start free with 20 unlock credits. Top up only when you need more leads.
+            Use Bombsell for free with starter credits. Move to managed GTM infrastructure when your motion needs more control.
           </p>
         </div>
 
@@ -197,7 +196,7 @@ export default function PricingPage() {
         </div>
 
         <p className="mt-12 text-[12px] text-[var(--color-text-3)]">
-          Self-serve is free to start · Credits are prepaid · Enterprise is custom
+          Self-serve is free to start · Credits are prepaid · Managed infrastructure is custom
         </p>
 
         <section className="section-reveal reveal-from-bottom w-full max-w-3xl mt-28">

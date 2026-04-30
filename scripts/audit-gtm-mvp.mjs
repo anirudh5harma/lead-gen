@@ -8,9 +8,13 @@ const requiredFiles = [
   'lib/gtm/identity.ts',
   'lib/gtm/graph.ts',
   'lib/gtm/memory.ts',
+  'lib/gtm/account-state.ts',
+  'lib/gtm/work-items.ts',
   'lib/workflows/runtime.ts',
   'lib/policies/outbound.ts',
   'app/api/gtm/ops/route.ts',
+  'app/api/gtm/work-items/route.ts',
+  'app/api/gtm/accounts/[id]/state/route.ts',
 ]
 
 const requiredTables = [
@@ -82,6 +86,21 @@ for (const hook of requiredAutomationHooks) {
 const opsRoute = read('app/api/gtm/ops/route.ts')
 for (const table of ['gtm_workflow_runs', 'gtm_policy_decisions', 'gtm_memories', 'gtm_accounts']) {
   if (!opsRoute.includes(table)) failures.push(`GTM ops route does not read ${table}`)
+}
+
+const accountState = read('lib/gtm/account-state.ts')
+for (const table of ['gtm_accounts', 'gtm_people', 'gtm_signals', 'gtm_touchpoints', 'gtm_memories', 'gtm_workflow_runs', 'gtm_policy_decisions']) {
+  if (!accountState.includes(table)) failures.push(`Account state helper does not read ${table}`)
+}
+
+const workItems = read('lib/gtm/work-items.ts')
+for (const token of ['policy_blocked', 'workflow_failed', 'needs_approval', 'reply_detected']) {
+  if (!workItems.includes(token)) failures.push(`Work item helper missing ${token}`)
+}
+
+const mcp = read('app/api/mcp/route.ts')
+for (const tool of ['list_work_items', 'get_account_state', 'record_memory']) {
+  if (!mcp.includes(tool)) failures.push(`MCP route missing tool: ${tool}`)
 }
 
 if (failures.length > 0) {

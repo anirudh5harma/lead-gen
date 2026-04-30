@@ -3,6 +3,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import * as z from 'zod/v4'
 import { createAdminClient } from '@/lib/supabase/server'
+import { getGtmAccountState } from '@/lib/gtm/account-state'
+import { recordGtmMemory } from '@/lib/gtm/memory'
+import { listGtmWorkItems } from '@/lib/gtm/work-items'
 import { buildLiveLeadFeedSnapshot } from '@/lib/lead-sources'
 import { protectedResourceMetadataUrl, validateMcpAccessToken } from '@/lib/mcp-oauth'
 import {
@@ -55,6 +58,9 @@ export async function GET(request: Request) {
       'list_watchlist',
       'add_watchlist_company',
       'list_feed_sessions',
+      'list_work_items',
+      'get_account_state',
+      'record_memory',
       'get_automation_settings',
       'configure_automation',
       'queue_leads_for_crm',
@@ -237,6 +243,65 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
   )
 
   server.registerTool(
+    'list_work_items',
+    {
+      title: 'List Work Items',
+      description: 'List agent work items across approvals, replies, booked meetings, policy blocks, workflow failures, and high-fit opportunities.',
+      inputSchema: {
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+        limit: z.number().min(1).max(100).optional().describe('Maximum work items to return. Default 30.'),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await listWorkItems(ctx, args)),
+  )
+
+  server.registerTool(
+    'get_account_state',
+    {
+      title: 'Get Account State',
+      description: 'Return canonical account state: account profile, people, signals, touchpoints, memories, workflows, policy decisions, and next actions.',
+      inputSchema: {
+        account_id: z.string().min(1).describe('GTM account id.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await getAccountState(ctx, args)),
+  )
+
+  server.registerTool(
+    'record_memory',
+    {
+      title: 'Record Memory',
+      description: 'Record a workspace or entity memory with source, confidence, and provenance for durable GTM context.',
+      inputSchema: {
+        content: z.string().min(1).max(4000).describe('Memory content.'),
+        memory_type: z.string().min(1).max(80).describe('Memory type, for example objection, positioning, buying_signal, or outcome.'),
+        source: z.string().min(1).max(120).describe('Where this memory came from.'),
+        scope: z.enum(['workspace', 'entity', 'performance', 'run']).optional().describe('Memory scope. Default workspace.'),
+        entity_type: z.string().optional().describe('Optional entity type, for example account or person.'),
+        entity_id: z.string().optional().describe('Optional entity id.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+        confidence: z.number().min(0).max(1).optional().describe('Confidence between 0 and 1. Default 1.'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await recordMemory(ctx, args)),
+  )
+
+  server.registerTool(
     'search_signal_timeline',
     {
       title: 'Search Signal Timeline',
@@ -316,6 +381,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
 
   registerJsonResource(server, 'workspace-profile', 'bombsell://workspace/profile', 'Workspace GTM profile', 'Current user profile, active client workspace, ICP, and agent guidance.', () => getGtmContext(ctx))
   registerJsonResource(server, 'recent-leads', 'bombsell://leads/recent', 'Recent leads', 'Recent non-dismissed leads for the active workspace.', () => listLeads(ctx, { limit: 25 }))
+  registerJsonResource(server, 'work-items', 'bombsell://work-items', 'Work items', 'Current GTM agent work queue for the active workspace.', () => listWorkItems(ctx, { limit: 30 }))
   registerJsonResource(server, 'watchlist', 'bombsell://watchlist', 'Watchlist', 'Watchlisted companies for the active workspace.', () => listWatchlist(ctx, {}))
   registerJsonResource(server, 'feed-sessions', 'bombsell://feed-sessions', 'Source sessions', 'Recent source-session groupings for batch and CRM-imported leads.', () => listFeedSessions(ctx, {}))
 
@@ -401,8 +467,10 @@ async function getGtmContext(ctx: McpContext) {
     clients: clients ?? [],
     guidance: [
       'Use list_leads for current live-signal, batch, CRM-queued opportunities, reply intent, and booked-meeting outcomes.',
+      'Use list_work_items for the current agent work queue, then get_account_state when an account needs deeper context.',
       'Use update_lead_status only when the user or calling workflow has decided the lead state should change.',
       'Use configure_automation to set safe outbound automation after the user has connected a sending inbox.',
+      'Use record_memory when a durable workspace or account fact should be retained with source and confidence.',
       'Use queue_leads_for_crm to stage approved workflow leads into the CRM export queue.',
       'Do not generate outreach for locked leads through MCP; use the Bombsell UI/API unlock flow first.',
     ],
@@ -569,6 +637,61 @@ async function listFeedSessions(ctx: McpContext, args: {
       new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
     )),
   }
+}
+
+async function listWorkItems(ctx: McpContext, args: { client_id?: string; limit?: number }) {
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  return listGtmWorkItems(ctx.supabase, {
+    userId: ctx.userId,
+    clientId,
+    limit: boundedNumber(args.limit, 1, 100, 30),
+  })
+}
+
+async function getAccountState(ctx: McpContext, args: { account_id: string; client_id?: string }) {
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const state = await getGtmAccountState(ctx.supabase, {
+    userId: ctx.userId,
+    clientId,
+    accountId: args.account_id,
+  })
+  if (!state) throw new Error('Account not found')
+  return state
+}
+
+async function recordMemory(ctx: McpContext, args: {
+  content: string
+  memory_type: string
+  source: string
+  scope?: 'workspace' | 'entity' | 'performance' | 'run'
+  entity_type?: string
+  entity_id?: string
+  client_id?: string
+  confidence?: number
+}) {
+  requireScope(ctx, 'bombsell:write:safe')
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const scope = args.scope ?? 'workspace'
+  const entityType = optionalString(args.entity_type)
+  const entityId = optionalString(args.entity_id)
+  if (scope === 'entity' && (!entityType || !entityId)) {
+    throw new Error('entity_type and entity_id are required for entity memory.')
+  }
+
+  const id = await recordGtmMemory(ctx.supabase, {
+    userId: ctx.userId,
+    clientId,
+    scope,
+    entityType,
+    entityId,
+    memoryType: args.memory_type,
+    content: args.content,
+    source: args.source,
+    confidence: typeof args.confidence === 'number' ? args.confidence : 1,
+    provenance: { recorded_via: 'mcp' },
+  })
+
+  return { ok: Boolean(id), memory_id: id }
 }
 
 async function getAutomationSettings(ctx: McpContext, args: { client_id?: string }) {
