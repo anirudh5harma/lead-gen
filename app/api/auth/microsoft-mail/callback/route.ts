@@ -4,6 +4,7 @@ import { exchangeMicrosoftCode } from '@/lib/oauth/microsoft'
 import { createOutlookSubscription } from '@/lib/oauth/outlook-watch'
 import { randomUUID } from 'crypto'
 import { verifyOAuthState } from '@/lib/oauth/state'
+import { canConnectSendingAccount } from '@/lib/oauth/connected-accounts'
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL!
 
@@ -25,35 +26,45 @@ export async function GET(request: Request) {
   try {
     const supabase = await createServiceClient()
     const tokens  = await exchangeMicrosoftCode(code)
+    const email = tokens.email.trim().toLowerCase()
 
-    const { data: account } = await supabase.from('connected_accounts').upsert({
+    if (!await canConnectSendingAccount(supabase, userId, 'outlook', email)) {
+      return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=max_accounts`)
+    }
+
+    const { data: account, error: accountError } = await supabase.from('connected_accounts').upsert({
       user_id:          userId,
       provider:         'outlook',
-      email:            tokens.email,
+      email,
       display_name:     tokens.name,
       access_token:     tokens.access_token,
       refresh_token:    tokens.refresh_token,
       token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
       is_active:        true,
-    }, { onConflict: 'user_id,email' }).select('id').single()
+    }, { onConflict: 'user_id,provider,email' }).select('id').single()
+    if (accountError) {
+      if (accountError.message.includes('connected sending account limit exceeded')) {
+        return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=max_accounts`)
+      }
+      throw new Error(accountError.message)
+    }
+    if (!account) throw new Error('Microsoft account connection was not saved')
 
     // Create inbox change notification subscription (best-effort)
-    if (account) {
-      try {
-        const clientState = randomUUID()
-        const sub = await createOutlookSubscription({
-          accessToken:  tokens.access_token,
-          clientState,
-          webhookUrl:   `${BASE}/api/webhooks/outlook`,
-        })
-        await supabase.from('connected_accounts').update({
-          outlook_subscription_id:  sub.subscriptionId,
-          outlook_subscription_exp: sub.expiration,
-          outlook_client_state:     clientState,
-        }).eq('id', account.id)
-      } catch (subErr) {
-        console.error('[microsoft-mail/callback] subscription setup failed:', subErr)
-      }
+    try {
+      const clientState = randomUUID()
+      const sub = await createOutlookSubscription({
+        accessToken:  tokens.access_token,
+        clientState,
+        webhookUrl:   `${BASE}/api/webhooks/outlook`,
+      })
+      await supabase.from('connected_accounts').update({
+        outlook_subscription_id:  sub.subscriptionId,
+        outlook_subscription_exp: sub.expiration,
+        outlook_client_state:     clientState,
+      }).eq('id', account.id)
+    } catch (subErr) {
+      console.error('[microsoft-mail/callback] subscription setup failed:', subErr)
     }
 
     return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_connected=outlook`)

@@ -59,37 +59,43 @@ export async function pickSenderAccount(
   supabase:     SupabaseClient,
   preferEmail?: string | null,
   preferAccountId?: string | null,
+  notUsedSince?: string | null,
 ): Promise<ConnectedAccount | null> {
   if (preferEmail) {
-    const { data } = await supabase
+    let query = supabase
       .from('connected_accounts')
       .select('id, provider, email, display_name, access_token, refresh_token, token_expires_at')
       .eq('user_id', userId)
       .eq('email', preferEmail)
       .eq('is_active', true)
-      .single()
+    if (notUsedSince) query = query.or(`last_used_at.is.null,last_used_at.lte.${notUsedSince}`)
+    const { data } = await query.maybeSingle()
     if (data) return data as ConnectedAccount
   }
 
   if (preferAccountId) {
-    const { data } = await supabase
+    let query = supabase
       .from('connected_accounts')
       .select('id, provider, email, display_name, access_token, refresh_token, token_expires_at')
       .eq('user_id', userId)
       .eq('id', preferAccountId)
       .eq('is_active', true)
-      .single()
+    if (notUsedSince) query = query.or(`last_used_at.is.null,last_used_at.lte.${notUsedSince}`)
+    const { data } = await query.maybeSingle()
     if (data) return data as ConnectedAccount
   }
 
-  const { data } = await supabase
+  let query = supabase
     .from('connected_accounts')
-    .select('id, provider, email, display_name, access_token, refresh_token, token_expires_at')
+    .select('id, provider, email, display_name, access_token, refresh_token, token_expires_at, created_at')
     .eq('user_id', userId)
     .eq('is_active', true)
+  if (notUsedSince) query = query.or(`last_used_at.is.null,last_used_at.lte.${notUsedSince}`)
+  const { data } = await query
     .order('last_used_at', { ascending: true, nullsFirst: true })
+    .order('created_at', { ascending: true })
     .limit(1)
-    .single()
+    .maybeSingle()
   return data as ConnectedAccount | null
 }
 
@@ -110,14 +116,15 @@ export async function sendWithConnectedAccount(params: {
   gmailThreadId?: string | null
   preferEmail?:  string | null
   preferAccountId?: string | null
+  notUsedSince?: string | null
 }): Promise<SendResult | null> {
-  const { userId, supabase, to, cc = [], subject, body, fromName, inReplyTo, gmailThreadId, preferEmail, preferAccountId } = params
+  const { userId, supabase, to, cc = [], subject, body, fromName, inReplyTo, gmailThreadId, preferEmail, preferAccountId, notUsedSince } = params
   const recipient = normalizeEmailAddress(to)
   const ccRecipients = [...new Set(cc.map(email => normalizeEmailAddress(email)).filter(email => email.toLowerCase() !== recipient.toLowerCase()))]
   const safeSubject = sanitizeHeaderValue(subject)
   const safeFromName = sanitizeHeaderValue(fromName)
 
-  const account = await pickSenderAccount(userId, supabase, preferEmail, preferAccountId)
+  const account = await pickSenderAccount(userId, supabase, preferEmail, preferAccountId, notUsedSince)
   if (!account) return null
 
   const accessToken  = await getValidAccessToken(account, supabase)

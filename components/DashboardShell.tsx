@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useMemo, useState, useTransition, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { MAX_CONNECTED_SENDING_ACCOUNTS } from '@/lib/oauth/connected-accounts'
 import Sidebar from './Sidebar'
 import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
@@ -2110,10 +2111,12 @@ function ConnectedAccountsPanel() {
   const [removing,    setRemoving]    = useState<string | null>(null)
   const [banner,      setBanner]      = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeAccounts = accounts.filter(account => account.is_active)
+  const accountLimitReached = activeAccounts.length >= MAX_CONNECTED_SENDING_ACCOUNTS
 
   useEffect(() => {
-    fetch('/api/connected-accounts')
-      .then(r => r.json() as Promise<{ accounts?: ConnectedAccount[] }>)
+    fetch('/api/connected-accounts', { cache: 'no-store' })
+      .then(r => r.json() as Promise<{ accounts?: ConnectedAccount[]; max_accounts?: number }>)
       .then(d => { setAccounts(d.accounts ?? []); setLoaded(true) })
       .catch(() => setLoaded(true))
 
@@ -2132,6 +2135,7 @@ function ConnectedAccountsPanel() {
         microsoft_failed: 'Microsoft connection failed — please try again.',
         invalid_state:    'Invalid OAuth state — please try again.',
         plan_required:    'Sending account connections are available on every workspace. Please try again.',
+        max_accounts:     `You can connect up to ${MAX_CONNECTED_SENDING_ACCOUNTS} sending inboxes.`,
       }
       showBanner('err', msgs[error] ?? 'Connection failed.')
     }
@@ -2160,10 +2164,17 @@ function ConnectedAccountsPanel() {
   return (
     <div className="card divide-y divide-[var(--color-line-1)]">
       <div className="px-5 py-4">
-        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Sending Accounts</h2>
-        <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-          Emails send from your own inbox. Multiple accounts rotate automatically.
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Sending Accounts</h2>
+            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+              Emails send from your own inbox. Multiple accounts rotate automatically.
+            </p>
+          </div>
+          <span className="shrink-0 rounded border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-2 py-1 text-[10px] font-medium text-[var(--color-text-3)]">
+            {activeAccounts.length}/{MAX_CONNECTED_SENDING_ACCOUNTS}
+          </span>
+        </div>
       </div>
 
       {banner && (
@@ -2185,13 +2196,16 @@ function ConnectedAccountsPanel() {
                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[var(--color-ink-2)] border border-[var(--color-line-1)] text-[var(--color-text-3)]">
                     {PROVIDER_LABEL[a.provider]}
                   </span>
-                  <span className="text-xs text-[var(--color-text-1)] truncate">{a.email}</span>
+                  <span className="text-xs text-[var(--color-text-1)] truncate">
+                    {a.display_name ? `${a.display_name} · ${a.email}` : a.email}
+                  </span>
                 </div>
-                {a.last_used_at && (
-                  <p className="text-[10px] text-[var(--color-text-4)] mt-0.5">
-                    Last used {new Date(a.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </p>
-                )}
+                <p className="text-[10px] text-[var(--color-text-4)] mt-0.5">
+                  {a.is_active ? 'Active' : 'Inactive'}
+                  {a.last_used_at
+                    ? ` · Last used ${new Date(a.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                    : ' · Not used yet'}
+                </p>
               </div>
               <button
                 onClick={() => remove(a.id)}
@@ -2205,8 +2219,19 @@ function ConnectedAccountsPanel() {
         </ul>
       )}
 
+      {loaded && accounts.length === 0 && (
+        <div className="px-5 py-4 text-xs text-[var(--color-text-4)]">
+          No sending inboxes connected.
+        </div>
+      )}
+
       <div className="px-5 py-4 flex items-center gap-2 flex-wrap">
-        {ENABLE_GMAIL_CONNECT && (
+        {accountLimitReached && (
+          <span className="text-[11px] text-[var(--color-text-4)]">
+            Disconnect an inbox before adding another.
+          </span>
+        )}
+        {ENABLE_GMAIL_CONNECT && !accountLimitReached && (
           <a
             href="/api/auth/google-mail"
             className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"
@@ -2220,18 +2245,20 @@ function ConnectedAccountsPanel() {
             Connect Gmail
           </a>
         )}
-        <a
-          href="/api/auth/microsoft-mail"
-          className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"
-        >
-          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden>
-            <path fill="#F25022" d="M1 1h10v10H1z"/>
-            <path fill="#7FBA00" d="M13 1h10v10H13z"/>
-            <path fill="#00A4EF" d="M1 13h10v10H1z"/>
-            <path fill="#FFB900" d="M13 13h10v10H13z"/>
-          </svg>
-          Connect Outlook
-        </a>
+        {!accountLimitReached && (
+          <a
+            href="/api/auth/microsoft-mail"
+            className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden>
+              <path fill="#F25022" d="M1 1h10v10H1z"/>
+              <path fill="#7FBA00" d="M13 1h10v10H13z"/>
+              <path fill="#00A4EF" d="M1 13h10v10H1z"/>
+              <path fill="#FFB900" d="M13 13h10v10H13z"/>
+            </svg>
+            Connect Outlook
+          </a>
+        )}
       </div>
     </div>
   )

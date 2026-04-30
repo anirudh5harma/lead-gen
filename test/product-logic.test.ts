@@ -15,6 +15,7 @@ import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-no
 import { buildBookingReplyBody, classifyReplyIntent, shouldAutoSendBookingLink } from '../lib/reply-intelligence.ts'
 import { buildIcpKeywords } from '../lib/icp.ts'
 import { buildRecipientGroup, ensureBodyGreetsRecipients } from '../lib/outreach-recipients.ts'
+import { accountKey, bodyPreview, normalizeDomain, personKey, signalKey } from '../lib/gtm/identity.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
@@ -871,4 +872,23 @@ test('outreach body greeting is rewritten to address grouped recipients', () => 
   )
 
   assert.match(body, /^Jane and Rahul, noticed Acme/)
+})
+
+test('gtm identity keys normalize accounts people and signals deterministically', () => {
+  assert.equal(normalizeDomain('https://www.Example.com/pricing'), 'example.com')
+  assert.equal(accountKey({ name: 'Example, Inc.', domain: 'www.example.com' }), 'domain:example.com')
+  assert.equal(accountKey({ name: 'Example, Inc.' }), 'name:example-inc')
+  assert.equal(personKey({ email: 'ALEX@EXAMPLE.COM' }), 'email:alex@example.com')
+  assert.equal(personKey({ name: 'Alex Rivera', accountId: 'acct_1' }), 'name:acct_1:alex-rivera')
+  assert.equal(signalKey({
+    accountKey: 'domain:example.com',
+    sourceUrl: 'https://example.com/news',
+    headline: 'Example hires a VP Sales',
+  }), 'url:https://example.com/news')
+})
+
+test('gtm body previews collapse whitespace and bound stored context', () => {
+  const preview = bodyPreview(' First line\n\nSecond\tline '.repeat(20), 40)
+  assert.equal(preview.length, 40)
+  assert.equal(preview.includes('\n'), false)
 })

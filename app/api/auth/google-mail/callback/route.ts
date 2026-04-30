@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { exchangeGoogleCode } from '@/lib/oauth/google'
 import { startGmailWatch } from '@/lib/oauth/gmail-watch'
 import { verifyOAuthState } from '@/lib/oauth/state'
+import { canConnectSendingAccount } from '@/lib/oauth/connected-accounts'
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL!
 
@@ -24,22 +25,34 @@ export async function GET(request: Request) {
   try {
     const supabase = await createServiceClient()
     const tokens  = await exchangeGoogleCode(code)
+    const email = tokens.email.trim().toLowerCase()
+
+    if (!await canConnectSendingAccount(supabase, userId, 'gmail', email)) {
+      return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=max_accounts`)
+    }
 
     // Upsert the account first so we have an ID to update
-    const { data: account } = await supabase.from('connected_accounts').upsert({
+    const { data: account, error: accountError } = await supabase.from('connected_accounts').upsert({
       user_id:          userId,
       provider:         'gmail',
-      email:            tokens.email,
+      email,
       display_name:     tokens.name,
       access_token:     tokens.access_token,
       refresh_token:    tokens.refresh_token,
       token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
       is_active:        true,
-    }, { onConflict: 'user_id,email' }).select('id').single()
+    }, { onConflict: 'user_id,provider,email' }).select('id').single()
+    if (accountError) {
+      if (accountError.message.includes('connected sending account limit exceeded')) {
+        return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=max_accounts`)
+      }
+      throw new Error(accountError.message)
+    }
+    if (!account) throw new Error('Google account connection was not saved')
 
     // Start inbox watch for reply detection (best-effort — don't fail the connect if watch fails)
     const pubsubTopic = process.env.GOOGLE_PUBSUB_TOPIC
-    if (pubsubTopic && account) {
+    if (pubsubTopic) {
       try {
         const watch = await startGmailWatch(tokens.access_token, pubsubTopic)
         await supabase.from('connected_accounts')

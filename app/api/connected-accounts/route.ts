@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { stopGmailWatch } from '@/lib/oauth/gmail-watch'
 import { deleteOutlookSubscription } from '@/lib/oauth/outlook-watch'
 import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
+import { MAX_CONNECTED_SENDING_ACCOUNTS } from '@/lib/oauth/connected-accounts'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const supabase = await createClient()
@@ -15,7 +18,10 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: true })
 
-  return NextResponse.json({ accounts: data ?? [] })
+  return NextResponse.json({
+    accounts: data ?? [],
+    max_accounts: MAX_CONNECTED_SENDING_ACCOUNTS,
+  })
 }
 
 export async function DELETE(request: Request) {

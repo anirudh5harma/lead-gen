@@ -12,6 +12,18 @@ import { sendAutomationLifecycleEmail } from '@/lib/resend'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { finishAgentRun, recordAgentEvent, startAgentRun } from '@/lib/agent-events'
 import { buildRecipientGroup, formatRecipientListForLog, type OutreachRecipientGroup } from '@/lib/outreach-recipients'
+import { upsertLeadIntoGtmGraph, recordGtmTouchpoint, type LeadGraphResult } from '@/lib/gtm/graph'
+import { bodyPreview } from '@/lib/gtm/identity'
+import { recordGtmMemory } from '@/lib/gtm/memory'
+import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
+import {
+  finishWorkflowRun,
+  finishWorkflowStep,
+  recordToolCall,
+  startWorkflowRun,
+  startWorkflowStep,
+  updateWorkflowCheckpoint,
+} from '@/lib/workflows/runtime'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -63,6 +75,20 @@ export async function GET(request: Request) {
           min_relevance_score: policy.min_relevance_score,
         },
       })
+      const workflowRunId = await startWorkflowRun(supabase, {
+        userId,
+        clientId,
+        agentRunId,
+        workflowType: 'outbound_automation',
+        workflowKey: row.id as string,
+        idempotencyKey: `outbound_automation:${row.id as string}:${runId}`,
+        input: {
+          policy_id: row.id,
+          origins: policy.target_origins,
+          daily_send_limit: policy.daily_send_limit,
+          min_relevance_score: policy.min_relevance_score,
+        },
+      })
       const activeAccount = await oldestEligibleAccount(supabase, userId, policy.connected_account_id)
       if (!activeAccount) {
         await recordAgentEvent(supabase, {
@@ -76,6 +102,12 @@ export async function GET(request: Request) {
           body: 'Connect a sending inbox before Bombsell can send from your mailbox.',
         })
         await finishAgentRun(supabase, { runId: agentRunId, status: 'completed', output: { sent: 0, reason: 'no_active_inbox' } })
+        await finishWorkflowRun(supabase, {
+          runId: workflowRunId,
+          status: 'completed',
+          output: { sent: 0, reason: 'no_active_inbox' },
+          checkpoint: { blocked_at: 'inbox_check' },
+        })
         skipped++
         continue
       }
@@ -94,6 +126,12 @@ export async function GET(request: Request) {
             body: `Bombsell waited because the selected inbox was used less than ${policy.min_minutes_between_sends} minutes ago.`,
           })
           await finishAgentRun(supabase, { runId: agentRunId, status: 'completed', output: { sent: 0, reason: 'mailbox_pacing' } })
+          await finishWorkflowRun(supabase, {
+            runId: workflowRunId,
+            status: 'completed',
+            output: { sent: 0, reason: 'mailbox_pacing' },
+            checkpoint: { waiting_on: 'mailbox_pacing', account_id: activeAccount.id },
+          })
           skipped++
           continue
         }
@@ -113,6 +151,12 @@ export async function GET(request: Request) {
           body: `Bombsell stopped sending after reaching the ${policy.daily_send_limit}/day cap.`,
         })
         await finishAgentRun(supabase, { runId: agentRunId, status: 'completed', output: { sent: 0, reason: 'daily_cap' } })
+        await finishWorkflowRun(supabase, {
+          runId: workflowRunId,
+          status: 'completed',
+          output: { sent: 0, reason: 'daily_cap' },
+          checkpoint: { blocked_at: 'daily_cap' },
+        })
         skipped++
         continue
       }
@@ -139,6 +183,10 @@ export async function GET(request: Request) {
           runId: agentRunId,
           lead,
           connectedAccountId: policy.connected_account_id,
+          minMinutesBetweenSends: policy.min_minutes_between_sends,
+          requireVerifiedContact: policy.require_verified_contact,
+          agentRunId,
+          workflowRunId,
         })
         if (didSend) sent++
         else skipped++
@@ -165,6 +213,16 @@ export async function GET(request: Request) {
           unlocked: prepared.unlocked,
           enriched: prepared.enriched,
         },
+      })
+      await finishWorkflowRun(supabase, {
+        runId: workflowRunId,
+        status: 'completed',
+        output: {
+          attempted: leads.length,
+          unlocked: prepared.unlocked,
+          enriched: prepared.enriched,
+        },
+        checkpoint: { completed_at: new Date().toISOString() },
       })
     }
 
@@ -226,7 +284,7 @@ async function loadEligibleAutomationLeads(
   const minCreatedAt = new Date(Date.now() - params.policy.max_lead_age_days * 24 * 60 * 60 * 1000).toISOString()
   let query = supabase
     .from('leads')
-    .select('id, client_id, origin, target_company, company_domain, relevance_score, relevance_reason, status, contact_email, contact_name, contact_title, contact_verified, feed_session_id, feed_snapshot, created_at')
+    .select('id, client_id, origin, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, feed_session_id, feed_snapshot, created_at')
     .eq('user_id', params.userId)
     .eq('is_unlocked', true)
     .in('origin', params.policy.target_origins)
@@ -449,6 +507,10 @@ async function sendAutomationLead(
     lead: Record<string, unknown>
     runId: string | null
     connectedAccountId: string | null
+    minMinutesBetweenSends: number
+    requireVerifiedContact: boolean
+    agentRunId: string | null
+    workflowRunId: string | null
   },
 ): Promise<boolean> {
   const [{ data: profile }, { data: clientProfile }, template] = await Promise.all([
@@ -476,26 +538,93 @@ async function sendAutomationLead(
   })
   if (!draft.recipientGroup) return false
 
+  const graphStepId = await startWorkflowStep(supabase, {
+    runId: params.workflowRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    stepKey: `lead:${params.lead.id as string}:graph_sync`,
+    input: { lead_id: params.lead.id },
+  })
+  const graph = await upsertLeadIntoGtmGraph(supabase, {
+    id: params.lead.id as string,
+    user_id: params.userId,
+    client_id: params.clientId,
+    target_company: params.lead.target_company as string,
+    company_domain: (params.lead.company_domain as string | null | undefined) ?? null,
+    relevance_score: (params.lead.relevance_score as number | null | undefined) ?? null,
+    relevance_reason: (params.lead.relevance_reason as string | null | undefined) ?? null,
+    status: (params.lead.status as string | null | undefined) ?? null,
+    is_unlocked: (params.lead.is_unlocked as boolean | null | undefined) ?? true,
+    contact_email: (params.lead.contact_email as string | null | undefined) ?? null,
+    contact_name: (params.lead.contact_name as string | null | undefined) ?? null,
+    contact_title: (params.lead.contact_title as string | null | undefined) ?? null,
+    contact_verified: (params.lead.contact_verified as boolean | null | undefined) ?? null,
+    origin: (params.lead.origin as string | null | undefined) ?? null,
+    feed_snapshot: params.lead.feed_snapshot,
+    created_at: (params.lead.created_at as string | null | undefined) ?? null,
+  }, {
+    agentRunId: params.agentRunId,
+    workflowRunId: params.workflowRunId,
+  })
+  await finishWorkflowStep(supabase, {
+    stepId: graphStepId,
+    status: graph ? 'completed' : 'skipped',
+    output: graph ? {
+      account_id: graph.accountId,
+      person_id: graph.personId,
+      signal_id: graph.signalId,
+    } : {},
+  })
+
   const recipientEmails = draft.recipientGroup.all.map(recipient => recipient.email.toLowerCase())
-  const [unsubRes, bounceRes] = await Promise.all([
-    supabase.from('unsubscribed_emails').select('email').in('email', recipientEmails),
-    supabase.from('bounced_emails').select('email').in('email', recipientEmails),
-  ])
-  const unsafeEmail = ((unsubRes.data ?? [])[0] as { email?: string } | undefined)?.email
-    ?? ((bounceRes.data ?? [])[0] as { email?: string } | undefined)?.email
-  if (unsafeEmail) {
+  const policyStepId = await startWorkflowStep(supabase, {
+    runId: params.workflowRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    stepKey: `lead:${params.lead.id as string}:policy`,
+    input: {
+      lead_id: params.lead.id,
+      recipient_count: recipientEmails.length,
+      require_verified_contact: params.requireVerifiedContact,
+    },
+  })
+  const policyDecision = await evaluateOutboundPolicy(supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
+    leadId: params.lead.id as string,
+    targetCompany: params.lead.target_company as string,
+    companyDomain: (params.lead.company_domain as string | null | undefined) ?? null,
+    status: (params.lead.status as string | null | undefined) ?? null,
+    isUnlocked: (params.lead.is_unlocked as boolean | null | undefined) ?? true,
+    contactVerified: (params.lead.contact_verified as boolean | null | undefined) ?? null,
+    recipientEmails,
+    requireVerifiedContact: params.requireVerifiedContact,
+    runId: params.workflowRunId,
+    stepId: policyStepId,
+    agentRunId: params.agentRunId,
+  })
+  await finishWorkflowStep(supabase, {
+    stepId: policyStepId,
+    status: policyDecision.decision === 'allowed' ? 'completed' : 'blocked',
+    output: {
+      decision: policyDecision.decision,
+      reasons: policyDecision.reasons,
+    },
+  })
+  if (policyDecision.decision !== 'allowed') {
     await recordAgentEvent(supabase, {
       userId: params.userId,
       clientId: params.clientId,
       runId: params.runId,
       leadId: params.lead.id as string,
       agentName: 'safety',
-      eventType: (unsubRes.data ?? []).length > 0 ? 'recipient_unsubscribed' : 'recipient_bounced',
+      eventType: 'outbound_policy_blocked',
       status: 'blocked',
-      title: `Skipped ${params.lead.target_company}: unsafe recipient`,
-      body: `${unsafeEmail} is blocked by unsubscribe or bounce suppression.`,
-      metadata: { recipients: recipientEmails },
+      title: `Skipped ${params.lead.target_company}: policy blocked send`,
+      body: `Blocked by ${policyDecision.reasons.join(', ')}.`,
+      metadata: { recipients: recipientEmails, reasons: policyDecision.reasons },
     })
+    if (graph) await recordBlockedTouchpoint(supabase, params, graph, policyDecision.reasons)
     return false
   }
 
@@ -504,6 +633,31 @@ async function sendAutomationLead(
     clientProfile,
   })
 
+  const sendStepId = await startWorkflowStep(supabase, {
+    runId: params.workflowRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    stepKey: `lead:${params.lead.id as string}:send`,
+    input: {
+      lead_id: params.lead.id,
+      recipient_count: recipientEmails.length,
+      connected_account_id: params.connectedAccountId,
+    },
+  })
+  await recordToolCall(supabase, {
+    runId: params.workflowRunId,
+    stepId: sendStepId,
+    agentRunId: params.agentRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    toolName: 'sendWithConnectedAccount',
+    status: 'running',
+    toolInput: {
+      to: draft.recipientGroup.to.email,
+      cc_count: draft.recipientGroup.cc.length,
+      prefer_account_id: params.connectedAccountId,
+    },
+  })
   const result = await sendWithConnectedAccount({
     userId: params.userId,
     supabase,
@@ -513,9 +667,31 @@ async function sendAutomationLead(
     body: draft.body,
     fromName: outreachContext.fromName,
     preferAccountId: params.connectedAccountId,
+    notUsedSince: new Date(Date.now() - params.minMinutesBetweenSends * 60_000).toISOString(),
   })
 
-  if (!result) return false
+  if (!result) {
+    await finishWorkflowStep(supabase, {
+      stepId: sendStepId,
+      status: 'blocked',
+      output: { reason: 'no_eligible_inbox' },
+    })
+    return false
+  }
+  await recordToolCall(supabase, {
+    runId: params.workflowRunId,
+    stepId: sendStepId,
+    agentRunId: params.agentRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    toolName: 'sendWithConnectedAccount',
+    status: 'completed',
+    output: {
+      provider: result.provider,
+      from_email: result.fromEmail,
+      message_id: result.messageId,
+    },
+  })
 
   const now = new Date().toISOString()
   await supabase
@@ -558,7 +734,98 @@ async function sendAutomationLead(
     },
   })
 
+  if (graph) {
+    await recordGtmTouchpoint(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      accountId: graph.accountId,
+      personId: graph.personId,
+      leadId: params.lead.id as string,
+      workflowRunId: params.workflowRunId,
+      type: 'email',
+      status: 'sent',
+      subject: draft.subject,
+      bodyPreview: bodyPreview(draft.body),
+      fromEmail: result.fromEmail,
+      toEmail: draft.recipientGroup.to.email,
+      provider: result.provider,
+      messageId: result.messageId,
+      occurredAt: now,
+      metadata: {
+        cc: draft.recipientGroup.cc.map(recipient => recipient.email),
+        thread_id: result.threadId,
+      },
+    })
+    await recordGtmMemory(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      scope: 'entity',
+      entityType: 'account',
+      entityId: graph.accountId,
+      memoryType: 'outreach_sent',
+      content: `Sent outreach from ${result.fromEmail} to ${formatRecipientListForLog(draft.recipientGroup)} about "${draft.subject}".`,
+      source: 'outbound_automation',
+      confidence: 1,
+      observedAt: now,
+      provenance: {
+        lead_id: params.lead.id,
+        message_id: result.messageId,
+        provider: result.provider,
+      },
+      agentRunId: params.agentRunId,
+      workflowRunId: params.workflowRunId,
+    })
+  }
+
+  await finishWorkflowStep(supabase, {
+    stepId: sendStepId,
+    status: 'completed',
+    output: {
+      from_email: result.fromEmail,
+      provider: result.provider,
+      message_id: result.messageId,
+    },
+  })
+  await updateWorkflowCheckpoint(supabase, {
+    runId: params.workflowRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    stepId: sendStepId,
+    currentStep: `lead:${params.lead.id as string}:sent`,
+    checkpoint: {
+      last_sent_lead_id: params.lead.id,
+      last_message_id: result.messageId,
+      last_from_email: result.fromEmail,
+      sent_at: now,
+    },
+  })
+
   return true
+}
+
+async function recordBlockedTouchpoint(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  params: {
+    userId: string
+    clientId: string | null
+    lead: Record<string, unknown>
+    workflowRunId: string | null
+  },
+  graph: LeadGraphResult,
+  reasons: string[],
+): Promise<void> {
+  await recordGtmTouchpoint(supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
+    accountId: graph.accountId,
+    personId: graph.personId,
+    leadId: params.lead.id as string,
+    workflowRunId: params.workflowRunId,
+    type: 'email',
+    status: 'blocked',
+    toEmail: (params.lead.contact_email as string | null | undefined) ?? null,
+    metadata: { reasons },
+  })
 }
 
 async function getOrCreateAutomationDraft(

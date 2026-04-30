@@ -4,6 +4,9 @@ import { recordAgentEvent } from '@/lib/agent-events'
 import { normalizeEmailAddress } from '@/lib/email-safety'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { sendReplyOutcomeEmail } from '@/lib/resend'
+import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
+import { bodyPreview } from '@/lib/gtm/identity'
+import { recordGtmMemory } from '@/lib/gtm/memory'
 import {
   buildBookingReplyBody,
   classifyReplyIntent,
@@ -90,6 +93,17 @@ export async function processInboundReply(params: {
     },
   })
 
+  await recordReplyInGtmMemory({
+    supabase,
+    userId,
+    leadId: lead.id,
+    clientId: lead.client_id ?? null,
+    now,
+    intent,
+    message,
+    text,
+  })
+
   if (booked) {
     await recordAgentEvent(supabase, {
       userId,
@@ -139,6 +153,86 @@ export async function processInboundReply(params: {
       reply_summary: intent.summary,
     },
   }).catch(() => {})
+}
+
+async function recordReplyInGtmMemory(params: {
+  supabase: SupabaseClient
+  userId: string
+  leadId: string
+  clientId: string | null
+  now: string
+  intent: ReturnType<typeof classifyReplyIntent>
+  message: InboundReplyMessage
+  text: string
+}) {
+  const { data: lead } = await params.supabase
+    .from('leads')
+    .select('id, user_id, client_id, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, origin, source_kind, feed_snapshot, created_at')
+    .eq('id', params.leadId)
+    .eq('user_id', params.userId)
+    .maybeSingle()
+
+  if (!lead) return
+
+  const graph = await upsertLeadIntoGtmGraph(params.supabase, {
+    id: lead.id,
+    user_id: params.userId,
+    client_id: (lead as { client_id?: string | null }).client_id ?? params.clientId,
+    target_company: lead.target_company,
+    company_domain: (lead as { company_domain?: string | null }).company_domain ?? null,
+    relevance_score: (lead as { relevance_score?: number | null }).relevance_score ?? null,
+    relevance_reason: (lead as { relevance_reason?: string | null }).relevance_reason ?? null,
+    status: (lead as { status?: string | null }).status ?? null,
+    is_unlocked: (lead as { is_unlocked?: boolean | null }).is_unlocked ?? true,
+    contact_email: (lead as { contact_email?: string | null }).contact_email ?? null,
+    contact_name: (lead as { contact_name?: string | null }).contact_name ?? null,
+    contact_title: (lead as { contact_title?: string | null }).contact_title ?? null,
+    contact_verified: (lead as { contact_verified?: boolean | null }).contact_verified ?? null,
+    origin: (lead as { origin?: string | null }).origin ?? null,
+    source_kind: (lead as { source_kind?: string | null }).source_kind ?? null,
+    feed_snapshot: (lead as { feed_snapshot?: unknown }).feed_snapshot,
+    created_at: (lead as { created_at?: string | null }).created_at ?? null,
+  })
+  if (!graph) return
+
+  await recordGtmTouchpoint(params.supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
+    accountId: graph.accountId,
+    personId: graph.personId,
+    leadId: params.leadId,
+    type: 'reply',
+    status: 'received',
+    subject: params.message.subject ?? null,
+    bodyPreview: bodyPreview(params.text || params.intent.summary),
+    fromEmail: params.message.from,
+    provider: params.message.provider,
+    messageId: params.message.messageId ?? null,
+    occurredAt: params.now,
+    metadata: {
+      intent: params.intent.intent,
+      confidence: params.intent.confidence,
+      thread_id: params.message.threadId ?? null,
+    },
+  })
+
+  await recordGtmMemory(params.supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
+    scope: 'entity',
+    entityType: 'account',
+    entityId: graph.accountId,
+    memoryType: 'reply_outcome',
+    content: `Reply intent: ${params.intent.intent}. ${params.intent.summary}`,
+    source: `${params.message.provider}_reply_webhook`,
+    confidence: params.intent.confidence,
+    observedAt: params.now,
+    provenance: {
+      lead_id: params.leadId,
+      message_id: params.message.messageId ?? null,
+      thread_id: params.message.threadId ?? null,
+    },
+  })
 }
 
 async function maybeSendBookingLink(params: {
