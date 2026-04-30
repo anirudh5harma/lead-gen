@@ -54,8 +54,10 @@ export function buildIcpKeywords(params: {
   generatedKeywords?: string[]
   targetIndustries?: string[]
 }): string[] {
+  const explicit = normalizeIcpKeywords(params.explicitKeywords)
+  if (explicit.length > 0) return explicit
+
   return normalizeIcpKeywords([
-    ...normalizeIcpKeywords(params.explicitKeywords),
     ...(params.generatedKeywords ?? []),
     ...(params.targetIndustries ?? []).map(industryLabel),
   ])

@@ -14,6 +14,7 @@ import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
 import { buildBookingReplyBody, classifyReplyIntent, shouldAutoSendBookingLink } from '../lib/reply-intelligence.ts'
 import { buildIcpKeywords } from '../lib/icp.ts'
+import { buildRecipientGroup, ensureBodyGreetsRecipients } from '../lib/outreach-recipients.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
@@ -148,6 +149,46 @@ test('services description resolver keeps manual description when website contex
   assert.equal(resolved?.description, 'We help finance teams automate revenue reconciliation and audit workflows.')
   assert.equal(resolved?.websiteUrl, null)
   assert.equal(resolved?.source, 'manual')
+})
+
+test('services description resolver keeps manual description when website is also provided', async () => {
+  const previousFirecrawlKey = process.env.FIRECRAWL_API_KEY
+  const originalFetch = globalThis.fetch
+  process.env.FIRECRAWL_API_KEY = 'test'
+  let fetched = false
+  globalThis.fetch = (() => {
+    fetched = true
+    throw new Error('website should not be fetched when manual description exists')
+  }) as typeof fetch
+
+  try {
+    const resolved = await resolveServicesDescription({
+      companyName: 'Acme',
+      industry: 'saas',
+      manualDescription: 'We help finance teams automate revenue reconciliation and audit workflows.',
+      websiteUrl: 'https://acme.com',
+    })
+
+    assert.equal(resolved?.description, 'We help finance teams automate revenue reconciliation and audit workflows.')
+    assert.equal(resolved?.websiteUrl, 'https://acme.com')
+    assert.equal(resolved?.source, 'manual')
+    assert.equal(fetched, false)
+  } finally {
+    if (previousFirecrawlKey === undefined) delete process.env.FIRECRAWL_API_KEY
+    else process.env.FIRECRAWL_API_KEY = previousFirecrawlKey
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('services description resolver does not silently save website-only descriptions', async () => {
+  const resolved = await resolveServicesDescription({
+    companyName: 'Acme',
+    industry: 'saas',
+    manualDescription: '',
+    websiteUrl: 'https://acme.com',
+  })
+
+  assert.equal(resolved, null)
 })
 
 test('lead dedupe keys normalize company variants by domain or legal suffix', () => {
@@ -783,7 +824,7 @@ test('booking reply body includes the user booking link without fabricating slot
   assert.match(body, /send over two times/i)
 })
 
-test('icp keywords include explicit terms and selected target industries', () => {
+test('icp keywords keep explicit user terms without generated or industry fallbacks', () => {
   const keywords = buildIcpKeywords({
     explicitKeywords: 'seed-stage SaaS, RevOps',
     generatedKeywords: ['pipeline automation', 'RevOps'],
@@ -793,8 +834,41 @@ test('icp keywords include explicit terms and selected target industries', () =>
   assert.deepEqual(keywords, [
     'seed-stage SaaS',
     'RevOps',
+  ])
+})
+
+test('icp keywords fall back to generated terms and selected target industries when explicit terms are empty', () => {
+  const keywords = buildIcpKeywords({
+    explicitKeywords: '',
+    generatedKeywords: ['pipeline automation', 'RevOps'],
+    targetIndustries: ['fintech', 'data_ai'],
+  })
+
+  assert.deepEqual(keywords, [
     'pipeline automation',
+    'RevOps',
     'FinTech',
     'Data and AI',
   ])
+})
+
+test('outreach recipients use first contact as to and remaining verified contacts as cc', () => {
+  const group = buildRecipientGroup([
+    { name: 'Jane Doe', title: 'CEO', email: 'Jane@Acme.com' },
+    { name: 'Rahul Mehta', title: 'Revenue', email: 'rahul@acme.com' },
+    { name: 'Jane Duplicate', title: 'CEO', email: 'jane@acme.com' },
+  ])
+
+  assert.equal(group?.to.email, 'jane@acme.com')
+  assert.deepEqual(group?.cc.map(recipient => recipient.email), ['rahul@acme.com'])
+  assert.equal(group?.greeting, 'Jane and Rahul')
+})
+
+test('outreach body greeting is rewritten to address grouped recipients', () => {
+  const body = ensureBodyGreetsRecipients(
+    'Jane, noticed Acme expanded into Europe.\n\nThat usually changes priorities.\n\nBombsell helps here.\n\nWorth a quick look?',
+    'Jane and Rahul',
+  )
+
+  assert.match(body, /^Jane and Rahul, noticed Acme/)
 })

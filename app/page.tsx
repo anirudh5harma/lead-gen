@@ -324,7 +324,7 @@ const FEATURES = [
   },
   {
     title: 'Workflow execution layer',
-    body: 'Generate outreach, send through Gmail or Outlook, pause on replies, and sync status changes back to your CRM workflows.',
+    body: 'Generate outreach, send through connected inboxes, pause on replies, and sync status changes back to your CRM workflows.',
   },
   {
     title: 'Agent consumption layer',

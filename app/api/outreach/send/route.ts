@@ -7,6 +7,7 @@ import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-context'
 import { recordAgentEvent } from '@/lib/agent-events'
+import { buildRecipientGroup, formatRecipientListForLog } from '@/lib/outreach-recipients'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -28,8 +29,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'leadId, to, subject, and body are required' }, { status: 400 })
   }
 
-  const { leadId, to, subject, body: emailBody, isFollowUp } = body as {
-    leadId: string; to: string; subject: string; body: string; isFollowUp?: boolean
+  const { leadId, to, cc, subject, body: emailBody, isFollowUp } = body as {
+    leadId: string; to: string; cc?: string[]; subject: string; body: string; isFollowUp?: boolean
   }
 
   if (!leadId || !to || !subject || !emailBody) {
@@ -57,12 +58,22 @@ export async function POST(request: Request) {
     )
   }
 
+  const recipientGroup = buildRecipientGroup([
+    { email: to },
+    ...(Array.isArray(cc) ? cc.map(email => ({ email })) : []),
+  ])
+  if (!recipientGroup) return NextResponse.json({ error: 'At least one valid recipient is required.' }, { status: 400 })
+
+  const recipientEmails = recipientGroup.all.map(recipient => recipient.email.toLowerCase())
   const [unsubRes, bounceRes] = await Promise.all([
-    supabase.from('unsubscribed_emails').select('id').eq('email', to.toLowerCase()).maybeSingle(),
-    supabase.from('bounced_emails').select('reason').eq('email', to.toLowerCase()).maybeSingle(),
+    supabase.from('unsubscribed_emails').select('email').in('email', recipientEmails),
+    supabase.from('bounced_emails').select('email, reason').in('email', recipientEmails),
   ])
 
-  if (unsubRes.data) {
+  const unsubscribed = (unsubRes.data ?? [])[0] as { email?: string } | undefined
+  const bounced = (bounceRes.data ?? [])[0] as { email?: string; reason?: string | null } | undefined
+
+  if (unsubscribed?.email) {
     await recordAgentEvent(supabase, {
       userId: user.id,
       clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
@@ -71,11 +82,11 @@ export async function POST(request: Request) {
       eventType: 'recipient_unsubscribed',
       status: 'blocked',
       title: 'Send blocked: recipient unsubscribed',
-      body: `Bombsell did not send to ${to}.`,
+      body: `Bombsell did not send because ${unsubscribed.email} has unsubscribed.`,
     })
-    return NextResponse.json({ error: 'This recipient has unsubscribed.' }, { status: 422 })
+    return NextResponse.json({ error: `${unsubscribed.email} has unsubscribed.` }, { status: 422 })
   }
-  if (bounceRes.data) {
+  if (bounced?.email) {
     await recordAgentEvent(supabase, {
       userId: user.id,
       clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
@@ -84,9 +95,9 @@ export async function POST(request: Request) {
       eventType: 'recipient_bounced',
       status: 'blocked',
       title: 'Send blocked: recipient bounced',
-      body: `Bombsell did not send to ${to}.`,
+      body: `Bombsell did not send because ${bounced.email} previously bounced.`,
     })
-    return NextResponse.json({ error: `Cannot send to this address (${bounceRes.data.reason}).` }, { status: 422 })
+    return NextResponse.json({ error: `Cannot send to ${bounced.email}${bounced.reason ? ` (${bounced.reason})` : ''}.` }, { status: 422 })
   }
 
   try {
@@ -107,7 +118,8 @@ export async function POST(request: Request) {
         const result = await sendWithConnectedAccount({
       userId:   user.id,
       supabase,
-      to,
+      to:       recipientGroup.to.email,
+      cc:       recipientGroup.cc.map(recipient => recipient.email),
       subject,
       body:     emailBody,
       fromName: outreachContext.fromName,
@@ -122,10 +134,10 @@ export async function POST(request: Request) {
         eventType: 'send_blocked',
         status: 'blocked',
         title: 'Send blocked: no connected inbox',
-        body: 'Connect Gmail or Outlook before sending outreach.',
+        body: 'Connect a sending inbox before sending outreach.',
       })
       return NextResponse.json(
-        { error: 'No sending account connected. Go to Automation → Sending Accounts to connect Gmail or Outlook.' },
+        { error: 'No sending account connected. Go to Settings → Sending Accounts to connect an inbox.' },
         { status: 503 }
       )
     }
@@ -171,11 +183,13 @@ export async function POST(request: Request) {
       eventType: isFollowUp ? 'followup_sent' : 'email_sent',
       status: 'completed',
       title: `${isFollowUp ? 'Sent follow-up' : 'Sent outreach'} to ${(leadRes.data as { target_company?: string }).target_company ?? 'lead'}`,
-      body: `Sent from ${result.fromEmail} to ${to}.`,
+      body: `Sent from ${result.fromEmail} to ${formatRecipientListForLog(recipientGroup)}.`,
       metadata: {
         provider: result.provider,
         message_id: result.messageId,
         thread_id: result.threadId,
+        to: recipientGroup.to.email,
+        cc: recipientGroup.cc.map(recipient => recipient.email),
       },
     })
 

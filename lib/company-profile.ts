@@ -37,22 +37,6 @@ export async function resolveServicesDescription(params: {
     : ''
   const websiteUrl = normalizeCompanyWebsiteUrl(params.websiteUrl)
 
-  if (websiteUrl) {
-    const websiteDescription = await describeWebsite({
-      companyName: params.companyName,
-      industry: params.industry,
-      websiteUrl,
-      manualHint: manual,
-    })
-    if (websiteDescription) {
-      return {
-        description: websiteDescription,
-        websiteUrl,
-        source: manual ? 'combined' : 'website',
-      }
-    }
-  }
-
   if (manual.length >= 10) {
     return {
       description: manual,
@@ -62,6 +46,29 @@ export async function resolveServicesDescription(params: {
   }
 
   return null
+}
+
+export async function suggestServicesDescriptionFromWebsite(params: {
+  companyName: string
+  industry: string
+  websiteUrl?: unknown
+}): Promise<ServicesDescriptionResult | null> {
+  const websiteUrl = normalizeCompanyWebsiteUrl(params.websiteUrl)
+  if (!websiteUrl) return null
+
+  const websiteDescription = await describeWebsite({
+    companyName: params.companyName,
+    industry: params.industry,
+    websiteUrl,
+    manualHint: '',
+  })
+  if (!websiteDescription) return null
+
+  return {
+    description: websiteDescription,
+    websiteUrl,
+    source: 'website',
+  }
 }
 
 async function describeWebsite(params: {

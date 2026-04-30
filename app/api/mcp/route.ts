@@ -277,7 +277,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
       inputSchema: {
         enabled: z.boolean().describe('Turn automation on or off.'),
         client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
-        connected_account_id: z.string().optional().describe('Optional connected Gmail/Outlook account id. Defaults to least recently used active inbox.'),
+        connected_account_id: z.string().optional().describe('Optional connected sending account id. Defaults to least recently used active inbox.'),
         target_origins: z.array(z.enum(['live', 'explore'])).optional().describe('Sources to automate. Use live for continuous Signal Feed and explore for selected Explore sessions.'),
         target_explore_session_ids: z.array(z.string()).optional().describe('Explore session ids to automate when target_origins includes explore.'),
         min_relevance_score: z.number().min(1).max(10).optional().describe('Minimum lead score. Default 7.'),
@@ -402,7 +402,7 @@ async function getGtmContext(ctx: McpContext) {
     guidance: [
       'Use list_leads for current signal, explore, CRM-queued opportunities, reply intent, and booked-meeting outcomes.',
       'Use update_lead_status only when the user or calling workflow has decided the lead state should change.',
-      'Use configure_automation to set safe outbound automation after the user has connected Gmail or Outlook.',
+      'Use configure_automation to set safe outbound automation after the user has connected a sending inbox.',
       'Use queue_leads_for_crm to stage reviewed Signal or Explore leads into the CRM export feed.',
       'Do not generate outreach for locked leads through MCP; use the Bombsell UI/API unlock flow first.',
     ],
@@ -643,7 +643,7 @@ async function configureAutomation(ctx: McpContext, args: {
     if (connectedAccountId) accountQuery = accountQuery.eq('id', connectedAccountId)
     const { data, error } = await accountQuery
     if (error) throw new Error(error.message)
-    if (!data?.length) throw new Error('Connect Gmail or Outlook before starting automation.')
+    if (!data?.length) throw new Error('Connect a sending inbox before starting automation.')
   }
 
   const payload = {

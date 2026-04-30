@@ -234,7 +234,7 @@ function buildReadiness(input: {
     { key: 'profile', label: 'Offer and company profile', done: input.hasProfile, action: 'Edit onboarding' },
     { key: 'website', label: 'Website for personalization', done: input.hasWebsite, action: 'Add website' },
     { key: 'icp', label: 'ICP targets', done: input.hasIcp, action: 'Tune ICP' },
-    { key: 'inbox', label: 'Connected Gmail or Outlook', done: input.hasInbox, action: 'Connect inbox' },
+    { key: 'inbox', label: 'Connected sending inbox', done: input.hasInbox, action: 'Connect inbox' },
     { key: 'credits', label: 'Lead unlock credits', done: input.hasCredits, action: 'Add credits' },
   ]
 }

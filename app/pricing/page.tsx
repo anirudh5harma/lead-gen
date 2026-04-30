@@ -20,7 +20,7 @@ const PLANS = [
       'Personalized outreach drafts',
       'Verified contact emails',
       'CRM sync, imports, and exports',
-      'Gmail/Outlook sending',
+      'Connected inbox sending',
       'Slack alerts and MCP access',
     ],
     cta: 'Get started',
@@ -57,7 +57,7 @@ const FAQS = [
   },
   {
     q: 'Which features are included for free?',
-    a: 'All self-serve features are available: live signal feed, prompt discovery, watchlists, CRM workflows, Gmail/Outlook sending, Slack alerts, and MCP access.',
+    a: 'All self-serve features are available: live signal feed, prompt discovery, watchlists, CRM workflows, connected inbox sending, Slack alerts, and MCP access.',
   },
   {
     q: 'When should I talk to Bombsell?',

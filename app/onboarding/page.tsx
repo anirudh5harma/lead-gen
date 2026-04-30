@@ -224,7 +224,7 @@ export default function OnboardingPage() {
 
   // Step validation
   const stepValid = [
-    form.company_name.trim().length > 1 && form.industry !== '' && (looksLikeWebsite(form.website_url) || form.services_description.trim().length >= 10),
+    form.company_name.trim().length > 1 && form.industry !== '' && form.services_description.trim().length >= 10,
     form.target_industries.length > 0,
     form.target_signal_types.length > 0,
   ]
@@ -292,7 +292,7 @@ export default function OnboardingPage() {
               Your GTM autopilot workspace is ready. Bombsell can now scan signals, score accounts, unlock high-fit leads with credits, and prepare safe outreach.
             </p>
             <p className="text-[14px] text-[var(--color-text-3)]">
-              Connect Gmail or Outlook in Live Autopilot to let the agents send, follow up, detect replies, and route booked meetings.
+              Connect your sending inbox in Live Autopilot to let the agents send, follow up, detect replies, and route booked meetings.
             </p>
           </div>
 
@@ -499,6 +499,40 @@ interface StepFormProps {
 }
 
 function StepCompany({ form, setForm }: StepFormProps) {
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestionMsg, setSuggestionMsg] = useState<string | null>(null)
+
+  async function generateWebsiteSuggestion() {
+    setSuggesting(true)
+    setSuggestionMsg(null)
+    try {
+      const res = await fetch('/api/profile/website-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: form.company_name,
+          industry: form.industry,
+          website_url: form.website_url,
+        }),
+      })
+      const data = await res.json().catch(() => null) as { description?: string; website_url?: string; error?: string } | null
+      if (!res.ok || !data?.description) {
+        setSuggestionMsg(data?.error ?? 'Could not generate a useful suggestion. Add what you sell manually.')
+        return
+      }
+      setForm((f) => ({
+        ...f,
+        website_url: data.website_url ?? f.website_url,
+        services_description: data.description ?? f.services_description,
+      }))
+      setSuggestionMsg('Suggestion added. Review and edit it before continuing.')
+    } catch {
+      setSuggestionMsg('Could not generate a suggestion. Add what you sell manually.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   return (
     <div className="card p-7 space-y-6">
       <div className="space-y-1.5">
@@ -555,24 +589,39 @@ function StepCompany({ form, setForm }: StepFormProps) {
           className="w-full px-4 py-3 rounded-xl bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[var(--color-text-1)] placeholder-[var(--color-text-4)] text-sm focus:outline-none focus:border-[var(--color-accent)] focus:bg-white focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
         />
         <p className="text-[11px] text-[var(--color-text-4)]">
-          We can read your site and turn it into a product/service description automatically.
+          Optional. Use it to generate an editable draft, but Bombsell will not save website text until you review it.
         </p>
       </div>
 
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-[var(--color-text-3)] uppercase tracking-wider">
-          What you offer <span className="text-[var(--color-text-4)] normal-case font-normal">(optional if website is added)</span>
+          What you offer
         </label>
         <textarea
           rows={4}
-          placeholder="Optional: add positioning, your best-fit buyers, or outcomes if the website does not say it clearly."
+          placeholder="Explain what you sell, who you help, and the outcome you create. This becomes the source of truth for matching and outreach."
           value={form.services_description}
           onChange={(e) => setForm((f) => ({ ...f, services_description: e.target.value }))}
           className="w-full px-4 py-3 rounded-xl bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[var(--color-text-1)] placeholder-[var(--color-text-4)] text-sm focus:outline-none focus:border-[var(--color-accent)] focus:bg-white focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-all resize-none leading-relaxed"
         />
-        <p className="text-[11px] text-[var(--color-text-4)]">
-          If you add both, we combine your notes with the scraped website context for better matching.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-[var(--color-text-4)]">
+            Required. Website suggestions are editable drafts, not hidden fallback context.
+          </p>
+          <button
+            type="button"
+            onClick={generateWebsiteSuggestion}
+            disabled={suggesting || !looksLikeWebsite(form.website_url) || form.company_name.trim().length < 2 || !form.industry}
+            className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] disabled:opacity-45"
+          >
+            {suggesting ? 'Generating…' : 'Generate editable suggestion'}
+          </button>
+        </div>
+        {suggestionMsg && (
+          <p className={`text-[11px] ${suggestionMsg.startsWith('Suggestion') ? 'text-[var(--color-sig-funding)]' : 'text-[var(--color-sig-regulation)]'}`}>
+            {suggestionMsg}
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">

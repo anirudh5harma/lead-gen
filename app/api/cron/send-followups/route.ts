@@ -6,6 +6,7 @@ import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { resolveOutreachContext } from '@/lib/outreach-context'
 import { messageIdHeader } from '@/lib/oauth/message-id'
 import { recordAgentEvent } from '@/lib/agent-events'
+import { buildRecipientGroup, formatRecipientListForLog } from '@/lib/outreach-recipients'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -184,12 +185,29 @@ export async function GET(request: Request) {
         continue
       }
 
-      const email = lead.contact_email.toLowerCase()
+      const { data: draftForRecipients } = await supabase
+        .from('outreach_drafts')
+        .select('stakeholders')
+        .eq('lead_id', item.lead_id)
+        .maybeSingle()
+      const draftStakeholders = Array.isArray((draftForRecipients as { stakeholders?: unknown } | null)?.stakeholders)
+        ? (draftForRecipients as { stakeholders: Array<{ name?: string; title?: string; email?: string }> }).stakeholders
+        : []
+      const recipientGroup = buildRecipientGroup(draftStakeholders.length > 0
+        ? draftStakeholders
+        : [{ email: lead.contact_email }]
+      )
+      if (!recipientGroup) {
+        await releaseClaim(supabase, item.id, claimToken)
+        continue
+      }
+
+      const emails = recipientGroup.all.map(recipient => recipient.email.toLowerCase())
       const [unsubRes, bounceRes] = await Promise.all([
-        supabase.from('unsubscribed_emails').select('id').eq('email', email).maybeSingle(),
-        supabase.from('bounced_emails').select('id').eq('email', email).maybeSingle(),
+        supabase.from('unsubscribed_emails').select('id').in('email', emails),
+        supabase.from('bounced_emails').select('id').in('email', emails),
       ])
-      if (unsubRes.data || bounceRes.data) {
+      if ((unsubRes.data ?? []).length > 0 || (bounceRes.data ?? []).length > 0) {
         await completeFollowup(supabase, item.id, claimToken, nowIso)
         continue
       }
@@ -209,7 +227,8 @@ export async function GET(request: Request) {
         const result = await sendWithConnectedAccount({
           userId:        item.user_id,
           supabase,
-          to:            lead.contact_email,
+          to:            recipientGroup.to.email,
+          cc:            recipientGroup.cc.map(recipient => recipient.email),
           subject:       fuSubject,
           body:          fuBody,
           fromName:      outreachContext.fromName,
@@ -239,11 +258,13 @@ export async function GET(request: Request) {
           eventType: 'followup_sent',
           status: 'completed',
           title: `Sent follow-up to ${lead.target_company}`,
-          body: `Follow-up sent from ${result.fromEmail}.`,
+          body: `Follow-up sent from ${result.fromEmail} to ${formatRecipientListForLog(recipientGroup)}.`,
           metadata: {
             provider: result.provider,
             message_id: result.messageId,
             thread_id: result.threadId,
+            to: recipientGroup.to.email,
+            cc: recipientGroup.cc.map(recipient => recipient.email),
           },
         })
         sent++

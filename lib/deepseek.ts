@@ -1,4 +1,5 @@
 import { assessExplorePrompt } from './explore.ts'
+import { ensureBodyGreetsRecipients } from './outreach-recipients.ts'
 
 const MODEL = 'deepseek-v4-flash'
 const API_URL = 'https://api.deepseek.com/chat/completions'
@@ -812,6 +813,7 @@ export async function draftOutreachEmail(params: {
   servicesDescription: string
   stakeholderName: string
   stakeholderTitle: string
+  recipientGreeting?: string | null
   targetCompany: string
   signalType: string
   signalSummary: string
@@ -823,14 +825,14 @@ export async function draftOutreachEmail(params: {
   customInstructions?: string | null
 }): Promise<{ subject: string; body: string }> {
   const {
-    senderCompany, senderWebsiteUrl, servicesDescription, stakeholderName, stakeholderTitle,
+    senderCompany, senderWebsiteUrl, servicesDescription, stakeholderName, stakeholderTitle, recipientGreeting,
     targetCompany, signalType, signalSummary,
     headline, fundingAmount, signalAgeLabel, articleContext,
     calendlyUrl, customInstructions,
   } = params
 
   const angle = SIGNAL_ANGLE[signalType] || SIGNAL_ANGLE.expansion
-  const firstName = stakeholderName.split(' ')[0] || stakeholderName
+  const firstName = recipientGreeting?.trim() || stakeholderName.split(' ')[0] || stakeholderName
 
   const ctaInstruction = calendlyUrl
     ? `Closing paragraph: a low-friction ask to book a 15-minute call. Include the Calendly link naturally: ${calendlyUrl}.`
@@ -859,7 +861,8 @@ Sender: ${senderIntro}
 ${senderWebsiteText}
 What they offer: ${servicesDescription}
 
-Recipient: ${firstName} (${stakeholderTitle}) at ${targetCompany}
+Recipient greeting: ${firstName}
+Recipient roles: ${stakeholderTitle} at ${targetCompany}
 ${signalBlock}
 
 ${articleBlock}
@@ -890,7 +893,7 @@ Tone:
 - No fabricated metrics, customers, or claims
 - Do not use markdown links or square brackets anywhere
 - The subject must not contain the recipient's first name or full name
-- First name only for recipient
+- Start the body with exactly this greeting followed by a comma: ${firstName}
 - Do not use long dash punctuation
 
 Return ONLY this JSON:
@@ -906,6 +909,7 @@ The body must use \\n\\n between paragraphs.`,
       sanitizeGeneratedEmail(JSON.parse(stripCodeFences(text))),
       {
         firstName,
+        recipientGreeting: firstName,
         senderCompany,
         senderWebsiteUrl,
         senderIntro,
@@ -922,6 +926,7 @@ The body must use \\n\\n between paragraphs.`,
       subject: `${targetCompany}'s ${signalType}: a thought`,
       body: fallbackOutreachBody({
         firstName,
+        recipientGreeting: firstName,
         senderIntro,
         servicesDescription,
         targetCompany,
@@ -931,6 +936,7 @@ The body must use \\n\\n between paragraphs.`,
       }),
     }), {
       firstName,
+      recipientGreeting: firstName,
       stakeholderName,
       senderCompany,
       senderWebsiteUrl,
@@ -975,6 +981,7 @@ function normalizeOutreachEmail(
   email: { subject: string; body: string },
   context: {
     firstName: string
+    recipientGreeting?: string | null
     stakeholderName: string
     senderCompany: string
     senderWebsiteUrl?: string | null
@@ -1004,6 +1011,7 @@ function normalizeOutreachEmail(
   }
 
   body = stripMarkdownLinks(body)
+  body = ensureBodyGreetsRecipients(body, context.recipientGreeting ?? context.firstName)
 
   return sanitizeGeneratedEmail({
     subject: sanitizeSubject(email.subject || `${context.targetCompany} ${context.signalType}`, context),
@@ -1013,6 +1021,7 @@ function normalizeOutreachEmail(
 
 function fallbackOutreachBody(context: {
   firstName: string
+  recipientGreeting?: string | null
   senderIntro: string
   servicesDescription: string
   targetCompany: string

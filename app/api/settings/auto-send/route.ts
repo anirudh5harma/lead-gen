@@ -161,7 +161,7 @@ export async function PATCH(request: Request) {
       : await accountQuery
     if (activeAccountError) return NextResponse.json({ error: activeAccountError.message }, { status: 500 })
     if (!activeAccounts?.length) {
-      return NextResponse.json({ error: 'Connect Gmail or Outlook before starting automation.' }, { status: 400 })
+      return NextResponse.json({ error: 'Connect a sending inbox before starting automation.' }, { status: 400 })
     }
   }
 

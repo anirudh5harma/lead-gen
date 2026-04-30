@@ -7,10 +7,14 @@ const GRAPH_API           = 'https://graph.microsoft.com/v1.0'
 
 const SCOPES = 'openid offline_access User.Read Mail.Send Mail.Read'
 
+export function microsoftRedirectUri(): string {
+  return process.env.MICROSOFT_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/microsoft-mail/callback`
+}
+
 export function microsoftAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id:     process.env.MICROSOFT_CLIENT_ID!,
-    redirect_uri:  `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/microsoft-mail/callback`,
+    redirect_uri:  microsoftRedirectUri(),
     response_type: 'code',
     scope:         SCOPES,
     state,
@@ -29,7 +33,7 @@ export async function exchangeMicrosoftCode(code: string): Promise<{
       code,
       client_id:     process.env.MICROSOFT_CLIENT_ID!,
       client_secret: process.env.MICROSOFT_CLIENT_SECRET!,
-      redirect_uri:  `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/microsoft-mail/callback`,
+      redirect_uri:  microsoftRedirectUri(),
       grant_type:    'authorization_code',
       scope:         SCOPES,
     }),
@@ -75,13 +79,15 @@ export async function sendViaOutlook(params: {
   fromEmail:   string
   fromName:    string
   to:          string
+  cc?:         string[]
   subject:     string
   body:        string
   inReplyTo?:  string | null
   unsubLink:   string
 }): Promise<{ messageId: string; threadId: string | null }> {
-  const { accessToken, fromEmail, fromName, to, subject, body, inReplyTo, unsubLink } = params
+  const { accessToken, fromEmail, fromName, to, cc = [], subject, body, inReplyTo, unsubLink } = params
   const safeTo = normalizeEmailAddress(to)
+  const safeCc = cc.map(email => normalizeEmailAddress(email)).filter(email => email.toLowerCase() !== safeTo.toLowerCase())
   const safeSubject = sanitizeHeaderValue(subject)
   const safeFromName = sanitizeHeaderValue(fromName)
   const safeInReplyTo = inReplyTo ? sanitizeHeaderValue(inReplyTo) : null
@@ -104,6 +110,7 @@ export async function sendViaOutlook(params: {
         subject: safeSubject,
         body:           { contentType: 'Text', content: body },
         toRecipients:   [{ emailAddress: { address: safeTo } }],
+        ccRecipients:   safeCc.map(address => ({ emailAddress: { address } })),
         from:           { emailAddress: { name: safeFromName, address: normalizeEmailAddress(fromEmail) } },
         internetMessageHeaders,
       },

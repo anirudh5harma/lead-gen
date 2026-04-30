@@ -85,21 +85,24 @@ export async function sendViaGmail(params: {
   fromEmail:   string
   fromName:    string
   to:          string
+  cc?:         string[]
   subject:     string
   body:        string
   inReplyTo?:  string | null
   threadId?:   string | null
   unsubLink:   string
 }): Promise<GmailSendResult> {
-  const { accessToken, fromEmail, fromName, to, subject, body, inReplyTo, threadId, unsubLink } = params
+  const { accessToken, fromEmail, fromName, to, cc = [], subject, body, inReplyTo, threadId, unsubLink } = params
   const safeFrom = formatMailboxHeader(fromName, fromEmail)
   const safeTo = normalizeEmailAddress(to)
+  const safeCc = cc.map(email => normalizeEmailAddress(email)).filter(email => email.toLowerCase() !== safeTo.toLowerCase())
   const safeSubject = sanitizeHeaderValue(subject)
   const safeInReplyTo = inReplyTo ? sanitizeHeaderValue(inReplyTo) : null
 
   const headerLines = [
     `From: ${safeFrom}`,
     `To: ${safeTo}`,
+    ...(safeCc.length > 0 ? [`Cc: ${safeCc.join(', ')}`] : []),
     `Subject: ${safeSubject}`,
     'Content-Type: text/plain; charset=utf-8',
     `List-Unsubscribe: <${unsubLink}>`,

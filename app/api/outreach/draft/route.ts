@@ -9,6 +9,7 @@ import type { Stakeholder } from '../../../api/contacts/find/route'
 import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
 import { resolveOutreachContext } from '@/lib/outreach-context'
 import { recordAgentEvent } from '@/lib/agent-events'
+import { buildRecipientGroup } from '@/lib/outreach-recipients'
 
 function signalAgeLabel(publishedAt: string | null): string | null {
   if (!publishedAt) return null
@@ -148,7 +149,8 @@ export async function POST(request: Request) {
       ])
     : ''
 
-  const primaryStakeholder = stakeholders[0] || { name: 'the team', title: 'Leadership' }
+  const recipientGroup = buildRecipientGroup(stakeholders)
+  const primaryStakeholder = recipientGroup?.to || { name: 'the team', title: 'Leadership' }
   const outreachContext = resolveOutreachContext({
     userProfile: profile,
     clientProfile: clientProfile,
@@ -159,7 +161,8 @@ export async function POST(request: Request) {
     senderWebsiteUrl:    outreachContext.websiteUrl,
     servicesDescription: outreachContext.servicesDescription,
     stakeholderName:     primaryStakeholder.name,
-    stakeholderTitle:    primaryStakeholder.title,
+    stakeholderTitle:    recipientGroup?.titleSummary ?? primaryStakeholder.title,
+    recipientGreeting:   recipientGroup?.greeting ?? primaryStakeholder.name,
     targetCompany:       lead.target_company,
     signalType:          signal?.signal_type || 'event',
     signalSummary:       signal?.summary || lead.relevance_reason || '',
@@ -199,7 +202,7 @@ export async function POST(request: Request) {
     status: 'needs_approval',
     title: `Draft ready for ${lead.target_company}`,
     body: stakeholders.length > 0
-      ? `Prepared outreach for ${stakeholders[0]?.name || 'a verified contact'} at ${lead.target_company}.`
+      ? `Prepared outreach for ${recipientGroup?.greeting || 'verified contacts'} at ${lead.target_company}.`
       : `Prepared outreach for ${lead.target_company}.`,
     metadata: {
       verified_contacts: stakeholders.length,

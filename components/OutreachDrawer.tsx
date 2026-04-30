@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
+import { buildRecipientGroup } from '@/lib/outreach-recipients'
 import StakeholderList, { type Stakeholder } from './StakeholderList'
 import type { Lead } from './LeadFeed'
 
@@ -137,8 +138,8 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
 
   async function sendEmail() {
     if (!draft) return
-    const recipient = draft.stakeholders.find(s => s.email)
-    if (!recipient?.email) {
+    const recipientGroup = buildRecipientGroup(draft.stakeholders)
+    if (!recipientGroup) {
       setSendError('No email address found for any contact.')
       return
     }
@@ -151,7 +152,14 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
       const res = await fetch('/api/outreach/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: lead.id, to: recipient.email, subject: currentSubject, body: currentBody, isFollowUp: tab === 'followup' }),
+        body: JSON.stringify({
+          leadId: lead.id,
+          to: recipientGroup.to.email,
+          cc: recipientGroup.cc.map(recipient => recipient.email),
+          subject: currentSubject,
+          body: currentBody,
+          isFollowUp: tab === 'followup',
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to send')
@@ -165,15 +173,13 @@ export default function OutreachDrawer({ lead, onClose, onEmailSent, onStatusCha
 
   function openInGmail() {
     if (!draft) return
-    const recipients = Array.from(new Set(
-      draft.stakeholders
-        .map(stakeholder => stakeholder.email?.trim())
-        .filter((email): email is string => Boolean(email))
-    ))
-    const to = recipients.join(';')
+    const recipientGroup = buildRecipientGroup(draft.stakeholders)
+    if (!recipientGroup) return
+    const to = recipientGroup.to.email
+    const cc = recipientGroup.cc.map(recipient => recipient.email).join(',')
     const subject = tab === 'followup' && followUp ? followUp.followup_subject : draft.subject
     const body    = tab === 'followup' && followUp ? followUp.followup_body    : draft.body
-    const params  = new URLSearchParams({ to, su: subject, body })
+    const params  = new URLSearchParams({ to, cc, su: subject, body })
     window.open(`https://mail.google.com/mail/u/0/?view=cm&fs=1&tf=1&${params.toString()}`, '_blank')
     // Don't close or mark as sent — user must confirm via "Mark as" buttons after sending from Gmail
   }

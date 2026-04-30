@@ -11,6 +11,7 @@ import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-conte
 import { sendAutomationLifecycleEmail } from '@/lib/resend'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { finishAgentRun, recordAgentEvent, startAgentRun } from '@/lib/agent-events'
+import { buildRecipientGroup, formatRecipientListForLog, type OutreachRecipientGroup } from '@/lib/outreach-recipients'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
           eventType: 'automation_blocked',
           status: 'blocked',
           title: 'Automation paused: no active inbox',
-          body: 'Connect Gmail or Outlook before Bombsell can send from your mailbox.',
+          body: 'Connect a sending inbox before Bombsell can send from your mailbox.',
         })
         await finishAgentRun(supabase, { runId: agentRunId, status: 'completed', output: { sent: 0, reason: 'no_active_inbox' } })
         skipped++
@@ -450,29 +451,6 @@ async function sendAutomationLead(
     connectedAccountId: string | null
   },
 ): Promise<boolean> {
-  const to = typeof params.lead.contact_email === 'string' ? params.lead.contact_email.trim().toLowerCase() : ''
-  if (!to) return false
-
-  const [unsubRes, bounceRes] = await Promise.all([
-    supabase.from('unsubscribed_emails').select('id').eq('email', to).maybeSingle(),
-    supabase.from('bounced_emails').select('id').eq('email', to).maybeSingle(),
-  ])
-  if (unsubRes.data || bounceRes.data) {
-    await recordAgentEvent(supabase, {
-      userId: params.userId,
-      clientId: params.clientId,
-      runId: params.runId,
-      leadId: params.lead.id as string,
-      agentName: 'safety',
-      eventType: unsubRes.data ? 'recipient_unsubscribed' : 'recipient_bounced',
-      status: 'blocked',
-      title: `Skipped ${params.lead.target_company}: unsafe recipient`,
-      body: unsubRes.data ? 'The recipient has unsubscribed.' : 'The recipient previously bounced.',
-      metadata: { to },
-    })
-    return false
-  }
-
   const [{ data: profile }, { data: clientProfile }, template] = await Promise.all([
     supabase
       .from('user_profiles')
@@ -496,6 +474,30 @@ async function sendAutomationLead(
     clientProfile,
     customInstructions: template?.custom_instructions ?? null,
   })
+  if (!draft.recipientGroup) return false
+
+  const recipientEmails = draft.recipientGroup.all.map(recipient => recipient.email.toLowerCase())
+  const [unsubRes, bounceRes] = await Promise.all([
+    supabase.from('unsubscribed_emails').select('email').in('email', recipientEmails),
+    supabase.from('bounced_emails').select('email').in('email', recipientEmails),
+  ])
+  const unsafeEmail = ((unsubRes.data ?? [])[0] as { email?: string } | undefined)?.email
+    ?? ((bounceRes.data ?? [])[0] as { email?: string } | undefined)?.email
+  if (unsafeEmail) {
+    await recordAgentEvent(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      runId: params.runId,
+      leadId: params.lead.id as string,
+      agentName: 'safety',
+      eventType: (unsubRes.data ?? []).length > 0 ? 'recipient_unsubscribed' : 'recipient_bounced',
+      status: 'blocked',
+      title: `Skipped ${params.lead.target_company}: unsafe recipient`,
+      body: `${unsafeEmail} is blocked by unsubscribe or bounce suppression.`,
+      metadata: { recipients: recipientEmails },
+    })
+    return false
+  }
 
   const outreachContext = resolveOutreachContext({
     userProfile: profile,
@@ -505,7 +507,8 @@ async function sendAutomationLead(
   const result = await sendWithConnectedAccount({
     userId: params.userId,
     supabase,
-    to,
+    to: draft.recipientGroup.to.email,
+    cc: draft.recipientGroup.cc.map(recipient => recipient.email),
     subject: draft.subject,
     body: draft.body,
     fromName: outreachContext.fromName,
@@ -545,11 +548,13 @@ async function sendAutomationLead(
     eventType: 'email_sent',
     status: 'completed',
     title: `Sent outreach to ${params.lead.target_company}`,
-    body: `Sent from ${result.fromEmail} to ${to}. Follow-up was scheduled automatically.`,
+    body: `Sent from ${result.fromEmail} to ${formatRecipientListForLog(draft.recipientGroup)}. Follow-up was scheduled automatically.`,
     metadata: {
       provider: result.provider,
       message_id: result.messageId,
       thread_id: result.threadId,
+      to: draft.recipientGroup.to.email,
+      cc: draft.recipientGroup.cc.map(recipient => recipient.email),
     },
   })
 
@@ -564,25 +569,58 @@ async function getOrCreateAutomationDraft(
     clientProfile: { name?: string | null; website_url?: string | null; services_description?: string | null; calendly_url?: string | null } | null
     customInstructions: string | null
   },
-): Promise<{ subject: string; body: string }> {
+): Promise<{ subject: string; body: string; recipientGroup: OutreachRecipientGroup | null }> {
   const { data: existing } = await supabase
     .from('outreach_drafts')
-    .select('subject, body')
+    .select('subject, body, stakeholders')
     .eq('lead_id', params.lead.id as string)
     .maybeSingle()
-  if (existing?.subject && existing?.body) return existing
+  if (existing?.subject && existing?.body) {
+    const existingStakeholders = Array.isArray((existing as { stakeholders?: unknown }).stakeholders)
+      ? (existing as { stakeholders: Array<Partial<{ name: string; title: string; email: string; confidence: string; source: string }> | null> }).stakeholders
+      : []
+    return {
+      subject: existing.subject,
+      body: existing.body,
+      recipientGroup: buildRecipientGroup(existingStakeholders.length > 0 ? existingStakeholders : [primaryLeadContact(params.lead)]),
+    }
+  }
 
   const signal = normalizeLeadFeedSnapshot(params.lead.feed_snapshot ?? null)
   const outreachContext = resolveOutreachContext({
     userProfile: params.profile,
     clientProfile: params.clientProfile,
   })
+  const enrichment = await enrichCompany(
+    String(params.lead.target_company ?? ''),
+    typeof params.lead.company_domain === 'string' ? params.lead.company_domain : null,
+    supabase,
+    {
+      servicesDescription: outreachContext.servicesDescription,
+      signalType: signal?.signal_type ?? null,
+      maxContacts: 4,
+    },
+  )
+  const verifiedContacts = enrichment.contacts.filter(contact => contact.verified)
+  const stakeholders = verifiedContacts.length > 0
+    ? verifiedContacts.map(contact => ({
+        name: contact.name,
+        title: contact.title || 'Decision Maker',
+        email: contact.email,
+        confidence: 'high',
+        source: contact.source,
+      }))
+    : [primaryLeadContact(params.lead)]
+  const recipientGroup = buildRecipientGroup(stakeholders)
+  if (!recipientGroup) return { subject: '', body: '', recipientGroup: null }
+
   const { subject, body } = await draftOutreachEmail({
     senderCompany: outreachContext.senderCompany,
     senderWebsiteUrl: outreachContext.websiteUrl,
     servicesDescription: outreachContext.servicesDescription,
-    stakeholderName: typeof params.lead.contact_name === 'string' && params.lead.contact_name.trim() ? params.lead.contact_name : 'the team',
-    stakeholderTitle: typeof params.lead.contact_title === 'string' && params.lead.contact_title.trim() ? params.lead.contact_title : 'Leadership',
+    stakeholderName: recipientGroup.to.name,
+    stakeholderTitle: recipientGroup.titleSummary,
+    recipientGreeting: recipientGroup.greeting,
     targetCompany: params.lead.target_company as string,
     signalType: signal?.signal_type || 'event',
     signalSummary: signal?.summary || (params.lead.relevance_reason as string | null) || '',
@@ -599,16 +637,20 @@ async function getOrCreateAutomationDraft(
     client_id: params.lead.client_id ?? null,
     subject,
     body,
-    stakeholders: [{
-      name: params.lead.contact_name ?? '',
-      title: params.lead.contact_title ?? '',
-      email: params.lead.contact_email ?? '',
-      confidence: 'high',
-      source: 'automation',
-    }],
+    stakeholders,
   })
 
-  return { subject, body }
+  return { subject, body, recipientGroup }
+}
+
+function primaryLeadContact(lead: Record<string, unknown>) {
+  return {
+    name: typeof lead.contact_name === 'string' ? lead.contact_name : '',
+    title: typeof lead.contact_title === 'string' ? lead.contact_title : 'Decision Maker',
+    email: typeof lead.contact_email === 'string' ? lead.contact_email : '',
+    confidence: 'high',
+    source: 'automation',
+  }
 }
 
 async function notifyAutomationCompleted(

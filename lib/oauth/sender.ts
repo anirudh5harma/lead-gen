@@ -94,7 +94,7 @@ export async function pickSenderAccount(
 }
 
 /**
- * Sends an email using the user's connected Gmail or Outlook account.
+ * Sends an email using the user's connected sending account.
  * Handles token refresh automatically.
  * Returns null if no connected account is available — caller falls back to Resend.
  */
@@ -102,6 +102,7 @@ export async function sendWithConnectedAccount(params: {
   userId:        string
   supabase:      SupabaseClient
   to:            string
+  cc?:           string[]
   subject:       string
   body:          string
   fromName:      string
@@ -110,8 +111,9 @@ export async function sendWithConnectedAccount(params: {
   preferEmail?:  string | null
   preferAccountId?: string | null
 }): Promise<SendResult | null> {
-  const { userId, supabase, to, subject, body, fromName, inReplyTo, gmailThreadId, preferEmail, preferAccountId } = params
+  const { userId, supabase, to, cc = [], subject, body, fromName, inReplyTo, gmailThreadId, preferEmail, preferAccountId } = params
   const recipient = normalizeEmailAddress(to)
+  const ccRecipients = [...new Set(cc.map(email => normalizeEmailAddress(email)).filter(email => email.toLowerCase() !== recipient.toLowerCase()))]
   const safeSubject = sanitizeHeaderValue(subject)
   const safeFromName = sanitizeHeaderValue(fromName)
 
@@ -131,6 +133,7 @@ export async function sendWithConnectedAccount(params: {
       fromEmail:  account.email,
       fromName:   displayName,
       to:         recipient,
+      cc:         ccRecipients,
       subject:    safeSubject,
       body:       bodyWithFooter,
       inReplyTo:  inReplyTo ?? null,
@@ -144,6 +147,7 @@ export async function sendWithConnectedAccount(params: {
       fromEmail:  account.email,
       fromName:   displayName,
       to:         recipient,
+      cc:         ccRecipients,
       subject:    safeSubject,
       body:       bodyWithFooter,
       inReplyTo:  inReplyTo ?? null,

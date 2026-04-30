@@ -502,7 +502,7 @@ function LiveAutopilotControl({
     { key: 'profile', label: 'Offer and company profile', done: Boolean(profile.company_name && profile.services_description), action: 'Edit onboarding' },
     { key: 'website', label: 'Website for personalization', done: Boolean(profile.website_url), action: 'Add website' },
     { key: 'icp', label: 'ICP targets', done: Boolean(profile.icp_keywords?.length || profile.target_industries?.length), action: 'Tune ICP' },
-    { key: 'inbox', label: 'Connected Gmail or Outlook', done: false, action: 'Connect inbox' },
+    { key: 'inbox', label: 'Connected sending inbox', done: false, action: 'Connect inbox' },
     { key: 'credits', label: 'Lead unlock credits', done: (profile.lead_credit_balance ?? 0) > 0, action: 'Add credits' },
   ]
   const completed = checklist.filter(item => item.done).length
@@ -911,7 +911,7 @@ function AutomationPanel() {
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Automated Feeds</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Custom automation for selected Explore sessions. Connect Gmail or Outlook from Settings.
+              Custom automation for selected Explore sessions. Connect your sending inbox from Settings.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -2102,6 +2102,7 @@ interface ConnectedAccount {
 }
 
 const PROVIDER_LABEL: Record<string, string> = { gmail: 'Gmail', outlook: 'Outlook' }
+const ENABLE_GMAIL_CONNECT = process.env.NEXT_PUBLIC_ENABLE_GMAIL_CONNECT === 'true'
 
 function ConnectedAccountsPanel() {
   const [accounts,    setAccounts]    = useState<ConnectedAccount[]>([])
@@ -2125,6 +2126,7 @@ function ConnectedAccountsPanel() {
     } else if (error) {
       const msgs: Record<string, string> = {
         google_denied:    'Google sign-in was cancelled.',
+        gmail_disabled:   'Gmail connection is temporarily disabled while Google verification is completed.',
         microsoft_denied: 'Microsoft sign-in was cancelled.',
         google_failed:    'Google connection failed — please try again.',
         microsoft_failed: 'Microsoft connection failed — please try again.',
@@ -2204,18 +2206,20 @@ function ConnectedAccountsPanel() {
       )}
 
       <div className="px-5 py-4 flex items-center gap-2 flex-wrap">
-        <a
-          href="/api/auth/google-mail"
-          className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"
-        >
-          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden>
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-          </svg>
-          Connect Gmail
-        </a>
+        {ENABLE_GMAIL_CONNECT && (
+          <a
+            href="/api/auth/google-mail"
+            className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden>
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Connect Gmail
+          </a>
+        )}
         <a
           href="/api/auth/microsoft-mail"
           className="inline-flex items-center gap-2 text-xs font-medium px-3.5 py-1.5 rounded-full btn-ghost transition-colors"

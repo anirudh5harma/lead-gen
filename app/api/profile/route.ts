@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { extractICPKeywords } from '@/lib/deepseek'
-import { resolveServicesDescription } from '@/lib/company-profile'
+import { normalizeCompanyWebsiteUrl } from '@/lib/company-profile'
 import { syncMonitoredAccountsFromWorkspaceSources } from '@/lib/monitored-accounts'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { grantStarterLeadCredits } from '@/lib/lead-credits'
@@ -62,30 +62,27 @@ export async function POST(request: Request) {
     )
   }
 
-  const resolvedDescription = await resolveServicesDescription({
-    companyName,
-    industry: industryName,
-    manualDescription: services_description,
-    websiteUrl: website_url,
-  })
+  const servicesDescription = typeof services_description === 'string' ? services_description.trim() : ''
+  const websiteUrl = normalizeCompanyWebsiteUrl(website_url)
 
-  if (!resolvedDescription) {
+  if (servicesDescription.length < 10) {
     return NextResponse.json(
-      { error: 'Add a website URL or a short product/service description so we can build your signal profile.' },
+      { error: 'Add a short product/service description before saving. Website suggestions must be reviewed first.' },
       { status: 400 }
     )
   }
 
-  const servicesDescription = resolvedDescription.description
-  const websiteUrl = resolvedDescription.websiteUrl
+  const explicitIcpKeywords = buildIcpKeywords({ explicitKeywords: icp_keywords })
 
   // ICP keywords and embeddings are both optional — don't let model/API failures block onboarding.
   const [generatedIcpKeywords, embedding] = await Promise.all([
-    extractICPKeywords(servicesDescription).catch(() => [] as string[]),
+    explicitIcpKeywords.length > 0
+      ? Promise.resolve([] as string[])
+      : extractICPKeywords(servicesDescription).catch(() => [] as string[]),
     embed(`${companyName} ${servicesDescription} targets: ${targetIndustries.join(', ')}`).catch(() => null as number[] | null),
   ])
   const normalizedIcpKeywords = buildIcpKeywords({
-    explicitKeywords: icp_keywords,
+    explicitKeywords: explicitIcpKeywords,
     generatedKeywords: generatedIcpKeywords,
     targetIndustries,
   })
