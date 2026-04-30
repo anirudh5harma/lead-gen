@@ -74,7 +74,7 @@ export async function GET() {
     }
     sessionMap.set(sessionId, {
       id: sessionId,
-      label: (row as { feed_session_label?: string | null }).feed_session_label ?? `Explore session · ${new Date(startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+      label: (row as { feed_session_label?: string | null }).feed_session_label ?? `Batch session · ${new Date(startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
       started_at: startedAt,
       lead_count: 1,
     })
@@ -133,7 +133,7 @@ export async function PATCH(request: Request) {
     : null
 
   if (body.enabled && targetOrigins.includes('explore') && targetExploreSessionIds.length === 0 && !targetOrigins.includes('live')) {
-    return NextResponse.json({ error: 'Select at least one Explore session or enable continuous Signal Feed automation.' }, { status: 400 })
+    return NextResponse.json({ error: 'Select at least one batch session or enable live automation.' }, { status: 400 })
   }
 
   if (connectedAccountId) {
@@ -223,8 +223,8 @@ export async function PATCH(request: Request) {
 
   if (body.enabled && !wasEnabled && user.email) {
     const summary = targetOrigins.includes('live')
-      ? `Bombsell will safely send eligible unlocked signal-feed leads, capped at ${dailySendLimit} sends/day with at least ${minMinutesBetweenSends} minutes between sends.`
-      : `Bombsell will safely send eligible unlocked leads from ${targetExploreSessionIds.length} selected Explore session${targetExploreSessionIds.length === 1 ? '' : 's'}, capped at ${dailySendLimit} sends/day.`
+      ? `Bombsell will safely send eligible unlocked live-signal leads, capped at ${dailySendLimit} sends/day with at least ${minMinutesBetweenSends} minutes between sends.`
+      : `Bombsell will safely send eligible unlocked leads from ${targetExploreSessionIds.length} selected batch session${targetExploreSessionIds.length === 1 ? '' : 's'}, capped at ${dailySendLimit} sends/day.`
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('company_name')

@@ -196,7 +196,7 @@ export async function POST(request: Request) {
     title: mode === 'autopilot' ? 'Live autopilot started' : 'Live autopilot paused',
     body: mode === 'autopilot'
       ? 'Bombsell will now unlock high-fit live signal leads with credits, find verified contacts, and send safely from your inbox.'
-      : 'Bombsell paused live signal autopilot. Explore automation can still run if configured.',
+      : 'Bombsell paused live signal autopilot. Batch workflows can still run if configured.',
     metadata: { mode },
   })
 

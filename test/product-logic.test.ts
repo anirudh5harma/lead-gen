@@ -312,7 +312,7 @@ test('feed session labels summarize explore prompts and crm imports clearly', ()
     recordCount: 24,
   })
 
-  assert.match(exploreLabel, /^Explore · Find 50 healthcare compliance startups/)
+  assert.match(exploreLabel, /^Batch · Find 50 healthcare compliance startups/)
   assert.match(crmLabel, /^Hubspot import · 24 records · /)
 })
 
@@ -348,7 +348,7 @@ test('explore prompt assessment accepts normal targeting prompts and rejects obv
     assessExplorePrompt('debug this Next.js build error for me'),
     {
       allowed: false,
-      reason: 'Explore only supports prompts for finding target accounts, companies, or prospects.',
+      reason: 'Batch sourcing only supports prompts for finding target accounts, companies, or prospects.',
     },
   )
 })

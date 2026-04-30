@@ -941,7 +941,7 @@ async function notifyAutomationCompleted(
       toEmail: email,
       companyName: (profile as { company_name?: string | null } | null)?.company_name ?? 'your workspace',
       event: 'completed',
-      summary: `Bombsell finished the eligible unlocked leads from ${sessionCount} selected Explore session${sessionCount === 1 ? '' : 's'}. Leads without verified contacts, unsubscribed recipients, bounced emails, or already-sent status were skipped for mailbox safety.`,
+      summary: `Bombsell finished the eligible unlocked leads from ${sessionCount} selected batch session${sessionCount === 1 ? '' : 's'}. Leads without verified contacts, unsubscribed recipients, bounced emails, or already-sent status were skipped for mailbox safety.`,
     })
   }
   await supabase

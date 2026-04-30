@@ -95,7 +95,7 @@ export function assessExplorePrompt(prompt: string): {
   if (obviouslyUnrelated) {
     return {
       allowed: false,
-      reason: 'Explore only supports prompts for finding target accounts, companies, or prospects.',
+      reason: 'Batch sourcing only supports prompts for finding target accounts, companies, or prospects.',
     }
   }
 

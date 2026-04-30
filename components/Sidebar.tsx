@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 
-type NavId = 'command' | 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'
+type NavId = 'command' | 'automation' | 'mcp' | 'settings'
 
 export interface SidebarProps {
   companyName: string
@@ -25,12 +25,23 @@ const CORE_NAV: { id: NavId; label: string; icon: React.ReactNode }[] = [
   },
   {
     id: 'automation',
-    label: 'Automated Feeds',
+    label: 'Workflows',
     icon: (
       <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6v6l4 2" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12a9 9 0 11-2.64-6.36" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 4v5h-5" />
+      </svg>
+    ),
+  },
+  {
+    id: 'mcp',
+    label: 'Agent API',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9h8M8 15h8" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6.5 4.5h11A2.5 2.5 0 0120 7v10a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 17V7a2.5 2.5 0 012.5-2.5z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 12H2m20 0h-2M12 4.5V2m0 20v-2.5" />
       </svg>
     ),
   },
@@ -46,62 +57,9 @@ const CORE_NAV: { id: NavId; label: string; icon: React.ReactNode }[] = [
   },
 ]
 
-const ADVANCED_NAV: { id: NavId; label: string; icon: React.ReactNode }[] = [
-  {
-    id: 'feed',
-    label: 'Signal Feed',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    ),
-  },
-  {
-    id: 'explore',
-    label: 'Explore',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 16l2.879-2.879m0 0A3 3 0 1115.12 8.88a3 3 0 01-4.242 4.242z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 3a9 9 0 109 9" />
-      </svg>
-    ),
-  },
-  {
-    id: 'crm',
-    label: 'CRM',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v9A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5v-9z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9.5h8M8 13h5" />
-      </svg>
-    ),
-  },
-  {
-    id: 'mcp',
-    label: 'MCP',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9h8M8 15h8" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6.5 4.5h11A2.5 2.5 0 0120 7v10a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 17V7a2.5 2.5 0 012.5-2.5z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 12H2m20 0h-2M12 4.5V2m0 20v-2.5" />
-      </svg>
-    ),
-  },
-  {
-    id: 'watchlist',
-    label: 'Watchlist',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-      </svg>
-    ),
-  },
-]
-
 export default function Sidebar({ companyName, userEmail, activeView, onNavigate }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [advancedOpen, setAdvancedOpen] = useState(() => ADVANCED_NAV.some(item => item.id === activeView))
 
   useEffect(() => {
     function onResize() {
@@ -111,7 +69,6 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const activeIsAdvanced = ADVANCED_NAV.some(item => item.id === activeView)
   const initial = (companyName || userEmail || 'U').charAt(0).toUpperCase()
   const widthClass = collapsed ? 'md:w-16' : 'md:w-[232px]'
   const renderNavItem = (item: { id: NavId; label: string; icon: React.ReactNode }) => {
@@ -169,37 +126,7 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
 
       {/* Nav */}
       <nav className="flex-1 px-2.5 pt-4 pb-2 space-y-0.5 overflow-y-auto">
-        {!collapsed && (
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)] px-2.5 pb-2.5">
-            Core
-          </p>
-        )}
         {CORE_NAV.map(renderNavItem)}
-
-        <div className={`${collapsed ? 'pt-2' : 'pt-5'}`}>
-          {!collapsed ? (
-            <button
-              type="button"
-              onClick={() => setAdvancedOpen(open => !open)}
-              className="w-full flex items-center justify-between px-2.5 pb-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)] hover:text-[var(--color-text-2)] transition-colors"
-            >
-              <span>Advanced</span>
-              <svg
-                width="12"
-                height="12"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                className={`transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-          ) : (
-            <div className="h-px bg-[var(--color-line-1)] mx-2 mb-2" />
-          )}
-          {(collapsed || advancedOpen || activeIsAdvanced) && ADVANCED_NAV.map(renderNavItem)}
-        </div>
       </nav>
 
       {/* User */}

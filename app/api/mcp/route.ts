@@ -129,7 +129,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
     'list_leads',
     {
       title: 'List Leads',
-      description: 'List recent Bombsell leads across live signals, Explore results, or CRM-queued records. Defaults to the active workspace.',
+      description: 'List recent Bombsell leads across live signals, batch source results, or CRM-queued records. Defaults to the active workspace.',
       inputSchema: {
         origin: z.enum(VALID_ORIGINS).optional().describe('Optional feed origin filter.'),
         status: z.enum(VALID_LEAD_STATUSES).optional().describe('Optional lead status filter.'),
@@ -222,7 +222,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
     'list_feed_sessions',
     {
       title: 'List Feed Sessions',
-      description: 'List feed sessions for Explore and CRM queue records, plus live-feed grouping metadata when available.',
+      description: 'List source sessions for batch and CRM queue records, plus live-signal grouping metadata when available.',
       inputSchema: {
         origin: z.enum(VALID_ORIGINS).optional().describe('Optional feed origin filter.'),
         client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
@@ -257,7 +257,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
     'get_automation_settings',
     {
       title: 'Get Automation Settings',
-      description: 'Return outbound automation policy, connected sending accounts, and Explore sessions for the active workspace.',
+      description: 'Return outbound automation policy, connected sending accounts, and batch sessions for the active workspace.',
       inputSchema: {
         client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
       },
@@ -278,8 +278,8 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
         enabled: z.boolean().describe('Turn automation on or off.'),
         client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
         connected_account_id: z.string().optional().describe('Optional connected sending account id. Defaults to least recently used active inbox.'),
-        target_origins: z.array(z.enum(['live', 'explore'])).optional().describe('Sources to automate. Use live for continuous Signal Feed and explore for selected Explore sessions.'),
-        target_explore_session_ids: z.array(z.string()).optional().describe('Explore session ids to automate when target_origins includes explore.'),
+        target_origins: z.array(z.enum(['live', 'explore'])).optional().describe('Sources to automate. Use live for continuous live-signal automation and explore for selected batch sessions.'),
+        target_explore_session_ids: z.array(z.string()).optional().describe('Batch session ids to automate when target_origins includes explore.'),
         min_relevance_score: z.number().min(1).max(10).optional().describe('Minimum lead score. Default 7.'),
         max_lead_age_days: z.number().min(1).max(365).optional().describe('Maximum age of eligible leads. Default 30.'),
         daily_send_limit: z.number().min(1).max(50).optional().describe('Maximum initial outreach sends per UTC day. Default 10.'),
@@ -299,7 +299,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
     'queue_leads_for_crm',
     {
       title: 'Queue Leads For CRM',
-      description: 'Stage selected Signal or Explore leads into the CRM export feed. This does not call the external CRM; users can review and export the CRM feed later.',
+      description: 'Stage selected workflow leads into the CRM export queue. This does not call the external CRM; users can approve and export the queue later.',
       inputSchema: {
         lead_ids: z.array(z.string()).min(1).max(100).describe('Lead ids to stage.'),
         client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
@@ -317,7 +317,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
   registerJsonResource(server, 'workspace-profile', 'bombsell://workspace/profile', 'Workspace GTM profile', 'Current user profile, active client workspace, ICP, and agent guidance.', () => getGtmContext(ctx))
   registerJsonResource(server, 'recent-leads', 'bombsell://leads/recent', 'Recent leads', 'Recent non-dismissed leads for the active workspace.', () => listLeads(ctx, { limit: 25 }))
   registerJsonResource(server, 'watchlist', 'bombsell://watchlist', 'Watchlist', 'Watchlisted companies for the active workspace.', () => listWatchlist(ctx, {}))
-  registerJsonResource(server, 'feed-sessions', 'bombsell://feed-sessions', 'Feed sessions', 'Recent feed-session groupings for Explore and CRM-imported leads.', () => listFeedSessions(ctx, {}))
+  registerJsonResource(server, 'feed-sessions', 'bombsell://feed-sessions', 'Source sessions', 'Recent source-session groupings for batch and CRM-imported leads.', () => listFeedSessions(ctx, {}))
 
   return server
 }
@@ -400,10 +400,10 @@ async function getGtmContext(ctx: McpContext) {
     active_client: activeClient,
     clients: clients ?? [],
     guidance: [
-      'Use list_leads for current signal, explore, CRM-queued opportunities, reply intent, and booked-meeting outcomes.',
+      'Use list_leads for current live-signal, batch, CRM-queued opportunities, reply intent, and booked-meeting outcomes.',
       'Use update_lead_status only when the user or calling workflow has decided the lead state should change.',
       'Use configure_automation to set safe outbound automation after the user has connected a sending inbox.',
-      'Use queue_leads_for_crm to stage reviewed Signal or Explore leads into the CRM export feed.',
+      'Use queue_leads_for_crm to stage approved workflow leads into the CRM export queue.',
       'Do not generate outreach for locked leads through MCP; use the Bombsell UI/API unlock flow first.',
     ],
   }
@@ -617,7 +617,7 @@ async function configureAutomation(ctx: McpContext, args: {
   const origins = sanitizeAutoSendOrigins(args.target_origins)
   const sessionIds = sanitizeSessionIds(args.target_explore_session_ids)
   if (args.enabled && origins.includes('explore') && !origins.includes('live') && sessionIds.length === 0) {
-    throw new Error('Select at least one Explore session or include live automation.')
+    throw new Error('Select at least one batch session or include live automation.')
   }
 
   const connectedAccountId = optionalString(args.connected_account_id)

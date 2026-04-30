@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardShell from '@/components/DashboardShell'
-import type { Lead } from '@/components/LeadFeed'
+import type { Lead } from '@/lib/leads'
 
 export const revalidate = 0
 
@@ -81,8 +81,8 @@ export default async function DashboardPage() {
 
   const leadBaseFilter = activeClientId ? { client_id: activeClientId } : {}
 
-  // Initial leads are loaded per origin so large Explore/CRM batches do not
-  // evict live-signal rows from the server-rendered feed.
+  // Initial account work is loaded per origin so large batch/CRM sources do not
+  // evict live-signal rows from the server-rendered command view.
   const [liveLeadsResult, exploreLeadsResult, crmLeadsResult, agentEventsResult] = await Promise.all([
     supabase
       .from('leads')
@@ -125,21 +125,12 @@ export default async function DashboardPage() {
     new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
   ))
 
-  // Watchlist
-  const { data: watchlist } = await supabase
-    .from('watchlist_companies')
-    .select('id, company_name, company_domain')
-    .eq('user_id', user.id)
-    .match(activeClientId ? { client_id: activeClientId } : {})
-    .order('created_at', { ascending: false })
-
   const typedLeads = leads as unknown as Lead[]
 
   return (
     <DashboardShell
       initialLeads={typedLeads}
       initialAgentEvents={(agentEventsResult.data ?? []) as never}
-      userId={user.id}
       userProfile={{
         company_name: profile.company_name,
         services_description: (clientProfile as { services_description?: string } | null)?.services_description ?? profile.services_description,
@@ -156,7 +147,6 @@ export default async function DashboardPage() {
         automation_mode: (profile as { automation_mode?: 'research_only' | 'approve_first' | 'autopilot' | null }).automation_mode ?? 'approve_first',
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
       }}
-      watchlist={watchlist ?? []}
     />
   )
 }

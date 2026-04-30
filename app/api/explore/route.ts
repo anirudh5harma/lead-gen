@@ -279,7 +279,7 @@ export async function POST(request: Request) {
         target_company: suggestion.company_name,
         company_domain: suggestion.company_domain,
         relevance_score: suggestion.relevance_score,
-        relevance_reason: `Explore: ${suggestion.relevance_reason}`.slice(0, 1000),
+        relevance_reason: `Batch source: ${suggestion.relevance_reason}`.slice(0, 1000),
         status: 'new',
         is_unlocked: false,
         unlocked_at: null,

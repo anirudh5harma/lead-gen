@@ -7,6 +7,17 @@ import { resolveOutreachContext } from '@/lib/outreach-context'
 import { messageIdHeader } from '@/lib/oauth/message-id'
 import { recordAgentEvent } from '@/lib/agent-events'
 import { buildRecipientGroup, formatRecipientListForLog } from '@/lib/outreach-recipients'
+import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
+import { bodyPreview } from '@/lib/gtm/identity'
+import { recordGtmMemory } from '@/lib/gtm/memory'
+import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
+import {
+  finishWorkflowRun,
+  finishWorkflowStep,
+  recordToolCall,
+  startWorkflowRun,
+  startWorkflowStep,
+} from '@/lib/workflows/runtime'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -50,7 +61,7 @@ export async function GET(request: Request) {
           .from('scheduled_followups')
           .select(`
             id, user_id, lead_id, scheduled_for,
-            leads(target_company, contact_email, contact_verified, status, message_id, from_email, gmail_thread_id, client_id, origin, relevance_score, created_at),
+            leads(id, user_id, target_company, company_domain, relevance_reason, contact_email, contact_name, contact_title, contact_verified, status, is_unlocked, message_id, from_email, gmail_thread_id, client_id, origin, source_kind, relevance_score, feed_snapshot, created_at),
             outreach_sequences(followup_subject, followup_body)
           `)
           .in('id', claimedIds)
@@ -135,10 +146,17 @@ export async function GET(request: Request) {
       const lead = item.leads as unknown as {
         contact_email?: string; target_company: string; status?: string
         message_id?: string | null; from_email?: string | null; gmail_thread_id?: string | null
+        company_domain?: string | null
+        relevance_reason?: string | null
+        contact_name?: string | null
+        contact_title?: string | null
         client_id?: string | null
         origin?: 'live' | 'explore' | 'crm_import' | null
+        source_kind?: string | null
         relevance_score?: number | null
         contact_verified?: boolean | null
+        is_unlocked?: boolean | null
+        feed_snapshot?: unknown
         created_at?: string | null
       } | null
       const seq = item.outreach_sequences as unknown as {
@@ -203,12 +221,106 @@ export async function GET(request: Request) {
       }
 
       const emails = recipientGroup.all.map(recipient => recipient.email.toLowerCase())
-      const [unsubRes, bounceRes] = await Promise.all([
-        supabase.from('unsubscribed_emails').select('id').in('email', emails),
-        supabase.from('bounced_emails').select('id').in('email', emails),
-      ])
-      if ((unsubRes.data ?? []).length > 0 || (bounceRes.data ?? []).length > 0) {
+      const workflowRunId = await startWorkflowRun(supabase, {
+        userId: item.user_id,
+        clientId: lead.client_id ?? null,
+        workflowType: 'scheduled_followup_send',
+        workflowKey: item.id,
+        idempotencyKey: `scheduled_followup:${item.id}:${claimToken}`,
+        input: {
+          scheduled_followup_id: item.id,
+          lead_id: item.lead_id,
+          recipient_count: emails.length,
+        },
+      })
+      const graphStepId = await startWorkflowStep(supabase, {
+        runId: workflowRunId,
+        userId: item.user_id,
+        clientId: lead.client_id ?? null,
+        stepKey: 'graph_sync',
+        input: { lead_id: item.lead_id },
+      })
+      const graph = await upsertLeadIntoGtmGraph(supabase, {
+        id: item.lead_id,
+        user_id: item.user_id,
+        client_id: lead.client_id ?? null,
+        target_company: lead.target_company,
+        company_domain: lead.company_domain ?? null,
+        relevance_score: lead.relevance_score ?? null,
+        relevance_reason: lead.relevance_reason ?? null,
+        status: lead.status ?? null,
+        is_unlocked: lead.is_unlocked ?? true,
+        contact_email: lead.contact_email ?? null,
+        contact_name: lead.contact_name ?? null,
+        contact_title: lead.contact_title ?? null,
+        contact_verified: lead.contact_verified ?? null,
+        origin: lead.origin ?? null,
+        source_kind: lead.source_kind ?? null,
+        feed_snapshot: lead.feed_snapshot,
+        created_at: lead.created_at ?? null,
+      }, { workflowRunId })
+      await finishWorkflowStep(supabase, {
+        stepId: graphStepId,
+        status: graph ? 'completed' : 'skipped',
+        output: graph ? {
+          account_id: graph.accountId,
+          person_id: graph.personId,
+          signal_id: graph.signalId,
+        } : {},
+      })
+      const policyStepId = await startWorkflowStep(supabase, {
+        runId: workflowRunId,
+        userId: item.user_id,
+        clientId: lead.client_id ?? null,
+        stepKey: 'policy',
+        input: { lead_id: item.lead_id, recipient_count: emails.length },
+      })
+      const policyDecision = await evaluateOutboundPolicy(supabase, {
+        userId: item.user_id,
+        clientId: lead.client_id ?? null,
+        leadId: item.lead_id,
+        targetCompany: lead.target_company,
+        companyDomain: lead.company_domain ?? null,
+        status: lead.status ?? null,
+        isUnlocked: lead.is_unlocked ?? true,
+        contactVerified: lead.contact_verified ?? null,
+        recipientEmails: emails,
+        requireVerifiedContact: policy.require_verified_contact,
+        runId: workflowRunId,
+        stepId: policyStepId,
+      })
+      await finishWorkflowStep(supabase, {
+        stepId: policyStepId,
+        status: policyDecision.decision === 'allowed' ? 'completed' : 'blocked',
+        output: {
+          decision: policyDecision.decision,
+          reasons: policyDecision.reasons,
+        },
+      })
+      if (policyDecision.decision !== 'allowed') {
+        if (graph) {
+          await recordGtmTouchpoint(supabase, {
+            userId: item.user_id,
+            clientId: lead.client_id ?? null,
+            accountId: graph.accountId,
+            personId: graph.personId,
+            leadId: item.lead_id,
+            workflowRunId,
+            type: 'followup',
+            status: 'blocked',
+            subject: fuSubject,
+            bodyPreview: bodyPreview(fuBody),
+            toEmail: recipientGroup.to.email,
+            metadata: { reasons: policyDecision.reasons },
+          })
+        }
         await completeFollowup(supabase, item.id, claimToken, nowIso)
+        await finishWorkflowRun(supabase, {
+          runId: workflowRunId,
+          status: 'completed',
+          output: { sent: false, policy_decision: policyDecision.decision, reasons: policyDecision.reasons },
+          checkpoint: { blocked_at: 'policy' },
+        })
         continue
       }
 
@@ -224,6 +336,27 @@ export async function GET(request: Request) {
       })
 
       try {
+        const sendStepId = await startWorkflowStep(supabase, {
+          runId: workflowRunId,
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          stepKey: 'send',
+          input: { lead_id: item.lead_id, recipient_count: emails.length },
+        })
+        await recordToolCall(supabase, {
+          runId: workflowRunId,
+          stepId: sendStepId,
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          toolName: 'sendWithConnectedAccount',
+          status: 'running',
+          toolInput: {
+            to: recipientGroup.to.email,
+            cc_count: recipientGroup.cc.length,
+            prefer_email: lead.from_email ?? null,
+            prefer_account_id: lead.from_email ? null : policy.connected_account_id,
+          },
+        })
         const result = await sendWithConnectedAccount({
           userId:        item.user_id,
           supabase,
@@ -240,8 +373,32 @@ export async function GET(request: Request) {
 
         if (!result) {
           await releaseClaim(supabase, item.id, claimToken)
+          await finishWorkflowStep(supabase, {
+            stepId: sendStepId,
+            status: 'blocked',
+            output: { reason: 'no_eligible_inbox' },
+          })
+          await finishWorkflowRun(supabase, {
+            runId: workflowRunId,
+            status: 'completed',
+            output: { sent: false, reason: 'no_eligible_inbox' },
+            checkpoint: { blocked_at: 'send' },
+          })
           continue
         }
+        await recordToolCall(supabase, {
+          runId: workflowRunId,
+          stepId: sendStepId,
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          toolName: 'sendWithConnectedAccount',
+          status: 'completed',
+          output: {
+            provider: result.provider,
+            from_email: result.fromEmail,
+            message_id: result.messageId,
+          },
+        })
 
         await completeFollowup(supabase, item.id, claimToken, nowIso)
         if (result.messageId) {
@@ -267,10 +424,74 @@ export async function GET(request: Request) {
             cc: recipientGroup.cc.map(recipient => recipient.email),
           },
         })
+        if (graph) {
+          await recordGtmTouchpoint(supabase, {
+            userId: item.user_id,
+            clientId: lead.client_id ?? null,
+            accountId: graph.accountId,
+            personId: graph.personId,
+            leadId: item.lead_id,
+            workflowRunId,
+            type: 'followup',
+            status: 'sent',
+            subject: fuSubject,
+            bodyPreview: bodyPreview(fuBody),
+            fromEmail: result.fromEmail,
+            toEmail: recipientGroup.to.email,
+            provider: result.provider,
+            messageId: result.messageId,
+            occurredAt: nowIso,
+            metadata: {
+              cc: recipientGroup.cc.map(recipient => recipient.email),
+              thread_id: result.threadId,
+            },
+          })
+          await recordGtmMemory(supabase, {
+            userId: item.user_id,
+            clientId: lead.client_id ?? null,
+            scope: 'entity',
+            entityType: 'account',
+            entityId: graph.accountId,
+            memoryType: 'followup_sent',
+            content: `Sent follow-up from ${result.fromEmail} to ${formatRecipientListForLog(recipientGroup)} about "${fuSubject}".`,
+            source: 'scheduled_followup',
+            confidence: 1,
+            observedAt: nowIso,
+            provenance: {
+              lead_id: item.lead_id,
+              scheduled_followup_id: item.id,
+              message_id: result.messageId,
+              provider: result.provider,
+            },
+            workflowRunId,
+          })
+        }
+        await finishWorkflowStep(supabase, {
+          stepId: sendStepId,
+          status: 'completed',
+          output: {
+            from_email: result.fromEmail,
+            provider: result.provider,
+            message_id: result.messageId,
+          },
+        })
+        await finishWorkflowRun(supabase, {
+          runId: workflowRunId,
+          status: 'completed',
+          output: { sent: true, message_id: result.messageId, from_email: result.fromEmail },
+          checkpoint: { completed_at: nowIso, lead_id: item.lead_id },
+        })
         sent++
       } catch (err) {
         console.error(`[send-followups] failed for lead ${item.lead_id}:`, err)
         await releaseClaim(supabase, item.id, claimToken)
+        await finishWorkflowRun(supabase, {
+          runId: workflowRunId,
+          status: 'failed',
+          output: { sent: false },
+          errorMessage: err instanceof Error ? err.message : 'Failed to send follow-up',
+          checkpoint: { failed_at: new Date().toISOString(), lead_id: item.lead_id },
+        })
       }
     }
 

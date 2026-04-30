@@ -26,9 +26,9 @@ export function buildFeedSessionLabel(params: {
 
   if (params.origin === 'explore') {
     if (params.prompt?.trim()) {
-      return `Explore · ${compactText(params.prompt, 52)}`
+      return `Batch · ${compactText(params.prompt, 52)}`
     }
-    return `Explore · ${timestamp}`
+    return `Batch · ${timestamp}`
   }
 
   if (params.origin === 'crm_import') {

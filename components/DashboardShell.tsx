@@ -5,17 +5,11 @@ import { useMemo, useState, useTransition, useCallback, useEffect, useRef } from
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { MAX_CONNECTED_SENDING_ACCOUNTS } from '@/lib/oauth/connected-accounts'
+import type { Lead } from '@/lib/leads'
 import Sidebar from './Sidebar'
-import LeadFeed, { type Lead } from './LeadFeed'
 import WatchlistManager from './WatchlistManager'
 
-type View = 'command' | 'feed' | 'explore' | 'crm' | 'automation' | 'mcp' | 'watchlist' | 'settings'
-
-interface WatchlistItem {
-  id: string
-  company_name: string
-  company_domain: string | null
-}
+type View = 'command' | 'automation' | 'mcp' | 'settings'
 
 interface UserProfile {
   company_name: string
@@ -37,9 +31,7 @@ interface UserProfile {
 interface Props {
   initialLeads: Lead[]
   initialAgentEvents: AgentEvent[]
-  userId: string
   userProfile: UserProfile
-  watchlist: WatchlistItem[]
 }
 
 interface AgentEvent {
@@ -53,6 +45,57 @@ interface AgentEvent {
   created_at: string
 }
 
+interface GtmOpsSnapshot {
+  workflow_runs: Array<{
+    id: string
+    workflow_type: string
+    status: string
+    current_step: string | null
+    started_at: string
+    completed_at: string | null
+    error_message: string | null
+    output?: Record<string, unknown>
+  }>
+  workflow_steps: Array<{
+    id: string
+    run_id: string
+    step_key: string
+    status: string
+    error_message: string | null
+  }>
+  tool_calls: Array<{
+    id: string
+    run_id: string | null
+    tool_name: string
+    status: string
+    error_message: string | null
+  }>
+  policy_decisions: Array<{
+    id: string
+    policy_name: string
+    action_type: string
+    decision: 'allowed' | 'blocked' | 'needs_approval'
+    reasons: string[]
+    decided_at: string
+  }>
+  memories: Array<{
+    id: string
+    memory_scope: string
+    memory_type: string
+    content: string
+    source: string
+    confidence: number
+    observed_at: string
+  }>
+  accounts: Array<{
+    id: string
+    name: string
+    domain: string | null
+    lifecycle_stage: string
+    last_seen_at: string
+  }>
+}
+
 interface AutoSendAccount {
   id: string
   provider: 'gmail' | 'outlook'
@@ -60,30 +103,19 @@ interface AutoSendAccount {
   display_name?: string | null
 }
 
-const EXPLORE_PROGRESS_STEPS = [
-  'Sending your targeting brief.',
-  'Generating target accounts from your brief.',
-  'Shaping lead records for the explore feed.',
-  'Finalizing and saving results.',
-]
-
 const VIEW_TITLES: Record<View, string> = {
   command:   'Live Autopilot',
-  feed:      'Signal Feed',
-  explore:   'Explore',
-  crm:       'CRM',
-  automation: 'Automated Feeds',
-  mcp:       'MCP',
-  watchlist: 'Watchlist',
+  automation: 'Workflow Control',
+  mcp:       'Agent API',
   settings:  'Settings',
 }
 
-export default function DashboardShell({ initialLeads, initialAgentEvents, userId, userProfile, watchlist }: Props) {
+export default function DashboardShell({ initialLeads, initialAgentEvents, userProfile }: Props) {
   const [activeView, setActiveView] = useState<View>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const requestedView = params.get('view')
-      if (requestedView === 'command' || requestedView === 'feed' || requestedView === 'explore' || requestedView === 'crm' || requestedView === 'automation' || requestedView === 'mcp' || requestedView === 'watchlist' || requestedView === 'settings') {
+      if (requestedView === 'command' || requestedView === 'automation' || requestedView === 'mcp' || requestedView === 'settings') {
         return requestedView
       }
     }
@@ -195,13 +227,9 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userI
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
                 {activeView === 'command' && 'Live signal automation, outcomes, replies, and booked meetings'}
-                {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
-                {activeView === 'explore' && 'Prompt-driven lead discovery based on who you want to target next'}
-                {activeView === 'crm' && 'Stage leads from Signal and Explore, then push them to your configured CRM'}
-                {activeView === 'automation' && 'Automate selected Explore sessions using your connected inboxes'}
-                {activeView === 'mcp' && 'Let agent frameworks consume your GTM context and lead workflows'}
-                {activeView === 'watchlist' && 'Companies you follow bypass relevance filtering'}
-                {activeView === 'settings' && 'Billing, inbox connections, targeting, Slack alerts, templates, and blocked companies'}
+                {activeView === 'automation' && 'Workflow policies, selected sources, inbox rotation, and follow-up pacing'}
+                {activeView === 'mcp' && 'API and MCP access for external agents and GTM infrastructure clients'}
+                {activeView === 'settings' && 'Memory inputs, integrations, inboxes, policies, credits, and guardrails'}
               </p>
             </div>
 
@@ -213,15 +241,6 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userI
                 <MetricChip value={metrics.booked} label="Booked" accent />
               </div>
             )}
-            {activeView === 'feed' && (
-              <div className="hidden lg:flex items-center gap-2 ml-6">
-                <MetricChip value={metrics.signals} label="Signals" />
-                <MetricChip value={metrics.drafted} label="Drafted" />
-                <MetricChip value={metrics.sent}    label="Sent" />
-                <MetricChip value={metrics.booked}  label="Booked" accent />
-              </div>
-            )}
-
             {/* Right side */}
             <div className="ml-auto flex items-center gap-2">
               <button
@@ -238,7 +257,7 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userI
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0A8.003 8.003 0 014.582 15M19.419 15H15" />
                 </svg>
               </button>
-              {(activeView === 'feed' || activeView === 'command') && (
+              {activeView === 'command' && (
                 <button
                   onClick={() => setActiveView('settings')}
                   className="hidden sm:inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] transition-colors"
@@ -270,53 +289,11 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userI
                 onNavigate={setActiveView}
               />
             )}
-            {activeView === 'feed' && (
-              <div className="space-y-4">
-                <LeadFeed
-                  initialLeads={initialLeads}
-                  userId={userId}
-                  watchlist={watchlist}
-                  activeClientId={userProfile.active_client_id ?? null}
-                  plan="free"
-                  origin="live"
-                  exportFeed="signal"
-                  onOpenCrmTab={() => setActiveView('crm')}
-                  onLeadCreditConsumed={() => setLeadCreditBalance(balance => Math.max(0, balance - 1))}
-                />
-              </div>
-            )}
-            {activeView === 'explore' && (
-              <ExplorePanel
-                initialLeads={initialLeads}
-                userId={userId}
-                watchlist={watchlist}
-                activeClientId={userProfile.active_client_id ?? null}
-                plan="free"
-                onOpenCrmTab={() => setActiveView('crm')}
-              />
-            )}
-            {activeView === 'crm' && (
-              <CrmWorkspacePanel
-                initialLeads={initialLeads}
-                userId={userId}
-                watchlist={watchlist}
-                activeClientId={userProfile.active_client_id ?? null}
-                plan="free"
-              />
-            )}
             {activeView === 'automation' && (
               <AutomationPanel />
             )}
             {activeView === 'mcp' && (
               <McpPanel />
-            )}
-            {activeView === 'watchlist' && (
-              <div className="space-y-4">
-                <p className="text-[12.5px] text-[var(--color-text-3)]">
-                  Any signal from a watched company bypasses the relevance filter.
-                </p>
-                <WatchlistManager />
-              </div>
             )}
             {activeView === 'settings' && (
               <SettingsPanel profile={displayProfile} />
@@ -358,6 +335,8 @@ function CommandCenter({
   const [autopilot, setAutopilot] = useState<AutopilotStatus | null>(null)
   const [autopilotBusy, setAutopilotBusy] = useState(false)
   const [autopilotMessage, setAutopilotMessage] = useState<string | null>(null)
+  const [opsSnapshot, setOpsSnapshot] = useState<GtmOpsSnapshot | null>(null)
+  const [opsError, setOpsError] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
   const [todayKey] = useState(() => new Date().toISOString().slice(0, 10))
   const lastSevenDays = now - 7 * 24 * 60 * 60 * 1000
@@ -378,6 +357,24 @@ function CommandCenter({
       .then(res => res.json() as Promise<AutopilotStatus>)
       .then(data => { if (!cancelled) setAutopilot(data) })
       .catch(() => { if (!cancelled) setAutopilotMessage('Unable to load autopilot status.') })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/gtm/ops', { cache: 'no-store' })
+      .then(async res => {
+        const data = await res.json().catch(() => null) as (GtmOpsSnapshot & { error?: string }) | null
+        if (cancelled) return
+        if (!res.ok || !data) {
+          setOpsError(data?.error ?? 'Unable to load GTM infrastructure trace.')
+          return
+        }
+        setOpsSnapshot(data)
+      })
+      .catch(() => {
+        if (!cancelled) setOpsError('Unable to load GTM infrastructure trace.')
+      })
     return () => { cancelled = true }
   }, [])
 
@@ -402,7 +399,7 @@ function CommandCenter({
         return
       }
       setAutopilot(prev => prev ? { ...prev, mode, policy: { ...(prev.policy ?? {}), enabled: mode === 'autopilot' } } : data)
-      setAutopilotMessage(mode === 'autopilot' ? 'Live autopilot is on. Bombsell will run safely in the background.' : 'Live autopilot paused. Explore automation can still run if configured.')
+      setAutopilotMessage(mode === 'autopilot' ? 'Live autopilot is on. Bombsell will run safely in the background.' : 'Live autopilot paused. Batch workflows can still run if configured.')
     } catch {
       setAutopilotMessage('Unable to start autopilot.')
     } finally {
@@ -428,6 +425,8 @@ function CommandCenter({
         <OutcomeCard label="Booked" value={booked.length} detail="Meetings marked booked" tone="booked" />
         <OutcomeCard label="Needs approval" value={approvals.length} detail="Drafts or ready leads" tone="approval" />
       </div>
+
+      <GtmInfrastructureTrace snapshot={opsSnapshot} error={opsError} />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_380px]">
         <section className="card overflow-hidden">
@@ -463,9 +462,98 @@ function CommandCenter({
       </div>
 
       <p className="text-[11px] text-[var(--color-text-4)]">
-        {recentLeads.length} recent live accounts monitored. Safety checks enforce verified contacts, unsubscribes, bounce suppression, caps, and pacing.
+        {recentLeads.length} recent accounts monitored. Safety checks enforce verified contacts, unsubscribes, bounce suppression, caps, and pacing.
       </p>
     </div>
+  )
+}
+
+function GtmInfrastructureTrace({ snapshot, error }: { snapshot: GtmOpsSnapshot | null; error: string | null }) {
+  const latestRuns = snapshot?.workflow_runs ?? []
+  const blockedPolicies = (snapshot?.policy_decisions ?? []).filter(decision => decision.decision !== 'allowed')
+  const recentMemories = snapshot?.memories ?? []
+  const accounts = snapshot?.accounts ?? []
+  const toolFailures = (snapshot?.tool_calls ?? []).filter(call => call.status === 'failed' || call.status === 'blocked')
+
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line-1)] px-5 py-4">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Infrastructure Trace</h3>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">Durable workflows, policies, tool calls, graph entities, and memory.</p>
+        </div>
+        {snapshot && (
+          <div className="flex flex-wrap gap-2">
+            <MetricChip value={latestRuns.length} label="Runs" />
+            <MetricChip value={accounts.length} label="Accounts" />
+            <MetricChip value={blockedPolicies.length} label="Blocks" accent={blockedPolicies.length > 0} />
+          </div>
+        )}
+      </div>
+      {error ? (
+        <div className="px-5 py-4 text-xs text-[var(--color-sig-regulation)]">{error}</div>
+      ) : !snapshot ? (
+        <div className="px-5 py-8 text-center text-xs text-[var(--color-text-4)]">Loading trace.</div>
+      ) : latestRuns.length === 0 && recentMemories.length === 0 ? (
+        <div className="px-5 py-8 text-center">
+          <p className="text-sm font-medium text-[var(--color-text-1)]">No infrastructure runs yet</p>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">The next send, follow-up, or reply will create a trace.</p>
+        </div>
+      ) : (
+        <div className="grid divide-y divide-[var(--color-line-1)] lg:grid-cols-[minmax(0,1fr)_360px] lg:divide-x lg:divide-y-0">
+          <div className="p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Workflow Runs</h4>
+              {toolFailures.length > 0 && (
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600">
+                  {toolFailures.length} tool issue{toolFailures.length === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            <div className="space-y-2">
+              {latestRuns.slice(0, 6).map(run => (
+                <div key={run.id} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[12.5px] font-semibold text-[var(--color-text-1)]">{run.workflow_type.replace(/_/g, ' ')}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-4)]">
+                        {run.current_step ? `Step: ${run.current_step}` : `Started ${new Date(run.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
+                      </p>
+                      {run.error_message && <p className="mt-1 text-[11px] text-[var(--color-sig-regulation)]">{run.error_message}</p>}
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${
+                      run.status === 'completed'
+                        ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+                        : run.status === 'failed'
+                          ? 'bg-red-50 text-red-600'
+                          : 'bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
+                    }`}>
+                      {run.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="p-5">
+            <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Recent Memory</h4>
+            <div className="space-y-2">
+              {recentMemories.slice(0, 5).map(memory => (
+                <div key={memory.id} className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/45 px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-accent-ring)]">{memory.memory_type.replace(/_/g, ' ')}</p>
+                    <span className="text-[10px] text-[var(--color-text-4)]">{Math.round(memory.confidence * 100)}%</span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-[11.5px] leading-5 text-[var(--color-text-3)]">{memory.content}</p>
+                  <p className="mt-1 text-[10px] text-[var(--color-text-4)]">{memory.source}</p>
+                </div>
+              ))}
+              {recentMemories.length === 0 && <p className="rounded-2xl border border-dashed border-[var(--color-line-2)] px-4 py-6 text-center text-xs text-[var(--color-text-4)]">No memories recorded yet.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -703,7 +791,7 @@ codex mcp login bombsell \\
               Bombsell for Codex and Claude.
             </h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-              Connect Bombsell to Codex CLI or Claude Code so your coding agents can inspect GTM context, review leads, update safe workflow state, and add watchlist companies. Setup uses browser OAuth, so users approve access without copying API tokens.
+              Connect Bombsell to Codex CLI or Claude Code so your coding agents can inspect GTM context, read account work, update safe workflow state, and add watched accounts. Setup uses browser OAuth, so users approve access without copying API tokens.
             </p>
           </div>
         </div>
@@ -741,10 +829,10 @@ codex mcp login bombsell \\
         <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
           {[
             ['Context', 'Workspace ICP and active client.'],
-            ['Leads', 'Live, Explore, and CRM-queued leads.'],
+            ['Accounts', 'Live, batch, and CRM-sourced account context.'],
             ['Workflow', 'Safe lead status updates.'],
             ['Watchlist', 'Read and add watched companies.'],
-            ['Sessions', 'Explore and CRM feed sessions.'],
+            ['Sessions', 'Batch and CRM source sessions.'],
             ['Signals', 'Company signal timelines.'],
           ].map(([title, body]) => (
             <div key={title} className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/45 p-4">
@@ -795,7 +883,7 @@ const CREDIT_TOP_UPS = [
   { amount: 50, credits: 200 },
   { amount: 100, credits: 400 },
 ]
-interface ExploreAutomationSession {
+interface BatchAutomationSession {
   id: string
   label: string
   started_at: string
@@ -810,8 +898,8 @@ function AutomationPanel() {
   const [autoSendMsg, setAutoSendMsg] = useState<string | null>(null)
   const [autoSendAccounts, setAutoSendAccounts] = useState<AutoSendAccount[]>([])
   const [autoSendAccountId, setAutoSendAccountId] = useState<string | null>(null)
-  const [selectedExploreSessions, setSelectedExploreSessions] = useState<string[]>([])
-  const [exploreSessions, setExploreSessions] = useState<ExploreAutomationSession[]>([])
+  const [selectedBatchSessions, setSelectedBatchSessions] = useState<string[]>([])
+  const [batchSessions, setBatchSessions] = useState<BatchAutomationSession[]>([])
   const [autoSendRequireVerified, setAutoSendRequireVerified] = useState(true)
   const [autoSendMinScore, setAutoSendMinScore] = useState(7)
   const [autoSendMaxAge, setAutoSendMaxAge] = useState(30)
@@ -836,11 +924,11 @@ function AutomationPanel() {
             min_minutes_between_sends?: number
           }
           accounts?: AutoSendAccount[]
-          explore_sessions?: ExploreAutomationSession[]
+          explore_sessions?: BatchAutomationSession[]
         } | null
         if (cancelled || !data) return
         if (!res.ok) {
-          setAutoSendMsg(data.error ?? 'Failed to load feed automation settings.')
+          setAutoSendMsg(data.error ?? 'Failed to load workflow settings.')
           setAutoSendLoaded(true)
           return
         }
@@ -848,19 +936,19 @@ function AutomationPanel() {
         setLiveAutopilotOn(Boolean(data.policy?.enabled && origins.includes('live')))
         setAutoSend(Boolean(data.policy?.enabled && origins.includes('explore')))
         setAutoSendAccountId(data.policy?.connected_account_id ?? null)
-        setSelectedExploreSessions(data.policy?.target_explore_session_ids ?? [])
+        setSelectedBatchSessions(data.policy?.target_explore_session_ids ?? [])
         setAutoSendRequireVerified(data.policy?.require_verified_contact !== false)
         setAutoSendMinScore(data.policy?.min_relevance_score ?? 7)
         setAutoSendMaxAge(data.policy?.max_lead_age_days ?? 30)
         setDailySendLimit(data.policy?.daily_send_limit ?? 10)
         setSendSpacing(data.policy?.min_minutes_between_sends ?? 15)
         setAutoSendAccounts(data.accounts ?? [])
-        setExploreSessions(data.explore_sessions ?? [])
+        setBatchSessions(data.explore_sessions ?? [])
         setAutoSendLoaded(true)
       })
       .catch(() => {
         if (!cancelled) {
-          setAutoSendMsg('Failed to load feed automation settings.')
+          setAutoSendMsg('Failed to load workflow settings.')
           setAutoSendLoaded(true)
         }
       })
@@ -884,7 +972,7 @@ function AutomationPanel() {
             ...(liveAutopilotOn ? ['live' as const] : []),
             ...(autoSend ? ['explore' as const] : []),
           ],
-          target_explore_session_ids: selectedExploreSessions,
+          target_explore_session_ids: selectedBatchSessions,
           require_verified_contact: autoSendRequireVerified,
           min_relevance_score: autoSendMinScore,
           max_lead_age_days: autoSendMaxAge,
@@ -894,25 +982,25 @@ function AutomationPanel() {
       })
       const data = await res.json().catch(() => null) as { error?: string } | null
       if (!res.ok) {
-        setAutoSendMsg(data?.error ?? 'Failed to save feed automation settings.')
+        setAutoSendMsg(data?.error ?? 'Failed to save workflow settings.')
         return
       }
-      setAutoSendMsg('Explore automation saved')
+      setAutoSendMsg('Batch workflow saved')
     } catch {
-      setAutoSendMsg('Failed to save Explore automation settings.')
+      setAutoSendMsg('Failed to save workflow settings.')
     } finally {
       setAutoSendSaving(false)
     }
-  }, [autoSend, liveAutopilotOn, autoSendAccountId, selectedExploreSessions, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge, dailySendLimit, sendSpacing])
+  }, [autoSend, liveAutopilotOn, autoSendAccountId, selectedBatchSessions, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge, dailySendLimit, sendSpacing])
 
   return (
     <div className="max-w-4xl space-y-4">
       <div className="card divide-y divide-[var(--color-line-1)]">
         <div className="px-5 py-4 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Automated Feeds</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Workflow Sources</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Custom automation for selected Explore sessions. Connect your sending inbox from Settings.
+              Configure batch source automation, inbox rotation, caps, pacing, and contact safety.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -975,27 +1063,27 @@ function AutomationPanel() {
             <div className="space-y-2">
               <p className="text-xs font-medium text-[var(--color-text-1)]">Scope</p>
               <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
-                <p className="text-[12.5px] font-medium text-[var(--color-text-1)]">Selected Explore Sessions</p>
+                <p className="text-[12.5px] font-medium text-[var(--color-text-1)]">Selected Batch Sessions</p>
                 <p className="mt-0.5 text-[11px] leading-5 text-[var(--color-text-4)]">
-                  Targeted lead sets generated from Explore prompts. Live autopilot stays {liveAutopilotOn ? 'on' : 'off'}.
+                  Curated account sets generated outside live monitoring. Live autopilot stays {liveAutopilotOn ? 'on' : 'off'}.
                 </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[var(--color-text-1)]">Explore sessions</p>
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Batch sessions</p>
               <div className="max-h-48 overflow-y-auto rounded-2xl border border-[var(--color-line-1)] bg-white p-2">
-                {exploreSessions.length === 0 ? (
-                  <p className="px-2 py-3 text-[11px] text-[var(--color-text-4)]">No Explore sessions yet.</p>
-                ) : exploreSessions.map(session => {
-                  const checked = selectedExploreSessions.includes(session.id)
+                {batchSessions.length === 0 ? (
+                  <p className="px-2 py-3 text-[11px] text-[var(--color-text-4)]">No batch sessions yet.</p>
+                ) : batchSessions.map(session => {
+                  const checked = selectedBatchSessions.includes(session.id)
                   return (
                     <label key={session.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-[var(--color-ink-2)]">
                       <input
                         type="checkbox"
                         checked={checked}
                         disabled={!autoSend}
-                        onChange={() => setSelectedExploreSessions(prev => checked ? prev.filter(id => id !== session.id) : [...prev, session.id])}
+                        onChange={() => setSelectedBatchSessions(prev => checked ? prev.filter(id => id !== session.id) : [...prev, session.id])}
                         className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
                       />
                       <span className="min-w-0">
@@ -1032,13 +1120,13 @@ function AutomationPanel() {
           </div>
 
           <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11.5px] leading-5 text-[var(--color-text-3)]">
-            Explore automation uses the same safety rules as live autopilot: credits are spent only on lead unlocks, verified contacts are required, unsubscribed and bounced recipients are skipped, and daily cap plus spacing are enforced.
+            Batch workflows use the same safety rules as live autopilot: credits are spent only on lead unlocks, verified contacts are required, unsubscribed and bounced recipients are skipped, and daily cap plus spacing are enforced.
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] text-[var(--color-text-4)]">{autoSendMsg ?? 'Turn on Explore automation after selecting at least one session.'}</div>
-            <button onClick={saveAutoSend} disabled={autoSendSaving || !autoSendLoaded || (autoSend && selectedExploreSessions.length === 0)} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
-              {autoSendSaving ? 'Saving…' : autoSend ? 'Start / update Explore automation' : 'Save Explore automation off'}
+            <div className="text-[11px] text-[var(--color-text-4)]">{autoSendMsg ?? 'Turn on batch workflows after selecting at least one session.'}</div>
+            <button onClick={saveAutoSend} disabled={autoSendSaving || !autoSendLoaded || (autoSend && selectedBatchSessions.length === 0)} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
+              {autoSendSaving ? 'Saving…' : autoSend ? 'Start / update batch workflow' : 'Save batch workflow off'}
             </button>
           </div>
         </div>
@@ -1153,6 +1241,20 @@ function SettingsPanel({
 
       <ClientWorkspacePanel activeClientId={profile.active_client_id ?? null} />
 
+      <CrmSyncPanel />
+
+      <div className="card divide-y divide-[var(--color-line-1)]">
+        <div className="px-5 py-4">
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Watched Accounts</h2>
+          <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+            Companies that should stay in memory and bypass normal signal filtering.
+          </p>
+        </div>
+        <div className="px-5 py-4">
+          <WatchlistManager />
+        </div>
+      </div>
+
       {/* Targeting */}
       <div className="card divide-y divide-[var(--color-line-1)]">
         <div className="px-5 py-4">
@@ -1245,239 +1347,6 @@ function SettingsPanel({
 
       {/* Blocked companies */}
       <BlockedCompaniesPanel />
-    </div>
-  )
-}
-
-function ExplorePanel({
-  initialLeads,
-  userId,
-  watchlist,
-  activeClientId,
-  plan,
-  onOpenCrmTab,
-}: {
-  initialLeads: Lead[]
-  userId: string
-  watchlist: WatchlistItem[]
-  activeClientId: string | null
-  plan: 'free'
-  onOpenCrmTab: () => void
-}) {
-  const router = useRouter()
-  const [prompt, setPrompt] = useState('')
-  const [searching, setSearching] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const [lastRunSummary, setLastRunSummary] = useState<{
-    inserted: number
-    skipped: number
-    generated: number
-    durationMs: number
-    requested?: number
-  } | null>(null)
-
-  useEffect(() => {
-    if (!searching) {
-      setElapsedSeconds(0)
-      return
-    }
-
-    const startedAt = Date.now()
-    const interval = window.setInterval(() => {
-      setElapsedSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)))
-    }, 1000)
-
-    return () => window.clearInterval(interval)
-  }, [searching])
-
-  async function runSearch() {
-    if (!prompt.trim()) return
-    setSearching(true)
-    setMessage(null)
-    setLastRunSummary(null)
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 180_000)
-
-    try {
-      const res = await fetch('/api/explore', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({ prompt }),
-      })
-      const data = await res.json().catch(() => null) as {
-        error?: string
-        ok?: boolean
-        inserted?: number
-        skipped?: number
-        generated?: number
-        requested?: number
-        message?: string
-        duration_ms?: number
-      } | null
-
-      if (!res.ok) {
-        setMessage(data?.error ?? data?.message ?? 'Explore search failed.')
-        return
-      }
-
-      const durationMs = typeof data?.duration_ms === 'number'
-        ? data.duration_ms
-        : Math.max(1, elapsedSeconds) * 1000
-
-      setLastRunSummary({
-        inserted: data?.inserted ?? 0,
-        skipped: data?.skipped ?? 0,
-        generated: data?.generated ?? 0,
-        requested: data?.requested,
-        durationMs,
-      })
-      setMessage(
-        data?.message
-          ?? `Added ${data?.inserted ?? 0} explore leads${typeof data?.skipped === 'number' ? `, skipped ${data.skipped}` : ''}.`,
-      )
-      router.refresh()
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        setMessage('Explore search took too long to respond. Try a tighter prompt and run it again.')
-        return
-      }
-
-      setMessage('Explore search failed before the server responded.')
-    } finally {
-      window.clearTimeout(timeoutId)
-      setSearching(false)
-    }
-  }
-
-  const progressStep = EXPLORE_PROGRESS_STEPS[Math.min(Math.floor(elapsedSeconds / 8), EXPLORE_PROGRESS_STEPS.length - 1)]
-
-  return (
-    <div className="space-y-4">
-      <div className="card divide-y divide-[var(--color-line-1)]">
-        <div className="px-5 py-4">
-          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Prompted Discovery</h2>
-          <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-            Describe the accounts, roles, and themes you want to pursue. Bombsell uses your brief and workspace profile to build an explore-only target list.
-          </p>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          <textarea
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            placeholder="Example: Find 50 fintech infrastructure companies expanding into community banking, recent compliance changes, or new partnerships with regional banks."
-            disabled={searching}
-            className="w-full min-h-[120px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] disabled:opacity-65"
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={runSearch}
-              disabled={searching || !prompt.trim()}
-              className="px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50"
-            >
-              {searching ? 'Searching…' : 'Run search'}
-            </button>
-            {message && <p className="text-[11px] text-[var(--color-text-4)]">{message}</p>}
-          </div>
-          {searching && (
-            <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-4)]">
-                  Search in progress
-                </p>
-                <p className="text-[11px] text-[var(--color-text-4)]">
-                  Elapsed {elapsedSeconds}s
-                </p>
-              </div>
-              <p className="mt-2 text-sm text-[var(--color-text-2)]">{progressStep}</p>
-              <p className="mt-1 text-[11px] text-[var(--color-text-4)]">
-                Keep this tab open while results are generated and saved to the explore feed.
-              </p>
-            </div>
-          )}
-          {!searching && lastRunSummary && (
-            <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11px] text-[var(--color-text-4)]">
-              Last run finished in {Math.max(1, Math.round(lastRunSummary.durationMs / 1000))}s.
-              {typeof lastRunSummary.requested === 'number' && <> Requested {lastRunSummary.requested}.</>}
-              {' '}Generated {lastRunSummary.generated} candidate{lastRunSummary.generated === 1 ? '' : 's'},
-              {' '}added {lastRunSummary.inserted}, skipped {lastRunSummary.skipped}.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="card border border-[var(--color-line-1)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,246,240,0.88))]">
-        <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line-1)]">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Explore Results</h3>
-            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Target accounts generated from your prompted discovery runs.
-            </p>
-          </div>
-        </div>
-        <LeadFeed
-          initialLeads={initialLeads}
-          userId={userId}
-          watchlist={watchlist}
-          activeClientId={activeClientId}
-          plan={plan}
-          origin="explore"
-          exportFeed="explore"
-          onOpenCrmTab={onOpenCrmTab}
-          searchPlaceholder="Search explore leads…"
-          emptyTitle="No explore leads yet"
-          emptyBody="Run a prompted search above and Bombsell will add the strongest matches here."
-        />
-      </div>
-    </div>
-  )
-}
-
-function CrmWorkspacePanel({
-  initialLeads,
-  userId,
-  watchlist,
-  activeClientId,
-  plan,
-}: {
-  initialLeads: Lead[]
-  userId: string
-  watchlist: WatchlistItem[]
-  activeClientId: string | null
-  plan: 'free'
-}) {
-  return (
-    <div className="space-y-4">
-      <CrmSyncPanel />
-
-      <div className="card border border-[var(--color-line-1)] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(243,248,246,0.9))]">
-        <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-line-1)]">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Export Feed</h3>
-            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Leads staged from Signal or Explore. Review this queue, then push the working set to your configured CRM.
-            </p>
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-white px-3 py-1.5 text-[11px] text-[var(--color-text-3)]">
-            <span className="h-2 w-2 rounded-full bg-[var(--color-sig-funding)]" />
-            Export queue
-          </div>
-        </div>
-        <LeadFeed
-          initialLeads={initialLeads}
-          userId={userId}
-          watchlist={watchlist}
-          activeClientId={activeClientId}
-          plan={plan}
-          origin="crm_import"
-          exportFeed="crm_import"
-          hideSignalTabs
-          searchPlaceholder="Search CRM prospects…"
-          emptyTitle="No CRM queue leads yet"
-          emptyBody="Select leads in Signal Feed or Explore and add them to the CRM feed before exporting to your CRM."
-        />
-      </div>
     </div>
   )
 }
@@ -1828,7 +1697,7 @@ function CrmSyncPanel() {
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
           <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-            Connect an outbound CRM endpoint. Signal and Explore leads can be staged into the CRM feed, then exported together.
+            Connect an outbound CRM endpoint. Workflow-qualified accounts can be staged into an export queue, then pushed together.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1853,7 +1722,7 @@ function CrmSyncPanel() {
               eyebrow="Export workflow"
               title="CRM queue to your CRM"
               status={savedConfig?.enabled ? 'Connected' : 'Off'}
-              body={`Selected Signal and Explore leads first land in the CRM feed. From there, push the reviewed queue to ${providerLabel} via ${outboundDestination}.`}
+              body={`Selected workflow outputs first land in the CRM export queue. From there, push the approved records to ${providerLabel} via ${outboundDestination}.`}
             />
           </div>
         ) : (
@@ -1863,7 +1732,7 @@ function CrmSyncPanel() {
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Connection</p>
                 <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">CRM export endpoint</h3>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
-                  Bombsell POSTs selected CRM feed records to this endpoint. Keep imports off for now; leads enter this feed only when users stage them from Signal or Explore.
+                  Bombsell POSTs approved export records to this endpoint. Keep imports off for now; records enter this queue only when workflows stage them.
                 </p>
                 <input
                   type="url"
@@ -1942,7 +1811,7 @@ function CrmSyncPanel() {
               </div>
             </div>
             <p className="text-[11px] text-[var(--color-text-4)]">
-              Signal and Explore feed actions add records to the CRM feed first. The CRM feed action pushes the reviewed queue to your provider.
+              Workflow actions add records to the export queue first. The CRM export action pushes approved records to your provider.
             </p>
           </div>
         )}
