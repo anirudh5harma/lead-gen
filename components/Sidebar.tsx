@@ -15,7 +15,7 @@ export interface SidebarProps {
 const CORE_NAV: { id: NavId; label: string; icon: React.ReactNode }[] = [
   {
     id: 'command',
-    label: 'Command',
+    label: 'Live Autopilot',
     icon: (
       <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 14l4-4 4 4 8-8" />
@@ -25,7 +25,7 @@ const CORE_NAV: { id: NavId; label: string; icon: React.ReactNode }[] = [
   },
   {
     id: 'automation',
-    label: 'Explore Auto',
+    label: 'Automated Feeds',
     icon: (
       <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 6v6l4 2" />

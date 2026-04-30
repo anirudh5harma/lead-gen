@@ -82,7 +82,7 @@ export async function sendReplyOutcomeEmail(params: {
         <p style="margin:0 0 8px;font-size:22px;font-weight:650;color:#1a1612;">${escapeHtml(title)}</p>
         <p style="margin:0 0 12px;font-size:14px;color:#1a1612;line-height:1.6;"><strong>${escapeHtml(params.leadCompany)}</strong> replied.</p>
         <p style="margin:0 0 20px;font-size:14px;color:#6b5f52;line-height:1.6;">${escapeHtml(params.summary)}</p>
-        <a href="${appUrl}/dashboard?view=command" style="display:inline-block;background:#c15f3c;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:999px;font-size:13px;font-weight:600;">Open Command Center</a>
+        <a href="${appUrl}/dashboard?view=command" style="display:inline-block;background:#c15f3c;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:999px;font-size:13px;font-weight:600;">Open Live Autopilot</a>
       </td></tr>
       <tr><td style="padding:0 30px 24px;">
         <p style="margin:0;font-size:12px;color:#9c8f82;line-height:1.5;">You're receiving this because Bombsell is tracking outcomes for ${escapeHtml(params.companyName || 'your workspace')}.</p>

@@ -129,6 +129,7 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null)
   const [isEdit, setIsEdit] = useState(false)
   const [done, setDone] = useState(false)
+  const [icpKeywordText, setIcpKeywordText] = useState('')
   const [form, setForm] = useState({
     company_name: '',
     industry: '' as IndustryValue | '',
@@ -171,7 +172,9 @@ export default function OnboardingPage() {
       const effectiveProfile = clientProfile ?? profile
 
       if (effectiveProfile) {
+        const existingIcpKeywords = (effectiveProfile as { icp_keywords?: string[] }).icp_keywords || []
         setIsEdit(true)
+        setIcpKeywordText(existingIcpKeywords.join(', '))
         setForm({
           company_name:         (effectiveProfile as { name?: string; company_name?: string }).name || (effectiveProfile as { company_name?: string }).company_name || '',
           industry:             ((effectiveProfile as { industry?: IndustryValue }).industry as IndustryValue) || '',
@@ -179,7 +182,7 @@ export default function OnboardingPage() {
           target_industries:    ((effectiveProfile as { target_industries?: IndustryValue[] }).target_industries) || [],
           services_description: (effectiveProfile as { services_description?: string }).services_description || '',
           calendly_url:         (effectiveProfile as { calendly_url?: string }).calendly_url || '',
-          icp_keywords:         (effectiveProfile as { icp_keywords?: string[] }).icp_keywords || [],
+          icp_keywords:         existingIcpKeywords,
           target_signal_types:  (effectiveProfile as { target_signal_types?: string[] }).target_signal_types || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
           min_relevance_score:  (effectiveProfile as { min_relevance_score?: number }).min_relevance_score || 6,
         })
@@ -208,6 +211,7 @@ export default function OnboardingPage() {
   }
 
   function setIcpKeywordsFromText(value: string) {
+    setIcpKeywordText(value)
     setForm((f) => ({
       ...f,
       icp_keywords: value
@@ -288,7 +292,7 @@ export default function OnboardingPage() {
               Your GTM autopilot workspace is ready. Bombsell can now scan signals, score accounts, unlock high-fit leads with credits, and prepare safe outreach.
             </p>
             <p className="text-[14px] text-[var(--color-text-3)]">
-              Connect Gmail or Outlook in Command Center to let the agents send, follow up, detect replies, and route booked meetings.
+              Connect Gmail or Outlook in Live Autopilot to let the agents send, follow up, detect replies, and route booked meetings.
             </p>
           </div>
 
@@ -314,7 +318,7 @@ export default function OnboardingPage() {
             onClick={() => router.push('/dashboard?view=command')}
             className="h-12 px-8 rounded-full btn-primary text-[14px] font-medium inline-flex items-center gap-2"
           >
-            Open Command Center →
+            Open Live Autopilot →
           </button>
         </div>
       </div>
@@ -351,6 +355,7 @@ export default function OnboardingPage() {
               form={form}
               toggleTargetIndustry={toggleTargetIndustry}
               setIcpKeywordsFromText={setIcpKeywordsFromText}
+              icpKeywordText={icpKeywordText}
             />
           )}
           {step === 2 && (
@@ -595,10 +600,12 @@ function StepTargeting({
   form,
   toggleTargetIndustry,
   setIcpKeywordsFromText,
+  icpKeywordText,
 }: {
   form: StepFormProps['form']
   toggleTargetIndustry: (v: IndustryValue) => void
   setIcpKeywordsFromText: (value: string) => void
+  icpKeywordText: string
 }) {
   return (
     <div className="card p-7 space-y-5">
@@ -650,7 +657,7 @@ function StepTargeting({
         <textarea
           rows={3}
           placeholder="Example: seed-stage SaaS, RevOps, B2B marketplaces, compliance-heavy fintech"
-          value={form.icp_keywords.join(', ')}
+          value={icpKeywordText}
           onChange={(event) => setIcpKeywordsFromText(event.target.value)}
           className="w-full px-4 py-3 rounded-xl bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[var(--color-text-1)] placeholder-[var(--color-text-4)] text-sm focus:outline-none focus:border-[var(--color-accent)] focus:bg-white focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-all resize-none leading-relaxed"
         />

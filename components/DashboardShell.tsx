@@ -67,11 +67,11 @@ const EXPLORE_PROGRESS_STEPS = [
 ]
 
 const VIEW_TITLES: Record<View, string> = {
-  command:   'Command Center',
+  command:   'Live Autopilot',
   feed:      'Signal Feed',
   explore:   'Explore',
   crm:       'CRM',
-  automation: 'Explore Automation',
+  automation: 'Automated Feeds',
   mcp:       'MCP',
   watchlist: 'Watchlist',
   settings:  'Settings',
@@ -193,14 +193,14 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userI
                 {VIEW_TITLES[activeView]}
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
-                {activeView === 'command' && 'Supervise live-signal autopilot, outcomes, replies, and booked meetings'}
+                {activeView === 'command' && 'Live signal automation, outcomes, replies, and booked meetings'}
                 {activeView === 'feed' && 'Real-time buying signals scored against your ICP'}
                 {activeView === 'explore' && 'Prompt-driven lead discovery based on who you want to target next'}
                 {activeView === 'crm' && 'Stage leads from Signal and Explore, then push them to your configured CRM'}
-                {activeView === 'automation' && 'Configure targeted Explore-session automation and sending inboxes'}
+                {activeView === 'automation' && 'Automate selected Explore sessions using your connected inboxes'}
                 {activeView === 'mcp' && 'Let agent frameworks consume your GTM context and lead workflows'}
                 {activeView === 'watchlist' && 'Companies you follow bypass relevance filtering'}
-                {activeView === 'settings' && 'Billing, targeting, Slack alerts, templates, and blocked companies'}
+                {activeView === 'settings' && 'Billing, inbox connections, targeting, Slack alerts, templates, and blocked companies'}
               </p>
             </div>
 
@@ -410,37 +410,14 @@ function CommandCenter({
   }, [])
 
   return (
-    <div className="space-y-5">
-      <section className="overflow-hidden rounded-[2rem] border border-[var(--color-line-1)] bg-[linear-gradient(135deg,#17231e,#31473a_52%,#c15f3c)] text-white shadow-[0_28px_80px_-44px_#1b2b24]">
-        <div className="relative px-6 py-7 sm:px-8">
-          <div className="absolute right-0 top-0 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-          <div className="relative max-w-3xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">Agentic GTM autopilot</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight">
-              Bombsell is running your outbound engine.
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/76">
-              Command Center is the control room for live-signal autopilot: agents unlock high-fit leads with credits, find verified contacts, send safely, stop on replies, and surface booked-meeting outcomes.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button onClick={() => startAutopilot('autopilot')} disabled={autopilotBusy || (autopilot ? !autopilot.ready : false)} className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#17231e] disabled:opacity-50">
-                {autopilot?.mode === 'autopilot' ? 'Live autopilot on' : 'Turn on live autopilot'}
-              </button>
-              <button onClick={() => startAutopilot('approve_first')} disabled={autopilotBusy} className="rounded-full border border-white/25 px-4 py-2 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50">
-                Pause live autopilot
-              </button>
-            </div>
-            {autopilotMessage && <p className="mt-3 text-xs text-white/75">{autopilotMessage}</p>}
-          </div>
-        </div>
-      </section>
-
-      <AutopilotLaunchPanel
+    <div className="space-y-4">
+      <LiveAutopilotControl
         profile={profile}
         status={autopilot}
         busy={autopilotBusy}
+        message={autopilotMessage}
         onStartAutopilot={() => startAutopilot('autopilot')}
-        onApproveFirst={() => startAutopilot('approve_first')}
+        onPauseAutopilot={() => startAutopilot('approve_first')}
         onNavigate={onNavigate}
       />
 
@@ -455,9 +432,6 @@ function CommandCenter({
         <section className="card overflow-hidden">
           <div className="border-b border-[var(--color-line-1)] px-5 py-4">
             <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Revenue Inbox</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">
-              The only lists founders should need: approvals, sent mail, replies, and booked meetings.
-            </p>
           </div>
           <div className="grid divide-y divide-[var(--color-line-1)] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
             <OutcomeList title="Needs Approval" empty="No leads waiting for approval." leads={approvals.slice(0, 6)} badge="Review" />
@@ -472,14 +446,10 @@ function CommandCenter({
         <section className="card overflow-hidden">
           <div className="border-b border-[var(--color-line-1)] px-5 py-4">
             <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Agent Activity</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">
-              Auditable trail of what the agents did and why.
-            </p>
           </div>
           {activeEvents.length === 0 ? (
             <div className="px-5 py-8 text-center">
               <p className="text-sm font-medium text-[var(--color-text-1)]">No agent events yet</p>
-              <p className="mt-1 text-xs text-[var(--color-text-4)]">Events will appear as automation sends, replies, follow-ups, and decisions happen.</p>
             </div>
           ) : (
             <div className="max-h-[620px] divide-y divide-[var(--color-line-1)] overflow-y-auto">
@@ -491,11 +461,9 @@ function CommandCenter({
         </section>
       </div>
 
-      <section className="grid gap-3 md:grid-cols-3">
-        <AgentSystemCard title="Research Agent" body={`${recentLeads.length} recent accounts monitored and scored against your workspace context.`} />
-        <AgentSystemCard title="Safety Agent" body="Verified-only sending, unsubscribe suppression, bounce checks, daily caps, and inbox pacing are enforced before sends." />
-        <AgentSystemCard title="Reply Agent" body="Replies stop follow-ups and move accounts into the revenue inbox for founder attention." />
-      </section>
+      <p className="text-[11px] text-[var(--color-text-4)]">
+        {recentLeads.length} recent live accounts monitored. Safety checks enforce verified contacts, unsubscribes, bounce suppression, caps, and pacing.
+      </p>
     </div>
   )
 }
@@ -510,19 +478,21 @@ interface AutopilotStatus {
   error?: string
 }
 
-function AutopilotLaunchPanel({
+function LiveAutopilotControl({
   profile,
   status,
   busy,
+  message,
   onStartAutopilot,
-  onApproveFirst,
+  onPauseAutopilot,
   onNavigate,
 }: {
   profile: UserProfile
   status: AutopilotStatus | null
   busy: boolean
+  message: string | null
   onStartAutopilot: () => void
-  onApproveFirst: () => void
+  onPauseAutopilot: () => void
   onNavigate: (view: View) => void
 }) {
   const router = useRouter()
@@ -538,76 +508,47 @@ function AutopilotLaunchPanel({
   const completed = checklist.filter(item => item.done).length
 
   function routeFor(item: { key: string }) {
-    if (item.key === 'inbox') onNavigate('automation')
+    if (item.key === 'inbox') onNavigate('settings')
     else if (item.key === 'credits') onNavigate('settings')
     else router.push('/onboarding')
   }
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="card overflow-hidden">
-        <div className="border-b border-[var(--color-line-1)] px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Live Signal Autopilot</h3>
-              <p className="mt-1 text-xs text-[var(--color-text-4)]">
-                Default-on workflow for live buying signals. Explore campaigns are configured in the Explore Automation tab.
-              </p>
+    <section className="card overflow-hidden">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="border-b border-[var(--color-line-1)] px-5 py-4 lg:border-b-0 lg:border-r">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Live Autopilot</p>
+              <h2 className="mt-1 text-xl font-semibold tracking-tight text-[var(--color-text-1)]">
+                {mode === 'autopilot' ? 'Running live signals' : 'Paused'}
+              </h2>
             </div>
-            <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-              mode === 'autopilot'
-                ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
-                : 'bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
-            }`}>
-              {mode === 'autopilot' ? 'Autopilot on' : mode === 'approve_first' ? 'Approve first' : 'Research only'}
-            </span>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={onStartAutopilot} disabled={busy || !ready} className="rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50">
+                {mode === 'autopilot' ? 'Running' : 'Turn on'}
+              </button>
+              <button onClick={onPauseAutopilot} disabled={busy} className="rounded-full border border-[var(--color-line-2)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-text-1)] disabled:opacity-50">
+                Pause
+              </button>
+            </div>
           </div>
-        </div>
-        <div className="grid gap-3 p-5 md:grid-cols-2">
-          {checklist.map(item => (
-            <button
-              key={item.key}
-              onClick={() => !item.done && routeFor(item)}
-              className={`rounded-2xl border px-4 py-3 text-left transition-colors ${
-                item.done
-                  ? 'border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)]'
-                  : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40'
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
-                  item.done ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-ink-2)] text-[var(--color-text-4)]'
-                }`}>
-                  {item.done ? '✓' : '•'}
-                </span>
-                <span>
-                  <span className="block text-[12.5px] font-semibold text-[var(--color-text-1)]">{item.label}</span>
-                  <span className="mt-0.5 block text-[11px] text-[var(--color-text-4)]">{item.done ? 'Ready' : item.action}</span>
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="card p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Launch readiness</p>
-        <p className="mt-2 text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">{completed}/{checklist.length}</p>
-        <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-          Live autopilot uses conservative defaults: high-fit live signals, verified contacts only, credits on unlock, 10 sends/day, and 30 minutes between sends.
-        </p>
-        <div className="mt-4 grid gap-2">
-          <button onClick={onStartAutopilot} disabled={busy || !ready} className="rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50">
-            {mode === 'autopilot' ? 'Live autopilot running' : 'Turn on live autopilot'}
-          </button>
-          <button onClick={onApproveFirst} disabled={busy} className="rounded-full border border-[var(--color-line-2)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-text-1)] disabled:opacity-50">
-            Pause live autopilot
-          </button>
+          {message && <p className="mt-3 text-xs text-[var(--color-text-3)]">{message}</p>}
           {!ready && (
-            <p className="text-[11px] leading-5 text-[var(--color-text-4)]">
-              Finish the checklist so live autopilot can send safely.
-            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {checklist.filter(item => !item.done).map(item => (
+                <button key={item.key} onClick={() => routeFor(item)} className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-2)] hover:text-[var(--color-text-1)]">
+                  {item.action}
+                </button>
+              ))}
+            </div>
           )}
+        </div>
+
+        <div className="bg-[var(--color-ink-2)] px-5 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Readiness</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-[var(--color-text-1)]">{completed}/{checklist.length}</p>
+          <p className="mt-1 text-[11px] text-[var(--color-text-4)]">Credits, inbox, ICP, profile.</p>
         </div>
       </div>
     </section>
@@ -716,15 +657,6 @@ function AgentEventRow({ event }: { event: AgentEvent }) {
           <p className="mt-1 text-[10.5px] text-[var(--color-text-4)]">{new Date(event.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
         </div>
       </div>
-    </div>
-  )
-}
-
-function AgentSystemCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-3xl border border-[var(--color-line-1)] bg-white px-5 py-4">
-      <p className="text-sm font-semibold text-[var(--color-text-1)]">{title}</p>
-      <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">{body}</p>
     </div>
   )
 }
@@ -974,29 +906,38 @@ function AutomationPanel() {
 
   return (
     <div className="max-w-4xl space-y-4">
-      <ConnectedAccountsPanel />
-
       <div className="card divide-y divide-[var(--color-line-1)]">
         <div className="px-5 py-4 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Explore Automation</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Automated Feeds</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Custom automation for selected Explore sessions. Live-signal autopilot is controlled from Command Center.
+              Custom automation for selected Explore sessions. Connect Gmail or Outlook from Settings.
             </p>
           </div>
-          <button
-            role="switch"
-            aria-checked={autoSend}
-            disabled={autoSendSaving || !autoSendLoaded}
-            onClick={() => setAutoSend(enabled => !enabled)}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
-              autoSend ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
-            }`}
-          >
-            <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${autoSend ? 'translate-x-5' : 'translate-x-0'}`} />
-          </button>
+          <div className="flex items-center gap-3">
+            <span className={`rounded-full px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] ${
+              autoSend
+                ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+                : 'bg-[var(--color-ink-2)] text-[var(--color-text-4)]'
+            }`}>
+              {autoSend ? 'On' : 'Off'}
+            </span>
+            <button
+              role="switch"
+              aria-checked={autoSend}
+              disabled={autoSendSaving || !autoSendLoaded}
+              onClick={() => setAutoSend(enabled => !enabled)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
+                autoSend ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
+              }`}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${autoSend ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
         </div>
-        <div className="px-5 py-4 space-y-5">
+        <div className={`px-5 py-4 space-y-5 transition-all duration-200 ${
+          autoSend ? 'opacity-100 saturate-100' : 'opacity-45 saturate-50'
+        }`}>
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="space-y-1">
               <span className="text-xs font-medium text-[var(--color-text-1)]">Sending inbox</span>
@@ -1031,11 +972,11 @@ function AutomationPanel() {
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[var(--color-text-1)]">What this tab controls</p>
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Scope</p>
               <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
                 <p className="text-[12.5px] font-medium text-[var(--color-text-1)]">Selected Explore Sessions</p>
                 <p className="mt-0.5 text-[11px] leading-5 text-[var(--color-text-4)]">
-                  Use this for targeted lead sets you generated from prompts. Live-signal autopilot stays {liveAutopilotOn ? 'on' : 'off'} and is managed from Command Center.
+                  Targeted lead sets generated from Explore prompts. Live autopilot stays {liveAutopilotOn ? 'on' : 'off'}.
                 </p>
               </div>
             </div>
@@ -1206,6 +1147,8 @@ function SettingsPanel({
           )}
         </div>
       </div>
+
+      <ConnectedAccountsPanel />
 
       <ClientWorkspacePanel activeClientId={profile.active_client_id ?? null} />
 

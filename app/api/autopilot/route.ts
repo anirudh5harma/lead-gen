@@ -205,7 +205,7 @@ export async function POST(request: Request) {
       toEmail: user.email,
       companyName: profile?.company_name ?? 'your workspace',
       event: 'started',
-      summary: 'Bombsell live-signal autopilot is active. Agents will unlock high-fit leads using credits, use verified contacts only, send with mailbox pacing, stop on replies, and surface outcomes in Command Center.',
+      summary: 'Bombsell live-signal autopilot is active. Agents will unlock high-fit leads using credits, use verified contacts only, send with mailbox pacing, stop on replies, and surface outcomes in Live Autopilot.',
     }).catch(error => console.error('[autopilot] start email failed:', error))
   }
 
