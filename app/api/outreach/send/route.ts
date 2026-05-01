@@ -11,6 +11,9 @@ import { buildRecipientGroup, formatRecipientListForLog } from '@/lib/outreach-r
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
+import { buildOutreachPlan } from '@/lib/gtm/outreach-plan'
+import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
+import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import {
   finishWorkflowRun,
@@ -107,6 +110,60 @@ export async function POST(request: Request) {
     } : {},
   })
 
+  const { data: clientProfileForPlan } = clientId
+    ? await supabase
+        .from('client_accounts')
+        .select('name, services_description, calendly_url')
+        .eq('id', clientId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+    : { data: null }
+  const outreachPlan = buildOutreachPlan({
+    lead: leadRes.data,
+    mode: 'manual',
+    senderContext: {
+      companyName: (clientProfileForPlan as { name?: string | null } | null)?.name ?? (profileRes.data as { company_name?: string | null } | null)?.company_name ?? null,
+      servicesDescription: (clientProfileForPlan as { services_description?: string | null } | null)?.services_description ?? (profileRes.data as { services_description?: string | null } | null)?.services_description ?? null,
+    },
+  })
+  const planStepId = await startWorkflowStep(supabase, {
+    runId: workflowRunId,
+    userId: user.id,
+    clientId,
+    stepKey: 'outreach_plan',
+    input: { lead_id: leadId, mode: 'manual' },
+  })
+  if (graph) {
+    await persistOutreachPlan(supabase, {
+      userId: user.id,
+      clientId,
+      leadId,
+      accountId: graph.accountId,
+      personId: graph.personId,
+      plan: outreachPlan,
+      workflowRunId,
+    })
+    await recordGtmMemory(supabase, {
+      userId: user.id,
+      clientId,
+      scope: 'entity',
+      entityType: 'account',
+      entityId: graph.accountId,
+      memoryType: 'outreach_plan',
+      content: `${outreachPlan.trigger}. ${outreachPlan.angle}`,
+      source: 'manual_outreach_planner',
+      confidence: outreachPlan.confidence / 100,
+      observedAt: new Date().toISOString(),
+      provenance: { lead_id: leadId, outreach_plan: outreachPlan },
+      workflowRunId,
+    })
+  }
+  await finishWorkflowStep(supabase, {
+    stepId: planStepId,
+    status: 'completed',
+    output: { outreach_plan: outreachPlan },
+  })
+
   const recipientEmails = recipientGroup.all.map(recipient => recipient.email.toLowerCase())
   const policyStepId = await startWorkflowStep(supabase, {
     runId: workflowRunId,
@@ -128,6 +185,7 @@ export async function POST(request: Request) {
     requireVerifiedContact: false,
     runId: workflowRunId,
     stepId: policyStepId,
+    metadata: { outreach_plan: outreachPlan },
   })
   await finishWorkflowStep(supabase, {
     stepId: policyStepId,
@@ -148,7 +206,7 @@ export async function POST(request: Request) {
       status: 'blocked',
       title: 'Send blocked by outbound policy',
       body: `Blocked by ${policyDecision.reasons.join(', ')}.`,
-      metadata: { reasons: policyDecision.reasons, recipients: recipientEmails },
+      metadata: { reasons: policyDecision.reasons, recipients: recipientEmails, outreach_plan: outreachPlan },
     })
     if (graph) {
       await recordGtmTouchpoint(supabase, {
@@ -163,9 +221,14 @@ export async function POST(request: Request) {
         subject,
         bodyPreview: bodyPreview(emailBody),
         toEmail: recipientGroup.to.email,
-        metadata: { reasons: policyDecision.reasons },
+        metadata: { reasons: policyDecision.reasons, outreach_plan: outreachPlan },
       })
     }
+    await markLatestOutreachPlanStatus(supabase, {
+      userId: user.id,
+      leadId,
+      status: 'blocked',
+    })
     await finishWorkflowRun(supabase, {
       runId: workflowRunId,
       status: 'completed',
@@ -243,6 +306,11 @@ export async function POST(request: Request) {
         output: { sent: false, reason: 'no_connected_inbox' },
         checkpoint: { blocked_at: 'send' },
       })
+      await markLatestOutreachPlanStatus(supabase, {
+        userId: user.id,
+        leadId,
+        status: 'blocked',
+      })
       return NextResponse.json(
         { error: 'No sending account connected. Go to Settings → Sending Accounts to connect an inbox.' },
         { status: 503 }
@@ -309,9 +377,10 @@ export async function POST(request: Request) {
         message_id: result.messageId,
         thread_id: result.threadId,
         to: recipientGroup.to.email,
-        cc: recipientGroup.cc.map(recipient => recipient.email),
-      },
-    })
+          cc: recipientGroup.cc.map(recipient => recipient.email),
+          outreach_plan: outreachPlan,
+        },
+      })
 
     if (graph) {
       await recordGtmTouchpoint(supabase, {
@@ -334,6 +403,7 @@ export async function POST(request: Request) {
           cc: recipientGroup.cc.map(recipient => recipient.email),
           thread_id: result.threadId,
           manual: true,
+          outreach_plan: outreachPlan,
         },
       })
       await recordGtmMemory(supabase, {
@@ -351,10 +421,30 @@ export async function POST(request: Request) {
           lead_id: leadId,
           message_id: result.messageId,
           provider: result.provider,
+          outreach_plan: outreachPlan,
         },
         workflowRunId,
       })
     }
+    await recordOutcomeLearning(supabase, {
+      userId: user.id,
+      clientId,
+      leadId,
+      outcome: 'sent',
+      observedAt: now,
+      metadata: {
+        provider: result.provider,
+        from_email: result.fromEmail,
+        manual: true,
+        outreach_plan_confidence: outreachPlan.confidence,
+      },
+      workflowRunId,
+    })
+    await markLatestOutreachPlanStatus(supabase, {
+      userId: user.id,
+      leadId,
+      status: 'sent',
+    })
     await finishWorkflowStep(supabase, {
       stepId: sendStepId,
       status: 'completed',
@@ -368,7 +458,7 @@ export async function POST(request: Request) {
       runId: workflowRunId,
       status: 'completed',
       output: { sent: true, message_id: result.messageId, from_email: result.fromEmail },
-      checkpoint: { completed_at: now, lead_id: leadId },
+      checkpoint: { completed_at: now, lead_id: leadId, outreach_plan_confidence: outreachPlan.confidence },
     })
 
     return NextResponse.json({ success: true, messageId: result.messageId, fromEmail: result.fromEmail })

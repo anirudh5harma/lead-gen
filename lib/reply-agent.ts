@@ -7,6 +7,7 @@ import { sendReplyOutcomeEmail } from '@/lib/resend'
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
+import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import {
   buildBookingReplyBody,
   classifyReplyIntent,
@@ -102,6 +103,18 @@ export async function processInboundReply(params: {
     intent,
     message,
     text,
+  })
+  await recordOutcomeLearning(supabase, {
+    userId,
+    clientId: lead.client_id ?? null,
+    leadId: lead.id,
+    outcome: booked ? 'booked' : 'replied',
+    observedAt: now,
+    metadata: {
+      intent: intent.intent,
+      confidence: intent.confidence,
+      provider: message.provider,
+    },
   })
 
   if (booked) {

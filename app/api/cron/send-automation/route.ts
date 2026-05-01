@@ -15,6 +15,9 @@ import { buildRecipientGroup, formatRecipientListForLog, type OutreachRecipientG
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint, type LeadGraphResult } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
+import { buildOutreachPlan, explainPlanBlock, type OutreachPlan } from '@/lib/gtm/outreach-plan'
+import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
+import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import {
   finishWorkflowRun,
@@ -530,14 +533,6 @@ async function sendAutomationLead(
     getDefaultSequenceTemplate(supabase, params.userId, params.clientId),
   ])
 
-  const draft = await getOrCreateAutomationDraft(supabase, {
-    lead: params.lead,
-    profile,
-    clientProfile,
-    customInstructions: template?.custom_instructions ?? null,
-  })
-  if (!draft.recipientGroup) return false
-
   const graphStepId = await startWorkflowStep(supabase, {
     runId: params.workflowRunId,
     userId: params.userId,
@@ -576,6 +571,85 @@ async function sendAutomationLead(
     } : {},
   })
 
+  const outreachPlan = buildOutreachPlan({
+    lead: params.lead,
+    mode: 'autonomous',
+    senderContext: {
+      companyName: (clientProfile as { name?: string | null } | null)?.name ?? (profile as { company_name?: string | null } | null)?.company_name ?? null,
+      servicesDescription: (clientProfile as { services_description?: string | null } | null)?.services_description ?? (profile as { services_description?: string | null } | null)?.services_description ?? null,
+    },
+  })
+  const planStepId = await startWorkflowStep(supabase, {
+    runId: params.workflowRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    stepKey: `lead:${params.lead.id as string}:outreach_plan`,
+    input: { lead_id: params.lead.id, mode: 'autonomous' },
+  })
+  if (graph) {
+    await persistOutreachPlan(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      leadId: params.lead.id as string,
+      accountId: graph.accountId,
+      personId: graph.personId,
+      plan: outreachPlan,
+      agentRunId: params.agentRunId,
+      workflowRunId: params.workflowRunId,
+    })
+    await recordGtmMemory(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      scope: 'entity',
+      entityType: 'account',
+      entityId: graph.accountId,
+      memoryType: 'outreach_plan',
+      content: `${outreachPlan.trigger}. ${outreachPlan.angle}`,
+      source: 'outreach_planner',
+      confidence: outreachPlan.confidence / 100,
+      observedAt: new Date().toISOString(),
+      provenance: { lead_id: params.lead.id, outreach_plan: outreachPlan },
+      agentRunId: params.agentRunId,
+      workflowRunId: params.workflowRunId,
+    })
+  }
+  await finishWorkflowStep(supabase, {
+    stepId: planStepId,
+    status: outreachPlan.requires_review ? 'blocked' : 'completed',
+    output: { outreach_plan: outreachPlan },
+  })
+  if (outreachPlan.requires_review) {
+    const reasons = explainPlanBlock(outreachPlan)
+    await recordAgentEvent(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      runId: params.runId,
+      leadId: params.lead.id as string,
+      agentName: 'message',
+      eventType: 'outreach_plan_needs_review',
+      status: 'blocked',
+      title: `Skipped ${params.lead.target_company}: plan needs review`,
+      body: `Autonomous sending paused because ${reasons.join(', ') || 'plan confidence was insufficient'}.`,
+      metadata: { reasons, outreach_plan: outreachPlan },
+    })
+    await markLatestOutreachPlanStatus(supabase, {
+      userId: params.userId,
+      leadId: params.lead.id as string,
+      status: 'needs_review',
+    })
+    if (graph) await recordBlockedTouchpoint(supabase, params, graph, reasons, outreachPlan)
+    return false
+  }
+
+  const draft = await getOrCreateAutomationDraft(supabase, {
+    lead: params.lead,
+    profile,
+    clientProfile,
+    customInstructions: template?.custom_instructions ?? null,
+    outreachPlan,
+  })
+  if (!draft.recipientGroup) return false
+
   const recipientEmails = draft.recipientGroup.all.map(recipient => recipient.email.toLowerCase())
   const policyStepId = await startWorkflowStep(supabase, {
     runId: params.workflowRunId,
@@ -602,6 +676,7 @@ async function sendAutomationLead(
     runId: params.workflowRunId,
     stepId: policyStepId,
     agentRunId: params.agentRunId,
+    metadata: { outreach_plan: outreachPlan },
   })
   await finishWorkflowStep(supabase, {
     stepId: policyStepId,
@@ -622,9 +697,14 @@ async function sendAutomationLead(
       status: 'blocked',
       title: `Skipped ${params.lead.target_company}: policy blocked send`,
       body: `Blocked by ${policyDecision.reasons.join(', ')}.`,
-      metadata: { recipients: recipientEmails, reasons: policyDecision.reasons },
+      metadata: { recipients: recipientEmails, reasons: policyDecision.reasons, outreach_plan: outreachPlan },
     })
-    if (graph) await recordBlockedTouchpoint(supabase, params, graph, policyDecision.reasons)
+    await markLatestOutreachPlanStatus(supabase, {
+      userId: params.userId,
+      leadId: params.lead.id as string,
+      status: 'blocked',
+    })
+    if (graph) await recordBlockedTouchpoint(supabase, params, graph, policyDecision.reasons, outreachPlan)
     return false
   }
 
@@ -731,6 +811,7 @@ async function sendAutomationLead(
       thread_id: result.threadId,
       to: draft.recipientGroup.to.email,
       cc: draft.recipientGroup.cc.map(recipient => recipient.email),
+      outreach_plan: outreachPlan,
     },
   })
 
@@ -754,6 +835,7 @@ async function sendAutomationLead(
       metadata: {
         cc: draft.recipientGroup.cc.map(recipient => recipient.email),
         thread_id: result.threadId,
+        outreach_plan: outreachPlan,
       },
     })
     await recordGtmMemory(supabase, {
@@ -771,11 +853,32 @@ async function sendAutomationLead(
         lead_id: params.lead.id,
         message_id: result.messageId,
         provider: result.provider,
+        outreach_plan: outreachPlan,
       },
       agentRunId: params.agentRunId,
       workflowRunId: params.workflowRunId,
     })
   }
+
+  await recordOutcomeLearning(supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
+    leadId: params.lead.id as string,
+    outcome: 'sent',
+    observedAt: now,
+    metadata: {
+      provider: result.provider,
+      from_email: result.fromEmail,
+      outreach_plan_confidence: outreachPlan.confidence,
+    },
+    agentRunId: params.agentRunId,
+    workflowRunId: params.workflowRunId,
+  })
+  await markLatestOutreachPlanStatus(supabase, {
+    userId: params.userId,
+    leadId: params.lead.id as string,
+    status: 'sent',
+  })
 
   await finishWorkflowStep(supabase, {
     stepId: sendStepId,
@@ -797,6 +900,7 @@ async function sendAutomationLead(
       last_message_id: result.messageId,
       last_from_email: result.fromEmail,
       sent_at: now,
+      outreach_plan_confidence: outreachPlan.confidence,
     },
   })
 
@@ -813,6 +917,7 @@ async function recordBlockedTouchpoint(
   },
   graph: LeadGraphResult,
   reasons: string[],
+  outreachPlan?: OutreachPlan,
 ): Promise<void> {
   await recordGtmTouchpoint(supabase, {
     userId: params.userId,
@@ -824,7 +929,7 @@ async function recordBlockedTouchpoint(
     type: 'email',
     status: 'blocked',
     toEmail: (params.lead.contact_email as string | null | undefined) ?? null,
-    metadata: { reasons },
+    metadata: { reasons, outreach_plan: outreachPlan ?? null },
   })
 }
 
@@ -835,6 +940,7 @@ async function getOrCreateAutomationDraft(
     profile: { company_name?: string | null; website_url?: string | null; services_description?: string | null; calendly_url?: string | null } | null
     clientProfile: { name?: string | null; website_url?: string | null; services_description?: string | null; calendly_url?: string | null } | null
     customInstructions: string | null
+    outreachPlan?: OutreachPlan
   },
 ): Promise<{ subject: string; body: string; recipientGroup: OutreachRecipientGroup | null }> {
   const { data: existing } = await supabase
@@ -890,7 +996,7 @@ async function getOrCreateAutomationDraft(
     recipientGreeting: recipientGroup.greeting,
     targetCompany: params.lead.target_company as string,
     signalType: signal?.signal_type || 'event',
-    signalSummary: signal?.summary || (params.lead.relevance_reason as string | null) || '',
+    signalSummary: params.outreachPlan?.angle || signal?.summary || (params.lead.relevance_reason as string | null) || '',
     headline: signal?.headline ?? null,
     fundingAmount: signal?.funding_amount ?? null,
     signalAgeLabel: null,

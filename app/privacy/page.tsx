@@ -40,7 +40,7 @@ const sections = [
   {
     title: 'Connected Accounts and Customer Data',
     paragraphs: [
-      'If you connect Gmail, Outlook, Slack, or other third-party tools, Bombsell accesses only the data necessary to provide the connected feature. We use inbox access to send email, detect replies, manage follow-up status, and display related outreach activity in your workspace.',
+      'If you connect Gmail, Outlook, or other third-party tools, Bombsell accesses only the data necessary to provide the connected feature. We use inbox access to send email, detect replies, manage follow-up status, and display related outreach activity in your workspace.',
       'You are responsible for making sure you have the right to process the prospect and customer data you upload or generate through Bombsell.',
     ],
   },

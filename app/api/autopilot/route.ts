@@ -193,10 +193,10 @@ export async function POST(request: Request) {
     agentName: 'operator',
     eventType: 'autopilot_mode_changed',
     status: enabled ? 'running' : 'completed',
-    title: mode === 'autopilot' ? 'Live autopilot started' : 'Live autopilot paused',
+    title: mode === 'autopilot' ? 'GTM Engine started' : 'GTM Engine set to approve-first',
     body: mode === 'autopilot'
-      ? 'Bombsell will now unlock high-fit live signal leads with credits, find verified contacts, and send safely from your inbox.'
-      : 'Bombsell paused live signal autopilot. Batch workflows can still run if configured.',
+      ? 'Bombsell will now unlock high-fit accounts with credits, find verified contacts, and send safely from your inbox.'
+      : 'Bombsell will continue surfacing account work for review before sending.',
     metadata: { mode },
   })
 
@@ -205,7 +205,7 @@ export async function POST(request: Request) {
       toEmail: user.email,
       companyName: profile?.company_name ?? 'your workspace',
       event: 'started',
-      summary: 'Bombsell live-signal autopilot is active. Agents will unlock high-fit leads using credits, use verified contacts only, send with mailbox pacing, stop on replies, and surface outcomes in Live Autopilot.',
+      summary: 'Bombsell GTM Engine is active. Account agents will unlock high-fit leads using credits, use verified contacts only, send with mailbox pacing, stop on replies, and surface outcomes in Bombsell.',
     }).catch(error => console.error('[autopilot] start email failed:', error))
   }
 

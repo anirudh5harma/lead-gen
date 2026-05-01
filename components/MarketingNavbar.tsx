@@ -31,7 +31,7 @@ export default function MarketingNavbar({ homeAnchors = false }: { homeAnchors?:
   const featuresHref = homeAnchors ? '#features' : '/#features'
 
   return (
-    <nav className="relative z-10 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/70 backdrop-blur-md">
+    <nav className="relative z-10 border-b border-[var(--color-line-2)] bg-[var(--color-ink-2)]/88 backdrop-blur-md">
       <div className="w-full max-w-7xl mx-auto flex items-center justify-between px-6 md:px-8 h-16">
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2.5">
@@ -44,7 +44,7 @@ export default function MarketingNavbar({ homeAnchors = false }: { homeAnchors?:
             />
             <span className="text-[15px] font-medium text-[var(--color-text-1)] tracking-tight">Bombsell</span>
           </Link>
-          <div className="hidden md:flex items-center gap-6 text-[13px] text-[var(--color-text-2)]">
+          <div className="hidden md:flex items-center gap-6 text-[13px] font-medium text-[var(--color-text-2)]">
             <a href={howHref} className="hover:text-[var(--color-text-1)] transition-colors">Platform</a>
             <a href={featuresHref} className="hover:text-[var(--color-text-1)] transition-colors">Differentiation</a>
             <Link href="/pricing" className="hover:text-[var(--color-text-1)] transition-colors">Pricing</Link>

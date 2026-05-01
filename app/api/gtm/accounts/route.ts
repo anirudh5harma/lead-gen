@@ -105,6 +105,8 @@ export async function GET(request: Request) {
           replied: relatedLeads.filter(lead => lead.replied_at || lead.status === 'replied').length,
           booked: relatedLeads.filter(lead => lead.booked_at || lead.status === 'booked').length,
         },
+        checkpoints: isRecord(account.attributes?.agent_checkpoints) ? account.attributes.agent_checkpoints : {},
+        source_learning: Array.isArray(account.attributes?.source_learning) ? account.attributes.source_learning.slice(0, 5) : [],
       }
     }),
   })
@@ -118,4 +120,8 @@ function countBy<T>(rows: T[], keyFn: (row: T) => string | null | undefined) {
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return counts
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

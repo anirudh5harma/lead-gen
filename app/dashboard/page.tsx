@@ -81,9 +81,9 @@ export default async function DashboardPage() {
 
   const leadBaseFilter = activeClientId ? { client_id: activeClientId } : {}
 
-  // Initial account work is loaded per origin so large batch/CRM sources do not
-  // evict live-signal rows from the server-rendered command view.
-  const [liveLeadsResult, exploreLeadsResult, crmLeadsResult, agentEventsResult] = await Promise.all([
+  // Initial account work is loaded per origin so large imported sources do not
+  // evict live-signal rows from the server-rendered work view.
+  const [liveLeadsResult, exploreLeadsResult, crmLeadsResult] = await Promise.all([
     supabase
       .from('leads')
       .select(leadSelect)
@@ -108,13 +108,6 @@ export default async function DashboardPage() {
       .eq('origin', 'crm_import')
       .order('created_at', { ascending: false })
       .limit(200),
-    supabase
-      .from('agent_events')
-      .select('id, agent_name, event_type, status, title, body, lead_id, created_at')
-      .eq('user_id', user.id)
-      .match(leadBaseFilter)
-      .order('created_at', { ascending: false })
-      .limit(80),
   ])
 
   const leads = [
@@ -130,7 +123,6 @@ export default async function DashboardPage() {
   return (
     <DashboardShell
       initialLeads={typedLeads}
-      initialAgentEvents={(agentEventsResult.data ?? []) as never}
       userProfile={{
         company_name: profile.company_name,
         services_description: (clientProfile as { services_description?: string } | null)?.services_description ?? profile.services_description,

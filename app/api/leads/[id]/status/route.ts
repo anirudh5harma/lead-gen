@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
+import { recordOutcomeLearning, type GtmOutcome } from '@/lib/gtm/outcome-learning'
 
 const VALID_STATUSES = ['new', 'viewed', 'drafted', 'sent', 'replied', 'booked', 'dismissed'] as const
 type LeadStatus = typeof VALID_STATUSES[number]
@@ -53,5 +54,26 @@ export async function PATCH(
     },
   }).catch(() => {})
 
+  const learningOutcome = statusToLearningOutcome(s)
+  if (learningOutcome) {
+    const serviceSupabase = await createServiceClient()
+    recordOutcomeLearning(serviceSupabase, {
+      userId: user.id,
+      clientId: (lead as { client_id?: string | null } | null)?.client_id ?? null,
+      leadId: id,
+      outcome: learningOutcome,
+      observedAt: new Date().toISOString(),
+      metadata: { source: 'lead_status_update' },
+    }).catch(() => {})
+  }
+
   return NextResponse.json({ ok: true })
+}
+
+function statusToLearningOutcome(status: LeadStatus): GtmOutcome | null {
+  if (status === 'sent') return 'sent'
+  if (status === 'replied') return 'replied'
+  if (status === 'booked') return 'booked'
+  if (status === 'dismissed') return 'dismissed'
+  return null
 }

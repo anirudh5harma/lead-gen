@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { accountKey, normalizeDomain, normalizeEntityName, personKey, signalKey } from './identity'
 import { recordGtmMemory } from './memory'
+import { buildSignalIntelligence } from './signal-intelligence'
+import { upsertSignalCluster } from './signal-clusters'
+import { recordSourceReliabilityOutcome } from './source-reliability'
 
 export interface LeadGraphInput {
   id: string
@@ -43,6 +46,20 @@ export async function upsertLeadIntoGtmGraph(
   const snapshot = normalizeLeadFeedSnapshot(lead.feed_snapshot)
   const domain = normalizeDomain(lead.company_domain ?? snapshot?.company_domain ?? null)
   const key = accountKey({ name: companyName, domain })
+  const signalIntelligence = snapshot
+    ? buildSignalIntelligence({
+        leadId: lead.id,
+        accountKey: key,
+        targetCompany: companyName,
+        companyDomain: domain,
+        relevanceScore: lead.relevance_score ?? null,
+        relevanceReason: lead.relevance_reason ?? null,
+        contactEmail: lead.contact_email ?? null,
+        contactVerified: lead.contact_verified ?? null,
+        createdAt: lead.created_at ?? null,
+        snapshot,
+      })
+    : null
   const accountId = await upsertAccount(supabase, {
     userId: lead.user_id,
     clientId: lead.client_id ?? null,
@@ -55,6 +72,13 @@ export async function upsertLeadIntoGtmGraph(
       relevance_score: lead.relevance_score ?? null,
       relevance_reason: lead.relevance_reason ?? null,
       origin: lead.origin ?? null,
+      signal_intelligence: signalIntelligence,
+      agent_checkpoints: {
+        last_signal_at: signalIntelligence?.event.published_at ?? lead.created_at ?? null,
+        last_signal_type: signalIntelligence?.event.event_type ?? null,
+        last_signal_cluster_key: signalIntelligence?.cluster_key ?? null,
+        last_memory_update_at: new Date().toISOString(),
+      },
     },
   })
   if (!accountId) return null
@@ -66,7 +90,7 @@ export async function upsertLeadIntoGtmGraph(
       clientId: lead.client_id ?? null,
       accountId,
       leadId: lead.id,
-      signalKey: signalKey({
+      signalKey: signalIntelligence?.cluster_key ?? signalKey({
         leadId: lead.id,
         sourceUrl: snapshot.source_url,
         headline: snapshot.headline,
@@ -78,9 +102,39 @@ export async function upsertLeadIntoGtmGraph(
       sourceUrl: snapshot.source_url,
       sourceName: snapshot.source_name,
       publishedAt: snapshot.published_at,
-      attributes: { ...snapshot },
+      confidence: signalIntelligence ? signalIntelligence.scores.quality / 100 : undefined,
+      attributes: {
+        ...snapshot,
+        structured_event: signalIntelligence?.event ?? null,
+        cluster_key: signalIntelligence?.cluster_key ?? null,
+        duplicate_key: signalIntelligence?.duplicate_key ?? null,
+        scores: signalIntelligence?.scores ?? null,
+        weighted_score: signalIntelligence?.weighted_score ?? null,
+        reasoning: signalIntelligence?.reasoning ?? [],
+      },
     })
     if (signalId) {
+      if (signalIntelligence) {
+        await Promise.all([
+          upsertSignalCluster(supabase, {
+            userId: lead.user_id,
+            clientId: lead.client_id ?? null,
+            accountId,
+            signalId,
+            intelligence: signalIntelligence,
+            observedAt: snapshot.published_at ?? lead.created_at ?? null,
+          }),
+          recordSourceReliabilityOutcome(supabase, {
+            userId: lead.user_id,
+            clientId: lead.client_id ?? null,
+            sourceName: signalIntelligence.event.source_name,
+            signalType: signalIntelligence.event.event_type,
+            outcome: 'signal',
+            observedAt: snapshot.published_at ?? lead.created_at ?? null,
+            metadata: { cluster_key: signalIntelligence.cluster_key },
+          }),
+        ])
+      }
       await upsertRelationship(supabase, {
         userId: lead.user_id,
         clientId: lead.client_id ?? null,
@@ -101,9 +155,14 @@ export async function upsertLeadIntoGtmGraph(
         memoryType: 'buying_signal',
         content: `${snapshot.headline}${snapshot.summary ? `: ${snapshot.summary}` : ''}`,
         source: snapshot.source_name ?? 'lead_feed',
-        confidence: 0.9,
+        confidence: signalIntelligence ? signalIntelligence.scores.quality / 100 : 0.9,
         observedAt: snapshot.published_at ?? lead.created_at ?? null,
-        provenance: { lead_id: lead.id, signal_id: signalId, source_url: snapshot.source_url ?? null },
+        provenance: {
+          lead_id: lead.id,
+          signal_id: signalId,
+          source_url: snapshot.source_url ?? null,
+          signal_intelligence: signalIntelligence,
+        },
         agentRunId: context.agentRunId ?? null,
         workflowRunId: context.workflowRunId ?? null,
       })
@@ -151,11 +210,12 @@ async function upsertAccount(
     name: string
     domain: string | null
     sourceKind: string
-    attributes: Record<string, unknown>
+  attributes: Record<string, unknown>
   },
 ): Promise<string | null> {
   const existing = await findScopedRow(supabase, 'gtm_accounts', input.userId, input.clientId, input.accountKey, 'account_key')
   const now = new Date().toISOString()
+  const attributes = mergeAccountAttributes(existing?.attributes, input.attributes)
 
   if (existing?.id) {
     const { error } = await supabase
@@ -164,7 +224,7 @@ async function upsertAccount(
         name: input.name,
         domain: input.domain,
         source_kind: input.sourceKind,
-        attributes: input.attributes,
+        attributes,
         last_seen_at: now,
       })
       .eq('id', existing.id)
@@ -181,7 +241,7 @@ async function upsertAccount(
       name: input.name,
       domain: input.domain,
       source_kind: input.sourceKind,
-      attributes: input.attributes,
+      attributes,
     })
     .select('id')
     .single()
@@ -266,6 +326,7 @@ async function upsertSignal(
     sourceUrl?: string | null
     sourceName?: string | null
     publishedAt?: string | null
+    confidence?: number
     attributes: Record<string, unknown>
   },
 ): Promise<string | null> {
@@ -279,6 +340,7 @@ async function upsertSignal(
     source_url: input.sourceUrl ?? null,
     source_name: input.sourceName ?? null,
     published_at: input.publishedAt ?? null,
+    confidence: input.confidence ?? null,
     attributes: input.attributes,
     observed_at: input.publishedAt ?? new Date().toISOString(),
   }
@@ -389,10 +451,10 @@ async function findScopedRow(
   clientId: string | null,
   key: string,
   keyColumn: string,
-): Promise<{ id?: string } | null> {
+): Promise<{ id?: string; attributes?: unknown } | null> {
   let query = supabase
     .from(table)
-    .select('id')
+    .select('id, attributes')
     .eq('user_id', userId)
     .eq(keyColumn, key)
     .limit(1)
@@ -403,5 +465,23 @@ async function findScopedRow(
     console.error(`[gtm-graph] ${table} lookup failed:`, error.message)
     return null
   }
-  return data as { id?: string } | null
+  return data as { id?: string; attributes?: unknown } | null
+}
+
+function mergeAccountAttributes(existing: unknown, incoming: Record<string, unknown>): Record<string, unknown> {
+  const base = isRecord(existing) ? existing : {}
+  const incomingCheckpoints = isRecord(incoming.agent_checkpoints) ? incoming.agent_checkpoints : {}
+  const existingCheckpoints = isRecord(base.agent_checkpoints) ? base.agent_checkpoints : {}
+  return {
+    ...base,
+    ...incoming,
+    agent_checkpoints: {
+      ...existingCheckpoints,
+      ...incomingCheckpoints,
+    },
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

@@ -10,16 +10,17 @@ import { useSectionReveal } from '@/hooks/use-section-reveal'
 const PLANS = [
   {
     id: 'free' as const,
-    name: 'Self-serve',
+    name: 'Launch',
     price: '$0',
     period: 'forever',
-    description: 'A complete workspace for experiencing our true AI-native GTM infrastructure.',
+    description: 'For founder-led GTM and small teams starting account-agent coverage.',
     features: [
       '20 starter lead credits',
-      'Live Autopilot and Work Inbox',
+      'Account agents and Work Inbox',
+      'Signal monitoring and account memory',
       'Gmail and Outlook connectors',
-      'CRM export and Slack alerts',
-      'MCP access',
+      'Approve-first sending guardrails',
+      'Reply and outcome learning',
       'Top up credits as needed',
     ],
     cta: 'Get started',
@@ -27,44 +28,43 @@ const PLANS = [
   },
   {
     id: 'enterprise' as const,
-    name: 'Managed Infrastructure',
+    name: 'Scale',
     price: 'Custom',
     period: '',
-    description: 'For teams that want Bombsell to run governed GTM workflows with stronger controls.',
+    description: 'For small and mid-sized teams that want deeper sources, playbooks, and controls.',
     features: [
-      'Managed GTM workflow design',
-      'Custom account agents and playbooks',
-      'Enterprise CRM governance',
+      'Custom account-agent playbooks',
       'Dedicated source connectors',
-      'Operator-in-the-loop execution',
-      'Security reviews and audit controls',
+      'Team guardrails and approval paths',
+      'CRM export and historical learning',
+      'Security review and audit controls',
     ],
     cta: 'Talk to us',
     highlight: false,
-    href: 'mailto:team@bombsell.com?subject=Managed%20GTM%20Infrastructure',
+    href: 'mailto:team@bombsell.com?subject=Scale%20Bombsell%20GTM%20Infrastructure',
   },
 ]
 
 const FAQS = [
   {
     q: 'What do credits pay for?',
-    a: 'Credits are used when Bombsell unlocks a lead/contact. Monitoring accounts, reviewing work items, using MCP, connecting inboxes, and managing settings do not consume credits.',
+    a: 'Credits are used when Bombsell unlocks a lead/contact. Monitoring accounts, reviewing work items, connecting inboxes, and managing settings do not consume credits.',
   },
   {
     q: 'What happens when I run out of credits?',
-    a: 'Your workspace still works, but new contact unlocks pause until you top up. Existing memories, workflows, CRM exports, and account context remain available.',
+    a: 'Your workspace still works, but new contact unlocks pause until you top up. Existing account memory, sent history, and work items remain available.',
   },
   {
     q: 'What is included in self-serve?',
-    a: 'Live Autopilot, Work Inbox, watched accounts, connected inboxes, CRM export queue, Slack alerts, GTM memory, and Agent API/MCP access.',
+    a: 'Account agents, Work Inbox, account memory, connected inboxes, approve-first outreach, and safe sending controls.',
   },
   {
     q: 'When should I talk to Bombsell?',
-    a: 'Talk to us when you want custom account agents, governed CRM workflows, dedicated data sources, security review, or an operator-in-the-loop motion.',
+    a: 'Talk to us when you want custom account-agent playbooks, dedicated data sources, security review, team controls, or CRM history ingestion.',
   },
   {
     q: 'Is this a sales engagement tool?',
-    a: 'Not exactly. Bombsell includes safe outbound, but the product is broader: account context, GTM memory, agent work, workflow controls, and execution guardrails.',
+    a: 'Not exactly. Bombsell includes safe outbound, but the product is broader: account context, GTM memory, next-best-action ranking, and execution guardrails.',
   },
   {
     q: 'How is outbound kept safe?',
@@ -106,7 +106,7 @@ export default function PricingPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden paper">
       <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
-        <div className="blob blob-1" style={{ width: 600, height: 600, top: -200, left: '50%', transform: 'translateX(-50%)', opacity: 0.7 }} />
+        <div className="blob blob-1" style={{ width: 600, height: 600, top: -200, left: '50%', transform: 'translateX(-50%)', opacity: 0.45 }} />
       </div>
 
       <nav className="relative z-10 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/70 backdrop-blur-md">
@@ -127,11 +127,11 @@ export default function PricingPage() {
         <div className="section-reveal reveal-from-bottom text-center mb-16 space-y-4 max-w-2xl fade-in">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pricing</p>
           <h1 className="text-4xl md:text-6xl font-medium text-[var(--color-text-1)] tracking-[-0.02em] leading-[1.02]">
-            Start self-serve.<br />
+            Start with account agents.<br />
             <span className="font-serif italic text-gradient">Scale with us.</span>
           </h1>
           <p className="text-[16px] text-[var(--color-text-2)] max-w-lg mx-auto leading-relaxed">
-            Use Bombsell for free with starter credits. Move to managed GTM infrastructure when your motion needs more control.
+            Use Bombsell for free with starter credits. Scale when your market coverage and GTM process need more depth.
           </p>
         </div>
 
@@ -196,7 +196,7 @@ export default function PricingPage() {
         </div>
 
         <p className="mt-12 text-[12px] text-[var(--color-text-3)]">
-          Self-serve is free to start · Credits are prepaid · Managed infrastructure is custom
+          Launch is free to start · Credits are prepaid · Scale is custom
         </p>
 
         <section className="section-reveal reveal-from-bottom w-full max-w-3xl mt-28">

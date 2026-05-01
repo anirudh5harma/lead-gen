@@ -289,10 +289,10 @@ export default function OnboardingPage() {
               You&rsquo;re all set.
             </h1>
             <p className="text-[17px] leading-[1.55] text-[var(--color-text-2)]">
-              Your GTM autopilot workspace is ready. Bombsell can now scan signals, score accounts, unlock high-fit leads with credits, and prepare safe outreach.
+              Your account-agent workspace is ready. Bombsell can now scan account movement, score fit, unlock high-fit contacts with credits, and prepare safe next moves.
             </p>
             <p className="text-[14px] text-[var(--color-text-3)]">
-              Connect your sending inbox in Live Autopilot to let the agents send, follow up, detect replies, and route booked meetings.
+              Connect a sending inbox in the GTM Engine when you are ready to review or automate outreach.
             </p>
           </div>
 
@@ -300,9 +300,9 @@ export default function OnboardingPage() {
             <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-4)] font-medium">What happens next</p>
             <ul className="space-y-2.5">
               {[
-                'Research and fit agents monitor fresh buying signals against your ICP',
-                'Contact and message agents unlock, verify, draft, and send only when safety checks pass',
-                'Reply and booking agents stop follow-ups, notify you, and hand interested buyers to your booking link',
+                'Account agents monitor fresh market movement against your ICP',
+                'Bombsell builds context, finds the right contact path, and recommends the next move',
+                'Replies, dismissals, and booked meetings teach future ranking and messaging',
               ].map((item, i) => (
                 <li key={i} className="flex items-start gap-2.5 text-[13px] text-[var(--color-text-2)]">
                   <span className="mt-0.5 w-4 h-4 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center shrink-0 text-[10px] font-semibold">
@@ -315,10 +315,10 @@ export default function OnboardingPage() {
           </div>
 
           <button
-            onClick={() => router.push('/dashboard?view=command')}
+            onClick={() => router.push('/dashboard?view=inbox')}
             className="h-12 px-8 rounded-full btn-primary text-[14px] font-medium inline-flex items-center gap-2"
           >
-            Open Live Autopilot →
+            Open Bombsell →
           </button>
         </div>
       </div>
@@ -636,7 +636,7 @@ function StepCompany({ form, setForm }: StepFormProps) {
           className="w-full px-4 py-3 rounded-xl bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[var(--color-text-1)] placeholder-[var(--color-text-4)] text-sm focus:outline-none focus:border-[var(--color-accent)] focus:bg-white focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
         />
         <p className="text-[11px] text-[var(--color-text-4)]">
-          Add this if you want the booking agent to reply with a scheduling link when prospects show meeting intent.
+          Add this if you want Bombsell to use a scheduling link when prospects show meeting intent.
         </p>
       </div>
     </div>

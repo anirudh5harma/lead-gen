@@ -85,7 +85,7 @@ export async function getGtmAccountState(
 
   const leads = leadsRes.data ?? []
   const leadIds = leads.map(lead => lead.id)
-  const [workflowRunsRes, policyDecisionsRes] = leadIds.length > 0
+  const [workflowRunsRes, policyDecisionsRes, outreachPlansRes] = leadIds.length > 0
     ? await Promise.all([
         scopedQuery(
           supabase
@@ -107,8 +107,18 @@ export async function getGtmAccountState(
             .limit(30),
           clientId,
         ),
+        optionalRows(scopedQuery(
+          supabase
+            .from('gtm_outreach_plans')
+            .select('id, lead_id, status, confidence, trigger, persona, angle, proof, risk_flags, created_at')
+            .eq('user_id', input.userId)
+            .in('lead_id', leadIds)
+            .order('created_at', { ascending: false })
+            .limit(30),
+          clientId,
+        )),
       ])
-    : [{ data: [], error: null }, { data: [], error: null }]
+    : [{ data: [], error: null }, { data: [], error: null }, { rows: [] }]
 
   if (workflowRunsRes.error) throw new Error(workflowRunsRes.error.message)
   if (policyDecisionsRes.error) throw new Error(policyDecisionsRes.error.message)
@@ -122,10 +132,13 @@ export async function getGtmAccountState(
     leads,
     workflow_runs: workflowRunsRes.data ?? [],
     policy_decisions: policyDecisionsRes.data ?? [],
+    outreach_plans: outreachPlansRes.rows,
+    checkpoints: deriveCheckpoints(account.attributes),
     next_actions: deriveNextActions({
       leads,
       policyDecisions: policyDecisionsRes.data ?? [],
       workflowRuns: workflowRunsRes.data ?? [],
+      checkpoints: deriveCheckpoints(account.attributes),
     }),
     state_health: {
       memory_count: memoriesRes.data?.length ?? 0,
@@ -137,10 +150,20 @@ export async function getGtmAccountState(
   }
 }
 
+async function optionalRows<T>(query: PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<{ rows: T[] }> {
+  const result = await query
+  if (result.error) {
+    console.error('[account-state] optional table query failed:', result.error.message)
+    return { rows: [] }
+  }
+  return { rows: result.data ?? [] }
+}
+
 function deriveNextActions(params: {
   leads: Array<Record<string, unknown>>
   policyDecisions: Array<Record<string, unknown>>
   workflowRuns: Array<Record<string, unknown>>
+  checkpoints: Record<string, unknown>
 }) {
   const actions: Array<{
     type: string
@@ -154,7 +177,7 @@ function deriveNextActions(params: {
     if (decision.decision !== 'allowed') {
       actions.push({
         type: 'policy_review',
-        label: 'Review blocked policy',
+        label: 'Review guardrail',
         reason: Array.isArray(decision.reasons) ? decision.reasons.join(', ') : 'Policy requires review.',
         priority: 90,
         lead_id: decision.lead_id,
@@ -166,8 +189,8 @@ function deriveNextActions(params: {
     if (run.status === 'failed') {
       actions.push({
         type: 'workflow_recovery',
-        label: 'Recover failed workflow',
-        reason: typeof run.error_message === 'string' && run.error_message ? run.error_message : 'Workflow failed.',
+        label: 'Review agent issue',
+        reason: typeof run.error_message === 'string' && run.error_message ? run.error_message : 'Account work failed.',
         priority: 88,
       })
     }
@@ -184,8 +207,8 @@ function deriveNextActions(params: {
       })
     } else if (lead.status === 'drafted' || (lead.is_unlocked === true && lead.contact_email && !lead.sent_at)) {
       actions.push({
-        type: 'approve_outreach',
-        label: 'Approve outreach',
+        type: 'review_outreach_plan',
+        label: 'Review next move',
         reason: typeof lead.contact_email === 'string' ? `Ready for ${lead.contact_email}.` : 'Ready for approval.',
         priority: 76,
         lead_id: lead.id,
@@ -193,7 +216,25 @@ function deriveNextActions(params: {
     }
   }
 
+  if (typeof params.checkpoints.last_signal_at === 'string' && !params.leads.some(lead => lead.sent_at || lead.status === 'sent')) {
+    actions.push({
+      type: 'plan_first_touch',
+      label: 'Plan first touch',
+      reason: `Latest signal checkpoint: ${params.checkpoints.last_signal_type ?? 'signal'} at ${params.checkpoints.last_signal_at}.`,
+      priority: 64,
+    })
+  }
+
   return actions.sort((a, b) => b.priority - a.priority).slice(0, 8)
+}
+
+function deriveCheckpoints(attributes: unknown): Record<string, unknown> {
+  if (!isRecord(attributes)) return {}
+  return isRecord(attributes.agent_checkpoints) ? attributes.agent_checkpoints : {}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function scopedQuery<T extends { eq: (column: string, value: string) => T; is: (column: string, value: null) => T }>(

@@ -100,15 +100,25 @@ export async function GET(request: Request) {
     const account = signal.account_id ? accountById.get(signal.account_id) ?? null : null
     const confidence = Number(signal.confidence ?? 0)
     const relevance = lead?.relevance_score ?? 0
+    const scores = extractSignalScores(signal.attributes)
     const feedbackScore = (
       (feedbackBySignalType.get(signal.signal_type.toLowerCase()) ?? 0) +
       (signal.source_name ? feedbackBySource.get(signal.source_name.toLowerCase()) ?? 0 : 0)
     )
-    const qualityScore = Math.max(0, Math.min(100, Math.round(
-      (confidence * 35) +
-      (relevance * 5) +
-      Math.max(-15, Math.min(15, feedbackScore)),
-    )))
+    const qualityScore = scores
+      ? Math.max(0, Math.min(100, Math.round(
+          scores.quality * 0.28 +
+          scores.novelty * 0.14 +
+          scores.fit * 0.24 +
+          scores.urgency * 0.18 +
+          scores.outreachability * 0.16 +
+          Math.max(-15, Math.min(15, feedbackScore)),
+        )))
+      : Math.max(0, Math.min(100, Math.round(
+          (confidence * 35) +
+          (relevance * 5) +
+          Math.max(-15, Math.min(15, feedbackScore)),
+        )))
 
     return {
       id: signal.id,
@@ -126,6 +136,8 @@ export async function GET(request: Request) {
       confidence,
       relevance_score: relevance,
       quality_score: qualityScore,
+      score_breakdown: scores,
+      cluster_key: stringAttribute(signal.attributes, 'cluster_key'),
       outcome: lead ? classifyOutcome(lead) : 'unmatched',
       reason: lead?.relevance_reason ?? inferSignalReason(signal),
     }
@@ -141,6 +153,29 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({ totals, by_type: byType, by_source: bySource, signals: items })
+}
+
+function extractSignalScores(attributes: Record<string, unknown> | null) {
+  const raw = attributes?.scores
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const scores = raw as Record<string, unknown>
+  return {
+    quality: numberScore(scores.quality),
+    novelty: numberScore(scores.novelty),
+    fit: numberScore(scores.fit),
+    urgency: numberScore(scores.urgency),
+    outreachability: numberScore(scores.outreachability),
+    source_reliability: numberScore(scores.source_reliability),
+  }
+}
+
+function stringAttribute(attributes: Record<string, unknown> | null, key: string): string | null {
+  const value = attributes?.[key]
+  return typeof value === 'string' ? value : null
+}
+
+function numberScore(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
 }
 
 function classifyOutcome(lead: LeadRow): string {

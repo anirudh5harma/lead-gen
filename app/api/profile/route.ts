@@ -156,7 +156,7 @@ export async function POST(request: Request) {
     slack_webhook_url: (existingProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null,
     slack_min_score: (existingProfile as { slack_min_score?: number | null } | null)?.slack_min_score ?? 7,
     auto_send_enabled: (existingProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? false,
-    automation_mode: (existingProfile as { automation_mode?: string | null } | null)?.automation_mode ?? 'autopilot',
+    automation_mode: (existingProfile as { automation_mode?: string | null } | null)?.automation_mode ?? 'approve_first',
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' })
 
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
     const { error: policyError } = await supabase.from('auto_send_policies').insert({
       user_id: user.id,
       client_id: activeClientId,
-      enabled: true,
+      enabled: false,
       connected_account_id: null,
       target_origins: ['live'],
       target_explore_session_ids: [],
@@ -184,7 +184,7 @@ export async function POST(request: Request) {
       max_lead_age_days: 30,
       daily_send_limit: 10,
       min_minutes_between_sends: 30,
-      last_started_at: new Date().toISOString(),
+      last_started_at: null,
       started_notification_sent_at: null,
       completed_notification_sent_at: null,
     })

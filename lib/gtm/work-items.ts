@@ -1,4 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
+import { accountKey, normalizeDomain, normalizeEntityName } from './identity'
+import { buildSignalIntelligence } from './signal-intelligence'
 
 export type GtmWorkItemType =
   | 'needs_approval'
@@ -48,6 +51,7 @@ interface LeadRow {
   contact_email: string | null
   contact_name: string | null
   contact_title: string | null
+  contact_verified: boolean | null
   created_at: string
   sent_at: string | null
   replied_at: string | null
@@ -55,6 +59,7 @@ interface LeadRow {
   reply_intent: string | null
   reply_summary: string | null
   origin: string | null
+  feed_snapshot: unknown
 }
 
 interface AccountRow {
@@ -84,17 +89,25 @@ interface WorkflowRunRow {
   input: Record<string, unknown> | null
 }
 
+interface OutreachPlanRow {
+  lead_id: string | null
+  status: string
+  confidence: number | null
+  plan: Record<string, unknown> | null
+  created_at: string
+}
+
 export async function listGtmWorkItems(
   supabase: SupabaseClient,
   input: ListGtmWorkItemsInput,
 ): Promise<{ work_items: GtmWorkItem[] }> {
   const limit = clampLimit(input.limit ?? 30)
   const clientId = input.clientId ?? null
-  const [leadsRes, accountsRes, policiesRes, workflowsRes] = await Promise.all([
+  const [leadsRes, accountsRes, policiesRes, workflowsRes, plansRes] = await Promise.all([
     scopedQuery(
       supabase
         .from('leads')
-        .select('id, client_id, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, created_at, sent_at, replied_at, booked_at, reply_intent, reply_summary, origin')
+        .select('id, client_id, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, created_at, sent_at, replied_at, booked_at, reply_intent, reply_summary, origin, feed_snapshot')
         .eq('user_id', input.userId)
         .neq('status', 'dismissed')
         .order('created_at', { ascending: false })
@@ -130,6 +143,15 @@ export async function listGtmWorkItems(
         .limit(50),
       clientId,
     ),
+    optionalRows(scopedQuery(
+      supabase
+        .from('gtm_outreach_plans')
+        .select('lead_id, status, confidence, plan, created_at')
+        .eq('user_id', input.userId)
+        .order('created_at', { ascending: false })
+        .limit(120),
+      clientId,
+    )),
   ])
 
   for (const res of [leadsRes, accountsRes, policiesRes, workflowsRes]) {
@@ -139,16 +161,20 @@ export async function listGtmWorkItems(
   const leads = (leadsRes.data ?? []) as LeadRow[]
   const leadById = new Map(leads.map(lead => [lead.id, lead]))
   const accountByKey = buildAccountIndex((accountsRes.data ?? []) as AccountRow[])
+  const planByLead = latestPlanByLead(plansRes.rows)
   const items: GtmWorkItem[] = []
 
   for (const lead of leads) {
     const account = findAccountForLead(accountByKey, lead)
+    const signalIntel = getLeadSignalIntelligence(lead)
+    const outreachPlan = planByLead.get(lead.id) ?? null
+    const signalBoost = signalIntel ? Math.round((signalIntel.weighted_score - 50) / 5) : 0
     if (lead.status === 'booked' || lead.booked_at) {
       items.push(leadItem('meeting_booked', lead, account, {
         priority: 96,
         status: 'completed',
         title: `Meeting booked with ${lead.target_company}`,
-        body: lead.reply_summary ?? 'A booked-meeting outcome was detected for this account.',
+        body: lead.reply_summary ?? 'This account converted into a meeting. Review the account history and learning signal.',
         actionLabel: 'Review outcome',
         createdAt: lead.booked_at ?? lead.replied_at ?? lead.created_at,
       }))
@@ -159,7 +185,7 @@ export async function listGtmWorkItems(
       items.push(leadItem('reply_detected', lead, account, {
         priority: lead.reply_intent === 'meeting_requested' ? 94 : 86,
         title: `${lead.target_company} replied`,
-        body: lead.reply_summary ?? 'Reply received. Review intent and decide the next step.',
+        body: lead.reply_summary ?? 'Reply received. Decide the next best step for this account.',
         actionLabel: 'Handle reply',
         createdAt: lead.replied_at ?? lead.created_at,
       }))
@@ -168,12 +194,16 @@ export async function listGtmWorkItems(
 
     if (lead.status === 'drafted' || (lead.is_unlocked === true && Boolean(lead.contact_email) && !lead.sent_at)) {
       items.push(leadItem('needs_approval', lead, account, {
-        priority: 78 + Math.min(12, Math.max(0, (lead.relevance_score ?? 0) - 7) * 3),
-        title: `Review outreach for ${lead.target_company}`,
+        priority: 78 + Math.min(12, Math.max(0, (lead.relevance_score ?? 0) - 7) * 3) + signalBoost,
+        title: `Next move ready for ${lead.target_company}`,
         body: lead.contact_email
-          ? `${lead.contact_email} is ready for workflow-safe sending.`
-          : lead.relevance_reason ?? 'This account is ready for human review.',
-        actionLabel: 'Review',
+          ? `${lead.contact_email} is ready for approve-first outreach.`
+          : lead.relevance_reason ?? 'This account is ready for review.',
+        actionLabel: 'Review next move',
+        metadata: {
+          ...(signalIntel ? { signal_intelligence: signalIntel } : {}),
+          ...(outreachPlan ? { outreach_plan: outreachPlan.plan, outreach_plan_status: outreachPlan.status, outreach_plan_confidence: outreachPlan.confidence } : {}),
+        },
       }))
       continue
     }
@@ -182,8 +212,8 @@ export async function listGtmWorkItems(
       items.push(leadItem('sent_followup_pending', lead, account, {
         priority: 52,
         status: 'waiting',
-        title: `${lead.target_company} is in follow-up window`,
-        body: 'Initial outreach was sent. Follow-up automation will continue unless a reply arrives.',
+        title: `${lead.target_company} is waiting on follow-up`,
+        body: 'Initial outreach was sent. Bombsell will keep the account in view unless a reply arrives.',
         actionLabel: 'Inspect account',
         createdAt: lead.sent_at,
       }))
@@ -192,10 +222,16 @@ export async function listGtmWorkItems(
 
     if ((lead.relevance_score ?? 0) >= 8) {
       items.push(leadItem('new_opportunity', lead, account, {
-        priority: 62 + Math.min(18, (lead.relevance_score ?? 0) * 2),
-        title: `High-fit account: ${lead.target_company}`,
-        body: lead.relevance_reason ?? 'New high-fit account surfaced by GTM sourcing.',
+        priority: 62 + Math.min(18, (lead.relevance_score ?? 0) * 2) + signalBoost,
+        title: `In-market account: ${lead.target_company}`,
+        body: signalIntel
+          ? `${signalIntel.event.event_type} movement scored ${signalIntel.weighted_score}/100.`
+          : lead.relevance_reason ?? 'New high-fit account surfaced by Bombsell.',
         actionLabel: 'Inspect account',
+        metadata: {
+          ...(signalIntel ? { signal_intelligence: signalIntel } : {}),
+          ...(outreachPlan ? { outreach_plan: outreachPlan.plan, outreach_plan_status: outreachPlan.status, outreach_plan_confidence: outreachPlan.confidence } : {}),
+        },
       }))
     }
   }
@@ -208,16 +244,16 @@ export async function listGtmWorkItems(
       type: 'policy_blocked',
       status: decision.decision === 'blocked' ? 'blocked' : 'waiting',
       priority: decision.decision === 'blocked' ? 88 : 72,
-      title: `${decision.action_type.replace(/_/g, ' ')} ${decision.decision}`,
-      body: (decision.reasons ?? []).join(', ') || 'Policy requires review before execution.',
+      title: `Guardrail ${decision.decision}`,
+      body: (decision.reasons ?? []).join(', ') || 'A safety rule requires review before execution.',
       account_name: lead?.target_company ?? 'Workspace policy',
       account_domain: lead?.company_domain ?? null,
       lead_id: lead?.id ?? decision.lead_id,
       account_id: account?.id ?? null,
       workflow_run_id: null,
       policy_decision_id: decision.id,
-      action_label: 'Inspect policy',
-      source: 'policy',
+      action_label: 'Review guardrail',
+      source: 'guardrail',
       created_at: decision.decided_at,
       account_state_url: account ? `/api/gtm/accounts/${account.id}/state` : null,
       metadata: decision.metadata ?? {},
@@ -233,16 +269,16 @@ export async function listGtmWorkItems(
       type: run.status === 'failed' ? 'workflow_failed' : 'workflow_waiting',
       status: run.status === 'failed' ? 'blocked' : 'waiting',
       priority: run.status === 'failed' ? 92 : 58,
-      title: `${run.workflow_type.replace(/_/g, ' ')} ${run.status}`,
-      body: run.error_message ?? (run.current_step ? `Current step: ${run.current_step}` : 'Workflow is active.'),
-      account_name: lead?.target_company ?? 'Workflow',
+      title: `Account work ${run.status}`,
+      body: run.error_message ?? (run.current_step ? `Current step: ${run.current_step.replace(/_/g, ' ')}` : 'Account work is active.'),
+      account_name: lead?.target_company ?? 'Account agent',
       account_domain: lead?.company_domain ?? null,
       lead_id: lead?.id ?? leadId,
       account_id: account?.id ?? null,
       workflow_run_id: run.id,
       policy_decision_id: null,
-      action_label: run.status === 'failed' ? 'Review failure' : 'Inspect run',
-      source: 'workflow',
+      action_label: run.status === 'failed' ? 'Review issue' : 'Inspect',
+      source: 'agent',
       created_at: run.started_at,
       account_state_url: account ? `/api/gtm/accounts/${account.id}/state` : null,
       metadata: { workflow_type: run.workflow_type, current_step: run.current_step },
@@ -267,6 +303,7 @@ function leadItem(
     actionLabel: string
     status?: GtmWorkItem['status']
     createdAt?: string
+    metadata?: Record<string, unknown>
   },
 ): GtmWorkItem {
   return {
@@ -291,6 +328,7 @@ function leadItem(
       contact_email: lead.contact_email,
       contact_name: lead.contact_name,
       contact_title: lead.contact_title,
+      ...(options.metadata ?? {}),
     },
   }
 }
@@ -331,8 +369,45 @@ function dedupeItems(items: GtmWorkItem[]): GtmWorkItem[] {
   return result
 }
 
+async function optionalRows<T>(query: PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<{ rows: T[] }> {
+  const result = await query
+  if (result.error) {
+    console.error('[gtm-work-items] optional table query failed:', result.error.message)
+    return { rows: [] }
+  }
+  return { rows: result.data ?? [] }
+}
+
+function latestPlanByLead(rows: OutreachPlanRow[]): Map<string, OutreachPlanRow> {
+  const map = new Map<string, OutreachPlanRow>()
+  for (const row of rows) {
+    if (!row.lead_id || map.has(row.lead_id)) continue
+    map.set(row.lead_id, row)
+  }
+  return map
+}
+
 function normalizeKey(value: string): string {
   return value.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[^a-z0-9.]+/g, '').trim()
+}
+
+function getLeadSignalIntelligence(lead: LeadRow) {
+  const snapshot = normalizeLeadFeedSnapshot(lead.feed_snapshot)
+  const companyName = normalizeEntityName(lead.target_company)
+  if (!snapshot || !companyName) return null
+  const domain = normalizeDomain(lead.company_domain ?? snapshot.company_domain ?? null)
+  return buildSignalIntelligence({
+    leadId: lead.id,
+    accountKey: accountKey({ name: companyName, domain }),
+    targetCompany: companyName,
+    companyDomain: domain,
+    relevanceScore: lead.relevance_score,
+    relevanceReason: lead.relevance_reason,
+    contactEmail: lead.contact_email,
+    contactVerified: lead.contact_verified,
+    createdAt: lead.created_at,
+    snapshot,
+  })
 }
 
 function scopedQuery<T extends { eq: (column: string, value: string) => T; is: (column: string, value: null) => T }>(
