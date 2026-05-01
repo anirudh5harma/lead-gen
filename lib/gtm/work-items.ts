@@ -169,11 +169,11 @@ export async function listGtmWorkItems(
     if (lead.status === 'drafted' || (lead.is_unlocked === true && Boolean(lead.contact_email) && !lead.sent_at)) {
       items.push(leadItem('needs_approval', lead, account, {
         priority: 78 + Math.min(12, Math.max(0, (lead.relevance_score ?? 0) - 7) * 3),
-        title: `Approve outreach for ${lead.target_company}`,
+        title: `Review outreach for ${lead.target_company}`,
         body: lead.contact_email
-          ? `${lead.contact_email} is ready for a policy-safe send.`
+          ? `${lead.contact_email} is ready for workflow-safe sending.`
           : lead.relevance_reason ?? 'This account is ready for human review.',
-        actionLabel: 'Approve send',
+        actionLabel: 'Review',
       }))
       continue
     }

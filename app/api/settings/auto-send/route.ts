@@ -44,46 +44,9 @@ export async function GET() {
   if (policyRes.error) return NextResponse.json({ error: policyRes.error.message }, { status: 500 })
   if (accountsRes.error) return NextResponse.json({ error: accountsRes.error.message }, { status: 500 })
 
-  let sessionQuery = supabase
-    .from('leads')
-    .select('feed_session_id, feed_session_label, feed_session_started_at, created_at, status')
-    .eq('user_id', user.id)
-    .eq('origin', 'explore')
-    .neq('status', 'dismissed')
-    .not('feed_session_id', 'is', null)
-    .order('feed_session_started_at', { ascending: false, nullsFirst: false })
-    .limit(250)
-  sessionQuery = activeClientId ? sessionQuery.eq('client_id', activeClientId) : sessionQuery.is('client_id', null)
-  const sessionsRes = await sessionQuery
-  if (sessionsRes.error) return NextResponse.json({ error: sessionsRes.error.message }, { status: 500 })
-
-  const sessionMap = new Map<string, {
-    id: string
-    label: string
-    started_at: string
-    lead_count: number
-  }>()
-  for (const row of sessionsRes.data ?? []) {
-    const sessionId = (row as { feed_session_id?: string | null }).feed_session_id
-    if (!sessionId) continue
-    const startedAt = (row as { feed_session_started_at?: string | null }).feed_session_started_at ?? row.created_at
-    const existing = sessionMap.get(sessionId)
-    if (existing) {
-      existing.lead_count += 1
-      continue
-    }
-    sessionMap.set(sessionId, {
-      id: sessionId,
-      label: (row as { feed_session_label?: string | null }).feed_session_label ?? `Batch session · ${new Date(startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-      started_at: startedAt,
-      lead_count: 1,
-    })
-  }
-
   return NextResponse.json({
     policy: normalizeAutoSendPolicy(policyRes.data ?? null),
     accounts: accountsRes.data ?? [],
-    explore_sessions: [...sessionMap.values()],
   })
 }
 

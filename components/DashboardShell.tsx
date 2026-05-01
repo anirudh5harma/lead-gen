@@ -9,7 +9,7 @@ import type { Lead } from '@/lib/leads'
 import Sidebar from './Sidebar'
 import WatchlistManager from './WatchlistManager'
 
-type View = 'command' | 'automation' | 'mcp' | 'settings'
+type View = 'command' | 'automation' | 'signals' | 'accounts' | 'mcp' | 'settings'
 
 interface UserProfile {
   company_name: string
@@ -122,9 +122,70 @@ interface GtmWorkItem {
   account_state_url: string | null
 }
 
+interface SignalQualitySnapshot {
+  totals: { signals: number; high_quality: number; weak: number; with_outcome: number }
+  by_type: Array<{ key: string; count: number; avg_quality: number; outcomes: Record<string, number> }>
+  by_source: Array<{ key: string; count: number; avg_quality: number; outcomes: Record<string, number> }>
+  signals: Array<{
+    id: string
+    account_id: string | null
+    lead_id: string | null
+    account_name: string
+    account_domain: string | null
+    signal_type: string
+    headline: string
+    summary: string | null
+    source_name: string | null
+    source_url: string | null
+    published_at: string | null
+    observed_at: string
+    confidence: number
+    relevance_score: number
+    quality_score: number
+    outcome: string
+    reason: string
+  }>
+}
+
+interface AccountMemoryListItem {
+  id: string
+  name: string
+  domain: string | null
+  lifecycle_stage: string
+  source_kind: string | null
+  first_seen_at: string
+  last_seen_at: string
+  counts: { signals: number; memories: number; touchpoints: number; leads: number }
+  outcomes: { sent: number; replied: number; booked: number }
+}
+
+interface AccountStateSnapshot {
+  account: {
+    id: string
+    name: string
+    domain: string | null
+    website_url?: string | null
+    lifecycle_stage: string
+    source_kind?: string | null
+    first_seen_at: string
+    last_seen_at: string
+  }
+  people: Array<{ id: string; email: string | null; name: string | null; title: string | null; verified: boolean | null; last_seen_at: string }>
+  signals: Array<{ id: string; signal_type: string; headline: string; summary: string | null; source_name: string | null; source_url: string | null; observed_at: string; confidence: number }>
+  touchpoints: Array<{ id: string; type: string; status: string; subject: string | null; body_preview: string | null; occurred_at: string }>
+  memories: Array<{ id: string; memory_type: string; content: string; source: string; confidence: number; observed_at: string }>
+  leads: Array<{ id: string; target_company: string; relevance_score: number; relevance_reason: string | null; status: string; created_at: string; sent_at: string | null; replied_at: string | null; booked_at: string | null }>
+  workflow_runs: Array<{ id: string; workflow_type: string; status: string; current_step: string | null; started_at: string; error_message: string | null }>
+  policy_decisions: Array<{ id: string; policy_name: string; action_type: string; decision: string; reasons: string[]; decided_at: string }>
+  next_actions: Array<{ type: string; label: string; reason: string; priority: number; lead_id?: string }>
+  state_health: { memory_count: number; signal_count: number; person_count: number; touchpoint_count: number; last_seen_at: string }
+}
+
 const VIEW_TITLES: Record<View, string> = {
   command:   'Work Inbox',
   automation: 'Workflow Runtime',
+  signals:   'Signal Quality',
+  accounts:  'Account Memory',
   mcp:       'Agent API',
   settings:  'Settings',
 }
@@ -134,7 +195,7 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userP
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const requestedView = params.get('view')
-      if (requestedView === 'command' || requestedView === 'automation' || requestedView === 'mcp' || requestedView === 'settings') {
+      if (requestedView === 'command' || requestedView === 'automation' || requestedView === 'signals' || requestedView === 'accounts' || requestedView === 'mcp' || requestedView === 'settings') {
         return requestedView
       }
     }
@@ -245,8 +306,10 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userP
                 {VIEW_TITLES[activeView]}
               </h1>
               <p className="text-[11px] text-[var(--color-text-3)] truncate">
-                {activeView === 'command' && 'AI-native GTM Infrastructure: account work, memory, workflows, and safe execution'}
+                {activeView === 'command' && 'Find the right accounts. Move the work safely.'}
                 {activeView === 'automation' && 'Durable workflow policies, source selection, inbox rotation, and pacing'}
+                {activeView === 'signals' && 'Captured account movement, quality scoring, source feedback, and signal outcomes'}
+                {activeView === 'accounts' && 'Durable account graph, memory, signals, touchpoints, and next actions'}
                 {activeView === 'mcp' && 'Programmable account state, work items, memory, and safe GTM tools'}
                 {activeView === 'settings' && 'Memory inputs, integrations, inboxes, policies, credits, and guardrails'}
               </p>
@@ -311,6 +374,12 @@ export default function DashboardShell({ initialLeads, initialAgentEvents, userP
             {activeView === 'automation' && (
               <AutomationPanel />
             )}
+            {activeView === 'signals' && (
+              <SignalQualityPanel />
+            )}
+            {activeView === 'accounts' && (
+              <AccountMemoryPanel />
+            )}
             {activeView === 'mcp' && (
               <McpPanel />
             )}
@@ -349,6 +418,31 @@ function MiniStat({ value, label }: { value: number; label: string }) {
   )
 }
 
+function TabLoadingState({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="space-y-4">
+      <section className="card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-5">
+          <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)]" />
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h2>
+            <p className="mt-1 text-xs text-[var(--color-text-4)]">{detail}</p>
+          </div>
+        </div>
+      </section>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="h-28 animate-pulse rounded-3xl border border-[var(--color-line-1)] bg-white" />
+        ))}
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_380px]">
+        <div className="h-80 animate-pulse rounded-3xl border border-[var(--color-line-1)] bg-white" />
+        <div className="h-80 animate-pulse rounded-3xl border border-[var(--color-line-1)] bg-white" />
+      </div>
+    </div>
+  )
+}
+
 function CommandCenter({
   leads,
   events,
@@ -361,12 +455,15 @@ function CommandCenter({
   onNavigate: (view: View) => void
 }) {
   const [autopilot, setAutopilot] = useState<AutopilotStatus | null>(null)
+  const [autopilotLoaded, setAutopilotLoaded] = useState(false)
   const [autopilotBusy, setAutopilotBusy] = useState(false)
   const [autopilotMessage, setAutopilotMessage] = useState<string | null>(null)
   const [opsSnapshot, setOpsSnapshot] = useState<GtmOpsSnapshot | null>(null)
   const [opsError, setOpsError] = useState<string | null>(null)
+  const [opsLoaded, setOpsLoaded] = useState(false)
   const [workItems, setWorkItems] = useState<GtmWorkItem[]>([])
   const [workItemsError, setWorkItemsError] = useState<string | null>(null)
+  const [workItemsLoaded, setWorkItemsLoaded] = useState(false)
   const [now] = useState(() => Date.now())
   const [todayKey] = useState(() => new Date().toISOString().slice(0, 10))
   const lastSevenDays = now - 7 * 24 * 60 * 60 * 1000
@@ -385,8 +482,17 @@ function CommandCenter({
     let cancelled = false
     fetch('/api/autopilot', { cache: 'no-store' })
       .then(res => res.json() as Promise<AutopilotStatus>)
-      .then(data => { if (!cancelled) setAutopilot(data) })
-      .catch(() => { if (!cancelled) setAutopilotMessage('Unable to load autopilot status.') })
+      .then(data => {
+        if (cancelled) return
+        setAutopilot(data)
+        setAutopilotLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAutopilotMessage('Unable to load autopilot status.')
+          setAutopilotLoaded(true)
+        }
+      })
     return () => { cancelled = true }
   }, [])
 
@@ -398,12 +504,17 @@ function CommandCenter({
         if (cancelled) return
         if (!res.ok || !data) {
           setOpsError(data?.error ?? 'Unable to load GTM infrastructure trace.')
+          setOpsLoaded(true)
           return
         }
         setOpsSnapshot(data)
+        setOpsLoaded(true)
       })
       .catch(() => {
-        if (!cancelled) setOpsError('Unable to load GTM infrastructure trace.')
+        if (!cancelled) {
+          setOpsError('Unable to load GTM infrastructure trace.')
+          setOpsLoaded(true)
+        }
       })
     return () => { cancelled = true }
   }, [])
@@ -416,12 +527,17 @@ function CommandCenter({
         if (cancelled) return
         if (!res.ok || !data) {
           setWorkItemsError(data?.error ?? 'Unable to load work items.')
+          setWorkItemsLoaded(true)
           return
         }
         setWorkItems(data.work_items ?? [])
+        setWorkItemsLoaded(true)
       })
       .catch(() => {
-        if (!cancelled) setWorkItemsError('Unable to load work items.')
+        if (!cancelled) {
+          setWorkItemsError('Unable to load work items.')
+          setWorkItemsLoaded(true)
+        }
       })
     return () => { cancelled = true }
   }, [])
@@ -455,29 +571,13 @@ function CommandCenter({
     }
   }, [])
 
+  const commandLoaded = autopilotLoaded && opsLoaded && workItemsLoaded
+  if (!commandLoaded) {
+    return <TabLoadingState title="Loading Live Autopilot" detail="Fetching runtime status, work inbox, infrastructure trace, and observatory events." />
+  }
+
   return (
     <div className="space-y-4">
-      <section className="overflow-hidden rounded-[18px] border border-[var(--color-line-1)] bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_42%,#f6eee7_100%)] shadow-[0_18px_60px_-40px_#1d2b4f44]">
-        <div className="grid gap-6 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div>
-            <span className="inline-flex rounded-full border border-[var(--color-accent)]/20 bg-[var(--color-accent-bg)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-accent-ring)]">
-              AI-native GTM Infrastructure
-            </span>
-            <h2 className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-[var(--color-text-1)]">
-              Find the right accounts. Move the work safely.
-            </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-3)]">
-              Live Autopilot monitors signals, prepares work, and respects your inbox and approval guardrails.
-            </p>
-          </div>
-          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-[var(--color-line-1)] bg-white/75 p-3">
-            <MiniStat label="Open work" value={workItems.filter(item => item.status === 'open').length} />
-            <MiniStat label="Blocked" value={workItems.filter(item => item.status === 'blocked').length} />
-            <MiniStat label="Memory" value={opsSnapshot?.memories.length ?? 0} />
-          </div>
-        </div>
-      </section>
-
       <LiveAutopilotControl
         profile={profile}
         status={autopilot}
@@ -492,13 +592,13 @@ function CommandCenter({
         <OutcomeCard label="Sent today" value={sentToday} detail={`${sent.length} total sent`} tone="neutral" />
         <OutcomeCard label="Replies" value={replies.length} detail={`${replyRate}% reply rate`} tone="reply" />
         <OutcomeCard label="Booked" value={booked.length} detail="Meetings marked booked" tone="booked" />
-        <OutcomeCard label="Needs approval" value={approvals.length} detail="Drafts or ready leads" tone="approval" />
+        <OutcomeCard label="Needs review" value={approvals.length} detail="Drafts or ready leads" tone="approval" />
       </div>
 
       <GtmInfrastructureTrace snapshot={opsSnapshot} error={opsError} />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_380px]">
-        <WorkInboxPanel items={workItems} error={workItemsError} fallbackApprovals={approvals.slice(0, 4)} />
+        <WorkInboxPanel items={workItems} error={workItemsError} fallbackApprovals={approvals.slice(0, 4)} onNavigate={onNavigate} />
 
         <ObservatoryPanel snapshot={opsSnapshot} workItems={workItems} events={activeEvents} />
       </div>
@@ -514,10 +614,12 @@ function WorkInboxPanel({
   items,
   error,
   fallbackApprovals,
+  onNavigate,
 }: {
   items: GtmWorkItem[]
   error: string | null
   fallbackApprovals: Lead[]
+  onNavigate: (view: View) => void
 }) {
   const [openItemId, setOpenItemId] = useState<string | null>(null)
   const [busyItemId, setBusyItemId] = useState<string | null>(null)
@@ -530,15 +632,17 @@ function WorkInboxPanel({
         type: 'needs_approval',
         status: 'open' as const,
         priority: lead.relevance_score ?? 0,
-        title: `Approve outreach for ${lead.target_company}`,
-        body: lead.contact_email ?? lead.relevance_reason ?? 'Ready for review.',
+        title: `Review outreach for ${lead.target_company}`,
+        body: lead.contact_email
+          ? `${lead.contact_email} is ready for workflow-safe sending.`
+          : lead.relevance_reason ?? 'Ready for review.',
         account_name: lead.target_company,
         account_domain: lead.company_domain ?? null,
         lead_id: lead.id,
         account_id: null,
         workflow_run_id: null,
         policy_decision_id: null,
-        action_label: 'Approve send',
+        action_label: 'Review',
         source: lead.origin ?? 'lead',
         created_at: lead.created_at,
         account_state_url: null,
@@ -576,7 +680,7 @@ function WorkInboxPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line-1)] px-5 py-4">
         <div>
           <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Agent Work Inbox</h3>
-          <p className="mt-1 text-xs text-[var(--color-text-4)]">Approvals, replies, booked meetings, policy blocks, and workflow recovery.</p>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">Review-ready outreach, replies, booked meetings, policy blocks, and workflow recovery.</p>
         </div>
         <MetricChip value={displayItems.length} label="Items" accent={displayItems.some(item => item.status === 'blocked')} />
       </div>
@@ -629,10 +733,16 @@ function WorkInboxPanel({
                     {item.workflow_run_id && <p><span className="font-medium text-[var(--color-text-1)]">Workflow:</span> {item.workflow_run_id.slice(0, 8)}</p>}
                     {item.policy_decision_id && <p><span className="font-medium text-[var(--color-text-1)]">Policy:</span> {item.policy_decision_id.slice(0, 8)}</p>}
                   </div>
+                  <OutreachPlanCard item={item} />
                   <div className="mt-4 flex flex-wrap gap-2">
                     {item.lead_id && (
                       <button onClick={() => updateLeadStatus(item, 'viewed')} disabled={busyItemId === item.id} className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)] disabled:opacity-50">
-                        Mark viewed
+                        Mark reviewed
+                      </button>
+                    )}
+                    {item.type === 'needs_approval' && (
+                      <button onClick={() => onNavigate('automation')} className="rounded-full btn-primary px-3 py-1.5 text-[11px] font-medium">
+                        Configure sending
                       </button>
                     )}
                     {item.lead_id && item.type === 'reply_detected' && (
@@ -645,11 +755,6 @@ function WorkInboxPanel({
                         Dismiss
                       </button>
                     )}
-                    {item.account_state_url && (
-                      <a href={item.account_state_url} target="_blank" rel="noreferrer" className="rounded-full border border-[var(--color-line-2)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-1)]">
-                        Account state
-                      </a>
-                    )}
                   </div>
                 </div>
               )}
@@ -659,6 +764,61 @@ function WorkInboxPanel({
       )}
     </section>
   )
+}
+
+function OutreachPlanCard({ item }: { item: GtmWorkItem }) {
+  const plan = buildOutreachPlan(item)
+  if (!plan) return null
+
+  return (
+    <div className="mt-4 rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Outreach Plan</p>
+        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-4)]">{plan.safety}</span>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <PlanFact label="Trigger" value={plan.trigger} />
+        <PlanFact label="Persona" value={plan.persona} />
+        <PlanFact label="Angle" value={plan.angle} />
+      </div>
+    </div>
+  )
+}
+
+function PlanFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{label}</p>
+      <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-2)]">{value}</p>
+    </div>
+  )
+}
+
+function buildOutreachPlan(item: GtmWorkItem): { trigger: string; persona: string; angle: string; safety: string } | null {
+  if (!['needs_approval', 'new_opportunity', 'policy_blocked'].includes(item.type)) return null
+  const type = item.type.replace(/_/g, ' ')
+  const trigger = item.body || `${type} surfaced for ${item.account_name}.`
+  const persona = inferPersona(item)
+  const safety = item.status === 'blocked'
+    ? 'Policy review required'
+    : item.lead_id
+      ? 'Guardrails required before send'
+      : 'Research only'
+  return {
+    trigger,
+    persona,
+    angle: `Tie the outreach to the recent ${type} and the account-specific fit reason. Avoid generic claims.`,
+    safety,
+  }
+}
+
+function inferPersona(item: GtmWorkItem): string {
+  const text = `${item.title} ${item.body}`.toLowerCase()
+  if (text.includes('security') || text.includes('compliance') || text.includes('regulation')) return 'Security, risk, or compliance owner'
+  if (text.includes('hiring') || text.includes('people') || text.includes('talent')) return 'People, talent, or department leader'
+  if (text.includes('funding') || text.includes('growth') || text.includes('expansion')) return 'Growth, operations, or revenue leader'
+  if (text.includes('product') || text.includes('launch')) return 'Product, growth, or GTM leader'
+  return 'Relevant functional owner for the trigger'
 }
 
 function ObservatoryPanel({
@@ -952,6 +1112,351 @@ function outcomeTime(lead: Lead): number {
   return new Date(lead.booked_at ?? lead.replied_at ?? lead.sent_at ?? lead.created_at).getTime()
 }
 
+function SignalQualityPanel() {
+  const [snapshot, setSnapshot] = useState<SignalQualitySnapshot | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/gtm/signal-quality?limit=80', { cache: 'no-store' })
+      .then(async res => {
+        const data = await res.json().catch(() => null) as (SignalQualitySnapshot & { error?: string }) | null
+        if (cancelled) return
+        if (!res.ok || !data) {
+          setError(data?.error ?? 'Unable to load signal quality.')
+          return
+        }
+        setSnapshot(data)
+      })
+      .catch(() => {
+        if (!cancelled) setError('Unable to load signal quality.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!snapshot && !error) {
+    return <TabLoadingState title="Loading Signal Quality" detail="Fetching captured signals, source feedback, account matches, and outcomes." />
+  }
+
+  if (error) return <PanelError title="Signal Quality" message={error} />
+
+  const signals = snapshot?.signals ?? []
+  const topTypes = snapshot?.by_type.slice(0, 4) ?? []
+  const topSources = snapshot?.by_source.slice(0, 4) ?? []
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <OutcomeCard label="Captured" value={snapshot?.totals.signals ?? 0} detail="Recent graph signals" tone="neutral" />
+        <OutcomeCard label="High quality" value={snapshot?.totals.high_quality ?? 0} detail="Quality score 70+" tone="booked" />
+        <OutcomeCard label="With outcome" value={snapshot?.totals.with_outcome ?? 0} detail="Sent, replied, or booked" tone="reply" />
+        <OutcomeCard label="Weak" value={snapshot?.totals.weak ?? 0} detail="Needs source or scoring review" tone="approval" />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SignalAggregateCard title="Signal Types" rows={topTypes} />
+        <SignalAggregateCard title="Sources" rows={topSources} />
+      </div>
+
+      <section className="card overflow-hidden">
+        <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Signal Review Queue</h2>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">Signals are ranked by confidence, account fit, and historical outcome feedback.</p>
+        </div>
+        {signals.length === 0 ? (
+          <div className="px-5 py-10 text-center text-xs text-[var(--color-text-4)]">No captured signals yet.</div>
+        ) : (
+          <div className="divide-y divide-[var(--color-line-1)]">
+            {signals.map(signal => (
+              <div key={signal.id} className="grid gap-3 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_180px]">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-3)]">{signal.signal_type.replace(/_/g, ' ')}</span>
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-4)]">{signal.source_name ?? 'source'}</span>
+                    <span className="text-[10px] text-[var(--color-text-4)]">{formatShortDate(signal.observed_at)}</span>
+                  </div>
+                  <p className="mt-2 truncate text-[13px] font-semibold text-[var(--color-text-1)]">{signal.headline}</p>
+                  <p className="mt-1 line-clamp-2 text-[11.5px] leading-5 text-[var(--color-text-3)]">{signal.reason}</p>
+                  <p className="mt-2 text-[10.5px] text-[var(--color-text-4)]">{signal.account_name}{signal.account_domain ? ` · ${signal.account_domain}` : ''}</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center lg:grid-cols-1 lg:text-right">
+                  <ScorePill label="Quality" value={signal.quality_score} />
+                  <ScorePill label="Fit" value={signal.relevance_score * 10} />
+                  <span className="self-center rounded-full border border-[var(--color-line-1)] bg-white px-2 py-1 text-[10.5px] font-medium text-[var(--color-text-3)]">{signal.outcome}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function SignalAggregateCard({ title, rows }: { title: string; rows: SignalQualitySnapshot['by_type'] }) {
+  return (
+    <section className="card overflow-hidden">
+      <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+        <h2 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h2>
+      </div>
+      <div className="divide-y divide-[var(--color-line-1)]">
+        {rows.length === 0 ? (
+          <p className="px-5 py-6 text-xs text-[var(--color-text-4)]">No data yet.</p>
+        ) : rows.map(row => (
+          <div key={row.key} className="flex items-center justify-between gap-4 px-5 py-3">
+            <div>
+              <p className="text-[12.5px] font-semibold text-[var(--color-text-1)]">{row.key.replace(/_/g, ' ')}</p>
+              <p className="mt-0.5 text-[10.5px] text-[var(--color-text-4)]">{row.count} signals · {Object.keys(row.outcomes).join(', ') || 'no outcomes'}</p>
+            </div>
+            <ScorePill label="Avg" value={row.avg_quality} />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AccountMemoryPanel() {
+  const [accounts, setAccounts] = useState<AccountMemoryListItem[]>([])
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  const [accountState, setAccountState] = useState<AccountStateSnapshot | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/gtm/accounts?limit=50', { cache: 'no-store' })
+      .then(async res => {
+        const data = await res.json().catch(() => null) as { accounts?: AccountMemoryListItem[]; error?: string } | null
+        if (cancelled) return
+        if (!res.ok || !data) {
+          setError(data?.error ?? 'Unable to load accounts.')
+          setLoaded(true)
+          return
+        }
+        const nextAccounts = data.accounts ?? []
+        setAccounts(nextAccounts)
+        setSelectedAccountId(nextAccounts[0]?.id ?? null)
+        setLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError('Unable to load accounts.')
+          setLoaded(true)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedAccountId) return
+    let cancelled = false
+    fetch(`/api/gtm/accounts/${selectedAccountId}/state`, { cache: 'no-store' })
+      .then(async res => {
+        const data = await res.json().catch(() => null) as (AccountStateSnapshot & { error?: string }) | null
+        if (cancelled) return
+        if (!res.ok || !data) {
+          setError(data?.error ?? 'Unable to load account state.')
+          return
+        }
+        setAccountState(data)
+      })
+      .catch(() => {
+        if (!cancelled) setError('Unable to load account state.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedAccountId])
+
+  if (!loaded) {
+    return <TabLoadingState title="Loading Account Memory" detail="Fetching account graph, memories, signals, touchpoints, and next actions." />
+  }
+
+  if (error && accounts.length === 0) return <PanelError title="Account Memory" message={error} />
+
+  const stateLoading = Boolean(selectedAccountId && accountState?.account.id !== selectedAccountId)
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <section className="card overflow-hidden">
+        <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Accounts</h2>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">{accounts.length} memory-backed accounts</p>
+        </div>
+        <div className="max-h-[720px] divide-y divide-[var(--color-line-1)] overflow-y-auto">
+          {accounts.length === 0 ? (
+            <p className="px-5 py-8 text-center text-xs text-[var(--color-text-4)]">No account memory yet.</p>
+          ) : accounts.map(account => (
+            <button
+              key={account.id}
+              onClick={() => setSelectedAccountId(account.id)}
+              className={`w-full px-5 py-4 text-left transition-colors hover:bg-[var(--color-ink-2)] ${selectedAccountId === account.id ? 'bg-[var(--color-accent-bg)]' : ''}`}
+            >
+              <p className="truncate text-[13px] font-semibold text-[var(--color-text-1)]">{account.name}</p>
+              <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-4)]">{account.domain ?? account.lifecycle_stage}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <SmallCount label="sig" value={account.counts.signals} />
+                <SmallCount label="mem" value={account.counts.memories} />
+                <SmallCount label="touch" value={account.counts.touchpoints} />
+                {account.outcomes.booked > 0 && <SmallCount label="booked" value={account.outcomes.booked} accent />}
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="card min-h-[520px] overflow-hidden">
+        {stateLoading ? (
+          <div className="p-5">
+            <div className="h-32 animate-pulse rounded-2xl bg-[var(--color-ink-2)]" />
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="h-48 animate-pulse rounded-2xl bg-[var(--color-ink-2)]" />
+              <div className="h-48 animate-pulse rounded-2xl bg-[var(--color-ink-2)]" />
+            </div>
+          </div>
+        ) : accountState ? (
+          <AccountStateDetail state={accountState} />
+        ) : (
+          <div className="px-5 py-12 text-center text-xs text-[var(--color-text-4)]">Select an account to inspect memory.</div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function AccountStateDetail({ state }: { state: AccountStateSnapshot }) {
+  return (
+    <div>
+      <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight text-[var(--color-text-1)]">{state.account.name}</h2>
+            <p className="mt-1 text-xs text-[var(--color-text-4)]">{state.account.domain ?? 'No domain'} · Last seen {formatShortDate(state.account.last_seen_at)}</p>
+          </div>
+          <span className="rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[10px] font-medium text-[var(--color-text-3)]">{state.account.lifecycle_stage}</span>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-4">
+          <MiniStat label="Signals" value={state.state_health.signal_count} />
+          <MiniStat label="Memories" value={state.state_health.memory_count} />
+          <MiniStat label="People" value={state.state_health.person_count} />
+          <MiniStat label="Touches" value={state.state_health.touchpoint_count} />
+        </div>
+      </div>
+
+      <div className="grid divide-y divide-[var(--color-line-1)] lg:grid-cols-[minmax(0,1fr)_340px] lg:divide-x lg:divide-y-0">
+        <div className="space-y-5 p-5">
+          <AccountSection title="Next Actions">
+            {state.next_actions.length === 0 ? (
+              <EmptyLine>No recommended action.</EmptyLine>
+            ) : state.next_actions.map(action => (
+              <div key={`${action.type}:${action.lead_id ?? action.reason}`} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[12.5px] font-semibold text-[var(--color-text-1)]">{action.label}</p>
+                  <span className="text-[10px] text-[var(--color-text-4)]">P{action.priority}</span>
+                </div>
+                <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-3)]">{action.reason}</p>
+              </div>
+            ))}
+          </AccountSection>
+
+          <AccountSection title="Signal Timeline">
+            {state.signals.length === 0 ? (
+              <EmptyLine>No signals recorded.</EmptyLine>
+            ) : state.signals.slice(0, 8).map(signal => (
+              <TimelineItem key={signal.id} title={signal.headline} meta={`${signal.signal_type} · ${formatShortDate(signal.observed_at)}`} body={signal.summary ?? signal.source_name ?? 'Signal captured.'} />
+            ))}
+          </AccountSection>
+        </div>
+
+        <div className="space-y-5 p-5">
+          <AccountSection title="Memory">
+            {state.memories.length === 0 ? (
+              <EmptyLine>No memory recorded.</EmptyLine>
+            ) : state.memories.slice(0, 6).map(memory => (
+              <TimelineItem key={memory.id} title={memory.memory_type.replace(/_/g, ' ')} meta={`${Math.round(memory.confidence * 100)}% · ${memory.source}`} body={memory.content} />
+            ))}
+          </AccountSection>
+
+          <AccountSection title="People">
+            {state.people.length === 0 ? (
+              <EmptyLine>No people recorded.</EmptyLine>
+            ) : state.people.slice(0, 6).map(person => (
+              <div key={person.id} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-3">
+                <p className="truncate text-[12.5px] font-semibold text-[var(--color-text-1)]">{person.name ?? person.email ?? 'Unknown contact'}</p>
+                <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-4)]">{person.title ?? 'No title'}{person.verified ? ' · verified' : ''}</p>
+              </div>
+            ))}
+          </AccountSection>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AccountSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{title}</h3>
+      <div className="space-y-2">{children}</div>
+    </div>
+  )
+}
+
+function TimelineItem({ title, meta, body }: { title: string; meta: string; body: string }) {
+  return (
+    <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-3">
+      <p className="line-clamp-1 text-[12.5px] font-semibold text-[var(--color-text-1)]">{title}</p>
+      <p className="mt-0.5 text-[10.5px] text-[var(--color-text-4)]">{meta}</p>
+      <p className="mt-1 line-clamp-2 text-[11.5px] leading-5 text-[var(--color-text-3)]">{body}</p>
+    </div>
+  )
+}
+
+function SmallCount({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] ${accent ? 'bg-[var(--color-accent)] text-white' : 'bg-white text-[var(--color-text-4)]'}`}>
+      {value} {label}
+    </span>
+  )
+}
+
+function ScorePill({ label, value }: { label: string; value: number }) {
+  const rounded = Math.round(value)
+  const tone = rounded >= 70
+    ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+    : rounded >= 45
+      ? 'bg-[#fff4df] text-[#936014]'
+      : 'bg-red-50 text-red-600'
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-[10.5px] font-semibold ${tone}`}>
+      {label} {rounded}
+    </span>
+  )
+}
+
+function EmptyLine({ children }: { children: React.ReactNode }) {
+  return <p className="rounded-2xl border border-dashed border-[var(--color-line-2)] px-4 py-6 text-center text-xs text-[var(--color-text-4)]">{children}</p>
+}
+
+function PanelError({ title, message }: { title: string; message: string }) {
+  return (
+    <section className="card px-5 py-5">
+      <h2 className="text-sm font-semibold text-[var(--color-text-1)]">{title}</h2>
+      <p className="mt-2 text-xs text-[var(--color-sig-regulation)]">{message}</p>
+    </section>
+  )
+}
+
+function formatShortDate(value: string | null | undefined): string {
+  if (!value) return 'Unknown'
+  return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 function McpPanel() {
   const [origin] = useState(() => (
     typeof window === 'undefined' ? 'https://your-bombsell-domain.com' : window.location.origin
@@ -1077,28 +1582,22 @@ const CREDIT_TOP_UPS = [
   { amount: 50, credits: 200 },
   { amount: 100, credits: 400 },
 ]
-interface BatchAutomationSession {
-  id: string
-  label: string
-  started_at: string
-  lead_count: number
-}
 
 function AutomationPanel() {
-  const [autoSend, setAutoSend] = useState(false)
   const [liveAutopilotOn, setLiveAutopilotOn] = useState(false)
   const [autoSendSaving, setAutoSendSaving] = useState(false)
   const [autoSendLoaded, setAutoSendLoaded] = useState(false)
   const [autoSendMsg, setAutoSendMsg] = useState<string | null>(null)
   const [autoSendAccounts, setAutoSendAccounts] = useState<AutoSendAccount[]>([])
   const [autoSendAccountId, setAutoSendAccountId] = useState<string | null>(null)
-  const [selectedBatchSessions, setSelectedBatchSessions] = useState<string[]>([])
-  const [batchSessions, setBatchSessions] = useState<BatchAutomationSession[]>([])
   const [autoSendRequireVerified, setAutoSendRequireVerified] = useState(true)
   const [autoSendMinScore, setAutoSendMinScore] = useState(7)
   const [autoSendMaxAge, setAutoSendMaxAge] = useState(30)
   const [dailySendLimit, setDailySendLimit] = useState(10)
   const [sendSpacing, setSendSpacing] = useState(15)
+  const [followups, setFollowups] = useState<PendingFollowup[]>([])
+  const [followupsLoaded, setFollowupsLoaded] = useState(false)
+  const [cancellingFollowupId, setCancellingFollowupId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1118,7 +1617,6 @@ function AutomationPanel() {
             min_minutes_between_sends?: number
           }
           accounts?: AutoSendAccount[]
-          explore_sessions?: BatchAutomationSession[]
         } | null
         if (cancelled || !data) return
         if (!res.ok) {
@@ -1128,16 +1626,13 @@ function AutomationPanel() {
         }
         const origins = data.policy?.target_origins ?? []
         setLiveAutopilotOn(Boolean(data.policy?.enabled && origins.includes('live')))
-        setAutoSend(Boolean(data.policy?.enabled && origins.includes('explore')))
         setAutoSendAccountId(data.policy?.connected_account_id ?? null)
-        setSelectedBatchSessions(data.policy?.target_explore_session_ids ?? [])
         setAutoSendRequireVerified(data.policy?.require_verified_contact !== false)
         setAutoSendMinScore(data.policy?.min_relevance_score ?? 7)
         setAutoSendMaxAge(data.policy?.max_lead_age_days ?? 30)
         setDailySendLimit(data.policy?.daily_send_limit ?? 10)
         setSendSpacing(data.policy?.min_minutes_between_sends ?? 15)
         setAutoSendAccounts(data.accounts ?? [])
-        setBatchSessions(data.explore_sessions ?? [])
         setAutoSendLoaded(true)
       })
       .catch(() => {
@@ -1152,6 +1647,33 @@ function AutomationPanel() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/leads/pending-followups', { cache: 'no-store' })
+      .then(r => r.json() as Promise<{ followups?: PendingFollowup[] }>)
+      .then(data => {
+        if (cancelled) return
+        setFollowups(data.followups ?? [])
+        setFollowupsLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) setFollowupsLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const cancelFollowup = useCallback(async (leadId: string, followupId: string) => {
+    setCancellingFollowupId(followupId)
+    try {
+      await fetch(`/api/leads/${leadId}/followup`, { method: 'DELETE' })
+      setFollowups(prev => prev.filter(followup => followup.id !== followupId))
+    } finally {
+      setCancellingFollowupId(null)
+    }
+  }, [])
+
   const saveAutoSend = useCallback(async () => {
     setAutoSendSaving(true)
     setAutoSendMsg(null)
@@ -1160,13 +1682,10 @@ function AutomationPanel() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          enabled: liveAutopilotOn || autoSend,
+          enabled: liveAutopilotOn,
           connected_account_id: autoSendAccountId,
-          target_origins: [
-            ...(liveAutopilotOn ? ['live' as const] : []),
-            ...(autoSend ? ['explore' as const] : []),
-          ],
-          target_explore_session_ids: selectedBatchSessions,
+          target_origins: liveAutopilotOn ? ['live' as const] : [],
+          target_explore_session_ids: [],
           require_verified_contact: autoSendRequireVerified,
           min_relevance_score: autoSendMinScore,
           max_lead_age_days: autoSendMaxAge,
@@ -1179,47 +1698,51 @@ function AutomationPanel() {
         setAutoSendMsg(data?.error ?? 'Failed to save workflow settings.')
         return
       }
-      setAutoSendMsg('Batch workflow saved')
+      setAutoSendMsg('Workflow runtime saved')
     } catch {
       setAutoSendMsg('Failed to save workflow settings.')
     } finally {
       setAutoSendSaving(false)
     }
-  }, [autoSend, liveAutopilotOn, autoSendAccountId, selectedBatchSessions, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge, dailySendLimit, sendSpacing])
+  }, [liveAutopilotOn, autoSendAccountId, autoSendRequireVerified, autoSendMinScore, autoSendMaxAge, dailySendLimit, sendSpacing])
+
+  if (!autoSendLoaded || !followupsLoaded) {
+    return <TabLoadingState title="Loading Workflow Runtime" detail="Fetching runtime policy, sending inboxes, safety controls, and scheduled follow-ups." />
+  }
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="w-full space-y-4">
       <div className="card divide-y divide-[var(--color-line-1)]">
         <div className="px-5 py-4 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Workflow Sources</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Live Workflow Runtime</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              Configure batch source automation, inbox rotation, caps, pacing, and contact safety.
+              Configure live-signal execution, inbox rotation, caps, pacing, and contact safety.
             </p>
           </div>
           <div className="flex items-center gap-3">
             <span className={`rounded-full px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] ${
-              autoSend
+              liveAutopilotOn
                 ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
                 : 'bg-[var(--color-ink-2)] text-[var(--color-text-4)]'
             }`}>
-              {autoSend ? 'On' : 'Off'}
+              {liveAutopilotOn ? 'On' : 'Off'}
             </span>
             <button
               role="switch"
-              aria-checked={autoSend}
+              aria-checked={liveAutopilotOn}
               disabled={autoSendSaving || !autoSendLoaded}
-              onClick={() => setAutoSend(enabled => !enabled)}
+              onClick={() => setLiveAutopilotOn(enabled => !enabled)}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
-                autoSend ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
+                liveAutopilotOn ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-2)] border-[var(--color-line-2)]'
               }`}
             >
-              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${autoSend ? 'translate-x-5' : 'translate-x-0'}`} />
+              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform mt-[-1px] ${liveAutopilotOn ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </div>
         </div>
         <div className={`px-5 py-4 space-y-5 transition-all duration-200 ${
-          autoSend ? 'opacity-100 saturate-100' : 'opacity-45 saturate-50'
+          liveAutopilotOn ? 'opacity-100 saturate-100' : 'opacity-60 saturate-75'
         }`}>
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="space-y-1">
@@ -1257,36 +1780,21 @@ function AutomationPanel() {
             <div className="space-y-2">
               <p className="text-xs font-medium text-[var(--color-text-1)]">Scope</p>
               <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
-                <p className="text-[12.5px] font-medium text-[var(--color-text-1)]">Selected Batch Sessions</p>
+                <p className="text-[12.5px] font-medium text-[var(--color-text-1)]">Live signal work</p>
                 <p className="mt-0.5 text-[11px] leading-5 text-[var(--color-text-4)]">
-                  Curated account sets generated outside live monitoring. Live autopilot stays {liveAutopilotOn ? 'on' : 'off'}.
+                  Runs on eligible unlocked leads from active monitoring. Batch session selection is not part of this MVP runtime.
                 </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium text-[var(--color-text-1)]">Batch sessions</p>
-              <div className="max-h-48 overflow-y-auto rounded-2xl border border-[var(--color-line-1)] bg-white p-2">
-                {batchSessions.length === 0 ? (
-                  <p className="px-2 py-3 text-[11px] text-[var(--color-text-4)]">No batch sessions yet.</p>
-                ) : batchSessions.map(session => {
-                  const checked = selectedBatchSessions.includes(session.id)
-                  return (
-                    <label key={session.id} className="flex items-start gap-3 rounded-xl px-2 py-2 hover:bg-[var(--color-ink-2)]">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={!autoSend}
-                        onChange={() => setSelectedBatchSessions(prev => checked ? prev.filter(id => id !== session.id) : [...prev, session.id])}
-                        className="mt-0.5 h-4 w-4 rounded border-[var(--color-line-2)]"
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate text-[12px] font-medium text-[var(--color-text-1)]">{session.label}</span>
-                        <span className="block text-[10.5px] text-[var(--color-text-4)]">{session.lead_count} leads · {new Date(session.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                      </span>
-                    </label>
-                  )
-                })}
+              <p className="text-xs font-medium text-[var(--color-text-1)]">Runtime order</p>
+              <div className="grid grid-cols-2 gap-2">
+                {['Monitor', 'Verify', 'Send', 'Stop on reply'].map(step => (
+                  <div key={step} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-3 text-[11.5px] font-medium text-[var(--color-text-2)]">
+                    {step}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -1314,17 +1822,17 @@ function AutomationPanel() {
           </div>
 
           <div className="rounded-2xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11.5px] leading-5 text-[var(--color-text-3)]">
-            Batch workflows use the same safety rules as live autopilot: credits are spent only on lead unlocks, verified contacts are required, unsubscribed and bounced recipients are skipped, and daily cap plus spacing are enforced.
+            Live workflows spend credits only on lead unlocks. Sending requires verified contacts, skips unsubscribed or bounced recipients, rotates inboxes when no specific inbox is selected, and enforces daily caps plus spacing.
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] text-[var(--color-text-4)]">{autoSendMsg ?? 'Turn on batch workflows after selecting at least one session.'}</div>
-            <button onClick={saveAutoSend} disabled={autoSendSaving || !autoSendLoaded || (autoSend && selectedBatchSessions.length === 0)} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
-              {autoSendSaving ? 'Saving…' : autoSend ? 'Start / update batch workflow' : 'Save batch workflow off'}
+            <div className="text-[11px] text-[var(--color-text-4)]">{autoSendMsg ?? 'Turn on the runtime when inbox, credits, and ICP are ready.'}</div>
+            <button onClick={saveAutoSend} disabled={autoSendSaving || !autoSendLoaded} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-3 py-1.5 text-xs disabled:opacity-50">
+              {autoSendSaving ? 'Saving…' : liveAutopilotOn ? 'Save live runtime' : 'Save runtime off'}
             </button>
           </div>
         </div>
-        <PendingFollowupsPanel />
+        <PendingFollowupsPanel followups={followups} cancelling={cancellingFollowupId} onCancel={cancelFollowup} />
       </div>
     </div>
   )
@@ -1341,8 +1849,10 @@ function SettingsPanel({
   const [slackMinScore, setSlackMinScore] = useState(profile.slack_min_score ?? 7)
   const [slackSaving, setSlackSaving] = useState(false)
   const [slackMsg, setSlackMsg] = useState<string | null>(null)
+  const [selectedCreditTopUpIndex, setSelectedCreditTopUpIndex] = useState(1)
   const [creditCheckoutAmount, setCreditCheckoutAmount] = useState<number | null>(null)
   const [creditCheckoutMsg, setCreditCheckoutMsg] = useState<string | null>(null)
+  const selectedCreditTopUp = CREDIT_TOP_UPS[selectedCreditTopUpIndex] ?? CREDIT_TOP_UPS[1]
 
   const saveSlack = useCallback(async () => {
     setSlackSaving(true)
@@ -1388,7 +1898,7 @@ function SettingsPanel({
   }, [])
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="w-full space-y-4">
       {/* Credits card */}
       <div className="card divide-y divide-[var(--color-line-1)]">
         <div className="px-5 py-4 flex items-center justify-between">
@@ -1412,18 +1922,58 @@ function SettingsPanel({
               {leadCreditBalance} credits
             </span>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {CREDIT_TOP_UPS.map(option => (
+          <div className="mt-4 rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Top up amount</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-[var(--color-text-1)]">
+                  ${selectedCreditTopUp.amount}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Unlocks</p>
+                <p className="mt-1 text-2xl font-semibold tracking-tight text-[var(--color-accent-ring)]">
+                  {selectedCreditTopUp.credits}
+                </p>
+              </div>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={CREDIT_TOP_UPS.length - 1}
+              step={1}
+              value={selectedCreditTopUpIndex}
+              onChange={event => setSelectedCreditTopUpIndex(Number(event.target.value))}
+              className="mt-4 w-full accent-[var(--color-accent)]"
+              aria-label="Credit top up amount"
+            />
+            <div className="mt-2 grid grid-cols-4 gap-2">
+              {CREDIT_TOP_UPS.map((option, index) => (
+                <button
+                  key={option.amount}
+                  type="button"
+                  onClick={() => setSelectedCreditTopUpIndex(index)}
+                  className={`rounded-xl border px-2 py-2 text-left transition-colors ${
+                    selectedCreditTopUpIndex === index
+                      ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)]'
+                      : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40'
+                  }`}
+                >
+                  <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">${option.amount}</span>
+                  <span className="block text-[10.5px] text-[var(--color-text-4)]">{option.credits}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-[11px] text-[var(--color-text-4)]">Checkout opens securely for the selected amount.</p>
               <button
-                key={option.amount}
-                onClick={() => startCreditCheckout(option.amount)}
+                onClick={() => startCreditCheckout(selectedCreditTopUp.amount)}
                 disabled={creditCheckoutAmount !== null}
-                className="rounded-2xl border border-[var(--color-line-1)] bg-white px-3 py-2 text-left transition-colors hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-accent-bg)] disabled:opacity-50"
+                className="rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50"
               >
-                <span className="block text-[12px] font-semibold text-[var(--color-text-1)]">${option.amount}</span>
-                <span className="block text-[11px] text-[var(--color-text-4)]">{option.credits} unlocks</span>
+                {creditCheckoutAmount !== null ? 'Starting…' : 'Top Up'}
               </button>
-            ))}
+            </div>
           </div>
           {creditCheckoutMsg && (
             <p className="mt-2 text-[11px] text-[var(--color-sig-regulation)]">{creditCheckoutMsg}</p>
@@ -1889,9 +2439,9 @@ function CrmSyncPanel() {
     <div className="card divide-y divide-[var(--color-line-1)]">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
         <div>
-          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Sync</h2>
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">CRM Export</h2>
           <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-            Connect an outbound CRM endpoint. Workflow-qualified accounts can be staged into an export queue, then pushed together.
+            Optional destination for approved account outcomes. The live runtime works without a CRM connection.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1914,9 +2464,9 @@ function CrmSyncPanel() {
           <div className="grid gap-3">
             <CrmWorkflowSummary
               eyebrow="Export workflow"
-              title="CRM queue to your CRM"
+              title="Approved records to CRM"
               status={savedConfig?.enabled ? 'Connected' : 'Off'}
-              body={`Selected workflow outputs first land in the CRM export queue. From there, push the approved records to ${providerLabel} via ${outboundDestination}.`}
+              body={`Approved records can be pushed to ${providerLabel} via ${outboundDestination}. Keep this as a downstream handoff, not a required runtime step.`}
             />
           </div>
         ) : (
@@ -1924,9 +2474,9 @@ function CrmSyncPanel() {
             <div className="grid gap-3">
               <div className="rounded-2xl border border-[var(--color-line-1)] bg-white px-4 py-3">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Connection</p>
-                <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">CRM export endpoint</h3>
+                <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Outbound export endpoint</h3>
                 <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-3)]">
-                  Bombsell POSTs approved export records to this endpoint. Keep imports off for now; records enter this queue only when workflows stage them.
+                  Bombsell POSTs approved records to this endpoint. Imports and bidirectional CRM sync stay outside the MVP runtime.
                 </p>
                 <input
                   type="url"
@@ -1937,7 +2487,7 @@ function CrmSyncPanel() {
                 />
                 <label className="mt-3 flex items-center gap-2 text-xs text-[var(--color-text-2)]">
                   <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
-                  Enable exports to CRM
+                  Enable CRM export
                 </label>
               </div>
             </div>
@@ -1957,7 +2507,7 @@ function CrmSyncPanel() {
                 </select>
               </label>
               <button onClick={save} disabled={!loaded || saving} className="h-9 whitespace-nowrap rounded-full btn-primary px-3.5 text-xs disabled:opacity-50">
-                {saving ? 'Saving…' : isConnected ? 'Update connection' : 'Save connection'}
+                {saving ? 'Saving…' : isConnected ? 'Update export' : 'Save export'}
               </button>
               {isConnected && (
                 <button
@@ -2005,7 +2555,7 @@ function CrmSyncPanel() {
               </div>
             </div>
             <p className="text-[11px] text-[var(--color-text-4)]">
-              Workflow actions add records to the export queue first. The CRM export action pushes approved records to your provider.
+              CRM export is a downstream handoff for approved records, not a dependency for live monitoring or sending.
             </p>
           </div>
         )}
@@ -2099,29 +2649,16 @@ interface PendingFollowup {
   leads: { id: string; target_company: string; status: string } | null
 }
 
-function PendingFollowupsPanel() {
-  const [followups, setFollowups] = useState<PendingFollowup[]>([])
-  const [loaded, setLoaded]       = useState(false)
-  const [cancelling, setCancelling] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/leads/pending-followups')
-      .then(r => r.json() as Promise<{ followups?: PendingFollowup[] }>)
-      .then(d => { setFollowups(d.followups ?? []); setLoaded(true) })
-      .catch(() => setLoaded(true))
-  }, [])
-
-  const cancel = useCallback(async (leadId: string, followupId: string) => {
-    setCancelling(followupId)
-    try {
-      await fetch(`/api/leads/${leadId}/followup`, { method: 'DELETE' })
-      setFollowups(prev => prev.filter(f => f.id !== followupId))
-    } finally {
-      setCancelling(null)
-    }
-  }, [])
-
-  if (!loaded || followups.length === 0) return null
+function PendingFollowupsPanel({
+  followups,
+  cancelling,
+  onCancel,
+}: {
+  followups: PendingFollowup[]
+  cancelling: string | null
+  onCancel: (leadId: string, followupId: string) => void
+}) {
+  if (followups.length === 0) return null
 
   return (
     <>
@@ -2142,7 +2679,7 @@ function PendingFollowupsPanel() {
               </p>
             </div>
             <button
-              onClick={() => f.leads && cancel(f.leads.id, f.id)}
+              onClick={() => f.leads && onCancel(f.leads.id, f.id)}
               disabled={cancelling === f.id}
               className="text-[11px] text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] disabled:opacity-50 transition-colors shrink-0"
             >
