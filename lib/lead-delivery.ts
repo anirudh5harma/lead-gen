@@ -9,6 +9,15 @@ const SOURCE_PRIORITY: Record<string, number> = {
   globenewswire: 22,
   product_hunt: 16,
   hacker_news: 14,
+  finsmes: 20,
+  techcrunch_startups: 18,
+  techcrunch_enterprise: 17,
+  securityweek: 17,
+  the_hacker_news: 17,
+  sec_press: 17,
+  eu_startups: 15,
+  venturebeat_ai: 15,
+  siliconangle: 13,
   google_news_company: 14,
   gdelt: 10,
   google_news: 8,
@@ -26,16 +35,20 @@ export function computeQueuePriority(params: {
   sourceName?: string | null
   isWatchlisted?: boolean
   keywordMatched?: boolean
+  clusterScore?: number | null
+  corroboratingSourceCount?: number | null
 }): number {
   const recencyAgeHours = params.publishedAt
     ? Math.max(0, Math.floor((Date.now() - new Date(params.publishedAt).getTime()) / (60 * 60 * 1000)))
     : 0
   const recencyBoost = Math.max(0, 72 - recencyAgeHours)
   const sourceBoost = SOURCE_PRIORITY[params.sourceName ?? ''] ?? 6
+  const clusterBoost = Math.max(0, Math.min(55, Math.round((params.clusterScore ?? 0) * 0.55)))
+  const corroborationBoost = Math.max(0, Math.min(30, ((params.corroboratingSourceCount ?? 1) - 1) * 15))
   const watchlistBoost = params.isWatchlisted ? 40 : 0
   const keywordBoost = params.keywordMatched ? 12 : 0
 
-  return (params.relevanceScore * 100) + recencyBoost + sourceBoost + watchlistBoost + keywordBoost
+  return (params.relevanceScore * 100) + recencyBoost + sourceBoost + clusterBoost + corroborationBoost + watchlistBoost + keywordBoost
 }
 
 export function computeDeliveryAllowance(params: {

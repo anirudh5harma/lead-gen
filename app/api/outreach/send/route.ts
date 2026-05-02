@@ -7,7 +7,7 @@ import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-context'
 import { recordAgentEvent } from '@/lib/agent-events'
-import { buildRecipientGroup, formatRecipientListForLog } from '@/lib/outreach-recipients'
+import { buildRecipientGroup, ensureBodyGreetsRecipients, formatRecipientListForLog } from '@/lib/outreach-recipients'
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
@@ -15,6 +15,7 @@ import { buildOutreachPlan } from '@/lib/gtm/outreach-plan'
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
+import { validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
   finishWorkflowRun,
   finishWorkflowStep,
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
     ...(Array.isArray(cc) ? cc.map(email => ({ email })) : []),
   ])
   if (!recipientGroup) return NextResponse.json({ error: 'At least one valid recipient is required.' }, { status: 400 })
+  const normalizedEmailBody = ensureBodyGreetsRecipients(emailBody, recipientGroup.greeting)
 
   const clientId = (leadRes.data as { client_id?: string | null }).client_id ?? null
   const workflowRunId = await startWorkflowRun(supabase, {
@@ -165,6 +167,80 @@ export async function POST(request: Request) {
   })
 
   const recipientEmails = recipientGroup.all.map(recipient => recipient.email.toLowerCase())
+  const validationStepId = await startWorkflowStep(supabase, {
+    runId: workflowRunId,
+    userId: user.id,
+    clientId,
+    stepKey: 'recipient_validation',
+    input: { lead_id: leadId, recipient_count: recipientEmails.length },
+  })
+  const recipientValidation = await validateOutboundRecipients(recipientEmails)
+  await finishWorkflowStep(supabase, {
+    stepId: validationStepId,
+    status: recipientValidation.safe ? 'completed' : 'blocked',
+    output: {
+      safe: recipientValidation.safe,
+      unsafe_emails: recipientValidation.unsafeEmails,
+      statuses: recipientValidation.rows.map(row => ({
+        email: row.email,
+        status: row.status,
+        safe: row.safe,
+        reason: row.reason,
+      })),
+    },
+  })
+
+  if (!recipientValidation.safe) {
+    const reasons = recipientValidation.reasons.length ? recipientValidation.reasons : ['recipient_not_verified']
+    await recordAgentEvent(supabase, {
+      userId: user.id,
+      clientId,
+      leadId,
+      agentName: 'safety',
+      eventType: 'recipient_validation_blocked',
+      status: 'blocked',
+      title: 'Send blocked by recipient validation',
+      body: `Unsafe recipient(s): ${recipientValidation.unsafeEmails.join(', ')}.`,
+      metadata: { reasons, recipient_validation: recipientValidation.rows, outreach_plan: outreachPlan },
+    })
+    if (graph) {
+      await recordGtmTouchpoint(supabase, {
+        userId: user.id,
+        clientId,
+        accountId: graph.accountId,
+        personId: graph.personId,
+        leadId,
+        workflowRunId,
+        type: isFollowUp ? 'followup' : 'email',
+        status: 'blocked',
+        subject,
+        bodyPreview: bodyPreview(normalizedEmailBody),
+        toEmail: recipientGroup.to.email,
+        metadata: { reasons, recipient_validation: recipientValidation.rows, outreach_plan: outreachPlan },
+      })
+    }
+    await markLatestOutreachPlanStatus(supabase, {
+      userId: user.id,
+      leadId,
+      status: 'blocked',
+    })
+    await finishWorkflowRun(supabase, {
+      runId: workflowRunId,
+      status: 'completed',
+      output: {
+        sent: false,
+        blocked_at: 'recipient_validation',
+        reasons,
+        unsafe_emails: recipientValidation.unsafeEmails,
+      },
+      checkpoint: { blocked_at: 'recipient_validation' },
+    })
+    return NextResponse.json({
+      error: `Send blocked: recipient validation failed for ${recipientValidation.unsafeEmails.join(', ')}`,
+      reasons,
+    }, { status: 422 })
+  }
+
   const policyStepId = await startWorkflowStep(supabase, {
     runId: workflowRunId,
     userId: user.id,
@@ -219,7 +295,7 @@ export async function POST(request: Request) {
         type: isFollowUp ? 'followup' : 'email',
         status: 'blocked',
         subject,
-        bodyPreview: bodyPreview(emailBody),
+        bodyPreview: bodyPreview(normalizedEmailBody),
         toEmail: recipientGroup.to.email,
         metadata: { reasons: policyDecision.reasons, outreach_plan: outreachPlan },
       })
@@ -280,7 +356,7 @@ export async function POST(request: Request) {
       to:       recipientGroup.to.email,
       cc:       recipientGroup.cc.map(recipient => recipient.email),
       subject,
-      body:     emailBody,
+      body:     normalizedEmailBody,
       fromName: outreachContext.fromName,
     })
 
@@ -393,7 +469,7 @@ export async function POST(request: Request) {
         type: isFollowUp ? 'followup' : 'email',
         status: 'sent',
         subject,
-        bodyPreview: bodyPreview(emailBody),
+        bodyPreview: bodyPreview(normalizedEmailBody),
         fromEmail: result.fromEmail,
         toEmail: recipientGroup.to.email,
         provider: result.provider,

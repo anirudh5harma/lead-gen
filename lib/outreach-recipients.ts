@@ -67,14 +67,22 @@ export function ensureBodyGreetsRecipients(body: string, greeting: string): stri
   const paragraphs = body.split(/\n{2,}/).map(paragraph => paragraph.trim()).filter(Boolean)
   if (paragraphs.length === 0) return `${cleanGreeting},\n\n${body}`.trim()
 
-  const first = paragraphs[0]
-  const salutationPattern = /^([A-Z][A-Za-z.'-]*(?:,\s*(?:and\s+)?[A-Z][A-Za-z.'-]*){0,6}|Hi\s+[^,\n]{1,80}|Hey\s+[^,\n]{1,80}|Hello\s+[^,\n]{1,80}),\s*/i
-  if (salutationPattern.test(first)) {
+  const first = collapseRepeatedGreeting(paragraphs[0], cleanGreeting)
+  const explicitGreetingPattern = new RegExp(`^(?:hi|hey|hello)?\\s*${escapeRegExp(cleanGreeting)}\\s*,\\s*`, 'i')
+  const salutationPattern = /^(?:hi|hey|hello)\s+[^,\n]{1,80},\s*|^[A-Z][A-Za-z.'-]*(?:\s+and\s+[A-Z][A-Za-z.'-]*|(?:,\s*(?:and\s+)?[A-Z][A-Za-z.'-]*){0,6}),\s*/i
+  if (explicitGreetingPattern.test(first)) {
+    paragraphs[0] = first.replace(explicitGreetingPattern, `${cleanGreeting}, `)
+  } else if (salutationPattern.test(first)) {
     paragraphs[0] = first.replace(salutationPattern, `${cleanGreeting}, `)
   } else {
     paragraphs[0] = `${cleanGreeting}, ${first}`
   }
   return paragraphs.join('\n\n')
+}
+
+function collapseRepeatedGreeting(value: string, greeting: string): string {
+  const greetingPattern = `(?:hi|hey|hello)?\\s*${escapeRegExp(greeting)}\\s*,\\s*`
+  return value.replace(new RegExp(`^${greetingPattern}${greetingPattern}`, 'i'), `${greeting}, `)
 }
 
 function formatGreeting(recipients: OutreachRecipient[]): string {
@@ -108,4 +116,8 @@ function cleanName(value: unknown): string {
   return typeof value === 'string'
     ? value.replace(/\s+/g, ' ').trim()
     : ''
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

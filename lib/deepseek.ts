@@ -154,6 +154,8 @@ Be permissive for clear events like:
 - executive appointments, CFO, CTO, CEO hires
 - market expansion, launches, new offices
 - regulations affecting a specific company
+- security incidents, data breaches, lawsuits, regulatory investigations, or compliance deadlines affecting a specific company
+- public RFPs, vendor selections, contract awards, implementations, migrations, or digital transformation projects tied to a named company
 
 Only return null for generic market commentary, roundups, sector snapshots, opinion pieces, or items without a specific named company event.
 
@@ -167,6 +169,8 @@ Return a JSON object with these fields:
 - company_name: string (the primary company involved in the event)
 - company_domain: string | null (for example "stripe.com", infer if obvious, else null)
 - signal_type: one of "funding" | "acquisition" | "expansion" | "regulation" | "hiring"
+  - Use "expansion" for RFPs, vendor selections, contracts, implementations, migrations, and transformation projects.
+  - Use "regulation" for breaches, security incidents, lawsuits, investigations, fines, and compliance deadlines.
 - summary: string (one crisp sentence describing the event and its business implication)
 - funding_amount: string | null (for example "$50M Series B", only for funding signals)
 - confidence: 1 | 2 | 3
@@ -230,8 +234,8 @@ function normalizeExtractedSignal(parsed: Record<string, unknown>): {
 function normalizeSignalType(value: string): 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring' | null {
   if (['funding', 'fundraise', 'financing'].includes(value)) return 'funding'
   if (['acquisition', 'acquire', 'merger', 'm&a', 'mna'].includes(value)) return 'acquisition'
-  if (['expansion', 'launch', 'market_expansion'].includes(value)) return 'expansion'
-  if (['regulation', 'compliance', 'legal'].includes(value)) return 'regulation'
+  if (['expansion', 'launch', 'market_expansion', 'procurement', 'rfp', 'contract', 'implementation', 'migration', 'digital_transformation'].includes(value)) return 'expansion'
+  if (['regulation', 'compliance', 'legal', 'breach', 'security_incident', 'lawsuit', 'investigation', 'fine'].includes(value)) return 'regulation'
   if (['hiring', 'executive_hire', 'appointment'].includes(value)) return 'hiring'
   return null
 }
@@ -254,8 +258,8 @@ function fallbackExtractFromHeadline(
   const funding = /\b(raise|raises|raised|raising|funding|financing|series [a-z]|seed|pre-seed|valuation|valued at)\b/i
   const acquisition = /\b(acquires?|acquired|acquisition|merger|merge(?:s|d)?|buyout)\b/i
   const hiring = /\b(appoints?|appointed|hires?|hired|joins?|joined)\b.{0,80}\b(ceo|cto|cfo|cmo|cro|cpo|ciso|chief|vp|vice president|head of)\b/i
-  const expansion = /\b(expands?|expanded|launch(?:es|ed)?|opens? (?:a|its)|enters? .*market|new office|new market)\b/i
-  const regulation = /\b(regulation|regulatory|compliance|fined|settlement|sec|fda|finra)\b/i
+  const expansion = /\b(expands?|expanded|launch(?:es|ed)?|opens? (?:a|its)|enters? .*market|new office|new market|rfp|request for proposal|selects? .*vendor|awards? .*contract|signs? .*contract|implementation|migration|digital transformation)\b/i
+  const regulation = /\b(regulation|regulatory|compliance|fined|settlement|sec|fda|finra|data breach|security incident|lawsuit|investigation)\b/i
 
   let signal_type: 'funding' | 'acquisition' | 'expansion' | 'regulation' | 'hiring' | null = null
   if (acquisition.test(text)) signal_type = 'acquisition'
@@ -290,6 +294,7 @@ function extractCompanyName(headline: string): string | null {
 
   const patterns = [
     /^(.+?)\s+\b(acquires?|acquired|acquisition|merger|merge(?:s|d)?|raises?|raised|raising|appoints?|appointed|hires?|hired|launch(?:es|ed)?|expands?|expanded)\b/i,
+    /^(.+?)\s+\b(selects?|awards?|signs?|issues?|faces?|settles?)\b/i,
     /^(.+?)\s+\bto\s+\b(acquire|raise|launch|expand)\b/i,
   ]
 

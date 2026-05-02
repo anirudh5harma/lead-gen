@@ -1,4 +1,11 @@
-import { fetchRSSFromUrl, fetchRSSItems, type RSSItem } from '@/lib/rss'
+import {
+  CURATED_INTERNET_FEEDS,
+  fetchRSSFromUrl,
+  fetchRSSItems,
+  parseExtraRssFeeds,
+  type RSSFeedConfig,
+  type RSSItem,
+} from '@/lib/rss'
 
 export interface CompanySeed {
   clientId?: string
@@ -19,6 +26,8 @@ const HN_ITEM_CONCURRENCY = 12
 const MONITORED_NEWS_CONCURRENCY = 5
 const COMPANY_OWNED_CONCURRENCY = 8
 const COMPANY_FEED_CONCURRENCY = 3
+const CURATED_FEED_CONCURRENCY = 6
+const CONFIGURED_FEED_CONCURRENCY = 6
 
 const GDELT_QUERIES = [
   '(startup OR company) (raises OR funding OR "Series A" OR "seed round")',
@@ -35,6 +44,9 @@ const HN_SIGNAL_PATTERN =
 
 const COMPANY_OWNED_SIGNAL_PATTERN =
   /\b(launch(?:es|ed)?|announces?|releases?|partnership|partnered|integration|pricing|expands?|acquires?|acquired|raises?|funding|appoints?|hires?|soc 2|iso 27001|compliance|certification|new office|new market)\b/i
+
+const CURATED_SIGNAL_PATTERN =
+  /\b(raise[sd]?|funding|series [a-z]|acquires?|acquisition|launch(?:es|ed)?|expands?|partnership|contract|rfp|selects? .*vendor|implementation|data breach|security incident|vulnerability|regulatory|compliance|fined|settlement|appoints?|hires?|new office|new market)\b/i
 
 interface GdeltArticle {
   title?: string
@@ -197,6 +209,25 @@ export async function fetchProductHuntItems(): Promise<RSSItem[]> {
   }
 }
 
+export async function fetchCuratedInternetItems(): Promise<RSSItem[]> {
+  return fetchConfiguredFeedSet(CURATED_INTERNET_FEEDS, CURATED_FEED_CONCURRENCY, {
+    quiet: true,
+    timeoutMs: 7000,
+    filter: true,
+  })
+}
+
+export async function fetchConfiguredRssItems(): Promise<RSSItem[]> {
+  const feeds = parseExtraRssFeeds(process.env.SIGNAL_EXTRA_RSS_FEEDS)
+  if (feeds.length === 0) return []
+
+  return fetchConfiguredFeedSet(feeds, CONFIGURED_FEED_CONCURRENCY, {
+    quiet: true,
+    timeoutMs: 7000,
+    filter: false,
+  })
+}
+
 export async function fetchMonitoredCompanyNewsItems(companies: CompanySeed[]): Promise<RSSItem[]> {
   const scopedCompanies = uniqueCompanies(companies)
     .slice(0, MONITORED_NEWS_COMPANY_LIMIT)
@@ -255,6 +286,29 @@ export async function fetchCompanyOwnedItems(companies: CompanySeed[]): Promise<
   )
 
   return results.flat()
+}
+
+async function fetchConfiguredFeedSet(
+  feeds: RSSFeedConfig[],
+  concurrency: number,
+  options: {
+    quiet: boolean
+    timeoutMs: number
+    filter: boolean
+  },
+): Promise<RSSItem[]> {
+  const results = await mapWithConcurrency(
+    feeds,
+    concurrency,
+    feed => fetchRSSFromUrl(feed.url, feed.source, {
+      quiet: options.quiet,
+      timeoutMs: options.timeoutMs,
+    }),
+  )
+
+  return results
+    .flat()
+    .filter(item => !options.filter || CURATED_SIGNAL_PATTERN.test(`${item.title} ${item.description}`))
 }
 
 function buildCompanyFeedUrls(domain: string): string[] {

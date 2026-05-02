@@ -8,6 +8,8 @@ export interface MatchSignalCandidate {
   headline?: string | null
   published_at?: string | null
   source_name?: string | null
+  cluster_score?: number | null
+  corroborating_source_count?: number | null
 }
 
 export interface ProfileCandidateInput {
@@ -29,6 +31,15 @@ const SOURCE_PRIORITY: Record<string, number> = {
   globenewswire: 14,
   product_hunt: 10,
   hacker_news: 8,
+  finsmes: 12,
+  techcrunch_startups: 10,
+  techcrunch_enterprise: 9,
+  securityweek: 9,
+  the_hacker_news: 9,
+  sec_press: 9,
+  eu_startups: 8,
+  venturebeat_ai: 8,
+  siliconangle: 7,
   google_news_company: 8,
   gdelt: 6,
   google_news: 4,
@@ -49,13 +60,15 @@ export function scoreProfileCandidate(input: ProfileCandidateInput): number {
     : 72
   const recencyScore = Math.max(0, 48 - recencyHours)
   const sourceScore = SOURCE_PRIORITY[input.signal.source_name ?? ''] ?? 2
+  const clusterScore = Math.max(0, Math.min(40, Math.round((input.signal.cluster_score ?? 0) * 0.4)))
+  const corroborationScore = Math.max(0, Math.min(24, ((input.signal.corroborating_source_count ?? 1) - 1) * 12))
   const watchlistScore = input.isWatchlisted ? 1000 : 0
   const keywordScore = input.keywordMatched ? 120 : 0
   const similarityScore = typeof input.similarity === 'number'
     ? Math.round(input.similarity * 100)
     : 0
 
-  return watchlistScore + keywordScore + similarityScore + recencyScore + sourceScore
+  return watchlistScore + keywordScore + similarityScore + recencyScore + sourceScore + clusterScore + corroborationScore
 }
 
 export function mergeProfileCandidates(

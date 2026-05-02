@@ -11,6 +11,7 @@ import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
+import { validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
   finishWorkflowRun,
   finishWorkflowStep,
@@ -268,6 +269,61 @@ export async function GET(request: Request) {
           signal_id: graph.signalId,
         } : {},
       })
+      const validationStepId = await startWorkflowStep(supabase, {
+        runId: workflowRunId,
+        userId: item.user_id,
+        clientId: lead.client_id ?? null,
+        stepKey: 'recipient_validation',
+        input: { lead_id: item.lead_id, recipient_count: emails.length },
+      })
+      const recipientValidation = await validateOutboundRecipients(emails)
+      await finishWorkflowStep(supabase, {
+        stepId: validationStepId,
+        status: recipientValidation.safe ? 'completed' : 'blocked',
+        output: {
+          safe: recipientValidation.safe,
+          unsafe_emails: recipientValidation.unsafeEmails,
+          statuses: recipientValidation.rows,
+        },
+      })
+      if (!recipientValidation.safe) {
+        const reasons = recipientValidation.reasons.length ? recipientValidation.reasons : ['recipient_not_verified']
+        await recordAgentEvent(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          agentName: 'safety',
+          eventType: 'recipient_validation_blocked',
+          status: 'blocked',
+          title: 'Follow-up blocked by recipient validation',
+          body: `Unsafe recipient(s): ${recipientValidation.unsafeEmails.join(', ')}.`,
+          metadata: { reasons, unsafe_emails: recipientValidation.unsafeEmails },
+        })
+        if (graph) {
+          await recordGtmTouchpoint(supabase, {
+            userId: item.user_id,
+            clientId: lead.client_id ?? null,
+            accountId: graph.accountId,
+            personId: graph.personId,
+            leadId: item.lead_id,
+            workflowRunId,
+            type: 'followup',
+            status: 'blocked',
+            subject: fuSubject,
+            bodyPreview: bodyPreview(fuBody),
+            toEmail: recipientGroup.to.email,
+            metadata: { reasons, recipient_validation: recipientValidation.rows },
+          })
+        }
+        await completeFollowup(supabase, item.id, claimToken, nowIso)
+        await finishWorkflowRun(supabase, {
+          runId: workflowRunId,
+          status: 'completed',
+          output: { sent: false, blocked_at: 'recipient_validation', reasons, unsafe_emails: recipientValidation.unsafeEmails },
+          checkpoint: { blocked_at: 'recipient_validation' },
+        })
+        continue
+      }
       const policyStepId = await startWorkflowStep(supabase, {
         runId: workflowRunId,
         userId: item.user_id,

@@ -55,7 +55,7 @@ async function runMatch(request: Request) {
 
     const { data: recentSignals, error: sigErr } = await supabase
       .from('signals')
-      .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain, novelty_key, published_at, source_name')
+      .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain, novelty_key, published_at, source_name, cluster_score, corroborating_source_count')
       .gte('published_at', windowStart)
       .order('published_at', { ascending: false })
       .limit(RECENT_SIGNAL_LIMIT)
@@ -301,7 +301,7 @@ async function runMatch(request: Request) {
 
       const mergedCandidates = mergeProfileCandidates([
         ...annCandidates.map(signal => ({
-          signal,
+          signal: recentSignalsById.get(signal.id) ?? signal,
           similarity: typeof signal.similarity === 'number' ? signal.similarity : null,
           keywordMatched: false,
           isWatchlisted: watchlist.has(normalizeLeadCompanyKey(signal.company_name, signal.company_domain)),
@@ -427,6 +427,8 @@ async function runMatch(request: Request) {
           sourceName: signal.source_name,
           isWatchlisted: candidate.isWatchlisted,
           keywordMatched: candidate.keywordMatched,
+          clusterScore: typeof signal.cluster_score === 'number' ? signal.cluster_score : null,
+          corroboratingSourceCount: typeof signal.corroborating_source_count === 'number' ? signal.corroborating_source_count : null,
         }) + candidate.feedbackBoost
 
         const { error } = await supabase.from('lead_delivery_queue').insert({
@@ -451,6 +453,8 @@ async function runMatch(request: Request) {
             candidate_rank: candidate.rank,
             feedback_boost: candidate.feedbackBoost,
             adjusted_candidate_rank: candidate.adjustedRank,
+            cluster_score: signal.cluster_score ?? null,
+            corroborating_source_count: signal.corroborating_source_count ?? null,
           },
           queue_status: 'pending',
           next_delivery_at: new Date().toISOString(),

@@ -8,6 +8,11 @@ export interface RSSItem {
   source: string
 }
 
+export interface RSSFeedConfig {
+  url: string
+  source: string
+}
+
 interface RSSFetchOptions {
   quiet?: boolean
   timeoutMs?: number
@@ -58,6 +63,17 @@ export const RSS_QUERIES = [
   'company hires new CTO CPO CISO CFO',
   'company appoints new CEO CFO CTO',
   'startup appoints chief revenue officer',
+  // Pain / urgency signals
+  'company data breach security incident compliance',
+  'company faces lawsuit regulatory investigation',
+  'company issues RFP software vendor',
+  'company selects vendor platform implementation',
+  'company signs contract digital transformation',
+  'company migrates to new platform cloud',
+  'company opens manufacturing facility expansion',
+  'company receives government contract technology',
+  'startup lands enterprise customer contract',
+  'company cuts costs automation initiative',
 ]
 
 /**
@@ -65,7 +81,7 @@ export const RSS_QUERIES = [
  * These services are used by companies to announce funding, acquisitions,
  * product launches, and executive appointments.
  */
-export const PRESS_RELEASE_FEEDS: Array<{ url: string; source: string }> = [
+export const PRESS_RELEASE_FEEDS: RSSFeedConfig[] = [
   // PRNewswire — Technology
   {
     url: 'https://www.prnewswire.com/rss/news-releases-list.rss?category=TEC&language=en',
@@ -102,6 +118,60 @@ export const PRESS_RELEASE_FEEDS: Array<{ url: string; source: string }> = [
     source: 'globenewswire',
   },
 ]
+
+/**
+ * Curated broad-web feeds. These are intentionally cheap RSS/Atom sources
+ * that add startup, security, AI, funding, and regulatory surface area before
+ * we spend LLM tokens.
+ */
+export const CURATED_INTERNET_FEEDS: RSSFeedConfig[] = [
+  { url: 'https://techcrunch.com/category/startups/feed/', source: 'techcrunch_startups' },
+  { url: 'https://techcrunch.com/category/enterprise/feed/', source: 'techcrunch_enterprise' },
+  { url: 'https://www.finsmes.com/feed', source: 'finsmes' },
+  { url: 'https://www.eu-startups.com/feed/', source: 'eu_startups' },
+  { url: 'https://venturebeat.com/category/ai/feed/', source: 'venturebeat_ai' },
+  { url: 'https://siliconangle.com/feed/', source: 'siliconangle' },
+  { url: 'https://www.securityweek.com/feed/', source: 'securityweek' },
+  { url: 'https://feeds.feedburner.com/TheHackersNews', source: 'the_hacker_news' },
+  { url: 'https://www.sec.gov/news/pressreleases.rss', source: 'sec_press' },
+]
+
+/**
+ * Optional user/self-hosted feeds. Supports either JSON:
+ * [{"source":"x_founder_feed","url":"https://..."}]
+ * or newline/comma separated entries:
+ * x_founder_feed|https://...
+ */
+export function parseExtraRssFeeds(value?: string | null): RSSFeedConfig[] {
+  const raw = value?.trim()
+  if (!raw) return []
+
+  if (raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed)) return []
+      return parsed
+        .map(item => {
+          if (typeof item !== 'object' || item === null) return null
+          const row = item as Record<string, unknown>
+          return normalizeFeedConfig(row.source, row.url)
+        })
+        .filter((item): item is RSSFeedConfig => Boolean(item))
+        .slice(0, 40)
+    } catch {
+      return []
+    }
+  }
+
+  return raw
+    .split(/[,\n]+/g)
+    .map(entry => {
+      const [source, ...urlParts] = entry.split('|')
+      return normalizeFeedConfig(source, urlParts.join('|'))
+    })
+    .filter((item): item is RSSFeedConfig => Boolean(item))
+    .slice(0, 40)
+}
 
 // ----------------------------------------------------------------
 // Internal XML parser (handles both Google News and PR RSS formats)
@@ -183,6 +253,18 @@ function textValue(value: unknown): string {
     if (typeof obj._ === 'string') return obj._
   }
   return String(value)
+}
+
+function normalizeFeedConfig(source: unknown, url: unknown): RSSFeedConfig | null {
+  const sourceValue = typeof source === 'string'
+    ? source.trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, '_').replace(/^_+|_+$/g, '')
+    : ''
+  const urlValue = typeof url === 'string' ? url.trim() : ''
+  if (!sourceValue || !/^https?:\/\//i.test(urlValue)) return null
+  return {
+    source: sourceValue.slice(0, 80),
+    url: urlValue,
+  }
 }
 
 function decodeEntities(str: string): string {

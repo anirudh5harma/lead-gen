@@ -6,6 +6,7 @@ import { resolveLeadQuotaDecision } from '../lib/lead-quota.ts'
 import { normalizeCompanyWebsiteUrl, resolveServicesDescription } from '../lib/company-profile.ts'
 import { buildLeadDedupeKey, normalizeLeadCompanyKey } from '../lib/lead-dedupe.ts'
 import { computeDeliveryAllowance } from '../lib/lead-delivery.ts'
+import { computeQueuePriority } from '../lib/lead-delivery.ts'
 import { aggregateMonitoredAccountSeeds, buildMonitoredAccountKey, computeMonitoredAccountPriority } from '../lib/monitored-accounts.ts'
 import { mergeProfileCandidates, signalTextMatchesKeywords } from '../lib/match-candidates.ts'
 import { buildFeedbackMaps, computeCandidateFeedbackBoost, computeLeadFeedbackScore, sortQueueRowsByFeedback } from '../lib/ranking-feedback.ts'
@@ -20,6 +21,9 @@ import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldSho
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
 import {
+  parseExtraRssFeeds,
+} from '../lib/rss.ts'
+import {
   assessExplorePrompt,
   buildExploreSearchTerms,
   rankExploreCandidates,
@@ -27,6 +31,7 @@ import {
   scoreExploreSourceItem,
   shouldUseWorkspaceIcp,
 } from '../lib/explore.ts'
+import { cheapJunkFilter, stableCandidateHash } from '../lib/signal-filter.ts'
 
 test('free workspace keeps every unarchived client visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -249,6 +254,64 @@ test('signal novelty detects the same event across slightly different wording', 
 
   assert.equal(isLikelySameSignalEvent(eventA, eventB), true)
   assert.match(buildSignalNoveltyKey(eventA), /^domain:acme\.com:/)
+})
+
+test('cheap signal filter rejects market noise before extraction', () => {
+  const decision = cheapJunkFilter({
+    title: 'Top 10 AI market trends to watch this year',
+    description: 'A research report and forecast for the software industry.',
+    link: 'https://example.com/report',
+    source: 'google_news',
+  })
+
+  assert.equal(decision.pass, false)
+  assert.equal(decision.decision, 'market_noise')
+})
+
+test('cheap signal filter passes named company events with stable raw hashes', () => {
+  const item = {
+    title: 'Acme Labs raises $25M Series A funding',
+    description: 'Acme Labs will expand its engineering and go-to-market teams.',
+    link: 'https://news.example.com/acme-series-a',
+    source: 'prnewswire',
+  }
+  const decision = cheapJunkFilter(item)
+
+  assert.equal(decision.pass, true)
+  assert.equal(decision.decision, 'company_event')
+  assert.equal(stableCandidateHash(item), stableCandidateHash({ ...item }))
+})
+
+test('queue priority rewards corroborated signal clusters', () => {
+  const base = computeQueuePriority({
+    relevanceScore: 7,
+    publishedAt: '2026-04-24T00:00:00.000Z',
+    sourceName: 'google_news',
+  })
+  const corroborated = computeQueuePriority({
+    relevanceScore: 7,
+    publishedAt: '2026-04-24T00:00:00.000Z',
+    sourceName: 'google_news',
+    clusterScore: 80,
+    corroboratingSourceCount: 3,
+  })
+
+  assert.ok(corroborated > base)
+})
+
+test('extra RSS feed config supports self-hosted source aggregators', () => {
+  assert.deepEqual(
+    parseExtraRssFeeds('x_founder_feed|https://rss.example.com/x.xml\nlinkedin_jobs|https://rss.example.com/linkedin.xml'),
+    [
+      { source: 'x_founder_feed', url: 'https://rss.example.com/x.xml' },
+      { source: 'linkedin_jobs', url: 'https://rss.example.com/linkedin.xml' },
+    ],
+  )
+
+  assert.deepEqual(
+    parseExtraRssFeeds('[{"source":"RSS Bridge / VC","url":"https://rss.example.com/vc.xml"}]'),
+    [{ source: 'rss_bridge_vc', url: 'https://rss.example.com/vc.xml' }],
+  )
 })
 
 test('crm provider normalization falls back to webhook for unknown providers', () => {
@@ -872,6 +935,24 @@ test('outreach body greeting is rewritten to address grouped recipients', () => 
   )
 
   assert.match(body, /^Jane and Rahul, noticed Acme/)
+})
+
+test('outreach greeting rewrite is idempotent for grouped greetings', () => {
+  assert.equal(
+    ensureBodyGreetsRecipients(
+      'Glenn and Lauren, Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
+      'Glenn and Lauren',
+    ),
+    'Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
+  )
+
+  assert.equal(
+    ensureBodyGreetsRecipients(
+      'Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
+      'Glenn and Lauren',
+    ),
+    'Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
+  )
 })
 
 test('gtm identity keys normalize accounts people and signals deterministically', () => {

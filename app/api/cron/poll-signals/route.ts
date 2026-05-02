@@ -7,6 +7,8 @@ import { fetchJobBoard } from '@/lib/job-boards'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import {
   fetchCompanyOwnedItems,
+  fetchConfiguredRssItems,
+  fetchCuratedInternetItems,
   fetchGdeltItems,
   fetchHackerNewsItems,
   fetchMonitoredCompanyNewsItems,
@@ -19,13 +21,15 @@ import {
   syncMonitoredAccountsFromWorkspaceSources,
 } from '@/lib/monitored-accounts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '@/lib/signal-novelty'
+import { cheapJunkFilter, classifySourceType, estimateSourceCost, stableCandidateHash, type JunkFilterOutput } from '@/lib/signal-filter'
+import { SourceLedger, recordSourceRunMetrics } from '@/lib/source-ledger'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const QUERY_BATCH_SIZE = 5
-const MAX_CANDIDATES_PER_RUN = 180
+const MAX_CANDIDATES_PER_RUN = 260
 const PROCESS_BATCH_SIZE = 5
 const EXTRACT_TIMEOUT_MS = 12_000
 const MONITORED_COMPANY_LIMIT = 220
@@ -38,7 +42,7 @@ const EVENT_KEYWORDS: Record<string, RegExp> = {
   funding: /\b(raise[sd]?|funding|financing|series [a-z]|seed round|venture capital|investment)\b/i,
   acquisition: /\b(acquisition|acquire[sd]?|merger|buyout|deal)\b/i,
   expansion: /\b(expansion|expand(?:s|ed|ing)?|launch(?:es|ed)?|new product|platform|partnership|integration|new office|new market|opens in|entered)\b/i,
-  regulation: /\b(regulation|regulatory|compliance|sec|finra|fda|law|mandate|fined|settlement|certification)\b/i,
+  regulation: /\b(regulation|regulatory|compliance|sec|finra|fda|law|mandate|fined|settlement|certification|data breach|security incident|lawsuit|investigation)\b/i,
   hiring: /\b(hire[sd]?|appoint(?:ed)?|joins?|joined|chief|cto|cfo|cpo|ciso|cmo|cro|vp|vice president)\b/i,
 }
 
@@ -46,7 +50,8 @@ const HIGH_SIGNAL_PATTERNS = [
   { type: 'funding', pattern: /\b(raise|raises|raised|raising|secure[sd]?|closed|closes)\b.{0,80}\b(series [a-z]|seed|pre-seed|funding|financing|investment|round)\b/i },
   { type: 'acquisition', pattern: /\b(acquire[sd]?|buyout|merger|merges with|to acquire)\b/i },
   { type: 'expansion', pattern: /\b(expands? into|launch(?:es|ed)? (?:in|new|a|an|the|product|platform|tool|app|feature)|opens? (?:a|its) .*office|enters? .*market|new office|new market|partnership|integration)\b/i },
-  { type: 'regulation', pattern: /\b(fined|settlement|regulatory approval|sec charges|fda approval|compliance mandate|data breach|soc 2|iso 27001)\b/i },
+  { type: 'expansion', pattern: /\b(rfp|request for proposal|selects? .*vendor|awards? .*contract|signs? .*contract|implementation|digital transformation|cloud migration)\b/i },
+  { type: 'regulation', pattern: /\b(fined|settlement|regulatory approval|sec charges|fda approval|compliance mandate|data breach|security incident|lawsuit|investigation|soc 2|iso 27001)\b/i },
   { type: 'hiring', pattern: /\b(appoint(?:ed|s)?|hires?|hired|joins?|joined)\b.{0,80}\b(ceo|cto|cfo|cpo|ciso|cmo|cro|chief|vp|vice president|head of)\b/i },
 ]
 
@@ -54,7 +59,9 @@ const NAMED_COMPANY_PATTERN = /\b[A-Z][A-Za-z0-9&.-]+(?:\s+[A-Z][A-Za-z0-9&.-]+)
 
 interface ShortlistResult {
   dedupedCount: number
+  rejectedCount: number
   items: CandidateWorkItem[]
+  rejected: CandidateWorkItem[]
 }
 
 interface CandidateWorkItem {
@@ -62,6 +69,8 @@ interface CandidateWorkItem {
   item: RSSItem
   rank: number
   shortlistReason: string
+  junkFilter: JunkFilterOutput
+  rawPayloadHash: string
   candidateId?: string
   extractStatus?: string
 }
@@ -85,6 +94,8 @@ async function runPoll(request: Request) {
 
   const supabase = await createServiceClient()
   const runId = await startCronRun(supabase, 'poll_signals')
+  const runStartedAt = new Date().toISOString()
+  const sourceLedger = new SourceLedger()
   try {
   let inserted = 0
   let skipped = 0
@@ -94,9 +105,12 @@ async function runPoll(request: Request) {
     fetched_gdelt: 0,
     fetched_hacker_news: 0,
     fetched_product_hunt: 0,
+    fetched_curated_internet: 0,
+    fetched_configured_rss: 0,
     fetched_company_owned: 0,
     fetched_company_news: 0,
     deduped_candidates: 0,
+    rejected_candidates: 0,
     shortlisted: 0,
     extract_success: 0,
     extract_null: 0,
@@ -140,16 +154,20 @@ async function runPoll(request: Request) {
   const monitoredCompanies = await fetchMonitoredCompaniesForPolling(supabase, MONITORED_COMPANY_LIMIT)
   stats.monitored_accounts_selected = monitoredCompanies.length
 
-  const [gdeltResult, hackerNewsResult, productHuntResult, companyOwnedResult, companyNewsResult] = await Promise.allSettled([
+  const [gdeltResult, hackerNewsResult, productHuntResult, curatedInternetResult, configuredRssResult, companyOwnedResult, companyNewsResult] = await Promise.allSettled([
     fetchGdeltItems(),
     fetchHackerNewsItems(),
     fetchProductHuntItems(),
+    fetchCuratedInternetItems(),
+    fetchConfiguredRssItems(),
     fetchCompanyOwnedItems(monitoredCompanies),
     fetchMonitoredCompanyNewsItems(monitoredCompanies),
   ])
   const gdeltItems = gdeltResult.status === 'fulfilled' ? gdeltResult.value : []
   const hackerNewsItems = hackerNewsResult.status === 'fulfilled' ? hackerNewsResult.value : []
   const productHuntItems = productHuntResult.status === 'fulfilled' ? productHuntResult.value : []
+  const curatedInternetItems = curatedInternetResult.status === 'fulfilled' ? curatedInternetResult.value : []
+  const configuredRssItems = configuredRssResult.status === 'fulfilled' ? configuredRssResult.value : []
   const companyOwnedItems = companyOwnedResult.status === 'fulfilled' ? companyOwnedResult.value : []
   const companyNewsItems = companyNewsResult.status === 'fulfilled' ? companyNewsResult.value : []
 
@@ -159,19 +177,27 @@ async function runPoll(request: Request) {
     ...gdeltItems,
     ...hackerNewsItems,
     ...productHuntItems,
+    ...curatedInternetItems,
+    ...configuredRssItems,
     ...companyOwnedItems,
     ...companyNewsItems,
   ]
+  for (const item of allItems) {
+    sourceLedger.addFetched(item.source, 1)
+  }
   stats.fetched_google = googleItems.length
   stats.fetched_press = prItems.length
   stats.fetched_gdelt = gdeltItems.length
   stats.fetched_hacker_news = hackerNewsItems.length
   stats.fetched_product_hunt = productHuntItems.length
+  stats.fetched_curated_internet = curatedInternetItems.length
+  stats.fetched_configured_rss = configuredRssItems.length
   stats.fetched_company_owned = companyOwnedItems.length
   stats.fetched_company_news = companyNewsItems.length
   console.log(
     `Poll: ${googleItems.length} Google News, ${prItems.length} press, ${gdeltItems.length} GDELT, ` +
-    `${hackerNewsItems.length} HN, ${productHuntItems.length} Product Hunt, ${companyOwnedItems.length} owned feed items, ` +
+    `${hackerNewsItems.length} HN, ${productHuntItems.length} Product Hunt, ${curatedInternetItems.length} curated web, ` +
+    `${configuredRssItems.length} configured RSS, ${companyOwnedItems.length} owned feed items, ` +
     `${companyNewsItems.length} monitored company news items`
   )
 
@@ -182,36 +208,20 @@ async function runPoll(request: Request) {
   // ── 2. Process each RSS item ──────────────────────────────────────
   const candidates = shortlistItems(allItems)
   stats.deduped_candidates = candidates.dedupedCount
+  stats.rejected_candidates = candidates.rejectedCount
   stats.shortlisted = candidates.items.length
+  for (const candidate of [...candidates.items, ...candidates.rejected]) {
+    sourceLedger.addRawCandidate(candidate.item.source)
+    sourceLedger.addFilterResult(candidate.item.source, candidate.junkFilter.pass)
+  }
   console.log(`[poll-signals] shortlisted ${candidates.items.length}/${candidates.dedupedCount} candidates`)
 
   const persistedCandidates = await Promise.all(
-    candidates.items.map(async candidate => {
-      const { data, error } = await supabase
-        .from('signal_candidates')
-        .upsert({
-          fingerprint: candidate.fingerprint,
-          title: candidate.item.title,
-          description: candidate.item.description,
-          source_url: candidate.item.link || null,
-          source_name: candidate.item.source,
-          published_at: candidate.item.pubDate ? new Date(candidate.item.pubDate).toISOString() : null,
-          shortlist_score: candidate.rank,
-          shortlist_reason: candidate.shortlistReason,
-          last_seen_at: new Date().toISOString(),
-        }, { onConflict: 'fingerprint' })
-        .select('id, extract_status')
-        .single()
-      if (error) {
-        console.error('[poll-signals] signal_candidates upsert error:', error.message)
-      }
-      const row = data as { id?: string; extract_status?: string } | null
-      return {
-        ...candidate,
-        candidateId: row?.id,
-        extractStatus: row?.extract_status ?? 'pending',
-      }
-    })
+    candidates.items.map(candidate => upsertSignalCandidate(supabase, candidate, true))
+  )
+
+  await Promise.all(
+    candidates.rejected.map(candidate => upsertSignalCandidate(supabase, candidate, false))
   )
 
   const candidatesToProcess = persistedCandidates.filter(candidate => {
@@ -225,10 +235,14 @@ async function runPoll(request: Request) {
 
   for (let i = 0; i < candidatesToProcess.length; i += PROCESS_BATCH_SIZE) {
     const batch = candidatesToProcess.slice(i, i + PROCESS_BATCH_SIZE)
-    const results = await Promise.allSettled(batch.map(candidate => processItem(candidate, supabase)))
+    const results = await Promise.allSettled(batch.map(async candidate => ({
+      candidate,
+      outcome: await processItem(candidate, supabase),
+    })))
     for (const result of results) {
       if (result.status === 'fulfilled') {
-        const outcome = result.value
+        const { candidate, outcome } = result.value
+        sourceLedger.addExtractionOutcome(candidate.item.source, mapOutcomeToLedger(outcome.status))
         switch (outcome.status) {
           case 'inserted':
             inserted++
@@ -282,6 +296,7 @@ async function runPoll(request: Request) {
   const jobBoardCompanies = monitoredCompanies.slice(0, JOB_BOARD_COMPANY_LIMIT)
   if (jobBoardCompanies.length) {
     stats.job_board_checked = jobBoardCompanies.length
+    sourceLedger.addFetched('job_board', jobBoardCompanies.length)
     const jobBoardInserted: string[] = []
 
     for (let i = 0; i < jobBoardCompanies.length; i += JOB_BOARD_BATCH_SIZE) {
@@ -315,6 +330,11 @@ async function runPoll(request: Request) {
             headline,
             summary,
           })
+          const clusterScore = computeEventClusterScore({
+            corroboratingSourceCount: 1,
+            sourceType: 'jobs',
+            filterScore: 80,
+          })
 
           const embedding = await embed(`${entry.name} hiring ${summary}`)
 
@@ -325,6 +345,10 @@ async function runPoll(request: Request) {
             headline,
             summary,
             novelty_key:      noveltyKey,
+            event_cluster_key: noveltyKey,
+            corroborating_source_count: 1,
+            cluster_score:    clusterScore,
+            source_type:      'jobs',
             source_url:       null,
             source_name:      'job_board',
             published_at:     new Date().toISOString(),
@@ -337,6 +361,7 @@ async function runPoll(request: Request) {
           }
 
           inserted++
+          sourceLedger.addExtractionOutcome('job_board', 'inserted')
           stats.job_board_inserted++
           insertedCompanies.push({
             name: entry.name,
@@ -378,12 +403,19 @@ async function runPoll(request: Request) {
     inserted,
     skipped,
     stats,
+    source_metrics: sourceLedger.values(),
     match_triggered: matchTriggered,
     match_result: matchResult,
     delivery_triggered: deliveryTriggered,
     delivery_result: deliveryResult,
   }
   console.log('[poll-signals] stats', { inserted, skipped, ...stats, match_triggered: matchTriggered })
+  await recordSourceRunMetrics(supabase, {
+    cronRunId: runId,
+    metrics: sourceLedger.values(),
+    startedAt: runStartedAt,
+    finishedAt: new Date().toISOString(),
+  })
   await finishCronRun(supabase, runId, { status: 'success', metrics: payload })
   return NextResponse.json(payload)
   } catch (error) {
@@ -431,6 +463,7 @@ async function triggerDownstreamCron(
 function shortlistItems(allItems: RSSItem[]): ShortlistResult {
   const seen = new Set<string>()
   const deduped: CandidateWorkItem[] = []
+  const rejected: CandidateWorkItem[] = []
 
   for (const item of allItems) {
     // Skip articles older than 7 days
@@ -442,6 +475,8 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
     const dedupeKey = item.link || `${item.source}:${item.title}`.toLowerCase()
     if (seen.has(dedupeKey)) continue
     seen.add(dedupeKey)
+    const junkFilter = cheapJunkFilter(item)
+    const rawPayloadHash = stableCandidateHash(item)
 
     const combinedText = `${item.title} ${item.description}`
     const text = combinedText.toLowerCase()
@@ -456,7 +491,28 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
     const isBroadNewsSource = item.source === 'gdelt'
     const isMonitoredNewsSource = item.source === 'google_news_company'
 
+    const baseCandidate = {
+      fingerprint: dedupeKey,
+      item,
+      junkFilter,
+      rawPayloadHash,
+    }
+
+    if (!junkFilter.pass) {
+      rejected.push({
+        ...baseCandidate,
+        rank: junkFilter.score,
+        shortlistReason: junkFilter.reason,
+      })
+      continue
+    }
+
     if (!hasNamedCompany) {
+      rejected.push({
+        ...baseCandidate,
+        rank: junkFilter.score,
+        shortlistReason: 'no_named_company',
+      })
       continue
     }
 
@@ -465,6 +521,11 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
       !isPressRelease &&
       !((isOwnedSource || isMonitoredNewsSource || isLaunchSource) && keywordHits > 0)
     ) {
+      rejected.push({
+        ...baseCandidate,
+        rank: junkFilter.score,
+        shortlistReason: 'no_high_signal_pattern',
+      })
       continue
     }
 
@@ -479,8 +540,7 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
       : 0
 
     deduped.push({
-      fingerprint: dedupeKey,
-      item,
+      ...baseCandidate,
       rank: keywordHits * 5 + sourceBoost + Math.min(recencyBoost, 12) + (matchedHighSignal ? 8 : 0),
       shortlistReason: matchedHighSignal ? 'high_signal_pattern' : 'press_release_priority',
     })
@@ -488,8 +548,53 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
 
   deduped.sort((a, b) => b.rank - a.rank)
   return {
-    dedupedCount: deduped.length,
+    dedupedCount: deduped.length + rejected.length,
+    rejectedCount: rejected.length,
     items: deduped.slice(0, MAX_CANDIDATES_PER_RUN),
+    rejected: rejected.slice(0, MAX_CANDIDATES_PER_RUN),
+  }
+}
+
+async function upsertSignalCandidate(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  candidate: CandidateWorkItem,
+  shouldProcess: boolean,
+): Promise<CandidateWorkItem> {
+  const { data, error } = await supabase
+    .from('signal_candidates')
+    .upsert({
+      fingerprint: candidate.fingerprint,
+      title: candidate.item.title,
+      description: candidate.item.description,
+      source_url: candidate.item.link || null,
+      source_name: candidate.item.source,
+      source_type: candidate.junkFilter.source_type,
+      raw_payload_hash: candidate.rawPayloadHash,
+      entity_hints: candidate.junkFilter.entity_hints,
+      junk_filter_output: candidate.junkFilter,
+      filter_decision: candidate.junkFilter.decision,
+      filter_score: candidate.junkFilter.score,
+      rejection_reason: shouldProcess ? null : candidate.shortlistReason,
+      estimated_cost_usd: estimateSourceCost(candidate.item.source),
+      published_at: candidate.item.pubDate ? new Date(candidate.item.pubDate).toISOString() : null,
+      shortlist_score: candidate.rank,
+      shortlist_reason: candidate.shortlistReason,
+      ...(shouldProcess ? {} : {
+        extract_status: 'extract_null',
+        processed_at: new Date().toISOString(),
+      }),
+      last_seen_at: new Date().toISOString(),
+    }, { onConflict: 'fingerprint' })
+    .select('id, extract_status')
+    .single()
+  if (error) {
+    console.error('[poll-signals] signal_candidates upsert error:', error.message)
+  }
+  const row = data as { id?: string; extract_status?: string } | null
+  return {
+    ...candidate,
+    candidateId: row?.id,
+    extractStatus: row?.extract_status ?? (shouldProcess ? 'pending' : 'extract_null'),
   }
 }
 
@@ -557,7 +662,7 @@ async function processItem(
 
   const recentSignalsQuery = supabase
     .from('signals')
-    .select('id, novelty_key, headline, summary, company_name, company_domain, funding_amount')
+    .select('id, novelty_key, headline, summary, company_name, company_domain, funding_amount, source_name, corroborating_source_count, cluster_score')
     .gte('published_at', noveltyWindowStart)
     .order('published_at', { ascending: false })
     .limit(12)
@@ -587,6 +692,13 @@ async function processItem(
   )
 
   if (duplicateSignal) {
+    await updateDuplicateClusterSignal(supabase, duplicateSignal, {
+      noveltyKey,
+      sourceName: item.source,
+      sourceType: candidate.junkFilter.source_type,
+      filterScore: candidate.junkFilter.score,
+      recentSignals: recentSignals ?? [],
+    })
     await updateCandidateStatus(supabase, candidateId, {
       extract_status: 'duplicate',
       extract_confidence: signal.confidence,
@@ -595,6 +707,13 @@ async function processItem(
     })
     return { status: 'duplicate' }
   }
+
+  const corroboratingSourceCount = computeCorroboratingSourceCount(recentSignals ?? [], item.source)
+  const clusterScore = computeEventClusterScore({
+    corroboratingSourceCount,
+    sourceType: candidate.junkFilter.source_type,
+    filterScore: candidate.junkFilter.score,
+  })
 
   let embedding: number[]
   try {
@@ -618,6 +737,10 @@ async function processItem(
     summary:          signal.summary,
     funding_amount:   signal.funding_amount,
     novelty_key:      noveltyKey,
+    event_cluster_key: noveltyKey,
+    corroborating_source_count: corroboratingSourceCount,
+    cluster_score:    clusterScore,
+    source_type:      candidate.junkFilter.source_type,
     source_url:       item.link,
     source_name:      item.source,
     published_at:     pubDate,
@@ -679,6 +802,91 @@ async function processItem(
     companyDomain: signal.company_domain ?? null,
   }
 }
+
+function mapOutcomeToLedger(status: ProcessOutcome['status']): 'success' | 'null' | 'error' | 'duplicate' | 'inserted' {
+  if (status === 'inserted') return 'inserted'
+  if (status === 'duplicate') return 'duplicate'
+  if (status === 'extract_null') return 'null'
+  return 'error'
+}
+
+function computeCorroboratingSourceCount(
+  recentSignals: Array<{ source_name?: string | null; novelty_key?: string | null }>,
+  currentSource: string,
+): number {
+  const sources = new Set<string>()
+  if (currentSource) sources.add(currentSource)
+  for (const signal of recentSignals) {
+    if (signal.source_name) sources.add(signal.source_name)
+  }
+  return Math.max(1, sources.size)
+}
+
+function computeEventClusterScore(params: {
+  corroboratingSourceCount: number
+  sourceType: ReturnType<typeof classifySourceType>
+  filterScore: number
+}): number {
+  const sourceTypeBoost: Record<ReturnType<typeof classifySourceType>, number> = {
+    owned: 16,
+    press: 12,
+    jobs: 10,
+    launch: 8,
+    community: 5,
+    news: 4,
+    social: 3,
+    crm: 14,
+    unknown: 0,
+  }
+  const corroborationBoost = Math.min(28, Math.max(0, params.corroboratingSourceCount - 1) * 14)
+  const score = params.filterScore * 0.56 + sourceTypeBoost[params.sourceType] + corroborationBoost
+  return Math.max(0, Math.min(100, Math.round(score)))
+}
+
+async function updateDuplicateClusterSignal(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  duplicateSignal: {
+    id?: string | null
+    source_name?: string | null
+    corroborating_source_count?: number | string | null
+    cluster_score?: number | string | null
+  },
+  input: {
+    noveltyKey: string
+    sourceName: string
+    sourceType: ReturnType<typeof classifySourceType>
+    filterScore: number
+    recentSignals: Array<{ source_name?: string | null; novelty_key?: string | null }>
+  },
+): Promise<void> {
+  if (!duplicateSignal.id) return
+  const corroboratingSourceCount = Math.max(
+    Number(duplicateSignal.corroborating_source_count ?? 1),
+    computeCorroboratingSourceCount(input.recentSignals, input.sourceName),
+  )
+  const clusterScore = Math.max(
+    Number(duplicateSignal.cluster_score ?? 0),
+    computeEventClusterScore({
+      corroboratingSourceCount,
+      sourceType: input.sourceType,
+      filterScore: input.filterScore,
+    }),
+  )
+
+  const { error } = await supabase
+    .from('signals')
+    .update({
+      event_cluster_key: input.noveltyKey,
+      corroborating_source_count: corroboratingSourceCount,
+      cluster_score: clusterScore,
+    })
+    .eq('id', duplicateSignal.id)
+
+  if (error) {
+    console.error('[poll-signals] duplicate cluster update error:', error.message)
+  }
+}
+
 async function updateCandidateStatus(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   candidateId: string | undefined,

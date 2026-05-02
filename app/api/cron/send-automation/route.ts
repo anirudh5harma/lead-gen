@@ -11,7 +11,7 @@ import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-conte
 import { sendAutomationLifecycleEmail } from '@/lib/resend'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { finishAgentRun, recordAgentEvent, startAgentRun } from '@/lib/agent-events'
-import { buildRecipientGroup, formatRecipientListForLog, type OutreachRecipientGroup } from '@/lib/outreach-recipients'
+import { buildRecipientGroup, ensureBodyGreetsRecipients, formatRecipientListForLog, type OutreachRecipientGroup } from '@/lib/outreach-recipients'
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint, type LeadGraphResult } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
@@ -19,6 +19,7 @@ import { buildOutreachPlan, explainPlanBlock, type OutreachPlan } from '@/lib/gt
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
+import { validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
   finishWorkflowRun,
   finishWorkflowStep,
@@ -651,6 +652,49 @@ async function sendAutomationLead(
   if (!draft.recipientGroup) return false
 
   const recipientEmails = draft.recipientGroup.all.map(recipient => recipient.email.toLowerCase())
+  const validationStepId = await startWorkflowStep(supabase, {
+    runId: params.workflowRunId,
+    userId: params.userId,
+    clientId: params.clientId,
+    stepKey: `lead:${params.lead.id as string}:recipient_validation`,
+    input: {
+      lead_id: params.lead.id,
+      recipient_count: recipientEmails.length,
+    },
+  })
+  const recipientValidation = await validateOutboundRecipients(recipientEmails)
+  await finishWorkflowStep(supabase, {
+    stepId: validationStepId,
+    status: recipientValidation.safe ? 'completed' : 'blocked',
+    output: {
+      safe: recipientValidation.safe,
+      unsafe_emails: recipientValidation.unsafeEmails,
+      statuses: recipientValidation.rows,
+    },
+  })
+  if (!recipientValidation.safe) {
+    const reasons = recipientValidation.reasons.length ? recipientValidation.reasons : ['recipient_not_verified']
+    await recordAgentEvent(supabase, {
+      userId: params.userId,
+      clientId: params.clientId,
+      leadId: params.lead.id as string,
+      runId: params.agentRunId,
+      agentName: 'safety',
+      eventType: 'recipient_validation_blocked',
+      status: 'blocked',
+      title: `Skipped ${params.lead.target_company}: recipient validation failed`,
+      body: `Unsafe recipient(s): ${recipientValidation.unsafeEmails.join(', ')}.`,
+      metadata: { recipients: recipientEmails, unsafe_emails: recipientValidation.unsafeEmails, reasons },
+    })
+    await markLatestOutreachPlanStatus(supabase, {
+      userId: params.userId,
+      leadId: params.lead.id as string,
+      status: 'blocked',
+    })
+    if (graph) await recordBlockedTouchpoint(supabase, params, graph, reasons, outreachPlan)
+    return false
+  }
+
   const policyStepId = await startWorkflowStep(supabase, {
     runId: params.workflowRunId,
     userId: params.userId,
@@ -712,6 +756,7 @@ async function sendAutomationLead(
     userProfile: profile,
     clientProfile,
   })
+  const normalizedDraftBody = ensureBodyGreetsRecipients(draft.body, draft.recipientGroup.greeting)
 
   const sendStepId = await startWorkflowStep(supabase, {
     runId: params.workflowRunId,
@@ -744,7 +789,7 @@ async function sendAutomationLead(
     to: draft.recipientGroup.to.email,
     cc: draft.recipientGroup.cc.map(recipient => recipient.email),
     subject: draft.subject,
-    body: draft.body,
+    body: normalizedDraftBody,
     fromName: outreachContext.fromName,
     preferAccountId: params.connectedAccountId,
     notUsedSince: new Date(Date.now() - params.minMinutesBetweenSends * 60_000).toISOString(),
@@ -826,7 +871,7 @@ async function sendAutomationLead(
       type: 'email',
       status: 'sent',
       subject: draft.subject,
-      bodyPreview: bodyPreview(draft.body),
+      bodyPreview: bodyPreview(normalizedDraftBody),
       fromEmail: result.fromEmail,
       toEmail: draft.recipientGroup.to.email,
       provider: result.provider,
