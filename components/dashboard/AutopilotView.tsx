@@ -121,16 +121,18 @@ export default function AutopilotView() {
 
   return (
     <div className="w-full space-y-4">
-      <div className="card overflow-hidden">
-        <div className="px-5 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Main toggle card */}
+      <div className="card overflow-hidden shadow-sm">
+        <div className="px-5 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[var(--color-ink-2)]/30">
           <div>
             <h2 className="text-lg font-bold text-[var(--color-text-1)]">GTM Engine</h2>
             <p className="text-xs text-[var(--color-text-4)] mt-0.5">Choose how account agents move from signal to next action.</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em] ${
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em] ${
               liveAutopilotOn ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'bg-[var(--color-ink-3)] text-[var(--color-text-4)]'
             }`}>
+              {liveAutopilotOn && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />}
               {liveAutopilotOn ? 'On' : 'Off'}
             </span>
             <button
@@ -148,8 +150,12 @@ export default function AutopilotView() {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+      {/* Activity log */}
+      <div className="card overflow-hidden shadow-sm">
+        <div className="border-b border-[var(--color-line-1)] px-5 py-4 bg-[var(--color-ink-2)]/30 flex items-center gap-2">
+          <svg className="w-3.5 h-3.5 text-[var(--color-text-4)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Recent agent work</h3>
         </div>
         {activityLog.length === 0 ? (
@@ -157,25 +163,26 @@ export default function AutopilotView() {
         ) : (
           <div className="divide-y divide-[var(--color-line-1)]">
             {activityLog.map(item => (
-              <div key={item.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />
-                  <span className="text-[12.5px] text-[var(--color-text-1)]">{item.action}</span>
-                  <span className="text-[11px] text-[var(--color-text-3)]">{item.company}</span>
+              <div key={item.id} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-[var(--color-ink-2)]/30 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="h-2 w-2 rounded-full bg-[var(--color-accent)] shrink-0" />
+                  <span className="text-[12.5px] text-[var(--color-text-1)] truncate">{item.action}</span>
+                  <span className="text-[11px] text-[var(--color-text-3)] truncate">{item.company}</span>
                 </div>
-                <span className="text-[10.5px] text-[var(--color-text-4)]">{formatDateTime(item.time)}</span>
+                <span className="text-[10.5px] text-[var(--color-text-4)] shrink-0">{formatDateTime(item.time)}</span>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div className="card divide-y divide-[var(--color-line-1)]">
+      {/* Settings + Followups */}
+      <div className="card divide-y divide-[var(--color-line-1)] shadow-sm overflow-hidden">
         <div className={`px-5 py-5 space-y-5 transition-all duration-200 ${liveAutopilotOn ? 'opacity-100' : 'opacity-60 saturate-75'}`}>
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="space-y-1.5">
               <span className="text-xs font-semibold text-[var(--color-text-1)]">Sending from</span>
-              <select value={accountId ?? ''} onChange={e => setAccountId(e.target.value || null)} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] text-[var(--color-text-1)]">
+              <select value={accountId ?? ''} onChange={e => setAccountId(e.target.value || null)} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] text-[var(--color-text-1)] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
                   <option value="">Rotate across connected inboxes</option>
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.display_name || a.email} · {a.provider}</option>)}
               </select>
@@ -183,13 +190,13 @@ export default function AutopilotView() {
             <div className="grid grid-cols-2 gap-3">
               <label className="space-y-1.5">
                 <span className="text-xs font-semibold text-[var(--color-text-1)]">Daily limit</span>
-                <select value={dailyLimit} onChange={e => setDailyLimit(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px]">
+                <select value={dailyLimit} onChange={e => setDailyLimit(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
                   {[5, 10, 15, 20, 30, 50].map(v => <option key={v} value={v}>{v}/day</option>)}
                 </select>
               </label>
               <label className="space-y-1.5">
                 <span className="text-xs font-semibold text-[var(--color-text-1)]">Gap between sends</span>
-                <select value={spacing} onChange={e => setSpacing(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px]">
+                <select value={spacing} onChange={e => setSpacing(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
                   {[15, 30, 60, 120, 240].map(v => <option key={v} value={v}>{v} min</option>)}
                 </select>
               </label>
@@ -197,7 +204,12 @@ export default function AutopilotView() {
           </div>
 
           <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
-            <p className="text-[12px] font-semibold text-[var(--color-text-1)]">Operating loop</p>
+            <p className="text-[12px] font-semibold text-[var(--color-text-1)] flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-[var(--color-accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Operating loop
+            </p>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {['Monitor account', 'Build context', 'Pick next move', 'Send or queue'].map((step, i) => (
                 <div key={step} className="flex items-center gap-2 text-[11px] text-[var(--color-text-3)]">
@@ -209,7 +221,7 @@ export default function AutopilotView() {
           </div>
 
           <details className="group">
-            <summary className="flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-[var(--color-text-2)]">
+            <summary className="flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)] transition-colors">
               <span className="transition-transform group-open:rotate-90">▸</span>
               Advanced settings
             </summary>
@@ -217,34 +229,40 @@ export default function AutopilotView() {
               <div className="grid gap-3 lg:grid-cols-3">
                 <label className="space-y-1.5">
                   <span className="text-xs font-semibold text-[var(--color-text-1)]">Minimum lead score</span>
-                  <select value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px]">
+                  <select value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
                     {Array.from({ length: 10 }, (_, i) => i + 1).map(s => <option key={s} value={s}>{s}+</option>)}
                   </select>
                 </label>
                 <label className="space-y-1.5">
                   <span className="text-xs font-semibold text-[var(--color-text-1)]">Max lead age</span>
-                  <select value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px]">
+                  <select value={maxAge} onChange={e => setMaxAge(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
                     {[7, 14, 30, 60, 90].map(d => <option key={d} value={d}>{d} days</option>)}
                   </select>
                 </label>
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 hover:shadow-sm transition-shadow cursor-pointer">
                   <span>
                     <span className="block text-[12px] font-semibold text-[var(--color-text-1)]">Verified contacts only</span>
                     <span className="block text-[10.5px] text-[var(--color-text-4)]">Skip unverified emails.</span>
                   </span>
-                  <input type="checkbox" checked={requireVerified} onChange={e => setRequireVerified(e.target.checked)} />
+                  <input type="checkbox" checked={requireVerified} onChange={e => setRequireVerified(e.target.checked)} className="accent-[var(--color-accent)] h-4 w-4" />
                 </label>
               </div>
             </div>
           </details>
 
-          <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11.5px] leading-5 text-[var(--color-text-3)]">
+          <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 text-[11.5px] leading-5 text-[var(--color-text-3)] flex items-start gap-2.5">
+            <svg className="w-4 h-4 text-[var(--color-text-4)] shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             The engine only spends credits on contact unlocks. It skips unsubscribed and bounced recipients, rotates inboxes, and respects your daily limit and spacing.
           </div>
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 pt-1">
             <div className="text-[11px] text-[var(--color-text-4)]">{msg ?? 'Start with approve-first until your targeting, inbox, and credits are ready.'}</div>
-            <button onClick={save} disabled={saving || !loaded} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50">
+            <button onClick={save} disabled={saving || !loaded} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] transition-transform">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
               {saving ? 'Saving…' : liveAutopilotOn ? 'Save and run' : 'Save approve-first'}
             </button>
           </div>
@@ -253,17 +271,26 @@ export default function AutopilotView() {
         {/* Followups */}
         {followups.length > 0 && (
           <>
-            <div className="px-5 py-3">
+            <div className="px-5 py-3 bg-[var(--color-ink-2)]/30 flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-[var(--color-text-4)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
               <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-4)] font-semibold">Scheduled · {followups.length}</p>
             </div>
             <ul className="divide-y divide-[var(--color-line-1)]">
               {followups.map(f => (
-                <li key={f.id} className="px-5 py-3 flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-xs text-[var(--color-text-1)] truncate">{f.leads?.target_company ?? 'Unknown'}</p>
-                    <p className="text-[10px] text-[var(--color-text-4)] mt-0.5">{formatDateTime(f.scheduled_for)}</p>
+                <li key={f.id} className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-[var(--color-ink-2)]/30 transition-colors">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5 text-[var(--color-text-4)] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <div>
+                      <p className="text-xs text-[var(--color-text-1)] truncate">{f.leads?.target_company ?? 'Unknown'}</p>
+                      <p className="text-[10px] text-[var(--color-text-4)] mt-0.5">{formatDateTime(f.scheduled_for)}</p>
+                    </div>
                   </div>
-                  <button onClick={() => f.leads && cancelFollowup(f.leads.id, f.id)} disabled={cancellingId === f.id} className="text-[11px] text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] disabled:opacity-50 transition-colors shrink-0">
+                  <button onClick={() => f.leads && cancelFollowup(f.leads.id, f.id)} disabled={cancellingId === f.id} className="inline-flex items-center gap-1 text-[11px] text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] disabled:opacity-50 transition-colors shrink-0">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     {cancellingId === f.id ? 'Cancelling…' : 'Cancel'}
                   </button>
                 </li>

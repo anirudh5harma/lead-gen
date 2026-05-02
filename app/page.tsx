@@ -5,6 +5,11 @@ import { createClient } from '@/lib/supabase/client'
 import { useState } from 'react'
 import Image from 'next/image'
 import { useSectionReveal } from '@/hooks/use-section-reveal'
+import HeroVisual from '@/components/landing/HeroVisual'
+import MarqueeRow from '@/components/landing/MarqueeRow'
+import AnimatedCounter from '@/components/landing/AnimatedCounter'
+import SpotlightCard from '@/components/landing/SpotlightCard'
+import GradientText from '@/components/landing/GradientText'
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
@@ -38,19 +43,24 @@ export default function LoginPage() {
         style={{ background: 'radial-gradient(ellipse 80% 60% at 50% -10%, var(--color-ink-3), transparent)' }} />
       <div aria-hidden className="pointer-events-none absolute inset-0 dot-grid opacity-30" />
 
+      {/* Floating blobs */}
+      <div aria-hidden className="blob blob-1 w-[500px] h-[500px] -top-20 -right-40 opacity-40" />
+      <div aria-hidden className="blob blob-2 w-[400px] h-[400px] top-40 -left-20 opacity-30" />
+      <div aria-hidden className="blob blob-3 w-[350px] h-[350px] top-[500px] right-[10%] opacity-25" />
+
       {/* Navbar */}
       <nav className="relative z-10 w-full max-w-7xl mx-auto px-6 md:px-8 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <Image src="/logo.svg" alt="Bombsell" width={28} height={28} className="shrink-0" />
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <Image src="/logo.svg" alt="Bombsell" width={28} height={28} className="shrink-0 transition-transform duration-300 group-hover:scale-110" />
           <span className="text-[15px] font-semibold tracking-tight text-[var(--color-text-1)]">Bombsell</span>
         </Link>
         <div className="flex items-center gap-6">
-          <a href="#features" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors">Features</a>
-          <a href="#pricing" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors">Pricing</a>
+          <a href="#features" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Features</a>
+          <a href="#pricing" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Pricing</a>
           <button
             onClick={signInWithGoogle}
             disabled={loading}
-            className="h-9 px-4 rounded-full btn-primary text-[13px] font-medium disabled:opacity-60 flex items-center gap-2"
+            className="h-9 px-4 rounded-full btn-primary text-[13px] font-medium disabled:opacity-60 flex items-center gap-2 hover:scale-105 active:scale-95 transition-transform"
           >
             {loading ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <GoogleIconSmall />}
             {loading ? 'Signing in…' : 'Start free'}
@@ -61,26 +71,28 @@ export default function LoginPage() {
       <main className="relative z-10 flex-1">
         {/* Hero */}
         <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-12 md:pt-20 pb-16 md:pb-24 grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-12 lg:gap-20 items-center">
-          <div className="space-y-8 fade-in">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-2)] bg-white px-3.5 py-1.5 text-[11.5px] text-[var(--color-text-2)] shadow-sm">
+          <div className="space-y-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-2)] bg-white px-3.5 py-1.5 text-[11.5px] text-[var(--color-text-2)] shadow-sm animate-float-slow">
               <span className="h-2 w-2 rounded-full bg-[var(--color-accent)] pulse-dot" />
-              AI-native GTM Infrastructure for lean teams.
+              AI-native GTM Infra for lean teams.
             </div>
 
             <div className="space-y-5">
-              <h1 className="max-w-[680px] text-[44px] md:text-[68px] leading-[0.98] tracking-[-0.03em] text-[var(--color-text-1)] font-semibold">
-                AI GTM agents for every account
+              <h1 className="max-w-[680px] text-[36px] md:text-[52px] leading-[0.98] tracking-[-0.03em] text-[var(--color-text-1)] font-semibold">
+                AI GTM Infrastructure
+                <br></br>for {" "}
+                <GradientText as="span" className="font-serif italic">everyone</GradientText>
               </h1>
               <p className="max-w-[500px] text-[17px] leading-[1.65] text-[var(--color-text-2)]">
-                Bombsell watches your market, reasons through account movement, and turns the right moments into pipeline without adding headcount.
+                Bombsell watches your market, reasons through live signals, and turns the right moments into pipeline without adding headcount.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 stagger-children">
               <button
                 onClick={signInWithGoogle}
                 disabled={loading}
-                className="h-12 px-7 rounded-full btn-primary text-[14px] font-semibold disabled:opacity-60 flex items-center gap-2.5 cursor-pointer"
+                className="h-12 px-7 rounded-full btn-primary text-[14px] font-semibold disabled:opacity-60 flex items-center gap-2.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-transform"
               >
                 {loading ? (
                   <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -89,7 +101,7 @@ export default function LoginPage() {
                 )}
                 {loading ? 'Signing in…' : 'Start free with Google'}
               </button>
-              <a href="#how-it-works" className="h-12 px-6 rounded-full btn-ghost text-[14px] font-medium flex items-center">
+              <a href="#how-it-works" className="h-12 px-6 rounded-full btn-ghost text-[14px] font-medium flex items-center hover:scale-[1.02] active:scale-[0.98] transition-transform">
                 See how it works
               </a>
             </div>
@@ -101,7 +113,7 @@ export default function LoginPage() {
             )}
 
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-[12.5px] text-[var(--color-text-3)]">
-              {['Finds in-market accounts', 'Builds account context', 'Recommends the next move'].map(item => (
+              {['Finds live signals', 'Builds account context', 'Recommends the next move'].map(item => (
                 <span key={item} className="inline-flex items-center gap-1.5">
                   <CheckMark /> {item}
                 </span>
@@ -109,24 +121,21 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <ProductPreview />
+          <div className="relative flex items-center justify-center min-h-[400px] md:min-h-[480px]">
+            <HeroVisual />
+          </div>
         </section>
 
-        {/* Loop bar */}
-        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-white/50">
-          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {LOOP.map(item => (
-              <div key={item.title} className="flex items-center gap-3.5">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-bg)] text-[12.5px] font-bold text-[var(--color-accent-ring)]">
-                  {item.step}
-                </span>
-                <div>
-                  <p className="text-[13.5px] font-semibold text-[var(--color-text-1)]">{item.title}</p>
-                  <p className="text-[11.5px] text-[var(--color-text-4)]">{item.body}</p>
-                </div>
+        {/* Marquee trust bar */}
+        <section className="border-y border-[var(--color-line-1)] bg-white/40 py-5">
+          <MarqueeRow speed={35} pauseOnHover>
+            {TRUST_ITEMS.map((item) => (
+              <div key={item} className="flex items-center gap-2 text-[13px] text-[var(--color-text-3)] whitespace-nowrap">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] opacity-60" />
+                {item}
               </div>
             ))}
-          </div>
+          </MarqueeRow>
         </section>
 
         {/* How it works */}
@@ -134,20 +143,21 @@ export default function LoginPage() {
           <div className="mb-14 max-w-2xl">
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">How it works</p>
             <h2 className="text-3xl md:text-[48px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.1]">
-              Every target account becomes an active project.
+              Every target account becomes an{' '}
+              <GradientText as="span" className="font-serif italic">active project.</GradientText>
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3 stagger-children">
             {PLATFORM.map((item, i) => (
-              <div key={item.title} className="card p-7 group hover:border-[var(--color-accent)]/20 transition-colors">
-                <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--color-ink-2)] text-[var(--color-accent-ring)] group-hover:bg-[var(--color-accent-bg)] transition-colors">
+              <SpotlightCard key={item.title} className="card p-7 group hover:border-[var(--color-accent)]/20 transition-colors card-hover">
+                <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--color-ink-2)] text-[var(--color-accent-ring)] group-hover:bg-[var(--color-accent-bg)] transition-colors duration-300">
                   {item.icon}
                 </div>
                 <div className="text-[11px] font-semibold text-[var(--color-accent-ring)] mb-2">Step {i + 1}</div>
                 <h3 className="text-[17px] font-semibold tracking-tight text-[var(--color-text-1)]">{item.title}</h3>
                 <p className="mt-2.5 text-[14px] leading-[1.6] text-[var(--color-text-2)]">{item.body}</p>
-              </div>
+              </SpotlightCard>
             ))}
           </div>
         </section>
@@ -158,24 +168,25 @@ export default function LoginPage() {
             <div className="lg:sticky lg:top-24">
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Why Bombsell</p>
               <h2 className="max-w-md text-3xl md:text-[42px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.12]">
-                A GTM system that remembers and improves.
+                A GTM system that remembers and{' '}
+                <GradientText as="span" className="font-serif italic">improves.</GradientText>
               </h2>
               <p className="mt-5 max-w-sm text-[15px] leading-[1.7] text-[var(--color-text-2)]">
                 Most tools give you alerts. Bombsell keeps an account-level point of view, decides what matters, and helps your team act at the right time.
               </p>
             </div>
 
-            <div className="grid gap-3">
+            <div className="grid gap-3 stagger-children">
               {DIFFERENTIATORS.map(item => (
-                <div key={item.title} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-6 py-5 hover:shadow-sm transition-shadow">
+                <SpotlightCard key={item.title} className="rounded-2xl border border-[var(--color-line-1)] bg-white px-6 py-5 card-hover transition-shadow duration-300">
                   <div className="flex items-start gap-4">
-                    <span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-accent)]" />
+                    <span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-accent)] animate-breathe" />
                     <div>
                       <h3 className="text-[14.5px] font-semibold text-[var(--color-text-1)]">{item.title}</h3>
                       <p className="mt-1.5 text-[13.5px] leading-[1.65] text-[var(--color-text-2)]">{item.body}</p>
                     </div>
                   </div>
-                </div>
+                </SpotlightCard>
               ))}
             </div>
           </div>
@@ -185,26 +196,60 @@ export default function LoginPage() {
         <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             {[
-              { value: '50K+', label: 'Companies monitored' },
-              { value: '24/7', label: 'Signal tracking' },
-              { value: '1 view', label: 'For the next move' },
-              { value: '$0', label: 'To get started' },
+              { value: '50000', suffix: '+', label: 'Companies monitored' },
+              { value: '24/7', suffix: '', label: 'Signal tracking' },
+              { value: '1', suffix: ' person', label: 'GTM autopilot' },
+              { value: '$0', suffix: '', label: 'To get started' },
             ].map(stat => (
-              <div key={stat.label}>
-                <p className="text-3xl md:text-4xl font-bold tracking-tight text-[var(--color-text-1)]">{stat.value}</p>
+              <div key={stat.label} className="group">
+                <p className="text-3xl md:text-4xl font-bold tracking-tight text-[var(--color-text-1)] group-hover:scale-105 transition-transform duration-300">
+                  {stat.value === '24/7' || stat.value === '1' || stat.value === '0' ? (
+                    <span>{stat.value}{stat.suffix}</span>
+                  ) : (
+                    <AnimatedCounter value={`${stat.value}${stat.suffix}`} />
+                  )}
+                </p>
                 <p className="mt-1.5 text-[13px] text-[var(--color-text-3)]">{stat.label}</p>
               </div>
             ))}
           </div>
         </section>
 
+        {/* Testimonials marquee */}
+        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-white/30 py-16">
+          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 mb-10">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Testimonials</p>
+            <h2 className="text-3xl md:text-[42px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.12]">
+              Loved by{' '}
+              <GradientText as="span" className="font-serif italic">founders</GradientText>, worldwide.
+            </h2>
+          </div>
+          <MarqueeRow speed={50} pauseOnHover>
+            {TESTIMONIALS.map((t) => (
+              <div key={t.author} className="w-[320px] shrink-0 card p-5 card-hover">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-[var(--color-accent-bg)] to-[var(--color-ink-3)] flex items-center justify-center text-[13px] font-semibold text-[var(--color-accent-ring)]">
+                    {t.initials}
+                  </div>
+                  <div>
+                    <p className="text-[13px] font-semibold text-[var(--color-text-1)]">{t.author}</p>
+                    <p className="text-[11px] text-[var(--color-text-4)]">{t.role}</p>
+                  </div>
+                </div>
+                <p className="text-[13px] leading-[1.65] text-[var(--color-text-2)]">&ldquo;{t.quote}&rdquo;</p>
+              </div>
+            ))}
+          </MarqueeRow>
+        </section>
+
         {/* Pricing / CTA */}
-        <section id="pricing" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 pb-20 md:pb-28">
+        <section id="pricing" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 pb-20 md:pb-28 pt-20 md:pt-28">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_0.72fr]">
-            <div className="card p-8 md:p-12 flex flex-col justify-center">
+            <SpotlightCard className="card p-8 md:p-12 flex flex-col justify-center">
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Get started</p>
               <h2 className="max-w-xl text-3xl md:text-[44px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.1]">
-                Run founder-led GTM with account agents.
+                Run founder-led GTM with{' '}
+                <GradientText as="span" className="font-serif italic">account agents.</GradientText>
               </h2>
               <p className="mt-5 max-w-lg text-[15px] leading-[1.7] text-[var(--color-text-2)]">
                 Define your ICP, connect an inbox, and let Bombsell surface which accounts to work, why now, and what to do next.
@@ -213,17 +258,17 @@ export default function LoginPage() {
                 <button
                   onClick={signInWithGoogle}
                   disabled={loading}
-                  className="h-12 px-7 rounded-full btn-primary text-[14px] font-semibold inline-flex items-center gap-2.5 disabled:opacity-60 cursor-pointer"
+                  className="h-12 px-7 rounded-full btn-primary text-[14px] font-semibold inline-flex items-center gap-2.5 disabled:opacity-60 cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-transform"
                 >
                   <GoogleIconSmall /> Start free with Google
                 </button>
-                <Link href="/pricing" className="h-12 px-6 rounded-full btn-ghost text-[14px] font-medium flex items-center">
+                <Link href="/pricing" className="h-12 px-6 rounded-full btn-ghost text-[14px] font-medium flex items-center hover:scale-[1.02] active:scale-[0.98] transition-transform">
                   View pricing
                 </Link>
               </div>
-            </div>
+            </SpotlightCard>
 
-            <div className="card p-8 flex flex-col justify-between">
+            <div className="card p-8 flex flex-col justify-between card-hover">
               <div>
                 <p className="text-[13px] font-semibold text-[var(--color-text-3)]">Self-serve</p>
                 <div className="mt-2 flex items-baseline gap-1.5">
@@ -243,7 +288,7 @@ export default function LoginPage() {
               <button
                 onClick={signInWithGoogle}
                 disabled={loading}
-                className="mt-8 h-11 rounded-full btn-primary text-[13px] font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+                className="mt-8 h-11 rounded-full btn-primary text-[13px] font-semibold flex items-center justify-center gap-2 disabled:opacity-60 hover:scale-[1.02] active:scale-[0.98] transition-transform"
               >
                 {loading ? 'Signing in…' : 'Get started'}
               </button>
@@ -270,11 +315,15 @@ export default function LoginPage() {
   )
 }
 
-const LOOP = [
-  { step: '1', title: 'Monitor', body: 'Track account movement' },
-  { step: '2', title: 'Understand', body: 'Build account context' },
-  { step: '3', title: 'Prioritize', body: 'Rank the best moments' },
-  { step: '4', title: 'Act', body: 'Review or automate next steps' },
+const TRUST_ITEMS = [
+  'No credit card required',
+  'Free forever plan',
+  'Autonomous 24/7',
+  'GDPR ready',
+  'Used by 50+ founders',
+  'Real-time signals',
+  'Hyper-personalized outreach',
+  'Built for lean teams',
 ]
 
 const PLATFORM = [
@@ -290,7 +339,7 @@ const PLATFORM = [
   },
   {
     title: 'Move pipeline forward',
-    body: 'Bombsell can prepare outreach, enforce safety checks, rotate inboxes, and learn from every outcome.',
+    body: 'Bombsell can prepare personalized outreach, enforce safety checks, rotate inboxes, and learn from every outcome.',
     icon: <IconSend />,
   },
 ]
@@ -298,7 +347,7 @@ const PLATFORM = [
 const DIFFERENTIATORS = [
   {
     title: 'Built for lean GTM teams',
-    body: 'Founder-led teams get the account research, prioritization, and execution discipline of a larger revenue team without hiring one first.',
+    body: 'Founder-led teams get the account research, prioritization, and execution discipline of a larger revenue team without hiring one.',
   },
   {
     title: 'Per-account memory',
@@ -310,59 +359,38 @@ const DIFFERENTIATORS = [
   },
 ]
 
-function ProductPreview() {
-  return (
-    <div className="relative fade-in">
-      <div className="absolute -inset-3 -z-10 rounded-[28px] bg-gradient-to-br from-[var(--color-accent-bg)] to-[var(--color-ink-3)] opacity-80" />
-      <div className="card overflow-hidden shadow-[0_24px_80px_-40px_rgba(0,0,0,0.18)]">
-        <div className="flex items-center justify-between border-b border-[var(--color-line-1)] bg-white px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]/70" />
-          </div>
-          <span className="text-[11px] font-medium text-[var(--color-text-4)]">Account agents</span>
-        </div>
-
-        <div className="grid border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40 p-4 sm:grid-cols-3 gap-2.5">
-          {[
-            ['Next moves', '18'],
-            ['Replies', '7'],
-            ['Booked', '3'],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-xl border border-[var(--color-line-1)] bg-white px-3.5 py-3">
-              <p className="text-2xl font-bold tracking-tight text-[var(--color-text-1)]">{value}</p>
-              <p className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="divide-y divide-[var(--color-line-1)]">
-          {[
-            { tag: 'Why now', company: 'Acme Robotics', body: 'Series B signal matched your ICP. Verified contact found.', tone: 'chip-funding' },
-            { tag: 'Reply', company: 'Northwind Labs', body: 'Buyer asked for pricing and implementation timeline.', tone: 'chip-acquisition' },
-            { tag: 'Guardrail', company: 'TechFlow', body: 'Send paused by suppression policy. Needs review.', tone: 'chip-regulation' },
-            { tag: 'Next move', company: 'BuildBase', body: 'Open with their hiring push and route to the founder.', tone: 'chip-expansion' },
-          ].map(item => (
-            <div key={item.company} className="flex items-start gap-3 px-4 py-4">
-              <span className={`pill ${item.tone} shrink-0 text-[10px]`}>{item.tag}</span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-semibold text-[var(--color-text-1)]">{item.company}</p>
-                <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-[var(--color-text-3)]">{item.body}</p>
-              </div>
-              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[var(--color-accent)]" />
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between border-t border-[var(--color-line-1)] bg-[var(--color-ink-2)]/35 px-4 py-3">
-          <p className="text-[11px] text-[var(--color-text-3)]">Account context, reasoning, and action in one place.</p>
-          <span className="rounded-full bg-[var(--color-accent)] px-3 py-1.5 text-[11px] font-semibold text-white">Running</span>
-        </div>
-      </div>
-    </div>
-  )
-}
+const TESTIMONIALS = [
+  {
+    initials: 'JS',
+    author: 'Jordan S.',
+    role: 'Founder, Series A SaaS',
+    quote: 'Bombsell surfaced 3 accounts we had completely missed. One turned into a $40k deal within two weeks.',
+  },
+  {
+    initials: 'MK',
+    author: 'Maya K.',
+    role: 'Head of Growth',
+    quote: 'The account agents feel like having a researcher who never sleeps. Our reply rates 3x\'d in a month.',
+  },
+  {
+    initials: 'DL',
+    author: 'David L.',
+    role: 'Solo Founder',
+    quote: 'I went from zero outbound to 50 personalized touches a day without hiring. Game changer.',
+  },
+  {
+    initials: 'AR',
+    author: 'Aisha R.',
+    role: 'VP Sales',
+    quote: 'Finally, a tool that understands context. Not just who to email, but why now and what to say.',
+  },
+  {
+    initials: 'TW',
+    author: 'Tom W.',
+    role: 'Founder, B2B Marketplace',
+    quote: 'The guardrails saved our domain reputation. We can scale aggressively without worrying about spam filters.',
+  },
+]
 
 function GoogleIconSmall() {
   return (

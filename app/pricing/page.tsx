@@ -127,11 +127,11 @@ export default function PricingPage() {
         <div className="section-reveal reveal-from-bottom text-center mb-16 space-y-4 max-w-2xl fade-in">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pricing</p>
           <h1 className="text-4xl md:text-6xl font-medium text-[var(--color-text-1)] tracking-[-0.02em] leading-[1.02]">
-            Start with account agents.<br />
+            Start for free.<br />
             <span className="font-serif italic text-gradient">Scale with us.</span>
           </h1>
           <p className="text-[16px] text-[var(--color-text-2)] max-w-lg mx-auto leading-relaxed">
-            Use Bombsell for free with starter credits. Scale when your market coverage and GTM process need more depth.
+            Use Bombsell for free with starter credits. Scale when your GTM needs more volume and depth.
           </p>
         </div>
 
