@@ -97,13 +97,18 @@ interface OutreachPlanRow {
   created_at: string
 }
 
+interface WorkItemActionRow {
+  item_key: string
+  action: string
+}
+
 export async function listGtmWorkItems(
   supabase: SupabaseClient,
   input: ListGtmWorkItemsInput,
 ): Promise<{ work_items: GtmWorkItem[] }> {
   const limit = clampLimit(input.limit ?? 30)
   const clientId = input.clientId ?? null
-  const [leadsRes, accountsRes, policiesRes, workflowsRes, plansRes] = await Promise.all([
+  const [leadsRes, accountsRes, policiesRes, workflowsRes, plansRes, actionRes] = await Promise.all([
     scopedQuery(
       supabase
         .from('leads')
@@ -152,6 +157,16 @@ export async function listGtmWorkItems(
         .limit(120),
       clientId,
     )),
+    optionalRows(scopedQuery(
+      supabase
+        .from('gtm_work_item_actions')
+        .select('item_key, action')
+        .eq('user_id', input.userId)
+        .in('action', ['reviewed', 'approved', 'discussed', 'dismissed'])
+        .order('created_at', { ascending: false })
+        .limit(500),
+      clientId,
+    )),
   ])
 
   for (const res of [leadsRes, accountsRes, policiesRes, workflowsRes]) {
@@ -162,6 +177,7 @@ export async function listGtmWorkItems(
   const leadById = new Map(leads.map(lead => [lead.id, lead]))
   const accountByKey = buildAccountIndex((accountsRes.data ?? []) as AccountRow[])
   const planByLead = latestPlanByLead(plansRes.rows)
+  const closedItemKeys = new Set((actionRes.rows as WorkItemActionRow[]).map(row => row.item_key))
   const items: GtmWorkItem[] = []
 
   for (const lead of leads) {
@@ -192,7 +208,7 @@ export async function listGtmWorkItems(
       continue
     }
 
-    if (lead.status === 'drafted' || (lead.is_unlocked === true && Boolean(lead.contact_email) && !lead.sent_at)) {
+    if (lead.status === 'drafted' || (lead.status !== 'viewed' && lead.is_unlocked === true && Boolean(lead.contact_email) && !lead.sent_at)) {
       items.push(leadItem('needs_approval', lead, account, {
         priority: 78 + Math.min(12, Math.max(0, (lead.relevance_score ?? 0) - 7) * 3) + signalBoost,
         title: `Next move ready for ${lead.target_company}`,
@@ -220,7 +236,7 @@ export async function listGtmWorkItems(
       continue
     }
 
-    if ((lead.relevance_score ?? 0) >= 8) {
+    if (lead.status !== 'viewed' && (lead.relevance_score ?? 0) >= 8) {
       items.push(leadItem('new_opportunity', lead, account, {
         priority: 62 + Math.min(18, (lead.relevance_score ?? 0) * 2) + signalBoost,
         title: `In-market account: ${lead.target_company}`,
@@ -287,6 +303,7 @@ export async function listGtmWorkItems(
 
   return {
     work_items: dedupeItems(items)
+      .filter(item => !closedItemKeys.has(item.id))
       .sort((a, b) => b.priority - a.priority || new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, limit),
   }

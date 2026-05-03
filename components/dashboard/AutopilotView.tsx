@@ -19,7 +19,6 @@ export default function AutopilotView() {
   const [followups, setFollowups] = useState<PendingFollowup[]>([])
   const [followupsLoaded, setFollowupsLoaded] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
-  const [activityLog, setActivityLog] = useState<Array<{ id: string; action: string; company: string; time: string }>>([])
 
   useEffect(() => {
     let cancelled = false
@@ -64,24 +63,6 @@ export default function AutopilotView() {
       .catch(() => { if (!cancelled) setFollowupsLoaded(true) })
     return () => { cancelled = true }
   }, [])
-
-  useEffect(() => {
-    if (!loaded) return
-    let cancelled = false
-    fetch('/api/gtm/ops', { cache: 'no-store' })
-      .then(async res => {
-        const data = await res.json().catch(() => null) as { workflow_runs?: Array<{ id: string; workflow_type: string; status: string; started_at: string; completed_at?: string | null; error_message: string | null; input?: Record<string, unknown> | null }>; error?: string } | null
-        if (cancelled || !res.ok || !data) return
-        setActivityLog((data.workflow_runs ?? []).slice(0, 8).map(run => ({
-          id: run.id,
-          action: labelWorkflowRun(run.workflow_type, run.status),
-          company: companyFromRun(run.input) ?? 'Account agent',
-          time: run.completed_at ?? run.started_at,
-        })))
-      })
-      .catch(() => undefined)
-    return () => { cancelled = true }
-  }, [loaded])
 
   const cancelFollowup = useCallback(async (leadId: string, followupId: string) => {
     setCancellingId(followupId)
@@ -150,32 +131,6 @@ export default function AutopilotView() {
         </div>
       </div>
 
-      {/* Activity log */}
-      <div className="card overflow-hidden shadow-sm">
-        <div className="border-b border-[var(--color-line-1)] px-5 py-4 bg-[var(--color-ink-2)]/30 flex items-center gap-2">
-          <svg className="w-3.5 h-3.5 text-[var(--color-text-4)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Recent agent work</h3>
-        </div>
-        {activityLog.length === 0 ? (
-          <div className="px-5 py-8 text-center text-xs text-[var(--color-text-4)]">No agent work yet. New signals and approved sends will appear here.</div>
-        ) : (
-          <div className="divide-y divide-[var(--color-line-1)]">
-            {activityLog.map(item => (
-              <div key={item.id} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-[var(--color-ink-2)]/30 transition-colors">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="h-2 w-2 rounded-full bg-[var(--color-accent)] shrink-0" />
-                  <span className="text-[12.5px] text-[var(--color-text-1)] truncate">{item.action}</span>
-                  <span className="text-[11px] text-[var(--color-text-3)] truncate">{item.company}</span>
-                </div>
-                <span className="text-[10.5px] text-[var(--color-text-4)] shrink-0">{formatDateTime(item.time)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Settings + Followups */}
       <div className="card divide-y divide-[var(--color-line-1)] shadow-sm overflow-hidden">
         <div className={`px-5 py-5 space-y-5 transition-all duration-200 ${liveAutopilotOn ? 'opacity-100' : 'opacity-60 saturate-75'}`}>
@@ -203,18 +158,31 @@ export default function AutopilotView() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
-            <p className="text-[12px] font-semibold text-[var(--color-text-1)] flex items-center gap-2">
-              <svg className="w-3.5 h-3.5 text-[var(--color-accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Operating loop
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {['Monitor account', 'Build context', 'Pick next move', 'Send or queue'].map((step, i) => (
-                <div key={step} className="flex items-center gap-2 text-[11px] text-[var(--color-text-3)]">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-bold text-[var(--color-accent-ring)] border border-[var(--color-line-1)]">{i + 1}</span>
-                  {step}
+          <div className="rounded-xl border border-[var(--color-line-1)] bg-[linear-gradient(135deg,#fffdf9_0%,#f6f0e7_48%,#eef4ef_100%)] p-4 shadow-[0_18px_45px_-35px_rgba(51,37,20,0.55)]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[12px] font-semibold text-[var(--color-text-1)]">Account agents</p>
+              <span className="rounded-full border border-white/80 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-[var(--color-text-3)] shadow-sm">
+                Signal to action
+              </span>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ['Monitor', 'Fresh account movement', 'M4 12h16m-8 8m8-8l-8-8'],
+                ['Context', 'Fit, trigger, buyer angle', 'M9 12h6m-6 6h12M5 6h14M5 18h14'],
+                ['Decide', 'Best next move', 'M9 12l2 2 4-4'],
+                ['Execute', 'Queue or send safely', 'M5 13l4 4L19 7'],
+              ].map(([label, detail, path], index) => (
+                <div key={label} className="rounded-lg border border-white/75 bg-white/72 px-3 py-3 shadow-[0_8px_25px_-22px_rgba(25,20,14,0.8)]">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] ring-1 ring-white/80">
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d={path} />
+                      </svg>
+                    </span>
+                    <span className="text-[10px] font-bold text-[var(--color-text-4)]">{String(index + 1).padStart(2, '0')}</span>
+                  </div>
+                  <p className="mt-3 text-[12px] font-semibold text-[var(--color-text-1)]">{label}</p>
+                  <p className="mt-1 text-[10.5px] leading-4 text-[var(--color-text-4)]">{detail}</p>
                 </div>
               ))}
             </div>
@@ -301,21 +269,4 @@ export default function AutopilotView() {
       </div>
     </div>
   )
-}
-
-function labelWorkflowRun(workflowType: string, status: string): string {
-  const base = workflowType
-    .replace(/^manual_/, '')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, char => char.toUpperCase())
-  if (status === 'failed') return `${base} blocked`
-  if (status === 'completed') return `${base} completed`
-  if (status === 'waiting') return `${base} waiting`
-  return `${base} running`
-}
-
-function companyFromRun(input: Record<string, unknown> | null | undefined): string | null {
-  if (!input) return null
-  const value = input.target_company ?? input.company ?? input.account_name
-  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
