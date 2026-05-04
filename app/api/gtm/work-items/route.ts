@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getActiveClientContext } from '@/lib/client-context'
+import { completeGtmActionForSourceItem, upsertGtmAction } from '@/lib/gtm/actions'
+import { eventIdempotencyKey, recordGtmEvent } from '@/lib/gtm/events'
 import { markLatestOutreachPlanStatus } from '@/lib/gtm/outreach-plan-store'
 import { listGtmWorkItems } from '@/lib/gtm/work-items'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
@@ -105,6 +107,62 @@ export async function POST(request: Request) {
 
     if (error && error.code !== '23505') return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  const actionStatus = action === 'dismissed' ? 'dismissed' : 'completed'
+  const actionResult = { work_item_action: action, metadata }
+  if (itemId.startsWith('action:')) {
+    const durableActionId = itemId.slice('action:'.length)
+    const { error: actionUpdateError } = await supabase
+      .from('gtm_actions')
+      .update({
+        status: actionStatus,
+        result: actionResult,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', durableActionId)
+      .eq('user_id', user.id)
+    if (actionUpdateError) return NextResponse.json({ error: actionUpdateError.message }, { status: 500 })
+  } else {
+    await upsertGtmAction(supabase, {
+      userId: user.id,
+      clientId: activeClientId ?? null,
+      leadId,
+      actionType: `work_item.${action}`,
+      channel: 'workspace',
+      title: `Work item ${action}`,
+      body: `User marked ${itemId} as ${action}.`,
+      priority: 50,
+      status: actionStatus,
+      payload: { item_id: itemId, metadata },
+      result: actionResult,
+      source: 'work_items',
+      sourceItemKey: itemId,
+    })
+  }
+
+  await completeGtmActionForSourceItem(supabase, {
+    userId: user.id,
+    clientId: activeClientId ?? null,
+    sourceItemKey: itemId,
+    result: actionResult,
+    status: actionStatus,
+  })
+
+  await recordGtmEvent(supabase, {
+    userId: user.id,
+    clientId: activeClientId ?? null,
+    entityType: leadId ? 'lead' : null,
+    entityId: leadId,
+    eventType: `work_item.${action}`,
+    source: 'work_items',
+    payload: {
+      item_id: itemId,
+      lead_id: leadId,
+      action,
+      metadata,
+    },
+    idempotencyKey: eventIdempotencyKey(['work_item', itemId, action]),
+  })
 
   if (leadId && action === 'approved') {
     const serviceSupabase = await createServiceClient()

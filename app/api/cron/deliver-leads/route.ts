@@ -7,6 +7,7 @@ import { sendSlackAlert } from '@/lib/slack'
 import { sendFirstLeadEmail } from '@/lib/resend'
 import { buildLiveLeadFeedSnapshot } from '@/lib/lead-sources'
 import { buildFeedbackMaps, sortQueueRowsByFeedback, getFeedbackWindowStart } from '@/lib/ranking-feedback'
+import { eventIdempotencyKey, recordGtmEvent } from '@/lib/gtm/events'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -232,6 +233,24 @@ async function runDelivery(request: Request) {
         stats.preview_delivered++
         deliveredLast24h.set(userId, (deliveredLast24h.get(userId) ?? 0) + 1)
         stats.delivered++
+
+        await recordGtmEvent(supabase, {
+          userId,
+          clientId: row.client_id,
+          entityType: 'lead',
+          entityId: inserted.id,
+          eventType: 'lead.created',
+          source: 'deliver_leads',
+          payload: {
+            lead_id: inserted.id,
+            signal_id: row.signal_id,
+            target_company: row.target_company,
+            company_domain: row.company_domain ?? null,
+            relevance_score: row.relevance_score,
+            source_name: row.source_name ?? null,
+          },
+          idempotencyKey: eventIdempotencyKey(['lead.created', inserted.id]),
+        })
 
         await supabase
           .from('lead_delivery_queue')

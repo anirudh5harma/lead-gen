@@ -5,6 +5,7 @@ import { recordGtmMemory } from './memory'
 import { buildSignalIntelligence } from './signal-intelligence'
 import { upsertSignalCluster } from './signal-clusters'
 import { recordSourceReliabilityOutcome } from './source-reliability'
+import { eventIdempotencyKey, recordGtmEvent } from './events'
 
 export interface LeadGraphInput {
   id: string
@@ -409,6 +410,31 @@ export async function recordGtmTouchpoint(
     metadata: input.metadata ?? {},
   })
   if (error) console.error('[gtm-graph] touchpoint insert failed:', error.message)
+
+  await recordGtmEvent(supabase, {
+    userId: input.userId,
+    clientId: input.clientId ?? null,
+    entityType: input.leadId ? 'lead' : input.accountId ? 'account' : null,
+    entityId: input.leadId ?? input.accountId ?? null,
+    eventType: `touchpoint.${input.type}.${input.status}`,
+    eventTime: input.occurredAt ?? new Date().toISOString(),
+    source: 'gtm_touchpoints',
+    payload: {
+      account_id: input.accountId ?? null,
+      person_id: input.personId ?? null,
+      lead_id: input.leadId ?? null,
+      workflow_run_id: input.workflowRunId ?? null,
+      type: input.type,
+      status: input.status,
+      subject: input.subject ?? null,
+      from_email: input.fromEmail ?? null,
+      to_email: input.toEmail ?? null,
+      provider: input.provider ?? null,
+      message_id: input.messageId ?? null,
+      metadata: input.metadata ?? {},
+    },
+    idempotencyKey: eventIdempotencyKey(['touchpoint', input.messageId, input.leadId, input.type, input.status, input.occurredAt]),
+  })
 }
 
 async function upsertRelationship(

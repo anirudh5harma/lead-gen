@@ -102,13 +102,30 @@ interface WorkItemActionRow {
   action: string
 }
 
+interface DurableActionRow {
+  id: string
+  account_id: string | null
+  lead_id: string | null
+  workflow_run_id: string | null
+  action_type: string
+  channel: string
+  title: string
+  body: string | null
+  priority: number
+  status: string
+  payload: Record<string, unknown> | null
+  source: string
+  source_item_key: string | null
+  created_at: string
+}
+
 export async function listGtmWorkItems(
   supabase: SupabaseClient,
   input: ListGtmWorkItemsInput,
 ): Promise<{ work_items: GtmWorkItem[] }> {
   const limit = clampLimit(input.limit ?? 30)
   const clientId = input.clientId ?? null
-  const [leadsRes, accountsRes, policiesRes, workflowsRes, plansRes, actionRes] = await Promise.all([
+  const [leadsRes, accountsRes, policiesRes, workflowsRes, plansRes, actionRes, durableActionsRes] = await Promise.all([
     scopedQuery(
       supabase
         .from('leads')
@@ -167,6 +184,17 @@ export async function listGtmWorkItems(
         .limit(500),
       clientId,
     )),
+    optionalRows(scopedQuery(
+      supabase
+        .from('gtm_actions')
+        .select('id, account_id, lead_id, workflow_run_id, action_type, channel, title, body, priority, status, payload, source, source_item_key, created_at')
+        .eq('user_id', input.userId)
+        .in('status', ['open', 'waiting', 'blocked'])
+        .order('priority', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(80),
+      clientId,
+    )),
   ])
 
   for (const res of [leadsRes, accountsRes, policiesRes, workflowsRes]) {
@@ -179,6 +207,38 @@ export async function listGtmWorkItems(
   const planByLead = latestPlanByLead(plansRes.rows)
   const closedItemKeys = new Set((actionRes.rows as WorkItemActionRow[]).map(row => row.item_key))
   const items: GtmWorkItem[] = []
+
+  for (const action of durableActionsRes.rows as DurableActionRow[]) {
+    const lead = action.lead_id ? leadById.get(action.lead_id) ?? null : null
+    const account = action.account_id
+      ? ((accountsRes.data ?? []) as AccountRow[]).find(row => row.id === action.account_id) ?? null
+      : lead ? findAccountForLead(accountByKey, lead) : null
+    items.push({
+      id: `action:${action.id}`,
+      type: mapActionType(action.action_type),
+      status: mapActionStatus(action.status),
+      priority: action.priority,
+      title: action.title,
+      body: action.body ?? 'Review this GTM action.',
+      account_name: account?.name ?? lead?.target_company ?? 'Workspace action',
+      account_domain: account?.domain ?? lead?.company_domain ?? null,
+      lead_id: action.lead_id,
+      account_id: action.account_id ?? account?.id ?? null,
+      workflow_run_id: action.workflow_run_id,
+      policy_decision_id: null,
+      action_label: labelForActionType(action.action_type),
+      source: action.source,
+      created_at: action.created_at,
+      account_state_url: action.account_id ? `/api/gtm/accounts/${action.account_id}/state` : account ? `/api/gtm/accounts/${account.id}/state` : null,
+      metadata: {
+        action_id: action.id,
+        action_type: action.action_type,
+        channel: action.channel,
+        source_item_key: action.source_item_key,
+        ...(action.payload ?? {}),
+      },
+    })
+  }
 
   for (const lead of leads) {
     const account = findAccountForLead(accountByKey, lead)
@@ -437,4 +497,28 @@ function scopedQuery<T extends { eq: (column: string, value: string) => T; is: (
 function clampLimit(value: number): number {
   if (!Number.isFinite(value)) return 30
   return Math.max(1, Math.min(100, Math.round(value)))
+}
+
+function mapActionType(actionType: string): GtmWorkItemType {
+  if (actionType.includes('approve') || actionType.includes('review')) return 'needs_approval'
+  if (actionType.includes('reply')) return 'reply_detected'
+  if (actionType.includes('workflow')) return 'workflow_waiting'
+  if (actionType.includes('policy')) return 'policy_blocked'
+  return 'new_opportunity'
+}
+
+function mapActionStatus(status: string): GtmWorkItem['status'] {
+  if (status === 'blocked') return 'blocked'
+  if (status === 'waiting') return 'waiting'
+  if (status === 'completed') return 'completed'
+  return 'open'
+}
+
+function labelForActionType(actionType: string): string {
+  if (actionType.includes('approve')) return 'Approve'
+  if (actionType.includes('review')) return 'Review'
+  if (actionType.includes('reply')) return 'Handle reply'
+  if (actionType.includes('content')) return 'Draft content'
+  if (actionType.includes('source')) return 'Review source'
+  return 'Inspect'
 }

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { classifySourceType, estimateSourceCost, type SourceType } from './signal-filter'
+import { eventIdempotencyKey, recordGtmEvent } from './gtm/events'
+import { upsertGtmSource } from './gtm/sources'
 
 export interface SourceLedgerMetrics {
   sourceName: string
@@ -108,4 +110,46 @@ export async function recordSourceRunMetrics(
   if (error) {
     console.error('[source-ledger] insert failed:', error.message)
   }
+
+  await Promise.all(input.metrics.map(metric => Promise.all([
+    upsertGtmSource(supabase, {
+      sourceName: metric.sourceName,
+      sourceType: metric.sourceType,
+      priority: sourcePriority(metric),
+      attributes: {
+        latest_run: {
+          fetched: metric.fetched,
+          raw_candidates: metric.rawCandidates,
+          filter_passed: metric.filterPassed,
+          filter_rejected: metric.filterRejected,
+          inserted_signals: metric.insertedSignals,
+          estimated_cost_usd: Number(metric.estimatedCost.toFixed(6)),
+          finished_at: finishedAt,
+        },
+      },
+    }),
+    recordGtmEvent(supabase, {
+      eventType: 'source.fetched',
+      source: 'source_ledger',
+      payload: {
+        cron_run_id: input.cronRunId ?? null,
+        source_name: metric.sourceName,
+        source_type: metric.sourceType,
+        fetched: metric.fetched,
+        raw_candidates: metric.rawCandidates,
+        filter_passed: metric.filterPassed,
+        filter_rejected: metric.filterRejected,
+        inserted_signals: metric.insertedSignals,
+        estimated_cost_usd: Number(metric.estimatedCost.toFixed(6)),
+      },
+      idempotencyKey: eventIdempotencyKey(['source', input.cronRunId, metric.sourceName, finishedAt]),
+    }),
+  ])))
+}
+
+function sourcePriority(metric: SourceLedgerMetrics): number {
+  if (metric.insertedSignals > 0) return 70
+  if (metric.filterPassed > 0) return 58
+  if (metric.fetched > 0 && metric.filterRejected >= metric.fetched) return 35
+  return 50
 }

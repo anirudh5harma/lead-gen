@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { eventIdempotencyKey, recordGtmEvent } from '@/lib/gtm/events'
 
 export type WorkflowStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled'
 export type WorkflowStepStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'skipped' | 'blocked'
@@ -43,7 +44,24 @@ export async function startWorkflowRun(
     return null
   }
 
-  return data?.id ?? null
+  const runId = data?.id ?? null
+  await recordGtmEvent(supabase, {
+    userId: input.userId,
+    clientId: input.clientId ?? null,
+    entityType: runId ? 'workflow_run' : null,
+    entityId: runId,
+    eventType: 'workflow.started',
+    source: 'workflow_runtime',
+    payload: {
+      workflow_type: input.workflowType,
+      workflow_key: input.workflowKey ?? null,
+      agent_run_id: input.agentRunId ?? null,
+      input: input.input ?? {},
+    },
+    idempotencyKey: eventIdempotencyKey(['workflow', runId, 'started']),
+  })
+
+  return runId
 }
 
 export async function startWorkflowStep(
@@ -157,6 +175,20 @@ export async function finishWorkflowRun(
     .eq('id', input.runId)
 
   if (error) console.error('[workflow-runtime] run finish failed:', error.message)
+
+  await recordGtmEvent(supabase, {
+    entityType: 'workflow_run',
+    entityId: input.runId,
+    eventType: `workflow.${input.status}`,
+    source: 'workflow_runtime',
+    payload: {
+      status: input.status,
+      output: input.output ?? {},
+      checkpoint: input.checkpoint ?? {},
+      error_message: input.errorMessage ?? null,
+    },
+    idempotencyKey: eventIdempotencyKey(['workflow', input.runId, input.status]),
+  })
 }
 
 export async function updateWorkflowCheckpoint(

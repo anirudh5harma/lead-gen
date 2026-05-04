@@ -16,6 +16,7 @@ import {
   computeCandidateFeedbackBoost,
   getFeedbackWindowStart,
 } from '@/lib/ranking-feedback'
+import { eventIdempotencyKey, recordGtmEvent } from '@/lib/gtm/events'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -472,6 +473,23 @@ async function runMatch(request: Request) {
         }
 
         queued++
+        await recordGtmEvent(supabase, {
+          userId: profile.user_id,
+          clientId: profile.id,
+          entityType: 'signal',
+          entityId: signal.id,
+          eventType: 'lead.queued',
+          source: 'match_leads',
+          payload: {
+            signal_id: signal.id,
+            target_company: signal.company_name,
+            company_domain: signal.company_domain ?? null,
+            relevance_score: score,
+            priority_score: priorityScore,
+            source_name: signal.source_name ?? null,
+          },
+          idempotencyKey: eventIdempotencyKey(['lead.queued', profile.id, signal.id]),
+        })
         existingPairSet.add(pairKey)
         if (signal.novelty_key) recentNoveltySet.add(`${profile.id}:${signal.novelty_key}`)
         recentCompanySet.add(`${profile.id}:${dedupeKey}`)

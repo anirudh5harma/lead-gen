@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { eventIdempotencyKey, recordGtmEvent } from './events'
 
 export type GtmMemoryScope = 'run' | 'entity' | 'workspace' | 'performance'
 
@@ -52,7 +53,30 @@ export async function recordGtmMemory(
     return null
   }
 
-  return data?.id ?? null
+  const memoryId = data?.id ?? null
+  await recordGtmEvent(supabase, {
+    userId: input.userId,
+    clientId: input.clientId ?? null,
+    entityType: input.entityType ?? (memoryId ? 'memory' : null),
+    entityId: input.entityId ?? memoryId,
+    eventType: 'memory.recorded',
+    eventTime: input.observedAt ?? new Date().toISOString(),
+    source: input.source.trim().slice(0, 120),
+    payload: {
+      memory_id: memoryId,
+      memory_scope: input.scope,
+      entity_type: input.entityType ?? null,
+      entity_id: input.entityId ?? null,
+      memory_type: input.memoryType.trim().slice(0, 80),
+      confidence: clampConfidence(input.confidence ?? 1),
+      provenance: input.provenance ?? {},
+      agent_run_id: input.agentRunId ?? null,
+      workflow_run_id: input.workflowRunId ?? null,
+    },
+    idempotencyKey: eventIdempotencyKey(['memory', memoryId]),
+  })
+
+  return memoryId
 }
 
 function clampConfidence(value: number): number {
