@@ -18,6 +18,7 @@ import { recordGtmMemory } from '@/lib/gtm/memory'
 import { buildOutreachPlan, explainPlanBlock, type OutreachPlan } from '@/lib/gtm/outreach-plan'
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
+import { buildGtmContextPack } from '@/lib/gtm/semantic-context'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
@@ -646,6 +647,8 @@ async function sendAutomationLead(
   }
 
   const draft = await getOrCreateAutomationDraft(supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
     lead: params.lead,
     profile,
     clientProfile,
@@ -991,6 +994,8 @@ async function recordBlockedTouchpoint(
 async function getOrCreateAutomationDraft(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   params: {
+    userId: string
+    clientId: string | null
     lead: Record<string, unknown>
     profile: { company_name?: string | null; website_url?: string | null; services_description?: string | null; calendly_url?: string | null } | null
     clientProfile: { name?: string | null; website_url?: string | null; services_description?: string | null; calendly_url?: string | null } | null
@@ -1043,6 +1048,20 @@ async function getOrCreateAutomationDraft(
   const recipientGroup = buildRecipientGroup(stakeholders)
   if (!recipientGroup) return { subject: '', body: '', recipientGroup: null }
 
+  const contextPack = await buildGtmContextPack(supabase, {
+    userId: params.userId,
+    clientId: params.clientId,
+    leadId: String(params.lead.id ?? ''),
+    query: [
+      params.lead.target_company,
+      signal?.headline,
+      signal?.summary,
+      params.lead.relevance_reason,
+      params.outreachPlan?.trigger,
+    ].filter(value => typeof value === 'string' && value.trim()).join('\n'),
+    limit: 8,
+  })
+
   const { subject, body } = await draftOutreachEmail({
     senderCompany: outreachContext.senderCompany,
     senderWebsiteUrl: outreachContext.websiteUrl,
@@ -1056,7 +1075,7 @@ async function getOrCreateAutomationDraft(
     headline: signal?.headline ?? null,
     fundingAmount: signal?.funding_amount ?? null,
     signalAgeLabel: null,
-    articleContext: null,
+    articleContext: contextPack.drafting_context || null,
     calendlyUrl: outreachContext.calendlyUrl,
     customInstructions: params.customInstructions,
   })

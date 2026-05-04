@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { upsertGtmAction } from './actions'
 import { eventIdempotencyKey, recordGtmEvent } from './events'
+import { upsertGtmEntityEmbedding } from './semantic-context'
 
 export interface GtmInsight {
   id: string
@@ -165,6 +166,20 @@ export async function updateGtmInsight(
     payload: { insight_id: input.insightId, action: input.action },
     idempotencyKey: eventIdempotencyKey(['insight', input.insightId, input.action]),
   })
+
+  await upsertGtmEntityEmbedding(supabase, {
+    userId: input.userId,
+    clientId,
+    entityType: 'insight',
+    entityId: input.insightId,
+    content: `${String(insight.insight_type ?? 'insight')}: ${String(insight.title ?? '')}\n${String(insight.summary ?? '')}`,
+    source: 'gtm_insights',
+    metadata: {
+      action: input.action,
+      status: nextStatus,
+      recommended_action_type: insight.recommended_action_type ?? null,
+    },
+  })
 }
 
 async function generateGtmInsights(
@@ -253,8 +268,26 @@ async function insertMissingInsights(
     }))
   if (rows.length === 0) return
 
-  const { error: insertError } = await supabase.from('gtm_insights').insert(rows)
-  if (insertError) console.error('[gtm-insights] insert failed:', insertError.message)
+  const { data: inserted, error: insertError } = await supabase
+    .from('gtm_insights')
+    .insert(rows)
+    .select('id, insight_type, title, summary, impact_score')
+  if (insertError) {
+    console.error('[gtm-insights] insert failed:', insertError.message)
+    return
+  }
+
+  for (const insight of (inserted ?? []) as Array<{ id: string; insight_type?: string; title?: string; summary?: string; impact_score?: number }>) {
+    await upsertGtmEntityEmbedding(supabase, {
+      userId: input.userId,
+      clientId: input.clientId,
+      entityType: 'insight',
+      entityId: insight.id,
+      content: `${insight.insight_type ?? 'insight'}: ${insight.title ?? ''}\n${insight.summary ?? ''}`,
+      source: 'gtm_insights',
+      metadata: { impact_score: insight.impact_score ?? null },
+    })
+  }
 }
 
 function sourceInsights(rows: SourceRunRow[]): InsightCandidate[] {

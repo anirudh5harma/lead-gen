@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { eventIdempotencyKey, recordGtmEvent } from './events'
+import { upsertGtmEntityEmbedding } from './semantic-context'
 
 export type GtmActionStatus = 'open' | 'waiting' | 'blocked' | 'completed' | 'dismissed' | 'failed'
 
@@ -103,6 +104,25 @@ export async function upsertGtmAction(
     },
     idempotencyKey: eventIdempotencyKey(['action', status, input.sourceItemKey ?? actionId]),
   })
+
+  if (actionId) {
+    await upsertGtmEntityEmbedding(supabase, {
+      userId: input.userId,
+      clientId: input.clientId ?? null,
+      accountId: input.accountId ?? null,
+      entityType: 'action',
+      entityId: actionId,
+      content: [row.title, row.body, row.action_type, row.channel].filter(Boolean).join('\n'),
+      source: 'gtm_actions',
+      metadata: {
+        action_type: row.action_type,
+        channel: row.channel,
+        status: row.status,
+        lead_id: row.lead_id,
+        source_item_key: row.source_item_key,
+      },
+    })
+  }
 
   return actionId
 }

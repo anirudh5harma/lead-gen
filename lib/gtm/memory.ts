@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { eventIdempotencyKey, recordGtmEvent } from './events'
+import { upsertGtmEntityEmbedding } from './semantic-context'
 
 export type GtmMemoryScope = 'run' | 'entity' | 'workspace' | 'performance'
 
@@ -76,7 +77,31 @@ export async function recordGtmMemory(
     idempotencyKey: eventIdempotencyKey(['memory', memoryId]),
   })
 
+  if (memoryId) {
+    await upsertGtmEntityEmbedding(supabase, {
+      userId: input.userId,
+      clientId: input.clientId ?? null,
+      accountId: input.entityType === 'account' ? input.entityId ?? null : accountIdFromProvenance(input.provenance),
+      entityType: 'memory',
+      entityId: memoryId,
+      content: `${input.memoryType}: ${content}`,
+      source: 'gtm_memories',
+      metadata: {
+        memory_scope: input.scope,
+        entity_type: input.entityType ?? null,
+        entity_id: input.entityId ?? null,
+        memory_type: input.memoryType.trim().slice(0, 80),
+        provenance: input.provenance ?? {},
+      },
+    })
+  }
+
   return memoryId
+}
+
+function accountIdFromProvenance(provenance: Record<string, unknown> | undefined): string | null {
+  const value = provenance?.account_id
+  return typeof value === 'string' ? value : null
 }
 
 function clampConfidence(value: number): number {

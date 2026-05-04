@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { upsertGtmAction } from './actions'
 import { eventIdempotencyKey, recordGtmEvent } from './events'
+import { upsertGtmEntityEmbedding } from './semantic-context'
 
 export interface GtmContentIdea {
   id: string
@@ -128,6 +129,28 @@ export async function updateMarketingContentIdea(
     source: 'marketing_content',
     payload: { content_idea_id: input.ideaId, action: input.action },
     idempotencyKey: eventIdempotencyKey(['content', input.ideaId, input.action]),
+  })
+
+  await upsertGtmEntityEmbedding(supabase, {
+    userId: input.userId,
+    clientId,
+    accountId: (idea as { account_id?: string | null }).account_id ?? null,
+    entityType: 'content_idea',
+    entityId: input.ideaId,
+    content: [
+      (idea as { content_type?: string }).content_type,
+      (idea as { audience?: string }).audience,
+      (idea as { pain_category?: string }).pain_category,
+      (idea as { angle?: string }).angle,
+      hasDraft(draft) ? JSON.stringify(draft).slice(0, 1000) : '',
+    ].filter(Boolean).join('\n'),
+    source: 'marketing_content',
+    metadata: {
+      action: input.action,
+      status: nextStatus,
+      lead_id: (idea as { lead_id?: string | null }).lead_id ?? null,
+      content_type: (idea as { content_type?: string }).content_type ?? null,
+    },
   })
 }
 

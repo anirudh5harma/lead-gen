@@ -6,6 +6,7 @@ import { buildSignalIntelligence } from './signal-intelligence'
 import { upsertSignalCluster } from './signal-clusters'
 import { recordSourceReliabilityOutcome } from './source-reliability'
 import { eventIdempotencyKey, recordGtmEvent } from './events'
+import { upsertGtmEntityEmbedding } from './semantic-context'
 
 export interface LeadGraphInput {
   id: string
@@ -230,6 +231,16 @@ async function upsertAccount(
       })
       .eq('id', existing.id)
     if (error) console.error('[gtm-graph] account update failed:', error.message)
+    await upsertGtmEntityEmbedding(supabase, {
+      userId: input.userId,
+      clientId: input.clientId,
+      accountId: existing.id as string,
+      entityType: 'account',
+      entityId: existing.id as string,
+      content: buildAccountEmbeddingContent(input.name, input.domain, input.sourceKind, attributes),
+      source: 'gtm_accounts',
+      metadata: { account_key: input.accountKey, source_kind: input.sourceKind },
+    })
     return existing.id as string
   }
 
@@ -251,7 +262,20 @@ async function upsertAccount(
     console.error('[gtm-graph] account insert failed:', error.message)
     return null
   }
-  return data?.id ?? null
+  const accountId = data?.id ?? null
+  if (accountId) {
+    await upsertGtmEntityEmbedding(supabase, {
+      userId: input.userId,
+      clientId: input.clientId,
+      accountId,
+      entityType: 'account',
+      entityId: accountId,
+      content: buildAccountEmbeddingContent(input.name, input.domain, input.sourceKind, attributes),
+      source: 'gtm_accounts',
+      metadata: { account_key: input.accountKey, source_kind: input.sourceKind },
+    })
+  }
+  return accountId
 }
 
 async function upsertPerson(
@@ -349,6 +373,16 @@ async function upsertSignal(
   if (existing?.id) {
     const { error } = await supabase.from('gtm_signals').update(row).eq('id', existing.id)
     if (error) console.error('[gtm-graph] signal update failed:', error.message)
+    await upsertGtmEntityEmbedding(supabase, {
+      userId: input.userId,
+      clientId: input.clientId,
+      accountId: input.accountId,
+      entityType: 'signal',
+      entityId: existing.id as string,
+      content: buildSignalEmbeddingContent(input),
+      source: 'gtm_signals',
+      metadata: { lead_id: input.leadId, signal_type: input.signalType, source_url: input.sourceUrl ?? null },
+    })
     return existing.id as string
   }
 
@@ -367,7 +401,20 @@ async function upsertSignal(
     console.error('[gtm-graph] signal insert failed:', error.message)
     return null
   }
-  return data?.id ?? null
+  const signalId = data?.id ?? null
+  if (signalId) {
+    await upsertGtmEntityEmbedding(supabase, {
+      userId: input.userId,
+      clientId: input.clientId,
+      accountId: input.accountId,
+      entityType: 'signal',
+      entityId: signalId,
+      content: buildSignalEmbeddingContent(input),
+      source: 'gtm_signals',
+      metadata: { lead_id: input.leadId, signal_type: input.signalType, source_url: input.sourceUrl ?? null },
+    })
+  }
+  return signalId
 }
 
 export async function recordGtmTouchpoint(
@@ -510,4 +557,35 @@ function mergeAccountAttributes(existing: unknown, incoming: Record<string, unkn
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function buildAccountEmbeddingContent(
+  name: string,
+  domain: string | null,
+  sourceKind: string,
+  attributes: Record<string, unknown>,
+): string {
+  return [
+    `Account: ${name}`,
+    domain ? `Domain: ${domain}` : '',
+    `Source: ${sourceKind}`,
+    typeof attributes.relevance_reason === 'string' ? `Reason: ${attributes.relevance_reason}` : '',
+    isRecord(attributes.signal_intelligence) ? `Signal intelligence: ${JSON.stringify(attributes.signal_intelligence).slice(0, 1200)}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+function buildSignalEmbeddingContent(input: {
+  signalType: string
+  headline: string
+  summary: string | null
+  sourceName?: string | null
+  publishedAt?: string | null
+}): string {
+  return [
+    `Signal type: ${input.signalType}`,
+    `Headline: ${input.headline}`,
+    input.summary ? `Summary: ${input.summary}` : '',
+    input.sourceName ? `Source: ${input.sourceName}` : '',
+    input.publishedAt ? `Published: ${input.publishedAt}` : '',
+  ].filter(Boolean).join('\n')
 }

@@ -17,6 +17,7 @@ import { buildBookingReplyBody, classifyReplyIntent, shouldAutoSendBookingLink }
 import { buildIcpKeywords } from '../lib/icp.ts'
 import { buildRecipientGroup, ensureBodyGreetsRecipients } from '../lib/outreach-recipients.ts'
 import { accountKey, bodyPreview, normalizeDomain, personKey, signalKey } from '../lib/gtm/identity.ts'
+import { buildContextQuery, normalizeEmbeddingContent, stableContentHash } from '../lib/gtm/semantic-context.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
@@ -237,6 +238,33 @@ test('lead dedupe keys normalize company variants by domain or legal suffix', ()
       date: new Date('2026-04-23T12:00:00.000Z'),
     }),
   )
+})
+
+test('semantic context hashes normalized content consistently', () => {
+  assert.equal(
+    stableContentHash('  Series A   funding announced\nfor Avoca  '),
+    stableContentHash('Series A funding announced for Avoca'),
+  )
+  assert.equal(normalizeEmbeddingContent('one\n\n two\tthree'), 'one two three')
+})
+
+test('semantic context query uses lead and account signal context', () => {
+  const query = buildContextQuery(null, {
+    target_company: 'Avoca',
+    company_domain: 'avoca.com',
+    relevance_reason: 'Raised funding and is hiring revenue leadership.',
+    feed_snapshot: {
+      signal_type: 'funding',
+      headline: 'Avoca raises Series A',
+      summary: 'Funding creates GTM hiring pressure.',
+    },
+  }, {
+    account: { name: 'Avoca', domain: 'avoca.com' },
+  })
+
+  assert.match(query, /Avoca/)
+  assert.match(query, /funding/)
+  assert.match(query, /GTM hiring pressure/)
 })
 
 test('signal novelty detects the same event across slightly different wording', () => {
