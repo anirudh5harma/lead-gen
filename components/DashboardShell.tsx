@@ -8,6 +8,7 @@ import Sidebar from './dashboard/Sidebar'
 import InboxView from './dashboard/InboxView'
 import AccountsView from './dashboard/AccountsView'
 import MarketingView from './dashboard/MarketingView'
+import InsightsView from './dashboard/InsightsView'
 import AutopilotView from './dashboard/AutopilotView'
 import SettingsView from './dashboard/SettingsView'
 
@@ -15,6 +16,7 @@ const VIEW_TITLES: Record<View, string> = {
   inbox:     'Work',
   accounts:  'Accounts',
   marketing: 'Marketing',
+  insights:  'Insights',
   autopilot: 'GTM Engine',
   settings:  'Settings',
 }
@@ -23,6 +25,7 @@ const VIEW_SUBTITLES: Record<View, string> = {
   inbox:     'The highest-value account moves to review next.',
   accounts:  'Context, signals, people, and next actions by account.',
   marketing: 'Signal-backed content ideas and campaign angles.',
+  insights:  'AI-native recommendations with actionable CTAs.',
   autopilot: 'Market coverage, sending mode, and safety rules.',
   settings:  'ICP, inboxes, credits, and guardrails.',
 }
@@ -37,7 +40,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const requestedView = params.get('view')
-      if (requestedView === 'inbox' || requestedView === 'accounts' || requestedView === 'marketing' || requestedView === 'autopilot' || requestedView === 'settings') {
+      if (requestedView === 'inbox' || requestedView === 'accounts' || requestedView === 'marketing' || requestedView === 'insights' || requestedView === 'autopilot' || requestedView === 'settings') {
         return requestedView
       }
     }
@@ -133,6 +136,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
             {activeView === 'inbox' && <InboxView leads={initialLeads} onNavigate={setActiveView} />}
             {activeView === 'accounts' && <AccountsView />}
             {activeView === 'marketing' && <MarketingView />}
+            {activeView === 'insights' && <InsightsView />}
             {activeView === 'autopilot' && <AutopilotView />}
             {activeView === 'settings' && <SettingsView profile={displayProfile} />}
           </div>

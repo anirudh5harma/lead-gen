@@ -1,5 +1,5 @@
 
-export type View = 'inbox' | 'accounts' | 'marketing' | 'autopilot' | 'settings'
+export type View = 'inbox' | 'accounts' | 'marketing' | 'insights' | 'autopilot' | 'settings'
 
 export interface UserProfile {
   company_name: string
@@ -49,6 +49,20 @@ export interface GtmContentIdea {
   pain_category: string
   status: 'new' | 'drafted' | 'approved' | 'dismissed'
   draft: Record<string, unknown>
+  created_at: string
+}
+
+export interface GtmInsight {
+  id: string
+  insight_type: string
+  title: string
+  summary: string
+  evidence: Array<{ label: string; value: string }>
+  confidence: number
+  impact_score: number
+  recommended_action_type: string
+  recommended_action_payload: Record<string, unknown>
+  status: 'open' | 'actioned' | 'dismissed' | 'archived'
   created_at: string
 }
 

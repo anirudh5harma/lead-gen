@@ -23,6 +23,17 @@ const NAV: { id: View; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
+    id: 'insights',
+    label: 'Insights',
+    icon: (
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 15l3-3 3 2 5-7" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18 7h-4" />
+      </svg>
+    ),
+  },
+  {
     id: 'marketing',
     label: 'Marketing',
     icon: (
