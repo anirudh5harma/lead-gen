@@ -66,11 +66,11 @@ MCP resources:
 
 Cron schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/vercel.json:1).
 
-- `/api/cron/poll-signals`: hourly, top-of-hour. When new signals are inserted, it opportunistically triggers matching and delivery so the live feed is not blocked on the next scheduled cron.
-- `/api/leads/match`: hourly at `:10` as a fallback/backfill to populate the delivery backlog.
-- `/api/cron/deliver-leads`: hourly at `:20` as a fallback/backfill to batch queued leads into user feeds.
-- `/api/cron/send-followups`: every 2 hours at `:30`.
-- `/api/cron/enrich-contacts`: every 2 hours at `:25`.
+- `/api/cron/poll-signals`: twice daily at `00:00` and `12:00` UTC. When new signals are inserted, it opportunistically triggers matching and delivery so the live feed is not blocked on the next scheduled cron.
+- `/api/leads/match`: twice daily at `00:10` and `12:10` UTC as a fallback/backfill to populate the delivery backlog.
+- `/api/cron/deliver-leads`: twice daily at `00:20` and `12:20` UTC as a fallback/backfill to batch queued leads into user feeds.
+- `/api/cron/send-followups`: twice daily at `00:30` and `12:30` UTC.
+- `/api/cron/enrich-contacts`: twice daily at `00:40` and `12:40` UTC.
 - `/api/cron/renew-inbox-watches`: daily.
 
 Each cron now writes a row into `cron_runs`, which powers the in-app diagnostics view.
