@@ -66,6 +66,21 @@ export interface GtmInsight {
   created_at: string
 }
 
+export interface CoverageRecommendation {
+  id: string
+  recommendation_type: string
+  source_name: string | null
+  source_type: string | null
+  title: string
+  summary: string
+  suggested_config: Record<string, unknown>
+  evidence: Array<{ label: string; value: string }>
+  expected_impact: number
+  estimated_cost_usd: number
+  status: 'open' | 'applied' | 'dismissed'
+  created_at: string
+}
+
 export interface LaunchReadinessSnapshot {
   score: number
   status: 'blocked' | 'needs_work' | 'ready' | 'running'
