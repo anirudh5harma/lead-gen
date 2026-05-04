@@ -318,11 +318,12 @@ async function writeCompanyEnrichmentCache(
 async function readValidationCache(
   emails: string[],
   supabase: SupabaseClient,
+  maxAgeDays = VALIDATION_CACHE_TTL_DAYS,
 ): Promise<Map<string, ValidationCacheRow>> {
   const normalized = [...new Set(emails.map(email => email.toLowerCase()))]
   if (normalized.length === 0) return new Map()
 
-  const cutoff = new Date(Date.now() - VALIDATION_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString()
   const { data } = await supabase
     .from('email_validation_cache')
     .select('email, status, sub_status, free_email, mx_found, did_you_mean, verified_at')
@@ -650,14 +651,14 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
 }> {
   const supabase = await createServiceClient()
   const retryAfter = new Date(Date.now() - RETRY_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const verificationCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data: leads, error } = await supabase
     .from('leads')
-    .select('id, target_company, company_domain, user_id, relevance_score')
-    .is('contact_email', null)
+    .select('id, target_company, company_domain, user_id, relevance_score, contact_email, contact_verified, contact_verified_at')
     .eq('is_unlocked', true)
     .neq('status', 'dismissed')
-    .or(`contact_enriched_at.is.null,contact_enriched_at.lt.${retryAfter}`)
+    .or(`contact_email.is.null,contact_enriched_at.is.null,contact_enriched_at.lt.${retryAfter},contact_verified_at.is.null,contact_verified_at.lt.${verificationCutoff}`)
     .limit(batchSize)
 
   if (error || !leads?.length) {
@@ -727,6 +728,9 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
         contact_title: topContact.title || null,
         contact_source: topContact.source,
         contact_verified: topContact.verified,
+        contact_verified_at: topContact.verified ? now : null,
+        contact_verification_status: topContact.zb_status ?? null,
+        last_contact_verification_error: topContact.verified ? null : 'contact_not_verified',
       }).in('id', groupLeads.map(lead => lead.id))
       enriched += groupLeads.length
     } else {
@@ -757,17 +761,20 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
   }
 }
 
-export async function enrichSingleEmail(email: string): Promise<ZBStatus | null> {
+export async function enrichSingleEmail(
+  email: string,
+  options?: { maxCacheAgeDays?: number },
+): Promise<{ status: ZBStatus; verifiedAt: string } | null> {
   const supabase = await createServiceClient()
-  const cached = await readValidationCache([email], supabase)
+  const cached = await readValidationCache([email], supabase, options?.maxCacheAgeDays)
   const existing = cached.get(email.toLowerCase())
-  if (existing) return existing.status
+  if (existing) return { status: existing.status, verifiedAt: existing.verified_at }
 
   const zb = await verifyEmail(email)
   if (zb) {
     await writeValidationCache([zb], supabase)
   }
-  return zb?.status ?? null
+  return zb ? { status: zb.status, verifiedAt: new Date().toISOString() } : null
 }
 
 async function applyValidationStage(

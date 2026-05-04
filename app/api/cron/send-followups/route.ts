@@ -11,7 +11,7 @@ import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
-import { validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
+import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
   finishWorkflowRun,
   finishWorkflowStep,
@@ -277,6 +277,12 @@ export async function GET(request: Request) {
         input: { lead_id: item.lead_id, recipient_count: emails.length },
       })
       const recipientValidation = await validateOutboundRecipients(emails)
+      const leadContactVerified = await persistLeadRecipientVerification(supabase, {
+        leadId: item.lead_id,
+        userId: item.user_id,
+        primaryEmail: recipientGroup.to.email,
+        validation: recipientValidation,
+      })
       await finishWorkflowStep(supabase, {
         stepId: validationStepId,
         status: recipientValidation.safe ? 'completed' : 'blocked',
@@ -339,7 +345,8 @@ export async function GET(request: Request) {
         companyDomain: lead.company_domain ?? null,
         status: lead.status ?? null,
         isUnlocked: lead.is_unlocked ?? true,
-        contactVerified: lead.contact_verified ?? null,
+        contactVerified: leadContactVerified,
+        recipientValidationSafe: recipientValidation.safe && leadContactVerified,
         recipientEmails: emails,
         requireVerifiedContact: policy.require_verified_contact,
         runId: workflowRunId,

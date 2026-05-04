@@ -837,6 +837,7 @@ export async function draftOutreachEmail(params: {
   } = params
 
   const angle = SIGNAL_ANGLE[signalType] || SIGNAL_ANGLE.expansion
+  const publicSignalSummary = sanitizePublicSignalSummary(signalSummary, signalType, targetCompany)
   const firstName = recipientGreeting?.trim() || stakeholderName.split(' ')[0] || stakeholderName
 
   const ctaInstruction = calendlyUrl
@@ -844,7 +845,7 @@ export async function draftOutreachEmail(params: {
     : `Closing paragraph: a low-friction ask for a 15-minute call. Use a soft direct question.`
 
   const signalBlock = [
-    `Trigger event: ${targetCompany} had a ${signalType}: ${signalSummary}`,
+    `Trigger event: ${targetCompany} had a ${signalType}: ${publicSignalSummary}`,
     headline ? `Original headline: ${headline}` : '',
     fundingAmount ? `Amount: ${fundingAmount}` : '',
     signalAgeLabel ? `Timing: ${signalAgeLabel}` : '',
@@ -855,7 +856,7 @@ export async function draftOutreachEmail(params: {
     : ''
   const senderIntro = senderCompany
   const senderWebsiteText = senderWebsiteUrl ? `${senderCompany} website: ${senderWebsiteUrl}` : 'No sender website available.'
-  const paragraphPattern = pickParagraphPattern(signalType, targetCompany, senderIntro, servicesDescription, signalSummary)
+  const paragraphPattern = pickParagraphPattern(signalType, targetCompany, senderIntro, servicesDescription, publicSignalSummary)
 
   try {
     const text = await completePrompt({
@@ -922,7 +923,7 @@ The body must use \\n\\n between paragraphs.`,
         stakeholderName,
         targetCompany,
         signalType,
-        signalSummary,
+        signalSummary: publicSignalSummary,
         calendlyUrl,
       },
     )
@@ -936,7 +937,7 @@ The body must use \\n\\n between paragraphs.`,
         servicesDescription,
         targetCompany,
         signalType,
-        signalSummary,
+        signalSummary: publicSignalSummary,
         calendlyUrl,
       }),
     }), {
@@ -949,7 +950,7 @@ The body must use \\n\\n between paragraphs.`,
       servicesDescription,
       targetCompany,
       signalType,
-      signalSummary,
+      signalSummary: publicSignalSummary,
       calendlyUrl,
     })
   }
@@ -1034,9 +1035,35 @@ function fallbackOutreachBody(context: {
   signalSummary: string
   calendlyUrl?: string | null
 }): string {
-  const trigger = context.signalSummary || `the recent ${context.signalType} signal`
+  const trigger = sanitizePublicSignalSummary(context.signalSummary, context.signalType, context.targetCompany)
   const offer = describeFallbackOffer(context.servicesDescription)
   return `${context.firstName}, noticed ${context.targetCompany} around ${trigger.toLowerCase()}. That kind of moment usually creates a short window where priorities shift and teams decide what needs attention now.\n\nThe hard part is turning that priority into a practical next step without adding more manual work or pulling the team away from the core plan.\n\n${context.senderIntro} helps teams with ${offer}, which may be relevant if this is becoming an active focus for ${context.targetCompany}.\n\nWorth a quick 15-minute look to see if this should be on your radar${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}` 
+}
+
+export function sanitizePublicSignalSummary(summary: string, signalType: string, targetCompany: string): string {
+  let cleaned = summary
+    .replace(/\s+/g, ' ')
+    .replace(/\bconnect\s+the\s+[^.]{0,220}?\s+to\s+a\s+concrete\s+gtm\s+priority\s+for\s+[^.]+\.?/gi, '')
+    .replace(/\bkeep\s+the\s+offer\s+tied\s+to:\s*[^.]+\.?/gi, '')
+    .replace(/\buse\s+this\s+paragraph\s+pattern\s+for\s+this\s+email:.*$/gi, '')
+    .replace(/\bparagraph\s+[1-4]\s*:\s*[^.]+\.?/gi, '')
+    .replace(/\bstrategic\s+angle:\s*[^.]+\.?/gi, '')
+    .replace(/\btemplate\s+guidance:\s*[^.]+\.?/gi, '')
+    .trim()
+
+  cleaned = cleaned
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[,;:.\s]+|[,;:.\s]+$/g, '')
+    .trim()
+
+  if (!cleaned || isInstructionalSignalSummary(cleaned)) {
+    return `the recent ${signalType} signal at ${targetCompany}`
+  }
+  return cleaned.slice(0, 320)
+}
+
+function isInstructionalSignalSummary(value: string): boolean {
+  return /\b(concrete gtm priority|keep the offer tied|paragraph pattern|template guidance|strategic angle|recipient greeting|email construction rules)\b/i.test(value)
 }
 
 function escapeRegExp(value: string): string {
@@ -1092,6 +1119,8 @@ function sanitizeEmailText(value: string): string {
     .replace(/[\u2500-\u257f]+/g, '')
     .replace(/^\s*[-_=*]{3,}\s*$/gm, '')
     .replace(/\s*[\u2013\u2014]\s*/g, ', ')
+    .replace(/\bconnect\s+the\s+[^.]{0,220}?\s+to\s+a\s+concrete\s+gtm\s+priority\s+for\s+[^.]+\.?/gi, '')
+    .replace(/\bkeep\s+the\s+offer\s+tied\s+to:\s*[^.]+\.?/gi, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]{2,}/g, ' ')

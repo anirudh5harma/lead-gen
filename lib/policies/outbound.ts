@@ -10,6 +10,7 @@ export interface OutboundPolicyInput {
   status?: string | null
   isUnlocked?: boolean | null
   contactVerified?: boolean | null
+  recipientValidationSafe?: boolean | null
   recipientEmails: string[]
   requireVerifiedContact?: boolean
   runId?: string | null
@@ -33,6 +34,7 @@ export async function evaluateOutboundPolicy(
   if (input.isUnlocked === false) reasons.push('lead_locked')
   if (!recipientEmails.length) reasons.push('missing_recipient')
   if (input.requireVerifiedContact && input.contactVerified !== true) reasons.push('contact_not_verified')
+  if (input.recipientValidationSafe !== true) reasons.push('recipient_verification_required')
   if (input.status === 'replied' || input.status === 'booked' || input.status === 'dismissed') {
     reasons.push(`lead_status_${input.status}`)
   }
@@ -90,6 +92,7 @@ export async function recordPolicyDecision(
       company_domain: input.companyDomain ?? null,
       status: input.status ?? null,
       require_verified_contact: input.requireVerifiedContact ?? false,
+      recipient_validation_safe: input.recipientValidationSafe ?? null,
       recipient_count: input.recipientEmails.length,
     },
     metadata,

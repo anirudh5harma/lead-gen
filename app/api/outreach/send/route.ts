@@ -15,7 +15,7 @@ import { buildOutreachPlan } from '@/lib/gtm/outreach-plan'
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
-import { validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
+import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
   finishWorkflowRun,
   finishWorkflowStep,
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   }
 
   const [leadRes, profileRes] = await Promise.all([
-    supabase.from('leads').select('id, user_id, client_id, origin, source_kind, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, feed_snapshot, created_at').eq('id', leadId).eq('user_id', user.id).single(),
+    supabase.from('leads').select('id, user_id, client_id, origin, source_kind, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, contact_verified_at, contact_verification_status, feed_snapshot, created_at').eq('id', leadId).eq('user_id', user.id).single(),
     supabase.from('user_profiles').select('company_name, services_description, calendly_url').eq('user_id', user.id).single(),
   ])
 
@@ -175,6 +175,12 @@ export async function POST(request: Request) {
     input: { lead_id: leadId, recipient_count: recipientEmails.length },
   })
   const recipientValidation = await validateOutboundRecipients(recipientEmails)
+  const leadContactVerified = await persistLeadRecipientVerification(supabase, {
+    leadId,
+    userId: user.id,
+    primaryEmail: recipientGroup.to.email,
+    validation: recipientValidation,
+  })
   await finishWorkflowStep(supabase, {
     stepId: validationStepId,
     status: recipientValidation.safe ? 'completed' : 'blocked',
@@ -256,9 +262,10 @@ export async function POST(request: Request) {
     companyDomain: (leadRes.data as { company_domain?: string | null }).company_domain ?? null,
     status: leadRes.data.status,
     isUnlocked: leadRes.data.is_unlocked,
-    contactVerified: (leadRes.data as { contact_verified?: boolean | null }).contact_verified ?? null,
+    contactVerified: leadContactVerified,
+    recipientValidationSafe: recipientValidation.safe && leadContactVerified,
     recipientEmails,
-    requireVerifiedContact: false,
+    requireVerifiedContact: true,
     runId: workflowRunId,
     stepId: policyStepId,
     metadata: { outreach_plan: outreachPlan },

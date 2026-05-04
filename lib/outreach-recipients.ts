@@ -82,7 +82,12 @@ export function ensureBodyGreetsRecipients(body: string, greeting: string): stri
 
 function collapseRepeatedGreeting(value: string, greeting: string): string {
   const greetingPattern = `(?:hi|hey|hello)?\\s*${escapeRegExp(greeting)}\\s*,\\s*`
-  return value.replace(new RegExp(`^${greetingPattern}${greetingPattern}`, 'i'), `${greeting}, `)
+  let collapsed = value
+  const repeated = new RegExp(`^(?:${greetingPattern}){2,}`, 'i')
+  while (repeated.test(collapsed)) {
+    collapsed = collapsed.replace(repeated, `${greeting}, `)
+  }
+  return collapsed
 }
 
 function formatGreeting(recipients: OutreachRecipient[]): string {

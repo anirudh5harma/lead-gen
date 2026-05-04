@@ -19,7 +19,7 @@ import { buildOutreachPlan, explainPlanBlock, type OutreachPlan } from '@/lib/gt
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
-import { validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
+import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
   finishWorkflowRun,
   finishWorkflowStep,
@@ -461,6 +461,9 @@ async function prepareAutopilotLeads(
         contact_title: topContact.title || null,
         contact_source: topContact.source,
         contact_verified: topContact.verified,
+        contact_verified_at: topContact.verified ? new Date().toISOString() : null,
+        contact_verification_status: topContact.zb_status ?? null,
+        last_contact_verification_error: topContact.verified ? null : 'contact_not_verified',
       }).eq('id', lead.id as string).eq('user_id', params.userId)
       enriched++
 
@@ -663,6 +666,12 @@ async function sendAutomationLead(
     },
   })
   const recipientValidation = await validateOutboundRecipients(recipientEmails)
+  const leadContactVerified = await persistLeadRecipientVerification(supabase, {
+    leadId: params.lead.id as string,
+    userId: params.userId,
+    primaryEmail: draft.recipientGroup.to.email,
+    validation: recipientValidation,
+  })
   await finishWorkflowStep(supabase, {
     stepId: validationStepId,
     status: recipientValidation.safe ? 'completed' : 'blocked',
@@ -714,7 +723,8 @@ async function sendAutomationLead(
     companyDomain: (params.lead.company_domain as string | null | undefined) ?? null,
     status: (params.lead.status as string | null | undefined) ?? null,
     isUnlocked: (params.lead.is_unlocked as boolean | null | undefined) ?? true,
-    contactVerified: (params.lead.contact_verified as boolean | null | undefined) ?? null,
+    contactVerified: leadContactVerified,
+    recipientValidationSafe: recipientValidation.safe && leadContactVerified,
     recipientEmails,
     requireVerifiedContact: params.requireVerifiedContact,
     runId: params.workflowRunId,
@@ -997,10 +1007,11 @@ async function getOrCreateAutomationDraft(
     const existingStakeholders = Array.isArray((existing as { stakeholders?: unknown }).stakeholders)
       ? (existing as { stakeholders: Array<Partial<{ name: string; title: string; email: string; confidence: string; source: string }> | null> }).stakeholders
       : []
+    const recipientGroup = buildRecipientGroup(existingStakeholders.length > 0 ? existingStakeholders : [primaryLeadContact(params.lead)])
     return {
       subject: existing.subject,
-      body: existing.body,
-      recipientGroup: buildRecipientGroup(existingStakeholders.length > 0 ? existingStakeholders : [primaryLeadContact(params.lead)]),
+      body: recipientGroup ? ensureBodyGreetsRecipients(existing.body, recipientGroup.greeting) : existing.body,
+      recipientGroup,
     }
   }
 
@@ -1041,7 +1052,7 @@ async function getOrCreateAutomationDraft(
     recipientGreeting: recipientGroup.greeting,
     targetCompany: params.lead.target_company as string,
     signalType: signal?.signal_type || 'event',
-    signalSummary: params.outreachPlan?.angle || signal?.summary || (params.lead.relevance_reason as string | null) || '',
+    signalSummary: signal?.summary || (params.lead.relevance_reason as string | null) || params.outreachPlan?.trigger || '',
     headline: signal?.headline ?? null,
     fundingAmount: signal?.funding_amount ?? null,
     signalAgeLabel: null,
@@ -1050,15 +1061,17 @@ async function getOrCreateAutomationDraft(
     customInstructions: params.customInstructions,
   })
 
+  const normalizedBody = ensureBodyGreetsRecipients(body, recipientGroup.greeting)
+
   await supabase.from('outreach_drafts').insert({
     lead_id: params.lead.id,
     client_id: params.lead.client_id ?? null,
     subject,
-    body,
+    body: normalizedBody,
     stakeholders,
   })
 
-  return { subject, body, recipientGroup }
+  return { subject, body: normalizedBody, recipientGroup }
 }
 
 function primaryLeadContact(lead: Record<string, unknown>) {

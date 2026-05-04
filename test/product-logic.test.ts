@@ -32,6 +32,7 @@ import {
   shouldUseWorkspaceIcp,
 } from '../lib/explore.ts'
 import { cheapJunkFilter, stableCandidateHash } from '../lib/signal-filter.ts'
+import { draftOutreachEmail, sanitizePublicSignalSummary } from '../lib/deepseek.ts'
 
 test('free workspace keeps every unarchived client visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -953,6 +954,49 @@ test('outreach greeting rewrite is idempotent for grouped greetings', () => {
     ),
     'Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
   )
+
+  assert.equal(
+    ensureBodyGreetsRecipients(
+      'Hi Glenn and Lauren, Glenn and Lauren, Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
+      'Glenn and Lauren',
+    ),
+    'Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
+  )
+})
+
+test('outreach draft fallback does not leak internal planning instructions', async () => {
+  const oldKey = process.env.DEEPSEEK_API_KEY
+  delete process.env.DEEPSEEK_API_KEY
+  try {
+    const draft = await draftOutreachEmail({
+      senderCompany: 'Bombsell',
+      servicesDescription: 'Bombsell is the best AI-native GTM infrastructure for finding companies in pain.',
+      stakeholderName: 'Carmen Ruiz',
+      stakeholderTitle: 'CEO',
+      recipientGreeting: 'Carmen and Apurva',
+      targetCompany: 'Avoca',
+      signalType: 'funding',
+      signalSummary: 'Connect the funding event at Avoca to a concrete GTM priority for executive sponsor. Keep the offer tied to: Bombsell is the best AI-native GTM infrastructure.',
+      customInstructions: null,
+    })
+
+    assert.doesNotMatch(draft.body, /connect the funding event/i)
+    assert.doesNotMatch(draft.body, /keep the offer tied/i)
+    assert.doesNotMatch(draft.body, /concrete gtm priority/i)
+    assert.match(draft.body, /^Carmen and Apurva,/)
+  } finally {
+    if (oldKey) process.env.DEEPSEEK_API_KEY = oldKey
+  }
+})
+
+test('public signal summaries strip internal outreach plan language', () => {
+  const summary = sanitizePublicSignalSummary(
+    'Connect the funding event at Avoca to a concrete GTM priority for executive sponsor. Keep the offer tied to: Bombsell is the best AI-native GTM infrastructure.',
+    'funding',
+    'Avoca',
+  )
+
+  assert.equal(summary, 'the recent funding signal at Avoca')
 })
 
 test('gtm identity keys normalize accounts people and signals deterministically', () => {
