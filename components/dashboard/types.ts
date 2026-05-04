@@ -1,5 +1,5 @@
 
-export type View = 'inbox' | 'accounts' | 'autopilot' | 'settings'
+export type View = 'inbox' | 'accounts' | 'marketing' | 'autopilot' | 'settings'
 
 export interface UserProfile {
   company_name: string
@@ -36,6 +36,20 @@ export interface GtmWorkItem {
   created_at: string
   account_state_url: string | null
   metadata?: Record<string, unknown>
+}
+
+export interface GtmContentIdea {
+  id: string
+  lead_id: string | null
+  account_id: string | null
+  content_type: 'linkedin_post' | 'newsletter_blurb' | 'campaign_brief' | 'sales_enablement_note'
+  audience: string
+  angle: string
+  proof_points: Array<{ label: string; value: string }>
+  pain_category: string
+  status: 'new' | 'drafted' | 'approved' | 'dismissed'
+  draft: Record<string, unknown>
+  created_at: string
 }
 
 export interface LaunchReadinessSnapshot {
