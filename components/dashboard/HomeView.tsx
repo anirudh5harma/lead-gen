@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import type { Lead } from '@/lib/leads'
 import type { View } from './types'
+import { SectionHeader } from './shared'
+import SpotlightCard from '@/components/landing/SpotlightCard'
 
 interface Props {
   leads: Lead[]
@@ -29,44 +31,78 @@ export default function HomeView({ leads, onNavigate }: Props) {
   const replyRate7d = sent7d > 0 ? Math.round((replied7d / sent7d) * 100) : 0
   const replyRate30d = sent30d > 0 ? Math.round((replied30d / sent30d) * 100) : 0
 
+  const liveSent7d = leads.filter(l => l.origin === 'live' && inWindow(l.sent_at, last7d)).length
+  const exploreSent7d = leads.filter(l => l.origin === 'explore' && inWindow(l.sent_at, last7d)).length
+  const liveReplied7d = leads.filter(l => l.origin === 'live' && inWindow(l.replied_at, last7d)).length
+  const exploreReplied7d = leads.filter(l => l.origin === 'explore' && inWindow(l.replied_at, last7d)).length
+
   const pendingApprovals = leads.filter(
     l => l.status === 'drafted' || (l.status !== 'viewed' && l.is_unlocked === true && Boolean(l.contact_email) && !l.sent_at)
   ).length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       {/* KPI Grid */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KPICard
-          label="Leads found (24h)"
-          value={found24h}
-          subtitle={`${found7d} this week`}
-          icon={<IconSearch />}
+      <section>
+        <SectionHeader
+          title="This week at a glance"
+          subtitle="Account movement, outreach, and outcomes."
+          label="Overview"
         />
-        <KPICard
-          label="Sent (7 days)"
-          value={sent7d}
-          subtitle={`${replyRate7d}% reply rate`}
-          icon={<IconSend />}
-        />
-        <KPICard
-          label="Replies (7 days)"
-          value={replied7d}
-          subtitle={`${booked7d} booked`}
-          icon={<IconReply />}
-        />
-        <KPICard
-          label="Reply rate (30d)"
-          value={`${replyRate30d}%`}
-          subtitle={`${sent30d} sent, ${booked30d} booked`}
-          icon={<IconChart />}
-        />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
+          <KPICard
+            label="Leads found (24h)"
+            value={found24h}
+            subtitle={`${found7d} this week`}
+            icon={<IconSearch />}
+          />
+          <KPICard
+            label="Sent (7 days)"
+            value={sent7d}
+            subtitle={`${replyRate7d}% reply rate`}
+            icon={<IconSend />}
+          />
+          <KPICard
+            label="Replies (7 days)"
+            value={replied7d}
+            subtitle={`${booked7d} booked`}
+            icon={<IconReply />}
+          />
+          <KPICard
+            label="Reply rate (30d)"
+            value={`${replyRate30d}%`}
+            subtitle={`${sent30d} sent, ${booked30d} booked`}
+            icon={<IconChart />}
+          />
+        </div>
+
+        {/* Origin Breakdown */}
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="rounded-lg border border-[var(--color-line-1)] bg-white px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Live signals</p>
+              <p className="mt-1 text-[18px] font-bold tabular-nums text-[var(--color-text-1)]">{liveSent7d} sent · {liveReplied7d} replies</p>
+            </div>
+            <span className="h-2 w-2 rounded-full bg-[var(--color-accent)]" />
+          </div>
+          <div className="rounded-lg border border-[var(--color-line-1)] bg-white px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Explore batches</p>
+              <p className="mt-1 text-[18px] font-bold tabular-nums text-[var(--color-text-1)]">{exploreSent7d} sent · {exploreReplied7d} replies</p>
+            </div>
+            <span className="h-2 w-2 rounded-full bg-[var(--color-text-3)]" />
+          </div>
+        </div>
       </section>
 
       {/* Quick Actions */}
       <section>
-        <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-4)] mb-3 px-1">Quick Actions</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <SectionHeader
+          title="Quick actions"
+          subtitle="Jump to the views you use most."
+          label="Navigate"
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 stagger-children">
           <QuickActionCard
             title="Review work inbox"
             description={`${pendingApprovals} leads need your attention`}
@@ -112,14 +148,14 @@ export default function HomeView({ leads, onNavigate }: Props) {
 
 function KPICard({ label, value, subtitle, icon }: { label: string; value: number | string; subtitle: string; icon: React.ReactNode }) {
   return (
-    <div className="card px-4 py-4 shadow-sm hover:shadow-md transition-shadow">
+    <SpotlightCard className="card px-4 py-4 card-hover">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
         <span className="text-[var(--color-text-3)]">{icon}</span>
       </div>
       <p className="mt-2 text-[26px] font-bold tracking-tight tabular-nums text-[var(--color-text-1)]">{value}</p>
       <p className="mt-1 text-[11px] text-[var(--color-text-4)]">{subtitle}</p>
-    </div>
+    </SpotlightCard>
   )
 }
 
@@ -133,7 +169,7 @@ function QuickActionCard({ title, description, action, onClick, highlight }: {
   return (
     <button
       onClick={onClick}
-      className={`group rounded-xl border text-left px-4 py-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+      className={`group rounded-xl border text-left px-4 py-4 transition-all duration-200 card-hover ${
         highlight ? 'border-[var(--color-accent)]/30 bg-[var(--color-accent-bg)]' : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-line-3)]'
       }`}
     >

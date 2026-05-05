@@ -78,10 +78,14 @@ export function constructEmailCandidates(
 
   // Always try common patterns as fallbacks
   candidates.add(`${f}@${domain}`)
+  candidates.add(`${l}@${domain}`)
   candidates.add(`${f}.${l}@${domain}`)
   candidates.add(`${f}${l}@${domain}`)
   candidates.add(`${f[0]}${l}@${domain}`)
   candidates.add(`${f[0]}.${l}@${domain}`)
+  candidates.add(`${f}_${l}@${domain}`)
+  candidates.add(`${f}-${l}@${domain}`)
+  candidates.add(`${l}.${f}@${domain}`)
 
   return Array.from(candidates)
 }

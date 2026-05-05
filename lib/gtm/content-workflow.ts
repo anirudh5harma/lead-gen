@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { enqueueDistributionJobForIdea } from '@/lib/distribution'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { completePrompt } from '@/lib/deepseek'
 import { upsertGtmAction } from './actions'
@@ -106,10 +107,12 @@ interface GeneratedContentIdea {
 
 export async function listMarketingContent(
   supabase: SupabaseClient,
-  input: { userId: string; clientId?: string | null; limit?: number },
+  input: { userId: string; clientId?: string | null; limit?: number; refresh?: boolean },
 ): Promise<{ ideas: GtmContentIdea[]; metrics: Record<string, number> }> {
   const clientId = input.clientId ?? null
-  await generateContentIdeas(supabase, { userId: input.userId, clientId })
+  if (input.refresh) {
+    await generateContentIdeas(supabase, { userId: input.userId, clientId })
+  }
 
   let query = supabase
     .from('gtm_content_ideas')
@@ -360,6 +363,16 @@ export async function scheduleMarketingContentIdea(
   },
 ): Promise<void> {
   const clientId = input.clientId ?? null
+  let ideaQuery = supabase
+    .from('gtm_content_ideas')
+    .select('id, content_type')
+    .eq('id', input.ideaId)
+    .eq('user_id', input.userId)
+  ideaQuery = clientId ? ideaQuery.eq('client_id', clientId) : ideaQuery.is('client_id', null)
+  const { data: idea, error: ideaError } = await ideaQuery.maybeSingle()
+  if (ideaError) throw new Error(ideaError.message)
+  if (!idea) throw new Error('Content idea not found')
+
   let query = supabase
     .from('gtm_content_ideas')
     .update({ scheduled_for: input.scheduledFor })
@@ -368,6 +381,14 @@ export async function scheduleMarketingContentIdea(
   query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
   const { error } = await query
   if (error) throw new Error(error.message)
+
+  await enqueueDistributionJobForIdea(supabase, {
+    userId: input.userId,
+    clientId,
+    ideaId: input.ideaId,
+    contentType: (idea as { content_type: string }).content_type,
+    scheduledFor: input.scheduledFor,
+  })
 
   await recordGtmEvent(supabase, {
     userId: input.userId,

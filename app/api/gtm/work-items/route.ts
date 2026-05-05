@@ -3,6 +3,7 @@ import { getActiveClientContext } from '@/lib/client-context'
 import { completeGtmActionForSourceItem, upsertGtmAction } from '@/lib/gtm/actions'
 import { eventIdempotencyKey, recordGtmEvent } from '@/lib/gtm/events'
 import { markLatestOutreachPlanStatus } from '@/lib/gtm/outreach-plan-store'
+import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import { listGtmWorkItems } from '@/lib/gtm/work-items'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
@@ -65,17 +66,39 @@ export async function POST(request: Request) {
   }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  let leadForAction: { id: string; client_id?: string | null; contact_email?: string | null; contact_verified?: boolean | null } | null = null
   if (leadId) {
     const { data: lead, error: leadError } = await supabase
       .from('leads')
-      .select('id, client_id')
+      .select('id, client_id, contact_email, contact_verified')
       .eq('id', leadId)
       .eq('user_id', user.id)
       .maybeSingle()
     if (leadError) return NextResponse.json({ error: leadError.message }, { status: 500 })
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    leadForAction = lead
     const leadClientId = (lead as { client_id?: string | null }).client_id ?? null
     if ((activeClientId ?? null) !== leadClientId) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+  }
+
+  if (leadId && action === 'approved') {
+    if (!leadForAction?.contact_email) {
+      return NextResponse.json({ error: 'A usable contact is required before approving this next move.' }, { status: 409 })
+    }
+    const serviceSupabase = await createServiceClient()
+    const validation = await validateOutboundRecipients([leadForAction.contact_email], { maxCacheAgeDays: 1 })
+    const verified = await persistLeadRecipientVerification(serviceSupabase, {
+      leadId,
+      userId: user.id,
+      primaryEmail: leadForAction.contact_email,
+      validation,
+    })
+    if (!verified) {
+      return NextResponse.json({
+        error: `Approval blocked: recipient validation failed for ${validation.unsafeEmails.join(', ')}`,
+        reasons: validation.reasons,
+      }, { status: 422 })
+    }
   }
 
   let existingActionQuery = supabase

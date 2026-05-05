@@ -74,9 +74,17 @@ export async function POST(request: Request) {
     )
   }
 
+  const { data: draftForRecipients } = await supabase
+    .from('outreach_drafts')
+    .select('stakeholders')
+    .eq('lead_id', leadId)
+    .maybeSingle()
+  const draftStakeholders = Array.isArray((draftForRecipients as { stakeholders?: unknown } | null)?.stakeholders)
+    ? (draftForRecipients as { stakeholders: Array<{ name?: string; title?: string; email?: string }> }).stakeholders
+    : []
   const recipientGroup = buildRecipientGroup([
-    { email: to },
-    ...(Array.isArray(cc) ? cc.map(email => ({ email })) : []),
+    recipientSeed(to, draftStakeholders, leadRes.data),
+    ...(Array.isArray(cc) ? cc.map(email => recipientSeed(email, draftStakeholders, leadRes.data)) : []),
   ])
   if (!recipientGroup) return NextResponse.json({ error: 'At least one valid recipient is required.' }, { status: 400 })
   const normalizedEmailBody = ensureBodyGreetsRecipients(emailBody, recipientGroup.greeting)
@@ -600,4 +608,28 @@ async function pregenerateFollowup(
     { lead_id: leadId, followup_subject: fuSubject, followup_body: fuBody },
     { onConflict: 'lead_id' }
   )
+}
+
+function recipientSeed(
+  email: string,
+  stakeholders: Array<{ name?: string; title?: string; email?: string }>,
+  lead: { contact_email?: string | null; contact_name?: string | null; contact_title?: string | null },
+) {
+  const normalized = email.trim().toLowerCase()
+  const stakeholder = stakeholders.find(item => item.email?.trim().toLowerCase() === normalized)
+  if (stakeholder) {
+    return {
+      email,
+      name: stakeholder.name ?? '',
+      title: stakeholder.title ?? 'Decision Maker',
+    }
+  }
+  if (lead.contact_email?.trim().toLowerCase() === normalized) {
+    return {
+      email,
+      name: lead.contact_name ?? '',
+      title: lead.contact_title ?? 'Decision Maker',
+    }
+  }
+  return { email }
 }

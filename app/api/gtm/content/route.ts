@@ -12,6 +12,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url)
   const limit = Number(url.searchParams.get('limit') ?? 40)
+  const refresh = url.searchParams.get('refresh') === '1' || url.searchParams.get('refresh') === 'true'
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
 
   try {
@@ -19,6 +20,7 @@ export async function GET(request: Request) {
       userId: user.id,
       clientId: activeClientId,
       limit,
+      refresh,
     })
     return NextResponse.json(result)
   } catch (error) {

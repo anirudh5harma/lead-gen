@@ -22,8 +22,13 @@ export interface ZBBatchItem {
   sub_status: string
 }
 
+/**
+ * ONLY 'valid' emails are guaranteed safe to send.
+ * catch-all, unknown, etc. are NOT acceptable because they can
+ * damage sender reputation and get the user flagged.
+ */
 export function isSafeToSend(status: ZBStatus): boolean {
-  return status === 'valid' || status === 'catch-all'
+  return status === 'valid'
 }
 
 export async function verifyEmail(email: string): Promise<ZBResult | null> {
@@ -36,7 +41,6 @@ export async function verifyEmail(email: string): Promise<ZBResult | null> {
 
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return null
-
     const json = await res.json() as Partial<ZBResult> & { error?: string }
     if (json.error) return null
 

@@ -182,10 +182,6 @@ export async function GET(request: Request) {
         await releaseClaim(supabase, item.id, claimToken)
         continue
       }
-      if (policy.require_verified_contact && lead.contact_verified !== true) {
-        await releaseClaim(supabase, item.id, claimToken)
-        continue
-      }
       if (lead.created_at) {
         const ageMs = Date.now() - new Date(lead.created_at).getTime()
         if (ageMs > policy.max_lead_age_days * 24 * 60 * 60 * 1000) {

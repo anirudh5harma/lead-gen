@@ -8,6 +8,31 @@ interface MarketingPayload {
   metrics: Record<string, number>
 }
 
+interface DistributionProvider {
+  id: string
+  label: string
+  category: string
+  direct: boolean
+  supported: string[]
+  manualReason?: string
+  connect: { enabled: boolean; reason: string | null }
+}
+
+interface DistributionAccount {
+  id: string
+  provider: string
+  display_name: string | null
+  handle: string | null
+  status: string
+  publish_mode: string
+  last_publish_at: string | null
+}
+
+interface DistributionPayload {
+  providers: DistributionProvider[]
+  accounts: DistributionAccount[]
+}
+
 type ChannelTab = 'all' | 'social' | 'written' | 'video' | 'campaign'
 type SourceMode = 'suggested' | 'custom'
 type MarketingContentType = GtmContentIdea['content_type']
@@ -26,13 +51,6 @@ const CUSTOM_TYPES: Array<{ id: MarketingContentType; label: string; channel: Ch
   { id: 'blog_article', label: 'Blog article', channel: 'written' },
   { id: 'video_script', label: 'Video script', channel: 'video' },
 ]
-
-const PLATFORM_CARDS = [
-  { id: 'linkedin', label: 'LinkedIn', category: 'Social', state: 'Ready for scheduling', tone: 'green' },
-  { id: 'x', label: 'X', category: 'Social', state: 'Connect publishing account', tone: 'amber' },
-  { id: 'blog', label: 'Blog/CMS', category: 'Articles', state: 'Export-ready drafts', tone: 'green' },
-  { id: 'youtube', label: 'YouTube', category: 'Video', state: 'Script planning', tone: 'amber' },
-] as const
 
 const STATUS_STYLES: Record<string, string> = {
   new: 'bg-[var(--color-accent)]/10 text-[var(--color-accent-ring)]',
@@ -54,6 +72,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
   const [payload, setPayload] = useState<MarketingPayload>({ ideas: [], metrics: {} })
   const [loading, setLoading] = useState(true)
+  const [refreshingIdeas, setRefreshingIdeas] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sourceMode, setSourceMode] = useState<SourceMode>('suggested')
@@ -61,19 +80,47 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
   const [customPrompt, setCustomPrompt] = useState('')
   const [assetText, setAssetText] = useState('')
   const [scheduleFor, setScheduleFor] = useState<Record<string, string>>({})
+  const [distribution, setDistribution] = useState<DistributionPayload>({ providers: [], accounts: [] })
 
-  async function load() {
-    setLoading(true)
+  async function load(options?: { refresh?: boolean; initial?: boolean }) {
+    const refresh = options?.refresh ?? false
+    if (options?.initial ?? !refresh) setLoading(true)
+    if (refresh) setRefreshingIdeas(true)
     setError(null)
-    const res = await fetch('/api/gtm/content?limit=80')
+    const res = await fetch(`/api/gtm/content?limit=80${refresh ? '&refresh=1' : ''}`)
     const data = await res.json().catch(() => null) as MarketingPayload & { error?: string } | null
     if (!res.ok) setError(data?.error ?? 'Could not load marketing content.')
     else setPayload({ ideas: data?.ideas ?? [], metrics: data?.metrics ?? {} })
     setLoading(false)
+    if (refresh) setRefreshingIdeas(false)
+    return data?.ideas ?? []
+  }
+
+  async function loadDistribution() {
+    const res = await fetch('/api/distribution/accounts')
+    const data = await res.json().catch(() => null) as DistributionPayload & { error?: string } | null
+    if (res.ok) setDistribution({ providers: data?.providers ?? [], accounts: data?.accounts ?? [] })
+  }
+
+  async function disconnectDistributionAccount(id: string) {
+    if (busyId) return
+    setBusyId(id)
+    await fetch('/api/distribution/accounts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    await loadDistribution()
+    setBusyId(null)
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { void load() }, 0)
+    const timer = window.setTimeout(() => {
+      void load({ initial: true }).then(ideas => {
+        if (ideas.length === 0) void load({ refresh: true, initial: false })
+      })
+      void loadDistribution()
+    }, 0)
     return () => window.clearTimeout(timer)
   }, [])
 
@@ -158,8 +205,9 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
 
       <ContentHubHeader
         hub={hub}
-        loading={loading}
-        onRefresh={load}
+        loading={loading || refreshingIdeas}
+        refreshingIdeas={refreshingIdeas}
+        onRefresh={() => { void load({ refresh: true, initial: false }) }}
       />
 
       {hub === 'overview' ? (
@@ -169,6 +217,9 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
           scheduledThisMonth={scheduledThisMonth}
           approvedReady={approvedReady}
           customDrafts={payload.metrics.custom ?? 0}
+          distribution={distribution}
+          busyId={busyId}
+          onDisconnect={disconnectDistributionAccount}
         />
       ) : (
         <ContentTypeWorkspace
@@ -200,10 +251,12 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
 function ContentHubHeader({
   hub,
   loading,
+  refreshingIdeas,
   onRefresh,
 }: {
   hub: HubTab
   loading: boolean
+  refreshingIdeas: boolean
   onRefresh: () => void
 }) {
   const tab = HUB_TABS.find(item => item.id === hub) ?? HUB_TABS[0]
@@ -223,7 +276,7 @@ function ContentHubHeader({
             disabled={loading}
             className="h-8 rounded-lg border border-white/80 bg-white/80 px-3 text-[12px] font-semibold text-[var(--color-text-2)] shadow-sm hover:text-[var(--color-text-1)] disabled:opacity-50"
           >
-            Refresh
+            {refreshingIdeas ? 'Refreshing ideas' : 'Refresh ideas'}
           </button>
         </div>
       </div>
@@ -242,12 +295,18 @@ function OverviewWorkspace({
   scheduledThisMonth,
   approvedReady,
   customDrafts,
+  distribution,
+  busyId,
+  onDisconnect,
 }: {
   ideas: GtmContentIdea[]
   calendarDays: Array<{ date: Date; items: GtmContentIdea[]; inMonth: boolean }>
   scheduledThisMonth: number
   approvedReady: number
   customDrafts: number
+  distribution: DistributionPayload
+  busyId: string | null
+  onDisconnect: (id: string) => void
 }) {
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -266,10 +325,10 @@ function OverviewWorkspace({
             <MixCard label="Videos" value={filterIdeasForHub(ideas, 'videos').length} />
           </div>
         </div>
+        <CalendarPanel days={calendarDays} />
       </div>
       <aside className="space-y-4">
-        <PlatformPanel />
-        <CalendarPanel days={calendarDays} />
+        <PlatformPanel distribution={distribution} busyId={busyId} onDisconnect={onDisconnect} />
       </aside>
     </section>
   )
@@ -604,22 +663,71 @@ function ContentCard({
   )
 }
 
-function PlatformPanel() {
+function PlatformPanel({
+  distribution,
+  busyId,
+  onDisconnect,
+}: {
+  distribution: DistributionPayload
+  busyId: string | null
+  onDisconnect: (id: string) => void
+}) {
+  const providers = distribution.providers.length > 0 ? distribution.providers : fallbackDistributionProviders()
   return (
     <section className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm">
       <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Distribution accounts</h3>
       <div className="mt-3 space-y-2">
-        {PLATFORM_CARDS.map(platform => (
-          <div key={platform.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
-            <div>
-              <p className="text-[12px] font-semibold text-[var(--color-text-1)]">{platform.label}</p>
-              <p className="text-[11px] text-[var(--color-text-4)]">{platform.category}</p>
+        {providers.map(provider => {
+          const account = distribution.accounts.find(item => item.provider === provider.id)
+          const connected = Boolean(account)
+          const manual = !provider.direct
+          return (
+          <div key={provider.id} className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-[var(--color-text-1)]">{provider.label}</p>
+                <p className="text-[11px] text-[var(--color-text-4)]">
+                  {connected
+                    ? `${account?.display_name ?? provider.label}${account?.handle ? ` ${account.handle}` : ''}`
+                    : manual ? 'Export-ready workflow' : provider.category}
+                </p>
+              </div>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${connected ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : manual ? 'bg-[#eef2f7] text-[#526070]' : 'bg-[#fff4df] text-[#936014]'}`}>
+                {connected ? 'Connected' : manual ? 'Manual' : 'Connect'}
+              </span>
             </div>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${platform.tone === 'green' ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'bg-[#fff4df] text-[#936014]'}`}>
-              {platform.state}
-            </span>
+
+            <p className="mt-2 text-[11px] leading-snug text-[var(--color-text-4)]">
+              {connected
+                ? `Schedules ${provider.supported.map(labelForContentType).join(', ')} from approved Content Hub items.`
+                : provider.manualReason ?? provider.connect.reason ?? `Connect ${provider.label} to publish scheduled content.`}
+            </p>
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              {connected && account ? (
+                <button
+                  onClick={() => onDisconnect(account.id)}
+                  disabled={busyId === account.id}
+                  className="h-7 rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)] disabled:opacity-50"
+                >
+                  Disconnect
+                </button>
+              ) : provider.connect.enabled ? (
+                <a
+                  href={`/api/distribution/auth/${provider.id}`}
+                  className="inline-flex h-7 items-center rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)]"
+                >
+                  Connect
+                </a>
+              ) : (
+                <span className="inline-flex h-7 items-center rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-4)]">
+                  {manual ? 'Copy/export' : 'Setup needed'}
+                </span>
+              )}
+            </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </section>
   )
@@ -730,6 +838,21 @@ function dotClass(channel: string): string {
   if (channel === 'written') return 'bg-[var(--color-sig-funding)]'
   if (channel === 'video') return 'bg-[var(--color-sig-expansion)]'
   return 'bg-[var(--color-text-4)]'
+}
+
+function labelForContentType(value: string): string {
+  return TYPE_LABELS[value] ?? value.replace(/_/g, ' ')
+}
+
+function fallbackDistributionProviders(): DistributionProvider[] {
+  return [
+    { id: 'linkedin', label: 'LinkedIn', category: 'Social', direct: true, supported: ['linkedin_post', 'blog_article'], connect: { enabled: false, reason: 'Loading connection settings.' } },
+    { id: 'x', label: 'X', category: 'Social', direct: true, supported: ['x_post'], connect: { enabled: false, reason: 'Loading connection settings.' } },
+    { id: 'instagram', label: 'Instagram', category: 'Social', direct: true, supported: ['video_script'], connect: { enabled: false, reason: 'Loading connection settings.' } },
+    { id: 'tiktok', label: 'TikTok', category: 'Video', direct: true, supported: ['video_script'], connect: { enabled: false, reason: 'Loading connection settings.' } },
+    { id: 'medium', label: 'Medium', category: 'Articles', direct: false, supported: ['blog_article'], manualReason: 'Export-ready copy.', connect: { enabled: false, reason: null } },
+    { id: 'substack', label: 'Substack', category: 'Newsletter', direct: false, supported: ['blog_article', 'newsletter_blurb'], manualReason: 'Export-ready copy.', connect: { enabled: false, reason: null } },
+  ]
 }
 
 function toDateTimeLocal(value: string | null | undefined): string {

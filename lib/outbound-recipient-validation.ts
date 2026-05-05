@@ -1,6 +1,6 @@
-import { enrichSingleEmail } from './email-finder/enrich'
-import { isSafeToSend, type ZBStatus } from './email-finder/zeroBounce'
-import { normalizeEmailAddress } from './email-safety'
+import { enrichSingleEmail } from './email-finder/enrich.ts'
+import { isSafeToSend, type ZBStatus } from './email-finder/zeroBounce.ts'
+import { normalizeEmailAddress } from './email-safety.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface RecipientValidationRow {
@@ -49,8 +49,8 @@ export async function validateOutboundRecipients(
 
 export function outboundVerificationMaxAgeDays(): number {
   const configured = Number(process.env.OUTBOUND_VERIFICATION_MAX_AGE_DAYS)
-  if (!Number.isFinite(configured) || configured <= 0) return 30
-  return Math.max(1, Math.min(90, Math.round(configured)))
+  if (!Number.isFinite(configured) || configured <= 0) return 3
+  return Math.max(1, Math.min(14, Math.round(configured)))
 }
 
 export async function persistLeadRecipientVerification(

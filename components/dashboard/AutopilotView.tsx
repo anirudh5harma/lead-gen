@@ -2,10 +2,22 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import type { AutoSendAccount, PendingFollowup } from './types'
-import { TabLoadingState, formatDateTime } from './shared'
+import { TabLoadingState, formatDateTime, SectionHeader } from './shared'
+import SpotlightCard from '@/components/landing/SpotlightCard'
+
+interface ExploreSession {
+  id: string
+  prompt: string
+  generated_count: number
+  inserted_count: number
+  created_at: string
+  in_autopilot: boolean
+  autopilot_status: string
+}
 
 export default function AutopilotView() {
   const [liveAutopilotOn, setLiveAutopilotOn] = useState(false)
+  const [exploreDailyLimit, setExploreDailyLimit] = useState(3)
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -19,6 +31,8 @@ export default function AutopilotView() {
   const [followups, setFollowups] = useState<PendingFollowup[]>([])
   const [followupsLoaded, setFollowupsLoaded] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [sessions, setSessions] = useState<ExploreSession[]>([])
+  const [sessionBusy, setSessionBusy] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -30,13 +44,16 @@ export default function AutopilotView() {
             enabled?: boolean
             connected_account_id?: string | null
             target_origins?: Array<'live' | 'explore'>
+            target_explore_session_ids?: string[]
             require_verified_contact?: boolean
             min_relevance_score?: number
             max_lead_age_days?: number
             daily_send_limit?: number
+            explore_daily_send_limit?: number
             min_minutes_between_sends?: number
           }
           accounts?: AutoSendAccount[]
+          explore_sessions?: ExploreSession[]
         } | null
         if (cancelled || !data) return
         if (!res.ok) { setMsg(data.error ?? 'Failed to load settings.'); setLoaded(true); return }
@@ -47,8 +64,10 @@ export default function AutopilotView() {
         setMinScore(data.policy?.min_relevance_score ?? 7)
         setMaxAge(data.policy?.max_lead_age_days ?? 30)
         setDailyLimit(data.policy?.daily_send_limit ?? 10)
+        setExploreDailyLimit(data.policy?.explore_daily_send_limit ?? 3)
         setSpacing(data.policy?.min_minutes_between_sends ?? 15)
         setAccounts(data.accounts ?? [])
+        setSessions(data.explore_sessions ?? [])
         setLoaded(true)
       })
       .catch(() => { if (!cancelled) { setMsg('Failed to load settings.'); setLoaded(true) } })
@@ -72,6 +91,23 @@ export default function AutopilotView() {
     } finally { setCancellingId(null) }
   }, [])
 
+  const removeSession = useCallback(async (sessionId: string) => {
+    setSessionBusy(sessionId)
+    try {
+      const res = await fetch(`/api/explore/sessions/${sessionId}/autopilot`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove' }),
+      })
+      const data = await res.json().catch(() => null) as { ok?: boolean } | null
+      if (data?.ok) {
+        setSessions(prev => prev.map(s =>
+          s.id === sessionId ? { ...s, in_autopilot: false, autopilot_status: 'paused' } : s
+        ))
+      }
+    } finally { setSessionBusy(null) }
+  }, [])
+
   const save = useCallback(async () => {
     setSaving(true)
     setMsg(null)
@@ -80,14 +116,18 @@ export default function AutopilotView() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          enabled: liveAutopilotOn,
+          enabled: liveAutopilotOn || sessions.some(s => s.in_autopilot),
           connected_account_id: accountId,
-          target_origins: liveAutopilotOn ? ['live' as const] : [],
-          target_explore_session_ids: [],
+          target_origins: [
+            ...(liveAutopilotOn ? ['live' as const] : []),
+            ...(sessions.some(s => s.in_autopilot) ? ['explore' as const] : []),
+          ],
+          target_explore_session_ids: sessions.filter(s => s.in_autopilot).map(s => s.id),
           require_verified_contact: requireVerified,
           min_relevance_score: minScore,
           max_lead_age_days: maxAge,
           daily_send_limit: dailyLimit,
+          explore_daily_send_limit: exploreDailyLimit,
           min_minutes_between_sends: spacing,
         }),
       })
@@ -96,44 +136,83 @@ export default function AutopilotView() {
       setMsg('GTM engine settings saved')
     } catch { setMsg('Failed to save settings.') }
     finally { setSaving(false) }
-  }, [liveAutopilotOn, accountId, requireVerified, minScore, maxAge, dailyLimit, spacing])
+  }, [liveAutopilotOn, accountId, requireVerified, minScore, maxAge, dailyLimit, exploreDailyLimit, spacing, sessions])
 
   if (!loaded || !followupsLoaded) return <TabLoadingState title="Loading Autopilot" detail="Fetching sending mode and scheduled follow-ups." />
 
+  const activeSessions = sessions.filter(s => s.in_autopilot)
+
   return (
-    <div className="w-full space-y-4">
+    <div className="w-full space-y-6">
       {/* Main toggle card */}
-      <div className="card overflow-hidden shadow-sm">
-        <div className="px-5 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[var(--color-ink-2)]/30">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--color-text-1)]">GTM Engine</h2>
-            <p className="text-xs text-[var(--color-text-4)] mt-0.5">Choose how account agents move from signal to next action.</p>
+      <section>
+        <SectionHeader
+          title="GTM Engine"
+          subtitle="Choose how account agents move from signal to next action."
+          label="Autopilot"
+        />
+        <SpotlightCard className="card overflow-hidden card-hover">
+          <div className="px-5 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-[var(--color-text-1)]">Live signal automation</h2>
+              <p className="text-xs text-[var(--color-text-4)] mt-0.5">Automatically send outreach when live signals match your ICP.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em] ${
+                liveAutopilotOn ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'bg-[var(--color-ink-3)] text-[var(--color-text-4)]'
+              }`}>
+                {liveAutopilotOn && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />}
+                {liveAutopilotOn ? 'On' : 'Off'}
+              </span>
+              <button
+                role="switch"
+                aria-checked={liveAutopilotOn}
+                disabled={saving || !loaded}
+                onClick={() => setLiveAutopilotOn(e => !e)}
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
+                  liveAutopilotOn ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-3)] border-[var(--color-line-2)]'
+                }`}
+              >
+                <span className={`pointer-events-none inline-block h-6 w-6 rounded-full bg-white shadow-md ring-0 transition-transform ${liveAutopilotOn ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.1em] ${
-              liveAutopilotOn ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'bg-[var(--color-ink-3)] text-[var(--color-text-4)]'
-            }`}>
-              {liveAutopilotOn && <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />}
-              {liveAutopilotOn ? 'On' : 'Off'}
-            </span>
-            <button
-              role="switch"
-              aria-checked={liveAutopilotOn}
-              disabled={saving || !loaded}
-              onClick={() => setLiveAutopilotOn(e => !e)}
-              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border transition-colors focus:outline-none disabled:opacity-50 ${
-                liveAutopilotOn ? 'bg-[var(--color-accent)] border-[var(--color-accent)]' : 'bg-[var(--color-ink-3)] border-[var(--color-line-2)]'
-              }`}
-            >
-              <span className={`pointer-events-none inline-block h-6 w-6 rounded-full bg-white shadow-md ring-0 transition-transform ${liveAutopilotOn ? 'translate-x-5' : 'translate-x-0'}`} />
-            </button>
+        </SpotlightCard>
+      </section>
+
+      {/* Explore Sessions in Autopilot */}
+      {activeSessions.length > 0 && (
+        <section>
+          <SectionHeader
+            title="Batch sessions in autopilot"
+            subtitle={`${activeSessions.length} explore session${activeSessions.length === 1 ? '' : 's'} queued for automated outreach.`}
+            label="Explore"
+          />
+          <div className="grid gap-3 stagger-children">
+            {activeSessions.map(session => (
+              <div key={session.id} className="card p-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-[var(--color-text-1)] line-clamp-1">{session.prompt}</p>
+                  <p className="text-[11px] text-[var(--color-text-4)]">
+                    {session.inserted_count} leads · {new Date(session.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <button
+                  onClick={() => removeSession(session.id)}
+                  disabled={sessionBusy === session.id}
+                  className="shrink-0 h-8 px-3 rounded-lg border border-[var(--color-line-1)] bg-white text-[11px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-sig-regulation)] disabled:opacity-50 transition-colors"
+                >
+                  {sessionBusy === session.id ? '…' : 'Remove'}
+                </button>
+              </div>
+            ))}
           </div>
-        </div>
-      </div>
+        </section>
+      )}
 
       {/* Settings + Followups */}
-      <div className="card divide-y divide-[var(--color-line-1)] shadow-sm overflow-hidden">
-        <div className={`px-5 py-5 space-y-5 transition-all duration-200 ${liveAutopilotOn ? 'opacity-100' : 'opacity-60 saturate-75'}`}>
+      <section className="card divide-y divide-[var(--color-line-1)] overflow-hidden">
+        <div className={`px-5 py-5 space-y-5 transition-all duration-200 ${liveAutopilotOn || activeSessions.length > 0 ? 'opacity-100' : 'opacity-60 saturate-75'}`}>
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="space-y-1.5">
               <span className="text-xs font-semibold text-[var(--color-text-1)]">Sending from</span>
@@ -207,14 +286,20 @@ export default function AutopilotView() {
                     {[7, 14, 30, 60, 90].map(d => <option key={d} value={d}>{d} days</option>)}
                   </select>
                 </label>
-                <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 hover:shadow-sm transition-shadow cursor-pointer">
-                  <span>
-                    <span className="block text-[12px] font-semibold text-[var(--color-text-1)]">Verified contacts only</span>
-                    <span className="block text-[10.5px] text-[var(--color-text-4)]">Skip unverified emails.</span>
-                  </span>
-                  <input type="checkbox" checked={requireVerified} onChange={e => setRequireVerified(e.target.checked)} className="accent-[var(--color-accent)] h-4 w-4" />
+                <label className="space-y-1.5">
+                  <span className="text-xs font-semibold text-[var(--color-text-1)]">Explore daily sub-limit</span>
+                  <select value={exploreDailyLimit} onChange={e => setExploreDailyLimit(Number(e.target.value))} className="w-full h-10 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
+                    {[0, 1, 2, 3, 5, 8, 10].map(v => <option key={v} value={v}>{v}/day</option>)}
+                  </select>
                 </label>
               </div>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3 hover:shadow-sm transition-shadow cursor-pointer">
+                <span>
+                  <span className="block text-[12px] font-semibold text-[var(--color-text-1)]">Verified contacts only</span>
+                  <span className="block text-[10.5px] text-[var(--color-text-4)]">Skip unverified emails.</span>
+                </span>
+                <input type="checkbox" checked={requireVerified} onChange={e => setRequireVerified(e.target.checked)} className="accent-[var(--color-accent)] h-4 w-4" />
+              </label>
             </div>
           </details>
 
@@ -222,7 +307,7 @@ export default function AutopilotView() {
             <svg className="w-4 h-4 text-[var(--color-text-4)] shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            The engine only spends credits on contact unlocks. It skips unsubscribed and bounced recipients, rotates inboxes, and respects your daily limit and spacing.
+            The engine only spends credits on contact unlocks. It skips unsubscribed and bounced recipients, rotates inboxes, and respects your daily limit and spacing. Explore sessions have their own sub-limit so live signals are never starved.
           </div>
 
           <div className="flex items-center justify-between gap-3 pt-1">
@@ -231,7 +316,7 @@ export default function AutopilotView() {
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
-              {saving ? 'Saving…' : liveAutopilotOn ? 'Save and run' : 'Save approve-first'}
+              {saving ? 'Saving…' : 'Save settings'}
             </button>
           </div>
         </div>
@@ -266,7 +351,7 @@ export default function AutopilotView() {
             </ul>
           </>
         )}
-      </div>
+      </section>
     </div>
   )
 }

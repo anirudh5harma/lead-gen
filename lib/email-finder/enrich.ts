@@ -10,14 +10,17 @@ import {
   isCandidateSafeWithoutVerification,
   shouldShortCircuitEnrichmentFailure,
 } from './enrich-helpers'
+import { cleanPersonName, emailContainsProfessionalSuffix } from '../person-normalization'
 import { normalizeLeadCompanyKey } from '../lead-dedupe'
+import { normalizeLeadFeedSnapshot } from '../lead-sources'
 
 const CACHE_TTL_DAYS = 30
+const VERIFIED_SEND_CACHE_TTL_DAYS = 7
 const VALIDATION_CACHE_TTL_DAYS = 90
 const RETRY_AFTER_DAYS = 21
 const MAX_CONTACTS_PER_COMPANY = 4
 const TARGET_SAFE_CONTACTS = 3
-const MIN_SAFE_CONTACTS = 2
+const MIN_SAFE_CONTACTS = 1
 const MAX_DIRECT_CANDIDATES = 6
 const MAX_PATTERN_PEOPLE = 3
 const MAX_PATTERNS_PER_PERSON = 2
@@ -97,6 +100,7 @@ export interface EnrichedContact {
   linkedin_url?: string | null
   base_score?: number
   resolution_method?: ResolutionMethod
+  enriched_at?: string
 }
 
 export interface EnrichMetrics {
@@ -147,9 +151,11 @@ async function readCache(
     results.flatMap(result => (result.data ?? []) as CachedContactRow[]),
   )
 
-  const contacts = mergedRows.map(row => ({
+  const contacts = mergedRows
+    .filter(row => !emailContainsProfessionalSuffix(row.contact_email, row.contact_name))
+    .map(row => ({
     email: row.contact_email,
-    name: row.contact_name ?? '',
+    name: cleanPersonName(row.contact_name) || (row.contact_name ?? ''),
     title: row.contact_title ?? '',
     source: row.contact_source,
     verified: row.contact_verified,
@@ -157,6 +163,7 @@ async function readCache(
     linkedin_url: row.linkedin_url,
     base_score: row.base_score ?? 0,
     resolution_method: row.resolution_method ?? 'pattern',
+    enriched_at: row.enriched_at,
   }))
 
   if (contacts.length > 0) return contacts
@@ -171,15 +178,17 @@ async function readCache(
     .maybeSingle()
 
   if (!legacy?.contact_email) return []
+  if (emailContainsProfessionalSuffix(legacy.contact_email, legacy.contact_name)) return []
   return [{
     email: legacy.contact_email,
-    name: legacy.contact_name ?? '',
+    name: cleanPersonName(legacy.contact_name) || (legacy.contact_name ?? ''),
     title: legacy.contact_title ?? '',
     source: legacy.contact_source as ContactSource,
     verified: legacy.contact_verified,
     zb_status: legacy.zb_status as ZBStatus | undefined,
     base_score: 0,
     resolution_method: legacy.contact_verified ? 'direct' : 'pattern',
+    enriched_at: new Date().toISOString(),
   }]
 }
 
@@ -196,7 +205,7 @@ async function writeCache(
       domain,
       company_key: companyKey,
       contact_email: contact.email.toLowerCase(),
-      contact_name: contact.name || null,
+      contact_name: cleanPersonName(contact.name) || null,
       contact_title: contact.title || null,
       contact_source: contact.source,
       contact_verified: contact.verified,
@@ -220,11 +229,29 @@ function rankForUser(
 }
 
 function splitName(fullName: string): { firstName: string; lastName: string } {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean)
+  const parts = cleanPersonName(fullName).split(/\s+/).filter(Boolean)
   return {
     firstName: parts[0] ?? '',
     lastName: parts.slice(1).join(' '),
   }
+}
+
+function extractMostCommonDomain(people: Array<{ companyDomain: string | null }>): string | null {
+  const counts = new Map<string, number>()
+  for (const person of people) {
+    if (person.companyDomain) {
+      counts.set(person.companyDomain, (counts.get(person.companyDomain) ?? 0) + 1)
+    }
+  }
+  let bestDomain: string | null = null
+  let bestCount = 0
+  for (const [domain, count] of counts) {
+    if (count > bestCount) {
+      bestCount = count
+      bestDomain = domain
+    }
+  }
+  return bestDomain
 }
 
 function dedupePeople(people: CandidatePerson[]): CandidatePerson[] {
@@ -272,6 +299,13 @@ function buildEmptyMetrics(): EnrichMetrics {
     contact_mix: { direct: 0, pattern: 0, role: 0 },
     negative_cache_hit: false,
   }
+}
+
+function isFreshVerifiedContact(contact: EnrichedContact): boolean {
+  if (!contact.verified) return false
+  if (!contact.enriched_at) return false
+  const cutoff = Date.now() - VERIFIED_SEND_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000
+  return Date.parse(contact.enriched_at) >= cutoff
 }
 
 async function readCompanyEnrichmentCache(
@@ -413,15 +447,15 @@ async function collectCandidatePeople(
 
   let resolvedDomain = companyDomain
   if (!resolvedDomain) {
-    resolvedDomain = fullEnrichPeople.find(person => person.companyDomain)?.companyDomain ?? null
+    resolvedDomain = extractMostCommonDomain(fullEnrichPeople)
   }
 
   const people: CandidatePerson[] = [
     ...fullEnrichPeople.map(person => ({
-      name: person.name,
+      name: cleanPersonName(person.name) || person.name,
       title: person.title,
-      firstName: person.firstName,
-      lastName: person.lastName,
+      firstName: splitName(person.name).firstName || person.firstName,
+      lastName: splitName(person.name).lastName || person.lastName,
       directEmail: null,
       linkedinUrl: person.linkedinUrl,
       source: 'fullenrich' as const,
@@ -430,7 +464,7 @@ async function collectCandidatePeople(
     ...scrapedPeople.map(person => {
       const split = splitName(person.name)
       return {
-        name: person.name,
+        name: cleanPersonName(person.name) || person.name,
         title: person.title,
         firstName: split.firstName,
         lastName: split.lastName,
@@ -443,7 +477,7 @@ async function collectCandidatePeople(
     ...hunterResult.contacts.map(contact => {
       const split = splitName(contact.name)
       return {
-        name: contact.name,
+        name: cleanPersonName(contact.name) || contact.name,
         title: contact.title,
         firstName: split.firstName,
         lastName: split.lastName,
@@ -547,6 +581,7 @@ async function resolveContacts(
   }
 
   const contacts = Array.from(selectedByIdentity.values())
+    .filter(contact => !emailContainsProfessionalSuffix(contact.email, contact.name))
     .sort((a, b) => (b.base_score ?? 0) - (a.base_score ?? 0))
     .slice(0, 8)
 
@@ -589,6 +624,8 @@ export async function enrichCompany(
     servicesDescription?: string | null
     signalType?: string | null
     maxContacts?: number
+    forceRefresh?: boolean
+    requireVerified?: boolean
   },
 ): Promise<EnrichResult> {
   const companyKey = normalizeLeadCompanyKey(companyName, companyDomain)
@@ -596,8 +633,13 @@ export async function enrichCompany(
   const cacheDomain = companyDomain ?? enrichmentCache?.resolved_domain ?? null
   const cachedContacts = await readCache(cacheDomain, companyKey, supabase)
 
-  if (cachedContacts.length > 0) {
-    const ranked = rankForUser(cachedContacts, options?.servicesDescription, options?.signalType, options?.maxContacts)
+  const requireVerified = options?.requireVerified === true
+  const usableCachedContacts = requireVerified
+    ? cachedContacts.filter(contact => contact.verified && isFreshVerifiedContact(contact))
+    : cachedContacts
+
+  if (!options?.forceRefresh && usableCachedContacts.length > 0) {
+    const ranked = rankForUser(usableCachedContacts, options?.servicesDescription, options?.signalType, options?.maxContacts)
     const metrics = buildEmptyMetrics()
     metrics.contacts_selected = ranked.length
     for (const contact of ranked) {
@@ -606,7 +648,7 @@ export async function enrichCompany(
     return { contact: ranked[0] ?? null, contacts: ranked, resolvedDomain: cacheDomain, fromCache: true, metrics }
   }
 
-  if (shouldShortCircuitEnrichmentFailure({ cache: enrichmentCache, companyDomain })) {
+  if (!options?.forceRefresh && shouldShortCircuitEnrichmentFailure({ cache: enrichmentCache, companyDomain })) {
     const metrics = buildEmptyMetrics()
     metrics.negative_cache_hit = true
     return { contact: null, contacts: [], resolvedDomain: cacheDomain, fromCache: true, metrics }
@@ -626,7 +668,8 @@ export async function enrichCompany(
     previousLastSucceededAt: enrichmentCache?.last_succeeded_at ?? null,
   }, supabase)
 
-  const ranked = rankForUser(contacts, options?.servicesDescription, options?.signalType, options?.maxContacts)
+  const selectableContacts = requireVerified ? contacts.filter(contact => contact.verified) : contacts
+  const ranked = rankForUser(selectableContacts, options?.servicesDescription, options?.signalType, options?.maxContacts)
   metrics.contacts_selected = ranked.length
   return { contact: ranked[0] ?? null, contacts: ranked, resolvedDomain, fromCache: false, metrics }
 }
@@ -655,7 +698,7 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
 
   const { data: leads, error } = await supabase
     .from('leads')
-    .select('id, target_company, company_domain, user_id, relevance_score, contact_email, contact_verified, contact_verified_at')
+    .select('id, target_company, company_domain, user_id, relevance_score, contact_email, contact_verified, contact_verified_at, feed_snapshot')
     .eq('is_unlocked', true)
     .neq('status', 'dismissed')
     .or(`contact_email.is.null,contact_enriched_at.is.null,contact_enriched_at.lt.${retryAfter},contact_verified_at.is.null,contact_verified_at.lt.${verificationCutoff}`)
@@ -703,9 +746,10 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
   const contactMix = { direct: 0, pattern: 0, role: 0 }
   const now = new Date().toISOString()
 
-  for (const [, groupLeads] of groups) {
+  const groupList = Array.from(groups.values())
+  await runWithConcurrency(groupList, 4, async groupLeads => {
     const firstLead = groupLeads[0]
-    const result = await enrichCompany(firstLead.target_company, firstLead.company_domain ?? null, supabase, { maxContacts: 4 })
+    const result = await enrichCompany(firstLead.target_company, firstLead.company_domain ?? null, supabase, { maxContacts: 6 })
     if (result.fromCache) {
       cached += groupLeads.length
       cachedCompanies++
@@ -716,28 +760,36 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
     contactMix.pattern += result.metrics.contact_mix.pattern
     contactMix.role += result.metrics.contact_mix.role
 
-    const topContact = result.contact
     const baseUpdate: Record<string, unknown> = { contact_enriched_at: now }
     if (result.resolvedDomain) baseUpdate.company_domain = result.resolvedDomain
 
-    if (topContact) {
-      await supabase.from('leads').update({
-        ...baseUpdate,
-        contact_email: topContact.email.toLowerCase(),
-        contact_name: topContact.name || null,
-        contact_title: topContact.title || null,
-        contact_source: topContact.source,
-        contact_verified: topContact.verified,
-        contact_verified_at: topContact.verified ? now : null,
-        contact_verification_status: topContact.zb_status ?? null,
-        last_contact_verification_error: topContact.verified ? null : 'contact_not_verified',
-      }).in('id', groupLeads.map(lead => lead.id))
-      enriched += groupLeads.length
+    if (result.contacts.length > 0) {
+      await Promise.all(groupLeads.map(async lead => {
+        const signal = normalizeLeadFeedSnapshot((lead as { feed_snapshot?: unknown }).feed_snapshot ?? null)
+        const topContact = rankForUser(result.contacts, null, signal?.signal_type ?? null, 1)[0] ?? result.contact
+        if (!topContact) {
+          await supabase.from('leads').update(baseUpdate).eq('id', lead.id)
+          failed++
+          return
+        }
+        await supabase.from('leads').update({
+          ...baseUpdate,
+          contact_email: topContact.email.toLowerCase(),
+          contact_name: topContact.name || null,
+          contact_title: topContact.title || null,
+          contact_source: topContact.source,
+          contact_verified: topContact.verified,
+          contact_verified_at: topContact.verified ? now : null,
+          contact_verification_status: topContact.zb_status ?? null,
+          last_contact_verification_error: topContact.verified ? null : 'contact_not_verified',
+        }).eq('id', lead.id)
+        enriched++
+      }))
     } else {
       await supabase.from('leads').update(baseUpdate).in('id', groupLeads.map(lead => lead.id))
       failed += groupLeads.length
     }
-  }
+  })
 
   const contactMixTotal = contactMix.direct + contactMix.pattern + contactMix.role
 
@@ -777,6 +829,22 @@ export async function enrichSingleEmail(
   return zb ? { status: zb.status, verifiedAt: new Date().toISOString() } : null
 }
 
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items]
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, queue.length)) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift()
+      if (!item) continue
+      await worker(item)
+    }
+  })
+  await Promise.all(workers)
+}
+
 async function applyValidationStage(
   candidates: ContactCandidateRecord[],
   selectedByIdentity: Map<string, EnrichedContact>,
@@ -786,7 +854,8 @@ async function applyValidationStage(
 ): Promise<void> {
   const stageCandidates = candidates.filter(candidate => (
     !usedEmails.has(candidate.email) &&
-    !selectedByIdentity.has(candidate.identityKey)
+    !selectedByIdentity.has(candidate.identityKey) &&
+    !emailContainsProfessionalSuffix(candidate.email, candidate.name)
   ))
   if (stageCandidates.length === 0) return
 

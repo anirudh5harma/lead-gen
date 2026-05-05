@@ -131,7 +131,14 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen relative">
+      {/* Ambient background — matching landing page */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute inset-x-0 top-0 h-[600px] opacity-[0.22]"
+          style={{ background: 'radial-gradient(ellipse 70% 50% at 50% -5%, var(--color-ink-3), transparent)' }} />
+        <div className="absolute inset-0 dot-grid opacity-[0.18]" />
+      </div>
+
       <Sidebar
         companyName={userProfile.client_name || userProfile.company_name}
         userEmail={userProfile.email}
@@ -139,9 +146,9 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
         onNavigate={navigate}
       />
 
-      <div className="flex-1 min-w-0 flex flex-col bg-[var(--color-ink-1)]">
+      <div className="flex-1 min-w-0 flex flex-col relative z-10">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 h-16 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/85 backdrop-blur-md">
+        <header className="sticky top-0 z-20 h-16 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/80 backdrop-blur-xl">
           <div className="h-full flex items-center px-6 gap-5 pl-16 md:pl-6">
             <div className="min-w-0">
               <h1 className="text-[15px] font-semibold text-[var(--color-text-1)] tracking-tight truncate">{VIEW_TITLES[activeView]}</h1>
@@ -161,7 +168,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
               </button>
               <button
                 onClick={() => navigate('settings')}
-                className="hidden sm:inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] transition-colors"
+                className="hidden sm:inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] transition-colors shadow-[0_1px_0_#0000000a]"
                 title="Lead credit balance"
               >
                 <span className="tabular-nums text-[var(--color-accent-ring)]">{leadCreditBalance}</span>
@@ -169,7 +176,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
               </button>
               <button
                 onClick={() => navigate('settings')}
-                className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-primary text-[12.5px] font-semibold items-center gap-1.5"
+                className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-primary text-[12.5px] font-semibold items-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] transition-transform"
               >
                 Add credits
               </button>
@@ -179,7 +186,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
         </header>
 
         {/* View content */}
-        <main className="flex-1 overflow-auto scroll-smooth px-6 py-6 pb-20">
+        <main className="flex-1 overflow-auto scroll-smooth px-6 py-8 pb-20">
           <div className="max-w-6xl mx-auto fade-in">
             {activeView === 'home' && <HomeView leads={initialLeads} onNavigate={navigate} />}
             {activeView === 'sales/inbox' && <InboxView leads={initialLeads} onNavigate={navigate} />}

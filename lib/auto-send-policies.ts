@@ -12,6 +12,7 @@ export interface AutoSendPolicyRecord {
   min_relevance_score?: number | null
   max_lead_age_days?: number | null
   daily_send_limit?: number | null
+  explore_daily_send_limit?: number | null
   min_minutes_between_sends?: number | null
   started_notification_sent_at?: string | null
   completed_notification_sent_at?: string | null
@@ -26,6 +27,7 @@ export interface AutoSendPolicy {
   min_relevance_score: number
   max_lead_age_days: number
   daily_send_limit: number
+  explore_daily_send_limit: number
   min_minutes_between_sends: number
 }
 
@@ -45,6 +47,7 @@ export function normalizeAutoSendPolicy(record: AutoSendPolicyRecord | null | un
     min_relevance_score: normalizePolicyScore(record?.min_relevance_score),
     max_lead_age_days: normalizePolicyAge(record?.max_lead_age_days),
     daily_send_limit: normalizeDailySendLimit(record?.daily_send_limit),
+    explore_daily_send_limit: normalizeExploreDailySendLimit(record?.explore_daily_send_limit),
     min_minutes_between_sends: normalizeSendSpacing(record?.min_minutes_between_sends),
   }
 }
@@ -79,6 +82,11 @@ export function normalizePolicyAge(value: unknown): number {
 export function normalizeDailySendLimit(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 10
   return Math.max(1, Math.min(50, Math.round(value)))
+}
+
+export function normalizeExploreDailySendLimit(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 3
+  return Math.max(0, Math.min(50, Math.round(value)))
 }
 
 export function normalizeSendSpacing(value: unknown): number {

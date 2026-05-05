@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 import type { Lead } from "@/lib/leads"
 import type { GtmWorkItem, LaunchReadinessSnapshot, View } from './types'
-import { TabLoadingState, StatusBadge, formatDateTime } from './shared'
+import { TabLoadingState, formatDateTime } from './shared'
 
 interface Props {
   leads: Lead[]
@@ -79,7 +80,7 @@ export default function InboxView({ leads, onNavigate }: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <StatusBanner readiness={readiness} error={readinessError} onNavigate={onNavigate} />
 
       <WorkInboxPanel items={workItems} error={workError} fallbackApprovals={approvals.slice(0, 4)} />
@@ -97,7 +98,7 @@ function outcomeTime(lead: Lead): number {
 
 function StatusBanner({ readiness, error, onNavigate }: { readiness: LaunchReadinessSnapshot | null; error: string | null; onNavigate: (view: View) => void }) {
   if (error) return (
-    <div className="rounded-xl border border-[var(--color-line-2)] bg-white px-4 py-3 flex items-center gap-3 shadow-sm">
+    <div className="card px-4 py-3 flex items-center gap-3">
       <span className="h-2 w-2 rounded-full bg-[var(--color-sig-regulation)]" />
       <p className="text-[12px] text-[var(--color-text-3)]">{error}</p>
     </div>
@@ -138,10 +139,17 @@ function StatusBanner({ readiness, error, onNavigate }: { readiness: LaunchReadi
 
 function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkItem[]; error: string | null; fallbackApprovals: Lead[] }) {
   const [busyItemId, setBusyItemId] = useState<string | null>(null)
-  const [itemMessage, setItemMessage] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ id: number; tone: 'success' | 'error'; message: string } | null>(null)
   const [hiddenItemIds, setHiddenItemIds] = useState<Set<string>>(() => new Set())
   const [queueView, setQueueView] = useState<WorkQueueView>('priority')
   const [visibleLimit, setVisibleLimit] = useState(20)
+  const [draftDrawer, setDraftDrawer] = useState<{ item: GtmWorkItem; draft: OutreachDraftPreview | null; loading: boolean; error: string | null } | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(current => current?.id === toast.id ? null : current), 3200)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
   const visibleItems = items.length > 0
     ? items
@@ -184,7 +192,7 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
   async function updateWorkItem(item: GtmWorkItem, action: 'reviewed' | 'approved' | 'discussed' | 'dismissed' | 'booked') {
     if (!item.lead_id) return
     setBusyItemId(item.id)
-    setItemMessage(null)
+    setHiddenItemIds(prev => new Set(prev).add(item.id))
     try {
       const res = await fetch('/api/gtm/work-items', {
         method: 'POST',
@@ -192,7 +200,15 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
         body: JSON.stringify({ item_id: item.id, action, lead_id: item.lead_id, metadata: { type: item.type } }),
       })
       const data = await res.json().catch(() => null) as { error?: string } | null
-      if (!res.ok) { setItemMessage(data?.error ?? 'Unable to update item.'); return }
+      if (!res.ok) {
+        setHiddenItemIds(prev => {
+          const next = new Set(prev)
+          next.delete(item.id)
+          return next
+        })
+        showToast('error', data?.error ?? 'Unable to update item.')
+        return
+      }
       const messages = {
         reviewed: 'Item reviewed.',
         approved: 'Item approved.',
@@ -200,17 +216,54 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
         dismissed: 'Item dismissed.',
         booked: 'Marked booked.',
       }
-      setItemMessage(messages[action])
-      setHiddenItemIds(prev => new Set(prev).add(item.id))
-    } catch { setItemMessage('Unable to update item.') }
+      showToast('success', messages[action])
+    } catch {
+      setHiddenItemIds(prev => {
+        const next = new Set(prev)
+        next.delete(item.id)
+        return next
+      })
+      showToast('error', 'Unable to update item.')
+    }
     finally { setBusyItemId(null) }
+  }
+
+  async function openDraftDrawer(item: GtmWorkItem) {
+    if (!item.lead_id || busyItemId) return
+    setBusyItemId(item.id)
+    setDraftDrawer({ item, draft: null, loading: true, error: null })
+    try {
+      const res = await fetch(`/api/leads/${item.lead_id}/draft`, { method: 'POST', cache: 'no-store' })
+      const data = await res.json().catch(() => null) as { draft?: OutreachDraftPreview; error?: string } | null
+      if (!res.ok || !data?.draft) {
+        setDraftDrawer({ item, draft: null, loading: false, error: data?.error ?? 'Unable to prepare draft.' })
+        return
+      }
+      setDraftDrawer({ item, draft: data.draft, loading: false, error: null })
+    } catch {
+      setDraftDrawer({ item, draft: null, loading: false, error: 'Unable to prepare draft.' })
+    } finally {
+      setBusyItemId(null)
+    }
+  }
+
+  async function approveFromDrawer() {
+    if (!draftDrawer) return
+    const item = draftDrawer.item
+    setDraftDrawer(null)
+    await updateWorkItem(item, 'approved')
   }
 
   async function closeFollowupReminders() {
     if (reminderItems.length === 0 || busyItemId) return
     setBusyItemId('batch:followups')
-    setItemMessage(null)
+    setHiddenItemIds(prev => {
+      const next = new Set(prev)
+      for (const item of reminderItems) next.add(item.id)
+      return next
+    })
     let closed = 0
+    const failedIds: string[] = []
     try {
       for (const item of reminderItems) {
         const res = await fetch('/api/gtm/work-items', {
@@ -218,24 +271,45 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ item_id: item.id, action: 'reviewed', lead_id: item.lead_id, metadata: { type: item.type, batch: 'followup_reminders' } }),
         })
-        if (res.ok) {
-          closed++
-          setHiddenItemIds(prev => new Set(prev).add(item.id))
-        }
+        if (res.ok) closed++
+        else failedIds.push(item.id)
       }
-      setItemMessage(closed > 0 ? `Closed ${closed} follow-up reminder${closed === 1 ? '' : 's'}.` : 'No reminders were closed.')
+      if (failedIds.length > 0) {
+        setHiddenItemIds(prev => {
+          const next = new Set(prev)
+          for (const id of failedIds) next.delete(id)
+          return next
+        })
+      }
+      showToast(
+        failedIds.length > 0 ? 'error' : 'success',
+        failedIds.length > 0
+          ? `Closed ${closed}; ${failedIds.length} reminder${failedIds.length === 1 ? '' : 's'} failed.`
+          : `Closed ${closed} follow-up reminder${closed === 1 ? '' : 's'}.`,
+      )
     } catch {
-      setItemMessage('Unable to close follow-up reminders.')
+      setHiddenItemIds(prev => {
+        const next = new Set(prev)
+        for (const item of reminderItems) next.delete(item.id)
+        return next
+      })
+      showToast('error', 'Unable to close follow-up reminders.')
     } finally {
       setBusyItemId(null)
     }
   }
 
+  function showToast(tone: 'success' | 'error', message: string) {
+    setToast({ id: Date.now(), tone, message })
+  }
+
   return (
-    <section className="card overflow-hidden shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line-1)] px-5 py-4 bg-[var(--color-ink-2)]/30">
+    <>
+    <section className="card overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line-1)] px-5 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Next Moves</h3>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Next Moves</p>
+          <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Work inbox</h3>
           <p className="mt-1 text-xs text-[var(--color-text-4)]">
             Start with the priority queue, then use filters when you want to clear a specific type of work.
           </p>
@@ -281,11 +355,6 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
           </div>
         </div>
       </div>
-      {itemMessage && (
-        <div className="border-b border-[var(--color-line-1)] px-5 py-2.5 text-[11px] text-[var(--color-accent-ring)] bg-[var(--color-accent-bg)]/40">
-          {itemMessage}
-        </div>
-      )}
       {error ? (
         <div className="px-5 py-4 text-xs text-[var(--color-sig-regulation)]">{error}</div>
       ) : queueItems.length === 0 ? (
@@ -312,7 +381,7 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
               busy={busyItemId === item.id}
               onReviewed={() => updateWorkItem(item, 'reviewed')}
               onApproved={() => updateWorkItem(item, 'approved')}
-              onDiscussed={() => updateWorkItem(item, 'discussed')}
+              onDraft={() => openDraftDrawer(item)}
               onBooked={() => updateWorkItem(item, 'booked')}
               onDismissed={() => updateWorkItem(item, 'dismissed')}
             />
@@ -331,6 +400,18 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
         </div>
       )}
     </section>
+    <ScreenOverlayPortal>
+      {draftDrawer && (
+        <DraftDrawer
+          state={draftDrawer}
+          busy={busyItemId === draftDrawer.item.id}
+          onApprove={approveFromDrawer}
+          onClose={() => setDraftDrawer(null)}
+        />
+      )}
+      {toast && <WorkToast tone={toast.tone} message={toast.message} onClose={() => setToast(null)} />}
+    </ScreenOverlayPortal>
+    </>
   )
 }
 
@@ -339,7 +420,7 @@ function WorkItemRow({
   busy,
   onReviewed,
   onApproved,
-  onDiscussed,
+  onDraft,
   onBooked,
   onDismissed,
 }: {
@@ -347,60 +428,299 @@ function WorkItemRow({
   busy: boolean
   onReviewed: () => void
   onApproved: () => void
-  onDiscussed: () => void
+  onDraft: () => void
   onBooked: () => void
   onDismissed: () => void
 }) {
-  const presentation = getWorkItemPresentation(item)
-  const actionButtons = getActionButtons(item, presentation, busy, onReviewed, onApproved, onDiscussed, onBooked, onDismissed)
+  const domain = item.account_domain ? cleanDomain(item.account_domain) : null
+  const why = readableWhy(item)
+  const canAct = Boolean(item.lead_id)
+  const canDraft = Boolean(item.lead_id && (item.type === 'needs_approval' || item.type === 'new_opportunity'))
+  const approveAction = item.type === 'needs_approval'
+    ? onApproved
+    : item.type === 'reply_detected'
+      ? onBooked
+      : onReviewed
 
   return (
-    <div className="group overflow-hidden rounded-xl border border-white/80 bg-white shadow-[0_16px_44px_-34px_rgba(36,28,17,0.9)] ring-1 ring-[var(--color-line-1)]/70 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_-38px_rgba(36,28,17,0.95)]">
-      <div className={`h-1 ${presentation.accentClass}`} />
-      <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+    <div className="rounded-xl border border-[var(--color-line-1)] bg-white px-4 py-3 shadow-sm transition-colors hover:border-[var(--color-line-3)]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${presentation.badgeClass}`}>
-              {getTypeIcon(item.type)}
-              {presentation.label}
-            </span>
-            <StatusBadge status={item.status} />
+            <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">{item.account_name}</p>
+            {domain && (
+              <a
+                href={domain.startsWith('http') ? domain : `https://${domain}`}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate text-[11px] font-medium text-[var(--color-accent-ring)] hover:text-[var(--color-accent)]"
+              >
+                {domain}
+              </a>
+            )}
             <span className="text-[10px] text-[var(--color-text-4)]">{formatDateTime(item.created_at)}</span>
           </div>
-
-          <div className="mt-3 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
-            <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/35 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Account</p>
-              <p className="mt-1 truncate text-[12px] font-semibold text-[var(--color-text-1)]">{item.account_name}</p>
-              {item.account_domain && <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-4)]">{item.account_domain}</p>}
-              <p className="mt-2 text-[10px] font-semibold text-[var(--color-text-4)]">Priority {Math.round(item.priority)}</p>
-            </div>
-
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">What happened</p>
-              <p className="mt-1 text-[13px] font-semibold text-[var(--color-text-1)]">{item.title}</p>
-              <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-3)]">{item.body}</p>
-            </div>
-          </div>
+          <p className="mt-1 text-[12px] leading-5 text-[var(--color-text-3)]">{why}</p>
         </div>
 
-        <div className="rounded-lg border border-[var(--color-line-1)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfaf6_100%)] p-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Recommended next step</p>
-          <p className="mt-1 text-[12px] font-semibold text-[var(--color-text-1)]">{presentation.recommendation}</p>
-          <p className="mt-1 text-[11px] leading-4 text-[var(--color-text-4)]">{presentation.effect}</p>
-          {actionButtons.length > 0 ? (
-            <div className="mt-3 flex flex-col gap-2">
-              {actionButtons}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {canAct && (
+            <button
+              onClick={approveAction}
+              disabled={busy}
+              className="inline-flex h-8 items-center justify-center rounded-lg btn-primary px-3 text-[11px] font-semibold disabled:opacity-50"
+            >
+              Approve
+            </button>
+          )}
+          {canDraft && (
+            <button
+              onClick={onDraft}
+              disabled={busy}
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-semibold text-[var(--color-text-1)] hover:bg-[var(--color-ink-2)] disabled:opacity-50"
+            >
+              {busy ? 'Drafting' : 'Draft'}
+            </button>
+          )}
+          <button
+            onClick={onDismissed}
+            disabled={busy || !item.lead_id}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-semibold text-[var(--color-sig-regulation)] hover:bg-red-50 hover:border-red-100 disabled:opacity-50"
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface OutreachDraftPreview {
+  subject: string
+  body: string
+  to?: string | null
+  to_name?: string | null
+  cc?: Array<{ name: string; email: string }>
+  all?: Array<{ name: string; title: string; email: string; confidence: string; source: string }>
+  contact_resolution?: {
+    status?: string
+    message?: string
+    source?: string
+    contact_email?: string | null
+    contact_name?: string | null
+    contact_verified?: boolean
+    used_credit?: boolean
+    from_cache?: boolean
+    resolved_domain?: string | null
+    contact_count?: number
+  }
+}
+
+function DraftDrawer({
+  state,
+  busy,
+  onApprove,
+  onClose,
+}: {
+  state: { item: GtmWorkItem; draft: OutreachDraftPreview | null; loading: boolean; error: string | null }
+  busy: boolean
+  onApprove: () => void
+  onClose: () => void
+}) {
+  const contactStatus = state.draft?.contact_resolution
+  const hasRecipient = Boolean(state.draft?.to)
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/20">
+      <button className="flex-1 cursor-default" aria-label="Close draft drawer" onClick={onClose} />
+      <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-[var(--color-line-2)] bg-white shadow-2xl">
+        <div className="sticky top-0 border-b border-[var(--color-line-1)] bg-white px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Draft outreach</p>
+              <h3 className="mt-1 text-base font-semibold text-[var(--color-text-1)]">{state.item.account_name}</h3>
+              {state.draft?.to && (
+                <div className="mt-1 space-y-0.5 text-xs text-[var(--color-text-4)]">
+                  <p>To {state.draft.to_name ? `${state.draft.to_name} ` : ''}{state.draft.to}</p>
+                  {state.draft.cc && state.draft.cc.length > 0 && (
+                    <p>Cc {state.draft.cc.map((r, i) => (
+                      <span key={r.email + i}>{r.name ? `${r.name} ` : ''}{r.email}{i < (state.draft?.cc?.length ?? 0) - 1 ? ', ' : ''}</span>
+                    ))}</p>
+                  )}
+                </div>
+              )}
             </div>
-          ) : (
-            <p className="mt-3 rounded-lg bg-[var(--color-ink-2)] px-3 py-2 text-[11px] text-[var(--color-text-4)]">
-              Open the related account or workflow to resolve this item.
+            <button onClick={onClose} className="rounded-lg border border-[var(--color-line-2)] px-3 py-1.5 text-[11px] font-semibold text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)]">
+              Close
+            </button>
+          </div>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          {state.loading && <DraftLoadingState companyName={state.item.account_name} />}
+          {state.error && <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-600">{state.error}</p>}
+          {state.draft && (
+            <>
+              <ContactStatusPanel draft={state.draft} />
+              <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/35 px-3 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Subject</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">{state.draft.subject}</p>
+              </div>
+              <div className="rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-3">
+                <p className="whitespace-pre-line text-sm leading-6 text-[var(--color-text-2)]">{state.draft.body}</p>
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-[var(--color-line-1)] pt-3">
+                <button onClick={onClose} className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)]">
+                  Close
+                </button>
+                <button
+                  onClick={onApprove}
+                  disabled={busy || !hasRecipient}
+                  title={!hasRecipient ? 'Add or discover a contact before approving outreach.' : undefined}
+                  className="inline-flex h-9 items-center justify-center rounded-lg btn-primary px-4 text-[12px] font-semibold disabled:opacity-50"
+                >
+                  {hasRecipient ? 'Approve' : 'Needs contact'}
+                </button>
+              </div>
+              {!hasRecipient && (
+                <p className="text-[11px] leading-4 text-[var(--color-text-4)]">
+                  {contactStatus?.message ?? 'Draft is ready. Contact discovery has not found a usable recipient yet.'}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </aside>
+    </div>
+  )
+}
+
+function ContactStatusPanel({ draft }: { draft: OutreachDraftPreview }) {
+  const status = draft.contact_resolution?.status ?? (draft.to ? 'ready' : 'not_found')
+  const ready = Boolean(draft.to)
+  const toneClass = ready
+    ? 'border-[var(--color-accent-bg)] bg-[var(--color-accent-bg)]/35'
+    : 'border-[#f0dcb0] bg-[#fff8e8]'
+  const dotClass = ready ? 'bg-[var(--color-accent)]' : 'bg-[#d6a235]'
+  const label = ready ? 'Contacts ready' : status === 'blocked' ? 'Contact blocked' : 'Contact pending'
+  const allCount = (draft.all?.length ?? 0) > 0 ? draft.all!.length : (draft.cc?.length ?? 0) + (draft.to ? 1 : 0)
+  const detail = ready
+    ? allCount > 1
+      ? `${draft.to_name ? `${draft.to_name} ` : ''}${draft.to} + ${allCount - 1} more`
+      : `${draft.to_name ? `${draft.to_name} ` : ''}${draft.to}`
+    : draft.contact_resolution?.message ?? 'No usable contact email is available yet.'
+
+  return (
+    <div className={`rounded-lg border px-3 py-3 ${toneClass}`}>
+      <div className="flex items-start gap-2">
+        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
+          <p className="mt-1 text-[12px] font-semibold text-[var(--color-text-1)]">{detail}</p>
+          {ready && draft.all && draft.all.length > 1 && (
+            <p className="mt-1 text-[11px] leading-4 text-[var(--color-text-4)]">
+              Draft addresses {draft.all.length} contacts at this company. All will receive this outreach.
+            </p>
+          )}
+          {!ready && (
+            <p className="mt-1 text-[11px] leading-4 text-[var(--color-text-4)]">
+              The email below is a draft preview. Approve/send is held until a usable recipient is available.
             </p>
           )}
         </div>
       </div>
     </div>
   )
+}
+
+function WorkToast({
+  tone,
+  message,
+  onClose,
+}: {
+  tone: 'success' | 'error'
+  message: string
+  onClose: () => void
+}) {
+  const toneClass = tone === 'success'
+    ? 'border-[var(--color-accent-bg)] bg-white text-[var(--color-text-2)]'
+    : 'border-red-100 bg-red-50 text-red-700'
+
+  return (
+    <div className={`fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-3 rounded-xl border px-4 py-3 text-xs font-medium shadow-xl ${toneClass}`}>
+      <span className={`h-2 w-2 rounded-full ${tone === 'success' ? 'bg-[var(--color-accent)]' : 'bg-red-500'}`} />
+      <span className="min-w-0 flex-1">{message}</span>
+      <button onClick={onClose} className="rounded-md px-1.5 py-0.5 text-[11px] text-current opacity-60 hover:bg-black/5 hover:opacity-100">
+        Close
+      </button>
+    </div>
+  )
+}
+
+function DraftLoadingState({ companyName }: { companyName: string }) {
+  const [step, setStep] = useState(0)
+  const steps = [
+    { label: 'Discovering contacts', detail: `Finding the right people at ${companyName}...` },
+    { label: 'Verifying emails', detail: 'Checking deliverability and role fit...' },
+    { label: 'Writing outreach', detail: `Crafting a personalized message for ${companyName}...` },
+    { label: 'Finalizing', detail: 'Almost ready...' },
+  ]
+
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setStep(1), 2500),
+      setTimeout(() => setStep(2), 5500),
+      setTimeout(() => setStep(3), 9000),
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [])
+
+  return (
+    <div className="space-y-5 py-8">
+      <div className="flex flex-col items-center text-center">
+        <div className="relative h-12 w-12">
+          <span className="absolute inset-0 h-12 w-12 animate-spin rounded-full border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)]" />
+          <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-[var(--color-accent-ring)]">
+            {Math.min(step + 1, 4)}/{steps.length}
+          </span>
+        </div>
+        <h4 className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">{steps[step]?.label ?? steps[steps.length - 1].label}</h4>
+        <p className="mt-1 text-xs text-[var(--color-text-3)] max-w-[280px]">{steps[step]?.detail ?? steps[steps.length - 1].detail}</p>
+        <p className="mt-3 text-[11px] text-[var(--color-text-4)]">This usually takes 5–10 seconds.</p>
+      </div>
+
+      <div className="space-y-2.5">
+        {steps.map((s, i) => (
+          <div key={s.label} className="flex items-center gap-3">
+            <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors duration-300 ${
+              i < step ? 'bg-[var(--color-accent)] text-white' :
+              i === step ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] ring-1 ring-[var(--color-accent)]' :
+              'bg-[var(--color-ink-2)] text-[var(--color-text-4)]'
+            }`}>
+              {i < step ? (
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+              ) : (
+                i + 1
+              )}
+            </div>
+            <span className={`text-[12px] font-medium transition-colors duration-300 ${
+              i <= step ? 'text-[var(--color-text-1)]' : 'text-[var(--color-text-4)]'
+            }`}>{s.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ScreenOverlayPortal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted || typeof document === 'undefined') return null
+  return createPortal(children, document.body)
 }
 
 function isPriorityWorkItem(item: GtmWorkItem): boolean {
@@ -433,224 +753,19 @@ function filterWorkItems(items: GtmWorkItem[], view: WorkQueueView, priorityItem
   }
 }
 
-function getWorkItemPresentation(item: GtmWorkItem) {
-  const presentations: Record<string, {
-    label: string
-    recommendation: string
-    effect: string
-    accentClass: string
-    badgeClass: string
-    primaryLabel?: string
-    reviewLabel: string
-    dismissLabel: string
-    discussLabel?: string
-    bookedLabel?: string
-  }> = {
-    needs_approval: {
-      label: 'Outreach approval',
-      recommendation: 'Approve the prepared outreach only if this account and contact look right.',
-      effect: 'Approve outreach marks the plan approved and moves the lead out of the review queue.',
-      accentClass: 'bg-[var(--color-accent)]',
-      badgeClass: 'border-[var(--color-accent)]/25 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]',
-      primaryLabel: 'Approve outreach',
-      reviewLabel: 'Reviewed only',
-      dismissLabel: 'Dismiss lead',
-    },
-    reply_detected: {
-      label: 'Reply needs handling',
-      recommendation: 'Decide whether this reply needs a discussion or should be counted as booked.',
-      effect: 'Discuss removes it from this queue for manual handling. Booked updates the lead status.',
-      accentClass: 'bg-[var(--color-sig-expansion)]',
-      badgeClass: 'border-[var(--color-sig-expansion)]/20 bg-[var(--color-sig-expansion)]/10 text-[var(--color-sig-expansion)]',
-      reviewLabel: 'Reviewed reply',
-      dismissLabel: 'Dismiss reply',
-      discussLabel: 'Move to discussion',
-      bookedLabel: 'Mark booked',
-    },
-    meeting_booked: {
-      label: 'Booked outcome',
-      recommendation: 'Review the outcome so learning and account history stay clean.',
-      effect: 'Review removes this booked outcome from the open work queue.',
-      accentClass: 'bg-[var(--color-sig-expansion)]',
-      badgeClass: 'border-[var(--color-sig-expansion)]/20 bg-[var(--color-sig-expansion)]/10 text-[var(--color-sig-expansion)]',
-      reviewLabel: 'Archive outcome',
-      dismissLabel: 'Dismiss',
-    },
-    policy_blocked: {
-      label: 'Guardrail block',
-      recommendation: 'Inspect the guardrail before any outreach proceeds.',
-      effect: 'Review records that you inspected the block. Dismiss closes the item.',
-      accentClass: 'bg-[var(--color-sig-regulation)]',
-      badgeClass: 'border-red-100 bg-red-50 text-red-600',
-      reviewLabel: 'Reviewed block',
-      dismissLabel: 'Dismiss block',
-    },
-    workflow_failed: {
-      label: 'Workflow issue',
-      recommendation: 'Review the failed agent step and decide whether to retry manually.',
-      effect: 'Review closes the item; dismiss removes it without action.',
-      accentClass: 'bg-[var(--color-sig-regulation)]',
-      badgeClass: 'border-red-100 bg-red-50 text-red-600',
-      reviewLabel: 'Reviewed issue',
-      dismissLabel: 'Dismiss issue',
-    },
-    workflow_waiting: {
-      label: 'Workflow waiting',
-      recommendation: 'Check whether the agent is waiting on a prerequisite or external event.',
-      effect: 'Review removes the reminder from the work queue.',
-      accentClass: 'bg-[#d6a235]',
-      badgeClass: 'border-[#f0dcb0] bg-[#fff4df] text-[#936014]',
-      reviewLabel: 'Reviewed wait',
-      dismissLabel: 'Dismiss wait',
-    },
-    sent_followup_pending: {
-      label: 'Follow-up watch',
-      recommendation: 'Keep this account in view while Bombsell watches for replies and follow-up timing.',
-      effect: 'Review closes this reminder without changing the sent outreach.',
-      accentClass: 'bg-[#d6a235]',
-      badgeClass: 'border-[#f0dcb0] bg-[#fff4df] text-[#936014]',
-      reviewLabel: 'Close reminder',
-      dismissLabel: 'Dismiss lead',
-    },
-    new_opportunity: {
-      label: 'New opportunity',
-      recommendation: 'Inspect the account before unlocking contacts or drafting outreach.',
-      effect: 'Review marks the account as seen. Dismiss removes the lead from active work.',
-      accentClass: 'bg-[var(--color-accent)]',
-      badgeClass: 'border-[var(--color-accent)]/25 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]',
-      reviewLabel: 'Mark seen',
-      dismissLabel: 'Dismiss lead',
-    },
-  }
-
-  return presentations[item.type] ?? {
-    label: item.type.replace(/_/g, ' '),
-    recommendation: item.action_label || 'Inspect this item and decide the next step.',
-    effect: 'Review closes the item from this queue. Dismiss removes it from active work.',
-    accentClass: 'bg-[var(--color-line-3)]',
-    badgeClass: 'border-[var(--color-line-1)] bg-[var(--color-ink-2)] text-[var(--color-text-3)]',
-    reviewLabel: 'Reviewed',
-    dismissLabel: 'Dismiss',
-  }
+function cleanDomain(value: string): string {
+  return value.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
 }
 
-function getTypeIcon(type: string) {
-  const icons: Record<string, React.ReactNode> = {
-    needs_approval: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.2-7.2a11.2 11.2 0 01-16.4 0A11.2 11.2 0 003 8c0 5.1 3.4 9.7 9 11 5.6-1.3 9-5.9 9-11 0-1.8-.4-3.6-.8-5.2z" /></svg>
-    ),
-    reply_detected: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
-    ),
-    meeting_booked: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M9 16l2 2 4-4M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-    ),
-    policy_blocked: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-    ),
-    workflow_failed: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M4.93 4.93l14.14 14.14M12 22a10 10 0 110-20 10 10 0 010 20z" /></svg>
-    ),
-    workflow_waiting: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-    ),
-    sent_followup_pending: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 12H8m8 0l-4-4m4 4l-4 4m9-4a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-    ),
-    new_opportunity: (
-      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-    ),
-  }
-  return icons[type] ?? (
-    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-  )
-}
-
-function getActionButtons(
-  item: GtmWorkItem,
-  presentation: ReturnType<typeof getWorkItemPresentation>,
-  busy: boolean,
-  onReviewed: () => void,
-  onApproved: () => void,
-  onDiscussed: () => void,
-  onBooked: () => void,
-  onDismissed: () => void,
-) {
-  const buttons: React.ReactNode[] = []
-
-  if (item.lead_id) {
-    buttons.push(
-      <button
-        key="viewed"
-        onClick={onReviewed}
-        disabled={busy}
-        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[var(--color-line-2)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-text-1)] hover:bg-[var(--color-ink-2)] hover:border-[var(--color-line-3)] disabled:opacity-50 transition-all"
-        title={presentation.effect}
-      >
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-        {presentation.reviewLabel}
-      </button>
-    )
-  }
-
-  if (item.type === 'needs_approval') {
-    buttons.push(
-      <button
-        key="approve"
-        onClick={onApproved}
-        disabled={busy}
-        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg btn-primary px-3 py-2 text-[11px] font-semibold disabled:opacity-50"
-        title="Approve the prepared outreach plan for this lead"
-      >
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-        {presentation.primaryLabel}
-      </button>
-    )
-  }
-
-  if (item.lead_id && item.type === 'reply_detected') {
-    buttons.push(
-      <button
-        key="discuss"
-        onClick={onDiscussed}
-        disabled={busy}
-        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[var(--color-line-2)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-text-1)] hover:bg-[var(--color-ink-2)] hover:border-[var(--color-line-3)] disabled:opacity-50 transition-all"
-        title="Move this reply into manual discussion handling"
-      >
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.9 9.9 0 01-4-.82L3 20l1.38-3.45A7.5 7.5 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-        {presentation.discussLabel}
-      </button>
-    )
-    buttons.push(
-      <button
-        key="booked"
-        onClick={onBooked}
-        disabled={busy}
-        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg btn-primary px-3 py-2 text-[11px] font-semibold disabled:opacity-50"
-        title="Mark this lead as booked"
-      >
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-        {presentation.bookedLabel}
-      </button>
-    )
-  }
-
-  if (item.lead_id) {
-    buttons.push(
-      <button
-        key="dismiss"
-        onClick={onDismissed}
-        disabled={busy}
-        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-[var(--color-line-2)] bg-white px-3 py-2 text-[11px] font-semibold text-[var(--color-sig-regulation)] hover:bg-red-50 hover:border-red-100 disabled:opacity-50 transition-all"
-        title="Dismiss this item from active work"
-      >
-        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-        {presentation.dismissLabel}
-      </button>
-    )
-  }
-
-  return buttons
+function readableWhy(item: GtmWorkItem): string {
+  const reason = item.body || item.title
+  if (item.type === 'needs_approval') return reason.replace(' is ready for approve-first outreach.', ' is ready for review.')
+  if (item.type === 'new_opportunity') return reason
+  if (item.type === 'reply_detected') return reason
+  if (item.type === 'sent_followup_pending') return 'Outreach was sent and this account is waiting on follow-up timing or a reply.'
+  if (item.type === 'policy_blocked') return `Guardrail review needed: ${reason}`
+  if (item.type === 'workflow_failed') return `Workflow needs attention: ${reason}`
+  return reason
 }
 
 function sortByLatestOutcome(a: Lead, b: Lead) {

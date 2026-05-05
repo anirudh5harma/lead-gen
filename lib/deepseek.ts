@@ -4,6 +4,44 @@ import { ensureBodyGreetsRecipients } from './outreach-recipients.ts'
 const MODEL = 'deepseek-v4-flash'
 const API_URL = 'https://api.deepseek.com/chat/completions'
 
+const OUTREACH_STRATEGY_LIBRARY = [
+  {
+    name: 'Commercial insight',
+    lineage: 'inspired by Challenger-style teaching',
+    move: 'Lead with a non-obvious business implication of the trigger, then make the product feel like the natural next operating step.',
+  },
+  {
+    name: 'Problem implication',
+    lineage: 'inspired by SPIN-style implication thinking',
+    move: 'Show how the trigger turns a quiet operational issue into a near-term cost, delay, or missed opportunity.',
+  },
+  {
+    name: 'Category contrast',
+    lineage: 'inspired by positioning and category-design thinking',
+    move: 'Contrast the old way of handling this moment with a cleaner new operating model.',
+  },
+  {
+    name: 'Jobs-to-be-done trigger',
+    lineage: 'inspired by switching-moment research',
+    move: 'Frame the event as a moment where the buyer has a new job to get done and old tools become awkward.',
+  },
+  {
+    name: 'Proof-led specificity',
+    lineage: 'inspired by direct-response and conversion writing',
+    move: 'Use one concrete observation from the signal, then make a specific low-risk offer instead of broad claims.',
+  },
+  {
+    name: 'Objection preemption',
+    lineage: 'inspired by consultative selling',
+    move: 'Acknowledge why this may not be the top priority, then make the ask small enough to be useful anyway.',
+  },
+  {
+    name: 'Narrative tension',
+    lineage: 'inspired by strategic messaging and story structure',
+    move: 'Name the tension between the company’s new ambition and the messy GTM execution work underneath it.',
+  },
+]
+
 interface PromptOptions {
   system?: string
   prompt: string
@@ -464,6 +502,13 @@ export interface ExploreLeadGenerationResult {
   leads: ExploreLeadSuggestion[]
 }
 
+export interface ExploreFilters {
+  industry?: string
+  region?: string
+  revenue?: string
+  employee_count?: string
+}
+
 export async function generateExploreLeads(params: {
   prompt: string
   sellerProfileDescription?: string | null
@@ -471,6 +516,7 @@ export async function generateExploreLeads(params: {
   useWorkspaceIcp?: boolean
   count?: number
   excludeCompanies?: string[]
+  filters?: ExploreFilters
 }): Promise<ExploreLeadGenerationResult> {
   const {
     prompt,
@@ -479,6 +525,7 @@ export async function generateExploreLeads(params: {
     useWorkspaceIcp = false,
     count = 12,
     excludeCompanies = [],
+    filters = {},
   } = params
   const promptAssessment = assessExplorePrompt(prompt)
 
@@ -497,10 +544,18 @@ export async function generateExploreLeads(params: {
       ? `Already generated companies to avoid: ${excludeCompanies.slice(0, 80).join(', ')}`
       : 'Already generated companies to avoid: none'
 
+    const filterConstraints = [
+      filters.industry ? `Industry MUST be: ${filters.industry}` : '',
+      filters.region ? `Region/location MUST be: ${filters.region}` : '',
+      filters.revenue ? `Revenue range MUST be: ${filters.revenue}` : '',
+      filters.employee_count ? `Employee count MUST be: ${filters.employee_count}` : '',
+    ].filter(Boolean)
+
     const buildPrompt = () => `Targeting prompt: ${prompt}
 Seller profile description: ${sellerProfileDescription || 'None provided'}
 ${useWorkspaceIcp && workspaceIcpContext ? `Workspace ICP context: ${workspaceIcpContext}` : 'Workspace ICP context: none'}
 ${excludedContext}
+${filterConstraints.length > 0 ? `\nHARD FILTER CONSTRAINTS — every lead must satisfy ALL of these:\n${filterConstraints.join('\n')}` : ''}
 
 Return a JSON object in exactly this shape:
 {
@@ -522,22 +577,23 @@ Requirements:
 - Do not include companies listed in "Already generated companies to avoid".
 - Use only these signal types: "funding", "acquisition", "expansion", "regulation", "hiring".
 - The headline and summary should read like a lead rationale, not a news citation.
-- Use null for company_domain if uncertain.
-- Do not include any keys other than "leads" and the lead fields shown above.`
+- Use null for company_domain only if you are genuinely uncertain; otherwise provide the real domain.
+- Do not include any keys other than "leads" and the lead fields shown above.
+${filterConstraints.length > 0 ? '- Every single lead MUST match all hard filter constraints above. If you cannot find enough companies that match, return fewer leads rather than violating constraints.' : ''}`
 
     const requestLeadPayload = async () => completePrompt({
       system: `You handle prompted account discovery for a B2B outbound product.
-Generate plausible target accounts from the user's targeting brief.
+Generate target accounts from the user's targeting brief.
 
 Rules:
-- Prefer real companies when reasonably likely.
-- Do not return placeholders or obviously fake names.
+- ONLY return real, verifiable companies. Do not return placeholders or obviously fake names.
 - Keep summaries and reasons concise.
 - Use one of these signal types only: funding, acquisition, expansion, regulation, hiring.
 - If the user asks broadly, optimize for useful targets, not strict seller-product fit.
 - Always consider the seller profile description as background context for what they sell.
 - Only use workspace ICP context as a narrowing filter when it is explicitly provided as narrowing guidance.
-- If a company domain is uncertain, return null.
+- If hard filter constraints are provided (industry, region, revenue, employee count), EVERY lead must match ALL constraints. Do not bend rules.
+- Provide the real company domain whenever possible; only use null if you are genuinely uncertain.
 
 Return ONLY valid JSON, no markdown.`,
       prompt: buildPrompt(),
@@ -575,12 +631,26 @@ Return ONLY valid JSON, no markdown.`,
           .filter((item): item is ExploreLeadSuggestion => item !== null)
           .slice(0, requestedCount)
 
+        // Verify domains for generated leads. Reject any lead with a non-resolving domain.
         if (candidateLeads.length > 0) {
-          return {
-            ok: true,
-            failure_kind: null,
-            rejection_reason: null,
-            leads: candidateLeads,
+          const verifiedLeads: ExploreLeadSuggestion[] = []
+          for (const lead of candidateLeads) {
+            if (!lead.company_domain) {
+              verifiedLeads.push(lead)
+              continue
+            }
+            const hasValidDomain = await verifyExploreDomain(lead.company_domain)
+            if (hasValidDomain) {
+              verifiedLeads.push(lead)
+            }
+          }
+          if (verifiedLeads.length > 0) {
+            return {
+              ok: true,
+              failure_kind: null,
+              rejection_reason: null,
+              leads: verifiedLeads,
+            }
           }
         }
       } catch (error) {
@@ -607,6 +677,21 @@ Return ONLY valid JSON, no markdown.`,
       rejection_reason: 'Could not generate leads for this prompt right now.',
       leads: [],
     }
+  }
+}
+
+/**
+ * Verifies that a domain has valid MX records.
+ * Used to filter out hallucinated or invalid company domains from explore generation.
+ */
+export async function verifyExploreDomain(domain: string | null): Promise<boolean> {
+  if (!domain) return false
+  try {
+    const { resolveMx } = await import('dns/promises')
+    const mxRecords = await resolveMx(domain)
+    return mxRecords.length > 0
+  } catch {
+    return false
   }
 }
 
@@ -856,7 +941,7 @@ export async function draftOutreachEmail(params: {
     : ''
   const senderIntro = senderCompany
   const senderWebsiteText = senderWebsiteUrl ? `${senderCompany} website: ${senderWebsiteUrl}` : 'No sender website available.'
-  const paragraphPattern = pickParagraphPattern(signalType, targetCompany, senderIntro, servicesDescription, publicSignalSummary)
+  const creativeMove = pickCreativeMove(signalType, targetCompany, stakeholderTitle, senderIntro, publicSignalSummary)
 
   try {
     const text = await completePrompt({
@@ -879,23 +964,30 @@ ${customInstructions || 'None'}
 Strategic angle:
 ${angle}
 
-Use this paragraph pattern for THIS email:
-${paragraphPattern}
-
-Email construction rules:
-- Subject line: choose the strongest option for this situation, max 9 words
-- Body: exactly 4 short paragraphs separated by blank lines
-- Paragraph 1: clear context from the trigger event, not a generic "companies at this stage" line
-- Paragraph 2: one concrete implication for ${stakeholderTitle || 'the recipient'} at ${targetCompany}
-- Paragraph 3: the proposition, using ${senderIntro} once as the sender name${senderWebsiteUrl ? ` and include ${senderWebsiteUrl} in plain text if useful` : ''}
-- Paragraph 4: one low-friction CTA
-- ${ctaInstruction}
+	Creative strategy, paraphrased from well-known sales and marketing writing:
+	${creativeMove}
+	
+	Creative process:
+	- Silently consider three different angles before writing: operational risk, missed timing, and useful outside perspective
+	- Choose the angle that is most specific to the trigger and least likely to appear in a generic funding/expansion email
+	- Vary sentence rhythm and paragraph shape; do not follow a fixed template
+	- Let the signal decide the structure instead of forcing the same opening every time
+	
+	Email construction rules:
+	- Subject line: choose the strongest option for this situation, max 9 words
+	- Body: 3 or 4 short paragraphs separated by blank lines
+	- Opening: clear context from the trigger event, not a generic "companies at this stage" line
+	- Middle: one concrete implication for ${stakeholderTitle || 'the recipient'} at ${targetCompany}, then the proposition using ${senderIntro} once as the sender name${senderWebsiteUrl ? ` and include ${senderWebsiteUrl} in plain text if useful` : ''}
+	- Closing: one low-friction CTA
+	- ${ctaInstruction}
 
 Tone:
 - Human, direct, slightly informal
 - Zero corporate speak
-- No generic frames like "most companies at this stage", "specific wall", "usual breakage", "streamline operations", or "unlock growth"
+- No generic frames like "most companies at this stage", "specific wall", "usual breakage", "short window", "priorities shift", "streamline operations", or "unlock growth"
 - Do not reuse stock openers; make the first sentence unique to the trigger
+- Do not write a congratulatory funding template
+- Do not repeat the greeting or recipient name after the greeting
 - No fabricated metrics, customers, or claims
 - Do not use markdown links or square brackets anywhere
 - The subject must not contain the recipient's first name or full name
@@ -908,7 +1000,7 @@ Return ONLY this JSON:
 The body must use \\n\\n between paragraphs.`,
       maxTokens: 1000,
       timeoutMs: 60_000,
-      temperature: 0.55,
+      temperature: 0.72,
     })
 
     return normalizeOutreachEmail(
@@ -956,31 +1048,22 @@ The body must use \\n\\n between paragraphs.`,
   }
 }
 
-function pickParagraphPattern(
+function pickCreativeMove(
   signalType: string,
   targetCompany: string,
+  stakeholderTitle: string,
   senderIntro: string,
-  servicesDescription: string,
   signalSummary: string,
 ): string {
-  const offer = servicesDescription.split(/[.!?]/)[0]?.trim() || 'your GTM workflow'
-  const summary = signalSummary || `the recent ${signalType} signal`
-  const patterns = [
-    `P1: "${targetCompany}" trigger context in one sentence, then why timing matters.
-P2: Operational implication created by "${summary}".
-P3: Introduce ${senderIntro} through one concrete workflow tied to "${offer}".
-P4: Ask for a 15-minute look.`,
-    `P1: Start with the business event, not congratulations.
-P2: Name the likely internal pressure this creates for the recipient's role.
-P3: Explain the proposition as a before/after workflow, not a feature list.
-P4: Soft question with one clear next step.`,
-    `P1: Mention the trigger and one plausible downstream decision.
-P2: Point out the cost of handling that decision manually.
-P3: Position ${senderIntro} as the operating layer for that specific motion.
-P4: Low-pressure call ask.`,
-  ]
-  const seed = `${targetCompany}:${signalType}:${summary}`.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
-  return patterns[seed % patterns.length]
+  const seedText = `${targetCompany}:${signalType}:${stakeholderTitle}:${senderIntro}:${signalSummary}`
+  const seed = seedText.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  const primary = OUTREACH_STRATEGY_LIBRARY[seed % OUTREACH_STRATEGY_LIBRARY.length]
+  const secondary = OUTREACH_STRATEGY_LIBRARY[(seed + 3) % OUTREACH_STRATEGY_LIBRARY.length]
+  return [
+    `Primary move: ${primary.name} (${primary.lineage}) - ${primary.move}`,
+    `Secondary move: ${secondary.name} - borrow lightly if it creates a fresher angle.`,
+    'Use these as strategy, not as language to copy. The email must still be specific to the signal, ICP, and sender offer.',
+  ].join('\n')
 }
 
 function normalizeOutreachEmail(
@@ -1005,9 +1088,9 @@ function normalizeOutreachEmail(
     .filter(Boolean)
 
   let body = email.body
-  if (paragraphs.length < 4) {
+  if (paragraphs.length < 3) {
     body = fallbackOutreachBody(context)
-  } else if (paragraphs.length > 4) {
+  } else if (paragraphs.length > 5) {
     body = [
       paragraphs[0],
       paragraphs[1],
@@ -1037,7 +1120,13 @@ function fallbackOutreachBody(context: {
 }): string {
   const trigger = sanitizePublicSignalSummary(context.signalSummary, context.signalType, context.targetCompany)
   const offer = describeFallbackOffer(context.servicesDescription)
-  return `${context.firstName}, noticed ${context.targetCompany} around ${trigger.toLowerCase()}. That kind of moment usually creates a short window where priorities shift and teams decide what needs attention now.\n\nThe hard part is turning that priority into a practical next step without adding more manual work or pulling the team away from the core plan.\n\n${context.senderIntro} helps teams with ${offer}, which may be relevant if this is becoming an active focus for ${context.targetCompany}.\n\nWorth a quick 15-minute look to see if this should be on your radar${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}` 
+  const patterns = [
+    `${context.firstName}, noticed ${context.targetCompany} around ${trigger.toLowerCase()}.\n\nThe interesting part is not the announcement itself, it is the GTM work that usually shows up right after: choosing the right accounts, timing the message, and deciding what deserves attention now.\n\n${context.senderIntro} helps teams with ${offer}, so the connection may be practical if this motion is getting more urgent internally.\n\nOpen to comparing notes for 15 minutes${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}`,
+    `${context.firstName}, ${trigger} caught my eye because it usually forces a sharper GTM question for ${context.targetCompany}: which accounts are actually showing pain right now?\n\nThat question gets expensive when the team is stitching signals, contacts, and outreach together by hand.\n\n${context.senderIntro} helps with ${offer}, with the goal of turning buying signals into cleaner next moves instead of more dashboard noise.\n\nWorth a quick sanity check${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}`,
+    `${context.firstName}, saw the ${context.signalType} signal around ${context.targetCompany} and had a specific thought.\n\nWhen a company is moving this way, the GTM risk is often not lack of activity; it is spreading attention across too many accounts that are not actually in pain.\n\n${context.senderIntro} helps teams with ${offer}, which may be useful if you are tightening how signals become pipeline.\n\nShould I send over the angle I had in mind${context.calendlyUrl ? `, or grab 15 minutes here: ${context.calendlyUrl}` : '?'}`,
+  ]
+  const seed = `${context.targetCompany}:${context.signalType}:${trigger}`.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  return patterns[seed % patterns.length]
 }
 
 export function sanitizePublicSignalSummary(summary: string, signalType: string, targetCompany: string): string {

@@ -65,12 +65,20 @@ export async function upsertGtmEntityEmbedding(
   if (!entityType || !source || !input.entityId || content.length < 12) return null
 
   const contentHash = stableContentHash(content)
-  const existing = await findExistingEmbedding(supabase, entityType, input.entityId, contentHash)
+  const { createServiceClient } = await import('../supabase/server.ts')
+  const writeClient = await createServiceClient()
+  const existing = await findExistingEmbedding(writeClient, {
+    userId: input.userId,
+    clientId: input.clientId ?? null,
+    entityType,
+    entityId: input.entityId,
+    contentHash,
+  })
   if (existing?.id) return existing.id
 
   try {
     const embedding = await embed(content)
-    const { data, error } = await supabase
+    const { data, error } = await writeClient
       .from('gtm_entity_embeddings')
       .upsert({
         user_id: input.userId,
@@ -271,18 +279,24 @@ async function findAccountIdForLead(
 
 async function findExistingEmbedding(
   supabase: SupabaseClient,
-  entityType: string,
-  entityId: string,
-  contentHash: string,
+  input: {
+    userId: string
+    clientId: string | null
+    entityType: string
+    entityId: string
+    contentHash: string
+  },
 ): Promise<{ id?: string } | null> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('gtm_entity_embeddings')
     .select('id')
-    .eq('entity_type', entityType)
-    .eq('entity_id', entityId)
-    .eq('content_hash', contentHash)
+    .eq('user_id', input.userId)
+    .eq('entity_type', input.entityType)
+    .eq('entity_id', input.entityId)
+    .eq('content_hash', input.contentHash)
     .limit(1)
-    .maybeSingle()
+  query = input.clientId ? query.eq('client_id', input.clientId) : query.is('client_id', null)
+  const { data, error } = await query.maybeSingle()
   if (error) {
     console.error('[gtm-semantic-context] embedding lookup failed:', error.message)
     return null

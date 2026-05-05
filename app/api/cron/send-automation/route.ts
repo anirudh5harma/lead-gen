@@ -3,7 +3,6 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { normalizeAutoSendPolicy } from '@/lib/auto-send-policies'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { draftOutreachEmail } from '@/lib/deepseek'
-import { enrichCompany } from '@/lib/email-finder/enrich'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
 import { getDefaultSequenceTemplate } from '@/lib/sequence-templates'
@@ -19,6 +18,7 @@ import { buildOutreachPlan, explainPlanBlock, type OutreachPlan } from '@/lib/gt
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
 import { buildGtmContextPack } from '@/lib/gtm/semantic-context'
+import { primaryLeadContact, resolveLeadRecipients, upsertOutreachDraft } from '@/lib/outreach-workflow'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
@@ -143,6 +143,9 @@ export async function GET(request: Request) {
       }
 
       const sentToday = await countSendsToday(supabase, userId, clientId)
+      const exploreSentToday = policy.target_origins.includes('explore')
+        ? await countExploreSendsToday(supabase, userId, clientId)
+        : 0
       const remainingToday = Math.max(0, policy.daily_send_limit - sentToday)
       if (remainingToday <= 0) {
         await recordAgentEvent(supabase, {
@@ -166,6 +169,8 @@ export async function GET(request: Request) {
         continue
       }
 
+      const exploreRemaining = Math.max(0, policy.explore_daily_send_limit - exploreSentToday)
+
       const prepared = await prepareAutopilotLeads(supabase, {
         userId,
         clientId,
@@ -174,12 +179,37 @@ export async function GET(request: Request) {
         limit: Math.min(MAX_AUTOPILOT_UNLOCKS_PER_POLICY_RUN, remainingToday),
       })
 
-      const leads = await loadEligibleAutomationLeads(supabase, {
-        userId,
-        clientId,
-        policy,
-        limit: Math.min(MAX_SENDS_PER_POLICY_RUN, remainingToday),
-      })
+      let policySent = 0
+      const leads: Awaited<ReturnType<typeof loadEligibleAutomationLeads>> = []
+
+      if (policy.target_origins.includes('explore') && exploreRemaining > 0 && remainingToday > 0) {
+        const exploreLeads = await loadEligibleAutomationLeads(supabase, {
+          userId,
+          clientId,
+          policy,
+          limit: Math.min(MAX_SENDS_PER_POLICY_RUN, exploreRemaining, remainingToday),
+          originFilter: 'explore',
+        })
+        for (const lead of exploreLeads) {
+          leads.push(lead)
+          policySent++
+        }
+      }
+
+      if (policy.target_origins.includes('live') && policySent < MAX_SENDS_PER_POLICY_RUN && policySent < remainingToday) {
+        const liveRemaining = Math.min(MAX_SENDS_PER_POLICY_RUN - policySent, remainingToday - policySent)
+        const liveLeads = await loadEligibleAutomationLeads(supabase, {
+          userId,
+          clientId,
+          policy,
+          limit: liveRemaining,
+          originFilter: 'live',
+        })
+        for (const lead of liveLeads) {
+          leads.push(lead)
+          policySent++
+        }
+      }
 
       for (const lead of leads) {
         const didSend = await sendAutomationLead(supabase, {
@@ -193,8 +223,17 @@ export async function GET(request: Request) {
           agentRunId,
           workflowRunId,
         })
-        if (didSend) sent++
-        else skipped++
+        if (didSend) {
+          sent++
+          if ((lead as { origin?: string }).origin === 'explore') {
+            const sessionId = (lead as { feed_session_id?: string }).feed_session_id
+            if (sessionId) {
+              await updateExploreRunStatus(supabase, sessionId, 'sending')
+            }
+          }
+        } else {
+          skipped++
+        }
       }
 
       if (!policy.target_origins.includes('live') && policy.target_origins.includes('explore')) {
@@ -207,6 +246,9 @@ export async function GET(request: Request) {
         if (remaining.length === 0 && !(row as { completed_notification_sent_at?: string | null }).completed_notification_sent_at) {
           await notifyAutomationCompleted(supabase, userId, row.id as string, policy.target_explore_session_ids.length)
           completed++
+          for (const sessionId of policy.target_explore_session_ids) {
+            await updateExploreRunStatus(supabase, sessionId, 'completed')
+          }
         }
       }
 
@@ -277,6 +319,40 @@ async function countSendsToday(
   return count ?? 0
 }
 
+async function countExploreSendsToday(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  userId: string,
+  clientId: string | null,
+): Promise<number> {
+  const start = new Date()
+  start.setUTCHours(0, 0, 0, 0)
+  let query = supabase
+    .from('leads')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('origin', 'explore')
+    .gte('sent_at', start.toISOString())
+
+  query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
+  const { count } = await query
+  return count ?? 0
+}
+
+async function updateExploreRunStatus(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  sessionId: string,
+  status: 'sending' | 'completed' | 'paused',
+) {
+  try {
+    await supabase
+      .from('explore_runs')
+      .update({ autopilot_status: status })
+      .eq('id', sessionId)
+  } catch (error) {
+    console.error('[send-automation] explore run status update failed:', error instanceof Error ? error.message : error)
+  }
+}
+
 async function loadEligibleAutomationLeads(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   params: {
@@ -284,20 +360,24 @@ async function loadEligibleAutomationLeads(
     clientId: string | null
     policy: ReturnType<typeof normalizeAutoSendPolicy>
     limit: number
+    originFilter?: 'live' | 'explore'
   },
 ) {
   const minCreatedAt = new Date(Date.now() - params.policy.max_lead_age_days * 24 * 60 * 60 * 1000).toISOString()
+  const origins = params.originFilter
+    ? [params.originFilter]
+    : params.policy.target_origins
+
   let query = supabase
     .from('leads')
     .select('id, client_id, origin, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, feed_session_id, feed_snapshot, created_at')
     .eq('user_id', params.userId)
     .eq('is_unlocked', true)
-    .in('origin', params.policy.target_origins)
+    .in('origin', origins)
     .in('status', AUTOMATION_STATUSES)
     .gte('relevance_score', params.policy.min_relevance_score)
     .gte('created_at', minCreatedAt)
     .not('contact_email', 'is', null)
-    .eq('contact_verified', true)
     .order('relevance_score', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(Math.max(1, params.limit * 5))
@@ -440,32 +520,18 @@ async function prepareAutopilotLeads(
     })
 
     const signal = normalizeLeadFeedSnapshot((lead as { feed_snapshot?: unknown }).feed_snapshot ?? null)
-    const result = await enrichCompany(
-      lead.target_company as string,
-      (signal?.company_domain ?? lead.company_domain ?? null) as string | null,
-      supabase,
-      {
-        servicesDescription: (profile as { services_description?: string | null } | null)?.services_description ?? null,
-        signalType: signal?.signal_type ?? null,
-        maxContacts: 4,
-      },
-    )
-    const topContact = result.contact
-    const baseUpdate: Record<string, unknown> = { contact_enriched_at: new Date().toISOString() }
-    if (result.resolvedDomain) baseUpdate.company_domain = result.resolvedDomain
+    const resolution = await resolveLeadRecipients(supabase, {
+      lead: { ...lead, is_unlocked: true },
+      userId: params.userId,
+      servicesDescription: (profile as { services_description?: string | null } | null)?.services_description ?? null,
+      signalType: signal?.signal_type ?? null,
+      signalDomain: signal?.company_domain ?? null,
+      consumeCreditIfLocked: false,
+      requireVerified: true,
+      maxContacts: 4,
+    })
 
-    if (topContact) {
-      await supabase.from('leads').update({
-        ...baseUpdate,
-        contact_email: topContact.email.toLowerCase(),
-        contact_name: topContact.name || null,
-        contact_title: topContact.title || null,
-        contact_source: topContact.source,
-        contact_verified: topContact.verified,
-        contact_verified_at: topContact.verified ? new Date().toISOString() : null,
-        contact_verification_status: topContact.zb_status ?? null,
-        last_contact_verification_error: topContact.verified ? null : 'contact_not_verified',
-      }).eq('id', lead.id as string).eq('user_id', params.userId)
+    if (resolution.contact) {
       enriched++
 
       await recordAgentEvent(supabase, {
@@ -474,21 +540,26 @@ async function prepareAutopilotLeads(
         runId: params.runId,
         leadId: lead.id as string,
         agentName: 'contact',
-        eventType: topContact.verified ? 'verified_contact_found' : 'contact_found_unverified',
-        status: topContact.verified ? 'completed' : 'blocked',
-        title: topContact.verified
-          ? `Verified contact found for ${lead.target_company}`
-          : `Contact found but not verified for ${lead.target_company}`,
-        body: topContact.verified
-          ? `Bombsell found ${topContact.email.toLowerCase()} and queued the lead for safe sending.`
-          : 'Bombsell will not send until a verified contact is available.',
+        eventType: 'verified_contact_found',
+        status: 'completed',
+        title: `Verified contact found for ${lead.target_company}`,
+        body: `Bombsell found ${resolution.contact.email.toLowerCase()} and queued the lead for safe sending.`,
         metadata: {
-          source: topContact.source,
-          from_cache: result.fromCache,
+          from_cache: resolution.debug.from_cache,
         },
       })
     } else {
-      await supabase.from('leads').update(baseUpdate).eq('id', lead.id as string).eq('user_id', params.userId)
+      await refundLeadCredit(supabase, {
+        userId: params.userId,
+        leadId: lead.id as string,
+        metadata: { source: 'autopilot_no_verified_contact_refund' },
+      }).catch(() => {})
+      await supabase
+        .from('leads')
+        .update({ is_unlocked: false, unlocked_at: null })
+        .eq('id', lead.id as string)
+        .eq('user_id', params.userId)
+        .is('contact_email', null)
       await recordAgentEvent(supabase, {
         userId: params.userId,
         clientId: params.clientId,
@@ -499,7 +570,11 @@ async function prepareAutopilotLeads(
         status: 'blocked',
         title: `No verified contact found for ${lead.target_company}`,
         body: 'Bombsell unlocked the lead but did not send because no safe recipient was found.',
-        metadata: { from_cache: result.fromCache },
+        metadata: {
+          from_cache: resolution.debug.from_cache,
+          resolved_domain: resolution.debug.resolved_domain,
+          refunded_credit: true,
+        },
       })
     }
   }
@@ -1013,10 +1088,29 @@ async function getOrCreateAutomationDraft(
       ? (existing as { stakeholders: Array<Partial<{ name: string; title: string; email: string; confidence: string; source: string }> | null> }).stakeholders
       : []
     const recipientGroup = buildRecipientGroup(existingStakeholders.length > 0 ? existingStakeholders : [primaryLeadContact(params.lead)])
-    return {
-      subject: existing.subject,
-      body: recipientGroup ? ensureBodyGreetsRecipients(existing.body, recipientGroup.greeting) : existing.body,
-      recipientGroup,
+    if (recipientGroup) {
+      const repairedBody = ensureBodyGreetsRecipients(existing.body, recipientGroup.greeting)
+      if (repairedBody !== existing.body) {
+        await upsertOutreachDraft(supabase, {
+          leadId: params.lead.id as string,
+          clientId: (params.lead.client_id as string | null | undefined) ?? null,
+          subject: existing.subject,
+          body: repairedBody,
+          stakeholders: existingStakeholders.map(stakeholder => ({
+            name: stakeholder?.name ?? '',
+            title: stakeholder?.title ?? 'Decision Maker',
+            email: stakeholder?.email ?? '',
+            confidence: stakeholder?.confidence ?? 'medium',
+            source: stakeholder?.source ?? 'existing_draft',
+          })),
+          greeting: recipientGroup.greeting,
+        }).catch(error => console.error('[send-automation] failed to repair existing draft:', error))
+      }
+      return {
+        subject: existing.subject,
+        body: repairedBody,
+        recipientGroup,
+      }
     }
   }
 
@@ -1025,26 +1119,17 @@ async function getOrCreateAutomationDraft(
     userProfile: params.profile,
     clientProfile: params.clientProfile,
   })
-  const enrichment = await enrichCompany(
-    String(params.lead.target_company ?? ''),
-    typeof params.lead.company_domain === 'string' ? params.lead.company_domain : null,
-    supabase,
-    {
-      servicesDescription: outreachContext.servicesDescription,
-      signalType: signal?.signal_type ?? null,
-      maxContacts: 4,
-    },
-  )
-  const verifiedContacts = enrichment.contacts.filter(contact => contact.verified)
-  const stakeholders = verifiedContacts.length > 0
-    ? verifiedContacts.map(contact => ({
-        name: contact.name,
-        title: contact.title || 'Decision Maker',
-        email: contact.email,
-        confidence: 'high',
-        source: contact.source,
-      }))
-    : [primaryLeadContact(params.lead)]
+  const contactResolution = await resolveLeadRecipients(supabase, {
+    lead: params.lead,
+    userId: params.userId,
+    servicesDescription: outreachContext.servicesDescription,
+    signalType: signal?.signal_type ?? null,
+    signalDomain: signal?.company_domain ?? null,
+    consumeCreditIfLocked: false,
+    requireVerified: true,
+    maxContacts: 4,
+  })
+  const stakeholders = contactResolution.stakeholders
   const recipientGroup = buildRecipientGroup(stakeholders)
   if (!recipientGroup) return { subject: '', body: '', recipientGroup: null }
 
@@ -1082,25 +1167,16 @@ async function getOrCreateAutomationDraft(
 
   const normalizedBody = ensureBodyGreetsRecipients(body, recipientGroup.greeting)
 
-  await supabase.from('outreach_drafts').insert({
-    lead_id: params.lead.id,
-    client_id: params.lead.client_id ?? null,
+  await upsertOutreachDraft(supabase, {
+    leadId: params.lead.id as string,
+    clientId: (params.lead.client_id as string | null | undefined) ?? null,
     subject,
     body: normalizedBody,
     stakeholders,
+    greeting: recipientGroup.greeting,
   })
 
   return { subject, body: normalizedBody, recipientGroup }
-}
-
-function primaryLeadContact(lead: Record<string, unknown>) {
-  return {
-    name: typeof lead.contact_name === 'string' ? lead.contact_name : '',
-    title: typeof lead.contact_title === 'string' ? lead.contact_title : 'Decision Maker',
-    email: typeof lead.contact_email === 'string' ? lead.contact_email : '',
-    confidence: 'high',
-    source: 'automation',
-  }
 }
 
 async function notifyAutomationCompleted(

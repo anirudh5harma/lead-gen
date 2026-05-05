@@ -1,4 +1,5 @@
 import { normalizeEmailAddress } from './email-safety.ts'
+import { cleanPersonName, emailContainsProfessionalSuffix } from './person-normalization.ts'
 
 export interface OutreachRecipient {
   name: string
@@ -30,6 +31,7 @@ export function buildRecipientGroup(
     } catch {
       continue
     }
+    if (emailContainsProfessionalSuffix(email, contact.name)) continue
     const key = email.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
@@ -87,13 +89,25 @@ function collapseRepeatedGreeting(value: string, greeting: string): string {
   while (repeated.test(collapsed)) {
     collapsed = collapsed.replace(repeated, `${greeting}, `)
   }
+  const firstName = greeting.split(/\s+/)[0]
+  if (firstName && !/\b(and|team|there)\b/i.test(firstName)) {
+    const duplicateFirstName = new RegExp(`^${escapeRegExp(greeting)}\\s*,\\s*${escapeRegExp(firstName)}\\b\\s*,?\\s*`, 'i')
+    collapsed = collapsed.replace(duplicateFirstName, `${greeting}, `)
+  }
   return collapsed
 }
 
 function formatGreeting(recipients: OutreachRecipient[]): string {
-  const names = recipients
-    .map(recipient => firstName(recipient.name))
-    .filter(Boolean)
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const recipient of recipients) {
+    const name = firstName(recipient.name)
+    if (!name) continue
+    const key = name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    names.push(name)
+  }
   if (names.length === 0) return 'there'
   if (names.length === 1) return names[0]
   if (names.length === 2) return `${names[0]} and ${names[1]}`
@@ -118,9 +132,7 @@ function firstName(value: string): string {
 }
 
 function cleanName(value: unknown): string {
-  return typeof value === 'string'
-    ? value.replace(/\s+/g, ' ').trim()
-    : ''
+  return cleanPersonName(value)
 }
 
 function escapeRegExp(value: string): string {

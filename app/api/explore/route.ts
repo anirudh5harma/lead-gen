@@ -129,6 +129,7 @@ export async function POST(request: Request) {
       useWorkspaceIcp,
       count: Math.min(MAX_GENERATION_BATCH_SIZE, remaining),
       excludeCompanies: [...excludedCompanies],
+      filters: body?.filters ?? {},
     })
 
     if (!generation.ok) {

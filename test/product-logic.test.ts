@@ -16,6 +16,7 @@ import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-no
 import { buildBookingReplyBody, classifyReplyIntent, shouldAutoSendBookingLink } from '../lib/reply-intelligence.ts'
 import { buildIcpKeywords } from '../lib/icp.ts'
 import { buildRecipientGroup, ensureBodyGreetsRecipients } from '../lib/outreach-recipients.ts'
+import { isSafeToSend } from '../lib/email-finder/zeroBounce.ts'
 import { accountKey, bodyPreview, normalizeDomain, personKey, signalKey } from '../lib/gtm/identity.ts'
 import { buildContextQuery, normalizeEmbeddingContent, stableContentHash } from '../lib/gtm/semantic-context.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
@@ -887,6 +888,17 @@ test('unverified candidates are only treated as safe when zerobounce is disabled
   }), false)
 })
 
+test('catch-all verification is not safe unless explicitly enabled', () => {
+  const previous = process.env.OUTBOUND_ALLOW_CATCH_ALL
+  delete process.env.OUTBOUND_ALLOW_CATCH_ALL
+  try {
+    assert.equal(isSafeToSend('valid'), true)
+    assert.equal(isSafeToSend('catch-all'), false)
+  } finally {
+    if (previous) process.env.OUTBOUND_ALLOW_CATCH_ALL = previous
+  }
+})
+
 test('reply intent classifier detects meeting and booking outcomes', () => {
   const meeting = classifyReplyIntent({
     subject: 'Re: data ops',
@@ -957,6 +969,17 @@ test('outreach recipients use first contact as to and remaining verified contact
   assert.equal(group?.greeting, 'Jane and Rahul')
 })
 
+test('outreach recipients strip professional suffixes and reject suffix-tainted emails', () => {
+  const group = buildRecipientGroup([
+    { name: 'Katherine Vasconez, Esq.', title: 'General Counsel', email: 'katherine.vasconezesq@adept.ai' },
+    { name: 'Katherine Vasconez, Esq.', title: 'General Counsel', email: 'katherine.vasconez@adept.ai' },
+  ])
+
+  assert.equal(group?.to.email, 'katherine.vasconez@adept.ai')
+  assert.equal(group?.to.name, 'Katherine Vasconez')
+  assert.equal(group?.greeting, 'Katherine')
+})
+
 test('outreach body greeting is rewritten to address grouped recipients', () => {
   const body = ensureBodyGreetsRecipients(
     'Jane, noticed Acme expanded into Europe.\n\nThat usually changes priorities.\n\nBombsell helps here.\n\nWorth a quick look?',
@@ -990,6 +1013,14 @@ test('outreach greeting rewrite is idempotent for grouped greetings', () => {
     ),
     'Glenn and Lauren, noticed Cloudsmith is expanding its platform.',
   )
+
+  assert.equal(
+    ensureBodyGreetsRecipients(
+      'katherine, katherine that funding round probably changes how Adept prioritizes enterprise accounts.',
+      'Katherine',
+    ),
+    'Katherine, that funding round probably changes how Adept prioritizes enterprise accounts.',
+  )
 })
 
 test('outreach draft fallback does not leak internal planning instructions', async () => {
@@ -1011,6 +1042,7 @@ test('outreach draft fallback does not leak internal planning instructions', asy
     assert.doesNotMatch(draft.body, /connect the funding event/i)
     assert.doesNotMatch(draft.body, /keep the offer tied/i)
     assert.doesNotMatch(draft.body, /concrete gtm priority/i)
+    assert.doesNotMatch(draft.body, /short window where priorities shift/i)
     assert.match(draft.body, /^Carmen and Apurva,/)
   } finally {
     if (oldKey) process.env.DEEPSEEK_API_KEY = oldKey

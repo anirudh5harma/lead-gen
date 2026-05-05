@@ -2,83 +2,116 @@
 
 import { useState } from 'react'
 import type { Lead } from '@/lib/leads'
-import { formatDateTime, StatusBadge } from './shared'
+import { formatDateTime, StatusBadge, SectionHeader, EmptyState } from './shared'
+import SpotlightCard from '@/components/landing/SpotlightCard'
 
 interface Props {
   leads: Lead[]
 }
 
+type OriginFilter = 'all' | 'live' | 'explore'
+
 export default function OutreachView({ leads }: Props) {
   const [now] = useState(() => Date.now())
+  const [originFilter, setOriginFilter] = useState<OriginFilter>('all')
   const day = 24 * 60 * 60 * 1000
   const last24h = now - day
   const last7d = now - 7 * day
 
-  const sent = leads.filter(l => l.status === 'sent')
-  const replied = leads.filter(l => l.status === 'replied' || l.status === 'booked')
-  const dismissed = leads.filter(l => l.status === 'dismissed')
+  const filteredLeads = originFilter === 'all' ? leads : leads.filter(l => l.origin === originFilter)
+  const sent = filteredLeads.filter(l => l.status === 'sent')
+  const replied = filteredLeads.filter(l => l.status === 'replied' || l.status === 'booked')
 
-  const found24h = leads.filter(l => inWindow(l.created_at, last24h)).length
-  const sent7d = leads.filter(l => inWindow(l.sent_at, last7d)).length
-  const replied7d = leads.filter(l => inWindow(l.replied_at, last7d)).length
-  const booked7d = leads.filter(l => inWindow(l.booked_at, last7d)).length
+  const found24h = filteredLeads.filter(l => inWindow(l.created_at, last24h)).length
+  const sent7d = filteredLeads.filter(l => inWindow(l.sent_at, last7d)).length
+  const replied7d = filteredLeads.filter(l => inWindow(l.replied_at, last7d)).length
+  const booked7d = filteredLeads.filter(l => inWindow(l.booked_at, last7d)).length
   const replyRate = sent7d > 0 ? Math.round((replied7d / sent7d) * 100) : 0
 
+  const originCounts = {
+    all: leads.length,
+    live: leads.filter(l => l.origin === 'live').length,
+    explore: leads.filter(l => l.origin === 'explore').length,
+  }
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       {/* Performance */}
-      <section className="card overflow-hidden shadow-sm">
-        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Performance</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">Recent account flow and outcomes.</p>
+      <section>
+        <SectionHeader
+          title="Performance"
+          subtitle="Recent account flow and outcomes."
+          label="Metrics"
+        />
+        <SpotlightCard className="card overflow-hidden card-hover">
+          <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 flex-1">
+              <Pill label="24h found" value={found24h} />
+              <Pill label="7d sent" value={sent7d} />
+              <Pill label="7d replies" value={replied7d} />
+              <Pill label="7d booked" value={booked7d} />
+              <Pill label="Reply rate" value={`${replyRate}%`} />
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Pill label="24h found" value={found24h} />
-            <Pill label="7d sent" value={sent7d} />
-            <Pill label="7d replies" value={replied7d} />
-            <Pill label="7d booked" value={booked7d} />
-            <Pill label="Reply rate" value={`${replyRate}%`} />
-          </div>
-        </div>
+        </SpotlightCard>
       </section>
 
-      {/* Metrics */}
-      {/* <section className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <Metric label="Sent" value={sent.length} />
-        <Metric label="Replies" value={replied.length} />
-        <Metric label="Dismissed" value={dismissed.length} />
-      </section> */}
-
-      {/* Sent */}
-      <section className="card overflow-hidden shadow-sm">
-        <div className="px-5 py-4 border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/30">
-          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Recently Sent</h3>
-          <p className="text-xs text-[var(--color-text-4)] mt-0.5">Track sent outreach and replies.</p>
+      {/* Origin Filter */}
+      <section>
+        <SectionHeader
+          title="Outreach history"
+          subtitle="Track sent outreach and replies by source."
+          label="Activity"
+        />
+        <div className="flex gap-1 mb-4">
+          {([
+            { id: 'all' as const, label: 'All' },
+            { id: 'live' as const, label: `Live signals (${originCounts.live})` },
+            { id: 'explore' as const, label: `Explore (${originCounts.explore})` },
+          ]).map(option => (
+            <button
+              key={option.id}
+              onClick={() => setOriginFilter(option.id)}
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                originFilter === option.id
+                  ? 'bg-[var(--color-text-1)] text-white'
+                  : 'bg-white text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] border border-[var(--color-line-1)]'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
-        {sent.length === 0 ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--color-text-3)]">
-            No sent messages yet. Outreach is sent from the work inbox when leads are approved and drafted.
-          </div>
-        ) : (
-          <div className="divide-y divide-[var(--color-line-1)]">
-            {sent.slice(0, 20).map(lead => (
-              <SentRow key={lead.id} lead={lead} />
-            ))}
-          </div>
-        )}
+
+        <div className="card overflow-hidden">
+          {sent.length === 0 ? (
+            <EmptyState
+              title="No sent messages yet"
+              body="Outreach is sent from the work inbox when leads are approved and drafted."
+            />
+          ) : (
+            <div className="divide-y divide-[var(--color-line-1)]">
+              {sent.slice(0, 20).map(lead => (
+                <SentRow key={lead.id} lead={lead} />
+              ))}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Replied */}
       {replied.length > 0 && (
-        <section className="card overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/30">
-            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Replied & Booked</h3>
-          </div>
-          <div className="divide-y divide-[var(--color-line-1)]">
-            {replied.slice(0, 15).map(lead => (
-              <RepliedRow key={lead.id} lead={lead} />
-            ))}
+        <section>
+          <SectionHeader
+            title="Replied & booked"
+            subtitle="Accounts that responded to outreach."
+          />
+          <div className="card overflow-hidden">
+            <div className="divide-y divide-[var(--color-line-1)]">
+              {replied.slice(0, 15).map(lead => (
+                <RepliedRow key={lead.id} lead={lead} />
+              ))}
+            </div>
           </div>
         </section>
       )}
@@ -103,6 +136,13 @@ function SentRow({ lead }: { lead: Lead }) {
           <div className="flex items-center gap-2">
             <span className="text-[13px] font-semibold text-[var(--color-text-1)]">{lead.target_company}</span>
             <StatusBadge status={lead.status} />
+            {lead.origin && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                lead.origin === 'live' ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
+              }`}>
+                {lead.origin}
+              </span>
+            )}
           </div>
           {lead.contact_email && <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">{lead.contact_email}</p>}
         </div>
@@ -132,15 +172,6 @@ function RepliedRow({ lead }: { lead: Lead }) {
         </div>
         <span className="text-[10px] text-[var(--color-text-4)] shrink-0">{formatDateTime(lead.replied_at)}</span>
       </div>
-    </div>
-  )
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-[var(--color-line-1)] bg-white px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase text-[var(--color-text-3)]">{label}</p>
-      <p className="mt-1 text-[22px] font-semibold tabular-nums text-[var(--color-text-1)]">{value}</p>
     </div>
   )
 }

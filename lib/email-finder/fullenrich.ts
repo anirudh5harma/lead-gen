@@ -44,6 +44,26 @@ export async function searchFullEnrichPeople(
 ): Promise<FullEnrichPerson[]> {
   if (!process.env.FULLENRICH_API_KEY) return []
 
+  const domain = companyDomain ?? null
+
+  // Try exact match first (most accurate when it works)
+  const exactResults = await searchFullEnrichWithMode(companyName, domain, true)
+  if (exactResults.length > 0) return exactResults
+
+  // If no domain provided and exact match failed, try non-exact match
+  // to catch variations like "Acme Corp" vs "Acme Corporation"
+  if (!domain) {
+    return await searchFullEnrichWithMode(companyName, null, false)
+  }
+
+  return []
+}
+
+async function searchFullEnrichWithMode(
+  companyName: string,
+  companyDomain: string | null,
+  exactMatch: boolean,
+): Promise<FullEnrichPerson[]> {
   const filters: Record<string, unknown> = {
     current_position_titles: TARGET_TITLES.map(value => ({
       value,
@@ -61,7 +81,7 @@ export async function searchFullEnrichPeople(
   } else {
     filters.current_company_names = [{
       value: companyName,
-      exact_match: true,
+      exact_match: exactMatch,
       exclude: false,
     }]
   }

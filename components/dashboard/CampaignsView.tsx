@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { TabLoadingState, formatDateTime } from './shared'
+import { TabLoadingState, SectionHeader, formatDateTime } from './shared'
+import SpotlightCard from '@/components/landing/SpotlightCard'
 
 interface Campaign {
   id: string
@@ -98,59 +99,66 @@ export default function CampaignsView() {
   const visibleCampaigns = payload.campaigns.filter(c => c.status !== 'dismissed')
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       {/* Header + Create */}
-      <section className="card overflow-hidden shadow-sm">
-        <div className="px-5 py-4 bg-[var(--color-ink-2)]/30 border-b border-[var(--color-line-1)] flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--color-text-1)]">Campaigns</h2>
-            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
-              {payload.metrics.active ?? 0} active · {payload.metrics.total ?? 0} total · {payload.metrics.assets ?? 0} assets
-            </p>
-          </div>
-          <button
-            onClick={() => setShowCreate(v => !v)}
-            className="inline-flex items-center gap-1.5 rounded-lg btn-primary px-4 py-2 text-xs font-semibold hover:scale-[1.02] active:scale-[0.98] transition-transform"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            {showCreate ? 'Cancel' : 'New Campaign'}
-          </button>
-        </div>
-
-        {showCreate && (
-          <div className="px-5 py-4 space-y-3 border-b border-[var(--color-line-1)]">
-            <input
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              placeholder="Campaign name (e.g. Q2 Expansion Play)"
-              className="w-full h-9 px-3 rounded-lg border border-[var(--color-line-2)] bg-white text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
-            />
-            <input
-              value={newSegment}
-              onChange={e => setNewSegment(e.target.value)}
-              placeholder="Target segment (e.g. Series A SaaS)"
-              className="w-full h-9 px-3 rounded-lg border border-[var(--color-line-2)] bg-white text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
-            />
-            <input
-              value={newTrigger}
-              onChange={e => setNewTrigger(e.target.value)}
-              placeholder="Trigger signal (e.g. Recent funding)"
-              className="w-full h-9 px-3 rounded-lg border border-[var(--color-line-2)] bg-white text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
-            />
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] text-[var(--color-text-4)]">{createMsg ?? ''}</span>
-              <button
-                onClick={createCampaign}
-                disabled={!newName.trim() || creating}
-                className="inline-flex items-center gap-1.5 rounded-lg btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] transition-transform"
-              >
-                {creating ? 'Creating…' : 'Create Campaign'}
-              </button>
+      <section>
+        <SectionHeader
+          title="Campaigns"
+          subtitle={`${payload.metrics.active ?? 0} active · ${payload.metrics.total ?? 0} total · ${payload.metrics.assets ?? 0} assets`}
+          label="Marketing"
+        />
+        <SpotlightCard className="card overflow-hidden card-hover">
+          <div className="px-5 py-4 border-b border-[var(--color-line-1)] flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-[var(--color-text-1)]">All campaigns</h2>
+              <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+                Group content ideas around a common segment, trigger, and narrative.
+              </p>
             </div>
+            <button
+              onClick={() => setShowCreate(v => !v)}
+              className="inline-flex items-center gap-1.5 rounded-lg btn-primary px-4 py-2 text-xs font-semibold hover:scale-[1.02] active:scale-[0.98] transition-transform"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              {showCreate ? 'Cancel' : 'New Campaign'}
+            </button>
           </div>
-        )}
+
+          {showCreate && (
+            <div className="px-5 py-4 space-y-3 border-b border-[var(--color-line-1)]">
+              <input
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="Campaign name (e.g. Q2 Expansion Play)"
+                className="w-full h-9 px-3 rounded-lg border border-[var(--color-line-2)] bg-white text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
+              />
+              <input
+                value={newSegment}
+                onChange={e => setNewSegment(e.target.value)}
+                placeholder="Target segment (e.g. Series A SaaS)"
+                className="w-full h-9 px-3 rounded-lg border border-[var(--color-line-2)] bg-white text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
+              />
+              <input
+                value={newTrigger}
+                onChange={e => setNewTrigger(e.target.value)}
+                placeholder="Trigger signal (e.g. Recent funding)"
+                className="w-full h-9 px-3 rounded-lg border border-[var(--color-line-2)] bg-white text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
+              />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] text-[var(--color-text-4)]">{createMsg ?? ''}</span>
+                <button
+                  onClick={createCampaign}
+                  disabled={!newName.trim() || creating}
+                  className="inline-flex items-center gap-1.5 rounded-lg btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] transition-transform"
+                >
+                  {creating ? 'Creating…' : 'Create Campaign'}
+                </button>
+              </div>
+            </div>
+          )}
+        </SpotlightCard>
       </section>
 
       {error && (
@@ -174,9 +182,9 @@ export default function CampaignsView() {
           </p>
         </section>
       ) : (
-        <section className="grid gap-3">
+        <section className="grid gap-3 stagger-children">
           {visibleCampaigns.map(campaign => (
-            <article key={campaign.id} className="rounded-lg border border-[var(--color-line-1)] bg-white shadow-[0_1px_2px_#00000008] overflow-hidden">
+            <article key={campaign.id} className="rounded-lg border border-[var(--color-line-1)] bg-white shadow-[0_1px_2px_#00000008] overflow-hidden card-hover transition-all">
               <div className="p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">

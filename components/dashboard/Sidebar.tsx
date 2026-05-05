@@ -137,9 +137,9 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
 
   function navItemClass(active: boolean, compact = false) {
     if (compact) {
-      return `w-full flex items-center justify-center h-9 rounded-lg text-[13px] font-medium transition-colors ${active ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]' : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'}`
+      return `w-full flex items-center justify-center h-9 rounded-lg text-[13px] font-medium transition-all duration-200 ${active ? 'bg-white text-[var(--color-accent)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]' : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'}`
     }
-    return `w-full flex items-center h-9 rounded-lg text-[13px] font-medium transition-colors gap-2.5 px-2.5 ${active ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]' : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'}`
+    return `w-full flex items-center h-9 rounded-lg text-[13px] font-medium transition-all duration-200 gap-2.5 px-2.5 ${active ? 'bg-white text-[var(--color-accent)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]' : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'}`
   }
 
   return (
@@ -236,7 +236,7 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
                                         onClick={() => { onNavigate(child.id); setMobileOpen(false) }}
                                         className={`w-full flex h-7 items-center rounded-md px-2 text-left text-[12px] font-medium transition-colors ${
                                           childActive
-                                            ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+                                            ? 'bg-white text-[var(--color-accent)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
                                             : 'text-[var(--color-text-3)] hover:bg-[var(--color-ink-3)] hover:text-[var(--color-text-1)]'
                                         }`}
                                       >

@@ -9,6 +9,7 @@ import {
   normalizeSendSpacing,
   sanitizeAutoSendOrigins,
   sanitizeSessionIds,
+  normalizeExploreDailySendLimit,
 } from '@/lib/auto-send-policies'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { sendAutomationLifecycleEmail } from '@/lib/resend'
@@ -19,17 +20,17 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
-  const [policyRes, accountsRes] = await Promise.all([
+  const [policyRes, accountsRes, exploreSessionsRes] = await Promise.all([
     activeClientId
       ? supabase
           .from('auto_send_policies')
-          .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
+          .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, explore_daily_send_limit, min_minutes_between_sends')
           .eq('user_id', user.id)
           .eq('client_id', activeClientId)
           .maybeSingle()
       : supabase
           .from('auto_send_policies')
-          .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
+          .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, explore_daily_send_limit, min_minutes_between_sends')
           .eq('user_id', user.id)
           .is('client_id', null)
           .maybeSingle(),
@@ -39,14 +40,32 @@ export async function GET() {
       .eq('user_id', user.id)
       .eq('is_active', true)
       .order('created_at', { ascending: true }),
+    supabase
+      .from('explore_runs')
+      .select('id, prompt, generated_count, inserted_count, created_at, autopilot_status')
+      .eq('user_id', user.id)
+      .eq('client_id', activeClientId)
+      .order('created_at', { ascending: false })
+      .limit(50),
   ])
 
   if (policyRes.error) return NextResponse.json({ error: policyRes.error.message }, { status: 500 })
   if (accountsRes.error) return NextResponse.json({ error: accountsRes.error.message }, { status: 500 })
 
+  const policy = normalizeAutoSendPolicy(policyRes.data ?? null)
+
   return NextResponse.json({
-    policy: normalizeAutoSendPolicy(policyRes.data ?? null),
+    policy,
     accounts: accountsRes.data ?? [],
+    explore_sessions: (exploreSessionsRes.data ?? []).map(session => ({
+      id: session.id,
+      prompt: session.prompt,
+      generated_count: session.generated_count,
+      inserted_count: session.inserted_count,
+      created_at: session.created_at,
+      in_autopilot: policy.target_explore_session_ids.includes(session.id),
+      autopilot_status: session.autopilot_status,
+    })),
   })
 }
 
@@ -65,6 +84,7 @@ export async function PATCH(request: Request) {
     min_relevance_score?: number
     max_lead_age_days?: number
     daily_send_limit?: number
+    explore_daily_send_limit?: number
     min_minutes_between_sends?: number
   } | null
 
@@ -90,6 +110,7 @@ export async function PATCH(request: Request) {
   const minRelevanceScore = normalizePolicyScore(body.min_relevance_score)
   const maxLeadAgeDays = normalizePolicyAge(body.max_lead_age_days)
   const dailySendLimit = normalizeDailySendLimit(body.daily_send_limit)
+  const exploreDailySendLimit = normalizeExploreDailySendLimit(body.explore_daily_send_limit)
   const minMinutesBetweenSends = normalizeSendSpacing(body.min_minutes_between_sends)
   const connectedAccountId = typeof body.connected_account_id === 'string' && body.connected_account_id.trim()
     ? body.connected_account_id.trim()
@@ -158,6 +179,7 @@ export async function PATCH(request: Request) {
     min_relevance_score: minRelevanceScore,
     max_lead_age_days: maxLeadAgeDays,
     daily_send_limit: dailySendLimit,
+    explore_daily_send_limit: exploreDailySendLimit,
     min_minutes_between_sends: minMinutesBetweenSends,
     ...(body.enabled && !wasEnabled
       ? {
@@ -174,12 +196,12 @@ export async function PATCH(request: Request) {
         .from('auto_send_policies')
         .update(payload)
         .eq('id', existing.id)
-        .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
+        .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, explore_daily_send_limit, min_minutes_between_sends')
         .single()
     : await supabase
         .from('auto_send_policies')
         .insert(payload)
-        .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends')
+        .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, explore_daily_send_limit, min_minutes_between_sends')
         .single()
 
   if (response.error) return NextResponse.json({ error: response.error.message }, { status: 500 })
