@@ -5,30 +5,71 @@ import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/leads'
 import type { View, UserProfile } from './dashboard/types'
 import Sidebar from './dashboard/Sidebar'
+import HomeView from './dashboard/HomeView'
 import InboxView from './dashboard/InboxView'
-import AccountsView from './dashboard/AccountsView'
+import OutreachView from './dashboard/OutreachView'
+import ExploreView from './dashboard/ExploreView'
 import MarketingView from './dashboard/MarketingView'
-import InsightsView from './dashboard/InsightsView'
+import CampaignsView from './dashboard/CampaignsView'
+import AudienceView from './dashboard/AudienceView'
+import PipelineView from './dashboard/PipelineView'
+import AnalyticsView from './dashboard/AnalyticsView'
+import AccountsView from './dashboard/AccountsView'
 import AutopilotView from './dashboard/AutopilotView'
+import CoverageView from './dashboard/CoverageView'
+import SequencesView from './dashboard/SequencesView'
 import SettingsView from './dashboard/SettingsView'
 
 const VIEW_TITLES: Record<View, string> = {
-  inbox:     'Work',
-  accounts:  'Accounts',
-  marketing: 'Marketing',
-  insights:  'Insights',
-  autopilot: 'GTM Engine',
-  settings:  'Settings',
+  home:                       'Home',
+  'sales/inbox':              'Work Inbox',
+  'sales/outreach':           'Outreach',
+  'sales/explore':            'Explore',
+  'marketing/content':        'Content Overview',
+  'marketing/content/posts':  'Posts',
+  'marketing/content/blogs':  'Blogs',
+  'marketing/content/videos': 'Videos',
+  'marketing/campaigns':      'Campaigns',
+  'marketing/audience':       'Audience',
+  'revenue/pipeline':         'Pipeline',
+  'revenue/analytics':        'Analytics',
+  accounts:                   'Accounts',
+  'engine/autopilot':         'Autopilot',
+  'engine/coverage':          'Coverage',
+  'engine/sequences':         'Sequences',
+  settings:                   'Settings',
 }
 
 const VIEW_SUBTITLES: Record<View, string> = {
-  inbox:     'The highest-value account moves to review next.',
-  accounts:  'Context, signals, people, and next actions by account.',
-  marketing: 'Signal-backed content ideas and campaign angles.',
-  insights:  'AI-native recommendations with actionable CTAs.',
-  autopilot: 'Market coverage, sending mode, and safety rules.',
-  settings:  'ICP, inboxes, credits, and guardrails.',
+  home:                       'GTM snapshot and quick actions.',
+  'sales/inbox':              'The highest-value account moves to review next.',
+  'sales/outreach':           'Drafts, sent messages, and reply tracking.',
+  'sales/explore':            'Search companies and import from CRM.',
+  'marketing/content':        'Marketing calendar, distribution mix, and account readiness.',
+  'marketing/content/posts':  'Social posts for LinkedIn and X.',
+  'marketing/content/blogs':  'Long-form articles and blog drafts.',
+  'marketing/content/videos': 'Video scripts and production-ready concepts.',
+  'marketing/campaigns':      'Group content into campaigns with timelines.',
+  'marketing/audience':       'ICP performance and persona analytics.',
+  'revenue/pipeline':         'Deal stages and revenue-ready opportunities.',
+  'revenue/analytics':        'Funnel metrics, conversion rates, and trends.',
+  accounts:                   'Context, signals, people, and next actions by account.',
+  'engine/autopilot':         'Automated sending rules and follow-up management.',
+  'engine/coverage':          'Source configuration and signal supply optimization.',
+  'engine/sequences':         'Reusable outreach templates and guidance.',
+  settings:                   'ICP, inboxes, credits, and integrations.',
 }
+
+const ALL_VIEWS: View[] = [
+  'home',
+  'sales/inbox', 'sales/outreach', 'sales/explore',
+  'marketing/content', 'marketing/content/posts', 'marketing/content/blogs', 'marketing/content/videos',
+  'marketing/campaigns', 'marketing/audience',
+  'revenue/pipeline', 'revenue/analytics',
+  'accounts',
+  'engine/autopilot', 'engine/coverage', 'engine/sequences',
+  'settings',
+]
 
 interface Props {
   initialLeads: Lead[]
@@ -40,11 +81,11 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const requestedView = params.get('view')
-      if (requestedView === 'inbox' || requestedView === 'accounts' || requestedView === 'marketing' || requestedView === 'insights' || requestedView === 'autopilot' || requestedView === 'settings') {
-        return requestedView
+      if (requestedView && (ALL_VIEWS as string[]).includes(requestedView)) {
+        return requestedView as View
       }
     }
-    return 'inbox'
+    return 'home'
   })
   const [isRefreshing, startTransition] = useTransition()
   const router = useRouter()
@@ -82,13 +123,20 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
 
   function refresh() { startTransition(() => router.refresh()) }
 
+  function navigate(v: View) {
+    setActiveView(v)
+    const url = new URL(window.location.href)
+    url.searchParams.set('view', v)
+    window.history.replaceState({}, '', url.toString())
+  }
+
   return (
     <div className="flex min-h-screen">
       <Sidebar
         companyName={userProfile.client_name || userProfile.company_name}
         userEmail={userProfile.email}
         activeView={activeView}
-        onNavigate={v => setActiveView(v)}
+        onNavigate={navigate}
       />
 
       <div className="flex-1 min-w-0 flex flex-col bg-[var(--color-ink-1)]">
@@ -112,7 +160,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
                 </svg>
               </button>
               <button
-                onClick={() => setActiveView('settings')}
+                onClick={() => navigate('settings')}
                 className="hidden sm:inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] transition-colors"
                 title="Lead credit balance"
               >
@@ -120,7 +168,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
                 <span>credits</span>
               </button>
               <button
-                onClick={() => setActiveView('settings')}
+                onClick={() => navigate('settings')}
                 className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-primary text-[12.5px] font-semibold items-center gap-1.5"
               >
                 Add credits
@@ -133,11 +181,22 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
         {/* View content */}
         <main className="flex-1 overflow-auto scroll-smooth px-6 py-6 pb-20">
           <div className="max-w-6xl mx-auto fade-in">
-            {activeView === 'inbox' && <InboxView leads={initialLeads} onNavigate={setActiveView} />}
+            {activeView === 'home' && <HomeView leads={initialLeads} onNavigate={navigate} />}
+            {activeView === 'sales/inbox' && <InboxView leads={initialLeads} onNavigate={navigate} />}
+            {activeView === 'sales/outreach' && <OutreachView leads={initialLeads} />}
+            {activeView === 'sales/explore' && <ExploreView leads={initialLeads} />}
+            {activeView === 'marketing/content' && <MarketingView hub="overview" />}
+            {activeView === 'marketing/content/posts' && <MarketingView hub="posts" />}
+            {activeView === 'marketing/content/blogs' && <MarketingView hub="blogs" />}
+            {activeView === 'marketing/content/videos' && <MarketingView hub="videos" />}
+            {activeView === 'marketing/campaigns' && <CampaignsView />}
+            {activeView === 'marketing/audience' && <AudienceView leads={initialLeads} />}
+            {activeView === 'revenue/pipeline' && <PipelineView leads={initialLeads} />}
+            {activeView === 'revenue/analytics' && <AnalyticsView leads={initialLeads} />}
             {activeView === 'accounts' && <AccountsView />}
-            {activeView === 'marketing' && <MarketingView />}
-            {activeView === 'insights' && <InsightsView />}
-            {activeView === 'autopilot' && <AutopilotView />}
+            {activeView === 'engine/autopilot' && <AutopilotView />}
+            {activeView === 'engine/coverage' && <CoverageView />}
+            {activeView === 'engine/sequences' && <SequencesView />}
             {activeView === 'settings' && <SettingsView profile={displayProfile} />}
           </div>
         </main>

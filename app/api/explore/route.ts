@@ -33,10 +33,21 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as {
     prompt?: string
     icp_hint?: string
+    count?: number
+    filters?: {
+      industry?: string
+      region?: string
+      revenue?: string
+      employee_count?: string
+    }
   } | null
 
-  const prompt = body?.prompt?.trim() ?? ''
-  const icpHint = (body?.icp_hint?.trim() ?? '').slice(0, MAX_ICP_HINT_LENGTH)
+  const prompt = buildStructuredExplorePrompt(body)
+  const filterHint = buildFilterIcpHint(body?.filters)
+  const icpHint = [body?.icp_hint?.trim() ?? '', filterHint]
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, MAX_ICP_HINT_LENGTH)
   if (prompt.length < 8) {
     return NextResponse.json({ error: 'Add a more specific targeting prompt.' }, { status: 400 })
   }
@@ -194,6 +205,8 @@ export async function POST(request: Request) {
     startedAt: now,
     prompt,
   })
+  const leadSelect = 'id, client_id, origin, source_kind, source_record_id, feed_session_id, feed_session_label, feed_session_started_at, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, unlocked_at, created_at, sent_at, replied_at, booked_at, reply_intent, reply_summary, reply_body_snippet, reply_received_at, meeting_detected_at, booking_reply_sent_at, contact_email, contact_name, contact_title, feed_snapshot'
+  const leads: unknown[] = []
   let inserted = 0
   let skipped = 0
   let duplicates = 0
@@ -239,7 +252,7 @@ export async function POST(request: Request) {
 
     const { data: existingLead } = await admin
       .from('leads')
-      .select('id')
+      .select(leadSelect)
       .eq('user_id', user.id)
       .eq('source_kind', 'explore_target')
       .eq('source_record_id', target.id)
@@ -248,6 +261,7 @@ export async function POST(request: Request) {
     if (existingLead) {
       duplicates++
       skipped++
+      leads.push(existingLead)
       continue
     }
 
@@ -264,7 +278,7 @@ export async function POST(request: Request) {
       publishedAt: now,
     })
 
-    const { error: leadError } = await admin
+    const { data: lead, error: leadError } = await admin
       .from('leads')
       .insert({
         user_id: user.id,
@@ -293,6 +307,8 @@ export async function POST(request: Request) {
           source_kind: 'explore_target',
         },
       })
+      .select(leadSelect)
+      .single()
 
     if (leadError) {
       leadErrors++
@@ -301,6 +317,7 @@ export async function POST(request: Request) {
       continue
     }
 
+    if (lead) leads.push(lead)
     inserted++
   }
 
@@ -326,6 +343,7 @@ export async function POST(request: Request) {
     duplicates,
     source_errors: sourceErrors,
     lead_errors: leadErrors,
+    leads,
     duration_ms: Date.now() - startedAt,
     message: inserted > 0
       ? `Added ${inserted} of ${targetCount} requested explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : ' directly from the prompt.'}`
@@ -333,6 +351,52 @@ export async function POST(request: Request) {
           ? `Found ${duplicates} duplicate explore ${duplicates === 1 ? 'lead' : 'leads'} and added no new ones.`
           : 'No new explore leads were added due to save errors.',
   })
+}
+
+function buildStructuredExplorePrompt(body: {
+  prompt?: string
+  count?: number
+  filters?: {
+    industry?: string
+    region?: string
+    revenue?: string
+    employee_count?: string
+  }
+} | null): string {
+  const basePrompt = body?.prompt?.trim() ?? ''
+  const filters = body?.filters ?? {}
+  const count = Number.isFinite(body?.count) ? Math.round(Number(body?.count)) : DEFAULT_RESULTS
+  const normalizedCount = Math.max(1, Math.min(MAX_RESULTS, EXPLORE_LIMITS.maxResults, count))
+  const filterLines = [
+    filters.industry ? `Industry: ${filters.industry}` : '',
+    filters.region ? `Region: ${filters.region}` : '',
+    filters.revenue ? `Revenue: ${filters.revenue}` : '',
+    filters.employee_count ? `Employee count: ${filters.employee_count}` : '',
+  ].filter(Boolean)
+
+  if (filterLines.length === 0) return basePrompt
+
+  return [
+    `Find ${normalizedCount} B2B companies that match our ICP and these lead generation filters.`,
+    ...filterLines,
+    basePrompt ? `Additional targeting notes: ${basePrompt}` : '',
+    'Prioritize accounts with a likely current GTM pain, buying trigger, or operational urgency.',
+  ].filter(Boolean).join('\n')
+}
+
+function buildFilterIcpHint(filters?: {
+  industry?: string
+  region?: string
+  revenue?: string
+  employee_count?: string
+}): string {
+  if (!filters) return ''
+  return [
+    filters.industry ? `Target industry: ${filters.industry}` : '',
+    filters.region ? `Target region: ${filters.region}` : '',
+    filters.revenue ? `Target revenue: ${filters.revenue}` : '',
+    filters.employee_count ? `Target employee count: ${filters.employee_count}` : '',
+  ].filter(Boolean).join('\n')
 }
 
 function extractRequestedLeadCount(prompt: string): number | null {

@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   }
 }
 
-const VALID_ACTIONS = ['reviewed', 'approved', 'discussed', 'dismissed'] as const
+const VALID_ACTIONS = ['reviewed', 'approved', 'discussed', 'dismissed', 'booked'] as const
 type WorkItemAction = typeof VALID_ACTIONS[number]
 
 export async function POST(request: Request) {
@@ -94,18 +94,16 @@ export async function POST(request: Request) {
   if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 })
 
   if (!existingAction) {
-    const { error } = await supabase
-      .from('gtm_work_item_actions')
-      .insert({
-        user_id: user.id,
-        client_id: activeClientId ?? null,
-        item_key: itemId,
-        lead_id: leadId,
-        action,
-        metadata,
-      })
+    const error = await recordWorkItemAction(supabase, {
+      userId: user.id,
+      clientId: activeClientId ?? null,
+      itemKey: itemId,
+      leadId,
+      action,
+      metadata,
+    })
 
-    if (error && error.code !== '23505') return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   const actionStatus = action === 'dismissed' ? 'dismissed' : 'completed'
@@ -173,6 +171,28 @@ export async function POST(request: Request) {
     })
   }
 
+  if (leadId && action === 'booked') {
+    const { error: bookedError } = await supabase
+      .from('leads')
+      .update({
+        status: 'booked',
+        booked_at: new Date().toISOString(),
+      })
+      .eq('id', leadId)
+      .eq('user_id', user.id)
+    if (bookedError) return NextResponse.json({ error: bookedError.message }, { status: 500 })
+
+    const derivedCloseError = await recordWorkItemAction(supabase, {
+      userId: user.id,
+      clientId: activeClientId ?? null,
+      itemKey: `lead:${leadId}:meeting_booked`,
+      leadId,
+      action: 'reviewed',
+      metadata: { ...metadata, closed_from: itemId, type: 'meeting_booked' },
+    })
+    if (derivedCloseError) return NextResponse.json({ error: derivedCloseError.message }, { status: 500 })
+  }
+
   if (leadId && (action === 'approved' || (action === 'reviewed' && itemId.endsWith(':needs_approval')))) {
     const { error: viewedError } = await supabase
       .from('leads')
@@ -193,4 +213,30 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true })
+}
+
+async function recordWorkItemAction(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: {
+    userId: string
+    clientId: string | null
+    itemKey: string
+    leadId: string | null
+    action: WorkItemAction
+    metadata: Record<string, unknown>
+  },
+) {
+  const { error } = await supabase
+    .from('gtm_work_item_actions')
+    .insert({
+      user_id: input.userId,
+      client_id: input.clientId,
+      item_key: input.itemKey,
+      lead_id: input.leadId,
+      action: input.action,
+      metadata: input.metadata,
+    })
+
+  if (error && error.code !== '23505') return error
+  return null
 }

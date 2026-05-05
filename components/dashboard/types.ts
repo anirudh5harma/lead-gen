@@ -1,5 +1,25 @@
+export type View =
+  | 'home'
+  | 'sales/inbox' | 'sales/outreach' | 'sales/explore'
+  | 'marketing/content' | 'marketing/content/posts' | 'marketing/content/blogs' | 'marketing/content/videos'
+  | 'marketing/campaigns' | 'marketing/audience'
+  | 'revenue/pipeline' | 'revenue/analytics'
+  | 'accounts'
+  | 'engine/autopilot' | 'engine/coverage' | 'engine/sequences'
+  | 'settings'
 
-export type View = 'inbox' | 'accounts' | 'marketing' | 'insights' | 'autopilot' | 'settings'
+export interface NavSection {
+  id: string
+  label: string
+  items: Array<{
+    id: View
+    label: string
+    children?: Array<{
+      id: View
+      label: string
+    }>
+  }>
+}
 
 export interface UserProfile {
   company_name: string
@@ -42,13 +62,26 @@ export interface GtmContentIdea {
   id: string
   lead_id: string | null
   account_id: string | null
-  content_type: 'linkedin_post' | 'newsletter_blurb' | 'campaign_brief' | 'sales_enablement_note'
+  content_type: 'x_post' | 'linkedin_post' | 'blog_article' | 'video_script' | 'newsletter_blurb' | 'campaign_brief' | 'sales_enablement_note'
+  channel?: 'social' | 'written' | 'video' | 'campaign' | string
+  target_platform?: string | null
+  origin?: 'suggested' | 'custom' | string
   audience: string
   angle: string
+  pillar?: string | null
+  idea_format?: string | null
+  why_now?: string | null
   proof_points: Array<{ label: string; value: string }>
+  source_insights?: Array<{ label: string; value: string }>
   pain_category: string
+  score?: number
+  scoring_debug?: Record<string, unknown>
   status: 'new' | 'drafted' | 'approved' | 'dismissed'
   draft: Record<string, unknown>
+  custom_prompt?: string | null
+  source_assets?: Array<{ label: string; value: string }>
+  scheduled_for?: string | null
+  published_at?: string | null
   created_at: string
 }
 

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { MAX_CONNECTED_SENDING_ACCOUNTS } from '@/lib/oauth/connected-accounts'
 import WatchlistManager from '@/components/WatchlistManager'
-import type { UserProfile, ConnectedAccount, SequenceTemplateRow, BlockedCompany } from './types'
+import type { UserProfile, ConnectedAccount, BlockedCompany } from './types'
 import { SectionHeader } from './shared'
 
 interface Props {
@@ -50,7 +50,19 @@ export default function SettingsView({ profile }: Props) {
         </h2>
         <div className="space-y-4">
           <ConnectedAccountsPanel />
-          <SequenceTemplatesPanel />
+        </div>
+      </div>
+
+      {/* Integrations */}
+      <div className="space-y-1">
+        <h2 className="px-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-4)] flex items-center gap-2">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Integrations
+        </h2>
+        <div className="space-y-4">
+          <SlackPanel profile={profile} />
         </div>
       </div>
     </div>
@@ -248,68 +260,53 @@ function ConnectedAccountsPanel() {
   )
 }
 
-function SequenceTemplatesPanel() {
-  const [templates, setTemplates] = useState<SequenceTemplateRow[]>([])
-  const [loading, setLoading] = useState(true)
+function SlackPanel({ profile }: { profile: UserProfile }) {
+  const [url, setUrl] = useState(profile.slack_webhook_url ?? '')
+  const [minScore, setMinScore] = useState(profile.slack_min_score ?? 7)
   const [saving, setSaving] = useState(false)
-  const [name, setName] = useState('Default')
-  const [instructions, setInstructions] = useState('')
-  const [followupInstructions, setFollowupInstructions] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try { const res = await fetch('/api/sequence-templates'); const data = await res.json() as { templates?: SequenceTemplateRow[] }; setTemplates(data.templates ?? []) }
-    finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  async function saveTemplate() {
+  async function save() {
     setSaving(true)
+    setMsg(null)
     try {
-      const res = await fetch('/api/sequence-templates', {
+      const res = await fetch('/api/settings/slack-webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, custom_instructions: instructions, followup_custom_instructions: followupInstructions, is_default: true }),
+        body: JSON.stringify({ slack_webhook_url: url || null, slack_min_score: minScore }),
       })
-      if (res.ok) { setInstructions(''); setFollowupInstructions(''); await load() }
-    } finally { setSaving(false) }
-  }
-
-  async function makeDefault(id: string) {
-    setSaving(true)
-    try { await fetch('/api/sequence-templates', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, is_default: true }) }); await load() }
+      if (!res.ok) { setMsg('Failed to save.'); return }
+      setMsg('Saved.')
+    } catch { setMsg('Failed to save.') }
     finally { setSaving(false) }
   }
 
   return (
     <div className="card divide-y divide-[var(--color-line-1)] shadow-sm overflow-hidden">
-      <SectionHeader title="Sequence Templates" subtitle="Reusable guidance injected into draft generation." />
+      <SectionHeader title="Slack Alerts" subtitle="Get notified when a high-quality lead is ready for review." />
       <div className="px-5 py-4 space-y-3">
-        <input value={name} onChange={e => setName(e.target.value)} className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all" placeholder="Template name" />
-        <textarea value={instructions} onChange={e => setInstructions(e.target.value)} className="w-full min-h-[80px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all" placeholder="Initial email guidance, tone, CTA, positioning…" />
-        <textarea value={followupInstructions} onChange={e => setFollowupInstructions(e.target.value)} className="w-full min-h-[80px] px-3 py-2 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all" placeholder="Follow-up guidance, objection handling, CTA…" />
-        <button onClick={saveTemplate} disabled={saving || !name.trim()} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full btn-primary text-xs disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] transition-transform">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-          Save as default
-        </button>
-        {loading ? <p className="text-xs text-[var(--color-text-4)]">Loading…</p> : (
-          <div className="space-y-2">
-            {templates.map(t => (
-              <div key={t.id} className="rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2 hover:shadow-sm transition-shadow">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold text-[var(--color-text-1)]">{t.name}</p>
-                    <p className="text-[11px] text-[var(--color-text-4)]">{t.is_default ? 'Default template' : 'Saved template'}</p>
-                  </div>
-                  {!t.is_default && <button onClick={() => makeDefault(t.id)} className="text-[11px] text-[var(--color-accent-ring)] hover:text-[var(--color-accent)] transition-colors">Make default</button>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <label className="space-y-1.5">
+          <span className="text-xs font-semibold text-[var(--color-text-1)]">Webhook URL</span>
+          <input
+            type="url"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            placeholder="https://hooks.slack.com/services/..."
+            className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
+          />
+        </label>
+        <label className="space-y-1.5">
+          <span className="text-xs font-semibold text-[var(--color-text-1)]">Minimum score</span>
+          <select value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-full h-9 px-3 rounded-lg bg-[var(--color-ink-2)] border border-[var(--color-line-2)] text-[12.5px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map(s => <option key={s} value={s}>{s}+</option>)}
+          </select>
+        </label>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[11px] text-[var(--color-text-4)]">{msg ?? ''}</span>
+          <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] transition-transform">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
       </div>
     </div>
   )

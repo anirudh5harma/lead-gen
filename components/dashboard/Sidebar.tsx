@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
-import type { View } from './types'
+import type { View, NavSection } from './types'
 
 interface SidebarProps {
   companyName: string
@@ -11,75 +11,98 @@ interface SidebarProps {
   onNavigate: (view: View) => void
 }
 
-const NAV: { id: View; label: string; icon: React.ReactNode }[] = [
+const SECTIONS: NavSection[] = [
   {
-    id: 'inbox',
-    label: 'Work',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M22 6l-10 7L2 6" />
-      </svg>
-    ),
+    id: 'sales', label: 'Sales',
+    items: [
+      { id: 'sales/inbox', label: 'Work Inbox' },
+      { id: 'sales/explore', label: 'Explore' },
+      { id: 'sales/outreach', label: 'Outreach' },
+    ],
   },
   {
-    id: 'insights',
-    label: 'Insights',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 15l3-3 3 2 5-7" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M18 7h-4" />
-      </svg>
-    ),
+    id: 'marketing', label: 'Marketing',
+    items: [
+      {
+        id: 'marketing/content',
+        label: 'Content Hub',
+        children: [
+          { id: 'marketing/content', label: 'Overview' },
+          { id: 'marketing/content/posts', label: 'Posts' },
+          { id: 'marketing/content/blogs', label: 'Blogs' },
+          { id: 'marketing/content/videos', label: 'Videos' },
+        ],
+      },
+      { id: 'marketing/campaigns', label: 'Campaigns' },
+      { id: 'marketing/audience', label: 'Audience' },
+    ],
   },
   {
-    id: 'marketing',
-    label: 'Marketing',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h9l1 3h6v9h-7l-1-3H4" />
-      </svg>
-    ),
+    id: 'revenue', label: 'Revenue',
+    items: [
+      { id: 'revenue/pipeline', label: 'Pipeline' },
+      { id: 'revenue/analytics', label: 'Analytics' },
+    ],
   },
   {
-    id: 'accounts',
-    label: 'Accounts',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 00-3-3.87" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 010 7.75" />
-      </svg>
-    ),
-  },
-  {
-    id: 'autopilot',
-    label: 'Engine',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 2a10 10 0 100 20 10 10 0 000-20z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
-      </svg>
-    ),
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: (
-      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-    ),
+    id: 'engine', label: 'Engine',
+    items: [
+      { id: 'engine/autopilot', label: 'Autopilot' },
+      { id: 'engine/coverage', label: 'Coverage' },
+      { id: 'engine/sequences', label: 'Sequences' },
+    ],
   },
 ]
+
+const TOP_ITEMS: Array<{ id: View; label: string }> = [
+  { id: 'home', label: 'Home' },
+]
+
+const BOTTOM_ITEMS: Array<{ id: View; label: string }> = [
+  { id: 'accounts', label: 'Accounts' },
+  { id: 'settings', label: 'Settings' },
+]
+
+function getViewIcon(view: View): React.ReactNode {
+  switch (view) {
+    case 'home':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+    case 'sales/inbox':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><path strokeLinecap="round" strokeLinejoin="round" d="M22 6l-10 7L2 6" /></svg>
+    case 'sales/outreach':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+    case 'sales/explore':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><circle cx="11" cy="11" r="8" /><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" /></svg>
+    case 'marketing/content':
+    case 'marketing/content/posts':
+    case 'marketing/content/blogs':
+    case 'marketing/content/videos':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5" /><path strokeLinecap="round" strokeLinejoin="round" d="M4 5h9l1 3h6v9h-7l-1-3H4" /></svg>
+    case 'marketing/campaigns':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+    case 'marketing/audience':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 00-3-3.87" /><path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 010 7.75" /></svg>
+    case 'revenue/pipeline':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+    case 'revenue/analytics':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" /><path strokeLinecap="round" strokeLinejoin="round" d="M7 15l3-3 3 2 5-7" /><path strokeLinecap="round" strokeLinejoin="round" d="M18 7h-4" /></svg>
+    case 'accounts':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 00-3-3.87" /><path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 010 7.75" /></svg>
+    case 'engine/autopilot':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 2a10 10 0 100 20 10 10 0 000-20z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" /></svg>
+    case 'engine/coverage':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    case 'engine/sequences':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+    case 'settings':
+      return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+  }
+}
 
 export default function Sidebar({ companyName, userEmail, activeView, onNavigate }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['sales']))
 
   useEffect(() => {
     function onResize() {
@@ -89,8 +112,35 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  useEffect(() => {
+    const parentSection = SECTIONS.find(s => activeView.startsWith(s.id + '/'))
+    if (parentSection) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpenSections(prev => {
+        if (prev.has(parentSection.id)) return prev
+        return new Set(prev).add(parentSection.id)
+      })
+    }
+  }, [activeView])
+
+  function toggleSection(sectionId: string) {
+    setOpenSections(prev => {
+      const next = new Set(prev)
+      if (next.has(sectionId)) next.delete(sectionId)
+      else next.add(sectionId)
+      return next
+    })
+  }
+
   const initial = (companyName || userEmail || 'U').charAt(0).toUpperCase()
   const widthClass = collapsed ? 'md:w-[68px]' : 'md:w-[220px]'
+
+  function navItemClass(active: boolean, compact = false) {
+    if (compact) {
+      return `w-full flex items-center justify-center h-9 rounded-lg text-[13px] font-medium transition-colors ${active ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]' : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'}`
+    }
+    return `w-full flex items-center h-9 rounded-lg text-[13px] font-medium transition-colors gap-2.5 px-2.5 ${active ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]' : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'}`
+  }
 
   return (
     <>
@@ -134,27 +184,125 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
           </button>
         </div>
 
-        <nav className="flex-1 px-2.5 pt-3 pb-2 space-y-0.5 overflow-y-auto">
-          {NAV.map(item => {
-            const active = activeView === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => { onNavigate(item.id); setMobileOpen(false) }}
-                title={collapsed ? item.label : undefined}
-                className={`
-                  w-full flex items-center h-9 rounded-lg text-[13px] font-medium transition-colors
-                  ${collapsed ? 'justify-center gap-0 px-0' : 'gap-2.5 px-2.5'}
-                  ${active
-                    ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
-                    : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'}
-                `}
-              >
-                <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{item.icon}</span>
-                {!collapsed && <span>{item.label}</span>}
-              </button>
-            )
-          })}
+        <nav className="flex-1 px-2.5 pt-3 pb-2 overflow-y-auto space-y-0.5">
+          {!collapsed ? (
+            <>
+              {TOP_ITEMS.map(item => {
+                const active = activeView === item.id
+                return (
+                  <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }} className={navItemClass(active)}>
+                    <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+
+              <div className="h-3" />
+
+              {SECTIONS.map(section => {
+                const sectionOpen = openSections.has(section.id)
+                return (
+                  <div key={section.id}>
+                    <button
+                      onClick={() => toggleSection(section.id)}
+                      className="w-full flex items-center h-8 rounded-md text-[10.5px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)] hover:text-[var(--color-text-2)] transition-colors gap-1.5 px-1.5"
+                    >
+                      <svg
+                        width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}
+                        className={`transition-transform duration-150 ${sectionOpen ? 'rotate-90' : ''}`}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                      {section.label}
+                    </button>
+
+                    {sectionOpen && (
+                      <div className="space-y-0.5 mt-0.5 mb-1.5">
+                        {section.items.map(item => {
+                          const active = activeView === item.id || Boolean(item.children?.some(child => child.id === activeView))
+                          return (
+                            <div key={item.id}>
+                              <button onClick={() => { onNavigate(item.id); setMobileOpen(false) }} className={`${navItemClass(active)} pl-5 pr-2.5`}>
+                                <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
+                                <span>{item.label}</span>
+                              </button>
+                              {item.children && active && (
+                                <div className="ml-7 mt-0.5 space-y-0.5 border-l border-[var(--color-line-1)] pl-2">
+                                  {item.children.map(child => {
+                                    const childActive = activeView === child.id
+                                    return (
+                                      <button
+                                        key={child.id}
+                                        onClick={() => { onNavigate(child.id); setMobileOpen(false) }}
+                                        className={`w-full flex h-7 items-center rounded-md px-2 text-left text-[12px] font-medium transition-colors ${
+                                          childActive
+                                            ? 'bg-white text-[var(--color-text-1)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+                                            : 'text-[var(--color-text-3)] hover:bg-[var(--color-ink-3)] hover:text-[var(--color-text-1)]'
+                                        }`}
+                                      >
+                                        {child.label}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              <div className="h-3" />
+
+              {BOTTOM_ITEMS.map(item => {
+                const active = activeView === item.id
+                return (
+                  <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }} className={navItemClass(active)}>
+                    <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </>
+          ) : (
+            <>
+              {TOP_ITEMS.map(item => {
+                const active = activeView === item.id
+                return (
+                  <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }} title={item.label} className={navItemClass(active, true)}>
+                    <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
+                  </button>
+                )
+              })}
+
+              <div className="h-1.5" />
+
+              {SECTIONS.map(section =>
+                section.items.flatMap(item => [item, ...(item.children ?? [])]).map(item => {
+                  const active = activeView === item.id
+                  return (
+                    <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }} title={item.label} className={navItemClass(active, true)}>
+                      <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
+                    </button>
+                  )
+                })
+              )}
+
+              <div className="h-1.5" />
+
+              {BOTTOM_ITEMS.map(item => {
+                const active = activeView === item.id
+                return (
+                  <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }} title={item.label} className={navItemClass(active, true)}>
+                    <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
+                  </button>
+                )
+              })}
+            </>
+          )}
         </nav>
 
         <div className="px-2.5 py-2.5 border-t border-[var(--color-line-1)] shrink-0">
