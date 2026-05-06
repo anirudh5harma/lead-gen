@@ -19,6 +19,7 @@ import { buildRecipientGroup, ensureBodyGreetsRecipients } from '../lib/outreach
 import { isSafeToSend } from '../lib/email-finder/zeroBounce.ts'
 import { accountKey, bodyPreview, normalizeDomain, personKey, signalKey } from '../lib/gtm/identity.ts'
 import { buildContextQuery, normalizeEmbeddingContent, stableContentHash } from '../lib/gtm/semantic-context.ts'
+import { applyDailySuggestionCaps, dailySuggestionDate, normalizeDraftSettings, tabForContentType } from '../lib/gtm/content-planning.ts'
 import { compareCachedContactRows, isCandidateSafeWithoutVerification, shouldShortCircuitEnrichmentFailure } from '../lib/email-finder/enrich-helpers.ts'
 import { buildCrmExportRecord, mapCrmImportRecord, normalizeCrmProvider } from '../lib/crm-sync.ts'
 import { buildFeedSessionLabel } from '../lib/feed-sessions.ts'
@@ -133,6 +134,47 @@ test('lead quota decision does not reserve bundled unlocks in PAYG mode', () => 
     used: 9,
     monthlyLimit: 10,
   }), 'preview')
+})
+
+test('marketing suggestion date respects workspace timezone', () => {
+  const now = new Date('2026-05-06T20:30:00.000Z')
+  assert.equal(dailySuggestionDate(now, 'Asia/Kolkata'), '2026-05-07')
+  assert.equal(dailySuggestionDate(now, 'UTC'), '2026-05-06')
+})
+
+test('marketing daily caps are enforced per content tab', () => {
+  const items = [
+    ...Array.from({ length: 6 }, (_, index) => ({ idea: { contentType: 'linkedin_post' as const }, id: `post_${index}` })),
+    ...Array.from({ length: 4 }, (_, index) => ({ idea: { contentType: 'blog_article' as const }, id: `blog_${index}` })),
+    ...Array.from({ length: 3 }, (_, index) => ({ idea: { contentType: 'video_script' as const }, id: `video_${index}` })),
+  ]
+
+  const capped = applyDailySuggestionCaps(items, { posts: 5, blogs: 2, videos: 1 })
+  assert.equal(capped.filter(item => tabForContentType(item.idea.contentType) === 'posts').length, 5)
+  assert.equal(capped.filter(item => tabForContentType(item.idea.contentType) === 'blogs').length, 2)
+  assert.equal(capped.filter(item => tabForContentType(item.idea.contentType) === 'videos').length, 1)
+  assert.deepEqual(capped.filter(item => item.idea.contentType === 'linkedin_post').map(item => item.rank), [1, 2, 3, 4, 5])
+})
+
+test('marketing draft settings normalize platform-specific controls', () => {
+  const settings = normalizeDraftSettings({
+    platform: 'instagram',
+    wordTarget: 99999,
+    emojiLevel: 'expressive',
+    linkMode: 'inline',
+    imageMode: 'required',
+    voice: 'founder',
+    durationSeconds: 2,
+    aspectRatio: '9:16',
+    aiLabel: false,
+  }, 'video_script')
+
+  assert.equal(settings.platform, 'instagram')
+  assert.equal(settings.wordTarget, 5000)
+  assert.equal(settings.durationSeconds, 5)
+  assert.equal(settings.emojiLevel, 'expressive')
+  assert.equal(settings.aspectRatio, '9:16')
+  assert.equal(settings.aiLabel, false)
 })
 
 test('follow-up scheduling stays exactly three days out by default', () => {

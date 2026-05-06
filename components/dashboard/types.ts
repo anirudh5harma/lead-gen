@@ -77,6 +77,9 @@ export interface GtmContentIdea {
   channel?: 'social' | 'written' | 'video' | 'campaign' | string
   target_platform?: string | null
   origin?: 'suggested' | 'custom' | string
+  tab?: 'posts' | 'blogs' | 'videos' | null
+  batch_date?: string | null
+  suggestion_rank?: number | null
   audience: string
   angle: string
   pillar?: string | null
@@ -89,8 +92,12 @@ export interface GtmContentIdea {
   scoring_debug?: Record<string, unknown>
   status: 'new' | 'drafted' | 'approved' | 'dismissed'
   draft: Record<string, unknown>
+  draft_settings?: Record<string, unknown>
+  final_body?: string | null
   custom_prompt?: string | null
   source_assets?: Array<{ label: string; value: string }>
+  media_assets?: Array<{ label: string; value: string }>
+  compliance_flags?: Record<string, unknown>
   scheduled_for?: string | null
   published_at?: string | null
   created_at: string

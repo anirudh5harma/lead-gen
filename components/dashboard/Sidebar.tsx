@@ -119,7 +119,6 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
   useEffect(() => {
     const parentSection = SECTIONS.find(s => activeView.startsWith(s.id + '/'))
     if (parentSection) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpenSections(prev => {
         if (prev.has(parentSection.id)) return prev
         return new Set(prev).add(parentSection.id)

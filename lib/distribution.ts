@@ -300,18 +300,19 @@ export async function publishDueDistributionJobs(
     try {
       const [{ data: account }, { data: idea }] = await Promise.all([
         supabase.from('connected_distribution_accounts').select('*').eq('id', accountId).maybeSingle(),
-        supabase.from('gtm_content_ideas').select('id, angle, content_type, draft, proof_points, source_assets').eq('id', ideaId).maybeSingle(),
+        supabase.from('gtm_content_ideas').select('id, angle, content_type, draft, proof_points, source_assets, media_assets, compliance_flags').eq('id', ideaId).maybeSingle(),
       ])
       if (!account || !idea) throw new Error('Distribution account or content idea no longer exists.')
       const refreshed = await refreshDistributionAccount(account as DistributionAccount, supabase)
       const draft = normalizeRecord((idea as Record<string, unknown>).draft)
       const sourceAssets = normalizeProofPoints((idea as Record<string, unknown>).source_assets)
+      const mediaAssets = normalizeProofPoints((idea as Record<string, unknown>).media_assets)
       const result = await publishToDistributionProvider({
         account: refreshed,
         title: stringValue(draft.title) || stringValue((idea as Record<string, unknown>).angle),
         text: stringValue(draft.body) || stringValue((idea as Record<string, unknown>).angle),
-        mediaUrl: sourceAssets.find(asset => /^https?:\/\//i.test(asset.value))?.value ?? null,
-        metadata: { content_idea_id: ideaId },
+        mediaUrl: [...mediaAssets, ...sourceAssets].find(asset => /^https?:\/\//i.test(asset.value))?.value ?? null,
+        metadata: { content_idea_id: ideaId, compliance_flags: normalizeRecord((idea as Record<string, unknown>).compliance_flags) },
       })
       await supabase.from('content_distribution_jobs').update({
         status: 'published',
@@ -511,9 +512,12 @@ async function publishInstagram(input: DistributionPublishInput): Promise<Distri
   if (!input.mediaUrl) throw new Error('Instagram publishing requires a public image/video URL in source assets.')
   const igId = input.account.provider_account_id
   const token = input.account.access_token ?? ''
+  const mediaParams: Record<string, string> = /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(input.mediaUrl)
+    ? { media_type: 'REELS', video_url: input.mediaUrl, caption: input.text.slice(0, 2200), access_token: token }
+    : { image_url: input.mediaUrl, caption: input.text.slice(0, 2200), access_token: token }
   const media = await fetch(`https://graph.facebook.com/v20.0/${igId}/media`, {
     method: 'POST',
-    body: new URLSearchParams({ image_url: input.mediaUrl, caption: input.text.slice(0, 2200), access_token: token }),
+    body: new URLSearchParams(mediaParams),
   }).then(res => res.json() as Promise<{ id?: string; error?: { message?: string } }>)
   if (!media.id) throw new Error(media.error?.message || 'Instagram media container creation failed')
   const publish = await fetch(`https://graph.facebook.com/v20.0/${igId}/media_publish`, {
@@ -536,6 +540,7 @@ async function publishTikTok(input: DistributionPublishInput): Promise<Distribut
         disable_duet: false,
         disable_comment: false,
         disable_stitch: false,
+        is_aigc: normalizeRecord(input.metadata).compliance_flags ? Boolean(normalizeRecord(normalizeRecord(input.metadata).compliance_flags).requires_ai_label) : false,
       },
       source_info: { source: 'PULL_FROM_URL', video_url: input.mediaUrl },
     }),

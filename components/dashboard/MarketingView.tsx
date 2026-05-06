@@ -6,6 +6,7 @@ import type { GtmContentIdea } from './types'
 interface MarketingPayload {
   ideas: GtmContentIdea[]
   metrics: Record<string, number>
+  preferences?: Array<{ tab: Exclude<HubTab, 'overview'>; settings: Partial<DraftSettings>; time_zone: string }>
 }
 
 interface DistributionProvider {
@@ -37,6 +38,23 @@ type ChannelTab = 'all' | 'social' | 'written' | 'video' | 'campaign'
 type SourceMode = 'suggested' | 'custom'
 type MarketingContentType = GtmContentIdea['content_type']
 type HubTab = 'overview' | 'posts' | 'blogs' | 'videos'
+type DraftSettings = {
+  platform: string
+  wordTarget: number
+  tone: string
+  cta: string
+  emojiLevel: 'none' | 'light' | 'expressive'
+  linkMode: 'none' | 'inline' | 'end'
+  imageMode: 'none' | 'optional' | 'required'
+  voice: 'founder' | 'company' | 'operator'
+  seoIntent?: string
+  outlineDepth?: 'brief' | 'standard' | 'detailed'
+  durationSeconds?: number
+  avatarStyle?: string
+  hookType?: string
+  aspectRatio?: '1:1' | '4:5' | '9:16' | '16:9'
+  aiLabel?: boolean
+}
 
 const HUB_TABS: Array<{ id: HubTab; label: string; description: string }> = [
   { id: 'overview', label: 'Overview', description: 'Calendar, readiness, and distribution mix' },
@@ -78,8 +96,16 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
   const [sourceMode, setSourceMode] = useState<SourceMode>('suggested')
   const [customType, setCustomType] = useState<MarketingContentType>('linkedin_post')
   const [customPrompt, setCustomPrompt] = useState('')
+  const [customBody, setCustomBody] = useState('')
   const [assetText, setAssetText] = useState('')
+  const [customScheduleAt, setCustomScheduleAt] = useState('')
+  const [showBacklog, setShowBacklog] = useState(false)
   const [scheduleFor, setScheduleFor] = useState<Record<string, string>>({})
+  const [draftSettings, setDraftSettings] = useState<Record<Exclude<HubTab, 'overview'>, DraftSettings>>({
+    posts: defaultDraftSettings('posts'),
+    blogs: defaultDraftSettings('blogs'),
+    videos: defaultDraftSettings('videos'),
+  })
   const [distribution, setDistribution] = useState<DistributionPayload>({ providers: [], accounts: [] })
 
   async function load(options?: { refresh?: boolean; initial?: boolean }) {
@@ -87,10 +113,27 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
     if (options?.initial ?? !refresh) setLoading(true)
     if (refresh) setRefreshingIdeas(true)
     setError(null)
-    const res = await fetch(`/api/gtm/content?limit=80${refresh ? '&refresh=1' : ''}`)
+    const params = new URLSearchParams({ limit: hub === 'overview' ? '80' : '40', tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' })
+    if (refresh) params.set('refresh', '1')
+    if (hub !== 'overview') params.set('tab', hub)
+    if (hub !== 'overview' && showBacklog) params.set('today', '0')
+    const res = await fetch(`/api/gtm/content?${params.toString()}`)
     const data = await res.json().catch(() => null) as MarketingPayload & { error?: string } | null
     if (!res.ok) setError(data?.error ?? 'Could not load marketing content.')
-    else setPayload({ ideas: data?.ideas ?? [], metrics: data?.metrics ?? {} })
+    else {
+      setPayload({ ideas: data?.ideas ?? [], metrics: data?.metrics ?? {}, preferences: data?.preferences ?? [] })
+      if (data?.preferences?.length) {
+        setDraftSettings(current => {
+          const next = { ...current }
+          for (const pref of data.preferences ?? []) {
+            if (pref.tab === 'posts' || pref.tab === 'blogs' || pref.tab === 'videos') {
+              next[pref.tab] = { ...next[pref.tab], ...pref.settings }
+            }
+          }
+          return next
+        })
+      }
+    }
     setLoading(false)
     if (refresh) setRefreshingIdeas(false)
     return data?.ideas ?? []
@@ -122,7 +165,9 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
       void loadDistribution()
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [])
+    // load is intentionally scoped to the active marketing hub/backlog mode.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hub, showBacklog])
 
   const activeIdeas = useMemo(() => payload.ideas.filter(idea => idea.status !== 'dismissed'), [payload.ideas])
   const hubIdeas = useMemo(() => filterIdeasForHub(activeIdeas, hub), [activeIdeas, hub])
@@ -138,7 +183,7 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
     const res = await fetch('/api/gtm/content', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idea_id: ideaId, action }),
+      body: JSON.stringify({ idea_id: ideaId, action, draft_settings: hub === 'overview' ? undefined : draftSettings[hub] }),
     })
     const data = await res.json().catch(() => null) as { error?: string } | null
     if (!res.ok) setError(data?.error ?? 'Could not update content idea.')
@@ -147,7 +192,7 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
   }
 
   async function createCustomContent() {
-    if (customPrompt.trim().length < 8 || busyId) return
+    if ((customPrompt.trim().length < 8 && customBody.trim().length < 2) || busyId) return
     setBusyId('custom')
     setError(null)
     const assets = assetText
@@ -161,14 +206,19 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
         action: 'create_custom',
         content_type: effectiveCustomType,
         prompt: customPrompt,
+        raw_body: customBody,
         assets,
+        draft_settings: hub === 'overview' ? undefined : draftSettings[hub],
+        scheduled_for: customScheduleAt ? new Date(customScheduleAt).toISOString() : undefined,
       }),
     })
     const data = await res.json().catch(() => null) as { error?: string } | null
     if (!res.ok) setError(data?.error ?? 'Could not create custom content.')
     else {
       setCustomPrompt('')
+      setCustomBody('')
       setAssetText('')
+      setCustomScheduleAt('')
       setSourceMode('custom')
       await load()
     }
@@ -187,10 +237,60 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
         idea_id: idea.id,
         action: 'schedule',
         scheduled_for: new Date(value).toISOString(),
+        draft_settings: hub === 'overview' ? undefined : draftSettings[hub],
       }),
     })
     const data = await res.json().catch(() => null) as { error?: string } | null
     if (!res.ok) setError(data?.error ?? 'Could not schedule content.')
+    await load()
+    setBusyId(null)
+  }
+
+  async function saveDraftSettings(tab: Exclude<HubTab, 'overview'>, settings: DraftSettings) {
+    setDraftSettings(current => ({ ...current, [tab]: settings }))
+    await fetch('/api/gtm/content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update_draft_settings',
+        tab,
+        draft_settings: settings,
+        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      }),
+    }).catch(() => null)
+  }
+
+  async function uploadAsset(file: File, ideaId?: string | null): Promise<string | null> {
+    if (busyId) return null
+    setBusyId(ideaId ?? 'asset')
+    setError(null)
+    const form = new FormData()
+    form.set('file', file)
+    form.set('label', file.name)
+    if (ideaId) form.set('idea_id', ideaId)
+    const res = await fetch('/api/gtm/content/assets', { method: 'POST', body: form })
+    const data = await res.json().catch(() => null) as { error?: string; asset?: { url?: string | null } } | null
+    if (!res.ok) {
+      setError(data?.error ?? 'Could not upload asset.')
+      setBusyId(null)
+      return null
+    }
+    if (ideaId) await load()
+    setBusyId(null)
+    return data?.asset?.url ?? null
+  }
+
+  async function prepareAvatarVideo(ideaId: string) {
+    if (busyId) return
+    setBusyId(ideaId)
+    setError(null)
+    const res = await fetch('/api/gtm/content/video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idea_id: ideaId, settings: draftSettings.videos }),
+    })
+    const data = await res.json().catch(() => null) as { error?: string } | null
+    if (!res.ok) setError(data?.error ?? 'Could not prepare avatar video.')
     await load()
     setBusyId(null)
   }
@@ -229,13 +329,23 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
           customType={effectiveCustomType}
           customPrompt={customPrompt}
           assetText={assetText}
+          customBody={customBody}
+          customScheduleAt={customScheduleAt}
+          draftSettings={draftSettings[hub]}
+          showBacklog={showBacklog}
           loading={loading}
           busyId={busyId}
           scheduleFor={scheduleFor}
           onSourceMode={setSourceMode}
           onCustomType={setCustomType}
           onPrompt={setCustomPrompt}
+          onCustomBody={setCustomBody}
           onAssets={setAssetText}
+          onCustomScheduleAt={setCustomScheduleAt}
+          onDraftSettings={settings => { void saveDraftSettings(hub, settings) }}
+          onShowBacklog={setShowBacklog}
+          onUploadAsset={uploadAsset}
+          onPrepareAvatarVideo={prepareAvatarVideo}
           onCreate={createCustomContent}
           onScheduleValue={(ideaId, value) => setScheduleFor(current => ({ ...current, [ideaId]: value }))}
           onSchedule={scheduleIdea}
@@ -341,13 +451,23 @@ function ContentTypeWorkspace({
   customType,
   customPrompt,
   assetText,
+  customBody,
+  customScheduleAt,
+  draftSettings,
+  showBacklog,
   loading,
   busyId,
   scheduleFor,
   onSourceMode,
   onCustomType,
   onPrompt,
+  onCustomBody,
   onAssets,
+  onCustomScheduleAt,
+  onDraftSettings,
+  onShowBacklog,
+  onUploadAsset,
+  onPrepareAvatarVideo,
   onCreate,
   onScheduleValue,
   onSchedule,
@@ -361,13 +481,23 @@ function ContentTypeWorkspace({
   customType: MarketingContentType
   customPrompt: string
   assetText: string
+  customBody: string
+  customScheduleAt: string
+  draftSettings: DraftSettings
+  showBacklog: boolean
   loading: boolean
   busyId: string | null
   scheduleFor: Record<string, string>
   onSourceMode: (value: SourceMode) => void
   onCustomType: (value: MarketingContentType) => void
   onPrompt: (value: string) => void
+  onCustomBody: (value: string) => void
   onAssets: (value: string) => void
+  onCustomScheduleAt: (value: string) => void
+  onDraftSettings: (value: DraftSettings) => void
+  onShowBacklog: (value: boolean) => void
+  onUploadAsset: (file: File, ideaId?: string | null) => Promise<string | null>
+  onPrepareAvatarVideo: (ideaId: string) => void
   onCreate: () => void
   onScheduleValue: (ideaId: string, value: string) => void
   onSchedule: (idea: GtmContentIdea) => void
@@ -375,12 +505,23 @@ function ContentTypeWorkspace({
   onApprove: (ideaId: string) => void
   onDismiss: (ideaId: string) => void
 }) {
-  const suggested = ideas.filter(idea => (idea.origin ?? 'suggested') !== 'custom' && idea.status === 'new')
+  const today = localDateKey(new Date())
+  const suggested = ideas.filter(idea =>
+    (idea.origin ?? 'suggested') !== 'custom' &&
+    idea.status === 'new' &&
+    (showBacklog || !idea.batch_date || idea.batch_date === today),
+  ).slice(0, showBacklog ? 20 : 5)
   const drafts = ideas.filter(idea => idea.status === 'drafted')
   const ready = ideas.filter(idea => idea.status === 'approved' || Boolean(idea.scheduled_for))
   const customItems = ideas.filter(idea => (idea.origin ?? 'suggested') === 'custom')
   const visibleSuggestions = sourceMode === 'suggested' ? suggested : customItems
   const availableTypes = CUSTOM_TYPES.filter(type => type.channel === hubToChannel(hub))
+  const hiddenBacklogCount = ideas.filter(idea =>
+    (idea.origin ?? 'suggested') !== 'custom' &&
+    idea.status === 'new' &&
+    idea.batch_date &&
+    idea.batch_date !== today,
+  ).length
 
   return (
     <section className="space-y-4">
@@ -388,14 +529,25 @@ function ContentTypeWorkspace({
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-[var(--color-text-1)]">{HUB_TABS.find(tab => tab.id === hub)?.label}</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">Move from ideas to drafts, then schedule the strongest assets.</p>
+            <p className="mt-1 text-xs text-[var(--color-text-4)]">Today shows at most 5 fresh ideas. Older ideas stay out of the way unless you open backlog.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button onClick={() => onSourceMode('suggested')} className={`rounded-lg px-3 py-2 text-[12px] font-semibold ${sourceMode === 'suggested' ? 'bg-[var(--color-text-1)] text-white' : 'border border-[var(--color-line-1)] bg-white text-[var(--color-text-2)]'}`}>Suggested</button>
             <button onClick={() => onSourceMode('custom')} className={`rounded-lg px-3 py-2 text-[12px] font-semibold ${sourceMode === 'custom' ? 'bg-[var(--color-text-1)] text-white' : 'border border-[var(--color-line-1)] bg-white text-[var(--color-text-2)]'}`}>Custom</button>
+            {sourceMode === 'suggested' && (
+              <button onClick={() => onShowBacklog(!showBacklog)} className="rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)]">
+                {showBacklog ? 'Hide backlog' : hiddenBacklogCount > 0 ? `Backlog ${hiddenBacklogCount}` : 'Backlog'}
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      <DraftCustomizationPanel
+        hub={hub}
+        settings={draftSettings}
+        onChange={onDraftSettings}
+      />
 
       {sourceMode === 'custom' && (
         <CustomContentPanel
@@ -403,10 +555,15 @@ function ContentTypeWorkspace({
           allowedTypes={availableTypes}
           customPrompt={customPrompt}
           assetText={assetText}
+          customBody={customBody}
+          customScheduleAt={customScheduleAt}
           busy={busyId === 'custom'}
           onType={onCustomType}
           onPrompt={onPrompt}
+          onCustomBody={onCustomBody}
           onAssets={onAssets}
+          onCustomScheduleAt={onCustomScheduleAt}
+          onUploadAsset={onUploadAsset}
           onCreate={onCreate}
         />
       )}
@@ -414,7 +571,7 @@ function ContentTypeWorkspace({
       {loading ? (
         <EmptyPanel text="Loading content workflow." />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,0.95fr)]">
           <ContentLane
             title={sourceMode === 'suggested' ? 'Suggested ideas' : 'Custom items'}
             empty={sourceMode === 'suggested' ? 'No suggested ideas in this category yet.' : 'No custom drafts in this category yet.'}
@@ -426,6 +583,8 @@ function ContentTypeWorkspace({
             onDraft={onDraft}
             onApprove={onApprove}
             onDismiss={onDismiss}
+            onUploadAsset={onUploadAsset}
+            onPrepareAvatarVideo={onPrepareAvatarVideo}
           />
           <ContentLane
             title="Drafts"
@@ -438,6 +597,8 @@ function ContentTypeWorkspace({
             onDraft={onDraft}
             onApprove={onApprove}
             onDismiss={onDismiss}
+            onUploadAsset={onUploadAsset}
+            onPrepareAvatarVideo={onPrepareAvatarVideo}
           />
           <ContentLane
             title="Ready and scheduled"
@@ -450,6 +611,8 @@ function ContentTypeWorkspace({
             onDraft={onDraft}
             onApprove={onApprove}
             onDismiss={onDismiss}
+            onUploadAsset={onUploadAsset}
+            onPrepareAvatarVideo={onPrepareAvatarVideo}
           />
         </div>
       )}
@@ -468,6 +631,8 @@ function ContentLane({
   onDraft,
   onApprove,
   onDismiss,
+  onUploadAsset,
+  onPrepareAvatarVideo,
 }: {
   title: string
   empty: string
@@ -479,6 +644,8 @@ function ContentLane({
   onDraft: (ideaId: string) => void
   onApprove: (ideaId: string) => void
   onDismiss: (ideaId: string) => void
+  onUploadAsset: (file: File, ideaId?: string | null) => Promise<string | null>
+  onPrepareAvatarVideo: (ideaId: string) => void
 }) {
   return (
     <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
@@ -501,6 +668,8 @@ function ContentLane({
               onDraft={() => onDraft(idea.id)}
               onApprove={() => onApprove(idea.id)}
               onDismiss={() => onDismiss(idea.id)}
+              onUploadAsset={file => onUploadAsset(file, idea.id)}
+              onPrepareAvatarVideo={() => onPrepareAvatarVideo(idea.id)}
             />
           ))}
         </div>
@@ -509,27 +678,157 @@ function ContentLane({
   )
 }
 
+function DraftCustomizationPanel({
+  hub,
+  settings,
+  onChange,
+}: {
+  hub: Exclude<HubTab, 'overview'>
+  settings: DraftSettings
+  onChange: (value: DraftSettings) => void
+}) {
+  const platformOptions = hub === 'posts'
+    ? ['linkedin', 'x']
+    : hub === 'blogs'
+      ? ['blog', 'linkedin', 'newsletter']
+      : ['tiktok', 'instagram']
+  const update = <K extends keyof DraftSettings>(key: K, value: DraftSettings[K]) => onChange({ ...settings, [key]: value })
+
+  return (
+    <section className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Platform</span>
+          <select value={settings.platform} onChange={event => update('platform', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
+            {platformOptions.map(option => <option key={option} value={option}>{titleCase(option)}</option>)}
+          </select>
+        </label>
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">{hub === 'videos' ? 'Duration' : 'Words'}</span>
+          <input
+            type="number"
+            min={hub === 'videos' ? 10 : 20}
+            max={hub === 'blogs' ? 3000 : hub === 'videos' ? 120 : 600}
+            value={hub === 'videos' ? settings.durationSeconds ?? 35 : settings.wordTarget}
+            onChange={event => hub === 'videos' ? update('durationSeconds', Number(event.target.value)) : update('wordTarget', Number(event.target.value))}
+            className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]"
+          />
+        </label>
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Tone</span>
+          <input value={settings.tone} onChange={event => update('tone', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
+        </label>
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">CTA</span>
+          <input value={settings.cta} onChange={event => update('cta', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
+        </label>
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Emoji</span>
+          <select value={settings.emojiLevel} onChange={event => update('emojiLevel', event.target.value as DraftSettings['emojiLevel'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
+            <option value="none">None</option>
+            <option value="light">Light</option>
+            <option value="expressive">Expressive</option>
+          </select>
+        </label>
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Links</span>
+          <select value={settings.linkMode} onChange={event => update('linkMode', event.target.value as DraftSettings['linkMode'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
+            <option value="none">No links</option>
+            <option value="inline">Inline</option>
+            <option value="end">At end</option>
+          </select>
+        </label>
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Images</span>
+          <select value={settings.imageMode} onChange={event => update('imageMode', event.target.value as DraftSettings['imageMode'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
+            <option value="none">None</option>
+            <option value="optional">Optional</option>
+            <option value="required">Required</option>
+          </select>
+        </label>
+        <label>
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Voice</span>
+          <select value={settings.voice} onChange={event => update('voice', event.target.value as DraftSettings['voice'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
+            <option value="founder">Founder</option>
+            <option value="company">Company</option>
+            <option value="operator">Operator</option>
+          </select>
+        </label>
+        {hub === 'blogs' && (
+          <>
+            <label>
+              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">SEO intent</span>
+              <input value={settings.seoIntent ?? ''} onChange={event => update('seoIntent', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
+            </label>
+            <label>
+              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Outline</span>
+              <select value={settings.outlineDepth ?? 'standard'} onChange={event => update('outlineDepth', event.target.value as DraftSettings['outlineDepth'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
+                <option value="brief">Brief</option>
+                <option value="standard">Standard</option>
+                <option value="detailed">Detailed</option>
+              </select>
+            </label>
+          </>
+        )}
+        {hub === 'videos' && (
+          <>
+            <label>
+              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Hook</span>
+              <input value={settings.hookType ?? ''} onChange={event => update('hookType', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
+            </label>
+            <label>
+              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Aspect</span>
+              <select value={settings.aspectRatio ?? '9:16'} onChange={event => update('aspectRatio', event.target.value as DraftSettings['aspectRatio'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
+                <option value="9:16">9:16</option>
+                <option value="4:5">4:5</option>
+                <option value="1:1">1:1</option>
+                <option value="16:9">16:9</option>
+              </select>
+            </label>
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function CustomContentPanel({
   customType,
   allowedTypes,
   customPrompt,
   assetText,
+  customBody,
+  customScheduleAt,
   busy,
   onType,
   onPrompt,
+  onCustomBody,
   onAssets,
+  onCustomScheduleAt,
+  onUploadAsset,
   onCreate,
 }: {
   customType: MarketingContentType
   allowedTypes?: Array<{ id: MarketingContentType; label: string; channel: ChannelTab }>
   customPrompt: string
   assetText: string
+  customBody: string
+  customScheduleAt: string
   busy: boolean
   onType: (value: MarketingContentType) => void
   onPrompt: (value: string) => void
+  onCustomBody: (value: string) => void
   onAssets: (value: string) => void
+  onCustomScheduleAt: (value: string) => void
+  onUploadAsset: (file: File, ideaId?: string | null) => Promise<string | null>
   onCreate: () => void
 }) {
+  async function uploadCustomFile(file: File | undefined) {
+    if (!file) return
+    const url = await onUploadAsset(file, null)
+    if (url) onAssets([assetText.trim(), url].filter(Boolean).join('\n\n'))
+  }
+
   return (
     <section className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm">
       <div className="grid gap-3 lg:grid-cols-[190px_minmax(0,1fr)]">
@@ -554,22 +853,50 @@ function CustomContentPanel({
         </label>
       </div>
       <label className="mt-3 block">
-        <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Assets or notes</span>
+        <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Content</span>
+        <textarea
+          value={customBody}
+          onChange={event => onCustomBody(event.target.value)}
+          rows={6}
+          placeholder="Type or paste your post, article, caption, or video notes. Leave empty if you want AI to draft from the prompt."
+          className="mt-1 w-full resize-none rounded-lg border border-[var(--color-line-2)] bg-white px-3 py-2 text-[12px] leading-relaxed text-[var(--color-text-1)]"
+        />
+      </label>
+      <label className="mt-3 block">
+        <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Links, images, videos, or notes</span>
         <textarea
           value={assetText}
           onChange={event => onAssets(event.target.value)}
           rows={4}
-          placeholder="Paste notes, positioning, transcript snippets, customer proof, or source material. Separate assets with a blank line."
+          placeholder="Paste URLs, image links, public video links, transcript snippets, customer proof, or source material. Separate assets with a blank line."
           className="mt-1 w-full resize-none rounded-lg border border-[var(--color-line-2)] bg-white px-3 py-2 text-[12px] leading-relaxed text-[var(--color-text-1)]"
         />
       </label>
-      <div className="mt-3 flex justify-end">
+      <label className="mt-3 inline-flex h-8 cursor-pointer items-center rounded-lg border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)]">
+        Upload asset
+        <input
+          type="file"
+          accept="image/*,video/*,application/pdf,text/plain"
+          className="sr-only"
+          onChange={event => { void uploadCustomFile(event.target.files?.[0]); event.currentTarget.value = '' }}
+        />
+      </label>
+      <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <label className="w-full md:max-w-[240px]">
+          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Schedule</span>
+          <input
+            type="datetime-local"
+            value={customScheduleAt}
+            onChange={event => onCustomScheduleAt(event.target.value)}
+            className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]"
+          />
+        </label>
         <button
           onClick={onCreate}
-          disabled={busy || customPrompt.trim().length < 8}
+          disabled={busy || (customPrompt.trim().length < 8 && customBody.trim().length < 2)}
           className="h-9 rounded-lg btn-primary px-4 text-[12px] font-semibold disabled:opacity-50"
         >
-          {busy ? 'Generating' : 'Generate draft'}
+          {busy ? 'Saving' : customScheduleAt ? 'Save and schedule' : customBody.trim() ? 'Save custom draft' : 'Generate draft'}
         </button>
       </div>
     </section>
@@ -585,6 +912,8 @@ function ContentCard({
   onDraft,
   onApprove,
   onDismiss,
+  onUploadAsset,
+  onPrepareAvatarVideo,
 }: {
   idea: GtmContentIdea
   busy: boolean
@@ -594,60 +923,110 @@ function ContentCard({
   onDraft: () => void
   onApprove: () => void
   onDismiss: () => void
+  onUploadAsset: (file: File) => Promise<string | null>
+  onPrepareAvatarVideo: () => void
 }) {
   const channel = idea.channel ?? channelForType(idea.content_type)
+  const primaryInsight = (idea.source_insights?.length ? idea.source_insights : idea.proof_points)[0]
+  const hasMedia = ((idea.media_assets?.length ?? 0) + (idea.source_assets?.length ?? 0)) > 0
   return (
     <article className="rounded-lg border border-[var(--color-line-1)] bg-white shadow-[0_1px_2px_#00000008] overflow-hidden">
       <div className="p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${STATUS_STYLES[idea.status] ?? STATUS_STYLES.new}`}>
-            {idea.status}
-          </span>
-          <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-text-3)]">
-            {TYPE_LABELS[idea.content_type] ?? idea.content_type.replace(/_/g, ' ')}
-          </span>
-          <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-text-3)]">
-            {channel}
-          </span>
-          <span className="text-[11px] text-[var(--color-text-3)]">{idea.audience}</span>
-          {typeof idea.score === 'number' && idea.score > 0 && (
-            <span className="ml-auto rounded-full bg-[#eef6f1] px-2 py-0.5 text-[10.5px] font-semibold text-[#2f6d46]">
-              {Math.round(idea.score)} fit
-            </span>
-          )}
-        </div>
+        <div className="flex items-start gap-3">
+          <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${dotClass(channel)}`} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[idea.status] ?? STATUS_STYLES.new}`}>
+                {idea.status}
+              </span>
+              <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-3)]">
+                {TYPE_LABELS[idea.content_type] ?? idea.content_type.replace(/_/g, ' ')}
+              </span>
+              {idea.batch_date && (
+                <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-3)]">
+                  {idea.batch_date}{idea.suggestion_rank ? ` #${idea.suggestion_rank}` : ''}
+                </span>
+              )}
+              {typeof idea.score === 'number' && idea.score > 0 && (
+                <span className="ml-auto rounded-full bg-[#eef6f1] px-2 py-0.5 text-[10px] font-semibold text-[#2f6d46]">
+                  {Math.round(idea.score)} fit
+                </span>
+              )}
+            </div>
 
-        <h3 className="mt-3 text-[14px] font-semibold leading-snug text-[var(--color-text-1)]">{idea.angle}</h3>
+            <h3 className="mt-2 text-[14px] font-semibold leading-snug text-[var(--color-text-1)]">{idea.angle}</h3>
 
-        {(idea.pillar || idea.idea_format || idea.why_now) && (
-          <div className="mt-3 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
-            <div className="flex flex-wrap gap-2 text-[10.5px] font-semibold text-[var(--color-text-3)]">
-              {idea.pillar && <span>{idea.pillar}</span>}
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10.5px] font-semibold text-[var(--color-text-3)]">
+              {idea.target_platform && <span>{titleCase(idea.target_platform)}</span>}
               {idea.idea_format && <span>{idea.idea_format}</span>}
+              {hasMedia && <span>media</span>}
             </div>
-            {idea.why_now && <p className="mt-1 text-[12px] leading-snug text-[var(--color-text-2)] line-clamp-2">{idea.why_now}</p>}
-          </div>
-        )}
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {(idea.source_insights?.length ? idea.source_insights : idea.proof_points).slice(0, 3).map(point => (
-            <div key={`${idea.id}:${point.label}`} className="rounded-md bg-[var(--color-ink-2)] px-3 py-2">
-              <p className="text-[10.5px] font-semibold uppercase text-[var(--color-text-3)]">{point.label}</p>
-              <p className="mt-1 text-[12px] leading-snug text-[var(--color-text-2)] line-clamp-2">{point.value}</p>
-            </div>
-          ))}
+            {primaryInsight && (
+              <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-[var(--color-text-2)]">
+                <span className="font-semibold text-[var(--color-text-3)]">{primaryInsight.label}: </span>{primaryInsight.value}
+              </p>
+            )}
+
+            {hasDraft(idea.draft) && (
+              <details className="mt-3 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
+                <summary className="cursor-pointer text-[12px] font-semibold text-[var(--color-text-1)]">{String(idea.draft.title ?? 'Draft')}</summary>
+                <p className="mt-2 max-h-44 overflow-auto whitespace-pre-line text-[12px] leading-relaxed text-[var(--color-text-2)]">{String(idea.draft.body ?? '')}</p>
+              </details>
+            )}
+
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[11px] font-semibold text-[var(--color-text-4)]">Details</summary>
+              <div className="mt-2 space-y-2">
+                {idea.why_now && <p className="text-[12px] leading-relaxed text-[var(--color-text-2)]">{idea.why_now}</p>}
+                <div className="grid gap-2">
+                  {(idea.source_insights?.length ? idea.source_insights : idea.proof_points).slice(0, 3).map((point, index) => (
+                    <div key={`${idea.id}:${point.label}:${index}:${point.value.slice(0, 24)}`} className="rounded-md bg-[var(--color-ink-2)] px-3 py-2">
+                      <p className="text-[10.5px] font-semibold uppercase text-[var(--color-text-3)]">{point.label}</p>
+                      <p className="mt-1 text-[12px] leading-snug text-[var(--color-text-2)] line-clamp-3">{point.value}</p>
+                    </div>
+                  ))}
+                </div>
+                {hasMedia && (
+                  <div className="flex flex-wrap gap-2">
+                    {[...(idea.media_assets ?? []), ...(idea.source_assets ?? [])].slice(0, 4).map(asset => (
+                      <a
+                        key={`${idea.id}:asset:${asset.label}:${asset.value}`}
+                        href={/^https?:\/\//i.test(asset.value) ? asset.value : undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-md border border-[var(--color-line-1)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)]"
+                      >
+                        {assetLabel(asset)}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </details>
+
+            <label className="mt-3 inline-flex h-7 cursor-pointer items-center rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">
+              Attach media
+              <input
+                type="file"
+                accept="image/*,video/*,application/pdf,text/plain"
+                className="sr-only"
+                onChange={event => {
+                  const file = event.target.files?.[0]
+                  if (file) void onUploadAsset(file)
+                  event.currentTarget.value = ''
+                }}
+              />
+            </label>
+          </div>
         </div>
-
-        {hasDraft(idea.draft) && (
-          <div className="mt-3 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-3">
-            <p className="text-[12px] font-semibold text-[var(--color-text-1)]">{String(idea.draft.title ?? 'Draft')}</p>
-            <p className="mt-2 whitespace-pre-line text-[12px] leading-relaxed text-[var(--color-text-2)]">{String(idea.draft.body ?? '')}</p>
-          </div>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-4 py-3">
         <button onClick={onDraft} disabled={busy} className="h-8 px-3 rounded-lg btn-primary text-[12px] font-semibold disabled:opacity-50">Draft</button>
+        {idea.content_type === 'video_script' && (
+          <button onClick={onPrepareAvatarVideo} disabled={busy || !hasDraft(idea.draft)} className="h-8 px-3 rounded-lg border border-[var(--color-line-1)] bg-white text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)] disabled:opacity-50">Avatar video</button>
+        )}
         <button onClick={onApprove} disabled={busy} className="h-8 px-3 rounded-lg border border-[var(--color-line-1)] bg-white text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)] disabled:opacity-50">Approve</button>
         <input
           type="datetime-local"
@@ -656,7 +1035,7 @@ function ContentCard({
           className="h-8 rounded-lg border border-[var(--color-line-1)] bg-white px-2 text-[11px] text-[var(--color-text-2)]"
         />
         <button onClick={onSchedule} disabled={busy || !scheduleValue} className="h-8 px-3 rounded-lg border border-[var(--color-line-1)] bg-white text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)] disabled:opacity-50">Schedule</button>
-        <button onClick={onDismiss} disabled={busy} className="h-8 px-3 rounded-lg text-[12px] font-semibold text-[var(--color-text-3)] hover:bg-white hover:text-[var(--color-text-1)] disabled:opacity-50">Dismiss</button>
+        <button onClick={onDismiss} disabled={busy} className="h-8 px-3 rounded-lg text-[12px] font-semibold text-[var(--color-text-3)] hover:bg-white hover:text-[var(--color-text-1)] disabled:opacity-50">Reject</button>
         {idea.scheduled_for && <span className="ml-auto text-[11px] text-[var(--color-text-3)]">Scheduled {formatShortDateTime(idea.scheduled_for)}</span>}
       </div>
     </article>
@@ -734,6 +1113,7 @@ function PlatformPanel({
 }
 
 function CalendarPanel({ days }: { days: Array<{ date: Date; items: GtmContentIdea[]; inMonth: boolean }> }) {
+  const upcoming = days.flatMap(day => day.items).sort((a, b) => new Date(a.scheduled_for ?? 0).getTime() - new Date(b.scheduled_for ?? 0).getTime()).slice(0, 8)
   return (
     <section className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm">
       <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Distribution calendar</h3>
@@ -742,16 +1122,36 @@ function CalendarPanel({ days }: { days: Array<{ date: Date; items: GtmContentId
       </div>
       <div className="mt-1 grid grid-cols-7 gap-1">
         {days.map(day => (
-          <div key={day.date.toISOString()} className={`min-h-14 rounded-md border px-1.5 py-1 ${day.inMonth ? 'border-[var(--color-line-1)] bg-white' : 'border-transparent bg-[var(--color-ink-1)] text-[var(--color-text-4)]'}`}>
+          <div key={day.date.toISOString()} className={`min-h-24 rounded-md border px-1.5 py-1 ${day.inMonth ? 'border-[var(--color-line-1)] bg-white' : 'border-transparent bg-[var(--color-ink-1)] text-[var(--color-text-4)]'}`}>
             <p className="text-[10px] font-semibold text-[var(--color-text-3)]">{day.date.getDate()}</p>
-            <div className="mt-1 flex flex-wrap gap-0.5">
-              {day.items.slice(0, 3).map(item => (
-                <span key={item.id} title={item.angle} className={`h-1.5 w-1.5 rounded-full ${dotClass(item.channel ?? channelForType(item.content_type))}`} />
+            <div className="mt-1 space-y-1">
+              {day.items.slice(0, 2).map(item => (
+                <div key={item.id} title={item.angle} className="min-w-0 rounded bg-[var(--color-ink-1)] px-1 py-0.5 text-left">
+                  <div className="flex items-center gap-1">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass(item.channel ?? channelForType(item.content_type))}`} />
+                    <span className="truncate text-[9.5px] font-semibold text-[var(--color-text-2)]">{formatCalendarTime(item.scheduled_for)} {platformLabel(item)}</span>
+                  </div>
+                  <p className="truncate text-[9.5px] text-[var(--color-text-4)]">{item.angle}</p>
+                </div>
               ))}
+              {day.items.length > 2 && <p className="text-[9.5px] font-semibold text-[var(--color-text-4)]">+{day.items.length - 2} more</p>}
             </div>
           </div>
         ))}
       </div>
+      {upcoming.length > 0 && (
+        <div className="mt-4 border-t border-[var(--color-line-1)] pt-3">
+          <h4 className="text-[12px] font-semibold text-[var(--color-text-2)]">Upcoming scheduled</h4>
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            {upcoming.map(item => (
+              <div key={`upcoming:${item.id}`} className="rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
+                <p className="truncate text-[12px] font-semibold text-[var(--color-text-1)]">{item.angle}</p>
+                <p className="mt-1 text-[11px] text-[var(--color-text-4)]">{formatShortDateTime(item.scheduled_for ?? '')} · {platformLabel(item)} · {item.status}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -802,6 +1202,16 @@ function normalizeCustomTypeForHub(hub: HubTab, value: MarketingContentType): Ma
   return value
 }
 
+function defaultDraftSettings(hub: Exclude<HubTab, 'overview'>): DraftSettings {
+  if (hub === 'posts') {
+    return { platform: 'linkedin', wordTarget: 180, tone: 'operator-led', cta: 'discussion prompt', emojiLevel: 'light', linkMode: 'end', imageMode: 'optional', voice: 'founder' }
+  }
+  if (hub === 'blogs') {
+    return { platform: 'blog', wordTarget: 900, tone: 'useful and specific', cta: 'product-relevant next step', emojiLevel: 'none', linkMode: 'inline', imageMode: 'optional', voice: 'company', seoIntent: 'problem-aware', outlineDepth: 'standard' }
+  }
+  return { platform: 'tiktok', wordTarget: 120, tone: 'direct and visual', cta: 'comment or visit link', emojiLevel: 'light', linkMode: 'end', imageMode: 'required', voice: 'founder', durationSeconds: 35, avatarStyle: 'credible founder avatar', hookType: 'pattern interrupt', aspectRatio: '9:16', aiLabel: true }
+}
+
 function buildMarketingCalendar(ideas: GtmContentIdea[]) {
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -844,6 +1254,27 @@ function labelForContentType(value: string): string {
   return TYPE_LABELS[value] ?? value.replace(/_/g, ' ')
 }
 
+function titleCase(value: string): string {
+  return value.replace(/[-_]/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase())
+}
+
+function localDateKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function assetLabel(asset: { label: string; value: string }): string {
+  if (/\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(asset.value)) return `${asset.label}: image`
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(asset.value)) return `${asset.label}: video`
+  if (/^https?:\/\//i.test(asset.value)) return `${asset.label}: link`
+  return asset.label
+}
+
 function fallbackDistributionProviders(): DistributionProvider[] {
   return [
     { id: 'linkedin', label: 'LinkedIn', category: 'Social', direct: true, supported: ['linkedin_post', 'blog_article'], connect: { enabled: false, reason: 'Loading connection settings.' } },
@@ -863,7 +1294,17 @@ function toDateTimeLocal(value: string | null | undefined): string {
 }
 
 function formatShortDateTime(value: string): string {
+  if (!value) return ''
   return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+function formatCalendarTime(value: string | null | undefined): string {
+  if (!value) return ''
+  return new Date(value).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+function platformLabel(item: GtmContentIdea): string {
+  return titleCase(item.target_platform ?? item.channel ?? channelForType(item.content_type))
 }
 
 function hasDraft(value: Record<string, unknown>): boolean {

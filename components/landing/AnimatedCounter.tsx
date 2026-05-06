@@ -37,8 +37,8 @@ export default function AnimatedCounter({ value, className = '' }: AnimatedCount
     // Parse the numeric part and suffix
     const match = value.match(/^([\d,.]+)(.*)$/)
     if (!match) {
-      setDisplayValue(value)
-      return
+      const timer = window.setTimeout(() => setDisplayValue(value), 0)
+      return () => window.clearTimeout(timer)
     }
 
     const numericStr = match[1].replace(/,/g, '')
@@ -46,8 +46,8 @@ export default function AnimatedCounter({ value, className = '' }: AnimatedCount
     const target = parseFloat(numericStr)
 
     if (isNaN(target)) {
-      setDisplayValue(value)
-      return
+      const timer = window.setTimeout(() => setDisplayValue(value), 0)
+      return () => window.clearTimeout(timer)
     }
 
     const duration = 1800

@@ -5,9 +5,20 @@ import { completePrompt } from '@/lib/deepseek'
 import { upsertGtmAction } from './actions'
 import { eventIdempotencyKey, recordGtmEvent } from './events'
 import { recordGtmMemory } from './memory'
+import {
+  applyDailySuggestionCaps,
+  dailySuggestionDate,
+  defaultDraftSettingsForContentType,
+  normalizeDraftSettings,
+  tabForContentType,
+  type MarketingContentTab,
+  type MarketingContentType,
+  type MarketingDraftSettings,
+} from './content-planning'
 import { upsertGtmEntityEmbedding } from './semantic-context'
 
-export type MarketingContentType = 'x_post' | 'linkedin_post' | 'blog_article' | 'video_script' | 'newsletter_blurb' | 'campaign_brief' | 'sales_enablement_note'
+export type { MarketingContentTab, MarketingContentType, MarketingDraftSettings } from './content-planning'
+export type MarketingDecisionAction = 'draft' | 'approve' | 'dismiss'
 
 export interface GtmContentIdea {
   id: string
@@ -31,9 +42,22 @@ export interface GtmContentIdea {
   draft: Record<string, unknown>
   custom_prompt: string | null
   source_assets: Array<{ label: string; value: string }>
+  tab: MarketingContentTab | null
+  batch_date: string | null
+  suggestion_rank: number | null
+  draft_settings: MarketingDraftSettings
+  final_body: string | null
+  media_assets: Array<{ label: string; value: string }>
+  compliance_flags: Record<string, unknown>
   scheduled_for: string | null
   published_at: string | null
   created_at: string
+}
+
+export interface MarketingDraftPreference {
+  tab: MarketingContentTab
+  settings: MarketingDraftSettings
+  time_zone: string
 }
 
 interface LeadSignalRow {
@@ -79,6 +103,7 @@ interface ContentContextSnapshot {
   }>
   previousIdeas: Array<{ title: string; status: string; contentType: string; pillar: string | null }>
   feedback: Array<{ eventType: string; contentType: string | null; pillar: string | null; ideaFormat: string | null }>
+  inspiration: Array<{ platform: string; title: string; pattern: string; sourceUrl: string | null; engagementScore: number }>
 }
 
 interface ContentPillar {
@@ -90,6 +115,8 @@ interface ContentPillar {
   formats: string[]
   confidence: number
 }
+
+const DAILY_SUGGESTION_CAP = 5
 
 interface GeneratedContentIdea {
   title: string
@@ -107,21 +134,29 @@ interface GeneratedContentIdea {
 
 export async function listMarketingContent(
   supabase: SupabaseClient,
-  input: { userId: string; clientId?: string | null; limit?: number; refresh?: boolean },
-): Promise<{ ideas: GtmContentIdea[]; metrics: Record<string, number> }> {
+  input: { userId: string; clientId?: string | null; limit?: number; refresh?: boolean; tab?: MarketingContentTab | null; timeZone?: string | null; todayOnly?: boolean },
+): Promise<{ ideas: GtmContentIdea[]; metrics: Record<string, number>; preferences: MarketingDraftPreference[] }> {
   const clientId = input.clientId ?? null
+  const timeZone = input.timeZone || 'UTC'
+  const today = dailySuggestionDate(new Date(), timeZone)
   if (input.refresh) {
-    await generateContentIdeas(supabase, { userId: input.userId, clientId })
+    await generateContentIdeas(supabase, { userId: input.userId, clientId, timeZone })
   }
 
   let query = supabase
     .from('gtm_content_ideas')
-    .select('id, lead_id, account_id, content_type, channel, target_platform, origin, audience, angle, pillar, idea_format, why_now, proof_points, source_insights, pain_category, score, scoring_debug, status, draft, custom_prompt, source_assets, scheduled_for, published_at, created_at')
+    .select('id, lead_id, account_id, content_type, channel, target_platform, origin, audience, angle, pillar, idea_format, why_now, proof_points, source_insights, pain_category, score, scoring_debug, status, draft, custom_prompt, source_assets, tab, batch_date, suggestion_rank, draft_settings, final_body, media_assets, compliance_flags, scheduled_for, published_at, created_at')
     .eq('user_id', input.userId)
+    .order('batch_date', { ascending: false, nullsFirst: false })
+    .order('suggestion_rank', { ascending: true, nullsFirst: false })
     .order('score', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(Math.max(1, Math.min(80, input.limit ?? 40)))
   query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
+  if (input.tab) query = query.eq('tab', input.tab)
+  if (input.todayOnly) {
+    query = query.or(`origin.eq.custom,status.neq.new,batch_date.eq.${today},scheduled_for.not.is.null`)
+  }
 
   const { data, error } = await query
   if (error) throw new Error(error.message)
@@ -133,16 +168,29 @@ export async function listMarketingContent(
     scoring_debug: normalizeRecord(row.scoring_debug),
     score: Number(row.score ?? 0),
     source_assets: normalizeProofPoints((row as { source_assets?: unknown }).source_assets),
+    media_assets: normalizeProofPoints((row as { media_assets?: unknown }).media_assets),
     channel: (row as { channel?: string | null }).channel ?? channelForContentType(row.content_type),
     target_platform: (row as { target_platform?: string | null }).target_platform ?? platformForContentType(row.content_type),
     origin: ((row as { origin?: string | null }).origin === 'custom' ? 'custom' : 'suggested') as 'suggested' | 'custom',
     custom_prompt: (row as { custom_prompt?: string | null }).custom_prompt ?? null,
+    tab: ((row as { tab?: MarketingContentTab | null }).tab ?? tabForContentType(row.content_type)) as MarketingContentTab,
+    batch_date: (row as { batch_date?: string | null }).batch_date ?? null,
+    suggestion_rank: typeof (row as { suggestion_rank?: unknown }).suggestion_rank === 'number' ? (row as { suggestion_rank: number }).suggestion_rank : null,
+    draft_settings: normalizeDraftSettings((row as { draft_settings?: unknown }).draft_settings, row.content_type),
+    final_body: (row as { final_body?: string | null }).final_body ?? null,
+    compliance_flags: normalizeRecord((row as { compliance_flags?: unknown }).compliance_flags),
     scheduled_for: (row as { scheduled_for?: string | null }).scheduled_for ?? null,
     published_at: (row as { published_at?: string | null }).published_at ?? null,
   }))
 
+  const preferences = await listMarketingDraftPreferences(supabase, {
+    userId: input.userId,
+    clientId,
+  })
+
   return {
     ideas,
+    preferences,
     metrics: {
       total: ideas.length,
       new: ideas.filter(idea => idea.status === 'new').length,
@@ -152,10 +200,80 @@ export async function listMarketingContent(
       social: ideas.filter(idea => idea.channel === 'social').length,
       written: ideas.filter(idea => idea.channel === 'written').length,
       video: ideas.filter(idea => idea.channel === 'video').length,
+      posts_today: ideas.filter(idea => idea.origin === 'suggested' && idea.tab === 'posts' && idea.batch_date === today).length,
+      blogs_today: ideas.filter(idea => idea.origin === 'suggested' && idea.tab === 'blogs' && idea.batch_date === today).length,
+      videos_today: ideas.filter(idea => idea.origin === 'suggested' && idea.tab === 'videos' && idea.batch_date === today).length,
       scheduled: ideas.filter(idea => Boolean(idea.scheduled_for)).length,
       custom: ideas.filter(idea => idea.origin === 'custom').length,
     },
   }
+}
+
+export async function listMarketingDraftPreferences(
+  supabase: SupabaseClient,
+  input: { userId: string; clientId?: string | null },
+): Promise<MarketingDraftPreference[]> {
+  const clientId = input.clientId ?? null
+  let query = supabase
+    .from('gtm_content_draft_preferences')
+    .select('tab, settings, time_zone')
+    .eq('user_id', input.userId)
+  query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
+  const { data, error } = await query
+  if (error) return defaultMarketingPreferences('UTC')
+  const rows = ((data ?? []) as Array<Record<string, unknown>>)
+    .map(row => {
+      const tab = stringValue(row.tab)
+      if (tab !== 'posts' && tab !== 'blogs' && tab !== 'videos') return null
+      const contentType = tab === 'posts' ? 'linkedin_post' : tab === 'blogs' ? 'blog_article' : 'video_script'
+      return {
+        tab,
+        settings: normalizeDraftSettings(row.settings, contentType),
+        time_zone: stringValue(row.time_zone) || 'UTC',
+      } satisfies MarketingDraftPreference
+    })
+    .filter((item): item is MarketingDraftPreference => Boolean(item))
+  const byTab = new Map(rows.map(row => [row.tab, row]))
+  return (['posts', 'blogs', 'videos'] as MarketingContentTab[]).map(tab =>
+    byTab.get(tab) ?? defaultMarketingPreference(tab, 'UTC'),
+  )
+}
+
+export async function saveMarketingDraftPreference(
+  supabase: SupabaseClient,
+  input: {
+    userId: string
+    clientId?: string | null
+    tab: MarketingContentTab
+    settings: MarketingDraftSettings
+    timeZone?: string | null
+  },
+): Promise<void> {
+  const clientId = input.clientId ?? null
+  const contentType = input.tab === 'posts' ? 'linkedin_post' : input.tab === 'blogs' ? 'blog_article' : 'video_script'
+  const settings = normalizeDraftSettings(input.settings, contentType)
+  const row = {
+    user_id: input.userId,
+    client_id: clientId,
+    tab: input.tab,
+    settings,
+    time_zone: input.timeZone || 'UTC',
+  }
+
+  let existingQuery = supabase
+    .from('gtm_content_draft_preferences')
+    .select('id')
+    .eq('user_id', input.userId)
+    .eq('tab', input.tab)
+    .limit(1)
+  existingQuery = clientId ? existingQuery.eq('client_id', clientId) : existingQuery.is('client_id', null)
+  const { data: existing, error: existingError } = await existingQuery.maybeSingle()
+  if (existingError) throw new Error(existingError.message)
+
+  const { error } = existing?.id
+    ? await supabase.from('gtm_content_draft_preferences').update(row).eq('id', existing.id)
+    : await supabase.from('gtm_content_draft_preferences').insert(row)
+  if (error) throw new Error(error.message)
 }
 
 export async function updateMarketingContentIdea(
@@ -164,13 +282,14 @@ export async function updateMarketingContentIdea(
     userId: string
     clientId?: string | null
     ideaId: string
-    action: 'draft' | 'approve' | 'dismiss'
+    action: MarketingDecisionAction
+    draftSettings?: MarketingDraftSettings | null
   },
 ): Promise<void> {
   const clientId = input.clientId ?? null
   let query = supabase
     .from('gtm_content_ideas')
-    .select('id, lead_id, account_id, content_type, audience, angle, pillar, idea_format, why_now, proof_points, source_insights, pain_category, score, scoring_debug, status, draft')
+    .select('id, lead_id, account_id, content_type, audience, angle, pillar, idea_format, why_now, proof_points, source_insights, pain_category, score, scoring_debug, status, draft, draft_settings, media_assets, compliance_flags')
     .eq('id', input.ideaId)
     .eq('user_id', input.userId)
   query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
@@ -180,13 +299,15 @@ export async function updateMarketingContentIdea(
   if (!idea) throw new Error('Content idea not found')
 
   const nextStatus = input.action === 'approve' ? 'approved' : input.action === 'dismiss' ? 'dismissed' : 'drafted'
+  const draftSettings = normalizeDraftSettings(input.draftSettings ?? (idea as { draft_settings?: unknown }).draft_settings, (idea as { content_type: string }).content_type)
   const draft = input.action === 'draft' && !hasDraft((idea as { draft?: unknown }).draft)
-    ? await generateDraftForIdea(idea as ContentIdeaRow)
+    ? await generateDraftForIdea(idea as ContentIdeaRow, draftSettings)
     : (idea as { draft?: Record<string, unknown> | null }).draft ?? {}
+  const finalBody = typeof draft.body === 'string' ? draft.body : null
 
   const { error: updateError } = await supabase
     .from('gtm_content_ideas')
-    .update({ status: nextStatus, draft })
+    .update({ status: nextStatus, draft, draft_settings: draftSettings, final_body: finalBody })
     .eq('id', input.ideaId)
     .eq('user_id', input.userId)
   if (updateError) throw new Error(updateError.message)
@@ -264,12 +385,16 @@ export async function createCustomMarketingContentIdea(
     clientId?: string | null
     contentType: MarketingContentType
     prompt: string
+    rawBody?: string | null
     assets?: Array<{ label: string; value: string }>
+    draftSettings?: MarketingDraftSettings | null
+    scheduledFor?: string | null
   },
 ): Promise<string> {
   const clientId = input.clientId ?? null
   const prompt = input.prompt.trim().slice(0, 2000)
-  if (prompt.length < 8) throw new Error('Add a clearer content prompt.')
+  const rawBody = (input.rawBody ?? '').trim().slice(0, 12000)
+  if (prompt.length < 8 && rawBody.length < 2) throw new Error('Add content or a clearer content prompt.')
 
   const assets = (input.assets ?? [])
     .map(asset => ({
@@ -277,11 +402,16 @@ export async function createCustomMarketingContentIdea(
       value: asset.value.trim().slice(0, 1200),
     }))
     .filter(asset => asset.value)
-    .slice(0, 6)
-  const draft = await generateCustomDraft(input.contentType, prompt, assets)
-  const title = typeof draft.title === 'string' && draft.title.trim() ? draft.title.trim() : titleForContentType(input.contentType, prompt)
+    .slice(0, 10)
+  const draftSettings = normalizeDraftSettings(input.draftSettings, input.contentType)
+  const draft = rawBody
+    ? { title: titleForContentType(input.contentType, prompt || rawBody), body: rawBody }
+    : await generateCustomDraft(input.contentType, prompt, assets, draftSettings)
+  const title = typeof draft.title === 'string' && draft.title.trim() ? draft.title.trim() : titleForContentType(input.contentType, prompt || rawBody)
   const now = new Date().toISOString()
-  const ideaKey = `custom:${input.contentType}:${stableSlug(`${prompt}:${now}`)}`
+  const ideaKey = `custom:${input.contentType}:${stableSlug(`${prompt}:${rawBody.slice(0, 160)}:${now}`)}`
+  const tab = tabForContentType(input.contentType)
+  const mediaAssets = assets.filter(asset => isLikelyMediaAsset(asset.value))
 
   const { data, error } = await supabase
     .from('gtm_content_ideas')
@@ -291,28 +421,49 @@ export async function createCustomMarketingContentIdea(
       idea_key: ideaKey,
       content_type: input.contentType,
       channel: channelForContentType(input.contentType),
-      target_platform: platformForContentType(input.contentType),
+      target_platform: draftSettings.platform || platformForContentType(input.contentType),
       origin: 'custom',
-      custom_prompt: prompt,
+      custom_prompt: prompt || null,
       source_assets: assets,
+      media_assets: mediaAssets,
+      tab,
+      batch_date: dailySuggestionDate(new Date()),
+      draft_settings: draftSettings,
       audience: audienceForContentType(input.contentType),
       angle: title,
       pillar: 'User-directed content',
       idea_format: 'custom',
-      why_now: 'The user requested this item from their own context.',
-      proof_points: assets.length > 0 ? assets : [{ label: 'Prompt', value: prompt }],
-      source_insights: assets.length > 0 ? assets : [{ label: 'User prompt', value: prompt }],
+      why_now: rawBody ? 'The user supplied this content and scheduled it from the custom composer.' : 'The user requested this item from their own context.',
+      proof_points: assets.length > 0 ? assets : [{ label: rawBody ? 'User content' : 'Prompt', value: rawBody ? bodyPreview(rawBody) : prompt }],
+      source_insights: assets.length > 0 ? assets : [{ label: rawBody ? 'User content' : 'User prompt', value: rawBody ? bodyPreview(rawBody) : prompt }],
       pain_category: 'custom_prompt',
       score: 72,
-      scoring_debug: { user_requested: true, source_assets: assets.length },
-      status: 'drafted',
+      scoring_debug: { user_requested: true, source_assets: assets.length, raw_body: Boolean(rawBody) },
+      status: input.scheduledFor ? 'approved' : 'drafted',
       draft,
+      final_body: typeof draft.body === 'string' ? draft.body : rawBody || null,
+      scheduled_for: input.scheduledFor ?? null,
     })
     .select('id')
     .single()
 
   if (error) throw new Error(error.message)
   const ideaId = (data as { id: string }).id
+  await insertContentAssets(supabase, {
+    userId: input.userId,
+    clientId,
+    ideaId,
+    assets,
+  })
+  if (input.scheduledFor) {
+    await enqueueDistributionJobForIdea(supabase, {
+      userId: input.userId,
+      clientId,
+      ideaId,
+      contentType: input.contentType,
+      scheduledFor: input.scheduledFor,
+    })
+  }
 
   await recordGtmEvent(supabase, {
     userId: input.userId,
@@ -360,22 +511,35 @@ export async function scheduleMarketingContentIdea(
     clientId?: string | null
     ideaId: string
     scheduledFor: string | null
+    draftSettings?: MarketingDraftSettings | null
   },
 ): Promise<void> {
   const clientId = input.clientId ?? null
   let ideaQuery = supabase
     .from('gtm_content_ideas')
-    .select('id, content_type')
+    .select('id, content_type, audience, angle, pillar, idea_format, why_now, proof_points, source_insights, pain_category, score, scoring_debug, status, draft, draft_settings')
     .eq('id', input.ideaId)
     .eq('user_id', input.userId)
   ideaQuery = clientId ? ideaQuery.eq('client_id', clientId) : ideaQuery.is('client_id', null)
   const { data: idea, error: ideaError } = await ideaQuery.maybeSingle()
   if (ideaError) throw new Error(ideaError.message)
   if (!idea) throw new Error('Content idea not found')
+  const draftSettings = normalizeDraftSettings(input.draftSettings ?? (idea as { draft_settings?: unknown }).draft_settings, (idea as { content_type: string }).content_type)
+  const existingDraft = (idea as { draft?: Record<string, unknown> | null }).draft ?? {}
+  const draft = input.scheduledFor && !hasDraft(existingDraft)
+    ? await generateDraftForIdea(idea as ContentIdeaRow, draftSettings)
+    : existingDraft
+  const finalBody = typeof draft.body === 'string' ? draft.body : null
 
   let query = supabase
     .from('gtm_content_ideas')
-    .update({ scheduled_for: input.scheduledFor })
+    .update({
+      scheduled_for: input.scheduledFor,
+      status: input.scheduledFor ? 'approved' : (idea as { status?: string }).status ?? 'drafted',
+      draft,
+      draft_settings: draftSettings,
+      final_body: finalBody,
+    })
     .eq('id', input.ideaId)
     .eq('user_id', input.userId)
   query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
@@ -412,9 +576,12 @@ export async function scheduleMarketingContentIdea(
 
 async function generateContentIdeas(
   supabase: SupabaseClient,
-  input: { userId: string; clientId: string | null },
+  input: { userId: string; clientId: string | null; timeZone?: string | null },
 ): Promise<void> {
-  const shouldRun = await shouldGenerateContentIdeas(supabase, input)
+  const batchDate = dailySuggestionDate(new Date(), input.timeZone || 'UTC')
+  const remainingByTab = await remainingDailySuggestionSlots(supabase, input, batchDate)
+  if (Object.values(remainingByTab).every(value => value <= 0)) return
+  const shouldRun = await shouldGenerateContentIdeas(supabase, input, remainingByTab, batchDate)
   if (!shouldRun) return
 
   const context = await buildContentContextSnapshot(supabase, input)
@@ -424,9 +591,12 @@ async function generateContentIdeas(
   const generatedIdeas = await generateCreativeIdeas(context, pillars)
   if (generatedIdeas.length === 0) return
 
-  const scoredIdeas = scoreAndDedupeIdeas(generatedIdeas, context)
-    .slice(0, 18)
-    .map(({ idea, score, debug }) => buildGeneratedIdeaRow(input.userId, input.clientId, idea, score, debug))
+  const scoredIdeas = applyDailySuggestionCaps(scoreAndDedupeIdeas(generatedIdeas, context), remainingByTab)
+    .map(({ idea, score, debug, rank }) => buildGeneratedIdeaRow(input.userId, input.clientId, idea, score, debug, {
+      batchDate,
+      rank,
+      inspiration: inspirationForIdea(context, idea),
+    }))
 
   if (scoredIdeas.length === 0) return
 
@@ -457,7 +627,10 @@ async function generateContentIdeas(
 async function shouldGenerateContentIdeas(
   supabase: SupabaseClient,
   input: { userId: string; clientId: string | null },
+  remainingByTab: Record<MarketingContentTab, number>,
+  batchDate: string,
 ): Promise<boolean> {
+  if (Object.values(remainingByTab).every(value => value <= 0)) return false
   let query = supabase
     .from('gtm_content_context_snapshots')
     .select('created_at')
@@ -470,7 +643,7 @@ async function shouldGenerateContentIdeas(
   if (error) return true
   const latest = (data?.[0] as { created_at?: string } | undefined)?.created_at
   if (!latest) return true
-  return Date.now() - new Date(latest).getTime() > 12 * 60 * 60 * 1000
+  return latest.slice(0, 10) !== batchDate || Date.now() - new Date(latest).getTime() > 12 * 60 * 60 * 1000
 }
 
 async function buildContentContextSnapshot(
@@ -484,6 +657,7 @@ async function buildContentContextSnapshot(
     fetchPreviousIdeas(supabase, input),
     fetchContentFeedback(supabase, input),
   ])
+  const inspiration = await fetchIndustryInspiration(supabase, input, profile.company.industry)
 
   return {
     company: profile.company,
@@ -492,6 +666,7 @@ async function buildContentContextSnapshot(
     recentSignals: leads,
     previousIdeas,
     feedback,
+    inspiration,
   }
 }
 
@@ -640,6 +815,35 @@ async function fetchContentFeedback(
   }))
 }
 
+async function fetchIndustryInspiration(
+  supabase: SupabaseClient,
+  input: { userId: string; clientId: string | null },
+  industry: string,
+): Promise<ContentContextSnapshot['inspiration']> {
+  let query = supabase
+    .from('gtm_content_inspiration_refs')
+    .select('platform, source_url, source_title, pattern_summary, engagement_score, captured_at')
+    .eq('user_id', input.userId)
+    .order('engagement_score', { ascending: false })
+    .order('captured_at', { ascending: false })
+    .limit(16)
+  query = input.clientId ? query.eq('client_id', input.clientId) : query.is('client_id', null)
+  if (industry && industry !== 'unknown') query = query.or(`industry.is.null,industry.ilike.%${industry.replace(/[%_,]/g, '')}%`)
+
+  const { data, error } = await query
+  if (!error && (data ?? []).length > 0) {
+    return ((data ?? []) as Array<Record<string, unknown>>).map(row => ({
+      platform: stringValue(row.platform) || 'industry',
+      title: stringValue(row.source_title).slice(0, 180),
+      pattern: stringValue(row.pattern_summary).slice(0, 500),
+      sourceUrl: stringValue(row.source_url) || null,
+      engagementScore: numberValue(row.engagement_score) ?? 0,
+    })).filter(item => item.title && item.pattern)
+  }
+
+  return fallbackInspirationPatterns(industry)
+}
+
 async function storeContentContextSnapshot(
   supabase: SupabaseClient,
   input: { userId: string; clientId: string | null },
@@ -749,12 +953,15 @@ async function generateCreativeIdeas(context: ContentContextSnapshot, pillars: C
         'You are Bombsell’s creative GTM content strategist.',
         'Generate original, useful content ideas grounded only in supplied context.',
         'Every idea must cite a memory insight, ICP pain, or recent signal. Avoid templates, empty thought leadership, and invented claims.',
+        'Use inspiration patterns only as structural guidance; do not copy source wording, full outlines, or video footage.',
+        'For videos, create original avatar-led concepts with captions and beat sheets, not close remixes of real creators.',
         'Return only valid JSON.',
       ].join(' '),
       prompt: [
-        'Generate 14 to 18 varied content ideas across LinkedIn posts, X posts, blog articles, and video scripts.',
+        'Generate enough varied content ideas to fill today’s remaining Posts, Blogs, and Videos queues.',
         'Use different creative patterns: opinion, tactical, contrarian, signal-led, story, data-backed, objection-handling, comparison, playbook, founder note.',
         'Do not repeat previous ideas. Do not start from a fixed template.',
+        'For each idea, include at least one source insight and, where relevant, one inspiration pattern reference.',
         `Context JSON:\n${JSON.stringify(trimContextForPrompt(context)).slice(0, 9000)}`,
         `Pillars JSON:\n${JSON.stringify(pillars).slice(0, 4500)}`,
         'Return JSON: {"ideas":[{"title":"","contentType":"linkedin_post|x_post|blog_article|video_script","format":"","pillar":"","audience":"","pain":"","sourceInsights":[{"label":"","value":""}],"whyNow":"","angle":"","draftBrief":"","confidence":0.8}]}',
@@ -815,13 +1022,47 @@ function scoreAndDedupeIdeas(
     .sort((a, b) => b.score - a.score)
 }
 
+async function remainingDailySuggestionSlots(
+  supabase: SupabaseClient,
+  input: { userId: string; clientId: string | null },
+  batchDate: string,
+): Promise<Record<MarketingContentTab, number>> {
+  let query = supabase
+    .from('gtm_content_ideas')
+    .select('tab')
+    .eq('user_id', input.userId)
+    .eq('origin', 'suggested')
+    .eq('batch_date', batchDate)
+  query = input.clientId ? query.eq('client_id', input.clientId) : query.is('client_id', null)
+
+  const { data, error } = await query
+  if (error) return { posts: DAILY_SUGGESTION_CAP, blogs: DAILY_SUGGESTION_CAP, videos: DAILY_SUGGESTION_CAP }
+  const counts: Record<MarketingContentTab, number> = { posts: 0, blogs: 0, videos: 0 }
+  for (const row of (data ?? []) as Array<{ tab?: string | null }>) {
+    const tab = row.tab === 'blogs' || row.tab === 'videos' || row.tab === 'posts' ? row.tab : null
+    if (tab) counts[tab]++
+  }
+  return {
+    posts: Math.max(0, DAILY_SUGGESTION_CAP - counts.posts),
+    blogs: Math.max(0, DAILY_SUGGESTION_CAP - counts.blogs),
+    videos: Math.max(0, DAILY_SUGGESTION_CAP - counts.videos),
+  }
+}
+
 function buildGeneratedIdeaRow(
   userId: string,
   clientId: string | null,
   idea: GeneratedContentIdea,
   score: number,
   debug: Record<string, unknown>,
+  options: {
+    batchDate: string
+    rank: number
+    inspiration: Array<{ label: string; value: string }>
+  },
 ) {
+  const tab = tabForContentType(idea.contentType)
+  const draftSettings = defaultDraftSettingsForContentType(idea.contentType)
   return {
     user_id: userId,
     client_id: clientId,
@@ -831,8 +1072,12 @@ function buildGeneratedIdeaRow(
     source_signal_ids: [],
     content_type: idea.contentType,
     channel: channelForContentType(idea.contentType),
-    target_platform: platformForContentType(idea.contentType),
+    target_platform: draftSettings.platform || platformForContentType(idea.contentType),
     origin: 'suggested',
+    tab,
+    batch_date: options.batchDate,
+    suggestion_rank: options.rank,
+    draft_settings: draftSettings,
     audience: idea.audience.slice(0, 240) || audienceForContentType(idea.contentType),
     angle: (idea.angle || idea.title).slice(0, 500),
     pillar: idea.pillar.slice(0, 180) || null,
@@ -841,29 +1086,37 @@ function buildGeneratedIdeaRow(
     proof_points: [
       { label: 'Content brief', value: idea.draftBrief || idea.angle || idea.title },
       ...idea.sourceInsights,
+      ...options.inspiration,
     ].slice(0, 6),
-    source_insights: idea.sourceInsights.slice(0, 8),
+    source_insights: idea.sourceInsights.concat(options.inspiration).slice(0, 8),
     pain_category: stableKey(idea.pain || 'market_timing').replace(/-/g, '_').slice(0, 80) || 'market_timing',
     score,
-    scoring_debug: debug,
+    scoring_debug: { ...debug, daily_cap: DAILY_SUGGESTION_CAP, tab },
+    compliance_flags: idea.contentType === 'video_script'
+      ? { ai_avatar: true, inspiration_only: true, source_footage_allowed: false, requires_ai_label: true }
+      : { inspiration_only: true },
     status: 'new',
     draft: {},
   }
 }
 
-async function generateDraftForIdea(idea: ContentIdeaRow): Promise<Record<string, unknown>> {
+async function generateDraftForIdea(idea: ContentIdeaRow, settings?: MarketingDraftSettings | null): Promise<Record<string, unknown>> {
   const proof = normalizeProofPoints(idea.proof_points)
   const insights = normalizeProofPoints(idea.source_insights)
+  const draftSettings = normalizeDraftSettings(settings ?? (idea as { draft_settings?: unknown }).draft_settings, idea.content_type)
   try {
     const text = await completePrompt({
       system: [
         'You are Bombsell’s senior B2B content strategist.',
         'Write original, specific marketing copy from the provided idea brief.',
         'Do not use a reusable template. Do not invent proof, customer claims, metrics, or named examples.',
+        'Preserve emojis and links only when requested by draft settings or source assets.',
+        'If the content type is video_script, write an original AI-avatar script, caption, and shot/beat notes inspired only by the pattern notes.',
         'Return only valid JSON with "title" and "body" string fields.',
       ].join(' '),
       prompt: [
         `Content type: ${labelForContentType(idea.content_type)}`,
+        `Draft settings JSON:\n${JSON.stringify(draftSettings)}`,
         `Audience: ${idea.audience}`,
         `Pillar: ${stringValue(idea.pillar) || 'not specified'}`,
         `Format: ${stringValue(idea.idea_format) || 'not specified'}`,
@@ -872,6 +1125,11 @@ async function generateDraftForIdea(idea: ContentIdeaRow): Promise<Record<string
         stringValue(idea.why_now) ? `Why now: ${stringValue(idea.why_now)}` : '',
         `Proof points:\n${proof.map(point => `- ${point.label}: ${point.value}`).join('\n') || '- none'}`,
         `Source insights:\n${insights.map(point => `- ${point.label}: ${point.value}`).join('\n') || '- none'}`,
+        draftSettings.wordTarget ? `Target length: about ${draftSettings.wordTarget} words.` : '',
+        draftSettings.durationSeconds ? `Target video duration: ${draftSettings.durationSeconds} seconds.` : '',
+        draftSettings.emojiLevel === 'none' ? 'Do not use emojis.' : '',
+        draftSettings.emojiLevel === 'light' ? 'Use at most 1 to 2 useful emojis.' : '',
+        draftSettings.linkMode === 'end' ? 'Place any link at the end.' : '',
         'Write in a sharp, useful, non-generic voice. Make it feel like a real operator wrote it from market context.',
       ].filter(Boolean).join('\n\n'),
       maxTokens: idea.content_type === 'blog_article' ? 1800 : 1000,
@@ -902,13 +1160,16 @@ async function generateCustomDraft(
   contentType: MarketingContentType,
   prompt: string,
   assets: Array<{ label: string; value: string }>,
+  settings?: MarketingDraftSettings | null,
 ): Promise<Record<string, unknown>> {
   const assetContext = assets.map(asset => `${asset.label}: ${asset.value}`).join('\n')
+  const draftSettings = normalizeDraftSettings(settings, contentType)
   try {
     const text = await completePrompt({
       system: 'You create concise B2B marketing assets. Return only valid JSON with "title" and "body" string fields.',
       prompt: [
         `Content type: ${labelForContentType(contentType)}`,
+        `Draft settings JSON:\n${JSON.stringify(draftSettings)}`,
         `User prompt: ${prompt}`,
         assetContext ? `Assets/context:\n${assetContext}` : '',
         'Keep the output ready to edit, specific, and distribution-friendly.',
@@ -937,11 +1198,101 @@ async function generateCustomDraft(
   }
 }
 
+async function insertContentAssets(
+  supabase: SupabaseClient,
+  input: {
+    userId: string
+    clientId: string | null
+    ideaId: string
+    assets: Array<{ label: string; value: string }>
+  },
+): Promise<void> {
+  const rows = input.assets.map(asset => ({
+    user_id: input.userId,
+    client_id: input.clientId,
+    content_idea_id: input.ideaId,
+    asset_type: assetTypeForValue(asset.value),
+    label: asset.label,
+    url: /^https?:\/\//i.test(asset.value) ? asset.value : null,
+    text_value: /^https?:\/\//i.test(asset.value) ? null : asset.value,
+    metadata: { source: 'custom_composer' },
+  })).slice(0, 10)
+  if (rows.length === 0) return
+  const { error } = await supabase.from('gtm_content_assets').insert(rows)
+  if (error) console.error('[content-workflow] content asset insert failed:', error.message)
+}
+
+function assetTypeForValue(value: string): 'link' | 'image' | 'video' | 'note' {
+  if (/\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(value)) return 'image'
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(value)) return 'video'
+  if (/^https?:\/\//i.test(value)) return 'link'
+  return 'note'
+}
+
+function isLikelyMediaAsset(value: string): boolean {
+  return /\.(png|jpe?g|gif|webp|avif|mp4|mov|webm|m4v)(\?|#|$)/i.test(value)
+}
+
 function channelForContentType(value: string): string {
   if (value === 'x_post' || value === 'linkedin_post') return 'social'
   if (value === 'blog_article' || value === 'newsletter_blurb') return 'written'
   if (value === 'video_script') return 'video'
   return 'campaign'
+}
+
+function inspirationForIdea(
+  context: ContentContextSnapshot,
+  idea: GeneratedContentIdea,
+): Array<{ label: string; value: string }> {
+  const targetPlatform = platformForContentType(idea.contentType)
+  return context.inspiration
+    .filter(item => item.platform === targetPlatform || item.platform === tabForContentType(idea.contentType) || item.platform === 'industry')
+    .slice(0, 2)
+    .map(item => ({
+      label: 'Inspiration pattern',
+      value: `${item.title}: ${item.pattern}${item.sourceUrl ? ` (${item.sourceUrl})` : ''}`.slice(0, 700),
+    }))
+}
+
+function fallbackInspirationPatterns(industry: string): ContentContextSnapshot['inspiration'] {
+  const label = industry && industry !== 'unknown' ? industry : 'B2B'
+  return [
+    {
+      platform: 'linkedin',
+      title: `${label} operator teardown`,
+      pattern: 'A concise opening claim, a visible before/after contrast, and three field-tested lessons tied to a current market shift.',
+      sourceUrl: null,
+      engagementScore: 62,
+    },
+    {
+      platform: 'x',
+      title: `${label} tactical thread`,
+      pattern: 'A sharp first-line outcome, compact numbered steps, and one practical caveat that makes the advice feel earned.',
+      sourceUrl: null,
+      engagementScore: 58,
+    },
+    {
+      platform: 'blog',
+      title: `${label} playbook article`,
+      pattern: 'Problem framing, operational diagnosis, a decision framework, and examples grounded in public market signals.',
+      sourceUrl: null,
+      engagementScore: 54,
+    },
+    {
+      platform: 'videos',
+      title: `${label} short-form avatar explainer`,
+      pattern: 'Fast pattern interrupt, one buyer pain, three quick visual beats, and a clear caption that connects the lesson to a current signal.',
+      sourceUrl: null,
+      engagementScore: 51,
+    },
+    {
+      platform: 'industry',
+      title: `${label} contrarian POV`,
+      pattern: 'Challenge a common assumption, name the hidden cost, then give one useful action the audience can take immediately.',
+      sourceUrl: null,
+      engagementScore: 49,
+    },
+  ]
 }
 
 function platformForContentType(value: string): string {
@@ -1095,6 +1446,19 @@ function fallbackIdeas(context: ContentContextSnapshot, pillars: ContentPillar[]
         draftBrief: pillar.belief,
         confidence: pillar.confidence,
       },
+      {
+        title: `${pillar.title}: 35-second market timing explainer`,
+        contentType: 'video_script',
+        format: 'avatar-led short',
+        pillar: pillar.title,
+        audience: pillar.audience,
+        pain: pillar.pain,
+        sourceInsights: [insight, { label: 'Inspiration pattern', value: 'Use a fast hook, one visual metaphor, and three concise proof beats without copying source footage.' }],
+        whyNow,
+        angle: `An original avatar-led short that turns ${pillar.pain} into a practical lesson tied to current market movement.`,
+        draftBrief: `Hook the audience with the timing problem, show three short visual beats, and close with a product-relevant caption.`,
+        confidence: Math.max(0.58, pillar.confidence - 0.04),
+      },
     ] satisfies GeneratedContentIdea[]
   })
 }
@@ -1115,6 +1479,7 @@ function trimContextForPrompt(context: ContentContextSnapshot): ContentContextSn
     recentSignals: context.recentSignals.slice(0, 18),
     previousIdeas: context.previousIdeas.slice(0, 24),
     feedback: context.feedback.slice(0, 30),
+    inspiration: context.inspiration.slice(0, 12),
   }
 }
 
@@ -1187,6 +1552,10 @@ function numberValue(value: unknown): number | null {
   return null
 }
 
+function bodyPreview(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, 500)
+}
+
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
   return Math.min(max, Math.max(min, value))
@@ -1235,4 +1604,17 @@ function painCategoryForSignal(signalType: string, text: string): string {
 
 function labelForContentType(value: string): string {
   return value.replace(/_/g, ' ')
+}
+
+function defaultMarketingPreferences(timeZone: string): MarketingDraftPreference[] {
+  return (['posts', 'blogs', 'videos'] as MarketingContentTab[]).map(tab => defaultMarketingPreference(tab, timeZone))
+}
+
+function defaultMarketingPreference(tab: MarketingContentTab, timeZone: string): MarketingDraftPreference {
+  const contentType = tab === 'posts' ? 'linkedin_post' : tab === 'blogs' ? 'blog_article' : 'video_script'
+  return {
+    tab,
+    settings: normalizeDraftSettings(null, contentType),
+    time_zone: timeZone,
+  }
 }

@@ -38,7 +38,8 @@ export default function InsightsView() {
   }
 
   useEffect(() => {
-    load()
+    const timer = window.setTimeout(() => { void load() }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   const openInsights = useMemo(
