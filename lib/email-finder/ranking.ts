@@ -3,7 +3,7 @@ export interface RankedContactInput {
   title: string
   email: string
   verified: boolean
-  source: 'fullenrich' | 'hunter' | 'pattern' | 'scrape'
+  source: 'apollo' | 'fullenrich' | 'hunter' | 'pattern' | 'scrape'
   linkedinUrl?: string | null
 }
 
@@ -61,6 +61,7 @@ function scoreContact(
   if (signalType === 'hiring' && (categories.has('technical') || categories.has('revenue') || categories.has('operations'))) score += 8
 
   if (verified) score += 10
+  if (source === 'apollo') score += 6
   if (source === 'hunter') score += 5
   if (source === 'fullenrich') score += 3
   if (source === 'pattern') score -= 2

@@ -4,6 +4,7 @@ import { searchFullEnrichPeople } from './fullenrich'
 import { hunterDomainSearch, constructEmailCandidates } from './hunter'
 import { verifyEmail, verifyEmailsBatch, isSafeToSend, type ZBStatus } from './zeroBounce'
 import { scrapeCompanyPeople } from './firecrawl'
+import { apolloFindAndEnrichPeople } from '../apollo'
 import { rankContactsForUseCase, baseContactScore } from './ranking'
 import {
   compareCachedContactRows,
@@ -26,7 +27,7 @@ const MAX_PATTERN_PEOPLE = 3
 const MAX_PATTERNS_PER_PERSON = 2
 const MAX_ROLE_FALLBACKS = 3
 
-type ContactSource = 'fullenrich' | 'hunter' | 'pattern' | 'scrape'
+type ContactSource = 'apollo' | 'fullenrich' | 'hunter' | 'pattern' | 'scrape'
 type ResolutionMethod = 'direct' | 'pattern' | 'role'
 
 interface CachedContactRow {
@@ -236,11 +237,12 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
   }
 }
 
-function extractMostCommonDomain(people: Array<{ companyDomain: string | null }>): string | null {
+function extractMostCommonDomain(people: Array<{ companyDomain?: string | null; organizationDomain?: string | null }>): string | null {
   const counts = new Map<string, number>()
   for (const person of people) {
-    if (person.companyDomain) {
-      counts.set(person.companyDomain, (counts.get(person.companyDomain) ?? 0) + 1)
+    const domain = person.companyDomain || person.organizationDomain
+    if (domain) {
+      counts.set(domain, (counts.get(domain) ?? 0) + 1)
     }
   }
   let bestDomain: string | null = null
@@ -439,7 +441,11 @@ async function collectCandidatePeople(
   companyName: string,
   companyDomain: string | null,
 ): Promise<{ resolvedDomain: string | null; people: CandidatePerson[]; hunterPattern: string | null }> {
-  const [fullEnrichPeople, scrapedPeople, hunterResult] = await Promise.all([
+  // Apollo is the primary people source (2-step: search + enrich for emails).
+  // FullEnrich is fallback when Apollo returns nothing or plan doesn't support it.
+  // Hunter provides email patterns and known contacts.
+  const [apolloPeople, fullEnrichPeople, scrapedPeople, hunterResult] = await Promise.all([
+    companyDomain ? apolloFindAndEnrichPeople(companyDomain) : Promise.resolve([]),
     searchFullEnrichPeople(companyName, companyDomain),
     companyDomain ? scrapeCompanyPeople(companyDomain) : Promise.resolve([]),
     companyDomain ? hunterDomainSearch(companyDomain) : Promise.resolve({ emailPattern: null, contacts: [] }),
@@ -447,19 +453,22 @@ async function collectCandidatePeople(
 
   let resolvedDomain = companyDomain
   if (!resolvedDomain) {
-    resolvedDomain = extractMostCommonDomain(fullEnrichPeople)
+    resolvedDomain = extractMostCommonDomain(apolloPeople) || extractMostCommonDomain(fullEnrichPeople)
   }
 
+  // Use Apollo as primary source. If Apollo returns no people, fall back to FullEnrich.
+  const primaryPeople = apolloPeople.length > 0 ? apolloPeople : fullEnrichPeople
+
   const people: CandidatePerson[] = [
-    ...fullEnrichPeople.map(person => ({
+    ...primaryPeople.map(person => ({
       name: cleanPersonName(person.name) || person.name,
       title: person.title,
       firstName: splitName(person.name).firstName || person.firstName,
       lastName: splitName(person.name).lastName || person.lastName,
-      directEmail: null,
-      linkedinUrl: person.linkedinUrl,
-      source: 'fullenrich' as const,
-      baseScore: baseContactScore(person.title),
+      directEmail: 'email' in person ? (person.email ?? null) : null,
+      linkedinUrl: person.linkedinUrl ?? null,
+      source: ('email' in person ? 'apollo' : 'fullenrich') as ContactSource,
+      baseScore: baseContactScore(person.title) + ('email' in person && person.email ? 5 : 0),
     })),
     ...scrapedPeople.map(person => {
       const split = splitName(person.name)

@@ -82,6 +82,7 @@ export async function POST(
     if (repairedBody !== existingDraftRes.data.body || contactResolution.stakeholders.length > 0) {
       await upsertOutreachDraft(serviceSupabase, {
         leadId: id,
+        userId: user.id,
         clientId: (lead.client_id as string | null | undefined) ?? null,
         subject: existingDraftRes.data.subject,
         body: repairedBody,
@@ -163,6 +164,7 @@ export async function POST(
   try {
     await upsertOutreachDraft(serviceSupabase, {
       leadId: id,
+      userId: user.id,
       clientId: (lead.client_id as string | null | undefined) ?? null,
       subject,
       body: normalizedBody,

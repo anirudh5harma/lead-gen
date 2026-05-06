@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getPaygPackCredits, normalizeCreditTopUpAmount } from '@/lib/lead-credits'
-import { createLeadCreditCheckoutUrl, getDodoConfigSummary } from '@/lib/dodo'
+import { createSubscriptionCheckoutUrl, getDodoConfigSummary } from '@/lib/dodo'
 import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
@@ -9,7 +8,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const rl = await checkRateLimit(`billing-credits:${user.id}`, 10, 3600, { failClosed: true })
+  const rl = await checkRateLimit(`billing-sub:${user.id}`, 10, 3600, { failClosed: true })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Too many checkout attempts. Please try again later.' },
@@ -17,15 +16,16 @@ export async function POST(request: Request) {
     )
   }
 
-  const body = await request.json().catch(() => null) as { amount_dollars?: unknown } | null
-  const amountDollars = normalizeCreditTopUpAmount(body?.amount_dollars)
-  if (!amountDollars) {
-    return NextResponse.json({ error: 'Choose a valid top-up amount.' }, { status: 400 })
-  }
+  const body = await request.json().catch(() => null) as {
+    tier?: unknown
+    period?: unknown
+  } | null
 
-  const credits = getPaygPackCredits(amountDollars)
-  if (credits <= 0) {
-    return NextResponse.json({ error: 'Credit conversion is not configured correctly.' }, { status: 503 })
+  const tier = body?.tier === 'growth' || body?.tier === 'scale' ? body.tier : null
+  const period = body?.period === 'annual' ? 'annual' : 'monthly'
+
+  if (!tier) {
+    return NextResponse.json({ error: 'Select a valid plan tier.' }, { status: 400 })
   }
 
   const { data: profile } = await supabase
@@ -35,28 +35,29 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   try {
-    const url = await createLeadCreditCheckoutUrl({
+    const url = await createSubscriptionCheckoutUrl({
       userEmail: user.email ?? '',
       userName: profile?.company_name ?? user.email ?? '',
       userId: user.id,
-      amountDollars,
-      credits,
+      tier,
+      period,
     })
-    return NextResponse.json({ url, amount_dollars: amountDollars, credits })
+    return NextResponse.json({ url, tier, period })
   } catch (error) {
     const config = getDodoConfigSummary()
-    console.error('[billing/credits/checkout] dodo checkout error', {
+    console.error('[billing/subscription/checkout] dodo checkout error', {
       error: error instanceof Error ? error.message : String(error),
       userId: user.id,
-      amountDollars,
-      credits,
+      tier,
+      period,
       environment: config.environment,
       hasApiKey: config.hasApiKey,
-      hasLeadCreditsProduct: config.hasLeadCreditsProduct,
+      hasGrowthMonthly: config.hasGrowthMonthly,
+      hasScaleMonthly: config.hasScaleMonthly,
     })
 
     return NextResponse.json(
-      { error: 'Unable to start credit checkout right now.' },
+      { error: 'Unable to start subscription checkout right now.' },
       { status: 502 },
     )
   }

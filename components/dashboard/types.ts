@@ -21,6 +21,12 @@ export interface NavSection {
   }>
 }
 
+export interface WorkspaceMembership {
+  client_id: string
+  role: string
+  name: string
+}
+
 export interface UserProfile {
   company_name: string
   client_name?: string
@@ -31,11 +37,16 @@ export interface UserProfile {
   email?: string
   plan?: string
   leads_used_this_month?: number
+  leads_reset_at?: string | null
   lead_credit_balance?: number
+  subscription_status?: 'none' | 'active' | 'canceled' | 'past_due'
+  subscription_period?: 'monthly' | 'annual' | null
+  subscription_renews_at?: string | null
   slack_webhook_url?: string | null
   slack_min_score?: number | null
   active_client_id?: string | null
   automation_mode?: 'research_only' | 'approve_first' | 'autopilot'
+  workspaces?: WorkspaceMembership[]
 }
 
 export interface GtmWorkItem {

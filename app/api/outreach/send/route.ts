@@ -449,7 +449,7 @@ export async function POST(request: Request) {
         { onConflict: 'lead_id' }
       )
       // Pre-generate follow-up copy fire-and-forget — never blocks the send response
-      pregenerateFollowup(supabase, leadId, profileRes.data, clientProfile).catch(err =>
+      pregenerateFollowup(supabase, user.id, leadId, profileRes.data, clientProfile).catch(err =>
         console.error('[outreach/send] follow-up pre-generation failed:', err)
       )
     }
@@ -569,6 +569,7 @@ export async function POST(request: Request) {
 
 async function pregenerateFollowup(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createClient>>,
+  userId: string,
   leadId: string,
   profile: { company_name: string; services_description: string; calendly_url?: string | null } | null,
   clientProfile: { name?: string | null; services_description?: string | null; calendly_url?: string | null } | null,
@@ -605,7 +606,7 @@ async function pregenerateFollowup(
   })
 
   await supabase.from('outreach_sequences').upsert(
-    { lead_id: leadId, followup_subject: fuSubject, followup_body: fuBody },
+    { lead_id: leadId, user_id: userId, followup_subject: fuSubject, followup_body: fuBody },
     { onConflict: 'lead_id' }
   )
 }

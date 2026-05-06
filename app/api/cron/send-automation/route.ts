@@ -1093,6 +1093,7 @@ async function getOrCreateAutomationDraft(
       if (repairedBody !== existing.body) {
         await upsertOutreachDraft(supabase, {
           leadId: params.lead.id as string,
+          userId: params.userId,
           clientId: (params.lead.client_id as string | null | undefined) ?? null,
           subject: existing.subject,
           body: repairedBody,
@@ -1169,6 +1170,7 @@ async function getOrCreateAutomationDraft(
 
   await upsertOutreachDraft(supabase, {
     leadId: params.lead.id as string,
+    userId: params.userId,
     clientId: (params.lead.client_id as string | null | undefined) ?? null,
     subject,
     body: normalizedBody,

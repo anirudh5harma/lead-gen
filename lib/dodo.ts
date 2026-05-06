@@ -19,6 +19,10 @@ function getDodoClient(): DodoPayments {
 
 export const PRODUCT_IDS = {
   leadCredits: cleanEnvValue(process.env.DODO_PRODUCT_LEAD_CREDITS),
+  growthMonthly: cleanEnvValue(process.env.DODO_PRODUCT_GROWTH_MONTHLY),
+  growthAnnual: cleanEnvValue(process.env.DODO_PRODUCT_GROWTH_ANNUAL),
+  scaleMonthly: cleanEnvValue(process.env.DODO_PRODUCT_SCALE_MONTHLY),
+  scaleAnnual: cleanEnvValue(process.env.DODO_PRODUCT_SCALE_ANNUAL),
 }
 
 export interface DodoPaymentDetails {
@@ -67,6 +71,39 @@ export async function createLeadCreditCheckoutUrl(params: {
   return (session as unknown as { checkout_url: string }).checkout_url
 }
 
+export async function createSubscriptionCheckoutUrl(params: {
+  userEmail: string
+  userName: string
+  userId: string
+  tier: 'growth' | 'scale'
+  period: 'monthly' | 'annual'
+}): Promise<string> {
+  const productId = params.period === 'annual'
+    ? (params.tier === 'growth' ? PRODUCT_IDS.growthAnnual : PRODUCT_IDS.scaleAnnual)
+    : (params.tier === 'growth' ? PRODUCT_IDS.growthMonthly : PRODUCT_IDS.scaleMonthly)
+
+  if (!productId) {
+    throw new Error(`Dodo product not configured for ${params.tier}/${params.period}`)
+  }
+
+  const session = await getDodoClient().checkoutSessions.create({
+    product_cart: [{
+      product_id: productId,
+      quantity: 1,
+    }],
+    return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?view=settings&subscription=1`,
+    feature_flags: { redirect_immediately: true },
+    customer: { email: params.userEmail, name: params.userName },
+    metadata: {
+      purchase_type: 'subscription',
+      user_id: params.userId,
+      tier: params.tier,
+      period: params.period,
+    },
+  })
+  return (session as unknown as { checkout_url: string }).checkout_url
+}
+
 export async function retrieveDodoPayment(paymentId: string): Promise<DodoPaymentDetails> {
   return await getDodoClient().payments.retrieve(paymentId) as DodoPaymentDetails
 }
@@ -96,12 +133,20 @@ export function getDodoConfigSummary(): {
   environment: DodoEnvironment
   hasApiKey: boolean
   hasLeadCreditsProduct: boolean
+  hasGrowthMonthly: boolean
+  hasGrowthAnnual: boolean
+  hasScaleMonthly: boolean
+  hasScaleAnnual: boolean
   hasBusinessId: boolean
 } {
   return {
     environment: getDodoEnvironment(),
     hasApiKey: Boolean(cleanEnvValue(process.env.DODO_API_KEY)),
     hasLeadCreditsProduct: Boolean(PRODUCT_IDS.leadCredits),
+    hasGrowthMonthly: Boolean(PRODUCT_IDS.growthMonthly),
+    hasGrowthAnnual: Boolean(PRODUCT_IDS.growthAnnual),
+    hasScaleMonthly: Boolean(PRODUCT_IDS.scaleMonthly),
+    hasScaleAnnual: Boolean(PRODUCT_IDS.scaleAnnual),
     hasBusinessId: Boolean(cleanEnvValue(process.env.DODO_BUSINESS_ID)),
   }
 }

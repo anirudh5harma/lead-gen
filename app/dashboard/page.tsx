@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardShell from '@/components/DashboardShell'
+import { getUserWorkspaceMemberships } from '@/lib/team'
 import type { Lead } from '@/lib/leads'
 
 export const revalidate = 0
@@ -31,16 +32,18 @@ export default async function DashboardPage() {
         .maybeSingle()
     : { data: null }
 
-  // Migration-004 fields — may not exist yet; use defaults if the query errors.
+  // Migration-004+056 fields — may not exist yet; use defaults if the query errors.
   const { data: extProfile } = await supabase
     .from('user_profiles')
-    .select('plan, leads_used_this_month, lead_credit_balance, slack_webhook_url, slack_min_score')
+    .select('plan, leads_used_this_month, leads_reset_at, lead_credit_balance, subscription_status, subscription_period, subscription_renews_at, slack_webhook_url, slack_min_score')
     .eq('user_id', user.id)
     .maybeSingle()
 
   const { data: recentLeadCount } = await supabase.rpc('recent_lead_count', {
     p_user_id: user.id,
   })
+
+  const workspaces = await getUserWorkspaceMemberships(supabase, user.id)
 
   const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const leadCredits      = (extProfile as { lead_credit_balance?: number } | null)?.lead_credit_balance ?? 0
@@ -130,14 +133,19 @@ export default async function DashboardPage() {
         icp_keywords: (clientProfile as { icp_keywords?: string[] | null } | null)?.icp_keywords ?? profile.icp_keywords,
         target_industries: (clientProfile as { target_industries?: string[] | null } | null)?.target_industries ?? (profile as { target_industries?: string[] | null }).target_industries ?? [],
         email: user.email,
-        plan: 'free',
+        plan: (extProfile as { plan?: string } | null)?.plan ?? 'free',
         leads_used_this_month: leadsUsed,
+        leads_reset_at: (extProfile as { leads_reset_at?: string | null } | null)?.leads_reset_at ?? null,
         lead_credit_balance: leadCredits,
+        subscription_status: (extProfile as { subscription_status?: 'none' | 'active' | 'canceled' | 'past_due' } | null)?.subscription_status ?? 'none',
+        subscription_period: (extProfile as { subscription_period?: 'monthly' | 'annual' | null } | null)?.subscription_period ?? null,
+        subscription_renews_at: (extProfile as { subscription_renews_at?: string | null } | null)?.subscription_renews_at ?? null,
         slack_webhook_url: slackWebhookUrl,
         slack_min_score: slackMinScore,
         active_client_id: activeClientId,
         automation_mode: (profile as { automation_mode?: 'research_only' | 'approve_first' | 'autopilot' | null }).automation_mode ?? 'approve_first',
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
+        workspaces,
       }}
     />
   )

@@ -89,7 +89,7 @@ export async function POST(request: Request) {
 
   const { data: existingProfile } = await supabase
     .from('user_profiles')
-    .select('active_client_id, plan, leads_used_this_month, leads_reset_at, slack_webhook_url, slack_min_score, auto_send_enabled, automation_mode')
+    .select('active_client_id, plan, leads_used_this_month, leads_reset_at, slack_webhook_url, slack_min_score, auto_send_enabled, automation_mode, subscription_status, subscription_period, subscription_renews_at, lead_credit_balance')
     .eq('user_id', user.id)
     .maybeSingle()
 

@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
-import type { View, NavSection } from './types'
+import type { View, NavSection, WorkspaceMembership } from './types'
 
 interface SidebarProps {
   companyName: string
   userEmail?: string
   activeView: View
   onNavigate: (view: View) => void
+  workspaces: WorkspaceMembership[]
+  activeClientId: string | null
 }
 
 const SECTIONS: NavSection[] = [
@@ -99,10 +101,12 @@ function getViewIcon(view: View): React.ReactNode {
   }
 }
 
-export default function Sidebar({ companyName, userEmail, activeView, onNavigate }: SidebarProps) {
+export default function Sidebar({ companyName, userEmail, activeView, onNavigate, workspaces, activeClientId }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['sales']))
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
+  const [switchingWorkspace, setSwitchingWorkspace] = useState(false)
 
   useEffect(() => {
     function onResize() {
@@ -134,6 +138,31 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
 
   const initial = (companyName || userEmail || 'U').charAt(0).toUpperCase()
   const widthClass = collapsed ? 'md:w-[68px]' : 'md:w-[220px]'
+
+  const hasMultipleWorkspaces = workspaces.length > 0
+
+  async function switchWorkspace(clientId: string) {
+    if (clientId === activeClientId) {
+      setWorkspaceMenuOpen(false)
+      return
+    }
+    setSwitchingWorkspace(true)
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activeClientId: clientId }),
+      })
+      if (res.ok) {
+        window.location.reload()
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSwitchingWorkspace(false)
+      setWorkspaceMenuOpen(false)
+    }
+  }
 
   function navItemClass(active: boolean, compact = false) {
     if (compact) {
@@ -306,6 +335,50 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
         </nav>
 
         <div className="px-2.5 py-2.5 border-t border-[var(--color-line-1)] shrink-0">
+          {!collapsed && hasMultipleWorkspaces && (
+            <div className="relative mb-2">
+              <button
+                onClick={() => setWorkspaceMenuOpen(o => !o)}
+                disabled={switchingWorkspace}
+                className="w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--color-ink-3)] transition-colors"
+              >
+                <div className="w-5 h-5 shrink-0 rounded-full bg-gradient-to-br from-[var(--color-accent-hi)] to-[var(--color-accent)] flex items-center justify-center text-[9px] font-bold text-white">
+                  {initial}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11.5px] font-semibold text-[var(--color-text-1)] truncate leading-snug">{companyName || 'Your company'}</p>
+                </div>
+                <svg className={`w-3 h-3 text-[var(--color-text-3)] shrink-0 transition-transform ${workspaceMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {workspaceMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setWorkspaceMenuOpen(false)} />
+                  <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-[var(--color-line-1)] rounded-xl shadow-lg z-40 py-1 max-h-48 overflow-y-auto">
+                    {workspaces.map(ws => (
+                      <button
+                        key={ws.client_id}
+                        onClick={() => switchWorkspace(ws.client_id)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors ${
+                          ws.client_id === activeClientId
+                            ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] font-medium'
+                            : 'text-[var(--color-text-1)] hover:bg-[var(--color-ink-2)]'
+                        }`}
+                      >
+                        <span className="truncate flex-1">{ws.name}</span>
+                        {ws.client_id === activeClientId && (
+                          <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <div className={`flex items-center gap-2.5 rounded-lg px-2 h-10 hover:bg-[var(--color-ink-3)] transition-colors cursor-default ${collapsed ? 'justify-center' : ''}`}>
             <div className="w-7 h-7 shrink-0 rounded-full bg-gradient-to-br from-[var(--color-accent-hi)] to-[var(--color-accent)] flex items-center justify-center text-[11px] font-bold text-white">
               {initial}

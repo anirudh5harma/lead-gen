@@ -1,22 +1,22 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { MAX_CONNECTED_SENDING_ACCOUNTS } from '@/lib/oauth/connected-accounts'
 import WatchlistManager from '@/components/WatchlistManager'
 import type { UserProfile, ConnectedAccount, BlockedCompany } from './types'
-import { SectionHeader, EmptyState } from './shared'
+import { SectionHeader } from './shared'
 import SpotlightCard from '@/components/landing/SpotlightCard'
+import { getTierConfig, type SubscriptionTier } from '@/lib/lead-credits'
 
 interface Props {
   profile: UserProfile
 }
 
-const CREDIT_TOP_UPS = [
-  { amount: 5, credits: 20 },
-  { amount: 20, credits: 80 },
-  { amount: 50, credits: 200 },
-  { amount: 100, credits: 400 },
+const PAYG_PACKS = [
+  { amount: 20, credits: 25 },
+  { amount: 50, credits: 75 },
+  { amount: 100, credits: 200 },
 ]
 
 export default function SettingsView({ profile }: Props) {
@@ -30,7 +30,8 @@ export default function SettingsView({ profile }: Props) {
           label="Settings"
         />
         <div className="space-y-5">
-          <CreditsPanel balance={profile.lead_credit_balance ?? 0} />
+          <SubscriptionPanel profile={profile} />
+          <TeamPanel profile={profile} />
           <TargetingPanel profile={profile} />
           <WatchlistPanel />
           <BlockedCompaniesPanel />
@@ -61,16 +62,37 @@ export default function SettingsView({ profile }: Props) {
 }
 
 /* ─────────────────────────────────────────────
-   Credits — intentionally left as-is per request
+   Subscription + Credits
    ───────────────────────────────────────────── */
-function CreditsPanel({ balance }: { balance: number }) {
-  const [selectedIndex, setSelectedIndex] = useState(1)
-  const [checkoutAmount, setCheckoutAmount] = useState<number | null>(null)
+function SubscriptionPanel({ profile }: { profile: UserProfile }) {
+  const tier = (profile.plan as SubscriptionTier) || 'free'
+  const config = getTierConfig(tier)
+  const leadsUsed = profile.leads_used_this_month ?? 0
+  const includedLeads = config.includedLeads
+  const remainingIncluded = Math.max(0, includedLeads - leadsUsed)
+  const creditBalance = profile.lead_credit_balance ?? 0
+  const isSubscribed = profile.subscription_status === 'active' && tier !== 'free'
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   const [checkoutMsg, setCheckoutMsg] = useState<string | null>(null)
-  const selected = CREDIT_TOP_UPS[selectedIndex] ?? CREDIT_TOP_UPS[1]
 
-  const startCheckout = useCallback(async (amountDollars: number) => {
-    setCheckoutAmount(amountDollars)
+  const startSubscriptionCheckout = useCallback(async (selectedTier: 'growth' | 'scale', period: 'monthly' | 'annual') => {
+    setCheckoutLoading(`${selectedTier}-${period}`)
+    setCheckoutMsg(null)
+    try {
+      const res = await fetch('/api/billing/subscription/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: selectedTier, period }),
+      })
+      const data = await res.json().catch(() => null) as { url?: string; error?: string } | null
+      if (!res.ok || !data?.url) { setCheckoutMsg(data?.error ?? 'Unable to start checkout.'); return }
+      window.location.assign(data.url)
+    } catch { setCheckoutMsg('Unable to start checkout.') }
+    finally { setCheckoutLoading(null) }
+  }, [])
+
+  const startCreditCheckout = useCallback(async (amountDollars: number) => {
+    setCheckoutLoading(`credit-${amountDollars}`)
     setCheckoutMsg(null)
     try {
       const res = await fetch('/api/billing/credits/checkout', {
@@ -82,56 +104,366 @@ function CreditsPanel({ balance }: { balance: number }) {
       if (!res.ok || !data?.url) { setCheckoutMsg(data?.error ?? 'Unable to start checkout.'); return }
       window.location.assign(data.url)
     } catch { setCheckoutMsg('Unable to start checkout.') }
-    finally { setCheckoutAmount(null) }
+    finally { setCheckoutLoading(null) }
   }, [])
 
   return (
     <SpotlightCard className="card divide-y divide-[var(--color-line-1)] overflow-hidden card-hover">
       <div className="px-5 py-4 flex items-center justify-between bg-[var(--color-ink-2)]/30">
         <div>
-          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Credits</h2>
-          <p className="text-xs text-[var(--color-text-4)] mt-0.5">Pay-as-you-go. 1 credit = 1 lead unlock.</p>
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">Plan & Credits</h2>
+          <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+            {isSubscribed
+              ? `${config.name} plan — ${remainingIncluded} of ${includedLeads} included leads remaining this month`
+              : `Pay-as-you-go — ${creditBalance} credits available`}
+          </p>
         </div>
-        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] text-[var(--color-accent-ring)]">PAYG</span>
+        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+          isSubscribed
+            ? 'border-[var(--color-accent)]/40 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+            : 'border-[var(--color-line-2)] bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
+        }`}>
+          {isSubscribed ? config.name.toUpperCase() : 'PAYG'}
+        </span>
       </div>
+
+      {/* Subscription usage bar */}
+      {isSubscribed && (
+        <div className="px-5 py-4">
+          <div className="flex items-center justify-between text-[11px] text-[var(--color-text-3)] mb-1.5">
+            <span>Monthly usage</span>
+            <span>{leadsUsed} / {includedLeads} leads</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-[var(--color-ink-2)] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[var(--color-accent)] transition-all"
+              style={{ width: `${Math.min(100, (leadsUsed / Math.max(1, includedLeads)) * 100)}%` }}
+            />
+          </div>
+          {remainingIncluded === 0 && (
+            <p className="mt-2 text-[11px] text-[var(--color-sig-regulation)]">
+              You have used all included leads this month. Additional unlocks will consume PAYG credits at ${config.overageRate}/lead.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* PAYG credits */}
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-[var(--color-text-1)]">Add lead credits</p>
-            <p className="text-xs text-[var(--color-text-4)] mt-0.5">New workspaces start with 20 credits. Each $1 adds 4 lead unlocks.</p>
+            <p className="text-xs font-semibold text-[var(--color-text-1)]">PAYG credits</p>
+            <p className="text-xs text-[var(--color-text-4)] mt-0.5">
+              {isSubscribed
+                ? 'Backup credits for when you exceed your monthly included leads.'
+                : 'Buy credits to unlock leads. Credits never expire.'}
+            </p>
           </div>
           <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-bold text-[var(--color-accent-ring)]">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            {balance} credits
+            {creditBalance} credits
           </span>
         </div>
-        <div className="mt-4 rounded-xl border border-[var(--color-line-1)] bg-white px-4 py-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Top up</p><p className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text-1)]">${selected.amount}</p></div>
-            <div className="text-right"><p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Unlocks</p><p className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-accent-ring)]">{selected.credits}</p></div>
-          </div>
-          <input type="range" min={0} max={CREDIT_TOP_UPS.length - 1} step={1} value={selectedIndex} onChange={e => setSelectedIndex(Number(e.target.value))} className="mt-4 w-full accent-[var(--color-accent)]" aria-label="Credit top up amount" />
-          <div className="mt-2 grid grid-cols-4 gap-2">
-            {CREDIT_TOP_UPS.map((opt, i) => (
-              <button key={opt.amount} type="button" onClick={() => setSelectedIndex(i)} className={`rounded-xl border px-2 py-2 text-left transition-all duration-200 ${selectedIndex === i ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)] shadow-sm' : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40 hover:shadow-sm'}`}>
-                <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">${opt.amount}</span>
-                <span className="block text-[10.5px] text-[var(--color-text-4)]">{opt.credits}</span>
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <p className="text-[11px] text-[var(--color-text-4)]">Checkout opens securely.</p>
-            <button onClick={() => startCheckout(selected.amount)} disabled={checkoutAmount !== null} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] transition-transform">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              {checkoutAmount !== null ? 'Starting…' : 'Top Up'}
+        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+          {PAYG_PACKS.map(pack => (
+            <button
+              key={pack.amount}
+              type="button"
+              onClick={() => startCreditCheckout(pack.amount)}
+              disabled={checkoutLoading === `credit-${pack.amount}`}
+              className="rounded-xl border border-[var(--color-line-1)] bg-white px-3 py-2.5 text-left transition-all hover:border-[var(--color-accent)]/40 hover:shadow-sm disabled:opacity-50"
+            >
+              <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">${pack.amount}</span>
+              <span className="block text-[10.5px] text-[var(--color-text-4)]">{pack.credits} unlocks</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Change plan */}
+      <div className="px-5 py-4">
+        <p className="text-xs font-semibold text-[var(--color-text-1)] mb-3">Change plan</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <button
+            onClick={() => startSubscriptionCheckout('growth', 'monthly')}
+            disabled={checkoutLoading === 'growth-monthly'}
+            className={`rounded-xl border px-3 py-2.5 text-left transition-all hover:shadow-sm disabled:opacity-50 ${
+              tier === 'growth' ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)]' : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40'
+            }`}
+          >
+            <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">Growth — $39/mo</span>
+            <span className="block text-[10.5px] text-[var(--color-text-4)]">60 leads/mo · 3 inboxes</span>
+          </button>
+          <button
+            onClick={() => startSubscriptionCheckout('scale', 'monthly')}
+            disabled={checkoutLoading === 'scale-monthly'}
+            className={`rounded-xl border px-3 py-2.5 text-left transition-all hover:shadow-sm disabled:opacity-50 ${
+              tier === 'scale' ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)]' : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40'
+            }`}
+          >
+            <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">Scale — $89/mo</span>
+            <span className="block text-[10.5px] text-[var(--color-text-4)]">200 leads/mo · 10 inboxes</span>
+          </button>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <Link href="/pricing" className="text-[11px] text-[var(--color-accent-ring)] hover:underline">
+            View all plans and annual billing →
+          </Link>
+          {profile.subscription_renews_at && (
+            <span className="text-[11px] text-[var(--color-text-4)]">
+              Renews {new Date(profile.subscription_renews_at).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {checkoutMsg && <p className="px-5 pb-4 text-[11px] text-[var(--color-sig-regulation)]">{checkoutMsg}</p>}
+    </SpotlightCard>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   Team
+   ───────────────────────────────────────────── */
+interface Member {
+  id: string
+  client_id: string
+  user_id: string | null
+  role: 'owner' | 'admin' | 'member'
+  invited_email: string
+  invited_at: string
+  accepted_at: string | null
+  name?: string | null
+}
+
+interface ActivityItem {
+  id: string
+  action_type: string
+  entity_type: string | null
+  entity_id: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  user_name?: string | null
+}
+
+function TeamPanel({ profile }: { profile: UserProfile }) {
+  const clientId = profile.active_client_id
+  const [members, setMembers] = useState<Member[] | null>(null)
+  const [activities, setActivities] = useState<ActivityItem[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member')
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [removeLoading, setRemoveLoading] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    if (!clientId) return
+    setLoading(true)
+    try {
+      const [membersRes, activityRes] = await Promise.all([
+        fetch(`/api/team/members?client_id=${encodeURIComponent(clientId)}`),
+        fetch(`/api/team/activity?client_id=${encodeURIComponent(clientId)}&limit=20`),
+      ])
+      const membersData = await membersRes.json().catch(() => ({ members: [] })) as { members: Member[] }
+      const activityData = await activityRes.json().catch(() => ({ activities: [] })) as { activities: ActivityItem[] }
+      setMembers(membersData.members ?? [])
+      setActivities(activityData.activities ?? [])
+    } catch {
+      setMembers([])
+      setActivities([])
+    } finally {
+      setLoading(false)
+    }
+  }, [clientId])
+
+  useEffect(() => { load() }, [load])
+
+  const sendInvite = useCallback(async () => {
+    if (!clientId || !inviteEmail.trim()) return
+    setInviteLoading(true)
+    setInviteMsg(null)
+    try {
+      const res = await fetch('/api/team/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, email: inviteEmail.trim(), role: inviteRole }),
+      })
+      const data = await res.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } | null
+      if (!res.ok || !data?.ok) {
+        setInviteMsg(data?.error ?? 'Failed to send invite.')
+      } else {
+        setInviteMsg(data.message ?? 'Invite sent.')
+        setInviteEmail('')
+        load()
+      }
+    } catch {
+      setInviteMsg('Failed to send invite.')
+    } finally {
+      setInviteLoading(false)
+    }
+  }, [clientId, inviteEmail, inviteRole, load])
+
+  const removeMember = useCallback(async (memberId: string) => {
+    if (!clientId) return
+    setRemoveLoading(memberId)
+    try {
+      const res = await fetch('/api/team/members', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, member_id: memberId }),
+      })
+      if (res.ok) {
+        setMembers(prev => prev?.filter(m => m.id !== memberId) ?? [])
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRemoveLoading(null)
+    }
+  }, [clientId])
+
+  const isOwner = members?.some(m => m.user_id && m.role === 'owner')
+  const canManage = isOwner || members?.some(m => m.user_id && m.role === 'admin')
+
+  function activityLabel(action: string): string {
+    const labels: Record<string, string> = {
+      member_joined: 'joined the workspace',
+      member_removed: 'removed a member',
+      lead_unlocked: 'unlocked a lead',
+      lead_assigned: 'assigned a lead',
+      email_sent: 'sent an email',
+      reply_received: 'received a reply',
+      meeting_booked: 'booked a meeting',
+      outreach_drafted: 'drafted outreach',
+      sequence_created: 'created a sequence',
+      explore_run: 'ran explore',
+      source_added: 'added a source',
+    }
+    return labels[action] ?? action.replace(/_/g, ' ')
+  }
+
+  return (
+    <SpotlightCard className="card overflow-hidden card-hover">
+      <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Collaboration</p>
+        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Team</h3>
+        <p className="mt-1 text-xs text-[var(--color-text-4)]">Invite team members and view workspace activity.</p>
+      </div>
+
+      {/* Invite */}
+      {canManage && (
+        <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+          <p className="text-xs font-semibold text-[var(--color-text-1)] mb-2">Invite by email</p>
+          <div className="flex items-center gap-2">
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              placeholder="colleague@company.com"
+              className="flex-1 text-[13px] px-3 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+              onKeyDown={e => { if (e.key === 'Enter') sendInvite() }}
+            />
+            <select
+              value={inviteRole}
+              onChange={e => setInviteRole(e.target.value as 'admin' | 'member')}
+              className="text-[12px] px-2 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button
+              onClick={sendInvite}
+              disabled={inviteLoading || !inviteEmail.trim()}
+              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-full btn-primary transition-colors disabled:opacity-50"
+            >
+              {inviteLoading ? 'Sending…' : 'Invite'}
             </button>
           </div>
+          {inviteMsg && (
+            <p className={`mt-2 text-[11px] ${inviteMsg.includes('sent') ? 'text-emerald-600' : 'text-[var(--color-sig-regulation)]'}`}>{inviteMsg}</p>
+          )}
         </div>
-        {checkoutMsg && <p className="mt-2 text-[11px] text-[var(--color-sig-regulation)]">{checkoutMsg}</p>}
+      )}
+
+      {/* Members */}
+      <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+        <p className="text-xs font-semibold text-[var(--color-text-1)] mb-3">Members</p>
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+            Loading…
+          </div>
+        ) : members && members.length > 0 ? (
+          <ul className="space-y-2">
+            {members.map(member => (
+              <li key={member.id} className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--color-accent-hi)] to-[var(--color-accent)] flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                    {(member.name || member.invited_email).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[13px] text-[var(--color-text-1)] truncate">{member.name || member.invited_email}</p>
+                    <p className="text-[10.5px] text-[var(--color-text-3)] truncate">
+                      {member.invited_email}
+                      {member.role !== 'member' && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-[var(--color-ink-2)] border border-[var(--color-line-1)] text-[10px] font-medium uppercase">
+                          {member.role}
+                        </span>
+                      )}
+                      {!member.accepted_at && (
+                        <span className="ml-1.5 text-amber-600 text-[10px]">Pending</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {canManage && member.role !== 'owner' && (
+                  <button
+                    onClick={() => removeMember(member.id)}
+                    disabled={removeLoading === member.id}
+                    className="text-[11px] text-[var(--color-sig-regulation)] hover:underline disabled:opacity-50 shrink-0"
+                  >
+                    {removeLoading === member.id ? 'Removing…' : 'Remove'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-[var(--color-text-3)]">No team members yet.</p>
+        )}
+      </div>
+
+      {/* Activity */}
+      <div className="px-5 py-4">
+        <p className="text-xs font-semibold text-[var(--color-text-1)] mb-3">Recent activity</p>
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+            Loading…
+          </div>
+        ) : activities && activities.length > 0 ? (
+          <ul className="space-y-2">
+            {activities.map(activity => (
+              <li key={activity.id} className="flex items-start gap-2 text-[12.5px]">
+                <span className="text-[var(--color-text-3)] shrink-0">
+                  {new Date(activity.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                </span>
+                <span className="text-[var(--color-text-2)]">
+                  <span className="font-medium text-[var(--color-text-1)]">{activity.user_name || 'Team member'}</span>{' '}
+                  {activityLabel(activity.action_type)}
+                  {activity.entity_type && activity.entity_id && (
+                    <span className="text-[var(--color-text-4)]"> · {activity.entity_type}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-[var(--color-text-3)]">No recent activity.</p>
+        )}
       </div>
     </SpotlightCard>
   )
@@ -199,56 +531,55 @@ function BlockedCompaniesPanel() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    try { const res = await fetch('/api/blocked-companies'); const data = await res.json() as { blocked?: BlockedCompany[] }; setBlocked(data.blocked ?? []) }
-    finally { setLoading(false) }
+    try {
+      const res = await fetch('/api/blocked-companies')
+      const data = await res.json().catch(() => ({ companies: [] })) as { companies: BlockedCompany[] }
+      setBlocked(data.companies ?? [])
+    } catch {
+      setBlocked([])
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const unblock = useCallback(async (id: string) => {
+  useEffect(() => { load() }, [load])
+
+  const remove = useCallback(async (id: string) => {
     await fetch(`/api/blocked-companies/${id}`, { method: 'DELETE' })
-    setBlocked(prev => prev?.filter(b => b.id !== id) ?? [])
+    setBlocked(prev => prev?.filter(c => c.id !== id) ?? null)
   }, [])
 
   return (
     <SpotlightCard className="card overflow-hidden card-hover">
-      <div className="px-5 py-4 border-b border-[var(--color-line-1)] flex items-center justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Safety</p>
-          <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Blocked Companies</h3>
-          <p className="mt-1 text-xs text-[var(--color-text-4)]">No signals from these companies will appear in your feed.</p>
-        </div>
-        {blocked === null && (
-          <button onClick={load} disabled={loading} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-[var(--color-text-2)] border border-[var(--color-line-1)] bg-white hover:bg-[var(--color-ink-2)] disabled:opacity-50 transition-colors">
-            {loading ? 'Loading…' : 'Show'}
-          </button>
+      <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Guardrails</p>
+        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Blocked Companies</h3>
+        <p className="mt-1 text-xs text-[var(--color-text-4)]">Accounts Bombsell will skip in outreach and research.</p>
+      </div>
+      <div className="px-5 py-4">
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+            Loading…
+          </div>
+        ) : blocked && blocked.length > 0 ? (
+          <ul className="space-y-2">
+            {blocked.map(company => (
+              <li key={company.id} className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="text-[var(--color-text-1)]">{company.company_name}</span>
+                <button
+                  onClick={() => remove(company.id)}
+                  className="text-[11px] text-[var(--color-sig-regulation)] hover:underline"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-[var(--color-text-3)]">No blocked companies.</p>
         )}
       </div>
-      {blocked !== null && (blocked.length === 0 ? (
-        <div className="px-5 py-8">
-          <EmptyState title="No companies blocked" body="Block a company from any lead card to stop their signals from appearing." />
-        </div>
-      ) : (
-        <ul className="divide-y divide-[var(--color-line-1)]">
-          {blocked.map(b => (
-            <li key={b.id} className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-[var(--color-ink-2)]/20 transition-colors">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-ink-2)] text-[var(--color-text-4)]">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                </span>
-                <div className="min-w-0">
-                  <span className="text-xs font-semibold text-[var(--color-text-1)]">{b.company_name}</span>
-                  {b.company_domain && <span className="ml-2 text-[10px] text-[var(--color-text-4)]">{b.company_domain}</span>}
-                </div>
-              </div>
-              <button onClick={() => unblock(b.id)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] hover:bg-red-50 transition-colors shrink-0">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                Unblock
-              </button>
-            </li>
-          ))}
-        </ul>
-      ))}
     </SpotlightCard>
   )
 }
@@ -257,102 +588,99 @@ function BlockedCompaniesPanel() {
    Connected Accounts
    ───────────────────────────────────────────── */
 function ConnectedAccountsPanel() {
-  const [accounts, setAccounts] = useState<ConnectedAccount[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [removing, setRemoving] = useState<string | null>(null)
-  const [banner, setBanner] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
-  const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const activeAccounts = accounts.filter(a => a.is_active)
-  const limitReached = activeAccounts.length >= MAX_CONNECTED_SENDING_ACCOUNTS
-  const enableGmail = process.env.NEXT_PUBLIC_ENABLE_GMAIL_CONNECT === 'true'
+  const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/connected-accounts', { cache: 'no-store' })
-      .then(r => r.json() as Promise<{ accounts?: ConnectedAccount[] }>)
-      .then(d => { setAccounts(d.accounts ?? []); setLoaded(true) })
-      .catch(() => setLoaded(true))
-    const params = new URLSearchParams(window.location.search)
-    const connected = params.get('ca_connected')
-    const error = params.get('ca_error')
-    if (connected) showBanner('ok', `${connected} connected successfully.`)
-    else if (error) {
-      const msgs: Record<string, string> = { google_denied: 'Google sign-in was cancelled.', microsoft_denied: 'Microsoft sign-in was cancelled.', max_accounts: `You can connect up to ${MAX_CONNECTED_SENDING_ACCOUNTS} inboxes.` }
-      showBanner('err', msgs[error] ?? 'Connection failed.')
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/connected-accounts')
+      const data = await res.json().catch(() => ({ accounts: [] })) as { accounts: ConnectedAccount[] }
+      setAccounts(data.accounts ?? [])
+    } catch {
+      setAccounts([])
+    } finally {
+      setLoading(false)
     }
   }, [])
 
-  function showBanner(type: 'ok' | 'err', msg: string) {
-    setBanner({ type, msg })
-    if (bannerTimer.current) clearTimeout(bannerTimer.current)
-    bannerTimer.current = setTimeout(() => setBanner(null), 5000)
-  }
+  useEffect(() => { load() }, [load])
 
-  const remove = useCallback(async (id: string) => {
-    setRemoving(id)
-    try {
-      await fetch('/api/connected-accounts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
-      setAccounts(prev => prev.filter(a => a.id !== id))
-    } finally { setRemoving(null) }
+  const disconnect = useCallback(async (id: string) => {
+    await fetch(`/api/connected-accounts?id=${id}`, { method: 'DELETE' })
+    setAccounts(prev => prev?.filter(a => a.id !== id) ?? null)
   }, [])
+
+  const count = accounts?.length ?? 0
+  const atLimit = count >= MAX_CONNECTED_SENDING_ACCOUNTS
 
   return (
     <SpotlightCard className="card overflow-hidden card-hover">
       <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Inboxes</p>
-        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Sending Accounts</h3>
-        <p className="mt-1 text-xs text-[var(--color-text-4)]">Emails send from your own inbox. Multiple accounts rotate automatically.</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Channels</p>
+        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Connected Accounts</h3>
+        <p className="mt-1 text-xs text-[var(--color-text-4)]">
+          Gmail and Outlook inboxes used for sending and reply tracking.
+        </p>
       </div>
-      {banner && (
-        <div className={`px-5 py-2.5 text-xs ${banner.type === 'ok' ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'bg-red-50 text-red-600'}`}>
-          {banner.msg}
-        </div>
-      )}
-      {loaded && accounts.length > 0 && (
-        <ul className="divide-y divide-[var(--color-line-1)]">
-          {accounts.map(a => (
-            <li key={a.id} className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-[var(--color-ink-2)]/20 transition-colors">
-              <div className="min-w-0 flex items-center gap-2.5">
-                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${a.provider === 'gmail' ? 'bg-blue-50' : 'bg-orange-50'}`}>
-                  {a.provider === 'gmail' ? (
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/><path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>
-                  )}
-                </span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-ink-2)] border border-[var(--color-line-1)] text-[var(--color-text-3)] uppercase">{a.provider}</span>
-                    <span className="text-xs text-[var(--color-text-1)] truncate">{a.display_name ? `${a.display_name} · ${a.email}` : a.email}</span>
-                  </div>
-                  <p className="text-[10px] text-[var(--color-text-4)] mt-0.5">{a.is_active ? 'Active' : 'Inactive'}{a.last_used_at ? ` · Last used ${new Date(a.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ' · Not used yet'}</p>
-                </div>
+      <div className="px-5 py-4 space-y-3">
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+            Loading…
+          </div>
+        ) : accounts && accounts.length > 0 ? (
+          accounts.map(account => (
+            <div key={account.id} className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className={`w-2 h-2 rounded-full ${account.is_active ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                <span className="text-[13px] text-[var(--color-text-1)]">{account.email}</span>
+                <span className="text-[10px] uppercase tracking-wider text-[var(--color-text-4)] bg-[var(--color-ink-2)] px-1.5 py-0.5 rounded">{account.provider}</span>
               </div>
-              <button onClick={() => remove(a.id)} disabled={removing === a.id} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-[var(--color-text-3)] hover:text-[var(--color-sig-regulation)] hover:bg-red-50 disabled:opacity-50 transition-colors shrink-0">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                {removing === a.id ? 'Removing…' : 'Disconnect'}
+              <button
+                onClick={() => disconnect(account.id)}
+                className="text-[11px] text-[var(--color-sig-regulation)] hover:underline"
+              >
+                Disconnect
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {loaded && accounts.length === 0 && (
-        <div className="px-5 py-8">
-          <EmptyState title="No inboxes connected" body="Connect Gmail or Outlook to start sending outreach from your own email." />
-        </div>
-      )}
-      <div className="px-5 py-4 border-t border-[var(--color-line-1)] flex items-center gap-2 flex-wrap">
-        {limitReached && <span className="text-[11px] text-[var(--color-text-4)]">Disconnect an inbox before adding another.</span>}
-        {enableGmail && !limitReached && (
-          <a href="/api/auth/google-mail" className="inline-flex items-center gap-2 text-xs font-semibold px-3.5 py-1.5 rounded-full btn-ghost transition-colors hover:scale-[1.02] active:scale-[0.98]">
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            </div>
+          ))
+        ) : (
+          <p className="text-[13px] text-[var(--color-text-3)]">No connected accounts.</p>
+        )}
+
+        <div className="pt-2 flex flex-wrap gap-2">
+          <a
+            href="/api/auth/google-mail"
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              atLimit
+                ? 'border-[var(--color-line-2)] text-[var(--color-text-4)] cursor-not-allowed pointer-events-none'
+                : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40 hover:shadow-sm text-[var(--color-text-1)]'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
             Connect Gmail
           </a>
-        )}
-        {!limitReached && (
-          <a href="/api/auth/microsoft-mail" className="inline-flex items-center gap-2 text-xs font-semibold px-3.5 py-1.5 rounded-full btn-ghost transition-colors hover:scale-[1.02] active:scale-[0.98]">
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/><path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>
+          <a
+            href="/api/auth/microsoft-mail"
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              atLimit
+                ? 'border-[var(--color-line-2)] text-[var(--color-text-4)] cursor-not-allowed pointer-events-none'
+                : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40 hover:shadow-sm text-[var(--color-text-1)]'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
             Connect Outlook
           </a>
+        </div>
+        {atLimit && (
+          <p className="text-[11px] text-[var(--color-sig-regulation)]">
+            You have reached the maximum of {MAX_CONNECTED_SENDING_ACCOUNTS} connected accounts.
+          </p>
         )}
       </div>
     </SpotlightCard>
@@ -368,50 +696,63 @@ function SlackPanel({ profile }: { profile: UserProfile }) {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  async function save() {
+  const save = useCallback(async () => {
     setSaving(true)
     setMsg(null)
     try {
       const res = await fetch('/api/settings/slack-webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slack_webhook_url: url || null, slack_min_score: minScore }),
+        body: JSON.stringify({ webhook_url: url || null, min_score: minScore }),
       })
-      if (!res.ok) { setMsg('Failed to save.'); return }
+      if (!res.ok) throw new Error()
       setMsg('Saved.')
-    } catch { setMsg('Failed to save.') }
-    finally { setSaving(false) }
-  }
+    } catch {
+      setMsg('Failed to save.')
+    } finally {
+      setSaving(false)
+    }
+  }, [url, minScore])
 
   return (
     <SpotlightCard className="card overflow-hidden card-hover">
       <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Notifications</p>
-        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Slack Alerts</h3>
-        <p className="mt-1 text-xs text-[var(--color-text-4)]">Get notified when a high-quality lead is ready for review.</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Connect</p>
+        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Slack Notifications</h3>
+        <p className="mt-1 text-xs text-[var(--color-text-4)]">Get alerts for high-relevance signals and replies.</p>
       </div>
-      <div className="px-5 py-4 space-y-4">
-        <label className="space-y-1.5">
-          <span className="text-xs font-semibold text-[var(--color-text-1)]">Webhook URL</span>
+      <div className="px-5 py-4 space-y-3">
+        <div>
+          <label className="text-[11px] font-medium text-[var(--color-text-3)]">Webhook URL</label>
           <input
             type="url"
             value={url}
             onChange={e => setUrl(e.target.value)}
             placeholder="https://hooks.slack.com/services/..."
-            className="w-full h-9 px-3 rounded-lg bg-white border border-[var(--color-line-2)] text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all"
+            className="mt-1 w-full text-[13px] px-3 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
           />
-        </label>
-        <label className="space-y-1.5">
-          <span className="text-xs font-semibold text-[var(--color-text-1)]">Minimum score</span>
-          <select value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-full h-9 px-3 rounded-lg bg-white border border-[var(--color-line-2)] text-[13px] focus:border-[var(--color-accent)]/40 focus:ring-1 focus:ring-[var(--color-accent)]/20 transition-all">
-            {Array.from({ length: 10 }, (_, i) => i + 1).map(s => <option key={s} value={s}>{s}+</option>)}
-          </select>
-        </label>
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <span className="text-[11px] text-[var(--color-text-4)]">{msg ?? ''}</span>
-          <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-full btn-primary px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98] transition-transform">
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-[var(--color-text-3)]">Minimum relevance score ({minScore})</label>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            step={1}
+            value={minScore}
+            onChange={e => setMinScore(Number(e.target.value))}
+            className="mt-1 w-full accent-[var(--color-accent)]"
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full btn-primary transition-colors hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+          >
             {saving ? 'Saving…' : 'Save'}
           </button>
+          {msg && <span className="text-[11px] text-[var(--color-text-3)]">{msg}</span>}
         </div>
       </div>
     </SpotlightCard>
@@ -423,9 +764,9 @@ function SlackPanel({ profile }: { profile: UserProfile }) {
    ───────────────────────────────────────────── */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-4 px-5 py-3 text-xs">
-      <dt className="text-[10px] uppercase tracking-widest text-[var(--color-text-4)] pt-0.5 font-semibold">{label}</dt>
-      <dd className="text-[var(--color-text-1)]">{children}</dd>
+    <div className="px-5 py-3 flex items-start justify-between gap-4">
+      <span className="text-[11px] font-medium text-[var(--color-text-3)] shrink-0 w-28">{label}</span>
+      <span className="text-[13px] text-[var(--color-text-1)] text-right">{children}</span>
     </div>
   )
 }

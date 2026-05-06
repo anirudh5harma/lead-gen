@@ -90,14 +90,13 @@ export async function PATCH(request: Request) {
   const activeClientId = body?.activeClientId
   if (!activeClientId) return NextResponse.json({ error: 'activeClientId required' }, { status: 400 })
 
-  const { data: existing } = await supabase
-    .from('client_accounts')
-    .select('id')
-    .eq('id', activeClientId)
-    .eq('user_id', user.id)
-    .maybeSingle()
+  // Allow switching to owned workspaces or team workspaces the user is a member of
+  const [{ data: owned }, { data: member }] = await Promise.all([
+    supabase.from('client_accounts').select('id').eq('id', activeClientId).eq('user_id', user.id).maybeSingle(),
+    supabase.from('workspace_members').select('id').eq('client_id', activeClientId).eq('user_id', user.id).not('accepted_at', 'is', null).maybeSingle(),
+  ])
 
-  if (!existing) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+  if (!owned && !member) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
   const { error } = await supabase
     .from('user_profiles')

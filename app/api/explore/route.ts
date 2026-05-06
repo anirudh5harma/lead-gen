@@ -6,6 +6,7 @@ import { shouldUseWorkspaceIcp } from '@/lib/explore'
 import { buildFeedSessionLabel } from '@/lib/feed-sessions'
 import { buildExploreLeadFeedSnapshot, type LeadSignalType } from '@/lib/lead-sources'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { apolloCompanyEnrich, apolloCompanyMatchesFilters } from '@/lib/apollo'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -141,6 +142,20 @@ export async function POST(request: Request) {
     for (const lead of generation.leads) {
       const key = normalizeExploreCompanyKey(lead.company_name, lead.company_domain)
       if (excludedCompanies.has(key)) continue
+
+      // Apollo verification: validate domain and filter constraints
+      if (lead.company_domain && process.env.APOLLO_API_KEY) {
+        const apolloCompany = await apolloCompanyEnrich(lead.company_domain)
+        if (apolloCompany) {
+          const filterCheck = apolloCompanyMatchesFilters(apolloCompany, body?.filters ?? {})
+          if (!filterCheck.matches) {
+            console.log('[explore] Apollo filter reject:', lead.company_name, filterCheck.reason)
+            excludedCompanies.add(key)
+            continue
+          }
+        }
+      }
+
       excludedCompanies.add(key)
       generatedLeads.push(lead)
       addedThisBatch++

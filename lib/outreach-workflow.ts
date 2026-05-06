@@ -265,6 +265,7 @@ export async function upsertOutreachDraft(
   supabase: SupabaseClient,
   input: {
     leadId: string
+    userId: string
     clientId?: string | null
     subject: string
     body: string
@@ -279,6 +280,7 @@ export async function upsertOutreachDraft(
     .from('outreach_drafts')
     .upsert({
       lead_id: input.leadId,
+      user_id: input.userId,
       client_id: input.clientId ?? null,
       subject: input.subject,
       body: normalizedBody,

@@ -144,6 +144,8 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
         userEmail={userProfile.email}
         activeView={activeView}
         onNavigate={navigate}
+        workspaces={userProfile.workspaces ?? []}
+        activeClientId={userProfile.active_client_id ?? null}
       />
 
       <div className="flex-1 min-w-0 flex flex-col relative z-10">

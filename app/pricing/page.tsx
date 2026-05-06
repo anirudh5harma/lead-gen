@@ -13,50 +13,98 @@ const PLANS = [
     name: 'Launch',
     price: '$0',
     period: 'forever',
-    description: 'For founder-led GTM and small teams starting account-agent coverage.',
+    description: 'Getting started.',
     features: [
-      '20 starter lead credits',
+      '10 starter lead credits',
       'Account agents and Work Inbox',
-      'Signal monitoring and account memory',
+      'Live Signal monitoring',
+      'Marketing Ideas and Analytics',
       'Gmail and Outlook connectors',
-      'Approve-first sending guardrails',
       'Reply and outcome learning',
-      'Top up credits as needed',
     ],
     cta: 'Get started',
+    highlight: false,
+  },
+  {
+    id: 'growth' as const,
+    name: 'Growth',
+    price: '$39',
+    period: '/mo',
+    annualPrice: '$390',
+    annualPeriod: '/yr',
+    description: 'Founders and growing teams.',
+    features: [
+      '60 lead unlocks/month',
+      'Autopilot Engine',
+      'AI-Powered Lead Discovery',
+      '3 connected inboxes',
+      'PAYG overages at $0.65/lead',
+      'Everything in Launch'
+    ],
+    cta: 'Start Growth',
+    highlight: false,
+  },
+  {
+    id: 'scale' as const,
+    name: 'Scale',
+    price: '$89',
+    period: '/mo',
+    annualPrice: '$890',
+    annualPeriod: '/yr',
+    description: 'Volume, depth and team controls.',
+    features: [
+      '200 lead unlocks/month',
+      'Team features + shared memory',
+      'Custom outreach templates',
+      '10 connected inboxes',
+      'CRM sync and Slack alerts',
+      'PAYG overages at $0.50/lead',
+      'Everything in Growth'
+    ],
+    cta: 'Start Scale',
     highlight: true,
   },
   {
     id: 'enterprise' as const,
-    name: 'Scale',
+    name: 'Enterprise',
     price: 'Custom',
     period: '',
-    description: 'For small and mid-sized teams that want deeper sources, playbooks, and controls.',
+    description: 'SMBs with custom needs.',
     features: [
-      'Custom account-agent playbooks',
-      'Dedicated source connectors',
-      'Team guardrails and approval paths',
-      'CRM export and historical learning',
+      'Unlimited lead unlocks',
+      'Unlimited inboxes',
+      'Custom playbooks',
       'Security review and audit controls',
+      'Priority support',
     ],
     cta: 'Talk to us',
     highlight: false,
-    href: 'mailto:team@bombsell.com?subject=Scale%20Bombsell%20GTM%20Infrastructure',
+    href: 'mailto:team@bombsell.com?subject=Enterprise%20Plan%20Inquiry',
   },
+]
+
+const PAYG_PACKS = [
+  { amount: 20, credits: 25, label: 'Plus' },
+  { amount: 50, credits: 75, label: 'Pro' },
+  { amount: 100, credits: 200, label: 'Max' },
 ]
 
 const FAQS = [
   {
     q: 'What do credits pay for?',
-    a: 'Credits are used when Bombsell unlocks a lead/contact. Monitoring accounts, reviewing work items, connecting inboxes, and managing settings do not consume credits.',
+    a: 'Credits are used when Bombsell unlocks a lead/contact. Monitoring accounts, reviewing work items, connecting inboxes, and managing settings do not consume credits. Subscription plans include a monthly allocation of lead unlocks.',
   },
   {
-    q: 'What happens when I run out of credits?',
-    a: 'Your workspace still works, but new contact unlocks pause until you top up. Existing account memory, sent history, and work items remain available.',
+    q: 'What happens when I run out of subscription leads?',
+    a: 'You can either upgrade your plan or purchase PAYG credits. Growth overages are $0.65/lead; Scale overages are $0.50/lead. Free users must purchase credits to continue unlocking.',
   },
   {
-    q: 'What is included in self-serve?',
-    a: 'Account agents, Work Inbox, account memory, connected inboxes, approve-first outreach, and safe sending controls.',
+    q: 'Can I cancel or change my plan anytime?',
+    a: 'Yes. You can upgrade, downgrade, or cancel from your Settings page at any time. Upgrades take effect immediately; downgrades take effect at the end of your current billing cycle.',
+  },
+  {
+    q: 'What is included in the free Launch plan?',
+    a: 'Account agents, Work Inbox, account memory, connected inboxes, approve-first outreach, and safe sending controls. You get 10 starter credits to try lead unlocking.',
   },
   {
     q: 'When should I talk to Bombsell?',
@@ -75,6 +123,7 @@ const FAQS = [
 export default function PricingPage() {
   const [isSignedIn, setIsSignedIn] = useState(false)
   const [authLoading, setAuthLoading] = useState(false)
+  const [isAnnual, setIsAnnual] = useState(false)
   const router = useRouter()
   useSectionReveal()
 
@@ -89,7 +138,6 @@ export default function PricingPage() {
       router.push('/dashboard')
       return
     }
-
     setAuthLoading(true)
     const supabase = createClient()
     const callback = new URL('/auth/callback', window.location.origin)
@@ -101,6 +149,42 @@ export default function PricingPage() {
       },
     })
     if (error) setAuthLoading(false)
+  }
+
+  async function startSubscription(tier: 'growth' | 'scale', period: 'monthly' | 'annual') {
+    if (!isSignedIn) {
+      setAuthLoading(true)
+      const supabase = createClient()
+      const callback = new URL('/auth/callback', window.location.origin)
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: callback.toString(),
+          queryParams: { access_type: 'offline', prompt: 'consent' },
+        },
+      })
+      if (error) setAuthLoading(false)
+      return
+    }
+
+    setAuthLoading(true)
+    try {
+      const res = await fetch('/api/billing/subscription/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier, period }),
+      })
+      const data = await res.json().catch(() => null) as { url?: string; error?: string } | null
+      if (!res.ok || !data?.url) {
+        alert(data?.error ?? 'Unable to start checkout.')
+        setAuthLoading(false)
+        return
+      }
+      window.location.assign(data.url)
+    } catch {
+      alert('Unable to start checkout.')
+      setAuthLoading(false)
+    }
   }
 
   return (
@@ -123,7 +207,7 @@ export default function PricingPage() {
         </div>
       </nav>
 
-      <main className="relative z-10 flex-1 flex flex-col items-center px-6 md:px-8 pt-20 md:pt-28 pb-24">
+      <main className="relative z-10 flex-1 flex flex-col items-center px-6 md:px-8 pt-14 md:pt-20 pb-24">
         <div className="section-reveal reveal-from-bottom text-center mb-16 space-y-4 max-w-2xl fade-in">
           <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pricing</p>
           <h1 className="text-4xl md:text-6xl font-medium text-[var(--color-text-1)] tracking-[-0.02em] leading-[1.02]">
@@ -133,13 +217,29 @@ export default function PricingPage() {
           <p className="text-[16px] text-[var(--color-text-2)] max-w-lg mx-auto leading-relaxed">
             Use Bombsell for free with starter credits. Scale when your GTM needs more volume and depth.
           </p>
+
+          {/* Billing toggle */}
+          <div className="inline-flex items-center gap-3 mt-6 p-1 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/50">
+            <button
+              onClick={() => setIsAnnual(false)}
+              className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-all ${!isAnnual ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setIsAnnual(true)}
+              className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-all ${isAnnual ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}`}
+            >
+              Annual <span className="text-[10px] opacity-80">Save 2 months</span>
+            </button>
+          </div>
         </div>
 
-        <div className="section-reveal reveal-from-bottom w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-5 fade-in-stagger">
+        <div className="section-reveal reveal-from-bottom w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 fade-in-stagger">
           {PLANS.map(plan => (
             <div
               key={plan.id}
-              className={`relative card p-7 flex flex-col gap-6 transition-all ${
+              className={`relative card p-6 flex flex-col gap-5 transition-all ${
                 plan.highlight
                   ? 'ring-1 ring-[var(--color-accent)]/40 shadow-[0_24px_80px_-24px_var(--color-accent-glow)]'
                   : 'hover:shadow-md'
@@ -154,17 +254,25 @@ export default function PricingPage() {
               <div>
                 <p className="text-[13px] text-[var(--color-text-3)] font-medium">{plan.name}</p>
                 <div className="flex items-baseline gap-1.5 mt-2.5">
-                  <span className="text-5xl font-medium text-[var(--color-text-1)] tracking-[-0.02em]">{plan.price}</span>
-                  <span className="text-[13px] text-[var(--color-text-4)]">{plan.period}</span>
+                  <span className="text-4xl font-medium text-[var(--color-text-1)] tracking-[-0.02em]">
+                    {plan.id === 'growth' || plan.id === 'scale'
+                      ? (isAnnual ? plan.annualPrice : plan.price)
+                      : plan.price}
+                  </span>
+                  <span className="text-[13px] text-[var(--color-text-4)]">
+                    {plan.id === 'growth' || plan.id === 'scale'
+                      ? (isAnnual ? plan.annualPeriod : plan.period)
+                      : plan.period}
+                  </span>
                 </div>
                 <p className="text-[13px] text-[var(--color-text-2)] mt-2 leading-relaxed">{plan.description}</p>
               </div>
 
               <div className="hairline" />
 
-              <ul className="flex-1 space-y-3">
+              <ul className="flex-1 space-y-2.5">
                 {plan.features.map(f => (
-                  <li key={f} className="flex items-start gap-2.5 text-[13.5px] text-[var(--color-text-1)] leading-snug">
+                  <li key={f} className="flex items-start gap-2.5 text-[13px] text-[var(--color-text-1)] leading-snug">
                     <span className="w-4 h-4 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center shrink-0 mt-0.5">
                       <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -183,20 +291,53 @@ export default function PricingPage() {
                 >
                   {authLoading ? 'Redirecting…' : plan.cta}
                 </button>
-              ) : (
+              ) : plan.id === 'enterprise' ? (
                 <a
                   href={plan.href}
                   className="w-full h-11 rounded-full btn-ghost text-[13.5px] font-medium inline-flex items-center justify-center"
                 >
                   {plan.cta}
                 </a>
+              ) : (
+                <button
+                  onClick={() => startSubscription(plan.id, isAnnual ? 'annual' : 'monthly')}
+                  disabled={authLoading}
+                  className={`w-full h-11 rounded-full text-[13.5px] font-medium disabled:opacity-60 ${
+                    plan.highlight ? 'btn-primary' : 'btn-ghost'
+                  }`}
+                >
+                  {authLoading ? 'Starting…' : plan.cta}
+                </button>
               )}
             </div>
           ))}
         </div>
 
+        {/* PAYG section */}
+        <div className="section-reveal reveal-from-bottom w-full max-w-3xl mt-20">
+          <div className="text-center mb-10 space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pay-as-you-go</p>
+            <h2 className="text-2xl md:text-3xl font-medium tracking-[-0.02em] text-[var(--color-text-1)] leading-[1.05]">
+              No subscription? No problem.
+            </h2>
+            <p className="text-[14px] text-[var(--color-text-2)] max-w-md mx-auto">
+              Buy lead unlock credits as needed. Credits never expire and roll over month to month.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {PAYG_PACKS.map(pack => (
+              <div key={pack.amount} className="card p-4 text-center hover:shadow-md transition-shadow">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{pack.label}</p>
+                <p className="mt-2 text-2xl font-bold text-[var(--color-text-1)]">${pack.amount}</p>
+                <p className="mt-1 text-[13px] text-[var(--color-accent-ring)] font-medium">{pack.credits} unlocks</p>
+                <p className="mt-0.5 text-[11px] text-[var(--color-text-4)]">${(pack.amount / pack.credits).toFixed(2)}/lead</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <p className="mt-12 text-[12px] text-[var(--color-text-3)]">
-          Launch is free to start · Credits are prepaid · Scale is custom
+          Launch is free to start · Subscriptions include monthly lead allocations · Credits are prepaid and never expire
         </p>
 
         <section className="section-reveal reveal-from-bottom w-full max-w-3xl mt-28">

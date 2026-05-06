@@ -56,7 +56,7 @@ export default function LoginPage() {
         </Link>
         <div className="flex items-center gap-6">
           <a href="#features" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Features</a>
-          <a href="#pricing" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Pricing</a>
+          <Link href="/pricing" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Pricing</Link>
           <button
             onClick={signInWithGoogle}
             disabled={loading}
@@ -70,21 +70,19 @@ export default function LoginPage() {
 
       <main className="relative z-10 flex-1">
         {/* Hero */}
-        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-12 md:pt-20 pb-16 md:pb-24 grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-12 lg:gap-20 items-center">
+        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-8 md:pt-14 pb-16 md:pb-24 grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-12 lg:gap-20 items-center">
           <div className="space-y-8">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-2)] bg-white px-3.5 py-1.5 text-[11.5px] text-[var(--color-text-2)] shadow-sm animate-float-slow">
-              <span className="h-2 w-2 rounded-full bg-[var(--color-accent)] pulse-dot" />
-              AI-native GTM Infra for lean teams.
-            </div>
-
             <div className="space-y-5">
               <h1 className="max-w-[680px] text-[36px] md:text-[52px] leading-[0.98] tracking-[-0.03em] text-[var(--color-text-1)] font-semibold">
                 AI GTM Infrastructure
                 <br></br>for {" "}
                 <GradientText as="span" className="font-serif italic">everyone</GradientText>
               </h1>
-              <p className="max-w-[500px] text-[17px] leading-[1.65] text-[var(--color-text-2)]">
-                Bombsell watches your market, reasons through live signals, and turns the right moments into pipeline without adding headcount.
+              <p className="max-w-[520px] text-[17px] leading-[1.65] text-[var(--color-text-2)]">
+                Bombsell watches your market, reasons through live signals, and turns the right moments into pipeline for sales, marketing, and revenue teams — without adding headcount.
+              </p>
+              <p className="text-[16px] font-medium tracking-[0.15em] uppercase text-[var(--color-accent)]">
+                Timing. Quality. Accuracy.
               </p>
             </div>
 
@@ -111,14 +109,6 @@ export default function LoginPage() {
                 {error}
               </p>
             )}
-
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-[12.5px] text-[var(--color-text-3)]">
-              {['Finds live signals', 'Builds account context', 'Recommends the next move'].map(item => (
-                <span key={item} className="inline-flex items-center gap-1.5">
-                  <CheckMark /> {item}
-                </span>
-              ))}
-            </div>
           </div>
 
           <div className="relative flex items-center justify-center min-h-[400px] md:min-h-[480px]">
@@ -248,11 +238,11 @@ export default function LoginPage() {
             <SpotlightCard className="card p-8 md:p-12 flex flex-col justify-center">
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Get started</p>
               <h2 className="max-w-xl text-3xl md:text-[44px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.1]">
-                Run founder-led GTM with{' '}
+                Run GTM with{' '}
                 <GradientText as="span" className="font-serif italic">account agents.</GradientText>
               </h2>
               <p className="mt-5 max-w-lg text-[15px] leading-[1.7] text-[var(--color-text-2)]">
-                Define your ICP, connect an inbox, and let Bombsell surface which accounts to work, why now, and what to do next.
+                Define your ICP, connect your channels, and let Bombsell surface which accounts to work, why now, and what to do next — across sales, marketing, and revenue.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <button
@@ -277,7 +267,7 @@ export default function LoginPage() {
                 </div>
                 <div className="hairline my-6" />
                 <ul className="space-y-3 text-[13.5px] text-[var(--color-text-2)]">
-                  {['20 starter lead credits', 'Account agents', 'Signal monitoring', 'Verified contact enrichment', 'Approve-first sending', 'Outcome learning'].map(perk => (
+                  {['10 starter lead credits', 'Account agents', 'Signal monitoring', 'Verified contact enrichment', 'Approve-first sending', 'Outcome learning'].map(perk => (
                     <li key={perk} className="flex items-start gap-2.5">
                       <span className="mt-0.5 text-[var(--color-accent-ring)]">✓</span>
                       <span>{perk}</span>
@@ -329,17 +319,17 @@ const TRUST_ITEMS = [
 const PLATFORM = [
   {
     title: 'Spot account movement',
-    body: 'Funding, hiring, expansion, product shifts, and market events are normalized into account-level context.',
+    body: 'Funding, hiring, expansion, product shifts, and market events are normalized into account-level context for sales, marketing, and revenue ops.',
     icon: <IconRadar />,
   },
   {
     title: 'Reason from your ICP',
-    body: 'Each account agent keeps a point of view on fit, urgency, likely buyers, and the most useful next step.',
+    body: 'Each account agent keeps a point of view on fit, urgency, likely buyers, and the most useful next step across your entire GTM motion.',
     icon: <IconSpark />,
   },
   {
-    title: 'Move pipeline forward',
-    body: 'Bombsell can prepare personalized outreach, enforce safety checks, rotate inboxes, and learn from every outcome.',
+    title: 'Execute across GTM',
+    body: 'Personalized outreach, content angles, pipeline alerts, and safety guardrails — all working together to move revenue forward.',
     icon: <IconSend />,
   },
 ]
@@ -347,15 +337,15 @@ const PLATFORM = [
 const DIFFERENTIATORS = [
   {
     title: 'Built for lean GTM teams',
-    body: 'Founder-led teams get the account research, prioritization, and execution discipline of a larger revenue team without hiring one.',
+    body: 'Sales, marketing, and revenue ops get the account research, prioritization, and execution discipline of a larger team — without hiring.',
   },
   {
     title: 'Per-account memory',
-    body: 'Signals, people, touchpoints, objections, and outcomes stay attached to the account so the next action starts with context.',
+    body: 'Signals, people, touchpoints, content, objections, and outcomes stay attached to the account so every team starts with context.',
   },
   {
     title: 'Execution with guardrails',
-    body: 'Verified contacts only, unsubscribe handling, bounce suppression, inbox rotation, and daily send caps keep your domain reputation clean.',
+    body: 'Verified contacts, unsubscribe handling, bounce suppression, inbox rotation, and daily caps keep every channel clean and scalable.',
   },
 ]
 
