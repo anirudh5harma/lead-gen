@@ -1100,6 +1100,7 @@ function normalizeOutreachEmail(
   }
 
   body = stripMarkdownLinks(body)
+  body = repairOutreachBodyTriggerOpening(body, context)
   body = ensureBodyGreetsRecipients(body, context.recipientGreeting ?? context.firstName)
 
   return sanitizeGeneratedEmail({
@@ -1119,14 +1120,35 @@ function fallbackOutreachBody(context: {
   calendlyUrl?: string | null
 }): string {
   const trigger = sanitizePublicSignalSummary(context.signalSummary, context.signalType, context.targetCompany)
+  const triggerPhrase = buildFallbackTriggerPhrase(trigger, context.targetCompany)
   const offer = describeFallbackOffer(context.servicesDescription)
   const patterns = [
-    `${context.firstName}, noticed ${context.targetCompany} around ${trigger.toLowerCase()}.\n\nThe interesting part is not the announcement itself, it is the GTM work that usually shows up right after: choosing the right accounts, timing the message, and deciding what deserves attention now.\n\n${context.senderIntro} helps teams with ${offer}, so the connection may be practical if this motion is getting more urgent internally.\n\nOpen to comparing notes for 15 minutes${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}`,
+    `${context.firstName}, noticed ${triggerPhrase}.\n\nThe interesting part is not the announcement itself, it is the GTM work that usually shows up right after: choosing the right accounts, timing the message, and deciding what deserves attention now.\n\n${context.senderIntro} helps teams with ${offer}, so the connection may be practical if this motion is getting more urgent internally.\n\nOpen to comparing notes for 15 minutes${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}`,
     `${context.firstName}, ${trigger} caught my eye because it usually forces a sharper GTM question for ${context.targetCompany}: which accounts are actually showing pain right now?\n\nThat question gets expensive when the team is stitching signals, contacts, and outreach together by hand.\n\n${context.senderIntro} helps with ${offer}, with the goal of turning buying signals into cleaner next moves instead of more dashboard noise.\n\nWorth a quick sanity check${context.calendlyUrl ? `? ${context.calendlyUrl}` : '?'}`,
     `${context.firstName}, saw the ${context.signalType} signal around ${context.targetCompany} and had a specific thought.\n\nWhen a company is moving this way, the GTM risk is often not lack of activity; it is spreading attention across too many accounts that are not actually in pain.\n\n${context.senderIntro} helps teams with ${offer}, which may be useful if you are tightening how signals become pipeline.\n\nShould I send over the angle I had in mind${context.calendlyUrl ? `, or grab 15 minutes here: ${context.calendlyUrl}` : '?'}`,
   ]
   const seed = `${context.targetCompany}:${context.signalType}:${trigger}`.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
   return patterns[seed % patterns.length]
+}
+
+function buildFallbackTriggerPhrase(trigger: string, targetCompany: string): string {
+  const cleaned = trigger.replace(/[.?!]+$/g, '').trim()
+  if (!cleaned) return `the recent signal at ${targetCompany}`
+
+  const companyPattern = new RegExp(`\\b${escapeRegExp(targetCompany)}\\b`, 'i')
+  if (companyPattern.test(cleaned)) {
+    return cleaned.replace(companyPattern, targetCompany)
+  }
+
+  if (/^(raised|closed|secured|announced|launched|hired|appointed|expanded|is|was|has|had)\b/i.test(cleaned)) {
+    return `${targetCompany} ${lowercaseFirst(cleaned)}`
+  }
+
+  return `${targetCompany}'s ${lowercaseFirst(cleaned)}`
+}
+
+function lowercaseFirst(value: string): string {
+  return value ? value.charAt(0).toLowerCase() + value.slice(1) : value
 }
 
 export function sanitizePublicSignalSummary(summary: string, signalType: string, targetCompany: string): string {
@@ -1161,6 +1183,18 @@ function escapeRegExp(value: string): string {
 
 function stripMarkdownLinks(value: string): string {
   return value.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
+}
+
+export function repairOutreachBodyTriggerOpening(
+  body: string,
+  context: { recipientGreeting?: string | null; firstName: string; targetCompany: string },
+): string {
+  const greeting = escapeRegExp((context.recipientGreeting ?? context.firstName).trim())
+  const company = escapeRegExp(context.targetCompany)
+  return body.replace(
+    new RegExp(`^(\\s*${greeting},\\s*noticed\\s+)${company}\\s+around\\s+${company}\\b,?\\s*`, 'i'),
+    `$1${context.targetCompany}, `,
+  )
 }
 
 function sanitizeSubject(

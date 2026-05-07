@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { draftOutreachEmail } from '@/lib/deepseek'
+import { draftOutreachEmail, repairOutreachBodyTriggerOpening } from '@/lib/deepseek'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { ensureBodyGreetsRecipients } from '@/lib/outreach-recipients'
 import { resolveOutreachContext } from '@/lib/outreach-context'
@@ -75,9 +75,14 @@ export async function POST(
   if (existingDraftRes.data?.subject && existingDraftRes.data?.body) {
     const existingRecipient = firstUsableStakeholder(existingDraftRes.data.stakeholders)
     const resolvedRecipient = contactResolution.recipientGroup?.to ?? null
+    const greeting = contactResolution.recipientGroup?.greeting || 'Hi there'
     const repairedBody = ensureBodyGreetsRecipients(
-      existingDraftRes.data.body,
-      contactResolution.recipientGroup?.greeting || 'Hi there',
+      repairOutreachBodyTriggerOpening(existingDraftRes.data.body, {
+        firstName: greeting,
+        recipientGreeting: greeting,
+        targetCompany: lead.target_company as string,
+      }),
+      greeting,
     )
     if (repairedBody !== existingDraftRes.data.body || contactResolution.stakeholders.length > 0) {
       await upsertOutreachDraft(serviceSupabase, {

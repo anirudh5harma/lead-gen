@@ -35,7 +35,7 @@ import {
   shouldUseWorkspaceIcp,
 } from '../lib/explore.ts'
 import { cheapJunkFilter, stableCandidateHash } from '../lib/signal-filter.ts'
-import { draftOutreachEmail, sanitizePublicSignalSummary } from '../lib/deepseek.ts'
+import { draftOutreachEmail, repairOutreachBodyTriggerOpening, sanitizePublicSignalSummary } from '../lib/deepseek.ts'
 
 test('free workspace keeps every unarchived client visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -1092,6 +1092,46 @@ test('outreach draft fallback does not leak internal planning instructions', asy
   } finally {
     if (oldKey) process.env.DEEPSEEK_API_KEY = oldKey
   }
+})
+
+test('outreach draft fallback does not duplicate company around funding signal', async () => {
+  const oldKey = process.env.DEEPSEEK_API_KEY
+  delete process.env.DEEPSEEK_API_KEY
+  try {
+    const draft = await draftOutreachEmail({
+      senderCompany: 'Bombsell',
+      servicesDescription: 'Bombsell helps teams turn public buying signals into timely outbound.',
+      stakeholderName: 'Angelika Sharma',
+      stakeholderTitle: 'Head of Revenue',
+      recipientGreeting: 'Angelika',
+      targetCompany: 'Dreamteam',
+      signalType: 'funding',
+      signalSummary: 'dreamteam, an ai startup founded by former freshworks executives, is in talks to raise a $40 million series a round from accel, signaling strong investor interest.',
+      customInstructions: null,
+    })
+
+    assert.doesNotMatch(draft.body, /Dreamteam\s+around\s+dreamteam/i)
+    assert.doesNotMatch(draft.body, /noticed\s+Dreamteam\s+around/i)
+    assert.match(draft.body, /^Angelika,/)
+  } finally {
+    if (oldKey) process.env.DEEPSEEK_API_KEY = oldKey
+  }
+})
+
+test('stored outreach draft repair removes duplicated trigger opening', () => {
+  const body = repairOutreachBodyTriggerOpening(
+    'Angelika, noticed Dreamteam around dreamteam, an ai startup founded by former freshworks executives, is in talks to raise a $40 million series a round from accel.\n\nWorth a quick look?',
+    {
+      firstName: 'Angelika',
+      recipientGreeting: 'Angelika',
+      targetCompany: 'Dreamteam',
+    },
+  )
+
+  assert.equal(
+    body,
+    'Angelika, noticed Dreamteam, an ai startup founded by former freshworks executives, is in talks to raise a $40 million series a round from accel.\n\nWorth a quick look?',
+  )
 })
 
 test('public signal summaries strip internal outreach plan language', () => {
