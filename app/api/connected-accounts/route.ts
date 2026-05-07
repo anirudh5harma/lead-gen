@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { stopGmailWatch } from '@/lib/oauth/gmail-watch'
 import { deleteOutlookSubscription } from '@/lib/oauth/outlook-watch'
 import { getValidAccessToken, type ConnectedAccount } from '@/lib/oauth/sender'
-import { MAX_CONNECTED_SENDING_ACCOUNTS } from '@/lib/oauth/connected-accounts'
+import { getMaxInboxesForTier, getUserTier } from '@/lib/oauth/connected-accounts'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,15 +12,18 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data } = await supabase
-    .from('connected_accounts')
-    .select('id, provider, email, display_name, is_active, last_used_at, created_at')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: true })
+  const [tier, { data }] = await Promise.all([
+    getUserTier(supabase, user.id),
+    supabase
+      .from('connected_accounts')
+      .select('id, provider, email, display_name, is_active, last_used_at, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true }),
+  ])
 
   return NextResponse.json({
     accounts: data ?? [],
-    max_accounts: MAX_CONNECTED_SENDING_ACCOUNTS,
+    max_accounts: getMaxInboxesForTier(tier),
   })
 }
 

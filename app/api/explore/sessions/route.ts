@@ -2,21 +2,23 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { sanitizeSessionIds } from '@/lib/auto-send-policies'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const userId = planCheck.userId
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
 
   const { data: sessions, error } = await supabase
     .from('explore_runs')
     .select('id, prompt, generated_count, inserted_count, created_at, autopilot_status, completed_at')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .eq('client_id', activeClientId)
     .order('created_at', { ascending: false })
     .limit(50)
@@ -26,7 +28,7 @@ export async function GET() {
   const { data: policy } = await supabase
     .from('auto_send_policies')
     .select('target_explore_session_ids')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .eq('client_id', activeClientId)
     .maybeSingle()
 

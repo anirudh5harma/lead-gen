@@ -4,6 +4,7 @@ import { AvatarVideoError, createAvatarVideoJob } from '@/lib/gtm/avatar-video'
 import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -11,21 +12,24 @@ export const maxDuration = 90
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const rate = await checkRateLimit(`marketing:avatar-video:${user.id}`, 20, 60 * 60, { supabase })
+  const rate = await checkRateLimit(`marketing:avatar-video:${userId}`, 20, 60 * 60, { supabase })
   if (!rate.allowed) return NextResponse.json({ error: 'Too many avatar video requests. Try again later.' }, { status: 429 })
 
   const body = await request.json().catch(() => null) as { idea_id?: unknown; settings?: unknown } | null
   const ideaId = typeof body?.idea_id === 'string' ? body.idea_id.trim() : ''
   if (!ideaId) return NextResponse.json({ error: 'idea_id is required' }, { status: 400 })
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
   let reservedCredit = false
   try {
     reservedCredit = await consumeLeadCredit(supabase, {
-      userId: user.id,
+      userId: userId,
       metadata: {
         source: 'avatar_video_generation',
         content_idea_id: ideaId,
@@ -38,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     const job = await createAvatarVideoJob(supabase, {
-      userId: user.id,
+      userId: userId,
       clientId: activeClientId,
       ideaId,
       settings: typeof body?.settings === 'object' && body.settings !== null && !Array.isArray(body.settings) ? body.settings as Record<string, unknown> : null,
@@ -46,7 +50,7 @@ export async function POST(request: Request) {
     })
 
     if (job.status === 'manual_ready') {
-      await refundReservedAvatarCredit(supabase, user.id, ideaId, job.id, 'manual_ready')
+      await refundReservedAvatarCredit(supabase, userId, ideaId, job.id, 'manual_ready')
       reservedCredit = false
       return NextResponse.json({ ok: true, job, charged: false })
     }
@@ -54,7 +58,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, job, charged: true, credits_used: 1 })
   } catch (error) {
     if (reservedCredit) {
-      await refundReservedAvatarCredit(supabase, user.id, ideaId, null, 'generation_failed').catch(refundError => {
+      await refundReservedAvatarCredit(supabase, userId, ideaId, null, 'generation_failed').catch(refundError => {
         console.error('[content/video] avatar video credit refund failed:', refundError instanceof Error ? refundError.message : refundError)
       })
     }

@@ -2,12 +2,14 @@
 
 import Link from 'next/link'
 import { useState, useCallback, useEffect } from 'react'
-import { MAX_CONNECTED_SENDING_ACCOUNTS } from '@/lib/oauth/connected-accounts'
+import { getMaxInboxesForTier } from '@/lib/oauth/connected-accounts'
 import WatchlistManager from '@/components/WatchlistManager'
 import type { UserProfile, ConnectedAccount, BlockedCompany } from './types'
 import { SectionHeader } from './shared'
 import SpotlightCard from '@/components/landing/SpotlightCard'
 import { getTierConfig, type SubscriptionTier } from '@/lib/lead-credits'
+import { hasPlanAccess } from '@/lib/plan-access'
+import PlanGate from '@/components/PlanGate'
 
 interface Props {
   profile: UserProfile
@@ -31,7 +33,9 @@ export default function SettingsView({ profile }: Props) {
         />
         <div className="space-y-5">
           <SubscriptionPanel profile={profile} />
-          <TeamPanel profile={profile} />
+          <PlanGate userTier={(profile.plan as SubscriptionTier) || 'free'} requiredTier="scale" featureName="Team features">
+            <TeamPanel profile={profile} />
+          </PlanGate>
           <TargetingPanel profile={profile} />
           <WatchlistPanel />
           <BlockedCompaniesPanel />
@@ -45,7 +49,7 @@ export default function SettingsView({ profile }: Props) {
           subtitle="Connected sending inboxes and delivery settings."
           label="Channels"
         />
-        <ConnectedAccountsPanel />
+        <ConnectedAccountsPanel profile={profile} />
       </section>
 
       {/* Integrations */}
@@ -55,7 +59,9 @@ export default function SettingsView({ profile }: Props) {
           subtitle="Connect external tools for notifications and alerts."
           label="Connect"
         />
-        <SlackPanel profile={profile} />
+        <PlanGate userTier={(profile.plan as SubscriptionTier) || 'free'} requiredTier="scale" featureName="Slack alerts & CRM sync">
+          <SlackPanel profile={profile} />
+        </PlanGate>
       </section>
     </div>
   )
@@ -193,7 +199,7 @@ function SubscriptionPanel({ profile }: { profile: UserProfile }) {
               tier === 'growth' ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)]' : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40'
             }`}
           >
-            <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">Growth — $39/mo</span>
+            <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">Growth — $49/mo</span>
             <span className="block text-[10.5px] text-[var(--color-text-4)]">60 leads/mo · 3 inboxes</span>
           </button>
           <button
@@ -203,7 +209,7 @@ function SubscriptionPanel({ profile }: { profile: UserProfile }) {
               tier === 'scale' ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)]' : 'border-[var(--color-line-1)] bg-white hover:border-[var(--color-accent)]/40'
             }`}
           >
-            <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">Scale — $89/mo</span>
+            <span className="block text-[11.5px] font-semibold text-[var(--color-text-1)]">Scale — $99/mo</span>
             <span className="block text-[10.5px] text-[var(--color-text-4)]">200 leads/mo · 10 inboxes</span>
           </button>
         </div>
@@ -594,9 +600,11 @@ function BlockedCompaniesPanel() {
 /* ─────────────────────────────────────────────
    Connected Accounts
    ───────────────────────────────────────────── */
-function ConnectedAccountsPanel() {
+function ConnectedAccountsPanel({ profile }: { profile: UserProfile }) {
   const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const tier = (profile.plan as SubscriptionTier) || 'free'
+  const maxInboxes = getMaxInboxesForTier(tier)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -619,7 +627,7 @@ function ConnectedAccountsPanel() {
   }, [])
 
   const count = accounts?.length ?? 0
-  const atLimit = count >= MAX_CONNECTED_SENDING_ACCOUNTS
+  const atLimit = count >= maxInboxes
 
   return (
     <SpotlightCard className="card overflow-hidden card-hover">
@@ -686,7 +694,7 @@ function ConnectedAccountsPanel() {
         </div>
         {atLimit && (
           <p className="text-[11px] text-[var(--color-sig-regulation)]">
-            You have reached the maximum of {MAX_CONNECTED_SENDING_ACCOUNTS} connected accounts.
+            You have reached the maximum of {maxInboxes} connected accounts for your plan. Upgrade to connect more.
           </p>
         )}
       </div>

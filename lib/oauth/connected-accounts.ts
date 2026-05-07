@@ -1,6 +1,21 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getTierConfig, type SubscriptionTier } from '@/lib/lead-credits'
 
 export const MAX_CONNECTED_SENDING_ACCOUNTS = 5
+
+export function getMaxInboxesForTier(tier: SubscriptionTier): number {
+  return getTierConfig(tier).maxInboxes
+}
+
+export async function getUserTier(supabase: SupabaseClient, userId: string): Promise<SubscriptionTier> {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('plan')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data?.plan as SubscriptionTier) || 'free'
+}
 
 export async function canConnectSendingAccount(
   supabase: SupabaseClient,
@@ -21,6 +36,9 @@ export async function canConnectSendingAccount(
   if (existingError) throw new Error(existingError.message)
   if (existingAccount) return true
 
+  const tier = await getUserTier(supabase, userId)
+  const maxInboxes = getMaxInboxesForTier(tier)
+
   const { count, error: countError } = await supabase
     .from('connected_accounts')
     .select('id', { count: 'exact', head: true })
@@ -28,5 +46,5 @@ export async function canConnectSendingAccount(
     .eq('is_active', true)
 
   if (countError) throw new Error(countError.message)
-  return (count ?? 0) < MAX_CONNECTED_SENDING_ACCOUNTS
+  return (count ?? 0) < maxInboxes
 }

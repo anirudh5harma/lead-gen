@@ -38,8 +38,8 @@ export default function MarketingNavbar({ homeAnchors = false }: { homeAnchors?:
             <Image
               src="/logo.svg"
               alt="Bombsell"
-              width={32}
-              height={32}
+              width={28}
+              height={28}
               className="shrink-0"
             />
             <span className="text-[15px] font-medium text-[var(--color-text-1)] tracking-tight">Bombsell</span>

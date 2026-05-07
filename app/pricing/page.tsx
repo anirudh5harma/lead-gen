@@ -18,7 +18,6 @@ const PLANS = [
       '10 starter lead credits',
       'Account agents and Work Inbox',
       'Live Signal monitoring',
-      'Marketing Ideas and Analytics',
       'Gmail and Outlook connectors',
       'Reply and outcome learning',
     ],
@@ -28,15 +27,16 @@ const PLANS = [
   {
     id: 'growth' as const,
     name: 'Growth',
-    price: '$39',
+    price: '$49',
     period: '/mo',
-    annualPrice: '$390',
+    annualPrice: '$490',
     annualPeriod: '/yr',
     description: 'Founders and growing teams.',
     features: [
       '60 lead unlocks/month',
       'Autopilot Engine',
       'AI-Powered Lead Discovery',
+      'Marketing content, calendar and integrations',
       '3 connected inboxes',
       'PAYG overages at $0.65/lead',
       'Everything in Launch'
@@ -47,9 +47,9 @@ const PLANS = [
   {
     id: 'scale' as const,
     name: 'Scale',
-    price: '$89',
+    price: '$99',
     period: '/mo',
-    annualPrice: '$890',
+    annualPrice: '$990',
     annualPeriod: '/yr',
     description: 'Volume, depth and team controls.',
     features: [

@@ -13,37 +13,39 @@ import {
 } from '@/lib/auto-send-policies'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { sendAutomationLifecycleEmail } from '@/lib/resend'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export async function GET() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
   const [policyRes, accountsRes, exploreSessionsRes] = await Promise.all([
     activeClientId
       ? supabase
           .from('auto_send_policies')
           .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, explore_daily_send_limit, min_minutes_between_sends')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('client_id', activeClientId)
           .maybeSingle()
       : supabase
           .from('auto_send_policies')
           .select('id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, explore_daily_send_limit, min_minutes_between_sends')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .is('client_id', null)
           .maybeSingle(),
     supabase
       .from('connected_accounts')
       .select('id, provider, email, display_name, is_active, last_used_at, created_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_active', true)
       .order('created_at', { ascending: true }),
     supabase
       .from('explore_runs')
       .select('id, prompt, generated_count, inserted_count, created_at, autopilot_status')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('client_id', activeClientId)
       .order('created_at', { ascending: false })
       .limit(50),
@@ -71,10 +73,11 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
   const body = await request.json().catch(() => null) as {
     enabled?: boolean
     connected_account_id?: string | null
@@ -92,7 +95,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
   }
 
-  const rl = await checkRateLimit(`automation-settings:${user.id}`, 30, 3600, { failClosed: true })
+  const rl = await checkRateLimit(`automation-settings:${userId}`, 30, 3600, { failClosed: true })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Too many automation setting changes. Try again later.' },
@@ -124,7 +127,7 @@ export async function PATCH(request: Request) {
     const { data: account, error: accountError } = await supabase
       .from('connected_accounts')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('id', connectedAccountId)
       .eq('is_active', true)
       .maybeSingle()
@@ -137,7 +140,7 @@ export async function PATCH(request: Request) {
     const accountQuery = supabase
       .from('connected_accounts')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('is_active', true)
       .limit(1)
     const { data: activeAccounts, error: activeAccountError } = connectedAccountId
@@ -153,13 +156,13 @@ export async function PATCH(request: Request) {
     ? supabase
         .from('auto_send_policies')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('client_id', activeClientId)
         .maybeSingle()
     : supabase
         .from('auto_send_policies')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .is('client_id', null)
         .maybeSingle()
 
@@ -169,7 +172,7 @@ export async function PATCH(request: Request) {
   const nowIso = new Date().toISOString()
 
   const payload = {
-    user_id: user.id,
+    user_id: userId,
     client_id: activeClientId,
     enabled: body.enabled,
     connected_account_id: connectedAccountId,
@@ -206,17 +209,18 @@ export async function PATCH(request: Request) {
 
   if (response.error) return NextResponse.json({ error: response.error.message }, { status: 500 })
 
-  if (body.enabled && !wasEnabled && user.email) {
+  const userEmail = (await supabase.auth.getUser()).data.user?.email
+  if (body.enabled && !wasEnabled && userEmail) {
     const summary = targetOrigins.includes('live')
       ? `Bombsell will safely send eligible unlocked live-signal leads, capped at ${dailySendLimit} sends/day with at least ${minMinutesBetweenSends} minutes between sends.`
       : `Bombsell will safely send eligible unlocked leads from ${targetExploreSessionIds.length} selected batch session${targetExploreSessionIds.length === 1 ? '' : 's'}, capped at ${dailySendLimit} sends/day.`
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('company_name')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle()
     sendAutomationLifecycleEmail({
-      toEmail: user.email,
+      toEmail: userEmail,
       companyName: (profile as { company_name?: string | null } | null)?.company_name ?? 'your workspace',
       event: 'started',
       summary,

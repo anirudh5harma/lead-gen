@@ -147,8 +147,8 @@ RETURNS JSONB AS $$
 BEGIN
   RETURN CASE p_plan
     WHEN 'free' THEN '{"name":"Launch","monthly_price":0,"annual_price":0,"included_leads":0,"overage_rate":0,"max_inboxes":1,"has_explore":false,"has_auto_send":false}'::jsonb
-    WHEN 'growth' THEN '{"name":"Growth","monthly_price":39,"annual_price":390,"included_leads":60,"overage_rate":0.65,"max_inboxes":3,"has_explore":true,"has_auto_send":true}'::jsonb
-    WHEN 'scale' THEN '{"name":"Scale","monthly_price":89,"annual_price":890,"included_leads":200,"overage_rate":0.50,"max_inboxes":10,"has_explore":true,"has_auto_send":true}'::jsonb
+    WHEN 'growth' THEN '{"name":"Growth","monthly_price":49,"annual_price":490,"included_leads":60,"overage_rate":0.65,"max_inboxes":3,"has_explore":true,"has_auto_send":true}'::jsonb
+    WHEN 'scale' THEN '{"name":"Scale","monthly_price":99,"annual_price":990,"included_leads":200,"overage_rate":0.50,"max_inboxes":10,"has_explore":true,"has_auto_send":true}'::jsonb
     WHEN 'enterprise' THEN '{"name":"Enterprise","monthly_price":0,"annual_price":0,"included_leads":10000,"overage_rate":0,"max_inboxes":999,"has_explore":true,"has_auto_send":true}'::jsonb
     ELSE '{"name":"Launch","monthly_price":0,"annual_price":0,"included_leads":0,"overage_rate":0,"max_inboxes":1,"has_explore":false,"has_auto_send":false}'::jsonb
   END;

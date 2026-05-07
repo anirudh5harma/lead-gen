@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import type { View, NavSection, WorkspaceMembership } from './types'
+import type { SubscriptionTier } from '@/lib/lead-credits'
+import { canAccessView } from '@/lib/plan-access'
 
 interface SidebarProps {
   companyName: string
@@ -11,6 +13,7 @@ interface SidebarProps {
   onNavigate: (view: View) => void
   workspaces: WorkspaceMembership[]
   activeClientId: string | null
+  userTier: SubscriptionTier
 }
 
 const SECTIONS: NavSection[] = [
@@ -101,7 +104,7 @@ function getViewIcon(view: View): React.ReactNode {
   }
 }
 
-export default function Sidebar({ companyName, userEmail, activeView, onNavigate, workspaces, activeClientId }: SidebarProps) {
+export default function Sidebar({ companyName, userEmail, activeView, onNavigate, workspaces, activeClientId, userTier }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['sales']))
@@ -248,11 +251,24 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
                       <div className="space-y-0.5 mt-0.5 mb-1.5">
                         {section.items.map(item => {
                           const active = activeView === item.id || Boolean(item.children?.some(child => child.id === activeView))
+                          const locked = !canAccessView(userTier, item.id)
                           return (
                             <div key={item.id}>
-                              <button onClick={() => { onNavigate(item.id); setMobileOpen(false) }} className={`${navItemClass(active)} pl-5 pr-2.5`}>
+                              <button
+                                onClick={() => { onNavigate(item.id); setMobileOpen(false) }}
+                                className={`${navItemClass(active)} pl-5 pr-2.5 ${locked ? 'opacity-60' : ''}`}
+                                title={locked ? `${item.label} — Upgrade to Growth` : item.label}
+                              >
                                 <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
                                 <span>{item.label}</span>
+                                {locked && (
+                                  <span className="ml-auto text-[var(--color-text-4)]">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                      <path d="M7 11V7a5 5 0 0110 0v4" />
+                                    </svg>
+                                  </span>
+                                )}
                               </button>
                               {item.children && active && (
                                 <div className="ml-7 mt-0.5 space-y-0.5 border-l border-[var(--color-line-1)] pl-2">
@@ -311,8 +327,9 @@ export default function Sidebar({ companyName, userEmail, activeView, onNavigate
               {SECTIONS.map(section =>
                 section.items.flatMap(item => [item, ...(item.children ?? [])]).map(item => {
                   const active = activeView === item.id
+                  const locked = !canAccessView(userTier, item.id)
                   return (
-                    <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }} title={item.label} className={navItemClass(active, true)}>
+                    <button key={item.id} onClick={() => { onNavigate(item.id); setMobileOpen(false) }} title={locked ? `${item.label} — Upgrade to Growth` : item.label} className={`${navItemClass(active, true)} ${locked ? 'opacity-60' : ''}`}>
                       <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{getViewIcon(item.id)}</span>
                     </button>
                   )

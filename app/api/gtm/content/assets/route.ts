@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -11,10 +12,13 @@ const BUCKET = 'marketing-content-assets'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const rate = await checkRateLimit(`marketing:asset:${user.id}`, 40, 60 * 60, { supabase })
+  const rate = await checkRateLimit(`marketing:asset:${userId}`, 40, 60 * 60, { supabase })
   if (!rate.allowed) return NextResponse.json({ error: 'Too many asset uploads. Try again later.' }, { status: 429 })
 
   const form = await request.formData().catch(() => null)
@@ -30,9 +34,9 @@ export async function POST(request: Request) {
   const assetType = assetTypeForMime(file.type)
   if (!assetType) return NextResponse.json({ error: 'Unsupported asset type' }, { status: 400 })
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
   if (ideaId) {
-    let ideaQuery = supabase.from('gtm_content_ideas').select('id, media_assets').eq('id', ideaId).eq('user_id', user.id)
+    let ideaQuery = supabase.from('gtm_content_ideas').select('id, media_assets').eq('id', ideaId).eq('user_id', userId)
     ideaQuery = activeClientId ? ideaQuery.eq('client_id', activeClientId) : ideaQuery.is('client_id', null)
     const { data: idea, error: ideaError } = await ideaQuery.maybeSingle()
     if (ideaError) return NextResponse.json({ error: ideaError.message }, { status: 500 })
@@ -41,7 +45,7 @@ export async function POST(request: Request) {
 
   const ext = extensionForFile(file)
   const safeName = file.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || `asset.${ext}`
-  const path = `${user.id}/${activeClientId ?? 'workspace'}/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`
+  const path = `${userId}/${activeClientId ?? 'workspace'}/${Date.now()}-${Math.random().toString(36).slice(2)}-${safeName}`
   const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
     contentType: file.type || undefined,
     upsert: false,
@@ -54,7 +58,7 @@ export async function POST(request: Request) {
   const { data: asset, error: assetError } = await supabase
     .from('gtm_content_assets')
     .insert({
-      user_id: user.id,
+      user_id: userId,
       client_id: activeClientId,
       content_idea_id: ideaId || null,
       asset_type: assetType,

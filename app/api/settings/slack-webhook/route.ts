@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export async function PATCH(request: Request) {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'scale')
+  if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

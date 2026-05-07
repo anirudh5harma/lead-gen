@@ -20,8 +20,8 @@ export const SUBSCRIPTION_TIERS = {
   growth: {
     id: 'growth',
     name: 'Growth',
-    monthlyPrice: 39,
-    annualPrice: 390,
+    monthlyPrice: 49,
+    annualPrice: 490,
     includedLeads: 60,
     overageRate: 0.65,
     maxInboxes: 3,
@@ -31,8 +31,8 @@ export const SUBSCRIPTION_TIERS = {
   scale: {
     id: 'scale',
     name: 'Scale',
-    monthlyPrice: 89,
-    annualPrice: 890,
+    monthlyPrice: 99,
+    annualPrice: 990,
     includedLeads: 200,
     overageRate: 0.5,
     maxInboxes: 10,

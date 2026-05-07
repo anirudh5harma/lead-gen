@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createTeamInvite } from '@/lib/team'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'scale')
+  if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

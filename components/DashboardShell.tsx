@@ -19,6 +19,9 @@ import AutopilotView from './dashboard/AutopilotView'
 import CoverageView from './dashboard/CoverageView'
 import SequencesView from './dashboard/SequencesView'
 import SettingsView from './dashboard/SettingsView'
+import PlanGate from './PlanGate'
+import { canAccessView } from '@/lib/plan-access'
+import type { SubscriptionTier } from '@/lib/lead-credits'
 
 const VIEW_TITLES: Record<View, string> = {
   home:                       'Home',
@@ -77,12 +80,15 @@ interface Props {
 }
 
 export default function DashboardShell({ initialLeads, userProfile }: Props) {
+  const userTier = (userProfile.plan as SubscriptionTier) || 'free'
+
   const [activeView, setActiveView] = useState<View>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       const requestedView = params.get('view')
       if (requestedView && (ALL_VIEWS as string[]).includes(requestedView)) {
-        return requestedView as View
+        const v = requestedView as View
+        return canAccessView(userTier, v) ? v : 'home'
       }
     }
     return 'home'
@@ -124,6 +130,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
   function refresh() { startTransition(() => router.refresh()) }
 
   function navigate(v: View) {
+    if (!canAccessView(userTier, v)) return
     setActiveView(v)
     const url = new URL(window.location.href)
     url.searchParams.set('view', v)
@@ -146,6 +153,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
         onNavigate={navigate}
         workspaces={userProfile.workspaces ?? []}
         activeClientId={userProfile.active_client_id ?? null}
+        userTier={userTier}
       />
 
       <div className="flex-1 min-w-0 flex flex-col relative z-10">
@@ -193,17 +201,49 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
             {activeView === 'home' && <HomeView leads={initialLeads} onNavigate={navigate} />}
             {activeView === 'sales/inbox' && <InboxView leads={initialLeads} onNavigate={navigate} />}
             {activeView === 'sales/outreach' && <OutreachView leads={initialLeads} />}
-            {activeView === 'sales/explore' && <ExploreView leads={initialLeads} />}
-            {activeView === 'marketing/content' && <MarketingView hub="overview" />}
-            {activeView === 'marketing/content/posts' && <MarketingView hub="posts" />}
-            {activeView === 'marketing/content/blogs' && <MarketingView hub="blogs" />}
-            {activeView === 'marketing/content/videos' && <MarketingView hub="videos" />}
-            {activeView === 'marketing/campaigns' && <CampaignsView />}
-            {activeView === 'marketing/audience' && <AudienceView leads={initialLeads} />}
+            {activeView === 'sales/explore' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="AI-Powered Lead Discovery">
+                <ExploreView leads={initialLeads} />
+              </PlanGate>
+            )}
+            {activeView === 'marketing/content' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
+                <MarketingView hub="overview" />
+              </PlanGate>
+            )}
+            {activeView === 'marketing/content/posts' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
+                <MarketingView hub="posts" />
+              </PlanGate>
+            )}
+            {activeView === 'marketing/content/blogs' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
+                <MarketingView hub="blogs" />
+              </PlanGate>
+            )}
+            {activeView === 'marketing/content/videos' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
+                <MarketingView hub="videos" />
+              </PlanGate>
+            )}
+            {activeView === 'marketing/campaigns' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Campaigns">
+                <CampaignsView />
+              </PlanGate>
+            )}
+            {activeView === 'marketing/audience' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Audience">
+                <AudienceView leads={initialLeads} />
+              </PlanGate>
+            )}
             {activeView === 'revenue/pipeline' && <PipelineView leads={initialLeads} />}
             {activeView === 'revenue/analytics' && <AnalyticsView leads={initialLeads} />}
             {activeView === 'accounts' && <AccountsView />}
-            {activeView === 'engine/autopilot' && <AutopilotView />}
+            {activeView === 'engine/autopilot' && (
+              <PlanGate userTier={userTier} requiredTier="growth" featureName="Autopilot Engine">
+                <AutopilotView />
+              </PlanGate>
+            )}
             {activeView === 'engine/coverage' && <CoverageView />}
             {activeView === 'engine/sequences' && <SequencesView />}
             {activeView === 'settings' && <SettingsView profile={displayProfile} />}

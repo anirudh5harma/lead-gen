@@ -3,11 +3,15 @@ import { getActiveClientContext } from '@/lib/client-context'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { createCustomMarketingContentIdea, listMarketingContent, saveMarketingDraftPreference, scheduleMarketingContentIdea, updateMarketingContentDraft, updateMarketingContentIdea, type MarketingContentTab, type MarketingContentType } from '@/lib/gtm/content-workflow'
 import { createClient } from '@/lib/supabase/server'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -17,15 +21,15 @@ export async function GET(request: Request) {
   const tab = parseMarketingTab(url.searchParams.get('tab'))
   const timeZone = normalizeTimeZone(url.searchParams.get('tz'))
   const todayOnly = url.searchParams.get('today') !== '0'
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
 
   try {
     if (refresh) {
-      const rate = await checkRateLimit(`marketing:refresh:${user.id}:${activeClientId ?? 'workspace'}`, 8, 60 * 60, { supabase })
+      const rate = await checkRateLimit(`marketing:refresh:${userId}:${activeClientId ?? 'workspace'}`, 8, 60 * 60, { supabase })
       if (!rate.allowed) return NextResponse.json({ error: 'Too many content refreshes. Try again later.' }, { status: 429 })
     }
     const result = await listMarketingContent(supabase, {
-      userId: user.id,
+      userId: userId,
       clientId: activeClientId,
       limit,
       refresh,
@@ -44,6 +48,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -73,14 +80,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'valid action is required' }, { status: 400 })
   }
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
 
   try {
     if (action === 'update_draft_settings') {
       const tab = typeof payload.tab === 'string' ? parseMarketingTab(payload.tab) : null
       if (!tab) return NextResponse.json({ error: 'valid tab is required' }, { status: 400 })
       await saveMarketingDraftPreference(supabase, {
-        userId: user.id,
+        userId: userId,
         clientId: activeClientId,
         tab,
         settings: normalizeDraftSettingsPayload(payload.draft_settings) ?? {},
@@ -90,7 +97,7 @@ export async function POST(request: Request) {
     }
 
     if (action === 'create_custom' || action === 'save_custom') {
-      const rate = await checkRateLimit(`marketing:custom:${user.id}:${activeClientId ?? 'workspace'}`, 25, 60 * 60, { supabase })
+      const rate = await checkRateLimit(`marketing:custom:${userId}:${activeClientId ?? 'workspace'}`, 25, 60 * 60, { supabase })
       if (!rate.allowed) return NextResponse.json({ error: 'Too many custom content actions. Try again later.' }, { status: 429 })
       const contentType = typeof payload.content_type === 'string' && isMarketingContentType(payload.content_type)
         ? payload.content_type
@@ -101,7 +108,7 @@ export async function POST(request: Request) {
       if (scheduledFor === 'invalid') return NextResponse.json({ error: 'scheduled_for must be a valid date' }, { status: 400 })
       if (!contentType) return NextResponse.json({ error: 'content_type is required' }, { status: 400 })
       const idea_id = await createCustomMarketingContentIdea(supabase, {
-        userId: user.id,
+        userId: userId,
         clientId: activeClientId,
         contentType,
         prompt,
@@ -119,7 +126,7 @@ export async function POST(request: Request) {
       const scheduledFor = parseOptionalIsoDate(payload.scheduled_for)
       if (scheduledFor === 'invalid') return NextResponse.json({ error: 'scheduled_for must be a valid date' }, { status: 400 })
       await scheduleMarketingContentIdea(supabase, {
-        userId: user.id,
+        userId: userId,
         clientId: activeClientId,
         ideaId,
         scheduledFor,
@@ -132,7 +139,7 @@ export async function POST(request: Request) {
     if (action === 'update_draft') {
       const bodyText = typeof payload.raw_body === 'string' ? payload.raw_body : ''
       await updateMarketingContentDraft(supabase, {
-        userId: user.id,
+        userId: userId,
         clientId: activeClientId,
         ideaId,
         title: typeof payload.title === 'string' ? payload.title : null,
@@ -141,11 +148,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true })
     }
     if (action === 'draft') {
-      const rate = await checkRateLimit(`marketing:draft:${user.id}:${activeClientId ?? 'workspace'}`, 40, 60 * 60, { supabase })
+      const rate = await checkRateLimit(`marketing:draft:${userId}:${activeClientId ?? 'workspace'}`, 40, 60 * 60, { supabase })
       if (!rate.allowed) return NextResponse.json({ error: 'Too many draft requests. Try again later.' }, { status: 429 })
     }
     await updateMarketingContentIdea(supabase, {
-      userId: user.id,
+      userId: userId,
       clientId: activeClientId,
       ideaId,
       action: (action === 'reject' ? 'dismiss' : action) as 'draft' | 'approve' | 'dismiss',

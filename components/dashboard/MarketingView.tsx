@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { VIDEO_SCRIPT_MAX_CHARS, VIDEO_SCRIPT_MAX_SECONDS } from '@/lib/gtm/content-planning'
 import type { GtmContentIdea } from './types'
 
@@ -519,8 +520,8 @@ function AvatarVideoCreditModal({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
+  const modal = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4 py-6">
       <div className="w-full max-w-md rounded-xl border border-[var(--color-line-1)] bg-white shadow-[0_20px_60px_#00000024]">
         <div className="border-b border-[var(--color-line-1)] px-5 py-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Avatar video</p>
@@ -550,6 +551,7 @@ function AvatarVideoCreditModal({
       </div>
     </div>
   )
+  return createPortal(modal, document.body)
 }
 
 function ContentTypeWorkspace({
