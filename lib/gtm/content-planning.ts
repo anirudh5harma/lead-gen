@@ -1,6 +1,10 @@
 export type MarketingContentType = 'x_post' | 'linkedin_post' | 'blog_article' | 'video_script' | 'newsletter_blurb' | 'campaign_brief' | 'sales_enablement_note'
 export type MarketingContentTab = 'posts' | 'blogs' | 'videos'
 
+export const VIDEO_SCRIPT_MAX_SECONDS = 30
+export const VIDEO_SCRIPT_MAX_CHARS = 650
+export const VIDEO_SCRIPT_MAX_WORDS = 75
+
 export interface MarketingDraftSettings {
   platform?: string | null
   wordTarget?: number | null
@@ -67,7 +71,7 @@ export function defaultDraftSettingsForContentType(contentType: string): Marketi
     return { platform: 'blog', wordTarget: 900, tone: 'useful and specific', cta: 'product-relevant next step', emojiLevel: 'none', linkMode: 'inline', imageMode: 'optional', voice: 'company', seoIntent: 'problem-aware', outlineDepth: 'standard' }
   }
   if (contentType === 'video_script') {
-    return { platform: 'tiktok', tone: 'direct and visual', cta: 'comment or visit link', emojiLevel: 'light', linkMode: 'end', imageMode: 'required', voice: 'founder', durationSeconds: 35, avatarStyle: 'credible founder avatar', hookType: 'pattern interrupt', aspectRatio: '9:16', aiLabel: true }
+    return { platform: 'tiktok', tone: 'direct and visual', cta: 'comment or visit link', emojiLevel: 'light', linkMode: 'end', imageMode: 'required', voice: 'founder', durationSeconds: VIDEO_SCRIPT_MAX_SECONDS, avatarStyle: 'credible founder avatar', hookType: 'pattern interrupt', aspectRatio: '9:16', aiLabel: true }
   }
   return { platform: platformForContentType(contentType), wordTarget: 160, tone: 'clear', cta: 'soft next step', emojiLevel: 'none', linkMode: 'end', imageMode: 'optional', voice: 'company' }
 }
@@ -77,7 +81,9 @@ export function normalizeDraftSettings(value: unknown, contentType = 'linkedin_p
   const row = normalizeRecord(value)
   return {
     platform: stringValue(row.platform) || defaults.platform,
-    wordTarget: boundedInt(row.wordTarget ?? row.word_target, 1, 5000) ?? defaults.wordTarget ?? null,
+    wordTarget: contentType === 'video_script'
+      ? boundedInt(row.wordTarget ?? row.word_target, 1, VIDEO_SCRIPT_MAX_WORDS) ?? VIDEO_SCRIPT_MAX_WORDS
+      : boundedInt(row.wordTarget ?? row.word_target, 1, 5000) ?? defaults.wordTarget ?? null,
     tone: stringValue(row.tone).slice(0, 80) || defaults.tone,
     cta: stringValue(row.cta).slice(0, 120) || defaults.cta,
     emojiLevel: enumValue(row.emojiLevel ?? row.emoji_level, ['none', 'light', 'expressive'] as const) ?? (defaults.emojiLevel as MarketingDraftSettings['emojiLevel']),
@@ -86,7 +92,9 @@ export function normalizeDraftSettings(value: unknown, contentType = 'linkedin_p
     voice: enumValue(row.voice, ['founder', 'company', 'operator'] as const) ?? (defaults.voice as MarketingDraftSettings['voice']),
     seoIntent: stringValue(row.seoIntent ?? row.seo_intent).slice(0, 100) || defaults.seoIntent,
     outlineDepth: enumValue(row.outlineDepth ?? row.outline_depth, ['brief', 'standard', 'detailed'] as const) ?? (defaults.outlineDepth as MarketingDraftSettings['outlineDepth']),
-    durationSeconds: boundedInt(row.durationSeconds ?? row.duration_seconds, 5, 240) ?? defaults.durationSeconds ?? null,
+    durationSeconds: contentType === 'video_script'
+      ? boundedInt(row.durationSeconds ?? row.duration_seconds, 5, VIDEO_SCRIPT_MAX_SECONDS) ?? VIDEO_SCRIPT_MAX_SECONDS
+      : boundedInt(row.durationSeconds ?? row.duration_seconds, 5, 240) ?? defaults.durationSeconds ?? null,
     avatarStyle: stringValue(row.avatarStyle ?? row.avatar_style).slice(0, 120) || defaults.avatarStyle,
     hookType: stringValue(row.hookType ?? row.hook_type).slice(0, 100) || defaults.hookType,
     aspectRatio: enumValue(row.aspectRatio ?? row.aspect_ratio, ['1:1', '4:5', '9:16', '16:9'] as const) ?? (defaults.aspectRatio as MarketingDraftSettings['aspectRatio']),

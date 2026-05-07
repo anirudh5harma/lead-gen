@@ -11,6 +11,9 @@ import {
   defaultDraftSettingsForContentType,
   normalizeDraftSettings,
   tabForContentType,
+  VIDEO_SCRIPT_MAX_CHARS,
+  VIDEO_SCRIPT_MAX_SECONDS,
+  VIDEO_SCRIPT_MAX_WORDS,
   type MarketingContentTab,
   type MarketingContentType,
   type MarketingDraftSettings,
@@ -19,6 +22,17 @@ import { upsertGtmEntityEmbedding } from './semantic-context'
 
 export type { MarketingContentTab, MarketingContentType, MarketingDraftSettings } from './content-planning'
 export type MarketingDecisionAction = 'draft' | 'approve' | 'dismiss'
+
+export interface MarketingAvatarVideoJob {
+  id: string
+  status: 'manual_ready' | 'queued' | 'rendering' | 'ready' | 'failed'
+  provider: string
+  video_url: string | null
+  thumbnail_url: string | null
+  error_message: string | null
+  created_at: string
+  updated_at: string | null
+}
 
 export interface GtmContentIdea {
   id: string
@@ -48,6 +62,7 @@ export interface GtmContentIdea {
   draft_settings: MarketingDraftSettings
   final_body: string | null
   media_assets: Array<{ label: string; value: string }>
+  latest_avatar_video_job: MarketingAvatarVideoJob | null
   compliance_flags: Record<string, unknown>
   scheduled_for: string | null
   published_at: string | null
@@ -169,6 +184,7 @@ export async function listMarketingContent(
     score: Number(row.score ?? 0),
     source_assets: normalizeProofPoints((row as { source_assets?: unknown }).source_assets),
     media_assets: normalizeProofPoints((row as { media_assets?: unknown }).media_assets),
+    latest_avatar_video_job: null,
     channel: (row as { channel?: string | null }).channel ?? channelForContentType(row.content_type),
     target_platform: (row as { target_platform?: string | null }).target_platform ?? platformForContentType(row.content_type),
     origin: ((row as { origin?: string | null }).origin === 'custom' ? 'custom' : 'suggested') as 'suggested' | 'custom',
@@ -182,6 +198,7 @@ export async function listMarketingContent(
     scheduled_for: (row as { scheduled_for?: string | null }).scheduled_for ?? null,
     published_at: (row as { published_at?: string | null }).published_at ?? null,
   }))
+  await hydrateLatestAvatarVideoJobs(supabase, ideas)
 
   const preferences = await listMarketingDraftPreferences(supabase, {
     userId: input.userId,
@@ -237,6 +254,49 @@ export async function listMarketingDraftPreferences(
   return (['posts', 'blogs', 'videos'] as MarketingContentTab[]).map(tab =>
     byTab.get(tab) ?? defaultMarketingPreference(tab, 'UTC'),
   )
+}
+
+async function hydrateLatestAvatarVideoJobs(
+  supabase: SupabaseClient,
+  ideas: GtmContentIdea[],
+): Promise<void> {
+  const ideaIds = ideas.filter(idea => idea.content_type === 'video_script').map(idea => idea.id)
+  if (ideaIds.length === 0) return
+
+  const { data, error } = await supabase
+    .from('gtm_avatar_video_jobs')
+    .select('id, content_idea_id, status, provider, video_url, thumbnail_url, error_message, created_at, updated_at')
+    .in('content_idea_id', ideaIds)
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.error('[content-workflow] avatar job lookup failed:', error.message)
+    return
+  }
+
+  const latest = new Map<string, MarketingAvatarVideoJob>()
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const ideaId = stringValue(row.content_idea_id)
+    if (!ideaId || latest.has(ideaId)) continue
+    latest.set(ideaId, {
+      id: stringValue(row.id),
+      status: avatarJobStatus(row.status),
+      provider: stringValue(row.provider) || 'avatar_provider',
+      video_url: stringValue(row.video_url) || null,
+      thumbnail_url: stringValue(row.thumbnail_url) || null,
+      error_message: stringValue(row.error_message) || null,
+      created_at: stringValue(row.created_at),
+      updated_at: stringValue(row.updated_at) || null,
+    })
+  }
+
+  for (const idea of ideas) {
+    idea.latest_avatar_video_job = latest.get(idea.id) ?? null
+  }
+}
+
+function avatarJobStatus(value: unknown): MarketingAvatarVideoJob['status'] {
+  if (value === 'queued' || value === 'rendering' || value === 'ready' || value === 'failed') return value
+  return 'manual_ready'
 }
 
 export async function saveMarketingDraftPreference(
@@ -378,6 +438,55 @@ export async function updateMarketingContentIdea(
   })
 }
 
+export async function updateMarketingContentDraft(
+  supabase: SupabaseClient,
+  input: {
+    userId: string
+    clientId?: string | null
+    ideaId: string
+    title?: string | null
+    body: string
+  },
+): Promise<void> {
+  const clientId = input.clientId ?? null
+  const title = (input.title ?? '').trim().slice(0, 240) || 'Draft'
+  let ideaQuery = supabase
+    .from('gtm_content_ideas')
+    .select('content_type')
+    .eq('id', input.ideaId)
+    .eq('user_id', input.userId)
+  ideaQuery = clientId ? ideaQuery.eq('client_id', clientId) : ideaQuery.is('client_id', null)
+  const { data: idea, error: ideaError } = await ideaQuery.maybeSingle()
+  if (ideaError) throw new Error(ideaError.message)
+  if (!idea) throw new Error('Content idea not found')
+  const body = clampBodyForContentType((idea as { content_type?: string }).content_type ?? '', input.body)
+  if (body.length < 2) throw new Error('Draft body is required.')
+
+  let query = supabase
+    .from('gtm_content_ideas')
+    .update({
+      draft: { title, body },
+      final_body: body,
+      status: 'drafted',
+    })
+    .eq('id', input.ideaId)
+    .eq('user_id', input.userId)
+  query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
+  const { error } = await query
+  if (error) throw new Error(error.message)
+
+  await recordGtmEvent(supabase, {
+    userId: input.userId,
+    clientId,
+    entityType: 'content_idea',
+    entityId: input.ideaId,
+    eventType: 'content.draft_edited',
+    source: 'marketing_content',
+    payload: { content_idea_id: input.ideaId },
+    idempotencyKey: eventIdempotencyKey(['content', input.ideaId, 'draft_edited', body.slice(0, 80)]),
+  })
+}
+
 export async function createCustomMarketingContentIdea(
   supabase: SupabaseClient,
   input: {
@@ -389,11 +498,12 @@ export async function createCustomMarketingContentIdea(
     assets?: Array<{ label: string; value: string }>
     draftSettings?: MarketingDraftSettings | null
     scheduledFor?: string | null
+    timeZone?: string | null
   },
 ): Promise<string> {
   const clientId = input.clientId ?? null
   const prompt = input.prompt.trim().slice(0, 2000)
-  const rawBody = (input.rawBody ?? '').trim().slice(0, 12000)
+  const rawBody = clampBodyForContentType(input.contentType, (input.rawBody ?? '').trim())
   if (prompt.length < 8 && rawBody.length < 2) throw new Error('Add content or a clearer content prompt.')
 
   const assets = (input.assets ?? [])
@@ -405,7 +515,7 @@ export async function createCustomMarketingContentIdea(
     .slice(0, 10)
   const draftSettings = normalizeDraftSettings(input.draftSettings, input.contentType)
   const draft = rawBody
-    ? { title: titleForContentType(input.contentType, prompt || rawBody), body: rawBody }
+    ? { title: titleForContentType(input.contentType, prompt || rawBody), body: clampBodyForContentType(input.contentType, rawBody) }
     : await generateCustomDraft(input.contentType, prompt, assets, draftSettings)
   const title = typeof draft.title === 'string' && draft.title.trim() ? draft.title.trim() : titleForContentType(input.contentType, prompt || rawBody)
   const now = new Date().toISOString()
@@ -427,7 +537,7 @@ export async function createCustomMarketingContentIdea(
       source_assets: assets,
       media_assets: mediaAssets,
       tab,
-      batch_date: dailySuggestionDate(new Date()),
+      batch_date: dailySuggestionDate(new Date(), input.timeZone || 'UTC'),
       draft_settings: draftSettings,
       audience: audienceForContentType(input.contentType),
       angle: title,
@@ -462,6 +572,7 @@ export async function createCustomMarketingContentIdea(
       ideaId,
       contentType: input.contentType,
       scheduledFor: input.scheduledFor,
+      targetPlatform: draftSettings.platform,
     })
   }
 
@@ -517,7 +628,7 @@ export async function scheduleMarketingContentIdea(
   const clientId = input.clientId ?? null
   let ideaQuery = supabase
     .from('gtm_content_ideas')
-    .select('id, content_type, audience, angle, pillar, idea_format, why_now, proof_points, source_insights, pain_category, score, scoring_debug, status, draft, draft_settings')
+    .select('id, content_type, target_platform, audience, angle, pillar, idea_format, why_now, proof_points, source_insights, pain_category, score, scoring_debug, status, draft, draft_settings')
     .eq('id', input.ideaId)
     .eq('user_id', input.userId)
   ideaQuery = clientId ? ideaQuery.eq('client_id', clientId) : ideaQuery.is('client_id', null)
@@ -552,6 +663,7 @@ export async function scheduleMarketingContentIdea(
     ideaId: input.ideaId,
     contentType: (idea as { content_type: string }).content_type,
     scheduledFor: input.scheduledFor,
+    targetPlatform: stringValue((idea as { target_platform?: string | null }).target_platform) || draftSettings.platform,
   })
 
   await recordGtmEvent(supabase, {
@@ -954,7 +1066,7 @@ async function generateCreativeIdeas(context: ContentContextSnapshot, pillars: C
         'Generate original, useful content ideas grounded only in supplied context.',
         'Every idea must cite a memory insight, ICP pain, or recent signal. Avoid templates, empty thought leadership, and invented claims.',
         'Use inspiration patterns only as structural guidance; do not copy source wording, full outlines, or video footage.',
-        'For videos, create original avatar-led concepts with captions and beat sheets, not close remixes of real creators.',
+        'For videos, create concise original avatar-led concepts that can become scripts of 75 spoken words or less and run 30 seconds or less.',
         'Return only valid JSON.',
       ].join(' '),
       prompt: [
@@ -962,6 +1074,8 @@ async function generateCreativeIdeas(context: ContentContextSnapshot, pillars: C
         'Use different creative patterns: opinion, tactical, contrarian, signal-led, story, data-backed, objection-handling, comparison, playbook, founder note.',
         'Do not repeat previous ideas. Do not start from a fixed template.',
         'For each idea, include at least one source insight and, where relevant, one inspiration pattern reference.',
+        'When a title or angle mentions the source signal it is inspired by, wrap the signal phrase in double quotes so it is visually distinct from the creative headline.',
+        'Video ideas must be short enough for a crisp 30-second AI avatar video: one hook, two proof beats, one CTA.',
         `Context JSON:\n${JSON.stringify(trimContextForPrompt(context)).slice(0, 9000)}`,
         `Pillars JSON:\n${JSON.stringify(pillars).slice(0, 4500)}`,
         'Return JSON: {"ideas":[{"title":"","contentType":"linkedin_post|x_post|blog_article|video_script","format":"","pillar":"","audience":"","pain":"","sourceInsights":[{"label":"","value":""}],"whyNow":"","angle":"","draftBrief":"","confidence":0.8}]}',
@@ -1079,7 +1193,7 @@ function buildGeneratedIdeaRow(
     suggestion_rank: options.rank,
     draft_settings: draftSettings,
     audience: idea.audience.slice(0, 240) || audienceForContentType(idea.contentType),
-    angle: (idea.angle || idea.title).slice(0, 500),
+    angle: formatGeneratedIdeaAngle(idea).slice(0, 500),
     pillar: idea.pillar.slice(0, 180) || null,
     idea_format: idea.format.slice(0, 120) || null,
     why_now: idea.whyNow.slice(0, 800) || null,
@@ -1111,7 +1225,7 @@ async function generateDraftForIdea(idea: ContentIdeaRow, settings?: MarketingDr
         'Write original, specific marketing copy from the provided idea brief.',
         'Do not use a reusable template. Do not invent proof, customer claims, metrics, or named examples.',
         'Preserve emojis and links only when requested by draft settings or source assets.',
-        'If the content type is video_script, write an original AI-avatar script, caption, and shot/beat notes inspired only by the pattern notes.',
+        'If the content type is video_script, write only a concise AI-avatar spoken script plus a one-line caption. Keep the spoken script at 75 words or less and 30 seconds or less.',
         'Return only valid JSON with "title" and "body" string fields.',
       ].join(' '),
       prompt: [
@@ -1126,13 +1240,14 @@ async function generateDraftForIdea(idea: ContentIdeaRow, settings?: MarketingDr
         `Proof points:\n${proof.map(point => `- ${point.label}: ${point.value}`).join('\n') || '- none'}`,
         `Source insights:\n${insights.map(point => `- ${point.label}: ${point.value}`).join('\n') || '- none'}`,
         draftSettings.wordTarget ? `Target length: about ${draftSettings.wordTarget} words.` : '',
-        draftSettings.durationSeconds ? `Target video duration: ${draftSettings.durationSeconds} seconds.` : '',
+        idea.content_type === 'video_script' ? `Hard limit: ${VIDEO_SCRIPT_MAX_SECONDS} seconds, ${VIDEO_SCRIPT_MAX_WORDS} spoken words, ${VIDEO_SCRIPT_MAX_CHARS} characters.` : '',
+        draftSettings.durationSeconds && idea.content_type !== 'video_script' ? `Target video duration: ${draftSettings.durationSeconds} seconds.` : '',
         draftSettings.emojiLevel === 'none' ? 'Do not use emojis.' : '',
         draftSettings.emojiLevel === 'light' ? 'Use at most 1 to 2 useful emojis.' : '',
         draftSettings.linkMode === 'end' ? 'Place any link at the end.' : '',
         'Write in a sharp, useful, non-generic voice. Make it feel like a real operator wrote it from market context.',
       ].filter(Boolean).join('\n\n'),
-      maxTokens: idea.content_type === 'blog_article' ? 1800 : 1000,
+      maxTokens: idea.content_type === 'blog_article' ? 1800 : idea.content_type === 'video_script' ? 420 : 1000,
       timeoutMs: 25_000,
       temperature: 0.58,
       responseFormat: { type: 'json_object' },
@@ -1140,7 +1255,7 @@ async function generateDraftForIdea(idea: ContentIdeaRow, settings?: MarketingDr
     })
     const parsed = JSON.parse(text) as { title?: unknown; body?: unknown }
     if (typeof parsed.title === 'string' && typeof parsed.body === 'string') {
-      return { title: parsed.title.slice(0, 240), body: parsed.body.slice(0, 7000) }
+      return { title: parsed.title.slice(0, 240), body: clampBodyForContentType(idea.content_type, parsed.body) }
     }
   } catch (error) {
     console.error('[content-workflow] suggested draft generation failed:', error)
@@ -1172,9 +1287,10 @@ async function generateCustomDraft(
         `Draft settings JSON:\n${JSON.stringify(draftSettings)}`,
         `User prompt: ${prompt}`,
         assetContext ? `Assets/context:\n${assetContext}` : '',
+        contentType === 'video_script' ? `Hard limit for video scripts: ${VIDEO_SCRIPT_MAX_SECONDS} seconds, ${VIDEO_SCRIPT_MAX_WORDS} spoken words, ${VIDEO_SCRIPT_MAX_CHARS} characters. Write a crisp spoken avatar script and a short caption only.` : '',
         'Keep the output ready to edit, specific, and distribution-friendly.',
       ].filter(Boolean).join('\n\n'),
-      maxTokens: 1200,
+      maxTokens: contentType === 'video_script' ? 420 : 1200,
       timeoutMs: 25_000,
       temperature: 0.35,
       responseFormat: { type: 'json_object' },
@@ -1182,7 +1298,7 @@ async function generateCustomDraft(
     })
     const parsed = JSON.parse(text) as { title?: unknown; body?: unknown }
     if (typeof parsed.title === 'string' && typeof parsed.body === 'string') {
-      return { title: parsed.title.slice(0, 240), body: parsed.body.slice(0, 6000) }
+      return { title: parsed.title.slice(0, 240), body: clampBodyForContentType(contentType, parsed.body) }
     }
   } catch (error) {
     console.error('[content-workflow] custom draft generation failed:', error)
@@ -1190,11 +1306,11 @@ async function generateCustomDraft(
 
   return {
     title: titleForContentType(contentType, prompt),
-    body: [
+    body: clampBodyForContentType(contentType, [
       prompt,
       assets.length > 0 ? `Context: ${assets.map(asset => asset.value).join(' ')}` : '',
       `Format this as a ${labelForContentType(contentType)} for ${audienceForContentType(contentType)}.`,
-    ].filter(Boolean).join('\n\n'),
+    ].filter(Boolean).join('\n\n')),
   }
 }
 
@@ -1231,6 +1347,36 @@ function assetTypeForValue(value: string): 'link' | 'image' | 'video' | 'note' {
 
 function isLikelyMediaAsset(value: string): boolean {
   return /\.(png|jpe?g|gif|webp|avif|mp4|mov|webm|m4v)(\?|#|$)/i.test(value)
+}
+
+function clampBodyForContentType(contentType: string, body: string): string {
+  const normalized = body.trim()
+  if (contentType !== 'video_script') return normalized.slice(0, 12000)
+  const words = normalized.split(/\s+/).filter(Boolean).slice(0, VIDEO_SCRIPT_MAX_WORDS)
+  return words.join(' ').slice(0, VIDEO_SCRIPT_MAX_CHARS).trim()
+}
+
+function formatGeneratedIdeaAngle(idea: GeneratedContentIdea): string {
+  const angle = (idea.angle || idea.title).trim()
+  if (/"/.test(angle)) return angle
+  const signal = idea.sourceInsights.find(insight => /signal|inspiration/i.test(insight.label))
+  if (!signal) return angle
+  const snippet = signalSnippetForIdea(signal.value)
+  if (!snippet) return angle
+  if (angle.toLowerCase().includes(snippet.toLowerCase())) {
+    return angle.replace(new RegExp(escapeRegExp(snippet), 'i'), `"${snippet}"`)
+  }
+  return `${angle} Inspired by "${snippet}"`
+}
+
+function signalSnippetForIdea(value: string): string {
+  const cleaned = value.replace(/\s+/g, ' ').trim()
+  const afterColon = cleaned.includes(':') ? cleaned.split(':').slice(1).join(':').trim() : cleaned
+  return (afterColon || cleaned).replace(/^["']|["']$/g, '').slice(0, 110)
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function channelForContentType(value: string): string {
@@ -1447,7 +1593,7 @@ function fallbackIdeas(context: ContentContextSnapshot, pillars: ContentPillar[]
         confidence: pillar.confidence,
       },
       {
-        title: `${pillar.title}: 35-second market timing explainer`,
+        title: `${pillar.title}: 30-second market timing explainer`,
         contentType: 'video_script',
         format: 'avatar-led short',
         pillar: pillar.title,
@@ -1455,7 +1601,7 @@ function fallbackIdeas(context: ContentContextSnapshot, pillars: ContentPillar[]
         pain: pillar.pain,
         sourceInsights: [insight, { label: 'Inspiration pattern', value: 'Use a fast hook, one visual metaphor, and three concise proof beats without copying source footage.' }],
         whyNow,
-        angle: `An original avatar-led short that turns ${pillar.pain} into a practical lesson tied to current market movement.`,
+        angle: `An original avatar-led short inspired by "${signalSnippetForIdea(insight.value)}" that turns ${pillar.pain} into a practical lesson.`,
         draftBrief: `Hook the audience with the timing problem, show three short visual beats, and close with a product-relevant caption.`,
         confidence: Math.max(0.58, pillar.confidence - 0.04),
       },

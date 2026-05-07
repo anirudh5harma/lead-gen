@@ -33,6 +33,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/cron/poll-avatar-videos",
+      "schedule": "*/10 * * * *"
+    },
+    {
       "path": "/api/cron/ingest-content-inspiration",
       "schedule": "15 2 * * *"
     }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { createCustomMarketingContentIdea, listMarketingContent, saveMarketingDraftPreference, scheduleMarketingContentIdea, updateMarketingContentIdea, type MarketingContentTab, type MarketingContentType } from '@/lib/gtm/content-workflow'
+import { createCustomMarketingContentIdea, listMarketingContent, saveMarketingDraftPreference, scheduleMarketingContentIdea, updateMarketingContentDraft, updateMarketingContentIdea, type MarketingContentTab, type MarketingContentType } from '@/lib/gtm/content-workflow'
 import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -60,6 +60,7 @@ export async function POST(request: Request) {
     content_type?: unknown
     prompt?: unknown
     raw_body?: unknown
+    title?: unknown
     assets?: unknown
     scheduled_for?: unknown
     draft_settings?: unknown
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
   }
   const ideaId = typeof payload.idea_id === 'string' ? payload.idea_id.trim() : ''
   const action = typeof payload.action === 'string' ? payload.action.trim() : ''
-  if (!['draft', 'approve', 'dismiss', 'reject', 'create_custom', 'save_custom', 'schedule', 'update_draft_settings'].includes(action)) {
+  if (!['draft', 'approve', 'dismiss', 'reject', 'create_custom', 'save_custom', 'schedule', 'update_draft', 'update_draft_settings'].includes(action)) {
     return NextResponse.json({ error: 'valid action is required' }, { status: 400 })
   }
 
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
         assets: normalizeAssets(payload.assets),
         draftSettings: normalizeDraftSettingsPayload(payload.draft_settings),
         scheduledFor,
+        timeZone: normalizeTimeZone(typeof payload.time_zone === 'string' ? payload.time_zone : null),
       })
       return NextResponse.json({ ok: true, idea_id })
     }
@@ -127,6 +129,17 @@ export async function POST(request: Request) {
     }
 
     if (!ideaId) return NextResponse.json({ error: 'idea_id is required' }, { status: 400 })
+    if (action === 'update_draft') {
+      const bodyText = typeof payload.raw_body === 'string' ? payload.raw_body : ''
+      await updateMarketingContentDraft(supabase, {
+        userId: user.id,
+        clientId: activeClientId,
+        ideaId,
+        title: typeof payload.title === 'string' ? payload.title : null,
+        body: bodyText,
+      })
+      return NextResponse.json({ ok: true })
+    }
     if (action === 'draft') {
       const rate = await checkRateLimit(`marketing:draft:${user.id}:${activeClientId ?? 'workspace'}`, 40, 60 * 60, { supabase })
       if (!rate.allowed) return NextResponse.json({ error: 'Too many draft requests. Try again later.' }, { status: 429 })

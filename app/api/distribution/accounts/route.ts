@@ -19,7 +19,20 @@ export async function GET() {
   query = activeClientId ? query.eq('client_id', activeClientId) : query.is('client_id', null)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    if (isMissingDistributionTableError(error.message)) {
+      console.error('[distribution/accounts] distribution tables missing:', error.message)
+      return NextResponse.json({
+        providers: DISTRIBUTION_PROVIDERS.map(provider => ({
+          ...provider,
+          connect: { enabled: false, reason: 'Run database migration 059_distribution_runtime_tables.sql.' },
+        })),
+        accounts: [],
+        setup_required: true,
+      })
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 
   return NextResponse.json({
     providers: DISTRIBUTION_PROVIDERS.map(provider => ({
@@ -46,4 +59,8 @@ export async function DELETE(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
+}
+
+function isMissingDistributionTableError(message: string): boolean {
+  return /connected_distribution_accounts|schema cache|could not find the table|does not exist/i.test(message)
 }

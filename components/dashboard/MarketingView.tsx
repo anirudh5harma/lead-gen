@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { VIDEO_SCRIPT_MAX_CHARS, VIDEO_SCRIPT_MAX_SECONDS } from '@/lib/gtm/content-planning'
 import type { GtmContentIdea } from './types'
 
 interface MarketingPayload {
@@ -88,6 +89,7 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
+  const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   const [payload, setPayload] = useState<MarketingPayload>({ ideas: [], metrics: {} })
   const [loading, setLoading] = useState(true)
   const [refreshingIdeas, setRefreshingIdeas] = useState(false)
@@ -101,6 +103,9 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
   const [customScheduleAt, setCustomScheduleAt] = useState('')
   const [showBacklog, setShowBacklog] = useState(false)
   const [scheduleFor, setScheduleFor] = useState<Record<string, string>>({})
+  const [pendingAvatarIdea, setPendingAvatarIdea] = useState<GtmContentIdea | null>(null)
+  const [draftingIds, setDraftingIds] = useState<Set<string>>(() => new Set())
+  const [avatarPreparingIds, setAvatarPreparingIds] = useState<Set<string>>(() => new Set())
   const [draftSettings, setDraftSettings] = useState<Record<Exclude<HubTab, 'overview'>, DraftSettings>>({
     posts: defaultDraftSettings('posts'),
     blogs: defaultDraftSettings('blogs'),
@@ -113,7 +118,7 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
     if (options?.initial ?? !refresh) setLoading(true)
     if (refresh) setRefreshingIdeas(true)
     setError(null)
-    const params = new URLSearchParams({ limit: hub === 'overview' ? '80' : '40', tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' })
+    const params = new URLSearchParams({ limit: hub === 'overview' ? '80' : '40', tz: browserTimeZone })
     if (refresh) params.set('refresh', '1')
     if (hub !== 'overview') params.set('tab', hub)
     if (hub !== 'overview' && showBacklog) params.set('today', '0')
@@ -169,6 +174,20 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hub, showBacklog])
 
+  useEffect(() => {
+    const hasPendingAvatarJob = payload.ideas.some(idea =>
+      idea.latest_avatar_video_job?.status === 'queued' ||
+      idea.latest_avatar_video_job?.status === 'rendering',
+    )
+    if (!hasPendingAvatarJob) return
+    const timer = window.setInterval(() => {
+      void load({ initial: false })
+    }, 20_000)
+    return () => window.clearInterval(timer)
+    // load is scoped to the current marketing hub.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload.ideas, hub, showBacklog])
+
   const activeIdeas = useMemo(() => payload.ideas.filter(idea => idea.status !== 'dismissed'), [payload.ideas])
   const hubIdeas = useMemo(() => filterIdeasForHub(activeIdeas, hub), [activeIdeas, hub])
   const effectiveCustomType = normalizeCustomTypeForHub(hub, customType)
@@ -178,6 +197,8 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
   const approvedReady = activeIdeas.filter(idea => idea.status === 'approved' && !idea.scheduled_for).length
 
   async function act(ideaId: string, action: 'draft' | 'approve' | 'dismiss') {
+    if (busyId || (action === 'draft' && draftingIds.has(ideaId))) return
+    if (action === 'draft') setDraftingIds(current => new Set(current).add(ideaId))
     setBusyId(ideaId)
     setError(null)
     const res = await fetch('/api/gtm/content', {
@@ -186,13 +207,18 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
       body: JSON.stringify({ idea_id: ideaId, action, draft_settings: hub === 'overview' ? undefined : draftSettings[hub] }),
     })
     const data = await res.json().catch(() => null) as { error?: string } | null
-    if (!res.ok) setError(data?.error ?? 'Could not update content idea.')
+    if (!res.ok) {
+      setError(data?.error ?? 'Could not update content idea.')
+      if (action === 'draft') setDraftingIds(current => withoutSetValue(current, ideaId))
+    }
     await load()
+    if (res.ok && action === 'draft') setDraftingIds(current => withoutSetValue(current, ideaId))
     setBusyId(null)
   }
 
   async function createCustomContent() {
-    if ((customPrompt.trim().length < 8 && customBody.trim().length < 2) || busyId) return
+    const boundedBody = boundedCustomBodyForType(effectiveCustomType, customBody)
+    if ((customPrompt.trim().length < 8 && boundedBody.trim().length < 2) || busyId) return
     setBusyId('custom')
     setError(null)
     const assets = assetText
@@ -206,10 +232,11 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
         action: 'create_custom',
         content_type: effectiveCustomType,
         prompt: customPrompt,
-        raw_body: customBody,
+        raw_body: boundedBody,
         assets,
         draft_settings: hub === 'overview' ? undefined : draftSettings[hub],
         scheduled_for: customScheduleAt ? new Date(customScheduleAt).toISOString() : undefined,
+        time_zone: browserTimeZone,
       }),
     })
     const data = await res.json().catch(() => null) as { error?: string } | null
@@ -242,6 +269,26 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
     })
     const data = await res.json().catch(() => null) as { error?: string } | null
     if (!res.ok) setError(data?.error ?? 'Could not schedule content.')
+    await load()
+    setBusyId(null)
+  }
+
+  async function saveDraft(ideaId: string, title: string, body: string) {
+    if (busyId) return
+    setBusyId(ideaId)
+    setError(null)
+    const res = await fetch('/api/gtm/content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        idea_id: ideaId,
+        action: 'update_draft',
+        title,
+        raw_body: body,
+      }),
+    })
+    const data = await res.json().catch(() => null) as { error?: string } | null
+    if (!res.ok) setError(data?.error ?? 'Could not save draft.')
     await load()
     setBusyId(null)
   }
@@ -281,7 +328,8 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
   }
 
   async function prepareAvatarVideo(ideaId: string) {
-    if (busyId) return
+    if (busyId || avatarPreparingIds.has(ideaId)) return
+    setAvatarPreparingIds(current => new Set(current).add(ideaId))
     setBusyId(ideaId)
     setError(null)
     const res = await fetch('/api/gtm/content/video', {
@@ -290,8 +338,14 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
       body: JSON.stringify({ idea_id: ideaId, settings: draftSettings.videos }),
     })
     const data = await res.json().catch(() => null) as { error?: string } | null
-    if (!res.ok) setError(data?.error ?? 'Could not prepare avatar video.')
+    if (!res.ok) {
+      setError(data?.error ?? 'Could not prepare avatar video.')
+      setAvatarPreparingIds(current => withoutSetValue(current, ideaId))
+    } else {
+      setPendingAvatarIdea(null)
+    }
     await load()
+    if (res.ok) setAvatarPreparingIds(current => withoutSetValue(current, ideaId))
     setBusyId(null)
   }
 
@@ -333,6 +387,7 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
           customScheduleAt={customScheduleAt}
           draftSettings={draftSettings[hub]}
           showBacklog={showBacklog}
+          timeZone={browserTimeZone}
           loading={loading}
           busyId={busyId}
           scheduleFor={scheduleFor}
@@ -345,13 +400,27 @@ export default function MarketingView({ hub = 'overview' }: { hub?: HubTab }) {
           onDraftSettings={settings => { void saveDraftSettings(hub, settings) }}
           onShowBacklog={setShowBacklog}
           onUploadAsset={uploadAsset}
-          onPrepareAvatarVideo={prepareAvatarVideo}
+          onPrepareAvatarVideo={setPendingAvatarIdea}
+          draftingIds={draftingIds}
+          avatarPreparingIds={avatarPreparingIds}
+          onSaveDraft={saveDraft}
           onCreate={createCustomContent}
           onScheduleValue={(ideaId, value) => setScheduleFor(current => ({ ...current, [ideaId]: value }))}
           onSchedule={scheduleIdea}
           onDraft={ideaId => act(ideaId, 'draft')}
           onApprove={ideaId => act(ideaId, 'approve')}
           onDismiss={ideaId => act(ideaId, 'dismiss')}
+        />
+      )}
+
+      {pendingAvatarIdea && (
+        <AvatarVideoCreditModal
+          idea={pendingAvatarIdea}
+          busy={busyId === pendingAvatarIdea.id}
+          onCancel={() => {
+            if (!busyId) setPendingAvatarIdea(null)
+          }}
+          onConfirm={() => { void prepareAvatarVideo(pendingAvatarIdea.id) }}
         />
       )}
     </div>
@@ -439,6 +508,50 @@ function OverviewWorkspace({
   )
 }
 
+function AvatarVideoCreditModal({
+  idea,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  idea: GtmContentIdea
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
+      <div className="w-full max-w-md rounded-xl border border-[var(--color-line-1)] bg-white shadow-[0_20px_60px_#00000024]">
+        <div className="border-b border-[var(--color-line-1)] px-5 py-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Avatar video</p>
+          <h3 className="mt-1 text-base font-semibold text-[var(--color-text-1)]">Generate this video for 1 credit?</h3>
+        </div>
+        <div className="space-y-3 px-5 py-4">
+          <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
+            <p className="line-clamp-2 text-[12px] font-semibold text-[var(--color-text-1)]">{idea.angle}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-5 py-3">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="h-9 rounded-lg border border-[var(--color-line-1)] bg-white px-4 text-[12px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)] disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="h-9 rounded-lg btn-primary px-4 text-[12px] font-semibold disabled:opacity-50"
+          >
+            {busy ? 'Generating' : 'Generate for 1 credit'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ContentTypeWorkspace({
   hub,
   ideas,
@@ -450,6 +563,7 @@ function ContentTypeWorkspace({
   customScheduleAt,
   draftSettings,
   showBacklog,
+  timeZone,
   loading,
   busyId,
   scheduleFor,
@@ -463,6 +577,9 @@ function ContentTypeWorkspace({
   onShowBacklog,
   onUploadAsset,
   onPrepareAvatarVideo,
+  draftingIds,
+  avatarPreparingIds,
+  onSaveDraft,
   onCreate,
   onScheduleValue,
   onSchedule,
@@ -480,6 +597,7 @@ function ContentTypeWorkspace({
   customScheduleAt: string
   draftSettings: DraftSettings
   showBacklog: boolean
+  timeZone: string
   loading: boolean
   busyId: string | null
   scheduleFor: Record<string, string>
@@ -492,7 +610,10 @@ function ContentTypeWorkspace({
   onDraftSettings: (value: DraftSettings) => void
   onShowBacklog: (value: boolean) => void
   onUploadAsset: (file: File, ideaId?: string | null) => Promise<string | null>
-  onPrepareAvatarVideo: (ideaId: string) => void
+  onPrepareAvatarVideo: (idea: GtmContentIdea) => void
+  draftingIds: Set<string>
+  avatarPreparingIds: Set<string>
+  onSaveDraft: (ideaId: string, title: string, body: string) => void
   onCreate: () => void
   onScheduleValue: (ideaId: string, value: string) => void
   onSchedule: (idea: GtmContentIdea) => void
@@ -502,13 +623,13 @@ function ContentTypeWorkspace({
 }) {
   const [contentTab, setContentTab] = useState<'ideas' | 'drafts' | 'scheduled'>('ideas')
   const [showSettings, setShowSettings] = useState(false)
-  const today = localDateKey(new Date())
+  const today = localDateKey(new Date(), timeZone)
 
   const suggested = ideas.filter(idea =>
     (idea.origin ?? 'suggested') !== 'custom' &&
     idea.status === 'new' &&
     (showBacklog || !idea.batch_date || idea.batch_date === today),
-  )
+  ).slice(0, showBacklog ? 20 : 5)
   const drafts = ideas.filter(idea => idea.status === 'drafted')
   const ready = ideas.filter(idea => idea.status === 'approved' || Boolean(idea.scheduled_for))
   const customItems = ideas.filter(idea => (idea.origin ?? 'suggested') === 'custom' && idea.status === 'new')
@@ -550,12 +671,12 @@ function ContentTypeWorkspace({
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
               Settings
             </button>
-            {contentTab === 'ideas' && sourceMode === 'suggested' && hiddenBacklogCount > 0 && (
+            {contentTab === 'ideas' && sourceMode === 'suggested' && (
               <button
                 onClick={() => onShowBacklog(!showBacklog)}
                 className={`inline-flex h-8 items-center rounded-lg border px-3 text-[11px] font-semibold transition-colors ${showBacklog ? 'border-[var(--color-pillar-timing)]/30 bg-[var(--color-pillar-timing-bg)] text-[var(--color-pillar-timing)]' : 'border-[var(--color-line-2)] bg-white text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}`}
               >
-                {showBacklog ? 'Hide backlog' : `${hiddenBacklogCount} older`}
+                {showBacklog ? 'Hide backlog' : hiddenBacklogCount > 0 ? `${hiddenBacklogCount} older` : 'Backlog'}
               </button>
             )}
           </div>
@@ -661,14 +782,16 @@ function ContentTypeWorkspace({
                   key={idea.id}
                   idea={idea}
                   busy={busyId === idea.id}
+                  drafting={draftingIds.has(idea.id)}
+                  avatarPreparing={avatarPreparingIds.has(idea.id)}
                   scheduleValue={scheduleFor[idea.id] ?? toDateTimeLocal(idea.scheduled_for)}
                   onScheduleValue={value => onScheduleValue(idea.id, value)}
                   onSchedule={() => onSchedule(idea)}
                   onDraft={() => onDraft(idea.id)}
                   onApprove={() => onApprove(idea.id)}
                   onDismiss={() => onDismiss(idea.id)}
-                  onUploadAsset={file => onUploadAsset(file, idea.id)}
-                  onPrepareAvatarVideo={() => onPrepareAvatarVideo(idea.id)}
+                  onPrepareAvatarVideo={() => onPrepareAvatarVideo(idea)}
+                  onSaveDraft={(title, body) => onSaveDraft(idea.id, title, body)}
                 />
               ))
             )}
@@ -727,9 +850,9 @@ function DraftCustomizationPanel({
         <input
           type="number"
           min={hub === 'videos' ? 10 : 20}
-          max={hub === 'blogs' ? 3000 : hub === 'videos' ? 120 : 600}
-          value={hub === 'videos' ? settings.durationSeconds ?? 35 : settings.wordTarget}
-          onChange={e => hub === 'videos' ? update('durationSeconds', Number(e.target.value)) : update('wordTarget', Number(e.target.value))}
+          max={hub === 'blogs' ? 3000 : hub === 'videos' ? VIDEO_SCRIPT_MAX_SECONDS : 600}
+          value={hub === 'videos' ? Math.min(settings.durationSeconds ?? VIDEO_SCRIPT_MAX_SECONDS, VIDEO_SCRIPT_MAX_SECONDS) : settings.wordTarget}
+          onChange={e => hub === 'videos' ? update('durationSeconds', Math.min(Number(e.target.value), VIDEO_SCRIPT_MAX_SECONDS)) : update('wordTarget', Number(e.target.value))}
           className="h-8 w-20 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]"
         />
         <input value={settings.tone} onChange={e => update('tone', e.target.value)} placeholder="Tone" className="h-8 w-32 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)]" />
@@ -805,6 +928,10 @@ function CustomContentPanel({
   onUploadAsset: (file: File, ideaId?: string | null) => Promise<string | null>
   onCreate: () => void
 }) {
+  const videoMode = customType === 'video_script'
+  const customBodyValue = videoMode ? customBody.slice(0, VIDEO_SCRIPT_MAX_CHARS) : customBody
+  const remainingVideoChars = VIDEO_SCRIPT_MAX_CHARS - customBodyValue.length
+
   async function uploadCustomFile(file: File | undefined) {
     if (!file) return
     const url = await onUploadAsset(file, null)
@@ -837,12 +964,18 @@ function CustomContentPanel({
       <label className="mt-3 block">
         <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Content</span>
         <textarea
-          value={customBody}
-          onChange={event => onCustomBody(event.target.value)}
+          value={customBodyValue}
+          onChange={event => onCustomBody(videoMode ? event.target.value.slice(0, VIDEO_SCRIPT_MAX_CHARS) : event.target.value)}
           rows={6}
-          placeholder="Type or paste your post, article, caption, or video notes. Leave empty if you want AI to draft from the prompt."
+          maxLength={videoMode ? VIDEO_SCRIPT_MAX_CHARS : undefined}
+          placeholder={videoMode ? 'Type or paste a concise avatar script. Keep it under 30 seconds.' : 'Type or paste your post, article, caption, or video notes. Leave empty if you want AI to draft from the prompt.'}
           className="mt-1 w-full resize-none rounded-lg border border-[var(--color-line-2)] bg-white px-3 py-2 text-[12px] leading-relaxed text-[var(--color-text-1)]"
         />
+        {videoMode && (
+          <span className="mt-1 block text-[10.5px] font-medium text-[var(--color-text-4)]">
+            30 seconds max. {remainingVideoChars} characters left.
+          </span>
+        )}
       </label>
       <label className="mt-3 block">
         <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Links, images, videos, or notes</span>
@@ -875,10 +1008,10 @@ function CustomContentPanel({
         </label>
         <button
           onClick={onCreate}
-          disabled={busy || (customPrompt.trim().length < 8 && customBody.trim().length < 2)}
+          disabled={busy || (customPrompt.trim().length < 8 && customBodyValue.trim().length < 2)}
           className="h-9 rounded-lg btn-primary px-4 text-[12px] font-semibold disabled:opacity-50"
         >
-          {busy ? 'Saving' : customScheduleAt ? 'Save and schedule' : customBody.trim() ? 'Save custom draft' : 'Generate draft'}
+          {busy ? 'Saving' : customScheduleAt ? 'Save and schedule' : customBodyValue.trim() ? 'Save custom draft' : 'Generate draft'}
         </button>
       </div>
     </section>
@@ -888,29 +1021,51 @@ function CustomContentPanel({
 function ContentCard({
   idea,
   busy,
+  drafting,
+  avatarPreparing,
   scheduleValue,
   onScheduleValue,
   onSchedule,
   onDraft,
   onApprove,
   onDismiss,
-  onUploadAsset,
   onPrepareAvatarVideo,
+  onSaveDraft,
 }: {
   idea: GtmContentIdea
   busy: boolean
+  drafting: boolean
+  avatarPreparing: boolean
   scheduleValue: string
   onScheduleValue: (value: string) => void
   onSchedule: () => void
   onDraft: () => void
   onApprove: () => void
   onDismiss: () => void
-  onUploadAsset: (file: File) => Promise<string | null>
   onPrepareAvatarVideo: () => void
+  onSaveDraft: (title: string, body: string) => void
 }) {
   const channel = idea.channel ?? channelForType(idea.content_type)
   const primaryInsight = (idea.source_insights?.length ? idea.source_insights : idea.proof_points)[0]
   const hasMedia = ((idea.media_assets?.length ?? 0) + (idea.source_assets?.length ?? 0)) > 0
+  const heading = suggestionHeading(idea, primaryInsight)
+  const avatarStatus = idea.latest_avatar_video_job?.status
+  const avatarLocked = avatarPreparing || avatarStatus === 'queued' || avatarStatus === 'rendering' || avatarStatus === 'ready'
+  const draftLocked = drafting || hasDraft(idea.draft) || idea.status === 'drafted' || idea.status === 'approved'
+  const draftTitle = String(idea.draft?.title ?? 'Draft')
+  const draftBody = String(idea.final_body ?? idea.draft?.body ?? '')
+  const [editingDraft, setEditingDraft] = useState(false)
+  const [editedTitle, setEditedTitle] = useState(draftTitle)
+  const [editedBody, setEditedBody] = useState(draftBody)
+  const [copied, setCopied] = useState(false)
+
+  async function copyDraft() {
+    const text = editedBody || draftBody || idea.angle
+    await navigator.clipboard?.writeText(text).catch(() => null)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
+
   return (
     <article className="rounded-lg border border-[var(--color-line-1)] bg-white shadow-[0_1px_2px_#00000008] overflow-hidden">
       <div className="p-4">
@@ -936,7 +1091,7 @@ function ContentCard({
               )}
             </div>
 
-            <h3 className="mt-2 text-[14px] font-semibold leading-snug text-[var(--color-text-1)]">{idea.angle}</h3>
+            <h3 className="mt-2 text-[14px] font-semibold leading-snug text-[var(--color-text-1)]">{heading}</h3>
 
             <div className="mt-2 flex flex-wrap gap-1.5 text-[10.5px] font-semibold text-[var(--color-text-3)]">
               {idea.target_platform && <span>{titleCase(idea.target_platform)}</span>}
@@ -952,9 +1107,53 @@ function ContentCard({
 
             {hasDraft(idea.draft) && (
               <details className="mt-3 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
-                <summary className="cursor-pointer text-[12px] font-semibold text-[var(--color-text-1)]">{String(idea.draft.title ?? 'Draft')}</summary>
-                <p className="mt-2 max-h-44 overflow-auto whitespace-pre-line text-[12px] leading-relaxed text-[var(--color-text-2)]">{String(idea.draft.body ?? '')}</p>
+                <summary className="cursor-pointer text-[12px] font-semibold text-[var(--color-text-1)]">{draftTitle}</summary>
+                {editingDraft ? (
+                  <div className="mt-2 space-y-2">
+                    <input
+                      value={editedTitle}
+                      onChange={event => setEditedTitle(event.target.value)}
+                      className="h-8 w-full rounded-md border border-[var(--color-line-2)] bg-white px-2 text-[12px] text-[var(--color-text-1)]"
+                    />
+                    <textarea
+                      value={editedBody}
+                      onChange={event => setEditedBody(event.target.value)}
+                      rows={8}
+                      className="w-full resize-y rounded-md border border-[var(--color-line-2)] bg-white px-2 py-2 text-[12px] leading-relaxed text-[var(--color-text-1)]"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => { onSaveDraft(editedTitle, editedBody); setEditingDraft(false) }} disabled={busy || editedBody.trim().length < 2} className="h-7 rounded-md btn-primary px-2.5 text-[11px] font-semibold disabled:opacity-50">Save draft</button>
+                      <button onClick={() => { setEditingDraft(false); setEditedTitle(draftTitle); setEditedBody(draftBody) }} className="h-7 rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="mt-2 max-h-44 overflow-auto whitespace-pre-line text-[12px] leading-relaxed text-[var(--color-text-2)]">{draftBody}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button onClick={() => { setEditedTitle(draftTitle); setEditedBody(draftBody); setEditingDraft(true) }} className="h-7 rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">Edit</button>
+                      <button onClick={() => { void copyDraft() }} className="h-7 rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">{copied ? 'Copied' : 'Copy/export'}</button>
+                    </div>
+                  </>
+                )}
               </details>
+            )}
+
+            {idea.latest_avatar_video_job && (
+              <div className="mt-2 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Avatar video</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-[var(--color-text-3)]">{idea.latest_avatar_video_job.status}</span>
+                  <span className="text-[10px] text-[var(--color-text-4)]">{idea.latest_avatar_video_job.provider}</span>
+                </div>
+                {idea.latest_avatar_video_job.video_url && (
+                  <a href={idea.latest_avatar_video_job.video_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-[11px] font-semibold text-[var(--color-accent)] hover:underline">
+                    Open video
+                  </a>
+                )}
+                {idea.latest_avatar_video_job.error_message && (
+                  <p className="mt-1 text-[11px] text-[var(--color-sig-regulation)]">{idea.latest_avatar_video_job.error_message}</p>
+                )}
+              </div>
             )}
 
             <details className="mt-2">
@@ -987,27 +1186,14 @@ function ContentCard({
               </div>
             </details>
 
-            <label className="mt-3 inline-flex h-7 cursor-pointer items-center rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">
-              Attach media
-              <input
-                type="file"
-                accept="image/*,video/*,application/pdf,text/plain"
-                className="sr-only"
-                onChange={event => {
-                  const file = event.target.files?.[0]
-                  if (file) void onUploadAsset(file)
-                  event.currentTarget.value = ''
-                }}
-              />
-            </label>
           </div>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-4 py-3">
-        <button onClick={onDraft} disabled={busy} className="h-8 px-3 rounded-lg btn-primary text-[12px] font-semibold disabled:opacity-50">Draft</button>
+        <button onClick={onDraft} disabled={busy || draftLocked} className="h-8 px-3 rounded-lg btn-primary text-[12px] font-semibold disabled:opacity-50">{drafting ? 'Drafting' : hasDraft(idea.draft) ? 'Drafted' : 'Draft'}</button>
         {idea.content_type === 'video_script' && (
-          <button onClick={onPrepareAvatarVideo} disabled={busy || !hasDraft(idea.draft)} className="h-8 px-3 rounded-lg border border-[var(--color-line-1)] bg-white text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)] disabled:opacity-50">Avatar video</button>
+          <button onClick={onPrepareAvatarVideo} disabled={busy || avatarLocked || !hasDraft(idea.draft)} className="h-8 px-3 rounded-lg border border-[var(--color-line-1)] bg-white text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)] disabled:opacity-50">{avatarPreparing ? 'Preparing video' : avatarStatus === 'ready' ? 'Video ready' : avatarStatus === 'queued' || avatarStatus === 'rendering' ? 'Video queued' : 'Avatar video'}</button>
         )}
         <button onClick={onApprove} disabled={busy} className="h-8 px-3 rounded-lg border border-[var(--color-line-1)] bg-white text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)] disabled:opacity-50">Approve</button>
         <input
@@ -1191,7 +1377,39 @@ function defaultDraftSettings(hub: Exclude<HubTab, 'overview'>): DraftSettings {
   if (hub === 'blogs') {
     return { platform: 'blog', wordTarget: 900, tone: 'useful and specific', cta: 'product-relevant next step', emojiLevel: 'none', linkMode: 'inline', imageMode: 'optional', voice: 'company', seoIntent: 'problem-aware', outlineDepth: 'standard' }
   }
-  return { platform: 'tiktok', wordTarget: 120, tone: 'direct and visual', cta: 'comment or visit link', emojiLevel: 'light', linkMode: 'end', imageMode: 'required', voice: 'founder', durationSeconds: 35, avatarStyle: 'credible founder avatar', hookType: 'pattern interrupt', aspectRatio: '9:16', aiLabel: true }
+  return { platform: 'tiktok', wordTarget: 75, tone: 'direct and visual', cta: 'comment or visit link', emojiLevel: 'light', linkMode: 'end', imageMode: 'required', voice: 'founder', durationSeconds: VIDEO_SCRIPT_MAX_SECONDS, avatarStyle: 'credible founder avatar', hookType: 'pattern interrupt', aspectRatio: '9:16', aiLabel: true }
+}
+
+function boundedCustomBodyForType(contentType: MarketingContentType, body: string): string {
+  return contentType === 'video_script' ? body.slice(0, VIDEO_SCRIPT_MAX_CHARS) : body
+}
+
+function withoutSetValue<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set)
+  next.delete(value)
+  return next
+}
+
+function suggestionHeading(idea: GtmContentIdea, insight?: { label: string; value: string } | null): string {
+  const heading = idea.angle.trim()
+  if ((idea.origin ?? 'suggested') === 'custom' || heading.includes('"') || !insight) return heading
+  if (!/signal|inspiration/i.test(insight.label)) return heading
+  const signal = signalSnippet(insight.value)
+  if (!signal) return heading
+  if (heading.toLowerCase().includes(signal.toLowerCase())) {
+    return heading.replace(new RegExp(escapeRegExp(signal), 'i'), `"${signal}"`)
+  }
+  return `${heading} Inspired by "${signal}"`
+}
+
+function signalSnippet(value: string): string {
+  const cleaned = value.replace(/\s+/g, ' ').trim()
+  const afterColon = cleaned.includes(':') ? cleaned.split(':').slice(1).join(':').trim() : cleaned
+  return (afterColon || cleaned).replace(/^["']|["']$/g, '').slice(0, 110)
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function buildMarketingCalendar(ideas: GtmContentIdea[]) {
@@ -1240,8 +1458,9 @@ function titleCase(value: string): string {
   return value.replace(/[-_]/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase())
 }
 
-function localDateKey(date: Date): string {
+function localDateKey(date: Date, timeZone?: string): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

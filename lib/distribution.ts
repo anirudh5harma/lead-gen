@@ -88,7 +88,13 @@ export function isDistributionProvider(value: string): value is DistributionProv
   return Boolean(providerConfig(value))
 }
 
-export function distributionProviderForContentType(contentType: string): DistributionProviderId | null {
+export function distributionProviderForContentType(contentType: string, targetPlatform?: string | null): DistributionProviderId | null {
+  if (targetPlatform === 'linkedin') return 'linkedin'
+  if (targetPlatform === 'x') return 'x'
+  if (targetPlatform === 'instagram') return 'instagram'
+  if (targetPlatform === 'tiktok') return 'tiktok'
+  if (targetPlatform === 'newsletter' || targetPlatform === 'substack') return 'substack'
+  if (targetPlatform === 'blog' || targetPlatform === 'medium') return 'medium'
   if (contentType === 'linkedin_post') return 'linkedin'
   if (contentType === 'x_post') return 'x'
   if (contentType === 'blog_article') return 'medium'
@@ -228,14 +234,22 @@ export async function publishToDistributionProvider(input: DistributionPublishIn
 
 export async function enqueueDistributionJobForIdea(
   supabase: SupabaseClient,
-  input: { userId: string; clientId: string | null; ideaId: string; contentType: string; scheduledFor: string | null },
+  input: { userId: string; clientId: string | null; ideaId: string; contentType: string; scheduledFor: string | null; targetPlatform?: string | null },
 ): Promise<void> {
-  const provider = distributionProviderForContentType(input.contentType)
+  const provider = distributionProviderForContentType(input.contentType, input.targetPlatform)
   if (!provider) return
+  if (!input.scheduledFor) {
+    await supabase
+      .from('content_distribution_jobs')
+      .update({ status: 'cancelled', scheduled_for: null, error_message: null })
+      .eq('content_idea_id', input.ideaId)
+      .eq('provider', provider)
+    return
+  }
 
   let accountQuery = supabase
     .from('connected_distribution_accounts')
-    .select('id, status')
+    .select('id, status, publish_mode')
     .eq('user_id', input.userId)
     .eq('provider', provider)
     .neq('status', 'disabled')
@@ -245,7 +259,7 @@ export async function enqueueDistributionJobForIdea(
   const { data: account } = await accountQuery.maybeSingle()
 
   const config = providerConfig(provider)
-  const status = config?.direct && account?.id && account.status === 'connected' ? 'queued' : 'manual_ready'
+  const status = config?.direct && account?.id && account.status === 'connected' && account.publish_mode !== 'manual_review' ? 'queued' : 'manual_ready'
   const { data: existingJob } = await supabase
     .from('content_distribution_jobs')
     .select('id')
@@ -279,6 +293,7 @@ export async function publishDueDistributionJobs(
     .select('id, user_id, client_id, content_idea_id, connected_distribution_account_id, provider, scheduled_for, attempt_count')
     .in('status', ['queued', 'failed'])
     .lte('scheduled_for', nowIso)
+    .lt('attempt_count', 3)
     .order('scheduled_for', { ascending: true })
     .limit(20)
   if (error) throw new Error(error.message)

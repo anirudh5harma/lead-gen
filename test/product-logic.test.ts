@@ -170,11 +170,14 @@ test('marketing draft settings normalize platform-specific controls', () => {
   }, 'video_script')
 
   assert.equal(settings.platform, 'instagram')
-  assert.equal(settings.wordTarget, 5000)
+  assert.equal(settings.wordTarget, 75)
   assert.equal(settings.durationSeconds, 5)
   assert.equal(settings.emojiLevel, 'expressive')
   assert.equal(settings.aspectRatio, '9:16')
   assert.equal(settings.aiLabel, false)
+
+  const cappedVideo = normalizeDraftSettings({ durationSeconds: 240 }, 'video_script')
+  assert.equal(cappedVideo.durationSeconds, 30)
 })
 
 test('follow-up scheduling stays exactly three days out by default', () => {

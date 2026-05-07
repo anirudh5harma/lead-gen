@@ -97,6 +97,16 @@ export interface GtmContentIdea {
   custom_prompt?: string | null
   source_assets?: Array<{ label: string; value: string }>
   media_assets?: Array<{ label: string; value: string }>
+  latest_avatar_video_job?: {
+    id: string
+    status: 'manual_ready' | 'queued' | 'rendering' | 'ready' | 'failed'
+    provider: string
+    video_url: string | null
+    thumbnail_url: string | null
+    error_message: string | null
+    created_at: string
+    updated_at: string | null
+  } | null
   compliance_flags?: Record<string, unknown>
   scheduled_for?: string | null
   published_at?: string | null
