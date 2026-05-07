@@ -39,13 +39,9 @@ export default async function DashboardPage() {
     .eq('user_id', userId)
     .maybeSingle()
 
-  const { data: recentLeadCount } = await supabase.rpc('recent_lead_count', {
-    p_user_id: userId,
-  })
-
   const workspaces = await getUserWorkspaceMemberships(supabase, userId)
 
-  const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
+  const leadsUsed        = (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const leadCredits      = (extProfile as { lead_credit_balance?: number } | null)?.lead_credit_balance ?? 0
   const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
   const slackMinScore    = (extProfile as { slack_min_score?: number | null } | null)?.slack_min_score ?? 7
