@@ -35,6 +35,17 @@
   --color-accent-bg: #e4d8d3;     /* pill/soft fill */
   --color-accent-on: #ffffff;     /* text on accent */
 
+  /* Three Pillars — Timing, Quality, Accuracy */
+  --color-pillar-timing: #b8862e;
+  --color-pillar-timing-bg: #f5ebd4;
+  --color-pillar-timing-glow: #b8862e25;
+  --color-pillar-quality: #9c5a45;
+  --color-pillar-quality-bg: #e4d8d3;
+  --color-pillar-quality-glow: #9c5a4525;
+  --color-pillar-accuracy: #3d5a4a;
+  --color-pillar-accuracy-bg: #d4e0d8;
+  --color-pillar-accuracy-glow: #3d5a4a25;
+
   /* Signal semantics — softer backgrounds */
   --color-sig-funding: #1f7a3a;
   --color-sig-acquisition: #1f5ccf;
@@ -133,12 +144,32 @@ body {
   mask-image: radial-gradient(ellipse at center, #000 20%, transparent 80%);
 }
 
-/* ── Paper card ── */
+/* ── Paper card — unified elevation system ── */
 .card {
   background: #fdfcfa;
   border: 1px solid var(--color-line-2);
   border-radius: 14px;
   box-shadow: 0 1px 0 #ffffff80, 0 10px 30px -24px #1a181699;
+}
+
+/* Flat card — for lists and dense rows */
+.card-flat {
+  background: #ffffff;
+  border: 1px solid var(--color-line-1);
+  border-radius: 12px;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.card-flat:hover {
+  border-color: var(--color-line-3);
+  box-shadow: 0 2px 8px -4px #1a181610;
+}
+
+/* Elevated card — for primary content blocks */
+.card-elevated {
+  background: #fdfcfa;
+  border: 1px solid var(--color-line-2);
+  border-radius: 14px;
+  box-shadow: 0 1px 0 #ffffff80, 0 12px 40px -20px #1a18164d;
 }
 
 /* ── Panel (less elevation than card) ── */
@@ -244,6 +275,58 @@ body {
 .chip-expansion   { background: var(--color-sig-expansion-bg);   color: var(--color-sig-expansion);   }
 .chip-hiring      { background: var(--color-sig-hiring-bg);      color: var(--color-sig-hiring);      }
 .chip-regulation  { background: var(--color-sig-regulation-bg);  color: var(--color-sig-regulation);  }
+
+/* Three Pillar badges */
+.pillar-timing {
+  background: var(--color-pillar-timing-bg);
+  color: var(--color-pillar-timing);
+}
+.pillar-quality {
+  background: var(--color-pillar-quality-bg);
+  color: var(--color-pillar-quality);
+}
+.pillar-accuracy {
+  background: var(--color-pillar-accuracy-bg);
+  color: var(--color-pillar-accuracy);
+}
+
+/* Freshness pulse — Timing pillar */
+.freshness-pulse {
+  position: relative;
+}
+.freshness-pulse::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: var(--color-pillar-timing);
+  opacity: 0;
+  animation: soft-pulse 2s ease-in-out infinite;
+}
+
+/* Quality seal — verified/contact found */
+.quality-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background: var(--color-pillar-quality-bg);
+  color: var(--color-pillar-quality);
+}
+
+/* Accuracy indicator — relevance/fit */
+.accuracy-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-pillar-accuracy);
+}
+.accuracy-dot-high { background: var(--color-pillar-accuracy); }
+.accuracy-dot-mid  { background: var(--color-pillar-timing); }
+.accuracy-dot-low  { background: var(--color-text-4); }
 
 /* ── Slide-in drawer ── */
 @keyframes slide-in-right {

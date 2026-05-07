@@ -71,9 +71,9 @@ const CUSTOM_TYPES: Array<{ id: MarketingContentType; label: string; channel: Ch
 ]
 
 const STATUS_STYLES: Record<string, string> = {
-  new: 'bg-[var(--color-accent)]/10 text-[var(--color-accent-ring)]',
-  drafted: 'bg-[var(--color-sig-funding)]/10 text-[var(--color-sig-funding)]',
-  approved: 'bg-[var(--color-sig-expansion)]/10 text-[var(--color-sig-expansion)]',
+  new: 'bg-[var(--color-pillar-timing-bg)] text-[var(--color-pillar-timing)]',
+  drafted: 'bg-[var(--color-sig-funding-bg)] text-[var(--color-sig-funding)]',
+  approved: 'bg-[var(--color-sig-expansion-bg)] text-[var(--color-sig-expansion)]',
   dismissed: 'bg-[var(--color-ink-3)] text-[var(--color-text-3)]',
 }
 
@@ -390,11 +390,6 @@ function ContentHubHeader({
           </button>
         </div>
       </div>
-      {hub !== 'overview' && (
-        <div className="border-t border-[var(--color-line-1)] px-4 py-3 text-[11px] text-[var(--color-text-4)]">
-          Suggested ideas come from Bombsell context. Custom items come from your prompt and assets.
-        </div>
-      )}
     </section>
   )
 }
@@ -505,17 +500,24 @@ function ContentTypeWorkspace({
   onApprove: (ideaId: string) => void
   onDismiss: (ideaId: string) => void
 }) {
+  const [contentTab, setContentTab] = useState<'ideas' | 'drafts' | 'scheduled'>('ideas')
+  const [showSettings, setShowSettings] = useState(false)
   const today = localDateKey(new Date())
+
   const suggested = ideas.filter(idea =>
     (idea.origin ?? 'suggested') !== 'custom' &&
     idea.status === 'new' &&
     (showBacklog || !idea.batch_date || idea.batch_date === today),
-  ).slice(0, showBacklog ? 20 : 5)
+  )
   const drafts = ideas.filter(idea => idea.status === 'drafted')
   const ready = ideas.filter(idea => idea.status === 'approved' || Boolean(idea.scheduled_for))
-  const customItems = ideas.filter(idea => (idea.origin ?? 'suggested') === 'custom')
-  const visibleSuggestions = sourceMode === 'suggested' ? suggested : customItems
-  const availableTypes = CUSTOM_TYPES.filter(type => type.channel === hubToChannel(hub))
+  const customItems = ideas.filter(idea => (idea.origin ?? 'suggested') === 'custom' && idea.status === 'new')
+  const visibleIdeas = contentTab === 'ideas'
+    ? (sourceMode === 'suggested' ? suggested : customItems)
+    : contentTab === 'drafts'
+      ? drafts
+      : ready
+
   const hiddenBacklogCount = ideas.filter(idea =>
     (idea.origin ?? 'suggested') !== 'custom' &&
     idea.status === 'new' &&
@@ -523,33 +525,51 @@ function ContentTypeWorkspace({
     idea.batch_date !== today,
   ).length
 
+  const availableTypes = CUSTOM_TYPES.filter(type => type.channel === hubToChannel(hub))
+
+  const tabCounts = {
+    ideas: suggested.length + customItems.length,
+    drafts: drafts.length,
+    scheduled: ready.length,
+  }
+
   return (
     <section className="space-y-4">
-      <div className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
+      {/* Compact header bar */}
+      <div className="card-flat px-4 py-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-[var(--color-text-1)]">{HUB_TABS.find(tab => tab.id === hub)?.label}</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">Today shows at most 5 fresh ideas. Older ideas stay out of the way unless you open backlog.</p>
+            <span className="text-[11px] text-[var(--color-text-4)]">{ideas.length} items</span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => onSourceMode('suggested')} className={`rounded-lg px-3 py-2 text-[12px] font-semibold ${sourceMode === 'suggested' ? 'bg-[var(--color-text-1)] text-white' : 'border border-[var(--color-line-1)] bg-white text-[var(--color-text-2)]'}`}>Suggested</button>
-            <button onClick={() => onSourceMode('custom')} className={`rounded-lg px-3 py-2 text-[12px] font-semibold ${sourceMode === 'custom' ? 'bg-[var(--color-text-1)] text-white' : 'border border-[var(--color-line-1)] bg-white text-[var(--color-text-2)]'}`}>Custom</button>
-            {sourceMode === 'suggested' && (
-              <button onClick={() => onShowBacklog(!showBacklog)} className="rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)]">
-                {showBacklog ? 'Hide backlog' : hiddenBacklogCount > 0 ? `Backlog ${hiddenBacklogCount}` : 'Backlog'}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(s => !s)}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition-colors ${showSettings ? 'border-[var(--color-accent)]/30 bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'border-[var(--color-line-2)] bg-white text-[var(--color-text-2)] hover:text-[var(--color-text-1)]'}`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              Settings
+            </button>
+            {contentTab === 'ideas' && sourceMode === 'suggested' && hiddenBacklogCount > 0 && (
+              <button
+                onClick={() => onShowBacklog(!showBacklog)}
+                className={`inline-flex h-8 items-center rounded-lg border px-3 text-[11px] font-semibold transition-colors ${showBacklog ? 'border-[var(--color-pillar-timing)]/30 bg-[var(--color-pillar-timing-bg)] text-[var(--color-pillar-timing)]' : 'border-[var(--color-line-2)] bg-white text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}`}
+              >
+                {showBacklog ? 'Hide backlog' : `${hiddenBacklogCount} older`}
               </button>
             )}
           </div>
         </div>
+
+        {showSettings && (
+          <div className="mt-3 border-t border-[var(--color-line-1)] pt-3">
+            <DraftCustomizationPanel hub={hub} settings={draftSettings} onChange={onDraftSettings} />
+          </div>
+        )}
       </div>
 
-      <DraftCustomizationPanel
-        hub={hub}
-        settings={draftSettings}
-        onChange={onDraftSettings}
-      />
-
-      {sourceMode === 'custom' && (
+      {/* Custom creation panel */}
+      {contentTab === 'ideas' && sourceMode === 'custom' && (
         <CustomContentPanel
           customType={availableTypes.some(type => type.id === customType) ? customType : availableTypes[0]?.id ?? customType}
           allowedTypes={availableTypes}
@@ -571,110 +591,114 @@ function ContentTypeWorkspace({
       {loading ? (
         <EmptyPanel text="Loading content workflow." />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,0.95fr)]">
-          <ContentLane
-            title={sourceMode === 'suggested' ? 'Suggested ideas' : 'Custom items'}
-            empty={sourceMode === 'suggested' ? 'No suggested ideas in this category yet.' : 'No custom drafts in this category yet.'}
-            ideas={visibleSuggestions}
-            busyId={busyId}
-            scheduleFor={scheduleFor}
-            onScheduleValue={onScheduleValue}
-            onSchedule={onSchedule}
-            onDraft={onDraft}
-            onApprove={onApprove}
-            onDismiss={onDismiss}
-            onUploadAsset={onUploadAsset}
-            onPrepareAvatarVideo={onPrepareAvatarVideo}
-          />
-          <ContentLane
-            title="Drafts"
-            empty="No drafts yet. Draft a suggestion or generate a custom item."
-            ideas={drafts}
-            busyId={busyId}
-            scheduleFor={scheduleFor}
-            onScheduleValue={onScheduleValue}
-            onSchedule={onSchedule}
-            onDraft={onDraft}
-            onApprove={onApprove}
-            onDismiss={onDismiss}
-            onUploadAsset={onUploadAsset}
-            onPrepareAvatarVideo={onPrepareAvatarVideo}
-          />
-          <ContentLane
-            title="Ready and scheduled"
-            empty="No approved or scheduled assets yet."
-            ideas={ready}
-            busyId={busyId}
-            scheduleFor={scheduleFor}
-            onScheduleValue={onScheduleValue}
-            onSchedule={onSchedule}
-            onDraft={onDraft}
-            onApprove={onApprove}
-            onDismiss={onDismiss}
-            onUploadAsset={onUploadAsset}
-            onPrepareAvatarVideo={onPrepareAvatarVideo}
-          />
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Sidebar tabs */}
+          <div className="lg:w-[200px] shrink-0">
+            <div className="flex lg:flex-col gap-1 p-1 rounded-xl bg-[var(--color-ink-2)]">
+              <SidebarTab
+                label="Ideas"
+                count={tabCounts.ideas}
+                active={contentTab === 'ideas'}
+                onClick={() => setContentTab('ideas')}
+                icon={<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>}
+              />
+              <SidebarTab
+                label="Drafts"
+                count={tabCounts.drafts}
+                active={contentTab === 'drafts'}
+                onClick={() => setContentTab('drafts')}
+                icon={<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>}
+              />
+              <SidebarTab
+                label="Scheduled"
+                count={tabCounts.scheduled}
+                active={contentTab === 'scheduled'}
+                onClick={() => setContentTab('scheduled')}
+                icon={<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
+              />
+            </div>
+
+            {/* Source toggle */}
+            {contentTab === 'ideas' && (
+              <div className="mt-3 px-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)] mb-1.5">Source</p>
+                <div className="flex rounded-lg bg-[var(--color-ink-2)] p-0.5">
+                  <button
+                    onClick={() => onSourceMode('suggested')}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-semibold transition-all ${sourceMode === 'suggested' ? 'bg-white text-[var(--color-text-1)] shadow-sm' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-2)]'}`}
+                  >
+                    Suggested
+                  </button>
+                  <button
+                    onClick={() => onSourceMode('custom')}
+                    className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-semibold transition-all ${sourceMode === 'custom' ? 'bg-white text-[var(--color-text-1)] shadow-sm' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-2)]'}`}
+                  >
+                    Custom
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[10px] text-[var(--color-text-4)] leading-relaxed">
+                  {sourceMode === 'suggested'
+                    ? 'AI-generated ideas from your signals and ICP.'
+                    : 'Create your own content from a prompt.'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Main content */}
+          <div className="flex-1 min-w-0 space-y-3">
+            {visibleIdeas.length === 0 ? (
+              <EmptyPanel text={
+                contentTab === 'ideas'
+                  ? sourceMode === 'suggested' ? 'No suggested ideas yet. Try refreshing or check your signal sources.' : 'No custom items. Use the form above to create one.'
+                  : contentTab === 'drafts'
+                    ? 'No drafts yet. Draft an idea to get started.'
+                    : 'Nothing scheduled yet. Approve or schedule items from the Ideas tab.'
+              } />
+            ) : (
+              visibleIdeas.map(idea => (
+                <ContentCard
+                  key={idea.id}
+                  idea={idea}
+                  busy={busyId === idea.id}
+                  scheduleValue={scheduleFor[idea.id] ?? toDateTimeLocal(idea.scheduled_for)}
+                  onScheduleValue={value => onScheduleValue(idea.id, value)}
+                  onSchedule={() => onSchedule(idea)}
+                  onDraft={() => onDraft(idea.id)}
+                  onApprove={() => onApprove(idea.id)}
+                  onDismiss={() => onDismiss(idea.id)}
+                  onUploadAsset={file => onUploadAsset(file, idea.id)}
+                  onPrepareAvatarVideo={() => onPrepareAvatarVideo(idea.id)}
+                />
+              ))
+            )}
+          </div>
         </div>
       )}
     </section>
   )
 }
 
-function ContentLane({
-  title,
-  empty,
-  ideas,
-  busyId,
-  scheduleFor,
-  onScheduleValue,
-  onSchedule,
-  onDraft,
-  onApprove,
-  onDismiss,
-  onUploadAsset,
-  onPrepareAvatarVideo,
-}: {
-  title: string
-  empty: string
-  ideas: GtmContentIdea[]
-  busyId: string | null
-  scheduleFor: Record<string, string>
-  onScheduleValue: (ideaId: string, value: string) => void
-  onSchedule: (idea: GtmContentIdea) => void
-  onDraft: (ideaId: string) => void
-  onApprove: (ideaId: string) => void
-  onDismiss: (ideaId: string) => void
-  onUploadAsset: (file: File, ideaId?: string | null) => Promise<string | null>
-  onPrepareAvatarVideo: (ideaId: string) => void
+function SidebarTab({ label, count, active, onClick, icon }: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
-      <div className="mb-3 flex items-center justify-between">
-        <h4 className="text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-3)]">{title}</h4>
-        <span className="text-[11px] font-semibold text-[var(--color-text-4)]">{ideas.length}</span>
-      </div>
-      {ideas.length === 0 ? (
-        <EmptyPanel text={empty} />
-      ) : (
-        <div className="grid gap-3">
-          {ideas.map(idea => (
-            <ContentCard
-              key={idea.id}
-              idea={idea}
-              busy={busyId === idea.id}
-              scheduleValue={scheduleFor[idea.id] ?? toDateTimeLocal(idea.scheduled_for)}
-              onScheduleValue={value => onScheduleValue(idea.id, value)}
-              onSchedule={() => onSchedule(idea)}
-              onDraft={() => onDraft(idea.id)}
-              onApprove={() => onApprove(idea.id)}
-              onDismiss={() => onDismiss(idea.id)}
-              onUploadAsset={file => onUploadAsset(file, idea.id)}
-              onPrepareAvatarVideo={() => onPrepareAvatarVideo(idea.id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2.5 w-full rounded-lg px-3 py-2.5 text-left transition-all ${
+        active
+          ? 'bg-white text-[var(--color-accent)] shadow-[0_1px_0_#0000000a,0_1px_2px_#0000000f]'
+          : 'text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-3)]'
+      }`}
+    >
+      <span className={`shrink-0 ${active ? 'text-[var(--color-accent)]' : ''}`}>{icon}</span>
+      <span className="text-[12.5px] font-medium">{label}</span>
+      <span className={`ml-auto text-[11px] font-semibold tabular-nums ${active ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-4)]'}`}>{count}</span>
+    </button>
   )
 }
 
@@ -695,100 +719,58 @@ function DraftCustomizationPanel({
   const update = <K extends keyof DraftSettings>(key: K, value: DraftSettings[K]) => onChange({ ...settings, [key]: value })
 
   return (
-    <section className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Platform</span>
-          <select value={settings.platform} onChange={event => update('platform', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
-            {platformOptions.map(option => <option key={option} value={option}>{titleCase(option)}</option>)}
-          </select>
-        </label>
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">{hub === 'videos' ? 'Duration' : 'Words'}</span>
-          <input
-            type="number"
-            min={hub === 'videos' ? 10 : 20}
-            max={hub === 'blogs' ? 3000 : hub === 'videos' ? 120 : 600}
-            value={hub === 'videos' ? settings.durationSeconds ?? 35 : settings.wordTarget}
-            onChange={event => hub === 'videos' ? update('durationSeconds', Number(event.target.value)) : update('wordTarget', Number(event.target.value))}
-            className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]"
-          />
-        </label>
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Tone</span>
-          <input value={settings.tone} onChange={event => update('tone', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
-        </label>
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">CTA</span>
-          <input value={settings.cta} onChange={event => update('cta', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
-        </label>
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Emoji</span>
-          <select value={settings.emojiLevel} onChange={event => update('emojiLevel', event.target.value as DraftSettings['emojiLevel'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
-            <option value="none">None</option>
-            <option value="light">Light</option>
-            <option value="expressive">Expressive</option>
-          </select>
-        </label>
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Links</span>
-          <select value={settings.linkMode} onChange={event => update('linkMode', event.target.value as DraftSettings['linkMode'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
-            <option value="none">No links</option>
-            <option value="inline">Inline</option>
-            <option value="end">At end</option>
-          </select>
-        </label>
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Images</span>
-          <select value={settings.imageMode} onChange={event => update('imageMode', event.target.value as DraftSettings['imageMode'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
-            <option value="none">None</option>
-            <option value="optional">Optional</option>
-            <option value="required">Required</option>
-          </select>
-        </label>
-        <label>
-          <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Voice</span>
-          <select value={settings.voice} onChange={event => update('voice', event.target.value as DraftSettings['voice'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
-            <option value="founder">Founder</option>
-            <option value="company">Company</option>
-            <option value="operator">Operator</option>
-          </select>
-        </label>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={settings.platform} onChange={e => update('platform', e.target.value)} className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]">
+          {platformOptions.map(option => <option key={option} value={option}>{titleCase(option)}</option>)}
+        </select>
+        <input
+          type="number"
+          min={hub === 'videos' ? 10 : 20}
+          max={hub === 'blogs' ? 3000 : hub === 'videos' ? 120 : 600}
+          value={hub === 'videos' ? settings.durationSeconds ?? 35 : settings.wordTarget}
+          onChange={e => hub === 'videos' ? update('durationSeconds', Number(e.target.value)) : update('wordTarget', Number(e.target.value))}
+          className="h-8 w-20 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]"
+        />
+        <input value={settings.tone} onChange={e => update('tone', e.target.value)} placeholder="Tone" className="h-8 w-32 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)]" />
+        <input value={settings.cta} onChange={e => update('cta', e.target.value)} placeholder="CTA" className="h-8 w-32 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)]" />
+        <select value={settings.voice} onChange={e => update('voice', e.target.value as DraftSettings['voice'])} className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]">
+          <option value="founder">Founder</option>
+          <option value="company">Company</option>
+          <option value="operator">Operator</option>
+        </select>
+        <select value={settings.emojiLevel} onChange={e => update('emojiLevel', e.target.value as DraftSettings['emojiLevel'])} className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]">
+          <option value="none">No emoji</option>
+          <option value="light">Light</option>
+          <option value="expressive">Expressive</option>
+        </select>
+        <select value={settings.linkMode} onChange={e => update('linkMode', e.target.value as DraftSettings['linkMode'])} className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]">
+          <option value="none">No links</option>
+          <option value="inline">Inline</option>
+          <option value="end">End</option>
+        </select>
         {hub === 'blogs' && (
           <>
-            <label>
-              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">SEO intent</span>
-              <input value={settings.seoIntent ?? ''} onChange={event => update('seoIntent', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
-            </label>
-            <label>
-              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Outline</span>
-              <select value={settings.outlineDepth ?? 'standard'} onChange={event => update('outlineDepth', event.target.value as DraftSettings['outlineDepth'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
-                <option value="brief">Brief</option>
-                <option value="standard">Standard</option>
-                <option value="detailed">Detailed</option>
-              </select>
-            </label>
+            <input value={settings.seoIntent ?? ''} onChange={e => update('seoIntent', e.target.value)} placeholder="SEO intent" className="h-8 w-28 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)]" />
+            <select value={settings.outlineDepth ?? 'standard'} onChange={e => update('outlineDepth', e.target.value as DraftSettings['outlineDepth'])} className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]">
+              <option value="brief">Brief</option>
+              <option value="standard">Standard</option>
+              <option value="detailed">Detailed</option>
+            </select>
           </>
         )}
         {hub === 'videos' && (
           <>
-            <label>
-              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Hook</span>
-              <input value={settings.hookType ?? ''} onChange={event => update('hookType', event.target.value)} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]" />
-            </label>
-            <label>
-              <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Aspect</span>
-              <select value={settings.aspectRatio ?? '9:16'} onChange={event => update('aspectRatio', event.target.value as DraftSettings['aspectRatio'])} className="mt-1 h-9 w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[12px] text-[var(--color-text-1)]">
-                <option value="9:16">9:16</option>
-                <option value="4:5">4:5</option>
-                <option value="1:1">1:1</option>
-                <option value="16:9">16:9</option>
-              </select>
-            </label>
+            <select value={settings.aspectRatio ?? '9:16'} onChange={e => update('aspectRatio', e.target.value as DraftSettings['aspectRatio'])} className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-2.5 text-[11px] text-[var(--color-text-1)]">
+              <option value="9:16">9:16</option>
+              <option value="4:5">4:5</option>
+              <option value="1:1">1:1</option>
+              <option value="16:9">16:9</option>
+            </select>
           </>
         )}
       </div>
-    </section>
+    </div>
   )
 }
 

@@ -346,126 +346,133 @@ function TeamPanel({ profile }: { profile: UserProfile }) {
   }
 
   return (
-    <SpotlightCard className="card overflow-hidden card-hover">
-      <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Collaboration</p>
-        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Team</h3>
-        <p className="mt-1 text-xs text-[var(--color-text-4)]">Invite team members and view workspace activity.</p>
-      </div>
-
-      {/* Invite */}
-      {canManage && (
+    <div className="space-y-5">
+      {/* Members Card */}
+      <SpotlightCard className="card overflow-hidden card-hover">
         <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
-          <p className="text-xs font-semibold text-[var(--color-text-1)] mb-2">Invite by email</p>
-          <div className="flex items-center gap-2">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={e => setInviteEmail(e.target.value)}
-              placeholder="colleague@company.com"
-              className="flex-1 text-[13px] px-3 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
-              onKeyDown={e => { if (e.key === 'Enter') sendInvite() }}
-            />
-            <select
-              value={inviteRole}
-              onChange={e => setInviteRole(e.target.value as 'admin' | 'member')}
-              className="text-[12px] px-2 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
-            >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
-            <button
-              onClick={sendInvite}
-              disabled={inviteLoading || !inviteEmail.trim()}
-              className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-full btn-primary transition-colors disabled:opacity-50"
-            >
-              {inviteLoading ? 'Sending…' : 'Invite'}
-            </button>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Collaboration</p>
+          <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Team</h3>
+          <p className="mt-1 text-xs text-[var(--color-text-4)]">Invite team members and manage workspace access.</p>
+        </div>
+
+        {/* Invite */}
+        {canManage && (
+          <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+            <div className="flex items-center gap-2">
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                placeholder="colleague@company.com"
+                className="flex-1 text-[13px] px-3 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+                onKeyDown={e => { if (e.key === 'Enter') sendInvite() }}
+              />
+              <select
+                value={inviteRole}
+                onChange={e => setInviteRole(e.target.value as 'admin' | 'member')}
+                className="text-[12px] px-2 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+              >
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button
+                onClick={sendInvite}
+                disabled={inviteLoading || !inviteEmail.trim()}
+                className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-full btn-primary transition-colors disabled:opacity-50"
+              >
+                {inviteLoading ? 'Sending…' : 'Invite'}
+              </button>
+            </div>
+            {inviteMsg && (
+              <p className={`mt-2 text-[11px] ${inviteMsg.includes('sent') ? 'text-[var(--color-pillar-accuracy)]' : 'text-[var(--color-pillar-quality)]'}`}>{inviteMsg}</p>
+            )}
           </div>
-          {inviteMsg && (
-            <p className={`mt-2 text-[11px] ${inviteMsg.includes('sent') ? 'text-emerald-600' : 'text-[var(--color-sig-regulation)]'}`}>{inviteMsg}</p>
+        )}
+
+        {/* Members */}
+        <div className="px-5 py-4">
+          {loading ? (
+            <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+              <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+              Loading…
+            </div>
+          ) : members && members.length > 0 ? (
+            <ul className="space-y-2">
+              {members.map(member => (
+                <li key={member.id} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--color-accent-hi)] to-[var(--color-accent)] flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                      {(member.name || member.invited_email).charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] text-[var(--color-text-1)] truncate">{member.name || member.invited_email}</p>
+                      <p className="text-[10.5px] text-[var(--color-text-3)] truncate">
+                        {member.invited_email}
+                        {member.role !== 'member' && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-[var(--color-ink-2)] border border-[var(--color-line-1)] text-[10px] font-medium uppercase">
+                            {member.role}
+                          </span>
+                        )}
+                        {!member.accepted_at && (
+                          <span className="ml-1.5 text-[var(--color-pillar-timing)] text-[10px]">Pending</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  {canManage && member.role !== 'owner' && (
+                    <button
+                      onClick={() => removeMember(member.id)}
+                      disabled={removeLoading === member.id}
+                      className="text-[11px] text-[var(--color-text-4)] hover:text-[var(--color-pillar-quality)] disabled:opacity-50 shrink-0 transition-colors"
+                    >
+                      {removeLoading === member.id ? 'Removing…' : 'Remove'}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] text-[var(--color-text-3)]">No team members yet.</p>
           )}
         </div>
-      )}
+      </SpotlightCard>
 
-      {/* Members */}
-      <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
-        <p className="text-xs font-semibold text-[var(--color-text-1)] mb-3">Members</p>
-        {loading ? (
-          <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
-            <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
-            Loading…
-          </div>
-        ) : members && members.length > 0 ? (
-          <ul className="space-y-2">
-            {members.map(member => (
-              <li key={member.id} className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--color-accent-hi)] to-[var(--color-accent)] flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                    {(member.name || member.invited_email).charAt(0).toUpperCase()}
-                  </div>
+      {/* Activity Card */}
+      <SpotlightCard className="card overflow-hidden card-hover">
+        <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Log</p>
+          <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Workspace Activity</h3>
+        </div>
+        <div className="px-5 py-4">
+          {loading ? (
+            <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+              <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+              Loading…
+            </div>
+          ) : activities && activities.length > 0 ? (
+            <ul className="space-y-3">
+              {activities.map(activity => (
+                <li key={activity.id} className="flex items-start gap-3">
+                  <div className="mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 bg-[var(--color-line-3)]" />
                   <div className="min-w-0">
-                    <p className="text-[13px] text-[var(--color-text-1)] truncate">{member.name || member.invited_email}</p>
-                    <p className="text-[10.5px] text-[var(--color-text-3)] truncate">
-                      {member.invited_email}
-                      {member.role !== 'member' && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-[var(--color-ink-2)] border border-[var(--color-line-1)] text-[10px] font-medium uppercase">
-                          {member.role}
-                        </span>
-                      )}
-                      {!member.accepted_at && (
-                        <span className="ml-1.5 text-amber-600 text-[10px]">Pending</span>
-                      )}
+                    <p className="text-[12.5px] text-[var(--color-text-2)]">
+                      <span className="font-medium text-[var(--color-text-1)]">{activity.user_name || 'Team member'}</span>{' '}
+                      {activityLabel(activity.action_type)}
+                    </p>
+                    <p className="mt-0.5 text-[10.5px] text-[var(--color-text-4)]">
+                      {new Date(activity.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {activity.entity_type && <span className="ml-2 text-[var(--color-text-3)]">{activity.entity_type}</span>}
                     </p>
                   </div>
-                </div>
-                {canManage && member.role !== 'owner' && (
-                  <button
-                    onClick={() => removeMember(member.id)}
-                    disabled={removeLoading === member.id}
-                    className="text-[11px] text-[var(--color-sig-regulation)] hover:underline disabled:opacity-50 shrink-0"
-                  >
-                    {removeLoading === member.id ? 'Removing…' : 'Remove'}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-[var(--color-text-3)]">No team members yet.</p>
-        )}
-      </div>
-
-      {/* Activity */}
-      <div className="px-5 py-4">
-        <p className="text-xs font-semibold text-[var(--color-text-1)] mb-3">Recent activity</p>
-        {loading ? (
-          <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
-            <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
-            Loading…
-          </div>
-        ) : activities && activities.length > 0 ? (
-          <ul className="space-y-2">
-            {activities.map(activity => (
-              <li key={activity.id} className="flex items-start gap-2 text-[12.5px]">
-                <span className="text-[var(--color-text-3)] shrink-0">
-                  {new Date(activity.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                </span>
-                <span className="text-[var(--color-text-2)]">
-                  <span className="font-medium text-[var(--color-text-1)]">{activity.user_name || 'Team member'}</span>{' '}
-                  {activityLabel(activity.action_type)}
-                  {activity.entity_type && activity.entity_id && (
-                    <span className="text-[var(--color-text-4)]"> · {activity.entity_type}</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-[var(--color-text-3)]">No recent activity.</p>
-        )}
-      </div>
-    </SpotlightCard>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] text-[var(--color-text-3)]">No recent activity.</p>
+          )}
+        </div>
+      </SpotlightCard>
+    </div>
   )
 }
 

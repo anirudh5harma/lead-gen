@@ -200,6 +200,29 @@ function IconChart() {
   return <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18" /><path strokeLinecap="round" strokeLinejoin="round" d="M7 15l3-3 3 2 5-7" /><path strokeLinecap="round" strokeLinejoin="round" d="M18 7h-4" /></svg>
 }
 
+function PillarBadge({ color, bg, label, desc, icon }: {
+  color: string
+  bg: string
+  label: string
+  desc: string
+  icon: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span
+        className="inline-flex h-7 w-7 items-center justify-center rounded-lg shrink-0"
+        style={{ background: bg, color }}
+      >
+        {icon}
+      </span>
+      <div>
+        <p className="text-[12px] font-semibold text-[var(--color-text-1)] leading-tight">{label}</p>
+        <p className="text-[10.5px] text-[var(--color-text-3)] leading-tight">{desc}</p>
+      </div>
+    </div>
+  )
+}
+
 function inWindow(value: string | null | undefined, since: number): boolean {
   if (!value) return false
   const time = new Date(value).getTime()

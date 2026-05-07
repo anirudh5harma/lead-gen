@@ -251,7 +251,7 @@ export default function ExploreView(_props: Props) {
               <button
                 onClick={runSearch}
                 disabled={!hasTargeting || loading}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--color-text-1)] px-4 text-[12px] font-bold text-white shadow-sm transition hover:bg-[var(--color-accent-ring)] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg btn-primary px-4 text-[12px] font-bold disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {loading && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
                 {loading ? 'Searching' : 'Generate leads'}
@@ -264,7 +264,7 @@ export default function ExploreView(_props: Props) {
       {(message || error) && (
         <div className={`rounded-lg border px-4 py-3 text-[12px] ${
           error
-            ? 'border-red-100 bg-red-50 text-red-700'
+            ? 'border-[var(--color-pillar-quality-bg)] bg-[var(--color-pillar-quality-bg)]/30 text-[var(--color-pillar-quality)]'
             : 'border-[var(--color-line-1)] bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
         }`}>
           {error ?? message}
