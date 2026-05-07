@@ -6,9 +6,12 @@ import {
   normalizeCrmProvider,
 } from '@/lib/crm-sync'
 import { normalizeOutboundWebhookUrl } from '@/lib/http-safety'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export async function GET() {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'scale')
+  if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -61,6 +64,8 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   const supabase = await createClient()
+  const planCheck = await requirePlan(supabase, 'scale')
+  if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { authenticateAgent, scopeGuard } from '@/lib/a2a/agent-auth'
-import { checkAgentRateLimit } from '@/lib/a2a/rate-limit'
-import { generateApiKey } from '@/lib/a2a/agent-auth'
 
 // GET /api/agents - list my agents
 export async function GET() {
@@ -44,7 +41,7 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const plan = (profile?.plan as string) ?? 'free'
+  const plan = planToAgentRateLimitTier((profile?.plan as string) ?? 'free')
   const tierRow = await supabase
     .from('agent_rate_limit_tiers')
     .select('max_agents')
@@ -83,4 +80,11 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ agent }, { status: 201 })
+}
+
+function planToAgentRateLimitTier(plan: string): string {
+  if (plan === 'enterprise') return 'enterprise'
+  if (plan === 'scale') return 'scale'
+  if (plan === 'growth') return 'growth'
+  return 'launch'
 }

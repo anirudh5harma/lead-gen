@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { authenticateAgent, scopeGuard } from '@/lib/a2a/agent-auth'
 import { checkAgentRateLimit } from '@/lib/a2a/rate-limit'
 import { consumeAgentCredit, getCostEstimate, finalizeTransaction } from '@/lib/a2a/cost-engine'
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const scopeCheck = scopeGuard(agent, 'write:outreach')
   if (scopeCheck) return scopeCheck
 
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const rateLimit = await checkAgentRateLimit(supabase, agent.apiKeyId, agent.rateLimitTier)
   if (!rateLimit.allowed) {
@@ -31,11 +31,16 @@ export async function POST(request: Request) {
     approval_mode?: string
   } | null
 
-  if (!body?.company_domain || !body?.contact_email || !body?.message_body) {
+  const companyDomain = normalizeCompanyDomain(body?.company_domain)
+  const contactEmail = body?.contact_email?.trim().toLowerCase()
+  if (!companyDomain || !contactEmail || !body?.message_body) {
     return NextResponse.json(
       { error: 'company_domain, contact_email, and message_body are required' },
       { status: 400 },
     )
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+    return NextResponse.json({ error: 'contact_email must be a valid email address' }, { status: 400 })
   }
 
   const cost = await getCostEstimate(supabase, 'outreach_executed')
@@ -48,11 +53,38 @@ export async function POST(request: Request) {
     )
   }
 
+  let leadQuery = supabase
+    .from('leads')
+    .select('id, contact_email, contact_verified')
+    .eq('user_id', agent.userId)
+    .eq('company_domain', companyDomain)
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (agent.clientId) leadQuery = leadQuery.eq('client_id', agent.clientId)
+
+  const { data: matchingLeads, error: leadError } = await leadQuery
+  const lead = matchingLeads?.[0] ?? null
+  if (leadError || !lead) {
+    const errorPayload = {
+      error: leadError?.message ?? 'No matching account found for this agent workspace.',
+      balance_after: tx.balanceAfter,
+    }
+    await finalizeTransaction(supabase, tx.transactionId!, 'failed', errorPayload)
+    return NextResponse.json(errorPayload, { status: leadError ? 500 : 404 })
+  }
+
+  const verifiedContact = Boolean(
+    lead.contact_verified &&
+    typeof lead.contact_email === 'string' &&
+    lead.contact_email.trim().toLowerCase() === contactEmail,
+  )
+
   // Run guardrails
   const guardrails = [
-    createAttestation(GUARDRAIL_TYPES.CONTACT_VERIFIED, true, {
-      email: body.contact_email,
-      verification_source: 'agent_provided',
+    createAttestation(GUARDRAIL_TYPES.CONTACT_VERIFIED, verifiedContact, {
+      email: contactEmail,
+      verification_source: verifiedContact ? 'workspace_lead' : 'missing_or_mismatched_workspace_contact',
     }),
     createAttestation(GUARDRAIL_TYPES.UNSUBSCRIBE_CHECKED, true, {
       list_status: 'agent_confirmed',
@@ -78,14 +110,6 @@ export async function POST(request: Request) {
     await finalizeTransaction(supabase, tx.transactionId!, 'failed', errorPayload)
     return NextResponse.json(errorPayload, { status: 400 })
   }
-
-  // Queue the outreach (agents always use approve-first for safety)
-  const { data: lead } = await supabase
-    .from('leads')
-    .select('id')
-    .eq('user_id', agent.userId)
-    .ilike('company_domain', `%${body.company_domain}%`)
-    .maybeSingle()
 
   const messageId = `msg_${crypto.randomUUID()}`
 
@@ -120,4 +144,15 @@ export async function POST(request: Request) {
   await finalizeTransaction(supabase, tx.transactionId!, 'completed', result, auditHash)
 
   return NextResponse.json({ ...result, audit_hash: auditHash })
+}
+
+function normalizeCompanyDomain(value: string | null | undefined): string | null {
+  if (!value) return null
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '')
+  return normalized && normalized.includes('.') ? normalized : null
 }

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 
@@ -34,7 +34,7 @@ export async function authenticateAgent(request: Request): Promise<Authenticated
 
   const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex')
 
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const { data: keyRow, error } = await supabase
     .from('agent_api_keys')
@@ -63,9 +63,13 @@ export async function authenticateAgent(request: Request): Promise<Authenticated
   // Get agent's client_id
   const { data: agent } = await supabase
     .from('agent_identities')
-    .select('client_id')
+    .select('client_id, is_active')
     .eq('id', keyRow.agent_id)
     .maybeSingle()
+
+  if (!agent?.is_active) {
+    return NextResponse.json({ error: 'Agent is inactive' }, { status: 401 })
+  }
 
   return {
     agentId: keyRow.agent_id,

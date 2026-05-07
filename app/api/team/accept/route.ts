@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { acceptTeamInvite } from '@/lib/team'
 
 export async function POST(request: Request) {
@@ -12,7 +12,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invite token is required.' }, { status: 400 })
   }
 
-  const result = await acceptTeamInvite(supabase, {
+  const serviceSupabase = createAdminClient()
+  const result = await acceptTeamInvite(serviceSupabase, {
     userId: user.id,
     userEmail: user.email,
     token: body.token,

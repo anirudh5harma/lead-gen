@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { PlanTier } from '@/lib/plan'
+import type { SubscriptionTier } from '@/lib/lead-credits'
 
 export interface ClientWorkspaceRow {
   id: string
@@ -8,7 +8,7 @@ export interface ClientWorkspaceRow {
 }
 
 export interface WorkspaceAccessInput {
-  plan: PlanTier
+  plan: SubscriptionTier
   activeClientId: string | null
   clients: ClientWorkspaceRow[]
 }
@@ -61,7 +61,7 @@ export function buildWorkspaceAccessPlan({
 export async function syncWorkspaceAccessForPlan(
   supabase: SupabaseClient,
   userId: string,
-  plan: PlanTier,
+  plan: SubscriptionTier,
 ): Promise<WorkspaceAccessPlan> {
   const [{ data: clients }, { data: profile }] = await Promise.all([
     supabase

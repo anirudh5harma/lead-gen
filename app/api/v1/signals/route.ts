@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { authenticateAgent, scopeGuard } from '@/lib/a2a/agent-auth'
 import { checkAgentRateLimit } from '@/lib/a2a/rate-limit'
 import { consumeAgentCredit, getCostEstimate, finalizeTransaction } from '@/lib/a2a/cost-engine'
-import { generateAuditHash, createAttestation, GUARDRAIL_TYPES } from '@/lib/a2a/audit'
 
 // GET /api/v1/signals - list signals for the agent's ICP
 export async function GET(request: Request) {
@@ -13,7 +12,7 @@ export async function GET(request: Request) {
   const scopeCheck = scopeGuard(agent, 'read:signals')
   if (scopeCheck) return scopeCheck
 
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const rateLimit = await checkAgentRateLimit(supabase, agent.apiKeyId, agent.rateLimitTier)
   if (!rateLimit.allowed) {
@@ -40,13 +39,17 @@ export async function GET(request: Request) {
   }
 
   // Fetch signals
-  const { data: signals, error } = await supabase
+  let query = supabase
     .from('leads')
     .select('id, target_company, company_domain, relevance_score, relevance_reason, status, created_at, sent_at, replied_at, contact_email, contact_name, contact_title')
     .eq('user_id', agent.userId)
     .gte('relevance_score', minScore)
     .order('created_at', { ascending: false })
     .limit(limit)
+
+  if (agent.clientId) query = query.eq('client_id', agent.clientId)
+
+  const { data: signals, error } = await query
 
   if (error) {
     await finalizeTransaction(supabase, tx.transactionId!, 'failed', { error: error.message })

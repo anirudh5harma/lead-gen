@@ -20,8 +20,8 @@ export default function AgentsGuidePage() {
           <span className="text-[15px] font-semibold tracking-tight text-[var(--color-text-1)]">Bombsell</span>
         </Link>
         <div className="flex items-center gap-6">
-          <a href="/#platform" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Platform</a>
-          <a href="/#differentiators" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Differentiation</a>
+          <Link href="/#platform" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Platform</Link>
+          <Link href="/#differentiators" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Differentiation</Link>
           <Link href="/pricing" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Pricing</Link>
           <Link href="/agents" className="hidden md:block text-[13px] font-medium text-[var(--color-text-1)]">Agents</Link>
           <Link href="/dashboard" className="h-9 px-4 rounded-full btn-primary text-[13px] font-medium inline-flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95 transition-transform">
@@ -201,7 +201,7 @@ function ClaudeSection() {
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-[var(--color-text-1)] mb-3">Claude Code (HTTP SSE)</h3>
         <p className="text-[14px] leading-[1.65] text-[var(--color-text-2)] mb-4">
-          Claude Code connects directly to Bombsell's MCP server over HTTP. No proxy needed.
+          Claude Code connects directly to Bombsell&apos;s MCP server over HTTP. No proxy needed.
         </p>
         <ol className="space-y-3 text-[13px] text-[var(--color-text-2)] list-decimal list-inside">
           <li>Sign in to Bombsell with Google</li>
@@ -246,7 +246,7 @@ function CodexSection() {
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-[var(--color-text-1)] mb-3">OpenAI Codex (Stdio)</h3>
         <p className="text-[14px] leading-[1.65] text-[var(--color-text-2)] mb-4">
-          Codex uses stdio to talk to MCP servers. Use the proxy script to bridge stdio to Bombsell's HTTP endpoint.
+          Codex uses stdio to talk to MCP servers. Use the proxy script to bridge stdio to Bombsell&apos;s HTTP endpoint.
         </p>
       </div>
 
@@ -295,7 +295,7 @@ function CrewaiSection() {
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-[var(--color-text-1)] mb-3">CrewAI / LangGraph / n8n</h3>
         <p className="text-[14px] leading-[1.65] text-[var(--color-text-2)] mb-4">
-          For agent frameworks, use the REST API directly with your agent's API key.
+          For agent frameworks, use the REST API directly with your agent&apos;s API key.
         </p>
       </div>
 

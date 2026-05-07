@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getWorkspaceActivity } from '@/lib/team'
-import { requirePlan } from '@/lib/api-plan-guard'
+import { requireWorkspacePlan } from '@/lib/api-plan-guard'
 
 export async function GET(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'scale')
-  if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -18,6 +16,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Workspace ID is required.' }, { status: 400 })
   }
 
-  const activities = await getWorkspaceActivity(supabase, clientId, limit)
+  const serviceSupabase = createAdminClient()
+  const planCheck = await requireWorkspacePlan(serviceSupabase, {
+    userId: user.id,
+    clientId,
+    requiredTier: 'scale',
+  })
+  if (planCheck instanceof NextResponse) return planCheck
+
+  const activities = await getWorkspaceActivity(serviceSupabase, clientId, limit)
   return NextResponse.json({ activities })
 }

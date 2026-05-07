@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getWorkspaceMembers, removeTeamMember } from '@/lib/team'
-import { requirePlan } from '@/lib/api-plan-guard'
+import { requireWorkspacePlan } from '@/lib/api-plan-guard'
 
 export async function GET(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'scale')
-  if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -16,14 +14,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Workspace ID is required.' }, { status: 400 })
   }
 
-  const members = await getWorkspaceMembers(supabase, clientId)
+  const serviceSupabase = createAdminClient()
+  const planCheck = await requireWorkspacePlan(serviceSupabase, {
+    userId: user.id,
+    clientId,
+    requiredTier: 'scale',
+  })
+  if (planCheck instanceof NextResponse) return planCheck
+
+  const members = await getWorkspaceMembers(serviceSupabase, clientId)
   return NextResponse.json({ members })
 }
 
 export async function DELETE(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'scale')
-  if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -32,7 +36,15 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Member ID and workspace ID are required.' }, { status: 400 })
   }
 
-  const result = await removeTeamMember(supabase, {
+  const serviceSupabase = createAdminClient()
+  const planCheck = await requireWorkspacePlan(serviceSupabase, {
+    userId: user.id,
+    clientId: body.client_id,
+    requiredTier: 'scale',
+  })
+  if (planCheck instanceof NextResponse) return planCheck
+
+  const result = await removeTeamMember(serviceSupabase, {
     requestedBy: user.id,
     clientId: body.client_id,
     memberId: body.member_id,

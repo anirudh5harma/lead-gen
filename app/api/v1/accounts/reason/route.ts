@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { authenticateAgent, scopeGuard } from '@/lib/a2a/agent-auth'
 import { checkAgentRateLimit } from '@/lib/a2a/rate-limit'
 import { consumeAgentCredit, getCostEstimate, finalizeTransaction } from '@/lib/a2a/cost-engine'
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const scopeCheck = scopeGuard(agent, 'read:accounts')
   if (scopeCheck) return scopeCheck
 
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   const rateLimit = await checkAgentRateLimit(supabase, agent.apiKeyId, agent.rateLimitTier)
   if (!rateLimit.allowed) {
@@ -29,12 +29,13 @@ export async function POST(request: Request) {
     context?: string
   } | null
 
-  if (!body?.company_domain) {
+  const companyDomain = normalizeCompanyDomain(body?.company_domain)
+  if (!companyDomain) {
     return NextResponse.json({ error: 'company_domain is required' }, { status: 400 })
   }
 
   const cost = await getCostEstimate(supabase, 'account_reasoned')
-  const tx = await consumeAgentCredit(supabase, agent.agentId, 'account_reasoned', 'bombsell.reason_account', body)
+  const tx = await consumeAgentCredit(supabase, agent.agentId, 'account_reasoned', 'bombsell.reason_account', body ?? {})
 
   if (!tx.success) {
     return NextResponse.json(
@@ -44,13 +45,17 @@ export async function POST(request: Request) {
   }
 
   // Fetch account data
-  const { data: leads } = await supabase
+  let leadQuery = supabase
     .from('leads')
     .select('id, target_company, company_domain, relevance_score, relevance_reason, status, created_at, contact_email, contact_name, contact_title, feed_snapshot')
     .eq('user_id', agent.userId)
-    .ilike('company_domain', `%${body.company_domain}%`)
+    .eq('company_domain', companyDomain)
     .order('created_at', { ascending: false })
     .limit(1)
+
+  if (agent.clientId) leadQuery = leadQuery.eq('client_id', agent.clientId)
+
+  const { data: leads } = await leadQuery
 
   const lead = leads?.[0]
 
@@ -74,8 +79,8 @@ export async function POST(request: Request) {
 
   const verdict = {
     verdict: allPassed ? 'proceed' : 'hold',
-    company_domain: body.company_domain,
-    company_name: lead?.target_company ?? body.company_name ?? null,
+    company_domain: companyDomain,
+    company_name: lead?.target_company ?? body?.company_name ?? null,
     confidence: lead?.relevance_score ? lead.relevance_score / 10 : 0.5,
     scores: {
       timing: lead?.relevance_score ? Math.min(1, lead.relevance_score / 10 + 0.1) : 0.5,
@@ -122,4 +127,15 @@ export async function POST(request: Request) {
   await finalizeTransaction(supabase, tx.transactionId!, 'completed', verdict, auditHash)
 
   return NextResponse.json({ ...verdict, audit_hash: auditHash })
+}
+
+function normalizeCompanyDomain(value: string | null | undefined): string | null {
+  if (!value) return null
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '')
+  return normalized && normalized.includes('.') ? normalized : null
 }

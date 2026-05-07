@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { normalizeOutboundWebhookUrl } from '@/lib/http-safety'
 
 // GET /api/agents/webhooks?agent_id=xxx
 export async function GET(request: Request) {
@@ -38,6 +39,10 @@ export async function POST(request: Request) {
   if (!body?.agent_id || !body?.url) {
     return NextResponse.json({ error: 'agent_id and url are required' }, { status: 400 })
   }
+  const webhookUrl = normalizeOutboundWebhookUrl(body.url)
+  if (!webhookUrl) {
+    return NextResponse.json({ error: 'Webhook URL must be HTTPS and cannot point to localhost or private network addresses.' }, { status: 400 })
+  }
 
   // Verify ownership
   const { data: agent } = await supabase
@@ -56,7 +61,7 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const plan = (profile?.plan as string) ?? 'free'
+  const plan = planToAgentRateLimitTier((profile?.plan as string) ?? 'free')
   const tierRow = await supabase
     .from('agent_rate_limit_tiers')
     .select('max_webhooks')
@@ -84,7 +89,7 @@ export async function POST(request: Request) {
     .insert({
       agent_id: body.agent_id,
       user_id: user.id,
-      url: body.url,
+      url: webhookUrl,
       secret,
       event_types: body.event_types ?? ['signal.new'],
       min_score: body.min_score ?? 7,
@@ -118,4 +123,11 @@ export async function DELETE(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })
+}
+
+function planToAgentRateLimitTier(plan: string): string {
+  if (plan === 'enterprise') return 'enterprise'
+  if (plan === 'scale') return 'scale'
+  if (plan === 'growth') return 'growth'
+  return 'launch'
 }

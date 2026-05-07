@@ -8,7 +8,6 @@ import type { UserProfile, ConnectedAccount, BlockedCompany } from './types'
 import { SectionHeader } from './shared'
 import SpotlightCard from '@/components/landing/SpotlightCard'
 import { getTierConfig, type SubscriptionTier } from '@/lib/lead-credits'
-import { hasPlanAccess } from '@/lib/plan-access'
 import PlanGate from '@/components/PlanGate'
 
 interface Props {
@@ -71,7 +70,7 @@ export default function SettingsView({ profile }: Props) {
           subtitle="Register AI agents, manage API keys, and monitor agent credit consumption."
           label="A2A"
         />
-        <AgentPanel profile={profile} />
+        <AgentPanel />
       </section>
     </div>
   )
@@ -807,7 +806,7 @@ interface AgentKey {
   created_at: string
 }
 
-function AgentPanel({ profile }: { profile: UserProfile }) {
+function AgentPanel() {
   const [agents, setAgents] = useState<AgentIdentity[] | null>(null)
   const [keys, setKeys] = useState<Record<string, AgentKey[]>>({})
   const [loading, setLoading] = useState(false)

@@ -11,12 +11,13 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/')
+  const userId = user.id
 
   // Core fields — these exist from migration 001. Used to gate the onboarding redirect.
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('company_name, website_url, services_description, icp_keywords, target_industries, active_client_id, automation_mode')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .single()
 
   if (!profile) redirect('/onboarding')
@@ -28,7 +29,6 @@ export default async function DashboardPage() {
         .from('client_accounts')
         .select('id, name, website_url, services_description, icp_keywords')
         .eq('id', activeClientId)
-        .eq('user_id', user.id)
         .maybeSingle()
     : { data: null }
 
@@ -36,14 +36,14 @@ export default async function DashboardPage() {
   const { data: extProfile } = await supabase
     .from('user_profiles')
     .select('plan, leads_used_this_month, leads_reset_at, lead_credit_balance, subscription_status, subscription_period, subscription_renews_at, slack_webhook_url, slack_min_score')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .maybeSingle()
 
   const { data: recentLeadCount } = await supabase.rpc('recent_lead_count', {
-    p_user_id: user.id,
+    p_user_id: userId,
   })
 
-  const workspaces = await getUserWorkspaceMemberships(supabase, user.id)
+  const workspaces = await getUserWorkspaceMemberships(supabase, userId)
 
   const leadsUsed        = recentLeadCount ?? (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
   const leadCredits      = (extProfile as { lead_credit_balance?: number } | null)?.lead_credit_balance ?? 0
@@ -82,35 +82,27 @@ export default async function DashboardPage() {
       feed_snapshot
     `
 
-  const leadBaseFilter = activeClientId ? { client_id: activeClientId } : {}
+  function leadQueryForOrigin(origin: 'live' | 'explore' | 'crm_import') {
+    let query = supabase
+      .from('leads')
+      .select(leadSelect)
+      .eq('origin', origin)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
+    query = activeClientId
+      ? query.eq('client_id', activeClientId)
+      : query.eq('user_id', userId)
+
+    return query
+  }
 
   // Initial account work is loaded per origin so large imported sources do not
   // evict live-signal rows from the server-rendered work view.
   const [liveLeadsResult, exploreLeadsResult, crmLeadsResult] = await Promise.all([
-    supabase
-      .from('leads')
-      .select(leadSelect)
-      .eq('user_id', user.id)
-      .match(leadBaseFilter)
-      .eq('origin', 'live')
-      .order('created_at', { ascending: false })
-      .limit(200),
-    supabase
-      .from('leads')
-      .select(leadSelect)
-      .eq('user_id', user.id)
-      .match(leadBaseFilter)
-      .eq('origin', 'explore')
-      .order('created_at', { ascending: false })
-      .limit(200),
-    supabase
-      .from('leads')
-      .select(leadSelect)
-      .eq('user_id', user.id)
-      .match(leadBaseFilter)
-      .eq('origin', 'crm_import')
-      .order('created_at', { ascending: false })
-      .limit(200),
+    leadQueryForOrigin('live'),
+    leadQueryForOrigin('explore'),
+    leadQueryForOrigin('crm_import'),
   ])
 
   const leads = [

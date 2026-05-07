@@ -52,6 +52,12 @@ export async function POST(request: Request) {
   }
 
   const { key, hash, prefix } = generateApiKey()
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('plan')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  const rateLimitTier = planToAgentRateLimitTier((profile?.plan as string | null | undefined) ?? 'free')
 
   const { data: keyRow, error } = await supabase
     .from('agent_api_keys')
@@ -62,6 +68,7 @@ export async function POST(request: Request) {
       key_prefix: prefix,
       name: body.name ?? 'Default',
       scopes: body.scopes ?? ['read:signals', 'read:accounts'],
+      rate_limit_tier: rateLimitTier,
       expires_at: body.expires_at ?? null,
     })
     .select('id, agent_id, key_prefix, name, scopes, rate_limit_tier, created_at')
@@ -96,4 +103,11 @@ export async function DELETE(request: Request) {
   }
 
   return NextResponse.json({ ok: true })
+}
+
+function planToAgentRateLimitTier(plan: string): string {
+  if (plan === 'enterprise') return 'enterprise'
+  if (plan === 'scale') return 'scale'
+  if (plan === 'growth') return 'growth'
+  return 'launch'
 }

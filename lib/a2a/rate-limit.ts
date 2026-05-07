@@ -15,6 +15,19 @@ interface RateLimitState {
 }
 
 const RATE_LIMIT_CACHE = new Map<string, { count: number; resetAt: number }>()
+let lastCleanupAt = 0
+
+function isUnlimited(limit: number): boolean {
+  return limit === 0
+}
+
+function cleanupExpiredRateLimitWindows(now: number): void {
+  if (now - lastCleanupAt < 60_000) return
+  lastCleanupAt = now
+  for (const [key, state] of RATE_LIMIT_CACHE.entries()) {
+    if (state.resetAt <= now) RATE_LIMIT_CACHE.delete(key)
+  }
+}
 
 export async function getAgentRateLimitTier(
   supabase: SupabaseClient,
@@ -39,29 +52,31 @@ export async function checkAgentRateLimit(
   apiKeyId: string,
   tier: string,
 ): Promise<RateLimitState> {
+  const now = Date.now()
+  cleanupExpiredRateLimitWindows(now)
   const limits = await getAgentRateLimitTier(supabase, tier)
 
   // Check minute window
-  const minuteKey = `rl:min:${apiKeyId}:${Math.floor(Date.now() / 60000)}`
-  const minuteState = RATE_LIMIT_CACHE.get(minuteKey) ?? { count: 0, resetAt: Math.ceil(Date.now() / 60000) * 60000 }
+  const minuteKey = `rl:min:${apiKeyId}:${Math.floor(now / 60000)}`
+  const minuteState = RATE_LIMIT_CACHE.get(minuteKey) ?? { count: 0, resetAt: Math.ceil(now / 60000) * 60000 }
 
-  if (minuteState.count >= limits.requests_per_minute) {
+  if (!isUnlimited(limits.requests_per_minute) && minuteState.count >= limits.requests_per_minute) {
     return { allowed: false, remaining: 0, resetAt: minuteState.resetAt, window: 'minute' }
   }
 
   // Check hour window
-  const hourKey = `rl:hr:${apiKeyId}:${Math.floor(Date.now() / 3600000)}`
-  const hourState = RATE_LIMIT_CACHE.get(hourKey) ?? { count: 0, resetAt: Math.ceil(Date.now() / 3600000) * 3600000 }
+  const hourKey = `rl:hr:${apiKeyId}:${Math.floor(now / 3600000)}`
+  const hourState = RATE_LIMIT_CACHE.get(hourKey) ?? { count: 0, resetAt: Math.ceil(now / 3600000) * 3600000 }
 
-  if (hourState.count >= limits.requests_per_hour) {
+  if (!isUnlimited(limits.requests_per_hour) && hourState.count >= limits.requests_per_hour) {
     return { allowed: false, remaining: 0, resetAt: hourState.resetAt, window: 'hour' }
   }
 
   // Check day window
-  const dayKey = `rl:day:${apiKeyId}:${Math.floor(Date.now() / 86400000)}`
-  const dayState = RATE_LIMIT_CACHE.get(dayKey) ?? { count: 0, resetAt: Math.ceil(Date.now() / 86400000) * 86400000 }
+  const dayKey = `rl:day:${apiKeyId}:${Math.floor(now / 86400000)}`
+  const dayState = RATE_LIMIT_CACHE.get(dayKey) ?? { count: 0, resetAt: Math.ceil(now / 86400000) * 86400000 }
 
-  if (dayState.count >= limits.requests_per_day) {
+  if (!isUnlimited(limits.requests_per_day) && dayState.count >= limits.requests_per_day) {
     return { allowed: false, remaining: 0, resetAt: dayState.resetAt, window: 'day' }
   }
 
@@ -74,9 +89,9 @@ export async function checkAgentRateLimit(
   RATE_LIMIT_CACHE.set(dayKey, dayState)
 
   const remaining = Math.min(
-    limits.requests_per_minute - minuteState.count,
-    limits.requests_per_hour - hourState.count,
-    limits.requests_per_day - dayState.count,
+    isUnlimited(limits.requests_per_minute) ? Number.MAX_SAFE_INTEGER : limits.requests_per_minute - minuteState.count,
+    isUnlimited(limits.requests_per_hour) ? Number.MAX_SAFE_INTEGER : limits.requests_per_hour - hourState.count,
+    isUnlimited(limits.requests_per_day) ? Number.MAX_SAFE_INTEGER : limits.requests_per_day - dayState.count,
   )
 
   return { allowed: true, remaining, resetAt: minuteState.resetAt, window: 'minute' }

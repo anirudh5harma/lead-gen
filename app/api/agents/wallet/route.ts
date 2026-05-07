@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { authenticateAgent } from '@/lib/a2a/agent-auth'
 
 // GET /api/agents/wallet?agent_id=xxx - get agent wallet balance
 export async function GET(request: Request) {
@@ -52,7 +51,8 @@ export async function POST(request: Request) {
     amount?: number
   } | null
 
-  if (!body?.agent_id || !body?.amount || body.amount <= 0) {
+  const amount = typeof body?.amount === 'number' ? Math.round(body.amount) : 0
+  if (!body?.agent_id || amount <= 0 || amount !== body.amount) {
     return NextResponse.json({ error: 'agent_id and positive amount are required' }, { status: 400 })
   }
 
@@ -66,46 +66,28 @@ export async function POST(request: Request) {
 
   if (!agent) return NextResponse.json({ error: 'Agent not found' }, { status: 404 })
 
-  // Check human credit balance
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('lead_credit_balance')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  const { data: transfer, error: transferError } = await supabase.rpc('transfer_lead_credits_to_agent', {
+    p_user_id: user.id,
+    p_agent_id: body.agent_id,
+    p_amount: amount,
+  })
 
-  const humanBalance = profile?.lead_credit_balance ?? 0
-  if (humanBalance < body.amount) {
+  if (transferError) {
+    return NextResponse.json({ error: transferError.message }, { status: 500 })
+  }
+
+  const result = Array.isArray(transfer) ? transfer[0] : transfer
+  if (!result?.success) {
     return NextResponse.json(
-      { error: `Insufficient human credits. You have ${humanBalance} credits.` },
+      { error: 'Insufficient human credits.', human_balance: result?.human_balance_after ?? null },
       { status: 402 },
     )
   }
 
-  // Deduct from human, add to agent
-  const { error: deductError } = await supabase.rpc('consume_lead_credit', {
-    p_user_id: user.id,
-    p_reason: 'agent_transfer',
-    p_metadata: { agent_id: body.agent_id, amount: body.amount },
-  })
-
-  if (deductError) {
-    return NextResponse.json({ error: deductError.message }, { status: 500 })
-  }
-
-  const { data: newBalance, error: grantError } = await supabase.rpc('grant_agent_credits', {
-    p_agent_id: body.agent_id,
-    p_amount: body.amount,
-    p_source: 'human_transfer',
-  })
-
-  if (grantError) {
-    return NextResponse.json({ error: grantError.message }, { status: 500 })
-  }
-
   return NextResponse.json({
     ok: true,
-    transferred: body.amount,
-    agent_balance: newBalance,
-    human_balance_remaining: humanBalance - body.amount,
+    transferred: amount,
+    agent_balance: result.agent_balance_after,
+    human_balance_remaining: result.human_balance_after,
   })
 }

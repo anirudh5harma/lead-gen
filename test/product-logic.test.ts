@@ -36,6 +36,7 @@ import {
 } from '../lib/explore.ts'
 import { cheapJunkFilter, stableCandidateHash } from '../lib/signal-filter.ts'
 import { draftOutreachEmail, repairOutreachBodyTriggerOpening, sanitizePublicSignalSummary } from '../lib/deepseek.ts'
+import { checkAgentRateLimit } from '../lib/a2a/rate-limit.ts'
 
 test('free workspace keeps every unarchived client visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -79,6 +80,37 @@ test('archived workspace is unarchived when it is the only available workspace',
   assert.equal(plan.keepClientId, 'client_c')
   assert.deepEqual(plan.archiveClientIds, [])
   assert.deepEqual(plan.unarchiveClientIds, ['client_c'])
+})
+
+test('agent rate limiter treats zero tier limits as unlimited', async () => {
+  const supabase = {
+    from() {
+      return {
+        select() {
+          return {
+            eq() {
+              return {
+                maybeSingle: async () => ({
+                  data: {
+                    requests_per_minute: 0,
+                    requests_per_hour: 0,
+                    requests_per_day: 0,
+                    concurrent_requests: 50,
+                  },
+                }),
+              }
+            },
+          }
+        },
+      }
+    },
+  }
+
+  for (let i = 0; i < 5; i += 1) {
+    const result = await checkAgentRateLimit(supabase as never, 'enterprise_key', 'enterprise')
+    assert.equal(result.allowed, true)
+    assert.ok(result.remaining > 1000)
+  }
 })
 
 test('outreach context prefers client branding and falls back to user branding', () => {

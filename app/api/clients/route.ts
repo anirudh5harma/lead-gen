@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
 import { checkRateLimit } from '@/lib/rate-limit'
 
@@ -8,32 +8,49 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const [{ data: clients, error: clientsErr }, { data: profile }] = await Promise.all([
-    supabase
+  const serviceSupabase = createAdminClient()
+  const [{ data: ownedClients, error: clientsErr }, { data: memberships }, { data: profile }] = await Promise.all([
+    serviceSupabase
       .from('client_accounts')
       .select('id, name, industry, services_description, created_at, is_archived')
       .eq('user_id', user.id)
       .eq('is_archived', false)
       .order('created_at', { ascending: true }),
-    supabase
+    serviceSupabase
+      .from('workspace_members')
+      .select('client_id, role, client_accounts(id, name, industry, services_description, created_at, is_archived)')
+      .eq('user_id', user.id)
+      .not('accepted_at', 'is', null),
+    serviceSupabase
       .from('user_profiles')
-      .select('active_client_id')
+      .select('active_client_id, plan')
       .eq('user_id', user.id)
       .maybeSingle(),
   ])
 
   if (clientsErr) return NextResponse.json({ error: clientsErr.message }, { status: 500 })
   const activeClientId = (profile as { active_client_id?: string | null } | null)?.active_client_id ?? null
+  const teamClients = (memberships ?? [])
+    .flatMap(row => {
+      const joined = row.client_accounts
+      return Array.isArray(joined) ? joined : joined ? [joined] : []
+    })
+    .filter(client => !client.is_archived)
+  const clientsById = new Map<string, NonNullable<typeof ownedClients>[number]>()
+  for (const client of [...(ownedClients ?? []), ...teamClients]) clientsById.set(client.id, client)
+  const clients = [...clientsById.values()].sort((a, b) => (
+    new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+  ))
   const accessPlan = buildWorkspaceAccessPlan({
-    plan: 'free',
+    plan: ((profile as { plan?: string | null } | null)?.plan ?? 'free') as 'free' | 'growth' | 'scale' | 'enterprise',
     activeClientId,
-    clients: (clients ?? []).map(client => ({
+    clients: clients.map(client => ({
       id: client.id,
       is_archived: client.is_archived,
       created_at: client.created_at,
     })),
   })
-  const visibleClients = (clients ?? []).filter(client => accessPlan.visibleClientIds.includes(client.id))
+  const visibleClients = clients.filter(client => accessPlan.visibleClientIds.includes(client.id))
 
   return NextResponse.json({
     clients: visibleClients,
