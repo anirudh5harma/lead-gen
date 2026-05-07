@@ -5,7 +5,7 @@ export type View =
   | 'marketing/campaigns' | 'marketing/audience'
   | 'revenue/pipeline' | 'revenue/analytics'
   | 'accounts'
-  | 'engine/autopilot' | 'engine/coverage' | 'engine/sequences'
+  | 'engine/autopilot' | 'engine/sequences'
   | 'settings'
 
 export interface NavSection {

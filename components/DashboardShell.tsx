@@ -16,7 +16,6 @@ import PipelineView from './dashboard/PipelineView'
 import AnalyticsView from './dashboard/AnalyticsView'
 import AccountsView from './dashboard/AccountsView'
 import AutopilotView from './dashboard/AutopilotView'
-import CoverageView from './dashboard/CoverageView'
 import SequencesView from './dashboard/SequencesView'
 import SettingsView from './dashboard/SettingsView'
 import PlanGate from './PlanGate'
@@ -38,7 +37,6 @@ const VIEW_TITLES: Record<View, string> = {
   'revenue/analytics':        'Analytics',
   accounts:                   'Accounts',
   'engine/autopilot':         'Autopilot',
-  'engine/coverage':          'Coverage',
   'engine/sequences':         'Sequences',
   settings:                   'Settings',
 }
@@ -58,7 +56,6 @@ const VIEW_SUBTITLES: Record<View, string> = {
   'revenue/analytics':        'Funnel metrics, conversion rates, and trends.',
   accounts:                   'Context, signals, people, and next actions by account.',
   'engine/autopilot':         'Automated sending rules and follow-up management.',
-  'engine/coverage':          'Source configuration and signal supply optimization.',
   'engine/sequences':         'Reusable outreach templates and guidance.',
   settings:                   'ICP, inboxes, credits, and integrations.',
 }
@@ -70,7 +67,7 @@ const ALL_VIEWS: View[] = [
   'marketing/campaigns', 'marketing/audience',
   'revenue/pipeline', 'revenue/analytics',
   'accounts',
-  'engine/autopilot', 'engine/coverage', 'engine/sequences',
+  'engine/autopilot', 'engine/sequences',
   'settings',
 ]
 
@@ -244,7 +241,6 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
                 <AutopilotView />
               </PlanGate>
             )}
-            {activeView === 'engine/coverage' && <CoverageView />}
             {activeView === 'engine/sequences' && <SequencesView />}
             {activeView === 'settings' && <SettingsView profile={displayProfile} />}
           </div>
