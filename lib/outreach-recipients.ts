@@ -17,6 +17,31 @@ export interface OutreachRecipientGroup {
   titleSummary: string
 }
 
+export function mergeRecipientStakeholders(
+  existingValue: unknown,
+  resolvedStakeholders: Array<Partial<OutreachRecipient>>,
+): Array<OutreachRecipient & { confidence: string; source: string }> {
+  const existingStakeholders = normalizeRecipientStakeholders(existingValue)
+  const merged = new Map<string, OutreachRecipient & { confidence: string; source: string }>()
+
+  for (const stakeholder of [...existingStakeholders, ...resolvedStakeholders]) {
+    const group = buildRecipientGroup([stakeholder])
+    const recipient = group?.to
+    if (!recipient) continue
+    const key = recipient.email.toLowerCase()
+    if (merged.has(key)) continue
+    merged.set(key, {
+      name: recipient.name,
+      title: recipient.title,
+      email: recipient.email,
+      confidence: stakeholder.confidence || recipient.confidence || 'medium',
+      source: stakeholder.source || recipient.source || 'draft',
+    })
+  }
+
+  return [...merged.values()]
+}
+
 export function buildRecipientGroup(
   contacts: Array<Partial<OutreachRecipient> | null | undefined>,
 ): OutreachRecipientGroup | null {
@@ -133,6 +158,19 @@ function firstName(value: string): string {
 
 function cleanName(value: unknown): string {
   return cleanPersonName(value)
+}
+
+function normalizeRecipientStakeholders(value: unknown): Array<OutreachRecipient & { confidence: string; source: string }> {
+  if (!Array.isArray(value)) return []
+  const group = buildRecipientGroup(value as Array<Partial<OutreachRecipient> | null>)
+  if (!group) return []
+  return group.all.map(recipient => ({
+    name: recipient.name,
+    title: recipient.title,
+    email: recipient.email,
+    confidence: recipient.confidence || 'medium',
+    source: recipient.source || 'draft',
+  }))
 }
 
 function escapeRegExp(value: string): string {

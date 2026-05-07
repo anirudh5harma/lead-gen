@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { draftOutreachEmail, repairOutreachBodyTriggerOpening } from '@/lib/deepseek'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
-import { ensureBodyGreetsRecipients } from '@/lib/outreach-recipients'
+import { buildRecipientGroup, ensureBodyGreetsRecipients, mergeRecipientStakeholders } from '@/lib/outreach-recipients'
 import { resolveOutreachContext } from '@/lib/outreach-context'
 import { buildGtmContextPack } from '@/lib/gtm/semantic-context'
 import { firstUsableStakeholder, resolveLeadRecipients, upsertOutreachDraft } from '@/lib/outreach-workflow'
@@ -73,9 +73,11 @@ export async function POST(
   })
 
   if (existingDraftRes.data?.subject && existingDraftRes.data?.body) {
-    const existingRecipient = firstUsableStakeholder(existingDraftRes.data.stakeholders)
-    const resolvedRecipient = contactResolution.recipientGroup?.to ?? null
-    const greeting = contactResolution.recipientGroup?.greeting || 'Hi there'
+    const stakeholders = mergeRecipientStakeholders(existingDraftRes.data.stakeholders, contactResolution.stakeholders)
+    const recipientGroup = buildRecipientGroup(stakeholders) ?? contactResolution.recipientGroup
+    const existingRecipient = firstUsableStakeholder(stakeholders)
+    const resolvedRecipient = recipientGroup?.to ?? contactResolution.recipientGroup?.to ?? null
+    const greeting = recipientGroup?.greeting || contactResolution.recipientGroup?.greeting || 'Hi there'
     const repairedBody = ensureBodyGreetsRecipients(
       repairOutreachBodyTriggerOpening(existingDraftRes.data.body, {
         firstName: greeting,
@@ -84,23 +86,23 @@ export async function POST(
       }),
       greeting,
     )
-    if (repairedBody !== existingDraftRes.data.body || contactResolution.stakeholders.length > 0) {
+    if (repairedBody !== existingDraftRes.data.body || stakeholders.length > 0) {
       await upsertOutreachDraft(serviceSupabase, {
         leadId: id,
         userId: user.id,
         clientId: (lead.client_id as string | null | undefined) ?? null,
         subject: existingDraftRes.data.subject,
         body: repairedBody,
-        stakeholders: contactResolution.stakeholders.length > 0
-          ? contactResolution.stakeholders
-          : Array.isArray(existingDraftRes.data.stakeholders) ? existingDraftRes.data.stakeholders : [],
-        greeting: contactResolution.recipientGroup?.greeting || 'Hi there',
+        stakeholders,
+        greeting,
       }).catch(error => console.error('[lead-draft] failed to repair existing draft:', error))
     }
-  const allRecipients = contactResolution.stakeholders.length > 0
-    ? contactResolution.stakeholders
-    : Array.isArray(existingDraftRes.data.stakeholders) ? existingDraftRes.data.stakeholders : []
-  const recipientGroupAll = allRecipients.length > 0 ? allRecipients : (resolvedRecipient ? [resolvedRecipient] : [existingRecipient].filter(Boolean))
+  const fallbackRecipients = resolvedRecipient
+    ? [resolvedRecipient]
+    : existingRecipient
+      ? [existingRecipient]
+      : []
+  const recipientGroupAll = stakeholders.length > 0 ? stakeholders : fallbackRecipients
   const ccRecipients = recipientGroupAll.slice(1)
 
   return NextResponse.json({

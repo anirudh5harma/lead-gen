@@ -15,7 +15,7 @@ import { buildWeeklyReview } from '../lib/internal-ops-review.ts'
 import { buildSignalNoveltyKey, isLikelySameSignalEvent } from '../lib/signal-novelty.ts'
 import { buildBookingReplyBody, classifyReplyIntent, shouldAutoSendBookingLink } from '../lib/reply-intelligence.ts'
 import { buildIcpKeywords } from '../lib/icp.ts'
-import { buildRecipientGroup, ensureBodyGreetsRecipients } from '../lib/outreach-recipients.ts'
+import { buildRecipientGroup, ensureBodyGreetsRecipients, mergeRecipientStakeholders } from '../lib/outreach-recipients.ts'
 import { isSafeToSend } from '../lib/email-finder/zeroBounce.ts'
 import { accountKey, bodyPreview, normalizeDomain, personKey, signalKey } from '../lib/gtm/identity.ts'
 import { buildContextQuery, normalizeEmbeddingContent, stableContentHash } from '../lib/gtm/semantic-context.ts'
@@ -1044,6 +1044,24 @@ test('outreach recipients use first contact as to and remaining verified contact
   assert.equal(group?.to.email, 'jane@acme.com')
   assert.deepEqual(group?.cc.map(recipient => recipient.email), ['rahul@acme.com'])
   assert.equal(group?.greeting, 'Jane and Rahul')
+})
+
+test('existing outreach draft stakeholders are not shrunk by lead primary contact reload', () => {
+  const existing = [
+    { name: 'Jane Doe', title: 'CEO', email: 'jane@acme.com', confidence: 'high', source: 'enrichment' },
+    { name: 'Rahul Mehta', title: 'Revenue', email: 'rahul@acme.com', confidence: 'high', source: 'enrichment' },
+    { name: 'Maya Singh', title: 'Growth', email: 'maya@acme.com', confidence: 'high', source: 'enrichment' },
+  ]
+  const resolvedFromLead = [
+    { name: 'Jane Doe', title: 'CEO', email: 'jane@acme.com', confidence: 'high', source: 'lead_contact' },
+  ]
+
+  const merged = mergeRecipientStakeholders(existing, resolvedFromLead)
+  const group = buildRecipientGroup(merged)
+
+  assert.deepEqual(merged.map(stakeholder => stakeholder.email), ['jane@acme.com', 'rahul@acme.com', 'maya@acme.com'])
+  assert.equal(group?.greeting, 'Jane, Rahul, and Maya')
+  assert.deepEqual(group?.cc.map(recipient => recipient.email), ['rahul@acme.com', 'maya@acme.com'])
 })
 
 test('outreach recipients strip professional suffixes and reject suffix-tainted emails', () => {
