@@ -169,25 +169,33 @@ export default function OnboardingPage() {
             .maybeSingle()
         : { data: null }
 
-      const effectiveProfile = clientProfile ?? profile
+	      const effectiveProfile = clientProfile ?? profile
+	      const landingWebsiteUrl = readLandingWebsitePrefill()
 
-      if (effectiveProfile) {
-        const existingIcpKeywords = (effectiveProfile as { icp_keywords?: string[] }).icp_keywords || []
-        setIsEdit(true)
-        setIcpKeywordText(existingIcpKeywords.join(', '))
-        setForm({
-          company_name:         (effectiveProfile as { name?: string; company_name?: string }).name || (effectiveProfile as { company_name?: string }).company_name || '',
-          industry:             ((effectiveProfile as { industry?: IndustryValue }).industry as IndustryValue) || '',
-          website_url:          (effectiveProfile as { website_url?: string }).website_url || '',
-          target_industries:    ((effectiveProfile as { target_industries?: IndustryValue[] }).target_industries) || [],
-          services_description: (effectiveProfile as { services_description?: string }).services_description || '',
+	      if (effectiveProfile) {
+	        const existingIcpKeywords = (effectiveProfile as { icp_keywords?: string[] }).icp_keywords || []
+	        const existingWebsite = (effectiveProfile as { website_url?: string }).website_url || ''
+	        setIsEdit(true)
+	        setIcpKeywordText(existingIcpKeywords.join(', '))
+	        setForm({
+	          company_name:         (effectiveProfile as { name?: string; company_name?: string }).name || (effectiveProfile as { company_name?: string }).company_name || '',
+	          industry:             ((effectiveProfile as { industry?: IndustryValue }).industry as IndustryValue) || '',
+	          website_url:          existingWebsite || landingWebsiteUrl,
+	          target_industries:    ((effectiveProfile as { target_industries?: IndustryValue[] }).target_industries) || [],
+	          services_description: (effectiveProfile as { services_description?: string }).services_description || '',
           calendly_url:         (effectiveProfile as { calendly_url?: string }).calendly_url || '',
           icp_keywords:         existingIcpKeywords,
           target_signal_types:  (effectiveProfile as { target_signal_types?: string[] }).target_signal_types || ['funding', 'acquisition', 'expansion', 'regulation', 'hiring'],
-          min_relevance_score:  (effectiveProfile as { min_relevance_score?: number }).min_relevance_score || 6,
-        })
-      }
-      setLoading(false)
+	          min_relevance_score:  (effectiveProfile as { min_relevance_score?: number }).min_relevance_score || 6,
+	        })
+	      } else if (landingWebsiteUrl) {
+	        setForm((f) => ({
+	          ...f,
+	          company_name: f.company_name || companyNameFromWebsite(landingWebsiteUrl),
+	          website_url: landingWebsiteUrl,
+	        }))
+	      }
+	      setLoading(false)
     }
     loadProfile()
   }, [])
@@ -250,11 +258,13 @@ export default function OnboardingPage() {
       return
     }
 
-    if (isEdit) {
-      router.push('/dashboard')
-    } else {
-      setDone(true)
-    }
+	    if (isEdit) {
+	      window.localStorage.removeItem('bombsell:onboarding:website_url')
+	      router.push('/dashboard')
+	    } else {
+	      window.localStorage.removeItem('bombsell:onboarding:website_url')
+	      setDone(true)
+	    }
   }
 
   if (loading) {
@@ -432,6 +442,33 @@ function looksLikeWebsite(value: string): boolean {
     return url.hostname.includes('.') && url.hostname !== 'localhost'
   } catch {
     return false
+  }
+}
+
+function readLandingWebsitePrefill(): string {
+  if (typeof window === 'undefined') return ''
+  const value = window.localStorage.getItem('bombsell:onboarding:website_url') ?? ''
+  if (!looksLikeWebsite(value)) return ''
+  try {
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`)
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return ''
+  }
+}
+
+function companyNameFromWebsite(value: string): string {
+  try {
+    const host = new URL(value).hostname.replace(/^www\./i, '')
+    const base = host.split('.')[0] ?? ''
+    return base
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  } catch {
+    return ''
   }
 }
 

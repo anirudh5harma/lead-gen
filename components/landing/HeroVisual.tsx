@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 export default function HeroVisual() {
   const [mounted, setMounted] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 100)
@@ -12,182 +11,150 @@ export default function HeroVisual() {
   }, [])
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full max-w-[540px] mx-auto lg:mx-0"
-    >
-      {/* Ambient glow behind */}
-      <div className="absolute -inset-6 -z-10 rounded-[32px] bg-gradient-to-br from-[var(--color-accent-bg)] via-[var(--color-ink-3)] to-[var(--color-accent-glow)] opacity-50 blur-3xl animate-breathe pointer-events-none" />
+    <div className="relative w-full">
+      {/* Ambient glow */}
+      <div className="absolute -inset-8 -z-10 rounded-[40px] bg-gradient-to-br from-[var(--color-accent-bg)] via-[var(--color-ink-3)] to-[var(--color-accent-glow)] opacity-40 blur-3xl animate-breathe pointer-events-none" />
 
-      {/* Browser chrome frame */}
-      <div className="card overflow-hidden shadow-2xl">
-        {/* Title bar */}
-        <div className="flex items-center gap-2 border-b border-[var(--color-line-1)] bg-[var(--color-ink-2)]/40 px-4 py-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]/70" />
-          <span className="ml-auto text-[11px] font-medium text-[var(--color-text-4)]">Bombsell — Account Agents</span>
-        </div>
-
-        {/* Bento grid */}
-        <div className="p-4 grid grid-cols-2 gap-3 bg-[var(--color-ink-1)]">
-          {/* Main pipeline chart tile */}
-          <BentoTile
-            mounted={mounted}
-            delay={0}
-            className="col-span-2"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Pipeline this week</span>
-              <span className="text-[13px] font-bold text-[var(--color-accent)]">+128%</span>
-            </div>
-            <AnimatedBars />
-          </BentoTile>
-
-          {/* Active agents tile */}
-          <BentoTile mounted={mounted} delay={100}>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="h-2 w-2 rounded-full bg-[var(--color-accent)] animate-pulse" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Active agents</span>
-            </div>
-            <div className="text-3xl font-bold tracking-tight text-[var(--color-text-1)]">18</div>
-            <div className="mt-1 text-[11px] text-[var(--color-text-3)]">Monitoring 50K+ companies</div>
-            {/* Mini avatar row */}
-            <div className="mt-3 flex -space-x-1.5">
-              {['bg-[#c49a8a]', 'bg-[#a0b096]', 'bg-[#c4b896]', 'bg-[#9c5a45]'].map((color, i) => (
-                <div key={i} className={`h-5 w-5 rounded-full ${color} border-2 border-white`} />
-              ))}
-              <div className="h-5 w-5 rounded-full bg-[var(--color-ink-3)] border-2 border-white flex items-center justify-center text-[8px] font-bold text-[var(--color-text-3)]">
-                +14
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-7">
+        {/* Sales Snapshot */}
+        <SnapshotPanel mounted={mounted} delay={0} accent="var(--color-accent)">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-[var(--color-accent)] animate-pulse" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Sales workflow</span>
               </div>
+              <p className="mt-1 text-[13px] font-semibold text-[var(--color-text-1)]">Find who to work now</p>
             </div>
-          </BentoTile>
+            <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-[10px] font-semibold text-[var(--color-accent-ring)]">Ready</span>
+          </div>
 
-          {/* Signals tile */}
-          <BentoTile mounted={mounted} delay={200}>
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">New signals</span>
-            <div className="mt-2 text-3xl font-bold tracking-tight text-[var(--color-text-1)]">47</div>
-            <div className="mt-2 space-y-1.5">
+          <div className="space-y-2">
+            {[
+              { label: 'Signal', value: 'Acme Robotics raised Series B', color: 'bg-[var(--color-sig-funding)]' },
+              { label: 'Buyer', value: 'VP Revenue verified', color: 'bg-[var(--color-sig-acquisition)]' },
+              { label: 'Draft', value: 'Personalized outreach ready', color: 'bg-[var(--color-sig-expansion)]' },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center gap-2.5 rounded-lg bg-[var(--color-ink-1)] px-2.5 py-2">
+                <div className={`h-1.5 w-1.5 rounded-full ${row.color}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">{row.label}</p>
+                  <p className="truncate text-[11px] font-medium text-[var(--color-text-1)]">{row.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <ActionFooter label="Next action" value="Approve send" />
+        </SnapshotPanel>
+
+        {/* Marketing Snapshot */}
+        <SnapshotPanel mounted={mounted} delay={120} accent="var(--color-pillar-timing)">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-[var(--color-pillar-timing)] animate-pulse" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Marketing workflow</span>
+              </div>
+              <p className="mt-1 text-[13px] font-semibold text-[var(--color-text-1)]">Turn signals into content</p>
+            </div>
+            <span className="rounded-full bg-[var(--color-pillar-timing-bg)] px-2 py-1 text-[10px] font-semibold text-[var(--color-pillar-timing)]">5/day</span>
+          </div>
+
+          <div className="space-y-2.5">
+            {[
+              { type: 'Post', title: '"Hiring surge" founder POV' },
+              { type: 'Blog', title: 'Why buyers act after funding' },
+              { type: 'Video', title: '30-sec avatar script queued' },
+            ].map((item) => (
+              <div key={item.type} className="rounded-lg bg-[var(--color-ink-1)] px-3 py-2.5">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">{item.type}</p>
+                <p className="mt-0.5 truncate text-[11px] font-medium text-[var(--color-text-1)]">{item.title}</p>
+              </div>
+            ))}
+          </div>
+
+          <ActionFooter label="Calendar" value="Scheduled" />
+        </SnapshotPanel>
+
+        {/* Revenue Snapshot */}
+        <SnapshotPanel mounted={mounted} delay={240} accent="var(--color-pillar-accuracy)">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-[var(--color-pillar-accuracy)] animate-pulse" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">Revenue workflow</span>
+              </div>
+              <p className="mt-1 text-[13px] font-semibold text-[var(--color-text-1)]">Connect work to pipeline</p>
+            </div>
+            <span className="rounded-full bg-[var(--color-pillar-accuracy-bg)] px-2 py-1 text-[10px] font-semibold text-[var(--color-pillar-accuracy)]">$84k</span>
+          </div>
+
+          <div className="rounded-lg bg-[var(--color-ink-1)] px-3 py-3">
+            <p className="text-[10px] font-semibold text-[var(--color-text-2)] mb-2">Account path</p>
+            <div className="space-y-1.5">
               {[
-                { label: 'Funding', count: 12, color: 'bg-[var(--color-sig-funding)]' },
-                { label: 'Hiring', count: 18, color: 'bg-[var(--color-sig-hiring)]' },
-                { label: 'Expansion', count: 17, color: 'bg-[var(--color-sig-expansion)]' },
-              ].map((s) => (
-                <div key={s.label} className="flex items-center gap-2">
-                  <div className={`h-1.5 w-1.5 rounded-full ${s.color}`} />
-                  <span className="text-[10px] text-[var(--color-text-3)] flex-1">{s.label}</span>
-                  <span className="text-[10px] font-semibold text-[var(--color-text-2)]">{s.count}</span>
+                { label: 'Signal fit', pct: 92, color: 'bg-[var(--color-pillar-accuracy)]' },
+                { label: 'Reply intent', pct: 74, color: 'bg-[var(--color-pillar-timing)]' },
+                { label: 'Deal stage', pct: 48, color: 'bg-[var(--color-sig-expansion)]' },
+              ].map((bar) => (
+                <div key={bar.label} className="flex items-center gap-2">
+                  <span className="text-[9px] text-[var(--color-text-3)] w-16 shrink-0">{bar.label}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-[var(--color-ink-2)] overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${bar.color}`}
+                      style={{ width: `${bar.pct}%` }}
+                    />
+                  </div>
+                  <span className="text-[9px] font-medium text-[var(--color-text-2)] w-6 text-right">{bar.pct}%</span>
                 </div>
               ))}
             </div>
-          </BentoTile>
-
-          {/* Account card tile */}
-          <BentoTile mounted={mounted} delay={300} className="col-span-2">
-            <div className="flex items-start gap-3">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-[var(--color-accent-bg)] to-[var(--color-ink-3)] flex items-center justify-center text-[13px] font-bold text-[var(--color-accent-ring)] shrink-0">
-                AR
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-semibold text-[var(--color-text-1)]">Acme Robotics</span>
-                  <span className="pill chip-funding text-[9px]">Why now</span>
-                </div>
-                <p className="mt-1 text-[11px] leading-4 text-[var(--color-text-3)]">
-                  Series B signal matched your ICP. Verified contact found. Recommended action: founder outreach.
-                </p>
-                <div className="mt-2 flex items-center gap-3">
-                  <span className="text-[10px] text-[var(--color-accent)] font-medium">+$12M raised</span>
-                  <span className="text-[10px] text-[var(--color-text-4)]">2h ago</span>
-                </div>
-              </div>
-            </div>
-          </BentoTile>
-
-          {/* Bottom stats row */}
-          <BentoTile mounted={mounted} delay={400}>
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Replies</span>
-            <div className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text-1)]">7</div>
-            <div className="mt-1 flex items-center gap-1">
-              <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
-              <span className="text-[10px] text-green-600 font-medium">+3 this week</span>
-            </div>
-          </BentoTile>
-
-          <BentoTile mounted={mounted} delay={500}>
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">Meetings booked</span>
-            <div className="mt-1 text-2xl font-bold tracking-tight text-[var(--color-text-1)]">3</div>
-            <div className="mt-1 flex items-center gap-1">
-              <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
-              <span className="text-[10px] text-green-600 font-medium">+2 this week</span>
-            </div>
-          </BentoTile>
-        </div>
+          </div>
+          <ActionFooter label="Insights" value="Analysis · Memory updated" />
+        </SnapshotPanel>
       </div>
     </div>
   )
 }
 
-function BentoTile({
+function SnapshotPanel({
   children,
   mounted,
   delay,
-  className = '',
+  accent,
 }: {
   children: React.ReactNode
   mounted: boolean
   delay: number
-  className?: string
+  accent: string
 }) {
   return (
     <div
-      className={`rounded-xl border border-[var(--color-line-2)] bg-white p-4 hover:border-[var(--color-accent)]/20 hover:shadow-lg transition-all duration-300 cursor-default ${className}`}
+      className="relative card overflow-hidden p-5 md:p-6 hover:shadow-xl transition-shadow duration-300"
       style={{
         opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0) scale(1)' : 'translateY(16px) scale(0.96)',
-        transitionProperty: 'opacity, transform, box-shadow, border-color',
-        transitionDuration: '600ms, 600ms, 300ms, 300ms',
-        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1), ease, ease',
-        transitionDelay: mounted ? `${delay}ms, ${delay}ms, 0ms, 0ms` : '0ms, 0ms, 0ms, 0ms',
+        transform: mounted ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.97)',
+        transitionProperty: 'opacity, transform, box-shadow',
+        transitionDuration: '700ms, 700ms, 300ms',
+        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1), cubic-bezier(0.22, 1, 0.36, 1), ease',
+        transitionDelay: mounted ? `${delay}ms, ${delay}ms, 0ms` : '0ms, 0ms, 0ms',
       }}
     >
+      {/* Top accent line */}
+      <div
+        className="absolute top-0 left-0 right-0 h-[2px]"
+        style={{ background: accent }}
+      />
       {children}
     </div>
   )
 }
 
-function AnimatedBars() {
-  const bars = [
-    { h: '28%', delay: '0ms' },
-    { h: '45%', delay: '80ms' },
-    { h: '35%', delay: '160ms' },
-    { h: '62%', delay: '240ms' },
-    { h: '48%', delay: '320ms' },
-    { h: '78%', delay: '400ms' },
-    { h: '65%', delay: '480ms' },
-    { h: '92%', delay: '560ms' },
-    { h: '85%', delay: '640ms' },
-    { h: '100%', delay: '720ms' },
-  ]
-
+function ActionFooter({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-end gap-[6px] h-[80px]">
-      {bars.map((bar, i) => (
-        <div
-          key={i}
-          className="flex-1 rounded-t-sm bg-gradient-to-t from-[var(--color-accent)] to-[var(--color-accent-hi)] opacity-80"
-          style={{
-            height: bar.h,
-            animation: 'bar-grow 1s cubic-bezier(0.22, 1, 0.36, 1) forwards',
-            animationDelay: bar.delay,
-            opacity: 0,
-          }}
-        />
-      ))}
+    <div className="mt-3 rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
+      <p className="mt-0.5 truncate text-[11px] font-semibold text-[var(--color-text-1)]">{value}</p>
     </div>
   )
 }

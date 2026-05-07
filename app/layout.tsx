@@ -26,9 +26,9 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Bombsell — Sell at the moment it matters",
+  title: "Bombsell — AI-native GTM Infrastructure",
   description:
-    "Real-time company signals + extremely personalized outreach. Convert at 4x higher rates by reaching out the moment companies are ready.",
+    "AI-native GTM Infrastructure for Agents, Founders and SMBs. Timing. Quality. Accuracy."
 };
 
 export default function RootLayout({

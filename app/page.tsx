@@ -14,11 +14,16 @@ import GradientText from '@/components/landing/GradientText'
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [websiteUrl, setWebsiteUrl] = useState('')
   useSectionReveal()
 
-  async function signInWithGoogle() {
+  async function signInWithGoogle(prefillWebsite?: string) {
     setLoading(true)
     setError(null)
+    const normalizedWebsite = normalizeLandingWebsite(prefillWebsite ?? websiteUrl)
+    if (normalizedWebsite) {
+      window.localStorage.setItem('bombsell:onboarding:website_url', normalizedWebsite)
+    }
     const supabase = createClient()
     const params = new URLSearchParams(window.location.search)
     const next = params.get('next')
@@ -39,14 +44,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden" style={{ background: 'var(--color-ink-1)' }}>
       {/* Ambient background */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[720px] opacity-40"
-        style={{ background: 'radial-gradient(ellipse 80% 60% at 50% -10%, var(--color-ink-3), transparent)' }} />
-      <div aria-hidden className="pointer-events-none absolute inset-0 dot-grid opacity-30" />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[900px] opacity-50"
+        style={{ background: 'radial-gradient(ellipse 70% 55% at 50% -5%, var(--color-ink-3), transparent)' }} />
+      <div aria-hidden className="pointer-events-none absolute inset-0 dot-grid opacity-25" />
 
       {/* Floating blobs */}
-      <div aria-hidden className="blob blob-1 w-[500px] h-[500px] -top-20 -right-40 opacity-40" />
-      <div aria-hidden className="blob blob-2 w-[400px] h-[400px] top-40 -left-20 opacity-30" />
-      <div aria-hidden className="blob blob-3 w-[350px] h-[350px] top-[500px] right-[10%] opacity-25" />
+      <div aria-hidden className="blob blob-1 w-[600px] h-[600px] -top-32 -right-48 opacity-35" />
+      <div aria-hidden className="blob blob-2 w-[500px] h-[500px] top-48 -left-32 opacity-25" />
+      <div aria-hidden className="blob blob-3 w-[400px] h-[400px] top-[700px] right-[8%] opacity-20" />
 
       {/* Navbar */}
       <nav className="relative z-10 w-full max-w-7xl mx-auto px-6 md:px-8 h-16 flex items-center justify-between">
@@ -55,10 +60,11 @@ export default function LoginPage() {
           <span className="text-[15px] font-semibold tracking-tight text-[var(--color-text-1)]">Bombsell</span>
         </Link>
         <div className="flex items-center gap-6">
-          <a href="#features" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Features</a>
+          <a href="#platform" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Platform</a>
+          <a href="#differentiators" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Differentiation</a>
           <Link href="/pricing" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Pricing</Link>
           <button
-            onClick={signInWithGoogle}
+	            onClick={() => { void signInWithGoogle() }}
             disabled={loading}
             className="h-9 px-4 rounded-full btn-primary text-[13px] font-medium disabled:opacity-60 flex items-center gap-2 hover:scale-105 active:scale-95 transition-transform"
           >
@@ -69,68 +75,100 @@ export default function LoginPage() {
       </nav>
 
       <main className="relative z-10 flex-1">
-        {/* Hero */}
-        <section className="section-reveal reveal-from-left w-full max-w-7xl mx-auto px-6 md:px-8 pt-8 md:pt-14 pb-16 md:pb-24 grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-12 lg:gap-20 items-center">
-          <div className="space-y-8">
-            <div className="space-y-5">
-              <h1 className="max-w-[680px] text-[36px] md:text-[52px] leading-[0.98] tracking-[-0.03em] text-[var(--color-text-1)] font-semibold">
-                AI GTM Infrastructure
-                <br></br>for {" "}
-                <GradientText as="span" className="font-serif italic">everyone</GradientText>
+	        {/* ── Hero ── */}
+	        <section className="w-full max-w-7xl mx-auto px-6 md:px-8 pt-12 md:pt-20 pb-10 md:pb-16 text-center">
+          <div className="max-w-4xl mx-auto space-y-8">
+            {/* Pillars */}
+            <p className="text-[13px] md:text-[14px] font-medium tracking-[0.12em] uppercase text-[var(--color-text-3)]">
+              Timing. Quality. Accuracy.
+            </p>
+
+            {/* Headline */}
+            <div className="space-y-4">
+              <h1 className="text-[30px] md:text-[48px] lg:text-[62px] leading-[0.95] tracking-[-0.04em] text-[var(--color-text-1)] font-semibold">
+                AI-native GTM Infrastructure
               </h1>
-              <p className="max-w-[520px] text-[17px] leading-[1.65] text-[var(--color-text-2)]">
-                Bombsell watches your market, reasons through live signals, and turns the right moments into pipeline for sales, marketing, and revenue teams — without adding headcount.
-              </p>
-              <p className="text-[16px] font-medium tracking-[0.15em] uppercase text-[var(--color-accent)]">
-                Timing. Quality. Accuracy.
+              <p className="text-[20px] md:text-[28px] lg:text-[32px] leading-[1.2] tracking-[-0.02em] text-[var(--color-text-2)] font-medium">
+                for <GradientText as="span" className="font-serif italic">Agents</GradientText>,{' '}
+                <GradientText as="span" className="font-serif italic">Founders</GradientText>{' '}
+                and <GradientText as="span" className="font-serif italic">SMBs</GradientText>
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 stagger-children">
-              <button
-                onClick={signInWithGoogle}
-                disabled={loading}
-                className="h-12 px-7 rounded-full btn-primary text-[14px] font-semibold disabled:opacity-60 flex items-center gap-2.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-transform"
-              >
-                {loading ? (
-                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <GoogleIconSmall />
-                )}
-                {loading ? 'Signing in…' : 'Start free with Google'}
-              </button>
-              <a href="#how-it-works" className="h-12 px-6 rounded-full btn-ghost text-[14px] font-medium flex items-center hover:scale-[1.02] active:scale-[0.98] transition-transform">
-                See how it works
-              </a>
-            </div>
+	            {/* Website CTA */}
+	            <div className="mx-auto max-w-2xl space-y-3">
+	              <form
+	                onSubmit={(event) => {
+	                  event.preventDefault()
+	                  void signInWithGoogle(websiteUrl)
+	                }}
+	                className="mx-auto flex max-w-xl flex-col gap-2 rounded-[22px] border border-[var(--color-line-1)] bg-white/85 p-2 shadow-[0_18px_60px_-36px_#9c5a45] backdrop-blur sm:flex-row"
+	              >
+	                <input
+	                  type="text"
+	                  inputMode="url"
+	                  value={websiteUrl}
+	                  onChange={(event) => setWebsiteUrl(event.target.value)}
+	                  placeholder="www.website.com"
+	                  className="min-h-12 flex-1 rounded-2xl border border-transparent bg-[var(--color-ink-1)] px-4 text-[14px] text-[var(--color-text-1)] outline-none transition-colors placeholder:text-[var(--color-text-4)] focus:border-[var(--color-accent)] focus:bg-white"
+	                />
+	                <button
+	                  type="submit"
+	                  disabled={loading}
+	                  className="h-12 rounded-2xl btn-primary px-6 text-[14px] font-semibold disabled:opacity-60 flex items-center justify-center gap-2.5 cursor-pointer hover:scale-[1.01] active:scale-[0.99] transition-transform"
+	                >
+	                  {loading ? (
+	                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+	                  ) : (
+	                    <GoogleIconSmall />
+	                  )}
+	                  {loading ? 'Signing in…' : 'Get started'}
+	                </button>
+	              </form>
+	              <p className="text-[12px] text-[var(--color-text-4)]">Free to start · No credit card required · Google sign-in</p>
+	            </div>
 
             {error && (
-              <p className="max-w-sm rounded-xl border border-[var(--color-sig-regulation)]/15 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-600">
+              <p className="max-w-sm mx-auto rounded-xl border border-[var(--color-sig-regulation)]/15 bg-red-50/60 px-3.5 py-2.5 text-[12px] text-red-600">
                 {error}
               </p>
             )}
           </div>
 
-          <div className="relative flex items-center justify-center min-h-[400px] md:min-h-[480px]">
-            <HeroVisual />
+          {/* Hero Visual */}
+          <div className="mt-14 md:mt-20 relative flex justify-center">
+            <div className="w-full max-w-[960px]">
+              <HeroVisual />
+            </div>
           </div>
         </section>
 
-        {/* Marquee trust bar */}
-        <section className="border-y border-[var(--color-line-1)] bg-white/40 py-5">
-          <MarqueeRow speed={35} pauseOnHover>
-            {TRUST_ITEMS.map((item) => (
-              <div key={item} className="flex items-center gap-2 text-[13px] text-[var(--color-text-3)] whitespace-nowrap">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] opacity-60" />
-                {item}
-              </div>
-            ))}
-          </MarqueeRow>
+        {/* ── Backed by ── */}
+        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-white/40 py-5">
+          <div className="w-full max-w-7xl mx-auto px-6 md:px-8">
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <span className="h-px w-8 bg-[var(--color-line-2)]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-text-4)]">Backed by</span>
+              <span className="h-px w-8 bg-[var(--color-line-2)]" />
+            </div>
+            <MarqueeRow speed={35} pauseOnHover>
+              {TRUST_ITEMS.map((item) => (
+                <div key={item} className="flex items-center gap-2 text-[13px] text-[var(--color-text-3)] whitespace-nowrap">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] opacity-60" />
+                  {item}
+                </div>
+              ))}
+            </MarqueeRow>
+          </div>
         </section>
 
-        {/* How it works */}
-        <section id="how-it-works" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28">
-          <div className="mb-14 max-w-2xl">
+        {/* ── How it works ── */}
+        <section id="platform" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
+          <div className="mb-16 max-w-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[11px] font-mono text-[var(--color-text-4)] tracking-wider">1.</span>
+              <span className="h-px flex-1 bg-[var(--color-line-1)]" />
+            </div>
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">How it works</p>
             <h2 className="text-3xl md:text-[48px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.1]">
               Every target account becomes an{' '}
@@ -152,10 +190,14 @@ export default function LoginPage() {
           </div>
         </section>
 
-        {/* Differentiators */}
-        <section className="section-reveal reveal-from-right border-y border-[var(--color-line-1)] bg-[var(--color-ink-2)]/35">
-          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28 grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-14 lg:gap-20 items-start">
+        {/* ── Differentiators ── */}
+        <section id="differentiators" className="section-reveal reveal-from-right border-y border-[var(--color-line-1)] bg-[var(--color-ink-2)]/35">
+          <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32 grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-14 lg:gap-20 items-start">
             <div className="lg:sticky lg:top-24">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-[11px] font-mono text-[var(--color-text-4)] tracking-wider">2.</span>
+                <span className="h-px flex-1 bg-[var(--color-line-1)]" />
+              </div>
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Why Bombsell</p>
               <h2 className="max-w-md text-3xl md:text-[42px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.12]">
                 A GTM system that remembers and{' '}
@@ -182,8 +224,12 @@ export default function LoginPage() {
           </div>
         </section>
 
-        {/* Social proof / stats */}
-        <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28">
+        {/* ── Stats ── */}
+        <section className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 py-24 md:py-32">
+          <div className="flex items-center gap-3 mb-10">
+            <span className="text-[11px] font-mono text-[var(--color-text-4)] tracking-wider">3.</span>
+            <span className="h-px flex-1 bg-[var(--color-line-1)]" />
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             {[
               { value: '50000', suffix: '+', label: 'Companies monitored' },
@@ -205,9 +251,13 @@ export default function LoginPage() {
           </div>
         </section>
 
-        {/* Testimonials marquee */}
-        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-white/30 py-16">
+        {/* ── Testimonials ── */}
+        <section className="section-reveal reveal-from-bottom border-y border-[var(--color-line-1)] bg-white/30 py-16 md:py-20">
           <div className="w-full max-w-7xl mx-auto px-6 md:px-8 mb-10">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[11px] font-mono text-[var(--color-text-4)] tracking-wider">4.</span>
+              <span className="h-px flex-1 bg-[var(--color-line-1)]" />
+            </div>
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Testimonials</p>
             <h2 className="text-3xl md:text-[42px] tracking-[-0.02em] text-[var(--color-text-1)] font-semibold leading-[1.12]">
               Loved by{' '}
@@ -232,8 +282,12 @@ export default function LoginPage() {
           </MarqueeRow>
         </section>
 
-        {/* Pricing / CTA */}
-        <section id="pricing" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 pb-20 md:pb-28 pt-20 md:pt-28">
+        {/* ── Pricing / CTA ── */}
+        <section id="pricing" className="section-reveal reveal-from-bottom w-full max-w-7xl mx-auto px-6 md:px-8 pb-24 md:pb-32 pt-24 md:pt-32">
+          <div className="flex items-center gap-3 mb-10">
+            <span className="text-[11px] font-mono text-[var(--color-text-4)] tracking-wider">5.</span>
+            <span className="h-px flex-1 bg-[var(--color-line-1)]" />
+          </div>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_0.72fr]">
             <SpotlightCard className="card p-8 md:p-12 flex flex-col justify-center">
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">Get started</p>
@@ -246,7 +300,7 @@ export default function LoginPage() {
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <button
-                  onClick={signInWithGoogle}
+	                  onClick={() => { void signInWithGoogle() }}
                   disabled={loading}
                   className="h-12 px-7 rounded-full btn-primary text-[14px] font-semibold inline-flex items-center gap-2.5 disabled:opacity-60 cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-transform"
                 >
@@ -276,7 +330,7 @@ export default function LoginPage() {
                 </ul>
               </div>
               <button
-                onClick={signInWithGoogle}
+	                onClick={() => { void signInWithGoogle() }}
                 disabled={loading}
                 className="mt-8 h-11 rounded-full btn-primary text-[13px] font-semibold flex items-center justify-center gap-2 disabled:opacity-60 hover:scale-[1.02] active:scale-[0.98] transition-transform"
               >
@@ -391,6 +445,20 @@ function GoogleIconSmall() {
       <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
     </svg>
   )
+}
+
+function normalizeLandingWebsite(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  try {
+    const url = new URL(withProtocol)
+    if (!url.hostname.includes('.')) return ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return ''
+  }
 }
 
 function IconRadar() {
