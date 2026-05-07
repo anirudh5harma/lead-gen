@@ -34,7 +34,15 @@ END $$;
 
 ALTER TABLE lead_credit_transactions
   ADD CONSTRAINT lead_credit_transactions_reason_check
-  CHECK (reason IN ('purchase', 'consume', 'refund', 'admin_adjustment', 'agent_transfer'));
+  CHECK (reason IN (
+    'starter',
+    'purchase',
+    'consume',
+    'refund',
+    'admin_adjustment',
+    'subscription_allocation',
+    'agent_transfer'
+  ));
 
 -- Complete/refund transactions idempotently. The previous function could refund
 -- more than once if a failed/refunded transaction was finalized repeatedly.
