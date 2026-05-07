@@ -203,6 +203,7 @@ export default function PricingPage() {
           <a href="/#platform" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Platform</a>
           <a href="/#differentiators" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Differentiation</a>
           <span className="hidden md:block text-[13px] font-medium text-[var(--color-text-1)]">Pricing</span>
+          <Link href="/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Agents</Link>
           {isSignedIn ? (
             <Link href="/dashboard" className="h-9 px-4 rounded-full btn-primary text-[13px] font-medium inline-flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95 transition-transform">
               Dashboard <span aria-hidden>→</span>

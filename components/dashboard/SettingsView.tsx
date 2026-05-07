@@ -63,6 +63,16 @@ export default function SettingsView({ profile }: Props) {
           <SlackPanel profile={profile} />
         </PlanGate>
       </section>
+
+      {/* A2A Agents */}
+      <section>
+        <SectionHeader
+          title="Agent Infrastructure"
+          subtitle="Register AI agents, manage API keys, and monitor agent credit consumption."
+          label="A2A"
+        />
+        <AgentPanel profile={profile} />
+      </section>
     </div>
   )
 }
@@ -770,6 +780,252 @@ function SlackPanel({ profile }: { profile: UserProfile }) {
           {msg && <span className="text-[11px] text-[var(--color-text-3)]">{msg}</span>}
         </div>
       </div>
+    </SpotlightCard>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   A2A Agent Panel
+   ───────────────────────────────────────────── */
+interface AgentIdentity {
+  id: string
+  name: string
+  description: string
+  provider: string
+  principal_email: string
+  is_active: boolean
+  created_at: string
+}
+
+interface AgentKey {
+  id: string
+  key_prefix: string
+  name: string
+  scopes: string[]
+  last_used_at: string | null
+  revoked_at: string | null
+  created_at: string
+}
+
+function AgentPanel({ profile }: { profile: UserProfile }) {
+  const [agents, setAgents] = useState<AgentIdentity[] | null>(null)
+  const [keys, setKeys] = useState<Record<string, AgentKey[]>>({})
+  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newAgentName, setNewAgentName] = useState('')
+  const [newAgentProvider, setNewAgentProvider] = useState('custom')
+  const [revealedKey, setRevealedKey] = useState<string | null>(null)
+  const [agentWallets, setAgentWallets] = useState<Record<string, number>>({})
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/agents')
+      const data = await res.json().catch(() => ({ agents: [] })) as { agents: AgentIdentity[] }
+      setAgents(data.agents ?? [])
+
+      // Load keys and wallets for each agent
+      const keyMap: Record<string, AgentKey[]> = {}
+      const walletMap: Record<string, number> = {}
+      for (const agent of data.agents ?? []) {
+        const [keysRes, walletRes] = await Promise.all([
+          fetch(`/api/agents/keys?agent_id=${agent.id}`),
+          fetch(`/api/agents/wallet?agent_id=${agent.id}`),
+        ])
+        const keysData = await keysRes.json().catch(() => ({ keys: [] })) as { keys: AgentKey[] }
+        const walletData = await walletRes.json().catch(() => ({ wallet: { balance: 0 } })) as { wallet: { balance: number } }
+        keyMap[agent.id] = keysData.keys ?? []
+        walletMap[agent.id] = walletData.wallet?.balance ?? 0
+      }
+      setKeys(keyMap)
+      setAgentWallets(walletMap)
+    } catch {
+      setAgents([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const createAgent = useCallback(async () => {
+    if (!newAgentName.trim()) return
+    setCreating(true)
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newAgentName.trim(), provider: newAgentProvider }),
+      })
+      if (res.ok) {
+        setNewAgentName('')
+        load()
+      }
+    } finally {
+      setCreating(false)
+    }
+  }, [newAgentName, newAgentProvider, load])
+
+  const createKey = useCallback(async (agentId: string) => {
+    const res = await fetch('/api/agents/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: agentId, name: 'Production', scopes: ['read:signals', 'read:accounts', 'write:outreach'] }),
+    })
+    const data = await res.json().catch(() => null) as { api_key?: string } | null
+    if (data?.api_key) {
+      setRevealedKey(data.api_key)
+      load()
+    }
+  }, [load])
+
+  const revokeKey = useCallback(async (keyId: string) => {
+    await fetch('/api/agents/keys', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key_id: keyId }),
+    })
+    load()
+  }, [load])
+
+  const topUpAgent = useCallback(async (agentId: string, amount: number) => {
+    const res = await fetch('/api/agents/wallet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: agentId, amount }),
+    })
+    if (res.ok) load()
+  }, [load])
+
+  return (
+    <SpotlightCard className="card overflow-hidden card-hover">
+      <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-accent)]">A2A</p>
+        <h3 className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">Agent Registry</h3>
+        <p className="mt-1 text-xs text-[var(--color-text-4)]">Register AI agents and issue scoped API keys for programmatic access.</p>
+      </div>
+
+      {/* Create agent */}
+      <div className="px-5 py-4 border-b border-[var(--color-line-1)]">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={newAgentName}
+            onChange={e => setNewAgentName(e.target.value)}
+            placeholder="Agent name (e.g. Sales Copilot)"
+            className="flex-1 text-[13px] px-3 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+            onKeyDown={e => { if (e.key === 'Enter') createAgent() }}
+          />
+          <select
+            value={newAgentProvider}
+            onChange={e => setNewAgentProvider(e.target.value)}
+            className="text-[12px] px-2 py-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-1)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/30"
+          >
+            <option value="custom">Custom</option>
+            <option value="crewai">CrewAI</option>
+            <option value="autogen">AutoGen</option>
+            <option value="langgraph">LangGraph</option>
+            <option value="n8n">n8n</option>
+          </select>
+          <button
+            onClick={createAgent}
+            disabled={creating || !newAgentName.trim()}
+            className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-full btn-primary transition-colors disabled:opacity-50"
+          >
+            {creating ? 'Creating…' : 'Register agent'}
+          </button>
+        </div>
+      </div>
+
+      {/* Agent list */}
+      <div className="px-5 py-4 space-y-4">
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs text-[var(--color-text-3)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--color-line-2)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+            Loading agents…
+          </div>
+        ) : agents && agents.length > 0 ? (
+          agents.map(agent => (
+            <div key={agent.id} className="rounded-xl border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--color-accent-hi)] to-[var(--color-accent)] flex items-center justify-center text-[11px] font-bold text-white">
+                    {agent.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-[13px] font-semibold text-[var(--color-text-1)]">{agent.name}</p>
+                    <p className="text-[10.5px] text-[var(--color-text-3)]">{agent.provider} · {agent.principal_email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-2)] px-2.5 py-1 text-[11px] font-bold text-[var(--color-accent-ring)]">
+                    {agentWallets[agent.id] ?? 0} credits
+                  </span>
+                  <button
+                    onClick={() => topUpAgent(agent.id, 10)}
+                    className="text-[11px] text-[var(--color-accent-ring)] hover:text-[var(--color-accent)] transition-colors"
+                  >
+                    +10
+                  </button>
+                  <button
+                    onClick={() => topUpAgent(agent.id, 50)}
+                    className="text-[11px] text-[var(--color-accent-ring)] hover:text-[var(--color-accent)] transition-colors"
+                  >
+                    +50
+                  </button>
+                </div>
+              </div>
+
+              {/* API Keys */}
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-medium text-[var(--color-text-3)]">API Keys</p>
+                  <button
+                    onClick={() => createKey(agent.id)}
+                    className="text-[11px] text-[var(--color-accent-ring)] hover:text-[var(--color-accent)] transition-colors"
+                  >
+                    Create key
+                  </button>
+                </div>
+                {(keys[agent.id] ?? []).map(key => (
+                  <div key={key.id} className="flex items-center justify-between gap-2 rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[11px] font-mono text-[var(--color-text-3)]">{key.key_prefix}••••••••</span>
+                      <span className="text-[10px] text-[var(--color-text-4)]">{key.name}</span>
+                      <span className="text-[10px] text-[var(--color-text-4)]">{key.scopes.join(', ')}</span>
+                      {key.last_used_at && <span className="text-[10px] text-[var(--color-text-4)]">Last used {new Date(key.last_used_at).toLocaleDateString()}</span>}
+                      {key.revoked_at && <span className="text-[10px] text-[var(--color-sig-regulation)]">Revoked</span>}
+                    </div>
+                    {!key.revoked_at && (
+                      <button
+                        onClick={() => revokeKey(key.id)}
+                        className="text-[10px] text-[var(--color-text-4)] hover:text-[var(--color-sig-regulation)] transition-colors shrink-0"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {(keys[agent.id] ?? []).length === 0 && (
+                  <p className="text-[11px] text-[var(--color-text-4)]">No API keys yet.</p>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-[13px] text-[var(--color-text-3)]">No agents registered yet. Create one to start using Bombsell via API.</p>
+        )}
+      </div>
+
+      {revealedKey && (
+        <div className="px-5 pb-4">
+          <div className="rounded-xl border border-[var(--color-accent)]/30 bg-[var(--color-accent-bg)] px-4 py-3">
+            <p className="text-[11px] font-semibold text-[var(--color-accent-ring)] mb-1">New API Key — Copy now, it will not be shown again</p>
+            <code className="block text-[12px] font-mono text-[var(--color-text-1)] break-all">{revealedKey}</code>
+            <button onClick={() => setRevealedKey(null)} className="mt-2 text-[11px] text-[var(--color-accent-ring)] hover:underline">Dismiss</button>
+          </div>
+        </div>
+      )}
     </SpotlightCard>
   )
 }
