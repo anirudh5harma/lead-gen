@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
-import { generateExploreLeads, type ExploreLeadSuggestion } from '@/lib/deepseek'
-import { buildExploreSearchTerms, rankExploreCandidates, scoreExploreSourceItem, shouldUseWorkspaceIcp } from '@/lib/explore'
+import type { ExploreLeadSuggestion } from '@/lib/deepseek'
 import { buildFeedSessionLabel } from '@/lib/feed-sessions'
 import { buildExploreLeadFeedSnapshot, type LeadSignalType } from '@/lib/lead-sources'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { apolloCompanyEnrich, apolloCompanyMatchesFilters, apolloOrganizationSearch } from '@/lib/apollo'
+import {
+  apolloCompanyMatchesFilters as providerCompanyMatchesFilters,
+  apolloOrganizationSearch as providerOrganizationSearch,
+} from '@/lib/apollo'
+import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -14,10 +17,8 @@ export const maxDuration = 300
 
 const DEFAULT_RESULTS = 10
 const MAX_RESULTS = 100
-const MAX_GENERATION_BATCH_SIZE = 25
-const MAX_PROMPT_LENGTH = 1500
-const MAX_ICP_HINT_LENGTH = 300
-const APOLLO_EXPLORE_MAX_RESULTS = 40
+const PROVIDER_EXPLORE_MAX_RESULTS = 40
+const PROVIDER_EXPLORE_MAX_PAGES = 4
 const EXPLORE_RESULT_OPTIONS = [5, 10, 20] as const
 const ALLOWED_INDUSTRIES = new Set([
   'SaaS and software',
@@ -86,7 +87,6 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null) as {
     prompt?: string
-    icp_hint?: string
     count?: number
     filters?: {
       industry?: string
@@ -112,58 +112,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Select at least one filter before running Explore search.' }, { status: 400 })
   }
 
-  const rawPrompt = body?.prompt?.trim() ?? ''
   const prompt = buildStructuredExplorePrompt(body)
-  const filterHint = buildFilterIcpHint(activeFilters)
-  const icpHint = [body?.icp_hint?.trim() ?? '', filterHint]
-    .filter(Boolean)
-    .join('\n')
-    .slice(0, MAX_ICP_HINT_LENGTH)
-  if (prompt.length > MAX_PROMPT_LENGTH) {
-    return NextResponse.json({ error: `Prompt is too long. Keep prompted discovery under ${MAX_PROMPT_LENGTH} characters.` }, { status: 400 })
-  }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
-  const [{ data: profile }, { data: clientProfile }] = await Promise.all([
-    supabase
-      .from('user_profiles')
-      .select('services_description, icp_keywords')
-      .eq('user_id', user.id)
-      .single(),
-    activeClientId
-      ? supabase
-          .from('client_accounts')
-          .select('services_description, icp_keywords')
-          .eq('id', activeClientId)
-          .eq('user_id', user.id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ])
 
   const hourlyLimit = await checkRateLimit(`explore:${user.id}:hour`, EXPLORE_LIMITS.perHour, 3600, { failClosed: true })
   if (!hourlyLimit.allowed) {
     return NextResponse.json(
-      { error: `Too many prompted discovery runs. Limit is ${EXPLORE_LIMITS.perHour} per hour.` },
+      { error: `Too many explore runs. Limit is ${EXPLORE_LIMITS.perHour} per hour.` },
       { status: 429, headers: { 'Retry-After': '3600' } },
     )
   }
   const dailyLimit = await checkRateLimit(`explore:${user.id}:day`, EXPLORE_LIMITS.perDay, 86_400, { failClosed: true })
   if (!dailyLimit.allowed) {
     return NextResponse.json(
-      { error: `Daily prompted discovery limit reached. Limit is ${EXPLORE_LIMITS.perDay} runs per day.` },
+      { error: `Daily explore run limit reached. Limit is ${EXPLORE_LIMITS.perDay} runs per day.` },
       { status: 429, headers: { 'Retry-After': '86400' } },
     )
   }
-
-  const servicesDescription = clientProfile?.services_description || profile?.services_description || ''
-  const icpKeywords = (clientProfile?.icp_keywords ?? profile?.icp_keywords ?? []) as string[]
-  const useWorkspaceIcp = shouldUseWorkspaceIcp({ prompt, icpHint })
-  const workspaceIcpContext = useWorkspaceIcp
-    ? [
-        icpHint ? `User ICP hint: ${icpHint}` : '',
-        icpKeywords.length > 0 ? `Workspace ICP keywords: ${icpKeywords.join(', ')}` : '',
-      ].filter(Boolean).join('\n')
-    : ''
 
   const { data: run } = await admin
     .from('explore_runs')
@@ -171,10 +137,10 @@ export async function POST(request: Request) {
       user_id: user.id,
       client_id: activeClientId,
       prompt,
-      icp_hint: icpHint || null,
-      seller_profile_snapshot: servicesDescription || null,
-      workspace_icp_snapshot: workspaceIcpContext || null,
-      used_workspace_icp: useWorkspaceIcp,
+      icp_hint: null,
+      seller_profile_snapshot: null,
+      workspace_icp_snapshot: null,
+      used_workspace_icp: false,
       status: 'running',
     })
     .select('id')
@@ -183,97 +149,12 @@ export async function POST(request: Request) {
   const runId = run?.id ?? null
 
   const targetCount = Math.max(1, Math.min(MAX_RESULTS, EXPLORE_LIMITS.maxResults, requestedCount))
-  const generatedLeads: ExploreLeadSuggestion[] = []
-  let generationFailure: Awaited<ReturnType<typeof generateExploreLeads>> | null = null
-  const excludedCompanies = new Set<string>()
-
-  const apolloSuggestions = await generateApolloExploreSuggestions({
-    prompt: rawPrompt,
-    count: Math.min(targetCount, APOLLO_EXPLORE_MAX_RESULTS),
-    workspaceIcpContext,
-    useWorkspaceIcp,
+  const providerSuggestions = await generateProviderExploreSuggestions({
+    count: Math.min(targetCount, PROVIDER_EXPLORE_MAX_RESULTS),
     filters: activeFilters,
-    excludedCompanies,
+    excludedCompanies: new Set<string>(),
   })
-
-  for (const suggestion of apolloSuggestions) {
-    const key = normalizeExploreCompanyKey(suggestion.company_name, suggestion.company_domain)
-    if (excludedCompanies.has(key)) continue
-    excludedCompanies.add(key)
-    generatedLeads.push(suggestion)
-    if (generatedLeads.length >= targetCount) break
-  }
-
-  const allowDeepseekFallback = process.env.APOLLO_EXPLORE_DEEPSEEK_FALLBACK === 'true'
-
-  while (allowDeepseekFallback && generatedLeads.length < targetCount) {
-    const remaining = targetCount - generatedLeads.length
-    const generation = await generateExploreLeads({
-      prompt,
-      sellerProfileDescription: servicesDescription,
-      workspaceIcpContext,
-      useWorkspaceIcp,
-      count: Math.min(MAX_GENERATION_BATCH_SIZE, remaining),
-      excludeCompanies: [...excludedCompanies],
-      filters: activeFilters,
-    })
-
-    if (!generation.ok) {
-      generationFailure = generation
-      break
-    }
-
-    let addedThisBatch = 0
-    for (const lead of generation.leads) {
-      const key = normalizeExploreCompanyKey(lead.company_name, lead.company_domain)
-      if (excludedCompanies.has(key)) continue
-
-      // Apollo verification: validate domain and filter constraints
-      if (lead.company_domain && process.env.APOLLO_API_KEY) {
-        const apolloCompany = await apolloCompanyEnrich(lead.company_domain)
-        if (apolloCompany) {
-          const filterCheck = apolloCompanyMatchesFilters(apolloCompany, activeFilters)
-          if (!filterCheck.matches) {
-            console.log('[explore] Apollo filter reject:', lead.company_name, filterCheck.reason)
-            excludedCompanies.add(key)
-            continue
-          }
-        }
-      }
-
-      excludedCompanies.add(key)
-      generatedLeads.push(lead)
-      addedThisBatch++
-      if (generatedLeads.length >= targetCount) break
-    }
-
-    if (addedThisBatch === 0 || generation.leads.length === 0) break
-  }
-
-  if (generatedLeads.length === 0 && generationFailure) {
-    if (runId) {
-      await admin
-        .from('explore_runs')
-        .update({
-          status: 'failed',
-          error_message: generationFailure.rejection_reason ?? 'Prompt generation failed.',
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', runId)
-    }
-
-    return NextResponse.json({
-      ok: false,
-      inserted: 0,
-      skipped: 0,
-      generated: 0,
-      duration_ms: Date.now() - startedAt,
-      requested: targetCount,
-      message: generationFailure.rejection_reason ?? 'This prompt is outside the scope of lead generation.',
-    }, { status: generationFailure.failure_kind === 'invalid_prompt' ? 400 : 502 })
-  }
-
-  const suggestions = generatedLeads.slice(0, targetCount)
+  const suggestions = providerSuggestions.slice(0, targetCount)
 
   if (suggestions.length === 0) {
     if (runId) {
@@ -296,7 +177,7 @@ export async function POST(request: Request) {
       generated: 0,
       requested: targetCount,
       duration_ms: Date.now() - startedAt,
-      message: 'No lead suggestions were generated for this prompt.',
+      message: 'No companies matched the selected filters.',
     })
   }
 
@@ -313,6 +194,10 @@ export async function POST(request: Request) {
   let duplicates = 0
   let sourceErrors = 0
   let leadErrors = 0
+  let creditsUsed = 0
+  let creditsRefunded = 0
+  let creditErrors = 0
+  let creditBlocked = 0
 
   for (const suggestion of suggestions) {
     const resultKey = buildExploreResultKey({
@@ -335,11 +220,12 @@ export async function POST(request: Request) {
       relevance_reason: suggestion.relevance_reason,
       relevance_score: suggestion.relevance_score,
       prompt,
-      icp_hint: icpHint || null,
+      icp_hint: null,
       source_payload: {
         prompt,
-        icp_hint: icpHint || null,
-        used_workspace_icp: useWorkspaceIcp,
+        icp_hint: null,
+        used_workspace_icp: false,
+        filters: activeFilters,
       },
       updated_at: now,
     })
@@ -366,14 +252,39 @@ export async function POST(request: Request) {
       continue
     }
 
+    let usedCredit = false
+    try {
+      usedCredit = await consumeLeadCredit(supabase, {
+        userId: user.id,
+        metadata: {
+          source: 'explore_generation',
+          run_id: runId,
+          company_name: suggestion.company_name,
+          company_domain: suggestion.company_domain,
+        },
+      })
+    } catch (creditError) {
+      creditErrors++
+      console.error('[explore] credit consume error:', creditError instanceof Error ? creditError.message : creditError)
+      skipped++
+      break
+    }
+
+    if (!usedCredit) {
+      creditBlocked++
+      skipped++
+      break
+    }
+    creditsUsed++
+
     const snapshot = buildExploreLeadFeedSnapshot({
       signalType: suggestion.signal_type as LeadSignalType,
       headline: suggestion.headline,
       summary: suggestion.summary,
       companyDomain: suggestion.company_domain,
       prompt,
-      icpHint: icpHint || null,
-      usedWorkspaceIcp: useWorkspaceIcp,
+      icpHint: null,
+      usedWorkspaceIcp: false,
       sourceUrl: `explore://target/${target.id}`,
       sourceName: 'explore_generated',
       publishedAt: now,
@@ -396,22 +307,37 @@ export async function POST(request: Request) {
         relevance_score: suggestion.relevance_score,
         relevance_reason: `Batch source: ${suggestion.relevance_reason}`.slice(0, 1000),
         status: 'new',
-        is_unlocked: false,
-        unlocked_at: null,
+        is_unlocked: true,
+        unlocked_at: now,
         feed_snapshot: snapshot,
         match_debug: {
           matched_via: 'explore_generation',
           prompt,
-          icp_hint: icpHint || null,
-          used_workspace_icp: useWorkspaceIcp,
+          icp_hint: null,
+          used_workspace_icp: false,
           run_id: runId,
           source_kind: 'explore_target',
+          credit_source: 'explore_generation',
         },
       })
       .select(leadSelect)
       .single()
 
     if (leadError) {
+      await refundLeadCredit(supabase, {
+        userId: user.id,
+        metadata: {
+          source: 'explore_generation_insert_failed_refund',
+          run_id: runId,
+          company_name: suggestion.company_name,
+          company_domain: suggestion.company_domain,
+        },
+      }).then(() => {
+        creditsRefunded++
+        creditsUsed = Math.max(0, creditsUsed - 1)
+      }).catch(refundError => {
+        console.error('[explore] credit refund error:', refundError instanceof Error ? refundError.message : refundError)
+      })
       leadErrors++
       console.error('[explore] lead insert error:', leadError.message)
       skipped++
@@ -427,7 +353,7 @@ export async function POST(request: Request) {
       .from('explore_runs')
       .update({
         status: 'completed',
-      generated_count: suggestions.length,
+        generated_count: suggestions.length,
         inserted_count: inserted,
         skipped_count: skipped,
         completed_at: new Date().toISOString(),
@@ -444,130 +370,94 @@ export async function POST(request: Request) {
     duplicates,
     source_errors: sourceErrors,
     lead_errors: leadErrors,
+    credits_used: creditsUsed,
+    credits_refunded: creditsRefunded,
+    credit_errors: creditErrors,
+    credit_blocked: creditBlocked,
     leads,
     duration_ms: Date.now() - startedAt,
     message: inserted > 0
-      ? `Added ${inserted} of ${targetCount} requested explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : '.'}`
+      ? `Added ${inserted} of ${targetCount} requested explore ${inserted === 1 ? 'lead' : 'leads'}${creditBlocked > 0 ? '. No additional lead credits were available for the remaining candidates.' : '.'}`
+      : creditBlocked > 0
+          ? 'No new explore leads were added because no lead credits were available.'
       : duplicates > 0 && sourceErrors === 0 && leadErrors === 0
           ? `Found ${duplicates} duplicate explore ${duplicates === 1 ? 'lead' : 'leads'} and added no new ones.`
           : 'No new explore leads were added due to save errors.',
   })
 }
 
-async function generateApolloExploreSuggestions(params: {
-  prompt: string
+async function generateProviderExploreSuggestions(params: {
   count: number
-  workspaceIcpContext: string
-  useWorkspaceIcp: boolean
   filters: ExploreFilters
   excludedCompanies: Set<string>
 }): Promise<ExploreLeadSuggestion[]> {
   if (process.env.APOLLO_EXPLORE_ENABLED === 'false') return []
   if (!process.env.APOLLO_API_KEY) return []
 
-  const query = buildApolloExploreQuery({
-    prompt: params.prompt,
-  })
-
   const revenueRange = parseRevenueRangeFilter(params.filters.revenue)
   const employeeRange = normalizeEmployeeRangeFilter(params.filters.employee_count)
     ?? mapMarketSegmentToEmployeeRange(params.filters.market_segment)
   const fundingFilter = mapFundingFilter(params.filters.funding)
   const signalFilter = mapSignalFilter(params.filters.signal)
-  const orgs = await apolloOrganizationSearch({
-    query,
-    page: 1,
-    perPage: Math.max(10, Math.min(params.count * 4, 100)),
-    industry: params.filters.industry ?? null,
-    region: mapRegionFilterToApolloLocations(params.filters.region) ?? null,
-    employeeRange,
-    revenueMin: revenueRange?.min ?? null,
-    revenueMax: revenueRange?.max ?? null,
-    latestFundingMin: fundingFilter?.latestFundingMin ?? null,
-    latestFundingMax: fundingFilter?.latestFundingMax ?? null,
-    latestFundingDateMin: fundingFilter?.latestFundingDateMin ?? null,
-    latestFundingDateMax: fundingFilter?.latestFundingDateMax ?? null,
-    jobTitles: signalFilter?.jobTitles ?? null,
-    minOpenJobs: signalFilter?.minOpenJobs ?? null,
-    maxOpenJobs: signalFilter?.maxOpenJobs ?? null,
-    jobPostedDateMin: signalFilter?.jobPostedDateMin ?? null,
-    jobPostedDateMax: signalFilter?.jobPostedDateMax ?? null,
-  })
-  if (orgs.length === 0) return []
+  const suggestions: ExploreLeadSuggestion[] = []
+  const perPage = Math.max(10, Math.min(params.count * 3, 75))
 
-  const terms = buildExploreSearchTerms({
-    prompt: params.prompt,
-    queries: params.workspaceIcpContext ? [params.workspaceIcpContext] : [],
-  })
+  for (let page = 1; page <= PROVIDER_EXPLORE_MAX_PAGES; page++) {
+    const orgs = await providerOrganizationSearch({
+      query: '',
+      page,
+      perPage,
+      industry: params.filters.industry ?? null,
+      region: mapRegionFilterToProviderLocations(params.filters.region) ?? null,
+      employeeRange,
+      revenueMin: revenueRange?.min ?? null,
+      revenueMax: revenueRange?.max ?? null,
+      latestFundingMin: fundingFilter?.latestFundingMin ?? null,
+      latestFundingMax: fundingFilter?.latestFundingMax ?? null,
+      latestFundingDateMin: fundingFilter?.latestFundingDateMin ?? null,
+      latestFundingDateMax: fundingFilter?.latestFundingDateMax ?? null,
+      jobTitles: signalFilter?.jobTitles ?? null,
+      minOpenJobs: signalFilter?.minOpenJobs ?? null,
+      maxOpenJobs: signalFilter?.maxOpenJobs ?? null,
+      jobPostedDateMin: signalFilter?.jobPostedDateMin ?? null,
+      jobPostedDateMax: signalFilter?.jobPostedDateMax ?? null,
+    })
+    if (orgs.length === 0) break
 
-  const ranked = rankExploreCandidates(
-    orgs
-      .filter(org => {
-        const key = normalizeExploreCompanyKey(org.name, org.domain || null)
-        return !params.excludedCompanies.has(key)
+    for (const org of orgs) {
+      const key = normalizeExploreCompanyKey(org.name, org.domain || null)
+      if (params.excludedCompanies.has(key)) continue
+
+      const filterCheck = providerCompanyMatchesFilters(org, params.filters)
+      if (!filterCheck.matches) continue
+
+      const reasonBits = [
+        org.industry ? `${org.industry} company` : 'B2B company',
+        org.location ? `in ${org.location}` : null,
+        org.employee_count ? `${org.employee_count} employees` : null,
+      ].filter(Boolean)
+      const summary = [
+        `${org.name} matches the selected filters`,
+        reasonBits.length > 0 ? `(${reasonBits.join(', ')}).` : '.',
+      ].join(' ')
+      const filterCount = countActiveFilters(params.filters)
+      const score = Math.max(4, Math.min(10, 5 + filterCount))
+
+      suggestions.push({
+        company_name: org.name,
+        company_domain: org.domain || null,
+        signal_type: resolveExploreSignalTypeFromFilters(params.filters),
+        headline: `${org.name} matches your explore filters`,
+        summary,
+        relevance_reason: 'Matched selected explore filters.',
+        relevance_score: score,
       })
-      .map(org => {
-        const filterCheck = apolloCompanyMatchesFilters(org, params.filters)
-        if (!filterCheck.matches) return null
+      params.excludedCompanies.add(key)
+      if (suggestions.length >= params.count) return suggestions
+    }
+  }
 
-        const text = [
-          org.name,
-          org.industry ?? '',
-          org.location ?? '',
-        ].join(' ').toLowerCase()
-        const termScore = scoreExploreSourceItem(text, terms)
-        const score = Math.max(4, Math.min(10, 4 + Math.round(termScore / 3)))
-        const reasonBits = [
-          org.industry ? `${org.industry} company` : 'B2B company',
-          org.location ? `in ${org.location}` : null,
-          params.filters.employee_count && org.employee_count
-            ? `${org.employee_count} employees`
-            : null,
-        ].filter(Boolean)
-
-        const summary = [
-          `${org.name} matches your account search criteria`,
-          reasonBits.length > 0 ? `(${reasonBits.join(', ')}).` : '.',
-        ].join(' ')
-
-        const derivedSignalType = resolveExploreSignalTypeFromFilters(params.filters)
-        return {
-          candidate: {
-            company_name: org.name,
-            company_domain: org.domain || null,
-            signal_type: derivedSignalType,
-            headline: `${org.name} matches your explore target criteria`,
-            summary,
-            relevance_reason: params.useWorkspaceIcp
-              ? 'Matched prompt intent and workspace ICP constraints using Apollo company search.'
-              : 'Matched prompt intent using Apollo company search.',
-            relevance_score: score,
-          },
-          score,
-          publishedAt: new Date().toISOString(),
-        }
-      })
-      .filter((row): row is { candidate: ExploreLeadSuggestion; score: number; publishedAt: string } => Boolean(row)),
-  )
-
-  return ranked.slice(0, params.count).map(row => row.candidate)
-}
-
-function buildApolloExploreQuery(params: {
-  prompt: string
-}): string {
-  const prompt = params.prompt.trim()
-  if (!prompt) return ''
-  const terms = buildExploreSearchTerms({
-    prompt,
-    queries: [],
-  })
-
-  const compact = terms
-    .filter(term => /^[a-z0-9][a-z0-9+.#-]{1,31}$/i.test(term))
-    .slice(0, 8)
-
-  return compact.join(' ').trim()
+  return suggestions
 }
 
 function parseRevenueRangeFilter(value: string | undefined): { min?: number; max?: number } | null {
@@ -700,7 +590,7 @@ function resolveExploreSignalTypeFromFilters(
   return 'expansion'
 }
 
-function mapRegionFilterToApolloLocations(value: string | undefined): string[] | null {
+function mapRegionFilterToProviderLocations(value: string | undefined): string[] | null {
   switch (value) {
     case 'United States':
       return ['United States']
@@ -750,19 +640,6 @@ function buildStructuredExplorePrompt(body: {
     ...filterLines,
     basePrompt ? `Additional targeting notes: ${basePrompt}` : '',
     'Prioritize accounts with a likely current GTM pain, buying trigger, or operational urgency.',
-  ].filter(Boolean).join('\n')
-}
-
-function buildFilterIcpHint(filters?: ExploreFilters): string {
-  if (!filters) return ''
-  return [
-    filters.industry ? `Target industry: ${filters.industry}` : '',
-    filters.region ? `Target region: ${filters.region}` : '',
-    filters.revenue ? `Target revenue: ${filters.revenue}` : '',
-    filters.employee_count ? `Target employee count: ${filters.employee_count}` : '',
-    filters.market_segment ? `Target market segment: ${filters.market_segment}` : '',
-    filters.funding ? `Funding signal: ${filters.funding}` : '',
-    filters.signal ? `Operating signal: ${filters.signal}` : '',
   ].filter(Boolean).join('\n')
 }
 
@@ -833,6 +710,18 @@ function hasAnyFilter(filters: ExploreFilters): boolean {
     filters.funding ||
     filters.signal
   )
+}
+
+function countActiveFilters(filters: ExploreFilters): number {
+  return [
+    filters.industry,
+    filters.region,
+    filters.revenue,
+    filters.employee_count,
+    filters.market_segment,
+    filters.funding,
+    filters.signal,
+  ].filter(Boolean).length
 }
 
 function normalizeExploreCompanyKey(companyName: string, companyDomain: string | null): string {

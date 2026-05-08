@@ -2,44 +2,65 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { sanitizeSessionIds } from '@/lib/auto-send-policies'
+import { requirePlan } from '@/lib/api-plan-guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function PATCH(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const userId = planCheck.userId
 
   const { id: sessionId } = await params
-  const body = await _request.json().catch(() => null) as { action?: 'add' | 'remove' } | null
+  const body = await request.json().catch(() => null) as { action?: 'add' | 'remove' } | null
   const action = body?.action
 
   if (action !== 'add' && action !== 'remove') {
     return NextResponse.json({ error: 'action must be "add" or "remove"' }, { status: 400 })
   }
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
+  const runQuery = activeClientId
+    ? supabase
+        .from('explore_runs')
+        .select('id')
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .eq('client_id', activeClientId)
+        .maybeSingle()
+    : supabase
+        .from('explore_runs')
+        .select('id')
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .is('client_id', null)
+        .maybeSingle()
+  const { data: existingRun, error: runError } = await runQuery
+  if (runError) return NextResponse.json({ error: runError.message }, { status: 500 })
+  if (!existingRun) return NextResponse.json({ error: 'Session not found for active workspace.' }, { status: 404 })
 
   const existingQuery = activeClientId
     ? supabase
         .from('auto_send_policies')
-        .select('id, target_explore_session_ids, target_origins')
-        .eq('user_id', user.id)
+        .select('id, enabled, target_explore_session_ids, target_origins')
+        .eq('user_id', userId)
         .eq('client_id', activeClientId)
         .maybeSingle()
     : supabase
         .from('auto_send_policies')
-        .select('id, target_explore_session_ids, target_origins')
-        .eq('user_id', user.id)
+        .select('id, enabled, target_explore_session_ids, target_origins')
+        .eq('user_id', userId)
         .is('client_id', null)
         .maybeSingle()
 
   const { data: existing, error: existingError } = await existingQuery
   if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 })
+  const currentlyEnabled = (existing as { enabled?: boolean | null } | null)?.enabled === true
 
   const currentSessionIds = sanitizeSessionIds((existing as { target_explore_session_ids?: unknown })?.target_explore_session_ids)
   const currentOrigins = Array.isArray((existing as { target_origins?: unknown })?.target_origins)
@@ -63,7 +84,9 @@ export async function PATCH(
   const policyPayload = {
     target_explore_session_ids: newSessionIds,
     target_origins: newOrigins,
-    enabled: existing ? (existing as { enabled?: boolean }).enabled ?? false : newOrigins.length > 0,
+    enabled: action === 'add'
+      ? true
+      : (newOrigins.length > 0 ? currentlyEnabled : false),
   }
 
   if (existing) {
@@ -76,7 +99,7 @@ export async function PATCH(
     const { error: insertError } = await supabase
       .from('auto_send_policies')
       .insert({
-        user_id: user.id,
+        user_id: userId,
         client_id: activeClientId,
         ...policyPayload,
         require_verified_contact: true,
@@ -98,7 +121,7 @@ export async function PATCH(
       autopilot_removed_at: action === 'remove' ? new Date().toISOString() : undefined,
     })
     .eq('id', sessionId)
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
 
   if (runUpdateError) console.error('[explore-autopilot] run status update failed:', runUpdateError.message)
 

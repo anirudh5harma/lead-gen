@@ -525,7 +525,7 @@ function ApiSection() {
   },
   "guardrails_passed": [
     { "type": "icp_matched", "passed": true, "evidence": { "score": 9.2 } },
-    { "type": "contact_verified", "passed": true, "evidence": { "source": "apollo" } },
+    { "type": "contact_verified", "passed": true, "evidence": { "source": "provider" } },
     { "type": "timing_appropriate", "passed": true, "evidence": { "age_days": 2 } }
   ],
   "cost_basis": { "action": "account_reasoned", "credits": 0.25, "unit": "call" },

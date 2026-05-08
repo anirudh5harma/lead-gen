@@ -19,7 +19,9 @@ export default function OutreachView({ leads }: Props) {
   const last7d = now - 7 * day
 
   const filteredLeads = originFilter === 'all' ? leads : leads.filter(l => l.origin === originFilter)
-  const sent = filteredLeads.filter(l => l.status === 'sent')
+  const sent = filteredLeads
+    .filter(l => l.status === 'sent')
+    .sort((a, b) => toTime(b.sent_at ?? b.created_at) - toTime(a.sent_at ?? a.created_at))
   const replied = filteredLeads.filter(l => l.status === 'replied' || l.status === 'booked')
 
   const found24h = filteredLeads.filter(l => inWindow(l.created_at, last24h)).length
@@ -178,6 +180,12 @@ function RepliedRow({ lead }: { lead: Lead }) {
 
 function inWindow(value: string | null | undefined, since: number): boolean {
   if (!value) return false
-  const time = new Date(value).getTime()
+  const time = toTime(value)
   return Number.isFinite(time) && time >= since
+}
+
+function toTime(value: string | null | undefined): number {
+  if (!value) return 0
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : 0
 }

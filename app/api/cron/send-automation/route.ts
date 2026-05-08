@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   try {
     const { data: policies, error: policyError } = await supabase
       .from('auto_send_policies')
-      .select('id, user_id, client_id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, min_minutes_between_sends, completed_notification_sent_at')
+      .select('id, user_id, client_id, enabled, connected_account_id, target_origins, target_explore_session_ids, require_verified_contact, min_relevance_score, max_lead_age_days, daily_send_limit, explore_daily_send_limit, min_minutes_between_sends, completed_notification_sent_at')
       .eq('enabled', true)
       .order('updated_at', { ascending: true })
       .limit(MAX_POLICIES_PER_RUN)

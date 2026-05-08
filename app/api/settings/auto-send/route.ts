@@ -187,13 +187,13 @@ export async function PATCH(request: Request) {
   const existingQuery = activeClientId
     ? supabase
         .from('auto_send_policies')
-        .select('id')
+        .select('id, enabled')
         .eq('user_id', userId)
         .eq('client_id', activeClientId)
         .maybeSingle()
     : supabase
         .from('auto_send_policies')
-        .select('id')
+        .select('id, enabled')
         .eq('user_id', userId)
         .is('client_id', null)
         .maybeSingle()

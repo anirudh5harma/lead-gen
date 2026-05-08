@@ -350,26 +350,7 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-1 lg:flex">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-4)]">Roles</span>
-              {CONTACT_ROLE_OPTIONS.map(option => {
-                const selected = targetRoles.includes(option.key)
-                return (
-                  <button
-                    key={option.key}
-                    onClick={() => toggleTargetRole(option.key)}
-                    className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors ${
-                      selected
-                        ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
-                        : 'border-[var(--color-line-2)] bg-white text-[var(--color-text-4)] hover:text-[var(--color-text-2)]'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                )
-              })}
-            </div>
+          <div>
             {reminderItems.length > 0 && (
               <button
                 onClick={closeFollowupReminders}
