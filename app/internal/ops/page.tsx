@@ -135,6 +135,15 @@ export default async function InternalOpsPage() {
             <MiniStat label="Queue delivered" value={String(summary.cron_30d.deliver_leads.delivered)} />
             <MiniStat label="Feedback reorders" value={String(summary.cron_30d.deliver_leads.feedback_reordered)} />
           </Panel>
+
+          <Panel title="Eval Traces · 30d">
+            <MiniStat label="Total traces" value={String(summary.eval_traces_30d.total)} />
+            <MiniStat label="Average score" value={summary.eval_traces_30d.average_score.toFixed(2)} />
+            <MiniStat label="Passed" value={String(summary.eval_traces_30d.passed)} />
+            <MiniStat label="Blocked" value={String(summary.eval_traces_30d.blocked)} />
+            <MiniStat label="Failed" value={String(summary.eval_traces_30d.failed)} />
+            <MiniStat label="Warning" value={String(summary.eval_traces_30d.warning)} />
+          </Panel>
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
@@ -170,6 +179,26 @@ export default async function InternalOpsPage() {
           <ListPanel title="Top Feedback · Companies" items={summary.feedback.companies} />
           <ListPanel title="Top Feedback · Signal Types" items={summary.feedback.signal_types} />
           <ListPanel title="Top Feedback · Sources" items={summary.feedback.sources} />
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-2">
+          <TablePanel
+            title="Eval Failure Taxonomy · 30d"
+            columns={['Taxonomy', 'Count']}
+            rows={summary.eval_traces_30d.top_failure_taxonomies.map(row => [
+              row.taxonomy,
+              String(row.count),
+            ])}
+          />
+          <TablePanel
+            title="Eval Trace Types · 30d"
+            columns={['Trace Type', 'Count', 'Avg Score']}
+            rows={summary.eval_traces_30d.by_trace_type.map(row => [
+              row.trace_type,
+              String(row.count),
+              row.avg_score.toFixed(2),
+            ])}
+          />
         </section>
       </div>
     </main>

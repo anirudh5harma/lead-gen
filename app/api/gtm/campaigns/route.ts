@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { createClient } from '@/lib/supabase/server'
+import { requirePlan } from '@/lib/api-plan-guard'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
 
   const clientFilter = activeClientId ? { client_id: activeClientId } : {}
 
@@ -17,14 +20,14 @@ export async function GET() {
     supabase
       .from('gtm_campaigns')
       .select('id, name, segment, trigger, narrative, status, created_at, updated_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .match(clientFilter)
       .order('created_at', { ascending: false })
       .limit(50),
     supabase
       .from('gtm_campaign_assets')
       .select('campaign_id, status')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .match(clientFilter),
   ])
 
@@ -61,8 +64,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
+  const rate = await checkRateLimit(`marketing:campaign:create:${userId}`, 30, 60 * 60, { failClosed: true })
+  if (!rate.allowed) return NextResponse.json({ error: 'Too many campaign creates. Try again later.' }, { status: 429 })
 
   const body = await request.json().catch(() => null) as {
     name?: string
@@ -76,7 +82,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Campaign name is required' }, { status: 400 })
   }
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
 
   const segment = body.segment?.trim() ?? 'All accounts'
   const trigger = body.trigger?.trim() ?? 'Market timing signal'
@@ -85,7 +91,7 @@ export async function POST(request: Request) {
   const { data: campaign, error } = await supabase
     .from('gtm_campaigns')
     .insert({
-      user_id: user.id,
+      user_id: userId,
       client_id: activeClientId,
       name: body.name.trim(),
       segment,
@@ -104,12 +110,12 @@ export async function POST(request: Request) {
     const { data: ideas } = await supabase
       .from('gtm_content_ideas')
       .select('id, content_type, angle')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .in('id', body.content_idea_ids)
 
     const assetRows = (ideas ?? []).map(idea => ({
       campaign_id: campaign.id,
-      user_id: user.id,
+      user_id: userId,
       client_id: activeClientId,
       content_idea_id: idea.id,
       asset_type: idea.content_type,

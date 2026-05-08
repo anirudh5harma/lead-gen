@@ -17,6 +17,13 @@ interface CronMetricsRow {
   metrics?: Record<string, unknown> | null
 }
 
+interface EvalTraceRow {
+  trace_type: string
+  status: 'passed' | 'blocked' | 'failed' | 'warning'
+  score: number | string | null
+  failure_taxonomy: string | null
+}
+
 export interface InternalOpsSummary {
   generated_at: string
   weekly_review: WeeklyReview
@@ -86,6 +93,16 @@ export interface InternalOpsSummary {
       feedback_reordered: number
     }
   }
+  eval_traces_30d: {
+    total: number
+    average_score: number
+    passed: number
+    blocked: number
+    failed: number
+    warning: number
+    top_failure_taxonomies: Array<{ taxonomy: string; count: number }>
+    by_trace_type: Array<{ trace_type: string; count: number; avg_score: number }>
+  }
 }
 
 export async function getInternalOpsSummary(
@@ -108,6 +125,7 @@ export async function getInternalOpsSummary(
     monitoredSignaledRes,
     pendingQueueRes,
     dueQueueRes,
+    evalTraceRes,
   ] = await Promise.all([
     supabase
       .from('leads')
@@ -150,12 +168,17 @@ export async function getInternalOpsSummary(
       .select('id', { count: 'exact', head: true })
       .eq('queue_status', 'pending')
       .lte('next_delivery_at', nowIso),
+    supabase
+      .from('gtm_eval_traces')
+      .select('trace_type, status, score, failure_taxonomy')
+      .gte('created_at', last30d),
   ])
 
   const leadRows = (leadRowsRes.data ?? []) as InternalOpsLeadRow[]
   const queueRows = (queueRowsRes.data ?? []) as InternalOpsQueueRow[]
   const signalRows = (signalRowsRes.data ?? []) as InternalOpsSignalRow[]
   const cronRows = (cronRowsRes.data ?? []) as CronMetricsRow[]
+  const evalRows = (evalTraceRes.data ?? []) as EvalTraceRow[]
   const leadRows30d = leadRows.filter(row => isWithinWindow(row.created_at, last30d, nowIso))
   const weeklyReview = buildWeeklyReview({
     now,
@@ -246,6 +269,29 @@ export async function getInternalOpsSummary(
     ? pendingRows30d.reduce((sum, row) => sum + row.attempt_count, 0) / pendingRows30d.length
     : 0
 
+  const evalByTaxonomy = new Map<string, number>()
+  const evalByType = new Map<string, { count: number; score: number }>()
+  let passedCount = 0
+  let blockedCount = 0
+  let failedCount = 0
+  let warningCount = 0
+  let totalScore = 0
+  for (const row of evalRows) {
+    totalScore += num(row.score)
+    if (row.status === 'passed') passedCount += 1
+    else if (row.status === 'blocked') blockedCount += 1
+    else if (row.status === 'failed') failedCount += 1
+    else if (row.status === 'warning') warningCount += 1
+
+    if (row.failure_taxonomy) {
+      evalByTaxonomy.set(row.failure_taxonomy, (evalByTaxonomy.get(row.failure_taxonomy) ?? 0) + 1)
+    }
+    const bucket = evalByType.get(row.trace_type) ?? { count: 0, score: 0 }
+    bucket.count += 1
+    bucket.score += num(row.score)
+    evalByType.set(row.trace_type, bucket)
+  }
+
   return {
     generated_at: nowIso,
     weekly_review: weeklyReview,
@@ -316,6 +362,25 @@ export async function getInternalOpsSummary(
         preview_delivered: num(metric.preview_delivered),
         feedback_reordered: num(metric.feedback_reordered),
       })),
+    },
+    eval_traces_30d: {
+      total: evalRows.length,
+      average_score: evalRows.length > 0 ? Number((totalScore / evalRows.length).toFixed(2)) : 0,
+      passed: passedCount,
+      blocked: blockedCount,
+      failed: failedCount,
+      warning: warningCount,
+      top_failure_taxonomies: [...evalByTaxonomy.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([taxonomy, count]) => ({ taxonomy, count })),
+      by_trace_type: [...evalByType.entries()]
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([trace_type, bucket]) => ({
+          trace_type,
+          count: bucket.count,
+          avg_score: bucket.count > 0 ? Number((bucket.score / bucket.count).toFixed(2)) : 0,
+        })),
     },
   }
 }

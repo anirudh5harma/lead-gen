@@ -52,6 +52,62 @@ export async function checkAgentRateLimit(
   apiKeyId: string,
   tier: string,
 ): Promise<RateLimitState> {
+  const rpcResult = await checkDistributedRateLimit(supabase, apiKeyId, tier)
+  if (rpcResult) return rpcResult
+
+  // Fallback for environments where the migration is not applied yet.
+  return checkInMemoryRateLimit(supabase, apiKeyId, tier)
+}
+
+async function checkDistributedRateLimit(
+  supabase: SupabaseClient,
+  apiKeyId: string,
+  tier: string,
+): Promise<RateLimitState | null> {
+  const { data, error } = await supabase.rpc('check_and_increment_agent_rate_limit', {
+    p_api_key_id: apiKeyId,
+    p_tier: tier,
+  })
+
+  if (error) {
+    // Keep API availability high during staggered deploy/migration windows.
+    console.warn('[a2a-rate-limit] distributed limiter unavailable, using fallback:', error.message)
+    return null
+  }
+
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row || typeof row !== 'object') return null
+  const payload = row as Record<string, unknown>
+
+  const resetAt = parseResetAt(payload.reset_at)
+  const remaining = Number(payload.remaining)
+  return {
+    allowed: Boolean(payload.allowed),
+    remaining: Number.isFinite(remaining) ? remaining : 0,
+    resetAt,
+    window: normalizeWindow(payload.rate_window ?? payload.window),
+  }
+}
+
+function parseResetAt(value: unknown): number {
+  if (typeof value === 'string' || value instanceof Date) {
+    const parsed = new Date(value).getTime()
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return Date.now() + 60_000
+}
+
+function normalizeWindow(value: unknown): string {
+  return value === 'day' || value === 'hour' || value === 'minute'
+    ? value
+    : 'minute'
+}
+
+async function checkInMemoryRateLimit(
+  supabase: SupabaseClient,
+  apiKeyId: string,
+  tier: string,
+): Promise<RateLimitState> {
   const now = Date.now()
   cleanupExpiredRateLimitWindows(now)
   const limits = await getAgentRateLimitTier(supabase, tier)

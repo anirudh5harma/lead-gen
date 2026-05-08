@@ -4,20 +4,63 @@ import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { buildRecipientGroup, ensureBodyGreetsRecipients, mergeRecipientStakeholders } from '@/lib/outreach-recipients'
 import { resolveOutreachContext } from '@/lib/outreach-context'
 import { buildGtmContextPack } from '@/lib/gtm/semantic-context'
+import { evaluateOutreachDraftQuality } from '@/lib/gtm/draft-eval'
+import { upsertGtmEvalTrace } from '@/lib/gtm/eval-traces'
 import { firstUsableStakeholder, resolveLeadRecipients, upsertOutreachDraft } from '@/lib/outreach-workflow'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import {
+  contactTitleMatchesRoles,
+  normalizeRoleSelection,
+  type ContactRoleKey,
+} from '@/lib/contact-targeting'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+const MAX_DRAFT_CONTACTS = 3
+
+type Stakeholder = { name: string; title: string; email: string; confidence: string; source: string }
+
+function applyDraftContactLimit<T>(value: T[], maxContacts = MAX_DRAFT_CONTACTS): T[] {
+  return value.slice(0, Math.max(1, maxContacts))
+}
+
+function normalizeStakeholders(
+  stakeholders: Array<{ name?: string; title?: string; email?: string; confidence?: string; source?: string }>,
+): Stakeholder[] {
+  return stakeholders.map(stakeholder => ({
+    name: stakeholder.name ?? '',
+    title: stakeholder.title ?? '',
+    email: stakeholder.email ?? '',
+    confidence: stakeholder.confidence ?? 'medium',
+    source: stakeholder.source ?? 'enrichment',
+  }))
+}
+
+function filterStakeholdersByRoles(stakeholders: Stakeholder[], targetRoles: ContactRoleKey[]): Stakeholder[] {
+  if (targetRoles.length === 0) return stakeholders
+  const filtered = stakeholders.filter(stakeholder => contactTitleMatchesRoles(stakeholder.title, targetRoles))
+  return filtered.length > 0 ? filtered : stakeholders
+}
+
+async function parseTargetRoles(request: Request): Promise<ContactRoleKey[]> {
+  try {
+    const payload = await request.json().catch(() => null) as { target_roles?: unknown } | null
+    return normalizeRoleSelection(payload?.target_roles)
+  } catch {
+    return []
+  }
+}
+
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const targetRoles = await parseTargetRoles(request)
   const { id } = await params
   const { data: lead, error: leadError } = await supabase
     .from('leads')
@@ -69,11 +112,27 @@ export async function POST(
     consumeCreditIfLocked: true,
     creditSource: 'work_inbox_draft_unlock',
     refundCreditWhenNoContact: true,
-    maxContacts: 4,
+    preferLeadContact: false,
+    targetRoles,
+    maxContacts: MAX_DRAFT_CONTACTS,
   })
 
   if (existingDraftRes.data?.subject && existingDraftRes.data?.body) {
-    const stakeholders = mergeRecipientStakeholders(existingDraftRes.data.stakeholders, contactResolution.stakeholders)
+    const existingStakeholders = normalizeStakeholders(
+      Array.isArray(existingDraftRes.data.stakeholders)
+        ? existingDraftRes.data.stakeholders as Array<{ name?: string; title?: string; email?: string; confidence?: string; source?: string }>
+        : [],
+    )
+    const mergedStakeholders = normalizeStakeholders(
+      mergeRecipientStakeholders(existingStakeholders, contactResolution.stakeholders),
+    )
+    const stakeholdersForDraft = existingStakeholders.length > 0
+      ? mergedStakeholders
+      : filterStakeholdersByRoles(mergedStakeholders, targetRoles)
+    const stakeholders = applyDraftContactLimit(
+      stakeholdersForDraft,
+      MAX_DRAFT_CONTACTS,
+    )
     const recipientGroup = buildRecipientGroup(stakeholders) ?? contactResolution.recipientGroup
     const existingRecipient = firstUsableStakeholder(stakeholders)
     const resolvedRecipient = recipientGroup?.to ?? contactResolution.recipientGroup?.to ?? null
@@ -86,45 +145,72 @@ export async function POST(
       }),
       greeting,
     )
-    if (repairedBody !== existingDraftRes.data.body || stakeholders.length > 0) {
-      await upsertOutreachDraft(serviceSupabase, {
-        leadId: id,
-        userId: user.id,
-        clientId: (lead.client_id as string | null | undefined) ?? null,
-        subject: existingDraftRes.data.subject,
-        body: repairedBody,
-        stakeholders,
-        greeting,
-      }).catch(error => console.error('[lead-draft] failed to repair existing draft:', error))
-    }
-  const fallbackRecipients = resolvedRecipient
-    ? [resolvedRecipient]
-    : existingRecipient
-      ? [existingRecipient]
-      : []
-  const recipientGroupAll = stakeholders.length > 0 ? stakeholders : fallbackRecipients
-  const ccRecipients = recipientGroupAll.slice(1)
-
-  return NextResponse.json({
-    draft: {
+    const draftEval = evaluateOutreachDraftQuality({
       subject: existingDraftRes.data.subject,
       body: repairedBody,
-      to: resolvedRecipient?.email ?? existingRecipient?.email ?? null,
-      to_name: resolvedRecipient?.name ?? existingRecipient?.name ?? null,
-      cc: ccRecipients.map((r: Partial<{ name: string; email: string }>) => ({ name: r.name ?? '', email: r.email ?? '' })),
-      all: recipientGroupAll.map((r: Partial<{ name: string; title: string; email: string; confidence: string; source: string }>) => ({
-        name: r.name ?? '',
-        title: r.title ?? '',
-        email: r.email ?? '',
-        confidence: r.confidence ?? '',
-        source: r.source ?? '',
-      })),
-      contact_resolution: contactResolution.debug,
-    },
-  })
+      greeting,
+      targetCompany: lead.target_company as string,
+      signalType: signal?.signal_type ?? null,
+      signalSummary: signal?.summary ?? (lead.relevance_reason as string | null) ?? null,
+    })
+    await upsertOutreachDraft(serviceSupabase, {
+      leadId: id,
+      userId: user.id,
+      clientId: (lead.client_id as string | null | undefined) ?? null,
+      subject: existingDraftRes.data.subject,
+      body: repairedBody,
+      stakeholders,
+      greeting,
+      qualityScore: draftEval.score,
+      qualityChecks: draftEval.checks,
+      qualityCheckedAt: new Date().toISOString(),
+      qualityVersion: draftEval.version,
+    }).catch(error => console.error('[lead-draft] failed to repair existing draft:', error))
+    await upsertGtmEvalTrace(serviceSupabase, {
+      userId: user.id,
+      clientId: (lead.client_id as string | null | undefined) ?? null,
+      leadId: id,
+      traceType: 'draft_quality',
+      status: draftEval.score >= 70 ? 'passed' : 'warning',
+      reasons: draftEval.failed,
+      draftQualityScore: draftEval.score,
+      metadata: {
+        quality_version: draftEval.version,
+        contact_resolution: contactResolution.debug,
+        target_roles: targetRoles,
+      },
+    })
+    const fallbackRecipients = resolvedRecipient
+      ? [resolvedRecipient]
+      : existingRecipient
+        ? [existingRecipient]
+        : []
+    const recipientGroupAll = stakeholders.length > 0 ? stakeholders : fallbackRecipients
+    const ccRecipients = recipientGroupAll.slice(1)
+
+    return NextResponse.json({
+      draft: {
+        subject: existingDraftRes.data.subject,
+        body: repairedBody,
+        to: resolvedRecipient?.email ?? existingRecipient?.email ?? null,
+        to_name: resolvedRecipient?.name ?? existingRecipient?.name ?? null,
+        cc: ccRecipients.map((r: Partial<{ name: string; email: string }>) => ({ name: r.name ?? '', email: r.email ?? '' })),
+        all: recipientGroupAll.map((r: Partial<{ name: string; title: string; email: string; confidence: string; source: string }>) => ({
+          name: r.name ?? '',
+          title: r.title ?? '',
+          email: r.email ?? '',
+          confidence: r.confidence ?? '',
+          source: r.source ?? '',
+        })),
+        contact_resolution: {
+          ...contactResolution.debug,
+          target_roles: targetRoles,
+        },
+        quality_eval: draftEval,
+      },
+    })
   }
 
-  const recipientGroup = contactResolution.recipientGroup
   const contextPack = await buildGtmContextPack(supabase, {
     userId: user.id,
     clientId: (lead.client_id as string | null | undefined) ?? null,
@@ -137,6 +223,22 @@ export async function POST(
     ].filter(value => typeof value === 'string' && value.trim()).join('\n'),
     limit: 8,
   })
+
+  const stakeholders = contactResolution.stakeholders.length > 0
+    ? applyDraftContactLimit(
+        filterStakeholdersByRoles(normalizeStakeholders(contactResolution.stakeholders), targetRoles),
+        MAX_DRAFT_CONTACTS,
+      )
+    : contactResolution.recipientGroup
+      ? [{
+          name: contactResolution.recipientGroup.to.name,
+          title: contactResolution.recipientGroup.to.title,
+          email: contactResolution.recipientGroup.to.email,
+          confidence: 'high',
+          source: 'work_inbox',
+        }]
+      : []
+  const recipientGroup = buildRecipientGroup(stakeholders) ?? contactResolution.recipientGroup
 
   const { subject, body } = await draftOutreachEmail({
     senderCompany: outreachContext.senderCompany,
@@ -156,17 +258,14 @@ export async function POST(
     customInstructions: null,
   })
   const normalizedBody = ensureBodyGreetsRecipients(body, recipientGroup?.greeting || 'Hi there')
-  const stakeholders = contactResolution.stakeholders.length > 0
-    ? contactResolution.stakeholders
-    : recipientGroup
-      ? [{
-          name: recipientGroup.to.name,
-          title: recipientGroup.to.title,
-          email: recipientGroup.to.email,
-          confidence: 'high',
-          source: 'work_inbox',
-        }]
-      : []
+  const draftEval = evaluateOutreachDraftQuality({
+    subject,
+    body: normalizedBody,
+    greeting: recipientGroup?.greeting || 'Hi there',
+    targetCompany: lead.target_company as string,
+    signalType: signal?.signal_type ?? null,
+    signalSummary: signal?.summary ?? (lead.relevance_reason as string | null) ?? null,
+  })
 
   try {
     await upsertOutreachDraft(serviceSupabase, {
@@ -177,13 +276,31 @@ export async function POST(
       body: normalizedBody,
       stakeholders,
       greeting: recipientGroup?.greeting || 'Hi there',
+      qualityScore: draftEval.score,
+      qualityChecks: draftEval.checks,
+      qualityCheckedAt: new Date().toISOString(),
+      qualityVersion: draftEval.version,
+    })
+    await upsertGtmEvalTrace(serviceSupabase, {
+      userId: user.id,
+      clientId: (lead.client_id as string | null | undefined) ?? null,
+      leadId: id,
+      traceType: 'draft_quality',
+      status: draftEval.score >= 70 ? 'passed' : 'warning',
+      reasons: draftEval.failed,
+      draftQualityScore: draftEval.score,
+      metadata: {
+        quality_version: draftEval.version,
+        contact_resolution: contactResolution.debug,
+        target_roles: targetRoles,
+      },
     })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to save draft' }, { status: 500 })
   }
 
-  const allRecipientsNew = stakeholders.length > 0 ? stakeholders : (recipientGroup ? [recipientGroup.to] : [])
-  const ccRecipientsNew = allRecipientsNew.slice(1)
+  const allRecipients = stakeholders.length > 0 ? stakeholders : (recipientGroup ? [recipientGroup.to] : [])
+  const ccRecipients = allRecipients.slice(1)
 
   return NextResponse.json({
     draft: {
@@ -191,15 +308,19 @@ export async function POST(
       body: normalizedBody,
       to: recipientGroup?.to.email ?? null,
       to_name: recipientGroup?.to.name ?? null,
-      cc: ccRecipientsNew.map((r: Partial<{ name: string; email: string }>) => ({ name: r.name ?? '', email: r.email ?? '' })),
-      all: allRecipientsNew.map((r: Partial<{ name: string; title: string; email: string; confidence: string; source: string }>) => ({
+      cc: ccRecipients.map((r: Partial<{ name: string; email: string }>) => ({ name: r.name ?? '', email: r.email ?? '' })),
+      all: allRecipients.map((r: Partial<{ name: string; title: string; email: string; confidence: string; source: string }>) => ({
         name: r.name ?? '',
         title: r.title ?? '',
         email: r.email ?? '',
         confidence: r.confidence ?? '',
         source: r.source ?? '',
       })),
-      contact_resolution: contactResolution.debug,
+      contact_resolution: {
+        ...contactResolution.debug,
+        target_roles: targetRoles,
+      },
+      quality_eval: draftEval,
     },
   })
 }

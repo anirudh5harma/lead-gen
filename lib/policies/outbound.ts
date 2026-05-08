@@ -28,6 +28,21 @@ export async function evaluateOutboundPolicy(
   supabase: SupabaseClient,
   input: OutboundPolicyInput,
 ): Promise<OutboundPolicyDecision> {
+  return resolveOutboundPolicyDecision(supabase, input, { persistDecision: true })
+}
+
+export async function simulateOutboundPolicy(
+  supabase: SupabaseClient,
+  input: OutboundPolicyInput,
+): Promise<OutboundPolicyDecision> {
+  return resolveOutboundPolicyDecision(supabase, input, { persistDecision: false })
+}
+
+async function resolveOutboundPolicyDecision(
+  supabase: SupabaseClient,
+  input: OutboundPolicyInput,
+  options: { persistDecision: boolean },
+): Promise<OutboundPolicyDecision> {
   const reasons: string[] = []
   const recipientEmails = [...new Set(input.recipientEmails.map(email => email.trim().toLowerCase()).filter(Boolean))]
 
@@ -59,13 +74,15 @@ export async function evaluateOutboundPolicy(
     reasons,
   }
 
-  await recordPolicyDecision(supabase, input, decision, {
-    recipient_count: recipientEmails.length,
-    blocked_company: blockedCompany,
-    unsubscribed: unsubscribed.data ?? [],
-    bounced: bounced.data ?? [],
-    ...(input.metadata ?? {}),
-  })
+  if (options.persistDecision) {
+    await recordPolicyDecision(supabase, input, decision, {
+      recipient_count: recipientEmails.length,
+      blocked_company: blockedCompany,
+      unsubscribed: unsubscribed.data ?? [],
+      bounced: bounced.data ?? [],
+      ...(input.metadata ?? {}),
+    })
+  }
 
   return decision
 }

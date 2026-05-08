@@ -10,6 +10,8 @@ import { recordAgentEvent } from '@/lib/agent-events'
 import { buildRecipientGroup, ensureBodyGreetsRecipients, formatRecipientListForLog } from '@/lib/outreach-recipients'
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
+import { evaluateOutreachDraftQuality } from '@/lib/gtm/draft-eval'
+import { upsertGtmEvalTrace } from '@/lib/gtm/eval-traces'
 import { recordGtmMemory } from '@/lib/gtm/memory'
 import { buildOutreachPlan } from '@/lib/gtm/outreach-plan'
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
@@ -88,6 +90,37 @@ export async function POST(request: Request) {
   ])
   if (!recipientGroup) return NextResponse.json({ error: 'At least one valid recipient is required.' }, { status: 400 })
   const normalizedEmailBody = ensureBodyGreetsRecipients(emailBody, recipientGroup.greeting)
+  const triggerSignal = normalizeLeadFeedSnapshot(leadRes.data.feed_snapshot)
+  const traceType = isFollowUp ? 'followup_send' : 'manual_outreach_send'
+  const leadClientId = (leadRes.data as { client_id?: string | null }).client_id ?? null
+  const draftQuality = evaluateOutreachDraftQuality({
+    subject,
+    body: normalizedEmailBody,
+    greeting: recipientGroup.greeting,
+    targetCompany: leadRes.data.target_company,
+    signalType: triggerSignal?.signal_type ?? null,
+    signalSummary: triggerSignal?.summary ?? leadRes.data.relevance_reason ?? null,
+  })
+
+  if (isFollowUp !== true && draftQuality.score < 55) {
+    await upsertGtmEvalTrace(supabase, {
+      userId: user.id,
+      clientId: leadClientId,
+      leadId,
+      traceType,
+      status: 'blocked',
+      reasons: ['draft_quality_low'],
+      draftQualityScore: draftQuality.score,
+      metadata: {
+        quality_failed_checks: draftQuality.failed,
+        quality_version: draftQuality.version,
+      },
+    })
+    return NextResponse.json({
+      error: 'Draft quality is too low to send. Please regenerate or edit the draft.',
+      quality_eval: draftQuality,
+    }, { status: 422 })
+  }
 
   const clientId = (leadRes.data as { client_id?: string | null }).client_id ?? null
   const workflowRunId = await startWorkflowRun(supabase, {
@@ -249,6 +282,20 @@ export async function POST(request: Request) {
       },
       checkpoint: { blocked_at: 'recipient_validation' },
     })
+    await upsertGtmEvalTrace(supabase, {
+      userId: user.id,
+      clientId,
+      leadId,
+      workflowRunId,
+      traceType,
+      status: 'blocked',
+      reasons,
+      draftQualityScore: draftQuality.score,
+      metadata: {
+        blocked_at: 'recipient_validation',
+        unsafe_emails: recipientValidation.unsafeEmails,
+      },
+    })
     return NextResponse.json({
       error: `Send blocked: recipient validation failed for ${recipientValidation.unsafeEmails.join(', ')}`,
       reasons,
@@ -326,6 +373,19 @@ export async function POST(request: Request) {
       output: { sent: false, policy_decision: policyDecision.decision, reasons: policyDecision.reasons },
       checkpoint: { blocked_at: 'policy' },
     })
+    await upsertGtmEvalTrace(supabase, {
+      userId: user.id,
+      clientId,
+      leadId,
+      workflowRunId,
+      traceType,
+      status: 'blocked',
+      reasons: policyDecision.reasons,
+      draftQualityScore: draftQuality.score,
+      metadata: {
+        blocked_at: 'policy',
+      },
+    })
     return NextResponse.json({ error: `Send blocked: ${policyDecision.reasons.join(', ')}` }, { status: 422 })
   }
 
@@ -396,6 +456,19 @@ export async function POST(request: Request) {
         status: 'completed',
         output: { sent: false, reason: 'no_connected_inbox' },
         checkpoint: { blocked_at: 'send' },
+      })
+      await upsertGtmEvalTrace(supabase, {
+        userId: user.id,
+        clientId,
+        leadId,
+        workflowRunId,
+        traceType,
+        status: 'blocked',
+        reasons: ['no_connected_inbox'],
+        draftQualityScore: draftQuality.score,
+        metadata: {
+          blocked_at: 'send',
+        },
       })
       await markLatestOutreachPlanStatus(supabase, {
         userId: user.id,
@@ -551,6 +624,21 @@ export async function POST(request: Request) {
       output: { sent: true, message_id: result.messageId, from_email: result.fromEmail },
       checkpoint: { completed_at: now, lead_id: leadId, outreach_plan_confidence: outreachPlan.confidence },
     })
+    await upsertGtmEvalTrace(supabase, {
+      userId: user.id,
+      clientId,
+      leadId,
+      workflowRunId,
+      traceType,
+      status: 'passed',
+      reasons: [],
+      draftQualityScore: draftQuality.score,
+      metadata: {
+        provider: result.provider,
+        message_id: result.messageId,
+        from_email: result.fromEmail,
+      },
+    })
 
     return NextResponse.json({ success: true, messageId: result.messageId, fromEmail: result.fromEmail })
   } catch (err) {
@@ -562,6 +650,17 @@ export async function POST(request: Request) {
       output: { sent: false },
       errorMessage: message,
       checkpoint: { failed_at: new Date().toISOString() },
+    })
+    await upsertGtmEvalTrace(supabase, {
+      userId: user.id,
+      clientId,
+      leadId,
+      workflowRunId,
+      traceType,
+      status: 'failed',
+      reasons: ['runtime_send_failure'],
+      errorMessage: message,
+      draftQualityScore: draftQuality.score,
     })
     return NextResponse.json({ error: message }, { status: 500 })
   }

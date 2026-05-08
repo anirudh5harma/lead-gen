@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { scoreLeadRelevance } from '@/lib/deepseek'
 import { buildWorkspaceAccessPlan } from '@/lib/client-workspaces'
+import type { SubscriptionTier } from '@/lib/lead-credits'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { embed, toVectorLiteral } from '@/lib/embeddings'
 import { buildLeadDedupeKey, normalizeLeadCompanyKey } from '@/lib/lead-dedupe'
@@ -85,15 +86,17 @@ async function runMatch(request: Request) {
     const userIds = [...new Set(profiles.map(profile => profile.user_id))]
     const { data: userSettings } = await supabase
       .from('user_profiles')
-      .select('user_id, active_client_id')
+      .select('user_id, active_client_id, plan')
       .in('user_id', userIds)
 
     const userSettingsMap = new Map<string, {
       activeClientId: string | null
+      plan: SubscriptionTier
     }>()
     for (const row of (userSettings ?? [])) {
       userSettingsMap.set(row.user_id, {
         activeClientId: row.active_client_id ?? null,
+        plan: normalizeSubscriptionTier(row.plan),
       })
     }
 
@@ -107,10 +110,11 @@ async function runMatch(request: Request) {
     const eligibleProfiles = Array.from(profilesByUser.entries()).flatMap(([userId, userProfiles]) => {
       const settings = userSettingsMap.get(userId) ?? {
         activeClientId: null,
+        plan: 'free' as SubscriptionTier,
       }
 
       const accessPlan = buildWorkspaceAccessPlan({
-        plan: 'free',
+        plan: settings.plan,
         activeClientId: settings.activeClientId,
         clients: userProfiles.map(profile => ({
           id: profile.id,
@@ -241,8 +245,11 @@ async function runMatch(request: Request) {
       eligible_profiles: eligibleProfiles.length,
       profiles_considered: 0,
       scored_by_llm: 0,
+      scored_by_heuristic: 0,
+      scored_from_cache: 0,
     }
     let queued = 0
+    const scoreCache = new Map<string, { score: number; reason: string }>()
 
     for (const profile of eligibleProfiles) {
       stats.profiles_considered++
@@ -270,6 +277,7 @@ async function runMatch(request: Request) {
       const allowedTypeSet = new Set(allowedTypes)
       const watchlist = watchlistMap[profile.id] ?? new Set<string>()
       const icpKeywords = (profile.icp_keywords as string[] | null) ?? []
+      const profileServices = typeof profile.services_description === 'string' ? profile.services_description : ''
 
       const annResult = await supabase.rpc('match_candidate_signals', {
         p_profile_embedding: profileEmbedding,
@@ -392,27 +400,52 @@ async function runMatch(request: Request) {
 
         let score = 5
         let reason = ''
-        try {
-          const result = await scoreLeadRelevance(
-            profile.services_description,
-            signal.signal_type,
-            signal.company_name,
-            signal.summary || '',
-          )
-          stats.scored_by_llm++
-          score = result.score
-          reason = result.reason
-        } catch (error) {
-          stats.llm_errors++
-          if (stats.llm_errors === 1) console.error('scoreLeadRelevance error:', (error as Error).message)
-          const fallback = fallbackLeadScore({
-            isWatchlisted: candidate.isWatchlisted === true,
-            keywordMatched: candidate.keywordMatched === true,
-            similarity: candidate.similarity,
+        const heuristic = heuristicLeadScore({
+          isWatchlisted: candidate.isWatchlisted === true,
+          keywordMatched: candidate.keywordMatched === true,
+          similarity: candidate.similarity,
+        })
+        if (heuristic) {
+          stats.scored_by_heuristic++
+          score = heuristic.score
+          reason = heuristic.reason
+        } else {
+          const scoreCacheKey = buildLeadScoreCacheKey({
+            servicesDescription: profileServices,
+            signalType: signal.signal_type,
+            companyName: signal.company_name,
+            signalSummary: signal.summary || '',
           })
-          if (!fallback) continue
-          score = fallback.score
-          reason = fallback.reason
+          const cachedScore = scoreCache.get(scoreCacheKey)
+          if (cachedScore) {
+            stats.scored_from_cache++
+            score = cachedScore.score
+            reason = cachedScore.reason
+          } else {
+            try {
+              const result = await scoreLeadRelevance(
+                profileServices,
+                signal.signal_type,
+                signal.company_name,
+                signal.summary || '',
+              )
+              stats.scored_by_llm++
+              score = result.score
+              reason = result.reason
+              scoreCache.set(scoreCacheKey, { score, reason })
+            } catch (error) {
+              stats.llm_errors++
+              if (stats.llm_errors === 1) console.error('scoreLeadRelevance error:', (error as Error).message)
+              const fallback = fallbackLeadScore({
+                isWatchlisted: candidate.isWatchlisted === true,
+                keywordMatched: candidate.keywordMatched === true,
+                similarity: candidate.similarity,
+              })
+              if (!fallback) continue
+              score = fallback.score
+              reason = fallback.reason
+            }
+          }
         }
 
         const minScore = (profile.min_relevance_score as number | null) ?? DEFAULT_SCORE_THRESHOLD
@@ -506,6 +539,58 @@ async function runMatch(request: Request) {
     console.error('[match-leads]', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+function normalizeSubscriptionTier(value: unknown): SubscriptionTier {
+  if (value === 'growth' || value === 'scale' || value === 'enterprise') return value
+  return 'free'
+}
+
+function buildLeadScoreCacheKey(input: {
+  servicesDescription: string
+  signalType: string
+  companyName: string
+  signalSummary: string
+}): string {
+  return [
+    normalizeCacheText(input.servicesDescription),
+    normalizeCacheText(input.signalType),
+    normalizeCacheText(input.companyName),
+    normalizeCacheText(input.signalSummary),
+  ].join('|')
+}
+
+function normalizeCacheText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 320)
+}
+
+function heuristicLeadScore(params: {
+  isWatchlisted: boolean
+  keywordMatched: boolean
+  similarity: number | null | undefined
+}): { score: number; reason: string } | null {
+  if (params.isWatchlisted) {
+    return {
+      score: 8,
+      reason: 'Matched a watchlisted company with strong policy alignment.',
+    }
+  }
+
+  if (params.keywordMatched && typeof params.similarity === 'number' && params.similarity >= 0.48) {
+    return {
+      score: 7,
+      reason: 'Strong keyword plus semantic match against the workspace ICP.',
+    }
+  }
+
+  if (typeof params.similarity === 'number' && params.similarity >= 0.66) {
+    return {
+      score: 7,
+      reason: 'High semantic fit against the workspace ICP.',
+    }
+  }
+
+  return null
 }
 
 function fallbackLeadScore(params: {

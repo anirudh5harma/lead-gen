@@ -2,21 +2,74 @@ import { NextResponse } from 'next/server'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { generateExploreLeads, type ExploreLeadSuggestion } from '@/lib/deepseek'
-import { shouldUseWorkspaceIcp } from '@/lib/explore'
+import { buildExploreSearchTerms, rankExploreCandidates, scoreExploreSourceItem, shouldUseWorkspaceIcp } from '@/lib/explore'
 import { buildFeedSessionLabel } from '@/lib/feed-sessions'
 import { buildExploreLeadFeedSnapshot, type LeadSignalType } from '@/lib/lead-sources'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { apolloCompanyEnrich, apolloCompanyMatchesFilters } from '@/lib/apollo'
+import { apolloCompanyEnrich, apolloCompanyMatchesFilters, apolloOrganizationSearch } from '@/lib/apollo'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-const DEFAULT_RESULTS = 12
+const DEFAULT_RESULTS = 10
 const MAX_RESULTS = 100
 const MAX_GENERATION_BATCH_SIZE = 25
 const MAX_PROMPT_LENGTH = 1500
 const MAX_ICP_HINT_LENGTH = 300
+const APOLLO_EXPLORE_MAX_RESULTS = 40
+const EXPLORE_RESULT_OPTIONS = [5, 10, 20] as const
+const ALLOWED_INDUSTRIES = new Set([
+  'SaaS and software',
+  'AI and data infrastructure',
+  'Fintech',
+  'Healthcare technology',
+  'Ecommerce and retail tech',
+  'Cybersecurity',
+  'Logistics and supply chain',
+  'Manufacturing',
+  'Professional services',
+])
+const ALLOWED_REGIONS = new Set([
+  'United States',
+  'North America',
+  'United Kingdom',
+  'Europe',
+  'India',
+  'Asia Pacific',
+  'Middle East',
+  'Global English-speaking markets',
+])
+const ALLOWED_REVENUE = new Set([
+  'Under $1M',
+  '$1M-$10M',
+  '$10M-$50M',
+  '$50M-$250M',
+  '$250M+',
+])
+const ALLOWED_EMPLOYEE_COUNTS = new Set([
+  '1-10',
+  '11-50',
+  '51-200',
+  '201-500',
+  '501-1000',
+  '1001-5000',
+  '5000+',
+])
+const ALLOWED_MARKET_SEGMENTS = new Set(['SMB', 'Mid-Market', 'Enterprise'])
+const ALLOWED_FUNDING = new Set([
+  'Funded in last 90 days',
+  'Funded in last 180 days',
+  'Latest round $1M-$10M',
+  'Latest round $10M-$50M',
+  'Latest round $50M+',
+])
+const ALLOWED_SIGNALS = new Set([
+  'Actively hiring',
+  'High hiring volume',
+  'Sales hiring',
+  'Engineering hiring',
+])
 
 const EXPLORE_LIMITS = {
   maxResults: 50,
@@ -40,18 +93,32 @@ export async function POST(request: Request) {
       region?: string
       revenue?: string
       employee_count?: string
+      market_segment?: string
+      funding?: string
+      signal?: string
     }
   } | null
 
+  const invalidFilters = validateExploreFilters(body?.filters)
+  if (invalidFilters.length > 0) {
+    return NextResponse.json({
+      error: `Unsupported filter option(s): ${invalidFilters.join(', ')}`,
+    }, { status: 400 })
+  }
+
+  const activeFilters = normalizeExploreFilters(body?.filters)
+  const requestedCount = normalizeExploreCount(body?.count)
+  if (!hasAnyFilter(activeFilters)) {
+    return NextResponse.json({ error: 'Select at least one filter before running Explore search.' }, { status: 400 })
+  }
+
+  const rawPrompt = body?.prompt?.trim() ?? ''
   const prompt = buildStructuredExplorePrompt(body)
-  const filterHint = buildFilterIcpHint(body?.filters)
+  const filterHint = buildFilterIcpHint(activeFilters)
   const icpHint = [body?.icp_hint?.trim() ?? '', filterHint]
     .filter(Boolean)
     .join('\n')
     .slice(0, MAX_ICP_HINT_LENGTH)
-  if (prompt.length < 8) {
-    return NextResponse.json({ error: 'Add a more specific targeting prompt.' }, { status: 400 })
-  }
   if (prompt.length > MAX_PROMPT_LENGTH) {
     return NextResponse.json({ error: `Prompt is too long. Keep prompted discovery under ${MAX_PROMPT_LENGTH} characters.` }, { status: 400 })
   }
@@ -115,13 +182,31 @@ export async function POST(request: Request) {
 
   const runId = run?.id ?? null
 
-  const requestedCount = extractRequestedLeadCount(prompt) ?? DEFAULT_RESULTS
   const targetCount = Math.max(1, Math.min(MAX_RESULTS, EXPLORE_LIMITS.maxResults, requestedCount))
   const generatedLeads: ExploreLeadSuggestion[] = []
   let generationFailure: Awaited<ReturnType<typeof generateExploreLeads>> | null = null
   const excludedCompanies = new Set<string>()
 
-  while (generatedLeads.length < targetCount) {
+  const apolloSuggestions = await generateApolloExploreSuggestions({
+    prompt: rawPrompt,
+    count: Math.min(targetCount, APOLLO_EXPLORE_MAX_RESULTS),
+    workspaceIcpContext,
+    useWorkspaceIcp,
+    filters: activeFilters,
+    excludedCompanies,
+  })
+
+  for (const suggestion of apolloSuggestions) {
+    const key = normalizeExploreCompanyKey(suggestion.company_name, suggestion.company_domain)
+    if (excludedCompanies.has(key)) continue
+    excludedCompanies.add(key)
+    generatedLeads.push(suggestion)
+    if (generatedLeads.length >= targetCount) break
+  }
+
+  const allowDeepseekFallback = process.env.APOLLO_EXPLORE_DEEPSEEK_FALLBACK === 'true'
+
+  while (allowDeepseekFallback && generatedLeads.length < targetCount) {
     const remaining = targetCount - generatedLeads.length
     const generation = await generateExploreLeads({
       prompt,
@@ -130,7 +215,7 @@ export async function POST(request: Request) {
       useWorkspaceIcp,
       count: Math.min(MAX_GENERATION_BATCH_SIZE, remaining),
       excludeCompanies: [...excludedCompanies],
-      filters: body?.filters ?? {},
+      filters: activeFilters,
     })
 
     if (!generation.ok) {
@@ -147,7 +232,7 @@ export async function POST(request: Request) {
       if (lead.company_domain && process.env.APOLLO_API_KEY) {
         const apolloCompany = await apolloCompanyEnrich(lead.company_domain)
         if (apolloCompany) {
-          const filterCheck = apolloCompanyMatchesFilters(apolloCompany, body?.filters ?? {})
+          const filterCheck = apolloCompanyMatchesFilters(apolloCompany, activeFilters)
           if (!filterCheck.matches) {
             console.log('[explore] Apollo filter reject:', lead.company_name, filterCheck.reason)
             excludedCompanies.add(key)
@@ -362,67 +447,392 @@ export async function POST(request: Request) {
     leads,
     duration_ms: Date.now() - startedAt,
     message: inserted > 0
-      ? `Added ${inserted} of ${targetCount} requested explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : ' directly from the prompt.'}`
+      ? `Added ${inserted} of ${targetCount} requested explore ${inserted === 1 ? 'lead' : 'leads'}${useWorkspaceIcp ? ' using workspace ICP context.' : '.'}`
       : duplicates > 0 && sourceErrors === 0 && leadErrors === 0
           ? `Found ${duplicates} duplicate explore ${duplicates === 1 ? 'lead' : 'leads'} and added no new ones.`
           : 'No new explore leads were added due to save errors.',
   })
 }
 
+async function generateApolloExploreSuggestions(params: {
+  prompt: string
+  count: number
+  workspaceIcpContext: string
+  useWorkspaceIcp: boolean
+  filters: ExploreFilters
+  excludedCompanies: Set<string>
+}): Promise<ExploreLeadSuggestion[]> {
+  if (process.env.APOLLO_EXPLORE_ENABLED === 'false') return []
+  if (!process.env.APOLLO_API_KEY) return []
+
+  const query = buildApolloExploreQuery({
+    prompt: params.prompt,
+  })
+
+  const revenueRange = parseRevenueRangeFilter(params.filters.revenue)
+  const employeeRange = normalizeEmployeeRangeFilter(params.filters.employee_count)
+    ?? mapMarketSegmentToEmployeeRange(params.filters.market_segment)
+  const fundingFilter = mapFundingFilter(params.filters.funding)
+  const signalFilter = mapSignalFilter(params.filters.signal)
+  const orgs = await apolloOrganizationSearch({
+    query,
+    page: 1,
+    perPage: Math.max(10, Math.min(params.count * 4, 100)),
+    industry: params.filters.industry ?? null,
+    region: mapRegionFilterToApolloLocations(params.filters.region) ?? null,
+    employeeRange,
+    revenueMin: revenueRange?.min ?? null,
+    revenueMax: revenueRange?.max ?? null,
+    latestFundingMin: fundingFilter?.latestFundingMin ?? null,
+    latestFundingMax: fundingFilter?.latestFundingMax ?? null,
+    latestFundingDateMin: fundingFilter?.latestFundingDateMin ?? null,
+    latestFundingDateMax: fundingFilter?.latestFundingDateMax ?? null,
+    jobTitles: signalFilter?.jobTitles ?? null,
+    minOpenJobs: signalFilter?.minOpenJobs ?? null,
+    maxOpenJobs: signalFilter?.maxOpenJobs ?? null,
+    jobPostedDateMin: signalFilter?.jobPostedDateMin ?? null,
+    jobPostedDateMax: signalFilter?.jobPostedDateMax ?? null,
+  })
+  if (orgs.length === 0) return []
+
+  const terms = buildExploreSearchTerms({
+    prompt: params.prompt,
+    queries: params.workspaceIcpContext ? [params.workspaceIcpContext] : [],
+  })
+
+  const ranked = rankExploreCandidates(
+    orgs
+      .filter(org => {
+        const key = normalizeExploreCompanyKey(org.name, org.domain || null)
+        return !params.excludedCompanies.has(key)
+      })
+      .map(org => {
+        const filterCheck = apolloCompanyMatchesFilters(org, params.filters)
+        if (!filterCheck.matches) return null
+
+        const text = [
+          org.name,
+          org.industry ?? '',
+          org.location ?? '',
+        ].join(' ').toLowerCase()
+        const termScore = scoreExploreSourceItem(text, terms)
+        const score = Math.max(4, Math.min(10, 4 + Math.round(termScore / 3)))
+        const reasonBits = [
+          org.industry ? `${org.industry} company` : 'B2B company',
+          org.location ? `in ${org.location}` : null,
+          params.filters.employee_count && org.employee_count
+            ? `${org.employee_count} employees`
+            : null,
+        ].filter(Boolean)
+
+        const summary = [
+          `${org.name} matches your account search criteria`,
+          reasonBits.length > 0 ? `(${reasonBits.join(', ')}).` : '.',
+        ].join(' ')
+
+        const derivedSignalType = resolveExploreSignalTypeFromFilters(params.filters)
+        return {
+          candidate: {
+            company_name: org.name,
+            company_domain: org.domain || null,
+            signal_type: derivedSignalType,
+            headline: `${org.name} matches your explore target criteria`,
+            summary,
+            relevance_reason: params.useWorkspaceIcp
+              ? 'Matched prompt intent and workspace ICP constraints using Apollo company search.'
+              : 'Matched prompt intent using Apollo company search.',
+            relevance_score: score,
+          },
+          score,
+          publishedAt: new Date().toISOString(),
+        }
+      })
+      .filter((row): row is { candidate: ExploreLeadSuggestion; score: number; publishedAt: string } => Boolean(row)),
+  )
+
+  return ranked.slice(0, params.count).map(row => row.candidate)
+}
+
+function buildApolloExploreQuery(params: {
+  prompt: string
+}): string {
+  const prompt = params.prompt.trim()
+  if (!prompt) return ''
+  const terms = buildExploreSearchTerms({
+    prompt,
+    queries: [],
+  })
+
+  const compact = terms
+    .filter(term => /^[a-z0-9][a-z0-9+.#-]{1,31}$/i.test(term))
+    .slice(0, 8)
+
+  return compact.join(' ').trim()
+}
+
+function parseRevenueRangeFilter(value: string | undefined): { min?: number; max?: number } | null {
+  switch (value) {
+    case 'Under $1M':
+      return { max: 1_000_000 }
+    case '$1M-$10M':
+      return { min: 1_000_000, max: 10_000_000 }
+    case '$10M-$50M':
+      return { min: 10_000_000, max: 50_000_000 }
+    case '$50M-$250M':
+      return { min: 50_000_000, max: 250_000_000 }
+    case '$250M+':
+      return { min: 250_000_000 }
+    default:
+      return null
+  }
+}
+
+function mapMarketSegmentToEmployeeRange(value: string | undefined): string | null {
+  switch (value) {
+    case 'SMB':
+      return '1,50'
+    case 'Mid-Market':
+      return '51,500'
+    case 'Enterprise':
+      return '501,100000'
+    default:
+      return null
+  }
+}
+
+function mapFundingFilter(value: string | undefined): {
+  latestFundingMin?: number
+  latestFundingMax?: number
+  latestFundingDateMin?: string
+  latestFundingDateMax?: string
+} | null {
+  if (!value) return null
+  const today = new Date()
+  const iso = (daysAgo: number) => {
+    const date = new Date(today)
+    date.setUTCDate(date.getUTCDate() - daysAgo)
+    return date.toISOString().slice(0, 10)
+  }
+
+  switch (value) {
+    case 'Funded in last 90 days':
+      return { latestFundingDateMin: iso(90), latestFundingDateMax: iso(0) }
+    case 'Funded in last 180 days':
+      return { latestFundingDateMin: iso(180), latestFundingDateMax: iso(0) }
+    case 'Latest round $1M-$10M':
+      return { latestFundingMin: 1_000_000, latestFundingMax: 10_000_000 }
+    case 'Latest round $10M-$50M':
+      return { latestFundingMin: 10_000_000, latestFundingMax: 50_000_000 }
+    case 'Latest round $50M+':
+      return { latestFundingMin: 50_000_000 }
+    default:
+      return null
+  }
+}
+
+function mapSignalFilter(value: string | undefined): {
+  jobTitles?: string[]
+  minOpenJobs?: number
+  maxOpenJobs?: number
+  jobPostedDateMin?: string
+  jobPostedDateMax?: string
+} | null {
+  if (!value) return null
+  const today = new Date()
+  const iso = (daysAgo: number) => {
+    const date = new Date(today)
+    date.setUTCDate(date.getUTCDate() - daysAgo)
+    return date.toISOString().slice(0, 10)
+  }
+
+  switch (value) {
+    case 'Actively hiring':
+      return { minOpenJobs: 5, jobPostedDateMin: iso(30), jobPostedDateMax: iso(0) }
+    case 'High hiring volume':
+      return { minOpenJobs: 20, jobPostedDateMin: iso(45), jobPostedDateMax: iso(0) }
+    case 'Sales hiring':
+      return {
+        jobTitles: ['sales manager', 'account executive', 'sales development representative'],
+        minOpenJobs: 3,
+        jobPostedDateMin: iso(45),
+        jobPostedDateMax: iso(0),
+      }
+    case 'Engineering hiring':
+      return {
+        jobTitles: ['software engineer', 'engineering manager', 'backend engineer'],
+        minOpenJobs: 3,
+        jobPostedDateMin: iso(45),
+        jobPostedDateMax: iso(0),
+      }
+    default:
+      return null
+  }
+}
+
+function normalizeEmployeeRangeFilter(value: string | undefined): string | null {
+  switch (value) {
+    case '1-10':
+      return '1,10'
+    case '11-50':
+      return '11,50'
+    case '51-200':
+      return '51,200'
+    case '201-500':
+      return '201,500'
+    case '501-1000':
+      return '501,1000'
+    case '1001-5000':
+      return '1001,5000'
+    case '5000+':
+      return '5000,100000'
+    default:
+      return null
+  }
+}
+
+function resolveExploreSignalTypeFromFilters(
+  filters: ExploreFilters,
+): ExploreLeadSuggestion['signal_type'] {
+  if (filters.funding) return 'funding'
+  if (filters.signal === 'Actively hiring' || filters.signal === 'High hiring volume' || filters.signal === 'Sales hiring' || filters.signal === 'Engineering hiring') {
+    return 'hiring'
+  }
+  return 'expansion'
+}
+
+function mapRegionFilterToApolloLocations(value: string | undefined): string[] | null {
+  switch (value) {
+    case 'United States':
+      return ['United States']
+    case 'North America':
+      return ['United States', 'Canada', 'Mexico']
+    case 'United Kingdom':
+      return ['United Kingdom']
+    case 'Europe':
+      return ['United Kingdom', 'Germany', 'France', 'Spain', 'Italy', 'Netherlands', 'Sweden', 'Ireland', 'Switzerland']
+    case 'India':
+      return ['India']
+    case 'Asia Pacific':
+      return ['India', 'Singapore', 'Australia', 'New Zealand', 'Japan', 'South Korea', 'Hong Kong']
+    case 'Middle East':
+      return ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman', 'Israel']
+    case 'Global English-speaking markets':
+      return ['United States', 'United Kingdom', 'Canada', 'Australia', 'New Zealand', 'Ireland', 'Singapore']
+    default:
+      return null
+  }
+}
+
 function buildStructuredExplorePrompt(body: {
   prompt?: string
   count?: number
-  filters?: {
-    industry?: string
-    region?: string
-    revenue?: string
-    employee_count?: string
-  }
+  filters?: ExploreFilters
 } | null): string {
   const basePrompt = body?.prompt?.trim() ?? ''
-  const filters = body?.filters ?? {}
-  const count = Number.isFinite(body?.count) ? Math.round(Number(body?.count)) : DEFAULT_RESULTS
-  const normalizedCount = Math.max(1, Math.min(MAX_RESULTS, EXPLORE_LIMITS.maxResults, count))
+  const filters = normalizeExploreFilters(body?.filters)
+  const normalizedCount = normalizeExploreCount(body?.count)
   const filterLines = [
     filters.industry ? `Industry: ${filters.industry}` : '',
     filters.region ? `Region: ${filters.region}` : '',
     filters.revenue ? `Revenue: ${filters.revenue}` : '',
     filters.employee_count ? `Employee count: ${filters.employee_count}` : '',
+    filters.market_segment ? `Market segment: ${filters.market_segment}` : '',
+    filters.funding ? `Funding: ${filters.funding}` : '',
+    filters.signal ? `Signal: ${filters.signal}` : '',
   ].filter(Boolean)
 
-  if (filterLines.length === 0) return basePrompt
+  if (filterLines.length === 0) {
+    return basePrompt || `Find ${normalizedCount} B2B companies for outbound prospecting.`
+  }
 
   return [
-    `Find ${normalizedCount} B2B companies that match our ICP and these lead generation filters.`,
+    `Find ${normalizedCount} B2B companies for outbound prospecting with these filters.`,
     ...filterLines,
     basePrompt ? `Additional targeting notes: ${basePrompt}` : '',
     'Prioritize accounts with a likely current GTM pain, buying trigger, or operational urgency.',
   ].filter(Boolean).join('\n')
 }
 
-function buildFilterIcpHint(filters?: {
-  industry?: string
-  region?: string
-  revenue?: string
-  employee_count?: string
-}): string {
+function buildFilterIcpHint(filters?: ExploreFilters): string {
   if (!filters) return ''
   return [
     filters.industry ? `Target industry: ${filters.industry}` : '',
     filters.region ? `Target region: ${filters.region}` : '',
     filters.revenue ? `Target revenue: ${filters.revenue}` : '',
     filters.employee_count ? `Target employee count: ${filters.employee_count}` : '',
+    filters.market_segment ? `Target market segment: ${filters.market_segment}` : '',
+    filters.funding ? `Funding signal: ${filters.funding}` : '',
+    filters.signal ? `Operating signal: ${filters.signal}` : '',
   ].filter(Boolean).join('\n')
 }
 
-function extractRequestedLeadCount(prompt: string): number | null {
-  const explicit = prompt.match(/\b(\d{1,3})\s*(?:leads?|companies|accounts|prospects|targets)\b/i)
-  const fallback = prompt.match(/\b(?:find|give|generate|return|show|source|get)\s+(\d{1,3})\b/i)
-  const raw = explicit?.[1] ?? fallback?.[1]
-  if (!raw) return null
-  const value = Number(raw)
-  if (!Number.isFinite(value) || value <= 0) return null
-  return Math.round(value)
+type ExploreFilters = {
+  industry?: string
+  region?: string
+  revenue?: string
+  employee_count?: string
+  market_segment?: string
+  funding?: string
+  signal?: string
+}
+
+function validateExploreFilters(filters: ExploreFilters | undefined): string[] {
+  if (!filters) return []
+  const invalid: string[] = []
+  const validate = (label: string, value: string | undefined, allowed: Set<string>) => {
+    if (!value) return
+    const trimmed = value.trim()
+    if (!trimmed || trimmed.startsWith('Any')) return
+    if (!allowed.has(trimmed)) invalid.push(`${label}:${trimmed}`)
+  }
+
+  validate('industry', filters.industry, ALLOWED_INDUSTRIES)
+  validate('region', filters.region, ALLOWED_REGIONS)
+  validate('revenue', filters.revenue, ALLOWED_REVENUE)
+  validate('employee_count', filters.employee_count, ALLOWED_EMPLOYEE_COUNTS)
+  validate('market_segment', filters.market_segment, ALLOWED_MARKET_SEGMENTS)
+  validate('funding', filters.funding, ALLOWED_FUNDING)
+  validate('signal', filters.signal, ALLOWED_SIGNALS)
+
+  return invalid
+}
+
+function normalizeExploreFilters(filters: ExploreFilters | undefined): ExploreFilters {
+  if (!filters) return {}
+  const normalizeValue = (value: string | undefined, allowed: Set<string>): string => {
+    if (!value) return ''
+    const trimmed = value.trim()
+    if (trimmed.startsWith('Any')) return ''
+    return allowed.has(trimmed) ? trimmed : ''
+  }
+
+  return {
+    industry: normalizeValue(filters.industry, ALLOWED_INDUSTRIES),
+    region: normalizeValue(filters.region, ALLOWED_REGIONS),
+    revenue: normalizeValue(filters.revenue, ALLOWED_REVENUE),
+    employee_count: normalizeValue(filters.employee_count, ALLOWED_EMPLOYEE_COUNTS),
+    market_segment: normalizeValue(filters.market_segment, ALLOWED_MARKET_SEGMENTS),
+    funding: normalizeValue(filters.funding, ALLOWED_FUNDING),
+    signal: normalizeValue(filters.signal, ALLOWED_SIGNALS),
+  }
+}
+
+function normalizeExploreCount(value: unknown): number {
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : DEFAULT_RESULTS
+  if (EXPLORE_RESULT_OPTIONS.includes(numeric as (typeof EXPLORE_RESULT_OPTIONS)[number])) return numeric
+  return DEFAULT_RESULTS
+}
+
+function hasAnyFilter(filters: ExploreFilters): boolean {
+  return Boolean(
+    filters.industry ||
+    filters.region ||
+    filters.revenue ||
+    filters.employee_count ||
+    filters.market_segment ||
+    filters.funding ||
+    filters.signal
+  )
 }
 
 function normalizeExploreCompanyKey(companyName: string, companyDomain: string | null): string {

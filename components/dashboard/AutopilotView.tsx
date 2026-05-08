@@ -15,6 +15,20 @@ interface ExploreSession {
   autopilot_status: string
 }
 
+interface PreflightResult {
+  status: 'pass' | 'fail' | 'no_eligible_leads'
+  sampled: number
+  passed: number
+  blocked: number
+  details: Array<{
+    lead_id: string
+    company: string
+    passed: boolean
+    reasons: string[]
+    recipient_email: string | null
+  }>
+}
+
 export default function AutopilotView() {
   const [liveAutopilotOn, setLiveAutopilotOn] = useState(false)
   const [exploreDailyLimit, setExploreDailyLimit] = useState(3)
@@ -132,8 +146,22 @@ export default function AutopilotView() {
         }),
       })
       const data = await res.json().catch(() => null) as { error?: string } | null
-      if (!res.ok) { setMsg(data?.error ?? 'Failed to save settings.'); return }
-      setMsg('GTM engine settings saved')
+      const preflight = (data as { preflight?: PreflightResult } | null)?.preflight
+      if (!res.ok) {
+        if (preflight?.status === 'fail') {
+          setMsg(`Preflight failed: ${preflight.blocked}/${preflight.sampled} sampled leads were blocked.`)
+        } else {
+          setMsg(data?.error ?? 'Failed to save settings.')
+        }
+        return
+      }
+      if (preflight?.status === 'pass') {
+        setMsg(`GTM engine saved · preflight passed on ${preflight.passed}/${preflight.sampled} sampled leads.`)
+      } else if (preflight?.status === 'no_eligible_leads') {
+        setMsg('GTM engine saved · no eligible leads for preflight yet.')
+      } else {
+        setMsg('GTM engine settings saved')
+      }
     } catch { setMsg('Failed to save settings.') }
     finally { setSaving(false) }
   }, [liveAutopilotOn, accountId, requireVerified, minScore, maxAge, dailyLimit, exploreDailyLimit, spacing, sessions])

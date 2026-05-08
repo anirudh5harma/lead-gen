@@ -37,8 +37,12 @@ import {
 import { cheapJunkFilter, stableCandidateHash } from '../lib/signal-filter.ts'
 import { draftOutreachEmail, repairOutreachBodyTriggerOpening, sanitizePublicSignalSummary } from '../lib/deepseek.ts'
 import { checkAgentRateLimit } from '../lib/a2a/rate-limit.ts'
+import { evaluateOutreachDraftQuality } from '../lib/gtm/draft-eval.ts'
+import { classifyFailureTaxonomy, scoreEvalTrace } from '../lib/gtm/eval-traces.ts'
+import { buildApolloPersonTitles, contactTitleMatchesRoles, normalizeRoleSelection } from '../lib/contact-targeting.ts'
+import { apolloCompanyMatchesFilters } from '../lib/apollo.ts'
 
-test('free workspace keeps every unarchived client visible', () => {
+test('free workspace keeps only the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
     plan: 'free',
     activeClientId: 'client_b',
@@ -48,9 +52,9 @@ test('free workspace keeps every unarchived client visible', () => {
     ],
   })
 
-  assert.deepEqual(plan.visibleClientIds, ['client_a', 'client_b'])
+  assert.deepEqual(plan.visibleClientIds, ['client_b'])
   assert.equal(plan.keepClientId, 'client_b')
-  assert.deepEqual(plan.archiveClientIds, [])
+  assert.deepEqual(plan.archiveClientIds, ['client_a'])
 })
 
 test('free workspace falls back to the oldest available workspace when active is missing', () => {
@@ -63,8 +67,9 @@ test('free workspace falls back to the oldest available workspace when active is
     ],
   })
 
-  assert.deepEqual(plan.visibleClientIds, ['client_a', 'client_b'])
+  assert.deepEqual(plan.visibleClientIds, ['client_a'])
   assert.equal(plan.keepClientId, 'client_a')
+  assert.deepEqual(plan.archiveClientIds, ['client_b'])
 })
 
 test('archived workspace is unarchived when it is the only available workspace', () => {
@@ -84,6 +89,17 @@ test('archived workspace is unarchived when it is the only available workspace',
 
 test('agent rate limiter treats zero tier limits as unlimited', async () => {
   const supabase = {
+    rpc() {
+      return {
+        data: [{
+          allowed: true,
+          remaining: 2147483647,
+          reset_at: new Date(Date.now() + 60_000).toISOString(),
+          window: 'minute',
+        }],
+        error: null,
+      }
+    },
     from() {
       return {
         select() {
@@ -111,6 +127,68 @@ test('agent rate limiter treats zero tier limits as unlimited', async () => {
     assert.equal(result.allowed, true)
     assert.ok(result.remaining > 1000)
   }
+})
+
+test('outreach draft quality evaluator flags duplicate company trigger opening', () => {
+  const result = evaluateOutreachDraftQuality({
+    subject: 'Quick thought on your funding',
+    body: 'Angelika, noticed Dreamteam around Dreamteam.\n\nThis usually creates GTM pressure.\n\nOpen to a quick call?',
+    greeting: 'Angelika',
+    targetCompany: 'Dreamteam',
+    signalType: 'funding',
+    signalSummary: 'Dreamteam is in talks to raise a Series A round.',
+  })
+
+  assert.ok(result.score < 80)
+  assert.ok(result.failed.includes('trigger_opening_sane'))
+})
+
+test('outreach draft quality evaluator rewards signal-aligned structure', () => {
+  const result = evaluateOutreachDraftQuality({
+    subject: 'Funding motion at Dreamteam',
+    body: 'Angelika,\n\nDreamteam\'s funding process usually creates immediate pressure to prioritize the right accounts and tighten outbound focus.\n\nWe help teams turn those funding and hiring signals into concrete first-touch sequences with verified contacts.\n\nWorth a 15-minute comparison this week?',
+    greeting: 'Angelika',
+    targetCompany: 'Dreamteam',
+    signalType: 'funding',
+    signalSummary: 'Dreamteam is in talks to raise a $40M Series A.',
+  })
+
+  assert.ok(result.score >= 80)
+  assert.ok(!result.failed.includes('trigger_opening_sane'))
+  assert.ok(!result.failed.includes('signal_alignment'))
+  assert.ok(!result.failed.includes('recipient_greeting'))
+})
+
+test('eval traces classify contact-related blocks correctly', () => {
+  const taxonomy = classifyFailureTaxonomy({
+    status: 'blocked',
+    reasons: ['contact_not_verified', 'recipient_verification_required'],
+  })
+  assert.equal(taxonomy, 'contact_quality')
+})
+
+test('eval traces classify runtime send errors as inbox or runtime faults', () => {
+  assert.equal(classifyFailureTaxonomy({
+    status: 'blocked',
+    reasons: ['no_connected_inbox'],
+    errorMessage: 'No sending account connected',
+  }), 'inbox_config')
+
+  assert.equal(classifyFailureTaxonomy({
+    status: 'failed',
+    reasons: ['runtime_send_failure'],
+    errorMessage: 'Upstream network timeout',
+  }), 'provider_transient')
+})
+
+test('eval trace scoring rewards pass and penalizes blocked reason stacks', () => {
+  const passed = scoreEvalTrace({ status: 'passed', reasons: [], draftQualityScore: 82 })
+  const blocked = scoreEvalTrace({ status: 'blocked', reasons: ['contact_not_verified', 'recipient_verification_required'] })
+  const failed = scoreEvalTrace({ status: 'failed', reasons: ['runtime_send_failure'] })
+
+  assert.ok(passed >= 80)
+  assert.ok(blocked < 50)
+  assert.ok(failed < blocked)
 })
 
 test('outreach context prefers client branding and falls back to user branding', () => {
@@ -1211,4 +1289,48 @@ test('gtm body previews collapse whitespace and bound stored context', () => {
   const preview = bodyPreview(' First line\n\nSecond\tline '.repeat(20), 40)
   assert.equal(preview.length, 40)
   assert.equal(preview.includes('\n'), false)
+})
+
+test('role selection normalizes and deduplicates known role keys', () => {
+  const selected = normalizeRoleSelection(['sales', 'Sales', 'executive', 'unknown', '', 'sales'])
+  assert.deepEqual(selected, ['sales', 'executive'])
+})
+
+test('apollo titles and title matching stay aligned with role filters', () => {
+  const titles = buildApolloPersonTitles(['sales', 'executive'])
+  assert.equal(titles.includes('Head of Sales'), true)
+  assert.equal(titles.includes('Chief Executive Officer'), true)
+  assert.equal(contactTitleMatchesRoles('VP of Sales', ['sales']), true)
+  assert.equal(contactTitleMatchesRoles('Head of Product', ['sales']), false)
+})
+
+test('apollo company filter matching supports full employee and revenue ranges', () => {
+  const enterprise = {
+    name: 'Acme',
+    domain: 'acme.com',
+    employee_count: 5400,
+    annual_revenue: 80_000_000,
+    location: 'Austin, Texas, United States',
+  }
+
+  assert.equal(
+    apolloCompanyMatchesFilters(enterprise, { employee_count: '5000+', revenue: '$50M-$250M' }).matches,
+    true,
+  )
+  assert.equal(
+    apolloCompanyMatchesFilters(enterprise, { revenue: 'Under $1M' }).matches,
+    false,
+  )
+})
+
+test('apollo company filter matching supports region aliases', () => {
+  const company = {
+    name: 'Northstar',
+    domain: 'northstar.com',
+    location: 'Seattle, Washington, USA',
+  }
+  assert.equal(
+    apolloCompanyMatchesFilters(company, { region: 'United States' }).matches,
+    true,
+  )
 })

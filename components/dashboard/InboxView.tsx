@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import type { Lead } from "@/lib/leads"
 import type { GtmWorkItem, LaunchReadinessSnapshot, View } from './types'
 import { TabLoadingState, formatDateTime } from './shared'
+import { CONTACT_ROLE_OPTIONS, type ContactRoleKey } from '@/lib/contact-targeting'
 
 interface Props {
   leads: Lead[]
@@ -144,6 +145,7 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
   const [queueView, setQueueView] = useState<WorkQueueView>('priority')
   const [visibleLimit, setVisibleLimit] = useState(20)
   const [draftDrawer, setDraftDrawer] = useState<{ item: GtmWorkItem; draft: OutreachDraftPreview | null; loading: boolean; error: string | null } | null>(null)
+  const [targetRoles, setTargetRoles] = useState<ContactRoleKey[]>([])
 
   useEffect(() => {
     if (!toast) return
@@ -233,7 +235,12 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
     setBusyItemId(item.id)
     setDraftDrawer({ item, draft: null, loading: true, error: null })
     try {
-      const res = await fetch(`/api/leads/${item.lead_id}/draft`, { method: 'POST', cache: 'no-store' })
+      const res = await fetch(`/api/leads/${item.lead_id}/draft`, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_roles: targetRoles }),
+      })
       const data = await res.json().catch(() => null) as { draft?: OutreachDraftPreview; error?: string } | null
       if (!res.ok || !data?.draft) {
         setDraftDrawer({ item, draft: null, loading: false, error: data?.error ?? 'Unable to prepare draft.' })
@@ -303,6 +310,10 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
     setToast({ id: Date.now(), tone, message })
   }
 
+  function toggleTargetRole(role: ContactRoleKey) {
+    setTargetRoles(prev => prev.includes(role) ? prev.filter(existing => existing !== role) : [...prev, role])
+  }
+
   return (
     <>
     <section className="card overflow-hidden">
@@ -340,6 +351,25 @@ function WorkInboxPanel({ items, error, fallbackApprovals }: { items: GtmWorkIte
             ))}
           </div>
           <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-1 lg:flex">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-4)]">Roles</span>
+              {CONTACT_ROLE_OPTIONS.map(option => {
+                const selected = targetRoles.includes(option.key)
+                return (
+                  <button
+                    key={option.key}
+                    onClick={() => toggleTargetRole(option.key)}
+                    className={`rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors ${
+                      selected
+                        ? 'border-[var(--color-accent)] bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
+                        : 'border-[var(--color-line-2)] bg-white text-[var(--color-text-4)] hover:text-[var(--color-text-2)]'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
             {reminderItems.length > 0 && (
               <button
                 onClick={closeFollowupReminders}
@@ -570,6 +600,7 @@ interface OutreachDraftPreview {
     from_cache?: boolean
     resolved_domain?: string | null
     contact_count?: number
+    target_roles?: ContactRoleKey[]
   }
 }
 

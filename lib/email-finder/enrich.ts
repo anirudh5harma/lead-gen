@@ -14,18 +14,28 @@ import {
 import { cleanPersonName, emailContainsProfessionalSuffix } from '../person-normalization'
 import { normalizeLeadCompanyKey } from '../lead-dedupe'
 import { normalizeLeadFeedSnapshot } from '../lead-sources'
+import {
+  buildApolloPersonTitles,
+  contactTitleMatchesRoles,
+  type ContactRoleKey,
+} from '../contact-targeting'
 
 const CACHE_TTL_DAYS = 30
 const VERIFIED_SEND_CACHE_TTL_DAYS = 7
 const VALIDATION_CACHE_TTL_DAYS = 90
 const RETRY_AFTER_DAYS = 21
-const MAX_CONTACTS_PER_COMPANY = 4
+const MAX_CONTACTS_PER_COMPANY = 3
 const TARGET_SAFE_CONTACTS = 3
 const MIN_SAFE_CONTACTS = 1
-const MAX_DIRECT_CANDIDATES = 6
+const MAX_DIRECT_CANDIDATES = 5
 const MAX_PATTERN_PEOPLE = 3
 const MAX_PATTERNS_PER_PERSON = 2
 const MAX_ROLE_FALLBACKS = 3
+const MIN_DIRECT_EMAILS_BEFORE_SKIPPING_FULLENRICH = 2
+const VALIDATION_MULTIPLIER_DIRECT = 2
+const VALIDATION_MULTIPLIER_PATTERN = 2
+const VALIDATION_MULTIPLIER_ROLE = 1
+const CONTACT_PROVIDER_MODE_DEFAULT = 'apollo_fullenrich'
 
 type ContactSource = 'apollo' | 'fullenrich' | 'hunter' | 'pattern' | 'scrape'
 type ResolutionMethod = 'direct' | 'pattern' | 'role'
@@ -71,6 +81,12 @@ interface RoleFallbackCandidate {
   title: string
   email: string
   baseScore: number
+}
+
+interface ContactResolutionResult {
+  contacts: EnrichedContact[]
+  resolvedDomain: string | null
+  metrics: EnrichMetrics
 }
 
 interface ValidationCacheRow {
@@ -119,6 +135,8 @@ export interface EnrichResult {
   fromCache: boolean
   metrics: EnrichMetrics
 }
+
+const inFlightContactResolution = new Map<string, Promise<ContactResolutionResult>>()
 
 async function readCache(
   domain: string | null,
@@ -227,6 +245,15 @@ function rankForUser(
   maxContacts = MAX_CONTACTS_PER_COMPANY,
 ): EnrichedContact[] {
   return rankContactsForUseCase(contacts, servicesDescription, signalType).slice(0, maxContacts)
+}
+
+function filterContactsByRolePreference(
+  contacts: EnrichedContact[],
+  targetRoles?: ContactRoleKey[],
+): EnrichedContact[] {
+  if (!targetRoles || targetRoles.length === 0) return contacts
+  const filtered = contacts.filter(contact => contactTitleMatchesRoles(contact.title, targetRoles))
+  return filtered.length > 0 ? filtered : contacts
 }
 
 function splitName(fullName: string): { firstName: string; lastName: string } {
@@ -440,24 +467,57 @@ async function verifyEmailsWithCache(
 async function collectCandidatePeople(
   companyName: string,
   companyDomain: string | null,
+  options?: {
+    targetRoles?: ContactRoleKey[]
+    maxApolloCandidates?: number
+  },
 ): Promise<{ resolvedDomain: string | null; people: CandidatePerson[]; hunterPattern: string | null }> {
-  // Apollo is the primary people source (2-step: search + enrich for emails).
-  // FullEnrich is fallback when Apollo returns nothing or plan doesn't support it.
-  // Hunter provides email patterns and known contacts.
-  const [apolloPeople, fullEnrichPeople, scrapedPeople, hunterResult] = await Promise.all([
-    companyDomain ? apolloFindAndEnrichPeople(companyDomain) : Promise.resolve([]),
-    searchFullEnrichPeople(companyName, companyDomain),
+  const providerMode = (process.env.CONTACT_PROVIDER_MODE || CONTACT_PROVIDER_MODE_DEFAULT).toLowerCase()
+  const fullEnrichEnabled = process.env.FULLENRICH_ENABLED !== 'false' && (
+    providerMode === 'apollo_fullenrich' || providerMode === 'all'
+  )
+  const hunterEnabled = process.env.HUNTER_ENABLED !== 'false' && (
+    providerMode === 'apollo_hunter' || providerMode === 'all'
+  )
+  const apolloPersonTitles = buildApolloPersonTitles(options?.targetRoles)
+  const maxApolloCandidates = Math.max(6, Math.min(options?.maxApolloCandidates ?? 9, 15))
+
+  // Stage 1: cheaper/high-confidence sources first.
+  const [apolloPeople, scrapedPeople, hunterResult] = await Promise.all([
+    companyDomain
+      ? apolloFindAndEnrichPeople(companyDomain, {
+          selectedRoles: options?.targetRoles,
+          personTitles: apolloPersonTitles,
+          maxEnrichCandidates: maxApolloCandidates,
+        })
+      : Promise.resolve([]),
     companyDomain ? scrapeCompanyPeople(companyDomain) : Promise.resolve([]),
-    companyDomain ? hunterDomainSearch(companyDomain) : Promise.resolve({ emailPattern: null, contacts: [] }),
+    (companyDomain && hunterEnabled)
+      ? hunterDomainSearch(companyDomain)
+      : Promise.resolve({ emailPattern: null, contacts: [] }),
   ])
+
+  const apolloDirectEmailCount = apolloPeople.reduce((count, person) => (
+    count + (typeof person.email === 'string' && person.email.trim() ? 1 : 0)
+  ), 0)
+
+  // Stage 2: call FullEnrich only when primary sources look thin.
+  const shouldUseFullEnrich = fullEnrichEnabled && (
+    apolloPeople.length === 0 || apolloDirectEmailCount < MIN_DIRECT_EMAILS_BEFORE_SKIPPING_FULLENRICH
+  )
+  const fullEnrichPeople = shouldUseFullEnrich
+    ? await searchFullEnrichPeople(companyName, companyDomain)
+    : []
 
   let resolvedDomain = companyDomain
   if (!resolvedDomain) {
     resolvedDomain = extractMostCommonDomain(apolloPeople) || extractMostCommonDomain(fullEnrichPeople)
   }
 
-  // Use Apollo as primary source. If Apollo returns no people, fall back to FullEnrich.
-  const primaryPeople = apolloPeople.length > 0 ? apolloPeople : fullEnrichPeople
+  // Use Apollo as primary source. If Apollo is sparse, enrich with FullEnrich.
+  const primaryPeople = apolloPeople.length > 0
+    ? apolloPeople.concat(fullEnrichPeople)
+    : fullEnrichPeople
 
   const people: CandidatePerson[] = [
     ...primaryPeople.map(person => ({
@@ -509,11 +569,22 @@ async function resolveContacts(
   companyName: string,
   companyDomain: string | null,
   supabase: SupabaseClient,
-): Promise<{ contacts: EnrichedContact[]; resolvedDomain: string | null; metrics: EnrichMetrics }> {
-  const { people, resolvedDomain, hunterPattern } = await collectCandidatePeople(companyName, companyDomain)
+  options?: {
+    targetSafeContacts?: number
+    minSafeContacts?: number
+    targetRoles?: ContactRoleKey[]
+  },
+): Promise<ContactResolutionResult> {
+  const targetSafeContacts = Math.max(1, Math.min(6, Math.round(options?.targetSafeContacts ?? TARGET_SAFE_CONTACTS)))
+  const { people, resolvedDomain, hunterPattern } = await collectCandidatePeople(companyName, companyDomain, {
+    targetRoles: options?.targetRoles,
+    maxApolloCandidates: Math.max(targetSafeContacts * 3, 6),
+  })
   if (!resolvedDomain || people.length === 0) {
     return { contacts: [], resolvedDomain, metrics: buildEmptyMetrics() }
   }
+
+  const minSafeContacts = Math.max(1, Math.min(targetSafeContacts, Math.round(options?.minSafeContacts ?? MIN_SAFE_CONTACTS)))
 
   const rankedPeople = rankContactsForUseCase(
     people.map(person => ({
@@ -547,9 +618,12 @@ async function resolveContacts(
       directSource: person.source,
     }))
 
-  await applyValidationStage(directCandidates, selectedByIdentity, usedEmails, supabase, metrics)
+  await applyValidationStage(directCandidates, selectedByIdentity, usedEmails, supabase, metrics, {
+    targetSafeContacts,
+    stageType: 'direct',
+  })
 
-  if (selectedByIdentity.size < TARGET_SAFE_CONTACTS) {
+  if (selectedByIdentity.size < targetSafeContacts) {
     const patternCandidates: ContactCandidateRecord[] = []
     for (const person of rankedPeople.filter(person => !person.directEmail).slice(0, MAX_PATTERN_PEOPLE)) {
       if (!person.firstName || !person.lastName) continue
@@ -569,10 +643,13 @@ async function resolveContacts(
         })
       }
     }
-    await applyValidationStage(patternCandidates, selectedByIdentity, usedEmails, supabase, metrics)
+    await applyValidationStage(patternCandidates, selectedByIdentity, usedEmails, supabase, metrics, {
+      targetSafeContacts,
+      stageType: 'pattern',
+    })
   }
 
-  if (selectedByIdentity.size < MIN_SAFE_CONTACTS) {
+  if (selectedByIdentity.size < minSafeContacts) {
     const roleCandidates: ContactCandidateRecord[] = buildRoleFallbackCandidates(resolvedDomain)
       .slice(0, MAX_ROLE_FALLBACKS)
       .map(candidate => ({
@@ -586,7 +663,10 @@ async function resolveContacts(
         resolutionMethod: 'role',
         directSource: null,
       }))
-    await applyValidationStage(roleCandidates, selectedByIdentity, usedEmails, supabase, metrics)
+    await applyValidationStage(roleCandidates, selectedByIdentity, usedEmails, supabase, metrics, {
+      targetSafeContacts,
+      stageType: 'role',
+    })
   }
 
   const contacts = Array.from(selectedByIdentity.values())
@@ -625,6 +705,45 @@ function buildRoleFallbackCandidates(domain: string): RoleFallbackCandidate[] {
   return Array.from(unique.values())
 }
 
+async function resolveContactsWithInFlightDedupe(input: {
+  companyKey: string
+  companyName: string
+  companyDomain: string | null
+  supabase: SupabaseClient
+  targetSafeContacts: number
+  minSafeContacts: number
+  targetRoles?: ContactRoleKey[]
+  forceRefresh: boolean
+}): Promise<ContactResolutionResult> {
+  const dedupeKey = [
+    input.companyKey,
+    input.companyDomain ?? '',
+    input.forceRefresh ? 'force' : 'cached',
+    input.targetSafeContacts,
+    input.minSafeContacts,
+    (input.targetRoles ?? []).join(','),
+  ].join('|')
+
+  const inFlight = inFlightContactResolution.get(dedupeKey)
+  if (inFlight) return inFlight
+
+  const task = resolveContacts(
+    input.companyName,
+    input.companyDomain,
+    input.supabase,
+    {
+      targetSafeContacts: input.targetSafeContacts,
+      minSafeContacts: input.minSafeContacts,
+      targetRoles: input.targetRoles,
+    },
+  ).finally(() => {
+    inFlightContactResolution.delete(dedupeKey)
+  })
+
+  inFlightContactResolution.set(dedupeKey, task)
+  return task
+}
+
 export async function enrichCompany(
   companyName: string,
   companyDomain: string | null,
@@ -635,6 +754,7 @@ export async function enrichCompany(
     maxContacts?: number
     forceRefresh?: boolean
     requireVerified?: boolean
+    targetRoles?: ContactRoleKey[]
   },
 ): Promise<EnrichResult> {
   const companyKey = normalizeLeadCompanyKey(companyName, companyDomain)
@@ -648,7 +768,8 @@ export async function enrichCompany(
     : cachedContacts
 
   if (!options?.forceRefresh && usableCachedContacts.length > 0) {
-    const ranked = rankForUser(usableCachedContacts, options?.servicesDescription, options?.signalType, options?.maxContacts)
+    const filtered = filterContactsByRolePreference(usableCachedContacts, options?.targetRoles)
+    const ranked = rankForUser(filtered, options?.servicesDescription, options?.signalType, options?.maxContacts)
     const metrics = buildEmptyMetrics()
     metrics.contacts_selected = ranked.length
     for (const contact of ranked) {
@@ -663,7 +784,17 @@ export async function enrichCompany(
     return { contact: null, contacts: [], resolvedDomain: cacheDomain, fromCache: true, metrics }
   }
 
-  const { contacts, resolvedDomain, metrics } = await resolveContacts(companyName, cacheDomain, supabase)
+  const targetSafeContacts = Math.max(1, Math.min(options?.maxContacts ?? TARGET_SAFE_CONTACTS, TARGET_SAFE_CONTACTS))
+  const { contacts, resolvedDomain, metrics } = await resolveContactsWithInFlightDedupe({
+    companyKey,
+    companyName,
+    companyDomain: cacheDomain,
+    supabase,
+    targetSafeContacts,
+    minSafeContacts: MIN_SAFE_CONTACTS,
+    targetRoles: options?.targetRoles,
+    forceRefresh: options?.forceRefresh === true,
+  })
   if (contacts.length > 0 && resolvedDomain) {
     await writeCache(resolvedDomain, companyKey, contacts, supabase)
   }
@@ -678,7 +809,8 @@ export async function enrichCompany(
   }, supabase)
 
   const selectableContacts = requireVerified ? contacts.filter(contact => contact.verified) : contacts
-  const ranked = rankForUser(selectableContacts, options?.servicesDescription, options?.signalType, options?.maxContacts)
+  const filtered = filterContactsByRolePreference(selectableContacts, options?.targetRoles)
+  const ranked = rankForUser(filtered, options?.servicesDescription, options?.signalType, options?.maxContacts)
   metrics.contacts_selected = ranked.length
   return { contact: ranked[0] ?? null, contacts: ranked, resolvedDomain, fromCache: false, metrics }
 }
@@ -758,7 +890,7 @@ export async function enrichLeadsInBatch(batchSize = 200): Promise<{
   const groupList = Array.from(groups.values())
   await runWithConcurrency(groupList, 4, async groupLeads => {
     const firstLead = groupLeads[0]
-    const result = await enrichCompany(firstLead.target_company, firstLead.company_domain ?? null, supabase, { maxContacts: 6 })
+    const result = await enrichCompany(firstLead.target_company, firstLead.company_domain ?? null, supabase, { maxContacts: 3 })
     if (result.fromCache) {
       cached += groupLeads.length
       cachedCompanies++
@@ -860,13 +992,26 @@ async function applyValidationStage(
   usedEmails: Set<string>,
   supabase: SupabaseClient,
   metrics: EnrichMetrics,
+  options: {
+    targetSafeContacts: number
+    stageType: 'direct' | 'pattern' | 'role'
+  },
 ): Promise<void> {
-  const stageCandidates = candidates.filter(candidate => (
+  const rawStageCandidates = candidates.filter(candidate => (
     !usedEmails.has(candidate.email) &&
     !selectedByIdentity.has(candidate.identityKey) &&
     !emailContainsProfessionalSuffix(candidate.email, candidate.name)
   ))
-  if (stageCandidates.length === 0) return
+  if (rawStageCandidates.length === 0) return
+
+  const remaining = Math.max(1, options.targetSafeContacts - selectedByIdentity.size)
+  const multiplier = options.stageType === 'direct'
+    ? VALIDATION_MULTIPLIER_DIRECT
+    : options.stageType === 'pattern'
+      ? VALIDATION_MULTIPLIER_PATTERN
+      : VALIDATION_MULTIPLIER_ROLE
+  const validationBudget = Math.max(remaining, remaining * multiplier)
+  const stageCandidates = rawStageCandidates.slice(0, validationBudget)
 
   const { results, billedCount, cacheHits } = await verifyEmailsWithCache(
     stageCandidates.map(candidate => candidate.email),
@@ -878,7 +1023,7 @@ async function applyValidationStage(
   const zeroBounceEnabled = Boolean(process.env.ZEROBOUNCE_API_KEY)
 
   for (const candidate of stageCandidates) {
-    if (selectedByIdentity.size >= TARGET_SAFE_CONTACTS && candidate.resolutionMethod !== 'role') break
+    if (selectedByIdentity.size >= options.targetSafeContacts && candidate.resolutionMethod !== 'role') break
 
     const verification = results.get(candidate.email)
     const safe = verification

@@ -21,47 +21,65 @@ const INSPIRATION_FEEDS = [
   { url: 'https://contentmarketinginstitute.com/feed/', source: 'content_marketing_institute' },
   { url: 'https://blog.hubspot.com/marketing/rss.xml', source: 'hubspot_marketing' },
 ]
+const INSPIRATION_CACHE_MAX_AGE_HOURS = 12
 
 export async function ingestMarketingInspiration(
   supabase: SupabaseClient,
   options: { limitProfiles?: number; now?: Date } = {},
 ): Promise<{ profiles: number; inserted: number; skipped: number }> {
   const profiles = await fetchWorkspaceProfiles(supabase, options.limitProfiles ?? 80)
+  const now = options.now ?? new Date()
   let inserted = 0
   let skipped = 0
 
+  const profilesByIndustry = new Map<string, WorkspaceProfileRow[]>()
   for (const profile of profiles) {
-    const items = await fetchInspirationItems(profile)
-    const rows = items
-      .map(item => buildInspirationRow(profile, item, options.now ?? new Date()))
-      .filter((row): row is NonNullable<typeof row> => Boolean(row))
-      .slice(0, 10)
-    if (rows.length === 0) continue
+    const key = profile.industry || 'B2B'
+    const group = profilesByIndustry.get(key)
+    if (group) group.push(profile)
+    else profilesByIndustry.set(key, [profile])
+  }
 
-    const existingUrls = rows.map(row => row.source_url).filter((url): url is string => Boolean(url))
-    let existingSet = new Set<string>()
-    if (existingUrls.length > 0) {
-      let existingQuery = supabase
-        .from('gtm_content_inspiration_refs')
-        .select('source_url')
-        .eq('user_id', profile.user_id)
-        .in('source_url', existingUrls)
-      existingQuery = profile.client_id ? existingQuery.eq('client_id', profile.client_id) : existingQuery.is('client_id', null)
-      const { data } = await existingQuery
-      existingSet = new Set(((data ?? []) as Array<{ source_url?: string | null }>).map(row => row.source_url).filter(Boolean) as string[])
-    }
+  for (const [industry, industryProfiles] of profilesByIndustry) {
+    const keywordPool = [...new Set(industryProfiles.flatMap(profile => profile.keywords).map(keyword => keyword.trim()).filter(Boolean))].slice(0, 6)
+    const items = await fetchInspirationItems(industry, keywordPool)
 
-    const insertRows = rows.filter(row => !row.source_url || !existingSet.has(row.source_url))
-    if (insertRows.length === 0) {
-      skipped += rows.length
-      continue
-    }
-    const { error } = await supabase.from('gtm_content_inspiration_refs').insert(insertRows)
-    if (error) {
-      skipped += insertRows.length
-    } else {
-      inserted += insertRows.length
-      skipped += rows.length - insertRows.length
+    for (const profile of industryProfiles) {
+      if (await hasFreshInspirationForProfile(supabase, profile, now)) {
+        continue
+      }
+
+      const rows = items
+        .map(item => buildInspirationRow(profile, item, now))
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))
+        .slice(0, 10)
+      if (rows.length === 0) continue
+
+      const existingUrls = rows.map(row => row.source_url).filter((url): url is string => Boolean(url))
+      let existingSet = new Set<string>()
+      if (existingUrls.length > 0) {
+        let existingQuery = supabase
+          .from('gtm_content_inspiration_refs')
+          .select('source_url')
+          .eq('user_id', profile.user_id)
+          .in('source_url', existingUrls)
+        existingQuery = profile.client_id ? existingQuery.eq('client_id', profile.client_id) : existingQuery.is('client_id', null)
+        const { data } = await existingQuery
+        existingSet = new Set(((data ?? []) as Array<{ source_url?: string | null }>).map(row => row.source_url).filter(Boolean) as string[])
+      }
+
+      const insertRows = rows.filter(row => !row.source_url || !existingSet.has(row.source_url))
+      if (insertRows.length === 0) {
+        skipped += rows.length
+        continue
+      }
+      const { error } = await supabase.from('gtm_content_inspiration_refs').insert(insertRows)
+      if (error) {
+        skipped += insertRows.length
+      } else {
+        inserted += insertRows.length
+        skipped += rows.length - insertRows.length
+      }
     }
   }
 
@@ -99,12 +117,12 @@ async function fetchWorkspaceProfiles(supabase: SupabaseClient, limit: number): 
   ].filter(row => row.user_id).slice(0, limit)
 }
 
-async function fetchInspirationItems(profile: WorkspaceProfileRow): Promise<RSSItem[]> {
+async function fetchInspirationItems(industry: string, keywords: string[]): Promise<RSSItem[]> {
   const terms = [
-    `${profile.industry} viral LinkedIn post marketing`,
-    `${profile.industry} business blog content examples`,
-    `${profile.industry} TikTok Instagram reels marketing`,
-    ...profile.keywords.slice(0, 2).map(keyword => `${keyword} B2B content marketing examples`),
+    `${industry} viral LinkedIn post marketing`,
+    `${industry} business blog content examples`,
+    `${industry} TikTok Instagram reels marketing`,
+    ...keywords.slice(0, 2).map(keyword => `${keyword} B2B content marketing examples`),
     ...INDUSTRY_PATTERN_QUERIES,
   ]
 
@@ -117,6 +135,25 @@ async function fetchInspirationItems(profile: WorkspaceProfileRow): Promise<RSSI
     .flatMap(result => result.status === 'fulfilled' ? result.value : [])
     .filter(item => item.title && item.link)
     .slice(0, 80)
+}
+
+async function hasFreshInspirationForProfile(
+  supabase: SupabaseClient,
+  profile: WorkspaceProfileRow,
+  now: Date,
+): Promise<boolean> {
+  const cutoff = new Date(now.getTime() - INSPIRATION_CACHE_MAX_AGE_HOURS * 60 * 60 * 1000).toISOString()
+  let query = supabase
+    .from('gtm_content_inspiration_refs')
+    .select('captured_at')
+    .eq('user_id', profile.user_id)
+    .gte('captured_at', cutoff)
+    .order('captured_at', { ascending: false })
+    .limit(1)
+  query = profile.client_id ? query.eq('client_id', profile.client_id) : query.is('client_id', null)
+  const { data, error } = await query
+  if (error) return false
+  return Boolean(data && data.length > 0)
 }
 
 function buildInspirationRow(profile: WorkspaceProfileRow, item: RSSItem, now: Date) {

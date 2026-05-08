@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { enrichCompany, type EnrichedContact } from './email-finder/enrich.ts'
 import { consumeLeadCredit, refundLeadCredit } from './lead-credits.ts'
 import { buildRecipientGroup, ensureBodyGreetsRecipients, type OutreachRecipientGroup } from './outreach-recipients.ts'
+import type { ContactRoleKey } from './contact-targeting.ts'
 
 export interface LeadContactLike {
   id?: unknown
@@ -47,12 +48,15 @@ export async function resolveLeadRecipients(
     refundCreditWhenNoContact?: boolean
     forceRefresh?: boolean
     requireVerified?: boolean
+    preferLeadContact?: boolean
+    targetRoles?: ContactRoleKey[]
     maxContacts?: number
   },
 ): Promise<LeadRecipientResolution> {
   const leadId = String(input.lead.id ?? '')
   const targetCompany = typeof input.lead.target_company === 'string' ? input.lead.target_company : ''
-  const existingGroup = input.forceRefresh || (input.requireVerified && input.lead.contact_verified !== true)
+  const useLeadContact = input.preferLeadContact !== false
+  const existingGroup = !useLeadContact || input.forceRefresh || (input.requireVerified && input.lead.contact_verified !== true)
     ? null
     : buildRecipientGroup([primaryLeadContact(input.lead)])
 
@@ -148,9 +152,10 @@ export async function resolveLeadRecipients(
     {
       servicesDescription: input.servicesDescription ?? null,
       signalType: input.signalType ?? null,
-      maxContacts: input.maxContacts ?? 4,
+      maxContacts: input.maxContacts ?? 3,
       forceRefresh: input.forceRefresh === true,
       requireVerified: input.requireVerified === true,
+      targetRoles: input.targetRoles,
     },
   )
   const contacts = result.contacts.filter(contact => contact.email && (!input.requireVerified || contact.verified))
@@ -233,6 +238,7 @@ export async function resolveLeadRecipients(
       contact_email: recipientGroup?.to.email ?? null,
       contact_name: recipientGroup?.to.name ?? null,
       require_verified: input.requireVerified === true,
+      target_roles: input.targetRoles ?? [],
     },
   }
 }
@@ -271,21 +277,33 @@ export async function upsertOutreachDraft(
     body: string
     stakeholders: OutreachStakeholder[]
     greeting?: string | null
+    qualityScore?: number | null
+    qualityChecks?: unknown[] | null
+    qualityCheckedAt?: string | null
+    qualityVersion?: string | null
   },
 ): Promise<{ subject: string; body: string; stakeholders: OutreachStakeholder[] }> {
   const normalizedBody = input.greeting
     ? ensureBodyGreetsRecipients(input.body, input.greeting)
     : input.body
+
+  const row: Record<string, unknown> = {
+    lead_id: input.leadId,
+    user_id: input.userId,
+    client_id: input.clientId ?? null,
+    subject: input.subject,
+    body: normalizedBody,
+    stakeholders: input.stakeholders,
+  }
+
+  if (typeof input.qualityScore === 'number') row.quality_score = input.qualityScore
+  if (Array.isArray(input.qualityChecks)) row.quality_checks = input.qualityChecks
+  if (typeof input.qualityCheckedAt === 'string' || input.qualityCheckedAt === null) row.quality_checked_at = input.qualityCheckedAt
+  if (typeof input.qualityVersion === 'string' || input.qualityVersion === null) row.quality_version = input.qualityVersion
+
   const { data, error } = await supabase
     .from('outreach_drafts')
-    .upsert({
-      lead_id: input.leadId,
-      user_id: input.userId,
-      client_id: input.clientId ?? null,
-      subject: input.subject,
-      body: normalizedBody,
-      stakeholders: input.stakeholders,
-    }, { onConflict: 'lead_id' })
+    .upsert(row, { onConflict: 'lead_id' })
     .select('subject, body, stakeholders')
     .maybeSingle()
 

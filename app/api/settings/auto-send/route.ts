@@ -14,6 +14,8 @@ import {
 import { checkRateLimit } from '@/lib/rate-limit'
 import { sendAutomationLifecycleEmail } from '@/lib/resend'
 import { requirePlan } from '@/lib/api-plan-guard'
+import { simulateOutboundPolicy } from '@/lib/policies/outbound'
+import { validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 
 export async function GET() {
   const supabase = await createClient()
@@ -22,6 +24,22 @@ export async function GET() {
   const { userId } = planCheck
 
   const { activeClientId } = await getActiveClientContext(supabase, userId)
+  const exploreSessionsQuery = activeClientId
+    ? supabase
+        .from('explore_runs')
+        .select('id, prompt, generated_count, inserted_count, created_at, autopilot_status')
+        .eq('user_id', userId)
+        .eq('client_id', activeClientId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+    : supabase
+        .from('explore_runs')
+        .select('id, prompt, generated_count, inserted_count, created_at, autopilot_status')
+        .eq('user_id', userId)
+        .is('client_id', null)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
   const [policyRes, accountsRes, exploreSessionsRes] = await Promise.all([
     activeClientId
       ? supabase
@@ -42,13 +60,7 @@ export async function GET() {
       .eq('user_id', userId)
       .eq('is_active', true)
       .order('created_at', { ascending: true }),
-    supabase
-      .from('explore_runs')
-      .select('id, prompt, generated_count, inserted_count, created_at, autopilot_status')
-      .eq('user_id', userId)
-      .eq('client_id', activeClientId)
-      .order('created_at', { ascending: false })
-      .limit(50),
+    exploreSessionsQuery,
   ])
 
   if (policyRes.error) return NextResponse.json({ error: policyRes.error.message }, { status: 500 })
@@ -108,6 +120,7 @@ export async function PATCH(request: Request) {
     : Array.isArray(body.target_origins)
       ? body.target_origins.filter((origin): origin is 'live' | 'explore' => origin === 'live' || origin === 'explore')
       : []
+  const preflightOrigins = targetOrigins.filter((origin): origin is 'live' | 'explore' => origin === 'live' || origin === 'explore')
   const targetExploreSessionIds = sanitizeSessionIds(body.target_explore_session_ids)
   const requireVerifiedContact = body.require_verified_contact === true
   const minRelevanceScore = normalizePolicyScore(body.min_relevance_score)
@@ -149,6 +162,25 @@ export async function PATCH(request: Request) {
     if (activeAccountError) return NextResponse.json({ error: activeAccountError.message }, { status: 500 })
     if (!activeAccounts?.length) {
       return NextResponse.json({ error: 'Connect a sending inbox before starting automation.' }, { status: 400 })
+    }
+  }
+
+  let preflight: AutopilotPreflightResult | null = null
+  if (body.enabled) {
+    preflight = await runAutopilotPreflight({
+      supabase,
+      userId,
+      clientId: activeClientId,
+      targetOrigins: preflightOrigins,
+      minRelevanceScore,
+      maxLeadAgeDays,
+      requireVerifiedContact,
+    })
+    if (preflight.status === 'fail') {
+      return NextResponse.json({
+        error: 'Autopilot preflight failed. Fix contact quality or policy blockers before enabling.',
+        preflight,
+      }, { status: 409 })
     }
   }
 
@@ -230,5 +262,104 @@ export async function PATCH(request: Request) {
   return NextResponse.json({
     ok: true,
     policy: normalizeAutoSendPolicy(response.data ?? null),
+    preflight,
   })
+}
+
+interface AutopilotPreflightResult {
+  status: 'pass' | 'fail' | 'no_eligible_leads'
+  sampled: number
+  passed: number
+  blocked: number
+  details: Array<{
+    lead_id: string
+    company: string
+    passed: boolean
+    reasons: string[]
+    recipient_email: string | null
+  }>
+}
+
+async function runAutopilotPreflight(input: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  userId: string
+  clientId: string | null
+  targetOrigins: Array<'live' | 'explore'>
+  minRelevanceScore: number
+  maxLeadAgeDays: number
+  requireVerifiedContact: boolean
+}): Promise<AutopilotPreflightResult> {
+  const threshold = new Date(Date.now() - input.maxLeadAgeDays * 24 * 60 * 60 * 1000).toISOString()
+  let query = input.supabase
+    .from('leads')
+    .select('id, target_company, company_domain, status, is_unlocked, relevance_score, created_at, contact_email, contact_verified, origin')
+    .eq('user_id', input.userId)
+    .eq('is_unlocked', true)
+    .gte('relevance_score', input.minRelevanceScore)
+    .gte('created_at', threshold)
+    .in('status', ['new', 'viewed', 'drafted'])
+    .order('created_at', { ascending: false })
+    .limit(6)
+
+  query = input.clientId
+    ? query.eq('client_id', input.clientId)
+    : query.is('client_id', null)
+  if (input.targetOrigins.length === 1) query = query.eq('origin', input.targetOrigins[0])
+
+  const { data: leads, error } = await query
+  if (error) {
+    console.error('[auto-send] preflight query failed:', error.message)
+    return { status: 'no_eligible_leads', sampled: 0, passed: 0, blocked: 0, details: [] }
+  }
+
+  const details: AutopilotPreflightResult['details'] = []
+  for (const lead of leads ?? []) {
+    const recipientEmail = typeof lead.contact_email === 'string' ? lead.contact_email.trim().toLowerCase() : null
+    const reasons: string[] = []
+    let passed = false
+    if (!recipientEmail) {
+      reasons.push('missing_recipient')
+    } else {
+      const validation = await validateOutboundRecipients([recipientEmail], { maxCacheAgeDays: 3 })
+      const decision = await simulateOutboundPolicy(input.supabase, {
+        userId: input.userId,
+        clientId: input.clientId,
+        leadId: lead.id,
+        targetCompany: lead.target_company,
+        companyDomain: lead.company_domain,
+        status: lead.status,
+        isUnlocked: lead.is_unlocked,
+        contactVerified: lead.contact_verified,
+        recipientValidationSafe: validation.safe,
+        recipientEmails: [recipientEmail],
+        requireVerifiedContact: input.requireVerifiedContact,
+        metadata: { preflight: true },
+      })
+      reasons.push(...decision.reasons)
+      if (!validation.safe) reasons.push(...validation.reasons)
+      passed = decision.decision === 'allowed' && validation.safe
+    }
+
+    details.push({
+      lead_id: lead.id,
+      company: lead.target_company,
+      passed,
+      reasons: [...new Set(reasons)],
+      recipient_email: recipientEmail,
+    })
+  }
+
+  if (details.length === 0) {
+    return { status: 'no_eligible_leads', sampled: 0, passed: 0, blocked: 0, details: [] }
+  }
+
+  const passed = details.filter(item => item.passed).length
+  const blocked = details.length - passed
+  return {
+    status: passed > 0 ? 'pass' : 'fail',
+    sampled: details.length,
+    passed,
+    blocked,
+    details,
+  }
 }

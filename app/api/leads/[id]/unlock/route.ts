@@ -149,7 +149,7 @@ async function enrichUnlockedLeadContact(
     signalDomain: signal?.company_domain ?? null,
     consumeCreditIfLocked: false,
     forceRefresh: !lead.contact_email,
-    maxContacts: 4,
+    maxContacts: 3,
   })
 
   return {

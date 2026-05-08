@@ -20,6 +20,7 @@ interface ExploreSession {
 }
 
 type FilterKey = 'industry' | 'region' | 'revenue' | 'employee_count'
+type ExtendedFilterKey = FilterKey | 'market_segment' | 'funding' | 'signal'
 
 const INDUSTRIES = [
   'Any B2B industry',
@@ -66,21 +67,50 @@ const EMPLOYEE_COUNTS = [
   '5000+',
 ] as const
 
+const MARKET_SEGMENTS = [
+  'Any market segment',
+  'SMB',
+  'Mid-Market',
+  'Enterprise',
+] as const
+
+const FUNDING_OPTIONS = [
+  'Any funding',
+  'Funded in last 90 days',
+  'Funded in last 180 days',
+  'Latest round $1M-$10M',
+  'Latest round $10M-$50M',
+  'Latest round $50M+',
+] as const
+
+const SIGNAL_OPTIONS = [
+  'Any signal',
+  'Actively hiring',
+  'High hiring volume',
+  'Sales hiring',
+  'Engineering hiring',
+] as const
+
 export default function ExploreView(_props: Props) {
   void _props
 
-  const [filters, setFilters] = useState<Record<FilterKey, string>>({
+  const [filters, setFilters] = useState<Record<ExtendedFilterKey, string>>({
     industry: INDUSTRIES[0],
     region: REGIONS[0],
     revenue: REVENUE[0],
     employee_count: EMPLOYEE_COUNTS[0],
+    market_segment: MARKET_SEGMENTS[0],
+    funding: FUNDING_OPTIONS[0],
+    signal: SIGNAL_OPTIONS[0],
   })
-  const [count, setCount] = useState(12)
-  const [notes, setNotes] = useState('')
+  const [count, setCount] = useState<5 | 10 | 20>(10)
   const [results, setResults] = useState<Lead[]>([])
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showCreditConfirm, setShowCreditConfirm] = useState(false)
+  const [actionBusy, setActionBusy] = useState<null | 'unlock' | 'dismiss' | 'crm_queue'>(null)
 
   const [sessions, setSessions] = useState<ExploreSession[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
@@ -100,12 +130,21 @@ export default function ExploreView(_props: Props) {
     region: filters.region.startsWith('Any') ? '' : filters.region,
     revenue: filters.revenue.startsWith('Any') ? '' : filters.revenue,
     employee_count: filters.employee_count.startsWith('Any') ? '' : filters.employee_count,
+    market_segment: filters.market_segment.startsWith('Any') ? '' : filters.market_segment,
+    funding: filters.funding.startsWith('Any') ? '' : filters.funding,
+    signal: filters.signal.startsWith('Any') ? '' : filters.signal,
   }), [filters])
 
-  const hasTargeting = Object.values(activeFilters).some(Boolean) || notes.trim().length > 0
+  const hasTargeting = Object.values(activeFilters).some(Boolean)
+  const allSelectableIds = results.map(lead => lead.id)
+  const allSelected = allSelectableIds.length > 0 && allSelectableIds.every(id => selectedLeadIds.includes(id))
 
   async function runSearch() {
-    if (!hasTargeting || loading) return
+    if (loading) return
+    if (!hasTargeting) {
+      setError('Select at least one filter before generating leads.')
+      return
+    }
     setLoading(true)
     setError(null)
     setMessage(null)
@@ -115,7 +154,6 @@ export default function ExploreView(_props: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: notes.trim(),
           count,
           filters: activeFilters,
           icp_hint: 'Use the workspace ICP as the primary fit filter.',
@@ -132,6 +170,7 @@ export default function ExploreView(_props: Props) {
       }
 
       setResults(payload?.leads ?? [])
+      setSelectedLeadIds([])
       setMessage(payload?.message ?? 'Lead search completed.')
       // Refresh sessions after generation
       const sessionsRes = await fetch('/api/explore/sessions', { cache: 'no-store' })
@@ -142,6 +181,71 @@ export default function ExploreView(_props: Props) {
       setResults([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  function requestSearch() {
+    if (loading) return
+    if (!hasTargeting) {
+      setError('Select at least one filter before generating leads.')
+      return
+    }
+    setShowCreditConfirm(true)
+  }
+
+  function toggleSelectAll() {
+    setSelectedLeadIds(current => current.length === allSelectableIds.length ? [] : [...allSelectableIds])
+  }
+
+  function toggleLeadSelection(leadId: string) {
+    setSelectedLeadIds(current => (
+      current.includes(leadId)
+        ? current.filter(id => id !== leadId)
+        : [...current, leadId]
+    ))
+  }
+
+  async function runBulkAction(action: 'unlock' | 'dismiss' | 'crm_queue') {
+    if (selectedLeadIds.length === 0 || actionBusy) return
+    setActionBusy(action)
+    setError(null)
+    setMessage(null)
+    try {
+      if (action === 'crm_queue') {
+        const res = await fetch('/api/crm/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_ids: selectedLeadIds }),
+        })
+        const payload = await res.json().catch(() => null) as { error?: string; queued?: number; skipped?: number } | null
+        if (!res.ok) throw new Error(payload?.error ?? 'Failed to queue selected leads.')
+        setMessage(`Queued ${payload?.queued ?? 0} lead${(payload?.queued ?? 0) === 1 ? '' : 's'} to CRM${payload?.skipped ? ` (${payload.skipped} skipped)` : ''}.`)
+      } else {
+        const endpoint = action === 'unlock' ? 'unlock' : 'status'
+        const method = action === 'unlock' ? 'POST' : 'PATCH'
+        const body = action === 'dismiss' ? JSON.stringify({ status: 'dismissed' }) : undefined
+        const headers = action === 'dismiss' ? { 'Content-Type': 'application/json' } : undefined
+
+        const settled = await Promise.all(selectedLeadIds.map(async id => {
+          const res = await fetch(`/api/leads/${id}/${endpoint}`, { method, headers, body })
+          return res.ok
+        }))
+        const successCount = settled.filter(Boolean).length
+        const failCount = settled.length - successCount
+
+        if (action === 'unlock') {
+          setResults(prev => prev.map(lead => selectedLeadIds.includes(lead.id) ? { ...lead, is_unlocked: true } : lead))
+          setMessage(`Unlocked ${successCount} lead${successCount === 1 ? '' : 's'}${failCount > 0 ? ` (${failCount} failed)` : ''}.`)
+        } else {
+          setResults(prev => prev.map(lead => selectedLeadIds.includes(lead.id) ? { ...lead, status: 'dismissed' } : lead))
+          setMessage(`Dismissed ${successCount} lead${successCount === 1 ? '' : 's'}${failCount > 0 ? ` (${failCount} failed)` : ''}.`)
+        }
+      }
+      setSelectedLeadIds([])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk action failed.')
+    } finally {
+      setActionBusy(null)
     }
   }
 
@@ -172,7 +276,7 @@ export default function ExploreView(_props: Props) {
       <section>
         <SectionHeader
           title="Find leads your way"
-          subtitle="Select broad filters, let Bombsell apply your ICP, and generate a fresh account list for sales outreach."
+          subtitle="Choose Apollo-mapped filters and generate a focused account list for outreach."
           label="Explore"
         />
         <SpotlightCard className="card overflow-hidden card-hover">
@@ -217,31 +321,42 @@ export default function ExploreView(_props: Props) {
                 options={EMPLOYEE_COUNTS}
                 onChange={value => setFilters(current => ({ ...current, employee_count: value }))}
               />
+              <FilterSelect
+                label="Market segment"
+                value={filters.market_segment}
+                options={MARKET_SEGMENTS}
+                onChange={value => setFilters(current => ({ ...current, market_segment: value }))}
+              />
+              <FilterSelect
+                label="Funding"
+                value={filters.funding}
+                options={FUNDING_OPTIONS}
+                onChange={value => setFilters(current => ({ ...current, funding: value }))}
+              />
+              <FilterSelect
+                label="Signals"
+                value={filters.signal}
+                options={SIGNAL_OPTIONS}
+                onChange={value => setFilters(current => ({ ...current, signal: value }))}
+              />
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px]">
-              <label className="block">
-                <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Targeting notes</span>
-                <textarea
-                  value={notes}
-                  onChange={event => setNotes(event.target.value)}
-                  rows={3}
-                  placeholder="Optional: focus on teams likely hiring sales ops, expanding outbound, changing CRM, entering a new market..."
-                  className="mt-1 w-full resize-none rounded-lg border border-[var(--color-line-2)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-accent)]/50 focus:ring-2 focus:ring-[var(--color-accent)]/10"
-                />
-              </label>
-              <label className="block">
+            <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <label className="block max-w-[220px]">
                 <span className="text-[11px] font-semibold text-[var(--color-text-2)]">Results</span>
                 <select
                   value={count}
-                  onChange={event => setCount(Number(event.target.value))}
+                  onChange={event => setCount(Number(event.target.value) as 5 | 10 | 20)}
                   className="mt-1 h-[38px] w-full rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[13px] text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-accent)]/50 focus:ring-2 focus:ring-[var(--color-accent)]/10"
                 >
-                  {[8, 12, 20, 30, 50].map(value => (
+                  {[5, 10, 20].map(value => (
                     <option key={value} value={value}>{value} leads</option>
                   ))}
                 </select>
               </label>
+              <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/35 px-3 py-2 text-[11px] text-[var(--color-text-4)]">
+                Explore runs Apollo company search with these filters and your workspace ICP context.
+              </div>
             </div>
 
             <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -249,7 +364,7 @@ export default function ExploreView(_props: Props) {
                 Generated leads are saved into Explore and can be unlocked or exported from your normal sales workflow.
               </p>
               <button
-                onClick={runSearch}
+                onClick={requestSearch}
                 disabled={!hasTargeting || loading}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg btn-primary px-4 text-[12px] font-bold disabled:cursor-not-allowed disabled:opacity-45"
               >
@@ -268,6 +383,35 @@ export default function ExploreView(_props: Props) {
             : 'border-[var(--color-line-1)] bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]'
         }`}>
           {error ?? message}
+        </div>
+      )}
+
+      {showCreditConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+          <div className="w-full max-w-md rounded-lg border border-[var(--color-line-1)] bg-white p-5 shadow-xl">
+            <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Confirm Explore Search</h3>
+            <p className="mt-2 text-[12px] leading-relaxed text-[var(--color-text-3)]">
+              Every lead generated from Apollo will consume 1 credit from your Bombsell credits.
+              This run is set to generate up to {count} leads.
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowCreditConfirm(false)}
+                className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-semibold text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreditConfirm(false)
+                  void runSearch()
+                }}
+                className="h-8 rounded-lg btn-primary px-3 text-[11px] font-semibold"
+              >
+                Confirm and search
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -309,15 +453,57 @@ export default function ExploreView(_props: Props) {
           title="Generated leads"
           subtitle={results.length > 0 ? `${results.length} leads from the latest search` : 'Run a search to generate leads'}
         />
+        {results.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-line-1)] bg-white px-3 py-2">
+            <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-2)]">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 rounded border-[var(--color-line-2)] text-[var(--color-accent-ring)] focus:ring-[var(--color-accent)]/20"
+              />
+              Select all
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-[var(--color-text-4)]">{selectedLeadIds.length} selected</span>
+              <button
+                onClick={() => runBulkAction('unlock')}
+                disabled={selectedLeadIds.length === 0 || Boolean(actionBusy)}
+                className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-semibold text-[var(--color-text-2)] disabled:opacity-50 hover:bg-[var(--color-ink-2)]"
+              >
+                {actionBusy === 'unlock' ? 'Unlocking…' : 'Unlock'}
+              </button>
+              <button
+                onClick={() => runBulkAction('crm_queue')}
+                disabled={selectedLeadIds.length === 0 || Boolean(actionBusy)}
+                className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-semibold text-[var(--color-text-2)] disabled:opacity-50 hover:bg-[var(--color-ink-2)]"
+              >
+                {actionBusy === 'crm_queue' ? 'Queueing…' : 'Queue CRM'}
+              </button>
+              <button
+                onClick={() => runBulkAction('dismiss')}
+                disabled={selectedLeadIds.length === 0 || Boolean(actionBusy)}
+                className="h-8 rounded-lg border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-semibold text-[var(--color-text-2)] disabled:opacity-50 hover:bg-[var(--color-ink-2)]"
+              >
+                {actionBusy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}
+              </button>
+            </div>
+          </div>
+        )}
         {results.length === 0 ? (
           <div className="rounded-lg border border-dashed border-[var(--color-line-2)] bg-white px-5 py-10 text-center">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">No generated list yet</p>
-            <p className="mt-1 text-xs text-[var(--color-text-4)]">Pick filters and run a custom search to create a targeted account list.</p>
+            <p className="mt-1 text-xs text-[var(--color-text-4)]">Pick filters and run a search to create a targeted account list.</p>
           </div>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2 stagger-children">
             {results.map(lead => (
-              <LeadResultCard key={lead.id} lead={lead} />
+              <LeadResultCard
+                key={lead.id}
+                lead={lead}
+                selected={selectedLeadIds.includes(lead.id)}
+                onToggleSelection={() => toggleLeadSelection(lead.id)}
+              />
             ))}
           </div>
         )}
@@ -392,11 +578,27 @@ function FilterSelect({
   )
 }
 
-function LeadResultCard({ lead }: { lead: Lead }) {
+function LeadResultCard({
+  lead,
+  selected,
+  onToggleSelection,
+}: {
+  lead: Lead
+  selected: boolean
+  onToggleSelection: () => void
+}) {
   return (
     <article className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-accent)]/30 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <label className="inline-flex shrink-0 items-center gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelection}
+            className="h-4 w-4 rounded border-[var(--color-line-2)] text-[var(--color-accent-ring)] focus:ring-[var(--color-accent)]/20"
+          />
+        </label>
+        <div className="min-w-0 flex-1">
           <h4 className="truncate text-sm font-bold text-[var(--color-text-1)]">{lead.target_company}</h4>
           <p className="mt-1 truncate text-[12px] text-[var(--color-text-4)]">{lead.company_domain ?? 'Domain not confirmed'}</p>
         </div>
@@ -412,6 +614,7 @@ function LeadResultCard({ lead }: { lead: Lead }) {
       )}
       <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--color-text-4)]">
         <span className="rounded bg-[var(--color-ink-2)] px-2 py-1">Explore</span>
+        {lead.is_unlocked && <span className="rounded bg-[var(--color-accent-bg)] px-2 py-1 text-[var(--color-accent-ring)]">Unlocked</span>}
         {lead.feed_session_label && <span className="max-w-full truncate rounded bg-[var(--color-ink-2)] px-2 py-1">{lead.feed_session_label}</span>}
       </div>
     </article>

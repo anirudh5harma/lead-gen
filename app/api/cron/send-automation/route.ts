@@ -528,7 +528,7 @@ async function prepareAutopilotLeads(
       signalDomain: signal?.company_domain ?? null,
       consumeCreditIfLocked: false,
       requireVerified: true,
-      maxContacts: 4,
+      maxContacts: 3,
     })
 
     if (resolution.contact) {
@@ -1128,7 +1128,7 @@ async function getOrCreateAutomationDraft(
     signalDomain: signal?.company_domain ?? null,
     consumeCreditIfLocked: false,
     requireVerified: true,
-    maxContacts: 4,
+    maxContacts: 3,
   })
   const stakeholders = contactResolution.stakeholders
   const recipientGroup = buildRecipientGroup(stakeholders)

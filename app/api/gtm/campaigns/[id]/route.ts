@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { createClient } from '@/lib/supabase/server'
+import { requirePlan } from '@/lib/api-plan-guard'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,15 +11,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const planCheck = await requirePlan(supabase, 'growth')
+  if (planCheck instanceof NextResponse) return planCheck
+  const { userId } = planCheck
+  const rate = await checkRateLimit(`marketing:campaign:update:${userId}`, 60, 60 * 60, { failClosed: true })
+  if (!rate.allowed) return NextResponse.json({ error: 'Too many campaign updates. Try again later.' }, { status: 429 })
 
   const { id } = await params
   const body = await request.json().catch(() => null) as {
     action?: string
   } | null
 
-  const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const { activeClientId } = await getActiveClientContext(supabase, userId)
   const clientFilter = activeClientId ? { client_id: activeClientId } : {}
 
   if (body?.action === 'activate' || body?.action === 'pause' || body?.action === 'complete' || body?.action === 'dismiss') {
@@ -33,7 +38,7 @@ export async function PATCH(
       .from('gtm_campaigns')
       .update({ status: nextStatus })
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .match(clientFilter)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
