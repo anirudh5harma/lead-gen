@@ -238,7 +238,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
             {activeView === 'accounts' && <AccountsView />}
             {activeView === 'engine/autopilot' && (
               <PlanGate userTier={userTier} requiredTier="growth" featureName="Autopilot Engine">
-                <AutopilotView />
+                <AutopilotView leads={initialLeads} />
               </PlanGate>
             )}
             {activeView === 'engine/sequences' && <SequencesView />}

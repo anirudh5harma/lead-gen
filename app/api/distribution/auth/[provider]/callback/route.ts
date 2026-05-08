@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   exchangeDistributionCode,
+  isPublishModeQueueEligible,
   isDistributionProvider,
   verifyDistributionOAuthState,
 } from '@/lib/distribution'
@@ -35,7 +36,7 @@ export async function GET(
     const expiresAt = result.expiresIn ? new Date(Date.now() + result.expiresIn * 1000).toISOString() : null
     let existingQuery = supabase
       .from('connected_distribution_accounts')
-      .select('id')
+      .select('id, publish_mode')
       .eq('user_id', verified.userId)
       .eq('provider', rawProvider)
       .eq('provider_account_id', result.profile.providerAccountId)
@@ -55,18 +56,55 @@ export async function GET(
       token_expires_at: expiresAt,
       scopes: result.scopes,
       status: 'connected',
-      publish_mode: 'manual_review',
+      publish_mode: normalizePublishMode((existing as { publish_mode?: unknown } | null)?.publish_mode),
       metadata: result.profile.metadata ?? {},
     }
 
-    const { error: upsertError } = existing?.id
-      ? await supabase.from('connected_distribution_accounts').update(accountRow).eq('id', existing.id)
-      : await supabase.from('connected_distribution_accounts').insert(accountRow)
+    const upsertResult = existing?.id
+      ? await supabase
+          .from('connected_distribution_accounts')
+          .update(accountRow)
+          .eq('id', existing.id)
+          .select('id, publish_mode')
+          .single()
+      : await supabase
+          .from('connected_distribution_accounts')
+          .insert(accountRow)
+          .select('id, publish_mode')
+          .single()
 
-    if (upsertError) throw new Error(upsertError.message)
+    if (upsertResult.error) throw new Error(upsertResult.error.message)
+
+    const connectedAccountId = (upsertResult.data as { id?: string } | null)?.id ?? null
+    const publishMode = normalizePublishMode((upsertResult.data as { publish_mode?: unknown } | null)?.publish_mode)
+
+    if (connectedAccountId && isPublishModeQueueEligible(publishMode)) {
+      let requeueQuery = supabase
+        .from('content_distribution_jobs')
+        .update({
+          status: 'queued',
+          connected_distribution_account_id: connectedAccountId,
+          error_message: null,
+        })
+        .eq('user_id', verified.userId)
+        .eq('provider', rawProvider)
+        .eq('status', 'manual_ready')
+        .not('scheduled_for', 'is', null)
+      requeueQuery = verified.clientId ? requeueQuery.eq('client_id', verified.clientId) : requeueQuery.is('client_id', null)
+      const { error: requeueError } = await requeueQuery
+      if (requeueError) {
+        console.error('[distribution/callback] manual-ready requeue failed:', requeueError.message)
+      }
+    }
+
     return NextResponse.redirect(`${BASE}/dashboard?view=marketing/content&distribution_connected=${rawProvider}`)
   } catch (connectError) {
     console.error('[distribution/callback]', connectError)
     return NextResponse.redirect(`${BASE}/dashboard?view=marketing/content&distribution_error=${rawProvider}_failed`)
   }
+}
+
+function normalizePublishMode(value: unknown): 'manual_review' | 'scheduled' | 'auto_publish' {
+  if (value === 'manual_review' || value === 'scheduled' || value === 'auto_publish') return value
+  return 'scheduled'
 }

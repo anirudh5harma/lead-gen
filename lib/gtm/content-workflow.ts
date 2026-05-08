@@ -360,6 +360,8 @@ export async function updateMarketingContentIdea(
 
   const nextStatus = input.action === 'approve' ? 'approved' : input.action === 'dismiss' ? 'dismissed' : 'drafted'
   const draftSettings = normalizeDraftSettings(input.draftSettings ?? (idea as { draft_settings?: unknown }).draft_settings, (idea as { content_type: string }).content_type)
+  const resolvedTargetPlatform = draftSettings.platform || platformForContentType((idea as { content_type: string }).content_type)
+  const resolvedChannel = channelForContentType((idea as { content_type: string }).content_type)
   const draft = input.action === 'draft' && !hasDraft((idea as { draft?: unknown }).draft)
     ? await generateDraftForIdea(idea as ContentIdeaRow, draftSettings)
     : (idea as { draft?: Record<string, unknown> | null }).draft ?? {}
@@ -367,7 +369,14 @@ export async function updateMarketingContentIdea(
 
   const { error: updateError } = await supabase
     .from('gtm_content_ideas')
-    .update({ status: nextStatus, draft, draft_settings: draftSettings, final_body: finalBody })
+    .update({
+      status: nextStatus,
+      draft,
+      draft_settings: draftSettings,
+      target_platform: resolvedTargetPlatform,
+      channel: resolvedChannel,
+      final_body: finalBody,
+    })
     .eq('id', input.ideaId)
     .eq('user_id', input.userId)
   if (updateError) throw new Error(updateError.message)
@@ -636,6 +645,8 @@ export async function scheduleMarketingContentIdea(
   if (ideaError) throw new Error(ideaError.message)
   if (!idea) throw new Error('Content idea not found')
   const draftSettings = normalizeDraftSettings(input.draftSettings ?? (idea as { draft_settings?: unknown }).draft_settings, (idea as { content_type: string }).content_type)
+  const resolvedTargetPlatform = draftSettings.platform || stringValue((idea as { target_platform?: unknown }).target_platform) || platformForContentType((idea as { content_type: string }).content_type)
+  const resolvedChannel = channelForContentType((idea as { content_type: string }).content_type)
   const existingDraft = (idea as { draft?: Record<string, unknown> | null }).draft ?? {}
   const draft = input.scheduledFor && !hasDraft(existingDraft)
     ? await generateDraftForIdea(idea as ContentIdeaRow, draftSettings)
@@ -649,6 +660,8 @@ export async function scheduleMarketingContentIdea(
       status: input.scheduledFor ? 'approved' : (idea as { status?: string }).status ?? 'drafted',
       draft,
       draft_settings: draftSettings,
+      target_platform: resolvedTargetPlatform,
+      channel: resolvedChannel,
       final_body: finalBody,
     })
     .eq('id', input.ideaId)
@@ -663,7 +676,7 @@ export async function scheduleMarketingContentIdea(
     ideaId: input.ideaId,
     contentType: (idea as { content_type: string }).content_type,
     scheduledFor: input.scheduledFor,
-    targetPlatform: stringValue((idea as { target_platform?: string | null }).target_platform) || draftSettings.platform,
+    targetPlatform: resolvedTargetPlatform,
   })
 
   await recordGtmEvent(supabase, {

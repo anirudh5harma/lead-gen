@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { AutoSendAccount, PendingFollowup } from './types'
+import type { Lead } from '@/lib/leads'
+import { buildRevenueSnapshot } from '@/lib/revenue-ux'
+import type { AutoSendAccount, GtmWorkItem, PendingFollowup } from './types'
+import { OperatingModelPanels } from './OperatingModelPanels'
 import { TabLoadingState, formatDateTime, SectionHeader } from './shared'
 import SpotlightCard from '@/components/landing/SpotlightCard'
 
@@ -29,7 +32,7 @@ interface PreflightResult {
   }>
 }
 
-export default function AutopilotView() {
+export default function AutopilotView({ leads }: { leads: Lead[] }) {
   const [liveAutopilotOn, setLiveAutopilotOn] = useState(false)
   const [exploreDailyLimit, setExploreDailyLimit] = useState(3)
   const [saving, setSaving] = useState(false)
@@ -47,6 +50,7 @@ export default function AutopilotView() {
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [sessions, setSessions] = useState<ExploreSession[]>([])
   const [sessionBusy, setSessionBusy] = useState<string | null>(null)
+  const [workItems, setWorkItems] = useState<GtmWorkItem[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -94,6 +98,19 @@ export default function AutopilotView() {
       .then(r => r.json() as Promise<{ followups?: PendingFollowup[] }>)
       .then(data => { if (!cancelled) { setFollowups(data.followups ?? []); setFollowupsLoaded(true) } })
       .catch(() => { if (!cancelled) setFollowupsLoaded(true) })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/gtm/work-items?limit=40', { cache: 'no-store' })
+      .then(r => r.json() as Promise<{ work_items?: GtmWorkItem[] }>)
+      .then(data => {
+        if (!cancelled) setWorkItems(data.work_items ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setWorkItems([])
+      })
     return () => { cancelled = true }
   }, [])
 
@@ -169,9 +186,94 @@ export default function AutopilotView() {
   if (!loaded || !followupsLoaded) return <TabLoadingState title="Loading Autopilot" detail="Fetching sending mode and scheduled follow-ups." />
 
   const activeSessions = sessions.filter(s => s.in_autopilot)
+  const snapshot = buildRevenueSnapshot(leads)
+  const blockedItems = workItems
+    .filter(item => item.status === 'blocked' || item.type === 'workflow_failed' || item.type === 'policy_blocked')
+    .slice(0, 4)
+
+  const working = [
+    ...(liveAutopilotOn ? [{ id: 'live-autopilot-on', label: 'Live automation is enabled', detail: 'Account agents can send from live signals within current safety rules.' }] : []),
+    ...(activeSessions.length > 0 ? [{ id: 'explore-autopilot-on', label: 'Explore automation is active', detail: `${activeSessions.length} batch session${activeSessions.length === 1 ? '' : 's'} queued for execution.` }] : []),
+    ...(accounts.length > 0 ? [{ id: 'inbox-capacity', label: 'Sending accounts are connected', detail: `${accounts.length} connected inbox${accounts.length === 1 ? '' : 'es'} available for routing.` }] : []),
+    ...(snapshot.windows.sent30d >= 10 && snapshot.rates.replyRate30 >= 8
+      ? [{ id: 'send-performance', label: 'Recent send performance is healthy', detail: `${snapshot.rates.replyRate30}% reply rate across ${snapshot.windows.sent30d} sends in the last 30 days.` }]
+      : []),
+  ]
+  const notWorking = [
+    ...(!liveAutopilotOn && activeSessions.length === 0
+      ? [{ id: 'automation-off', label: 'No automation source is active', detail: 'Live and batch automation are both paused, so account movement is manual only.' }]
+      : []),
+    ...(accounts.length === 0
+      ? [{ id: 'no-inbox', label: 'No sending inbox is connected', detail: 'Autopilot cannot execute outreach until at least one mailbox is active.' }]
+      : []),
+    ...(!requireVerified
+      ? [{ id: 'verification-off', label: 'Verified-recipient guardrail is disabled', detail: 'Turning this back on reduces delivery risk and policy blocks.' }]
+      : []),
+    ...(followups.length > 10
+      ? [{ id: 'followup-backlog', label: 'Follow-up queue is piling up', detail: `${followups.length} follow-ups are pending right now.` }]
+      : []),
+    ...(blockedItems.length > 0
+      ? [{ id: 'blocked-work', label: 'Execution blockers are active', detail: `${blockedItems.length} blocked work item${blockedItems.length === 1 ? '' : 's'} need review.` }]
+      : []),
+  ]
+
+  const actionMap = new Map<string, { id: string; label: string; reason: string; href: string }>()
+  for (const item of blockedItems) {
+    const href = actionHrefForWorkItem(item)
+    actionMap.set(`work:${item.id}`, {
+      id: `work:${item.id}`,
+      label: item.title,
+      reason: item.body,
+      href,
+    })
+  }
+  for (const action of snapshot.actions) {
+    actionMap.set(`snapshot:${action.id}`, { ...action, id: `snapshot:${action.id}` })
+  }
+  if (!liveAutopilotOn && activeSessions.length === 0) {
+    actionMap.set('autopilot:enable', {
+      id: 'autopilot:enable',
+      label: 'Enable at least one automation source',
+      reason: 'Turn on live automation or add an explore batch to restart account execution.',
+      href: '/dashboard?view=engine/autopilot',
+    })
+  }
+  if (accounts.length === 0) {
+    actionMap.set('autopilot:inbox', {
+      id: 'autopilot:inbox',
+      label: 'Connect a sending inbox',
+      reason: 'Autopilot cannot deliver outbound messages without an active mailbox.',
+      href: '/dashboard?view=settings',
+    })
+  }
+  if (!requireVerified) {
+    actionMap.set('autopilot:verify', {
+      id: 'autopilot:verify',
+      label: 'Re-enable verified contacts guardrail',
+      reason: 'Keep sends constrained to safe recipients before autopilot scales.',
+      href: '/dashboard?view=engine/autopilot',
+    })
+  }
+  const actions = [...actionMap.values()].slice(0, 8)
 
   return (
     <div className="w-full space-y-6">
+      <section>
+        <SectionHeader
+          title="Health snapshot"
+          subtitle={snapshot.summary.detail}
+          label="Operate"
+        />
+        <OperatingModelPanels
+          working={working}
+          notWorking={notWorking}
+          actions={actions}
+          actionTitle="Action Queue"
+          workingEmptyText="No stable execution wins yet."
+          notWorkingEmptyText="No major execution risks right now."
+        />
+      </section>
+
       {/* Main toggle card */}
       <section>
         <SectionHeader
@@ -382,4 +484,17 @@ export default function AutopilotView() {
       </section>
     </div>
   )
+}
+
+function actionHrefForWorkItem(item: GtmWorkItem): string {
+  if (item.type === 'needs_approval' || item.type === 'reply_detected' || item.type === 'meeting_booked' || item.type === 'new_opportunity') {
+    return '/dashboard?view=sales/inbox'
+  }
+  if (item.type === 'policy_blocked' || item.type === 'workflow_failed' || item.type === 'workflow_waiting') {
+    return '/dashboard?view=accounts'
+  }
+  if (item.type === 'sent_followup_pending') {
+    return '/dashboard?view=engine/autopilot'
+  }
+  return '/dashboard?view=accounts'
 }

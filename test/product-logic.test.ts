@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import type { Lead } from '../lib/leads.ts'
 import { buildWorkspaceAccessPlan } from '../lib/client-workspaces.ts'
 import { resolveOutreachContext, scheduleFollowupAt } from '../lib/outreach-context.ts'
 import { resolveLeadQuotaDecision } from '../lib/lead-quota.ts'
@@ -41,6 +42,8 @@ import { evaluateOutreachDraftQuality } from '../lib/gtm/draft-eval.ts'
 import { classifyFailureTaxonomy, scoreEvalTrace } from '../lib/gtm/eval-traces.ts'
 import { buildApolloPersonTitles, contactTitleMatchesRoles, normalizeRoleSelection } from '../lib/contact-targeting.ts'
 import { apolloCompanyMatchesFilters } from '../lib/apollo.ts'
+import { isPublishModeQueueEligible, selectPreferredDistributionAccount } from '../lib/distribution.ts'
+import { buildRevenueSnapshot } from '../lib/revenue-ux.ts'
 
 test('free workspace keeps only the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -1333,4 +1336,153 @@ test('apollo company filter matching supports region aliases', () => {
     apolloCompanyMatchesFilters(company, { region: 'United States' }).matches,
     true,
   )
+})
+
+test('distribution account selection prefers connected scheduled accounts', () => {
+  const selected = selectPreferredDistributionAccount([
+    { id: 'a', status: 'needs_reconnect', publish_mode: 'scheduled' },
+    { id: 'b', status: 'connected', publish_mode: 'manual_review' },
+    { id: 'c', status: 'connected', publish_mode: 'scheduled' },
+  ])
+  assert.equal(selected?.id, 'c')
+})
+
+test('distribution account selection still returns best fallback when no connected account exists', () => {
+  const selected = selectPreferredDistributionAccount([
+    { id: 'a', status: 'needs_reconnect', publish_mode: 'scheduled' },
+    { id: 'b', status: 'needs_reconnect', publish_mode: 'manual_review' },
+  ])
+  assert.equal(selected?.id, 'a')
+})
+
+test('manual review publish mode is queue-eligible by default', () => {
+  const previous = process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW
+  delete process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW
+  assert.equal(isPublishModeQueueEligible('manual_review'), true)
+  if (typeof previous === 'string') process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW = previous
+  else delete process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW
+})
+
+test('manual review publish mode is blocked when explicit manual review is required', () => {
+  const previous = process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW
+  process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW = 'true'
+  assert.equal(isPublishModeQueueEligible('manual_review'), false)
+  if (typeof previous === 'string') process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW = previous
+  else delete process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW
+})
+
+test('revenue snapshot flags no-send state and proposes outreach action', () => {
+  const now = Date.parse('2026-05-08T12:00:00.000Z')
+  const leads = [
+    { id: 'l1', target_company: 'Acme', relevance_score: 8, relevance_reason: null, status: 'drafted', created_at: '2026-05-01T00:00:00.000Z' },
+    { id: 'l2', target_company: 'Beta', relevance_score: 7, relevance_reason: null, status: 'new', created_at: '2026-04-10T00:00:00.000Z' },
+  ]
+  const snapshot = buildRevenueSnapshot(leads as unknown as Lead[], now)
+  assert.equal(snapshot.windows.sent30d, 0)
+  assert.equal(snapshot.notWorking.some(item => item.id === 'no-sends'), true)
+  assert.equal(snapshot.actions.some(action => action.id === 'send-first-batch'), true)
+})
+
+test('revenue snapshot marks healthy activity when sends replies and bookings are present', () => {
+  const now = Date.parse('2026-05-08T12:00:00.000Z')
+  const leads = [
+    {
+      id: 'l1',
+      target_company: 'Acme',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'booked',
+      created_at: '2026-04-20T00:00:00.000Z',
+      sent_at: '2026-04-25T00:00:00.000Z',
+      replied_at: '2026-04-27T00:00:00.000Z',
+      booked_at: '2026-04-29T00:00:00.000Z',
+    },
+    {
+      id: 'l2',
+      target_company: 'Beta',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-22T00:00:00.000Z',
+      sent_at: '2026-04-28T00:00:00.000Z',
+    },
+    {
+      id: 'l3',
+      target_company: 'Gamma',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'replied',
+      created_at: '2026-04-23T00:00:00.000Z',
+      sent_at: '2026-04-29T00:00:00.000Z',
+      replied_at: '2026-05-01T00:00:00.000Z',
+    },
+    {
+      id: 'l4',
+      target_company: 'Delta',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-24T00:00:00.000Z',
+      sent_at: '2026-05-02T00:00:00.000Z',
+    },
+    {
+      id: 'l5',
+      target_company: 'Epsilon',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-24T00:00:00.000Z',
+      sent_at: '2026-05-03T00:00:00.000Z',
+    },
+    {
+      id: 'l6',
+      target_company: 'Zeta',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-24T00:00:00.000Z',
+      sent_at: '2026-05-04T00:00:00.000Z',
+    },
+    {
+      id: 'l7',
+      target_company: 'Eta',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-24T00:00:00.000Z',
+      sent_at: '2026-05-05T00:00:00.000Z',
+    },
+    {
+      id: 'l8',
+      target_company: 'Theta',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-24T00:00:00.000Z',
+      sent_at: '2026-05-06T00:00:00.000Z',
+    },
+    {
+      id: 'l9',
+      target_company: 'Iota',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-24T00:00:00.000Z',
+      sent_at: '2026-05-07T00:00:00.000Z',
+    },
+    {
+      id: 'l10',
+      target_company: 'Kappa',
+      relevance_score: 8,
+      relevance_reason: null,
+      status: 'sent',
+      created_at: '2026-04-24T00:00:00.000Z',
+      sent_at: '2026-05-07T12:00:00.000Z',
+    },
+  ]
+  const snapshot = buildRevenueSnapshot(leads as unknown as Lead[], now)
+  assert.equal(snapshot.windows.sent30d >= 9, true)
+  assert.equal(snapshot.windows.replied30d >= 2, true)
+  assert.equal(snapshot.windows.booked30d >= 1, true)
+  assert.equal(snapshot.working.length > 0, true)
 })

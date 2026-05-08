@@ -89,6 +89,18 @@ interface WorkflowRunRow {
   input: Record<string, unknown> | null
 }
 
+interface EvalTraceRow {
+  id: string
+  lead_id: string | null
+  workflow_run_id: string | null
+  trace_type: string
+  status: 'passed' | 'blocked' | 'failed' | 'warning'
+  score: number
+  failure_taxonomy: string | null
+  reasons: string[] | null
+  created_at: string
+}
+
 interface OutreachPlanRow {
   lead_id: string | null
   status: string
@@ -125,7 +137,7 @@ export async function listGtmWorkItems(
 ): Promise<{ work_items: GtmWorkItem[] }> {
   const limit = clampLimit(input.limit ?? 30)
   const clientId = input.clientId ?? null
-  const [leadsRes, accountsRes, policiesRes, workflowsRes, plansRes, actionRes, durableActionsRes] = await Promise.all([
+  const [leadsRes, accountsRes, policiesRes, workflowsRes, tracesRes, plansRes, actionRes, durableActionsRes] = await Promise.all([
     scopedQuery(
       supabase
         .from('leads')
@@ -165,6 +177,16 @@ export async function listGtmWorkItems(
         .limit(50),
       clientId,
     ),
+    optionalRows(scopedQuery(
+      supabase
+        .from('gtm_eval_traces')
+        .select('id, lead_id, workflow_run_id, trace_type, status, score, failure_taxonomy, reasons, created_at')
+        .eq('user_id', input.userId)
+        .in('status', ['blocked', 'failed', 'warning'])
+        .order('created_at', { ascending: false })
+        .limit(80),
+      clientId,
+    )),
     optionalRows(scopedQuery(
       supabase
         .from('gtm_outreach_plans')
@@ -358,6 +380,47 @@ export async function listGtmWorkItems(
       created_at: run.started_at,
       account_state_url: account ? `/api/gtm/accounts/${account.id}/state` : null,
       metadata: { workflow_type: run.workflow_type, current_step: run.current_step },
+    })
+  }
+  const workflowIssueRunIds = new Set(
+    items
+      .filter(item => item.source === 'agent' && item.workflow_run_id)
+      .map(item => item.workflow_run_id as string),
+  )
+  for (const trace of tracesRes.rows as EvalTraceRow[]) {
+    if (trace.workflow_run_id && workflowIssueRunIds.has(trace.workflow_run_id)) continue
+    const lead = trace.lead_id ? leadById.get(trace.lead_id) ?? null : null
+    const account = lead ? findAccountForLead(accountByKey, lead) : null
+    const reasons = (trace.reasons ?? []).filter(Boolean)
+    const summary = reasons.length > 0
+      ? reasons.join(', ')
+      : trace.failure_taxonomy ?? 'Execution issue detected.'
+    const isFailed = trace.status === 'failed'
+    const isBlocked = trace.status === 'blocked'
+    items.push({
+      id: `eval:${trace.id}`,
+      type: isFailed ? 'workflow_failed' : isBlocked ? 'policy_blocked' : 'workflow_waiting',
+      status: isFailed ? 'blocked' : isBlocked ? 'blocked' : 'waiting',
+      priority: isFailed ? 90 : isBlocked ? 82 : 68,
+      title: `${trace.trace_type.replace(/_/g, ' ')} ${trace.status}`,
+      body: summary,
+      account_name: lead?.target_company ?? 'Account agent',
+      account_domain: lead?.company_domain ?? null,
+      lead_id: lead?.id ?? trace.lead_id,
+      account_id: account?.id ?? null,
+      workflow_run_id: trace.workflow_run_id,
+      policy_decision_id: null,
+      action_label: 'Review issue',
+      source: 'eval',
+      created_at: trace.created_at,
+      account_state_url: account ? `/api/gtm/accounts/${account.id}/state` : null,
+      metadata: {
+        trace_type: trace.trace_type,
+        trace_status: trace.status,
+        trace_score: trace.score,
+        failure_taxonomy: trace.failure_taxonomy,
+        reasons,
+      },
     })
   }
 

@@ -2,8 +2,10 @@
 
 import { useState } from 'react'
 import type { Lead } from '@/lib/leads'
+import { buildRevenueSnapshot } from '@/lib/revenue-ux'
 import type { View } from './types'
 import { SectionHeader } from './shared'
+import { OperatingModelPanels } from './OperatingModelPanels'
 import SpotlightCard from '@/components/landing/SpotlightCard'
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
 
 export default function HomeView({ leads, onNavigate }: Props) {
   const [now] = useState(() => Date.now())
+  const snapshot = buildRevenueSnapshot(leads)
 
   const day = 24 * 60 * 60 * 1000
   const last24h = now - day
@@ -42,8 +45,24 @@ export default function HomeView({ leads, onNavigate }: Props) {
 
   return (
     <div className="space-y-8">
-      {/* KPI Grid */}
       <section>
+        <SectionHeader
+          title="Welcome!"
+          subtitle={snapshot.summary.detail}
+          label="Operate"
+        />
+        <OperatingModelPanels
+          working={snapshot.working}
+          notWorking={snapshot.notWorking}
+          actions={snapshot.actions}
+          actionTitle="Action Queue"
+          workingEmptyText="No strong wins detected yet."
+          notWorkingEmptyText="No major risk signals right now."
+        />
+      </section>
+
+      {/* KPI Grid */}
+      {/* <section>
         <SectionHeader
           title="This week at a glance"
           subtitle="Account movement, outreach, and outcomes."
@@ -76,7 +95,6 @@ export default function HomeView({ leads, onNavigate }: Props) {
           />
         </div>
 
-        {/* Origin Breakdown */}
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-[var(--color-line-1)] bg-white px-4 py-3 flex items-center justify-between">
             <div>
@@ -93,7 +111,7 @@ export default function HomeView({ leads, onNavigate }: Props) {
             <span className="h-2 w-2 rounded-full bg-[var(--color-text-3)]" />
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Quick Actions */}
       <section>

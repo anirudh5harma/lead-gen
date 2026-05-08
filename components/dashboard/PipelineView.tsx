@@ -1,125 +1,130 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import type { Lead } from '@/lib/leads'
-import type { LaunchReadinessSnapshot } from './types'
-import { TabLoadingState, SectionHeader } from './shared'
-import SpotlightCard from '@/components/landing/SpotlightCard'
+import { buildRevenueSnapshot } from '@/lib/revenue-ux'
+import { SectionHeader } from './shared'
 
 interface Props {
   leads: Lead[]
 }
 
 export default function PipelineView({ leads }: Props) {
-  const [readiness, setReadiness] = useState<LaunchReadinessSnapshot | null>(null)
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/gtm/readiness', { cache: 'no-store' })
-      .then(async res => {
-        const data = await res.json().catch(() => null) as (LaunchReadinessSnapshot & { error?: string }) | null
-        if (cancelled) return
-        if (data && res.ok) setReadiness(data)
-        setLoaded(true)
-      })
-      .catch(() => { if (!cancelled) setLoaded(true) })
-    return () => { cancelled = true }
-  }, [])
-
-  const [now] = useState(() => Date.now())
-  const day = 24 * 60 * 60 * 1000
-  const last30d = now - 30 * day
-
-  const stageLeads = {
-    observed: leads.filter(l => l.status === 'new' || l.status === 'viewed').length,
-    qualified: leads.filter(l => l.status === 'drafted').length,
-    engaged: leads.filter(l => l.status === 'sent').length,
-    opportunity: leads.filter(l => l.status === 'replied').length,
-    customer: leads.filter(l => l.status === 'booked').length,
-    blocked: leads.filter(l => l.status === 'dismissed').length,
-  }
-
-  const totalPipeline = stageLeads.observed + stageLeads.qualified + stageLeads.engaged + stageLeads.opportunity
-
-  const sent30d = leads.filter(l => inWindow(l.sent_at, last30d)).length
-  const replied30d = leads.filter(l => inWindow(l.replied_at, last30d)).length
-  const booked30d = leads.filter(l => inWindow(l.booked_at, last30d)).length
-
-  const replyRate = sent30d > 0 ? Math.round((replied30d / sent30d) * 100) : 0
-  const bookRate = sent30d > 0 ? Math.round((booked30d / sent30d) * 100) : 0
-
-  const stages = [
-    { key: 'observed', label: 'Observed', value: stageLeads.observed, color: 'bg-[var(--color-ink-3)]' },
-    { key: 'qualified', label: 'Qualified', value: stageLeads.qualified, color: 'bg-blue-400' },
-    { key: 'engaged', label: 'Engaged', value: stageLeads.engaged, color: 'bg-[var(--color-sig-expansion)]' },
-    { key: 'opportunity', label: 'Opportunity', value: stageLeads.opportunity, color: 'bg-[var(--color-sig-funding)]' },
-    { key: 'customer', label: 'Customer', value: stageLeads.customer, color: 'bg-[var(--color-accent)]' },
+  const snapshot = buildRevenueSnapshot(leads)
+  const stageRows = [
+    { label: 'Observed', value: snapshot.pipeline.observed, hint: `${snapshot.pipeline.staleObserved14d} stale` },
+    { label: 'Drafted', value: snapshot.pipeline.qualified, hint: `${snapshot.pipeline.draftedBacklog} waiting` },
+    { label: 'Sent', value: snapshot.pipeline.engaged, hint: `${snapshot.windows.sent30d} in 30d` },
+    { label: 'Replied', value: snapshot.pipeline.opportunity, hint: `${snapshot.windows.replied30d} in 30d` },
+    { label: 'Booked', value: snapshot.pipeline.customer, hint: `${snapshot.windows.booked30d} in 30d` },
   ]
-
-  const maxStageValue = Math.max(...stages.map(s => s.value), 1)
-
-  if (!loaded) return <TabLoadingState title="Loading Pipeline" detail="Computing deal stages and revenue metrics." />
+  const maxStage = Math.max(...stageRows.map(stage => stage.value), 1)
 
   return (
-    <div className="space-y-8">
-      {/* KPI Banner */}
-      <section>
+    <div className="space-y-5">
+      <section className="rounded-lg border border-[var(--color-line-1)] bg-white px-4 py-4">
         <SectionHeader
-          title="Pipeline overview"
-          subtitle="Deal flow and conversion metrics."
           label="Revenue"
+          title="Control Center"
+          subtitle={snapshot.summary.detail}
         />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger-children">
-          <MetricCard label="Total Pipeline" value={totalPipeline} subtitle="Active deals in funnel" />
-          <MetricCard label="Reply Rate (30d)" value={`${replyRate}%`} subtitle={`${sent30d} sent → ${replied30d} replied`} />
-          <MetricCard label="Book Rate (30d)" value={`${bookRate}%`} subtitle={`${booked30d} booked meetings`} />
-          <MetricCard label="Revenue Ready" value={readiness?.status === 'running' ? 'Active' : readiness?.status === 'ready' ? 'Ready' : 'Setup'} subtitle={readiness?.headline ?? 'Configure GTM engine'} />
+        <div className="grid gap-3 md:grid-cols-4">
+          <KpiCard label="Active pipeline" value={snapshot.pipeline.active} detail="Observed + drafted + sent + replied" />
+          <KpiCard label="Reply rate (30d)" value={`${snapshot.rates.replyRate30}%`} detail={`${snapshot.windows.replied30d}/${snapshot.windows.sent30d} from sent`} />
+          <KpiCard label="Book rate (30d)" value={`${snapshot.rates.bookRate30}%`} detail={`${snapshot.windows.booked30d}/${snapshot.windows.sent30d} from sent`} />
+          <KpiCard label="Dismissed share" value={`${snapshot.rates.dismissedShare}%`} detail={`${snapshot.pipeline.blocked} of ${leads.length} total leads`} />
         </div>
       </section>
 
-      {/* Funnel Visualization */}
-      <section>
-        <SectionHeader
-          title="Deal stages"
-          subtitle="Accounts by lifecycle stage. Revenue tracking coming in a future update."
-          label="Funnel"
-        />
-        <SpotlightCard className="card overflow-hidden card-hover">
-          <div className="px-5 py-5 space-y-4">
-            {stages.map(stage => (
-              <div key={stage.key}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] font-semibold text-[var(--color-text-1)]">{stage.label}</span>
-                  <span className="text-[12px] font-bold tabular-nums text-[var(--color-text-2)]">{stage.value}</span>
-                </div>
-                <div className="w-full h-3 rounded-full bg-[var(--color-ink-2)] overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${stage.color}`}
-                    style={{ width: `${maxStageValue > 0 ? (stage.value / maxStageValue) * 100 : 0}%`, minWidth: stage.value > 0 ? '8px' : '0' }}
-                  />
-                </div>
+      <section className="grid gap-3 lg:grid-cols-3">
+        <SignalPanel title="What Is Working" tone="positive" items={snapshot.working} emptyText="No reliable wins yet." />
+        <SignalPanel title="What Is Not Working" tone="negative" items={snapshot.notWorking} emptyText="No major blockers detected." />
+        <ActionPanel actions={snapshot.actions} />
+      </section>
+
+      <section className="rounded-lg border border-[var(--color-line-1)] bg-white px-4 py-4">
+        <h3 className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-3)]">Pipeline Snapshot</h3>
+        <div className="mt-3 space-y-2.5">
+          {stageRows.map(stage => (
+            <div key={stage.label}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12px] font-semibold text-[var(--color-text-1)]">{stage.label}</p>
+                <p className="text-[11px] text-[var(--color-text-4)]">
+                  <span className="tabular-nums font-semibold text-[var(--color-text-2)]">{stage.value}</span> · {stage.hint}
+                </p>
               </div>
-            ))}
-          </div>
-        </SpotlightCard>
+              <div className="mt-1 h-2 rounded-full bg-[var(--color-ink-2)]">
+                <div
+                  className="h-2 rounded-full bg-[var(--color-accent)]"
+                  style={{ width: `${Math.max(4, Math.round((stage.value / maxStage) * 100))}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   )
 }
 
-function MetricCard({ label, value, subtitle }: { label: string; value: number | string; subtitle: string }) {
+function KpiCard({ label, value, detail }: { label: string; value: number | string; detail: string }) {
   return (
-    <SpotlightCard className="card px-4 py-4 card-hover">
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
-      <p className="mt-2 text-[26px] font-bold tracking-tight tabular-nums text-[var(--color-text-1)]">{value}</p>
-      <p className="mt-1 text-[11px] text-[var(--color-text-4)]">{subtitle}</p>
-    </SpotlightCard>
+    <div className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-[var(--color-text-4)]">{label}</p>
+      <p className="mt-1 text-[22px] font-semibold tabular-nums text-[var(--color-text-1)]">{value}</p>
+      <p className="mt-1 text-[11px] text-[var(--color-text-4)]">{detail}</p>
+    </div>
   )
 }
 
-function inWindow(value: string | null | undefined, since: number): boolean {
-  if (!value) return false
-  const time = new Date(value).getTime()
-  return Number.isFinite(time) && time >= since
+function SignalPanel({
+  title,
+  tone,
+  items,
+  emptyText,
+}: {
+  title: string
+  tone: 'positive' | 'negative'
+  items: Array<{ id: string; label: string; detail: string }>
+  emptyText: string
+}) {
+  const border = tone === 'positive' ? 'border-[var(--color-sig-expansion)]/30' : 'border-[var(--color-sig-regulation)]/28'
+  const badge = tone === 'positive' ? 'bg-[var(--color-sig-expansion-bg)] text-[var(--color-sig-expansion)]' : 'bg-[var(--color-sig-regulation)]/12 text-[var(--color-sig-regulation)]'
+
+  return (
+    <section className={`rounded-lg border ${border} bg-white px-4 py-4`}>
+      <h3 className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge}`}>{title}</h3>
+      <div className="mt-2 space-y-2">
+        {items.length > 0 ? items.map(item => (
+          <div key={item.id} className="rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
+            <p className="text-[12px] font-semibold text-[var(--color-text-1)]">{item.label}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--color-text-4)]">{item.detail}</p>
+          </div>
+        )) : (
+          <p className="text-[11px] text-[var(--color-text-4)]">{emptyText}</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function ActionPanel({ actions }: { actions: Array<{ id: string; label: string; reason: string; href: string }> }) {
+  return (
+    <section className="rounded-lg border border-[var(--color-line-1)] bg-white px-4 py-4">
+      <h3 className="inline-flex rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-accent-ring)]">Next Actions</h3>
+      <div className="mt-2 space-y-2">
+        {actions.length > 0 ? actions.map(action => (
+          <a
+            key={action.id}
+            href={action.href}
+            className="block rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2 hover:border-[var(--color-accent)]/35"
+          >
+            <p className="text-[12px] font-semibold text-[var(--color-text-1)]">{action.label}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--color-text-4)]">{action.reason}</p>
+          </a>
+        )) : (
+          <p className="text-[11px] text-[var(--color-text-4)]">No immediate action required.</p>
+        )}
+      </div>
+    </section>
+  )
 }

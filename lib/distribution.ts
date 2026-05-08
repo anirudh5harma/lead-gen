@@ -60,6 +60,12 @@ interface ProviderConfig {
   manualReason?: string
 }
 
+interface DistributionAccountSelection {
+  id: string
+  status: string
+  publish_mode: string
+}
+
 interface OAuthStatePayload {
   userId: string
   clientId: string | null
@@ -101,6 +107,20 @@ export function distributionProviderForContentType(contentType: string, targetPl
   if (contentType === 'newsletter_blurb') return 'substack'
   if (contentType === 'video_script') return 'tiktok'
   return null
+}
+
+export function selectPreferredDistributionAccount(
+  accounts: DistributionAccountSelection[],
+): DistributionAccountSelection | null {
+  if (!Array.isArray(accounts) || accounts.length === 0) return null
+  const scored = [...accounts].sort((left, right) => distributionAccountScore(right) - distributionAccountScore(left))
+  return scored[0] ?? null
+}
+
+export function isPublishModeQueueEligible(mode: string): boolean {
+  if (mode === 'scheduled' || mode === 'auto_publish') return true
+  if (mode === 'manual_review') return process.env.DISTRIBUTION_REQUIRE_MANUAL_REVIEW === 'true' ? false : true
+  return false
 }
 
 export function providerConnectStatus(provider: DistributionProviderId) {
@@ -236,16 +256,23 @@ export async function enqueueDistributionJobForIdea(
   supabase: SupabaseClient,
   input: { userId: string; clientId: string | null; ideaId: string; contentType: string; scheduledFor: string | null; targetPlatform?: string | null },
 ): Promise<void> {
-  const provider = distributionProviderForContentType(input.contentType, input.targetPlatform)
-  if (!provider) return
   if (!input.scheduledFor) {
     await supabase
       .from('content_distribution_jobs')
       .update({ status: 'cancelled', scheduled_for: null, error_message: null })
       .eq('content_idea_id', input.ideaId)
-      .eq('provider', provider)
+      .in('status', ['queued', 'failed', 'publishing', 'manual_ready'])
     return
   }
+  const provider = distributionProviderForContentType(input.contentType, input.targetPlatform)
+  if (!provider) return
+
+  await supabase
+    .from('content_distribution_jobs')
+    .update({ status: 'cancelled', scheduled_for: null, error_message: 'Cancelled because target platform changed.' })
+    .eq('content_idea_id', input.ideaId)
+    .neq('provider', provider)
+    .in('status', ['queued', 'failed', 'publishing', 'manual_ready'])
 
   let accountQuery = supabase
     .from('connected_distribution_accounts')
@@ -254,12 +281,21 @@ export async function enqueueDistributionJobForIdea(
     .eq('provider', provider)
     .neq('status', 'disabled')
     .order('created_at', { ascending: true })
-    .limit(1)
+    .limit(20)
   accountQuery = input.clientId ? accountQuery.eq('client_id', input.clientId) : accountQuery.is('client_id', null)
-  const { data: account } = await accountQuery.maybeSingle()
+  const { data: accountRows } = await accountQuery
+  const account = selectPreferredDistributionAccount(
+    ((accountRows ?? []) as Array<Record<string, unknown>>).map(row => ({
+      id: stringValue(row.id),
+      status: stringValue(row.status),
+      publish_mode: stringValue(row.publish_mode),
+    })).filter(row => row.id),
+  )
 
   const config = providerConfig(provider)
-  const status = config?.direct && account?.id && account.status === 'connected' && account.publish_mode !== 'manual_review' ? 'queued' : 'manual_ready'
+  const status = config?.direct && account?.id && account.status === 'connected' && isPublishModeQueueEligible(account.publish_mode)
+    ? 'queued'
+    : 'manual_ready'
   const { data: existingJob } = await supabase
     .from('content_distribution_jobs')
     .select('id')
@@ -306,8 +342,19 @@ export async function publishDueDistributionJobs(
     const jobId = stringValue(job.id)
     const accountId = stringValue(job.connected_distribution_account_id)
     const ideaId = stringValue(job.content_idea_id)
-    if (!jobId || !accountId || !ideaId) {
+    if (!jobId) {
       skipped++
+      continue
+    }
+    if (!accountId || !ideaId) {
+      skipped++
+      await supabase
+        .from('content_distribution_jobs')
+        .update({
+          status: 'cancelled',
+          error_message: 'Distribution job missing required references. Reschedule from Content Hub.',
+        })
+        .eq('id', jobId)
       continue
     }
 
@@ -317,7 +364,17 @@ export async function publishDueDistributionJobs(
         supabase.from('connected_distribution_accounts').select('*').eq('id', accountId).maybeSingle(),
         supabase.from('gtm_content_ideas').select('id, angle, content_type, draft, proof_points, source_assets, media_assets, compliance_flags').eq('id', ideaId).maybeSingle(),
       ])
-      if (!account || !idea) throw new Error('Distribution account or content idea no longer exists.')
+      if (!account || !idea) {
+        skipped++
+        await supabase
+          .from('content_distribution_jobs')
+          .update({
+            status: 'cancelled',
+            error_message: 'Distribution account or content idea no longer exists.',
+          })
+          .eq('id', jobId)
+        continue
+      }
       const refreshed = await refreshDistributionAccount(account as DistributionAccount, supabase)
       const draft = normalizeRecord((idea as Record<string, unknown>).draft)
       const sourceAssets = normalizeProofPoints((idea as Record<string, unknown>).source_assets)
@@ -614,4 +671,14 @@ function normalizeProofPoints(value: unknown): Array<{ label: string; value: str
     .map(item => normalizeRecord(item))
     .map(item => ({ label: stringValue(item.label), value: stringValue(item.value) }))
     .filter(item => item.label && item.value)
+}
+
+function distributionAccountScore(account: DistributionAccountSelection): number {
+  let score = 0
+  if (account.status === 'connected') score += 100
+  else if (account.status === 'needs_reconnect') score += 30
+  if (account.publish_mode === 'scheduled' || account.publish_mode === 'auto_publish') score += 20
+  else if (isPublishModeQueueEligible(account.publish_mode)) score += 5
+  else if (account.publish_mode === 'manual_review') score -= 10
+  return score
 }

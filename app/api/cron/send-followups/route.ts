@@ -10,6 +10,7 @@ import { buildRecipientGroup, formatRecipientListForLog } from '@/lib/outreach-r
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
+import { upsertGtmEvalTrace } from '@/lib/gtm/eval-traces'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
@@ -324,6 +325,27 @@ export async function GET(request: Request) {
           output: { sent: false, blocked_at: 'recipient_validation', reasons, unsafe_emails: recipientValidation.unsafeEmails },
           checkpoint: { blocked_at: 'recipient_validation' },
         })
+        await upsertGtmEvalTrace(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          workflowRunId,
+          traceType: 'followup_send',
+          status: 'blocked',
+          reasons,
+          metadata: {
+            blocked_at: 'recipient_validation',
+            unsafe_emails: recipientValidation.unsafeEmails,
+          },
+        })
+        await recordFollowupBlockerMemory(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          graph,
+          reasons,
+          workflowRunId,
+        })
         continue
       }
       const policyStepId = await startWorkflowStep(supabase, {
@@ -379,6 +401,24 @@ export async function GET(request: Request) {
           status: 'completed',
           output: { sent: false, policy_decision: policyDecision.decision, reasons: policyDecision.reasons },
           checkpoint: { blocked_at: 'policy' },
+        })
+        await upsertGtmEvalTrace(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          workflowRunId,
+          traceType: 'followup_send',
+          status: 'blocked',
+          reasons: policyDecision.reasons,
+          metadata: { blocked_at: 'policy' },
+        })
+        await recordFollowupBlockerMemory(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          graph,
+          reasons: policyDecision.reasons,
+          workflowRunId,
         })
         continue
       }
@@ -442,6 +482,24 @@ export async function GET(request: Request) {
             status: 'completed',
             output: { sent: false, reason: 'no_eligible_inbox' },
             checkpoint: { blocked_at: 'send' },
+          })
+          await upsertGtmEvalTrace(supabase, {
+            userId: item.user_id,
+            clientId: lead.client_id ?? null,
+            leadId: item.lead_id,
+            workflowRunId,
+            traceType: 'followup_send',
+            status: 'blocked',
+            reasons: ['no_eligible_inbox'],
+            metadata: { blocked_at: 'send' },
+          })
+          await recordFollowupBlockerMemory(supabase, {
+            userId: item.user_id,
+            clientId: lead.client_id ?? null,
+            leadId: item.lead_id,
+            graph,
+            reasons: ['no_eligible_inbox'],
+            workflowRunId,
           })
           continue
         }
@@ -540,16 +598,49 @@ export async function GET(request: Request) {
           output: { sent: true, message_id: result.messageId, from_email: result.fromEmail },
           checkpoint: { completed_at: nowIso, lead_id: item.lead_id },
         })
+        await upsertGtmEvalTrace(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          workflowRunId,
+          traceType: 'followup_send',
+          status: 'passed',
+          reasons: [],
+          metadata: {
+            provider: result.provider,
+            message_id: result.messageId,
+            from_email: result.fromEmail,
+          },
+        })
         sent++
       } catch (err) {
         console.error(`[send-followups] failed for lead ${item.lead_id}:`, err)
         await releaseClaim(supabase, item.id, claimToken)
+        const message = err instanceof Error ? err.message : 'Failed to send follow-up'
         await finishWorkflowRun(supabase, {
           runId: workflowRunId,
           status: 'failed',
           output: { sent: false },
-          errorMessage: err instanceof Error ? err.message : 'Failed to send follow-up',
+          errorMessage: message,
           checkpoint: { failed_at: new Date().toISOString(), lead_id: item.lead_id },
+        })
+        await upsertGtmEvalTrace(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          workflowRunId,
+          traceType: 'followup_send',
+          status: 'failed',
+          reasons: ['runtime_send_failure'],
+          errorMessage: message,
+        })
+        await recordFollowupBlockerMemory(supabase, {
+          userId: item.user_id,
+          clientId: lead.client_id ?? null,
+          leadId: item.lead_id,
+          graph,
+          reasons: ['runtime_send_failure'],
+          workflowRunId,
         })
       }
     }
@@ -595,4 +686,35 @@ async function releaseClaim(
     .eq('id', followupId)
     .eq('processing_token', claimToken)
     .is('sent_at', null)
+}
+
+async function recordFollowupBlockerMemory(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  input: {
+    userId: string
+    clientId: string | null
+    leadId: string
+    graph: { accountId: string } | null
+    reasons: string[]
+    workflowRunId: string | null
+  },
+) {
+  if (!input.graph || input.reasons.length === 0) return
+  await recordGtmMemory(supabase, {
+    userId: input.userId,
+    clientId: input.clientId,
+    scope: 'entity',
+    entityType: 'account',
+    entityId: input.graph.accountId,
+    memoryType: 'followup_blocker',
+    content: `Follow-up execution blocked for lead ${input.leadId}: ${input.reasons.join(', ')}.`,
+    source: 'scheduled_followup',
+    confidence: 1,
+    observedAt: new Date().toISOString(),
+    provenance: {
+      lead_id: input.leadId,
+      reasons: input.reasons,
+    },
+    workflowRunId: input.workflowRunId,
+  })
 }

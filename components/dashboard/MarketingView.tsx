@@ -655,6 +655,11 @@ function ContentTypeWorkspace({
     drafts: drafts.length,
     scheduled: ready.length,
   }
+  const suggestedLabel = hub === 'posts'
+    ? 'No post ideas yet. Refresh ideas or adjust post settings.'
+    : hub === 'blogs'
+      ? 'No blog ideas yet. Refresh ideas or adjust blog settings.'
+      : 'No video ideas yet. Refresh ideas or adjust video settings.'
 
   return (
     <section className="space-y-4">
@@ -773,7 +778,7 @@ function ContentTypeWorkspace({
             {visibleIdeas.length === 0 ? (
               <EmptyPanel text={
                 contentTab === 'ideas'
-                  ? sourceMode === 'suggested' ? 'No suggested ideas yet. Try refreshing or check your signal sources.' : 'No custom items. Use the form above to create one.'
+                  ? sourceMode === 'suggested' ? suggestedLabel : 'No custom items. Use the form above to create one.'
                   : contentTab === 'drafts'
                     ? 'No drafts yet. Draft an idea to get started.'
                     : 'Nothing scheduled yet. Approve or schedule items from the Ideas tab.'
@@ -1051,6 +1056,7 @@ function ContentCard({
   const primaryInsight = (idea.source_insights?.length ? idea.source_insights : idea.proof_points)[0]
   const hasMedia = ((idea.media_assets?.length ?? 0) + (idea.source_assets?.length ?? 0)) > 0
   const heading = suggestionHeading(idea, primaryInsight)
+  const conciseInsight = compactInsightText(primaryInsight)
   const avatarStatus = idea.latest_avatar_video_job?.status
   const avatarLocked = avatarPreparing || avatarStatus === 'queued' || avatarStatus === 'rendering' || avatarStatus === 'ready'
   const draftLocked = drafting || hasDraft(idea.draft) || idea.status === 'drafted' || idea.status === 'approved'
@@ -1101,9 +1107,9 @@ function ContentCard({
               {hasMedia && <span>media</span>}
             </div>
 
-            {primaryInsight && (
+            {conciseInsight && (
               <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-[var(--color-text-2)]">
-                <span className="font-semibold text-[var(--color-text-3)]">{primaryInsight.label}: </span>{primaryInsight.value}
+                <span className="font-semibold text-[var(--color-text-3)]">Signal:</span> {conciseInsight}
               </p>
             )}
 
@@ -1225,10 +1231,14 @@ function PlatformPanel({
   return (
     <section className="rounded-lg border border-[var(--color-line-1)] bg-white p-4 shadow-sm">
       <h3 className="text-sm font-semibold text-[var(--color-text-1)]">Distribution accounts</h3>
+      <p className="mt-1 text-[11px] leading-relaxed text-[var(--color-text-4)]">
+        Connect once, then schedule directly from approved drafts.
+      </p>
       <div className="mt-3 space-y-2">
         {providers.map(provider => {
-          const account = distribution.accounts.find(item => item.provider === provider.id)
-          const connected = Boolean(account)
+          const account = selectPreferredDistributionAccountForProvider(distribution.accounts, provider.id)
+          const connected = Boolean(account && account.status === 'connected')
+          const needsReconnect = Boolean(account && account.status !== 'connected')
           const manual = !provider.direct
           return (
           <div key={provider.id} className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
@@ -1238,22 +1248,26 @@ function PlatformPanel({
                 <p className="text-[11px] text-[var(--color-text-4)]">
                   {connected
                     ? `${account?.display_name ?? provider.label}${account?.handle ? ` ${account.handle}` : ''}`
+                    : needsReconnect
+                      ? `${account?.display_name ?? provider.label} needs reconnect`
                     : manual ? 'Export-ready workflow' : provider.category}
                 </p>
               </div>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${connected ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : manual ? 'bg-[#eef2f7] text-[#526070]' : 'bg-[#fff4df] text-[#936014]'}`}>
-                {connected ? 'Connected' : manual ? 'Manual' : 'Connect'}
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${connected ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : needsReconnect ? 'bg-[#fff4df] text-[#936014]' : manual ? 'bg-[#eef2f7] text-[#526070]' : 'bg-[#fff4df] text-[#936014]'}`}>
+                {connected ? 'Connected' : needsReconnect ? 'Reconnect' : manual ? 'Manual' : 'Connect'}
               </span>
             </div>
 
             <p className="mt-2 text-[11px] leading-snug text-[var(--color-text-4)]">
               {connected
                 ? `Schedules ${provider.supported.map(labelForContentType).join(', ')} from approved Content Hub items.`
+                : needsReconnect
+                  ? `Reconnect ${provider.label} to resume scheduled publishing for ${provider.supported.map(labelForContentType).join(', ')}.`
                 : provider.manualReason ?? provider.connect.reason ?? `Connect ${provider.label} to publish scheduled content.`}
             </p>
 
             <div className="mt-2 flex flex-wrap gap-2">
-              {connected && account ? (
+              {(connected || needsReconnect) && account && (
                 <button
                   onClick={() => onDisconnect(account.id)}
                   disabled={busyId === account.id}
@@ -1261,22 +1275,33 @@ function PlatformPanel({
                 >
                   Disconnect
                 </button>
-              ) : provider.connect.enabled ? (
+              )}
+              {(!connected || needsReconnect) && provider.connect.enabled ? (
                 <a
                   href={`/api/distribution/auth/${provider.id}`}
                   className="inline-flex h-7 items-center rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-2)] hover:text-[var(--color-text-1)]"
                 >
-                  Connect
+                  {needsReconnect ? 'Reconnect' : 'Connect'}
                 </a>
               ) : (
-                <span className="inline-flex h-7 items-center rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-4)]">
-                  {manual ? 'Copy/export' : 'Setup needed'}
-                </span>
+                !connected && (
+                  <span className="inline-flex h-7 items-center rounded-md border border-[var(--color-line-1)] bg-white px-2.5 text-[11px] font-semibold text-[var(--color-text-4)]">
+                    {manual ? 'Copy/export' : 'Setup needed'}
+                  </span>
+                )
               )}
             </div>
           </div>
           )
         })}
+      </div>
+      <div className="mt-3 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2">
+        <p className="text-[11px] font-semibold text-[var(--color-text-2)]">Connect in 3 steps</p>
+        <ol className="mt-1 space-y-1 text-[10.5px] leading-relaxed text-[var(--color-text-4)]">
+          <li>1. Click <span className="font-semibold text-[var(--color-text-3)]">Connect</span> for your channel.</li>
+          <li>2. Sign in and approve permissions on the provider page.</li>
+          <li>3. Return to Bombsell and confirm the channel shows <span className="font-semibold text-[var(--color-text-3)]">Connected</span>.</li>
+        </ol>
       </div>
     </section>
   )
@@ -1393,25 +1418,74 @@ function withoutSetValue<T>(set: Set<T>, value: T): Set<T> {
 }
 
 function suggestionHeading(idea: GtmContentIdea, insight?: { label: string; value: string } | null): string {
-  const heading = idea.angle.trim()
-  if ((idea.origin ?? 'suggested') === 'custom' || heading.includes('"') || !insight) return heading
-  if (!/signal|inspiration/i.test(insight.label)) return heading
-  const signal = signalSnippet(insight.value)
-  if (!signal) return heading
-  if (heading.toLowerCase().includes(signal.toLowerCase())) {
-    return heading.replace(new RegExp(escapeRegExp(signal), 'i'), `"${signal}"`)
-  }
-  return `${heading} Inspired by "${signal}"`
+  const baseHeading = normalizeHeadingText(idea.angle)
+  const isCustom = (idea.origin ?? 'suggested') === 'custom'
+  if (isCustom) return clampHeading(baseHeading || fallbackHeadingForType(idea.content_type), 84)
+  const signal = signalSnippet(insight?.value ?? '')
+  const cleaned = stripHeadingFluff(baseHeading)
+  const chosen = cleaned.length >= 18 ? cleaned : signal || cleaned || fallbackHeadingForType(idea.content_type)
+  const prefix = prefixForContentType(idea.content_type)
+  const candidate = chosen.toLowerCase().startsWith(prefix.toLowerCase())
+    ? chosen
+    : `${prefix}: ${chosen}`
+  return clampHeading(candidate, 84)
 }
 
 function signalSnippet(value: string): string {
   const cleaned = value.replace(/\s+/g, ' ').trim()
   const afterColon = cleaned.includes(':') ? cleaned.split(':').slice(1).join(':').trim() : cleaned
-  return (afterColon || cleaned).replace(/^["']|["']$/g, '').slice(0, 110)
+  return (afterColon || cleaned)
+    .replace(/^["']|["']$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 96)
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+function compactInsightText(insight?: { label: string; value: string } | null): string {
+  if (!insight) return ''
+  const label = normalizeHeadingText(insight.label).replace(/signal|inspiration/gi, '').trim()
+  const value = signalSnippet(insight.value)
+  if (!value) return label || ''
+  const combined = label ? `${titleCase(label)}: ${value}` : value
+  return clampHeading(combined, 120)
+}
+
+function normalizeHeadingText(value: string | null | undefined): string {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^["']|["']$/g, '')
+    .trim()
+}
+
+function stripHeadingFluff(value: string): string {
+  const compact = normalizeHeadingText(value)
+    .replace(/^(create|draft|write|build|prepare|generate|publish|share)\s+/i, '')
+    .replace(/^(a|an|the)\s+/i, '')
+    .replace(/\b(for linkedin|for x|for twitter|for blog|for newsletter|for tiktok|for instagram)\b/ig, '')
+    .replace(/\b(based on|inspired by|around)\b/ig, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return compact || normalizeHeadingText(value)
+}
+
+function prefixForContentType(contentType: string): string {
+  if (contentType === 'linkedin_post' || contentType === 'x_post') return 'Post'
+  if (contentType === 'blog_article' || contentType === 'newsletter_blurb') return 'Article'
+  if (contentType === 'video_script') return 'Video'
+  return 'Idea'
+}
+
+function fallbackHeadingForType(contentType: string): string {
+  if (contentType === 'linkedin_post' || contentType === 'x_post') return 'Post angle from fresh signal'
+  if (contentType === 'blog_article' || contentType === 'newsletter_blurb') return 'Article angle from fresh signal'
+  if (contentType === 'video_script') return 'Video angle from fresh signal'
+  return 'Content angle from fresh signal'
+}
+
+function clampHeading(value: string, max = 84): string {
+  const text = normalizeHeadingText(value)
+  if (text.length <= max) return text
+  return `${text.slice(0, Math.max(20, max - 1)).trimEnd()}…`
 }
 
 function buildMarketingCalendar(ideas: GtmContentIdea[]) {
@@ -1487,6 +1561,25 @@ function fallbackDistributionProviders(): DistributionProvider[] {
     { id: 'medium', label: 'Medium', category: 'Articles', direct: false, supported: ['blog_article'], manualReason: 'Export-ready copy.', connect: { enabled: false, reason: null } },
     { id: 'substack', label: 'Substack', category: 'Newsletter', direct: false, supported: ['blog_article', 'newsletter_blurb'], manualReason: 'Export-ready copy.', connect: { enabled: false, reason: null } },
   ]
+}
+
+function selectPreferredDistributionAccountForProvider(
+  accounts: DistributionAccount[],
+  provider: string,
+): DistributionAccount | null {
+  const candidates = accounts.filter(account => account.provider === provider)
+  if (candidates.length === 0) return null
+  const [preferred] = [...candidates].sort((left, right) => distributionAccountScore(right) - distributionAccountScore(left))
+  return preferred ?? null
+}
+
+function distributionAccountScore(account: DistributionAccount): number {
+  let score = 0
+  if (account.status === 'connected') score += 100
+  else if (account.status === 'needs_reconnect') score += 30
+  if (account.publish_mode === 'scheduled' || account.publish_mode === 'auto_publish') score += 20
+  else if (account.publish_mode === 'manual_review') score += 5
+  return score
 }
 
 function toDateTimeLocal(value: string | null | undefined): string {
