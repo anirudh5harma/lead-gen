@@ -48,13 +48,17 @@ async function call<T>(path: string, init: RequestInit & { timeoutMs?: number } 
 export type PostForMePlatform = 'linkedin' | 'x'
 
 /** POST /v1/social-accounts/auth-url — returns the hosted OAuth URL the user
- *  authorizes on. `externalId` is our workspace id; `redirectUrl` overrides the
- *  dashboard default redirect for this flow. */
-export async function createConnectUrl(opts: { platform: PostForMePlatform; redirectUrl: string; externalId: string }): Promise<{ ok: boolean; url?: string; error?: string }> {
-  const r = await call<{ url?: string; platform?: string }>(`/v1/social-accounts/auth-url`, {
-    method: 'POST',
-    body: JSON.stringify({ platform: opts.platform, external_id: opts.externalId, redirect_url_override: opts.redirectUrl }),
-  })
+ *  authorizes on. `externalId` is our workspace id.
+ *
+ *  Where the user lands after authorizing is the **Project Redirect URL set in
+ *  the Post for Me dashboard** — set it to `https://<app>/api/auth/postforme/callback`.
+ *  Quickstart projects reject `redirect_url_override`; only White Label projects
+ *  allow it, so we only send `redirectUrl` when `POSTFORME_WHITE_LABEL=true`. */
+export async function createConnectUrl(opts: { platform: PostForMePlatform; redirectUrl?: string; externalId: string }): Promise<{ ok: boolean; url?: string; error?: string }> {
+  const allowOverride = (process.env.POSTFORME_WHITE_LABEL ?? '').toLowerCase() === 'true'
+  const body: Record<string, unknown> = { platform: opts.platform, external_id: opts.externalId }
+  if (allowOverride && opts.redirectUrl) body.redirect_url_override = opts.redirectUrl
+  const r = await call<{ url?: string; platform?: string }>(`/v1/social-accounts/auth-url`, { method: 'POST', body: JSON.stringify(body) })
   if (!r.ok || !r.data?.url) return { ok: false, error: r.error ?? 'Could not start Post for Me connect flow' }
   return { ok: true, url: r.data.url }
 }

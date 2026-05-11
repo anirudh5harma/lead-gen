@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import type { UserProfile } from './types'
 import type { SubscriptionTier } from '@/lib/lead-credits'
 import { createClient } from '@/lib/supabase/client'
-import { hasPlanAccess } from '@/lib/plan-access'
 
 interface Props { profile: UserProfile; userTier: SubscriptionTier }
 
@@ -19,7 +18,7 @@ type AutomationMode = 'research_only' | 'approve_first' | 'autopilot'
  */
 export default function SettingsView({ profile, userTier }: Props) {
   const router = useRouter()
-  const canUseAutopilot = hasPlanAccess(userTier, 'growth')
+  const canUseAutopilot = true   // autopilot available on every plan
   const [mode, setMode] = useState<AutomationMode>(profile.automation_mode ?? 'approve_first')
   const [savingMode, setSavingMode] = useState(false)
   const [modeError, setModeError] = useState<string | null>(null)
@@ -29,10 +28,6 @@ export default function SettingsView({ profile, userTier }: Props) {
 
   async function saveMode(next: AutomationMode) {
     if (next === mode) return
-    if (next === 'autopilot' && !canUseAutopilot) {
-      setModeError('Autopilot requires the growth plan.')
-      return
-    }
     const previous = mode
     setMode(next)            // optimistic
     setSavingMode(true); setModeError(null)
@@ -78,7 +73,7 @@ export default function SettingsView({ profile, userTier }: Props) {
     <div className="space-y-12 max-w-3xl">
       <div>
         <p className="mono mb-2">Account</p>
-        <h2 className="font-serif text-[34px] leading-tight tracking-tight text-[var(--color-text-1)]">Settings</h2>
+        <h2 className="text-[30px] leading-tight font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">Settings</h2>
       </div>
 
       <Block label="01" title="Profile">
@@ -95,7 +90,7 @@ export default function SettingsView({ profile, userTier }: Props) {
       </Block>
 
       <Block label="03" title="Automation">
-        <p className="text-[13px] text-[var(--color-text-3)] mb-4">Choose how much agency you give the loop. You can change this any time.</p>
+        <p className="text-[13px] text-[var(--color-text-3)] mb-4">Choose how much agency you give the fleet. Available on every plan; change it any time.</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {([
             ['research_only', 'Research only', 'Surface accounts. No drafts, no sends.'],
@@ -189,7 +184,7 @@ function Block({ label, title, children }: { label: string; title: string; child
       <div className="grid grid-cols-[60px_1fr] gap-6">
         <div className="mono pt-1">{label}</div>
         <div>
-          <h3 className="font-serif text-[22px] leading-tight mb-5 text-[var(--color-text-1)]">{title}</h3>
+          <h3 className="text-[18px] leading-tight font-semibold mb-5 text-[var(--color-text-1)]">{title}</h3>
           <div className="space-y-3">{children}</div>
         </div>
       </div>

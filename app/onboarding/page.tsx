@@ -106,21 +106,29 @@ export default function OnboardingPage() {
   }, [])
 
   async function autoFillFromWebsite() {
-    if (!form.website_url || !form.industry) return
+    if (!form.website_url) { setError('Add your company website first.'); return }
     setAnalysing(true); setError(null)
-    const guessName = form.company_name || companyNameFromWebsite(form.website_url)
-    setForm((f) => ({ ...f, company_name: guessName }))
     try {
       const res = await fetch('/api/profile/website-suggestion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_name: guessName, industry: form.industry, website_url: form.website_url }),
+        body: JSON.stringify({
+          website_url: form.website_url,
+          company_name: form.company_name || undefined,
+          industries: INDUSTRIES.map(([v]) => v),
+        }),
       })
-      const body = await res.json().catch(() => ({}))
+      const body = await res.json().catch(() => ({})) as { description?: string; website_url?: string; company_name?: string | null; industry?: string | null; error?: string }
       if (res.ok && body?.description) {
-        setForm((f) => ({ ...f, services_description: body.description, website_url: body.website_url ?? f.website_url }))
-      } else if (!res.ok) {
-        setError(body?.error || 'Could not analyse website. Type a description below.')
+        setForm((f) => ({
+          ...f,
+          services_description: body.description!,
+          website_url: body.website_url ?? f.website_url,
+          company_name: f.company_name || (body.company_name ?? f.company_name),
+          industry: f.industry || (body.industry && (INDUSTRIES as readonly (readonly [string, string])[]).some(([v]) => v === body.industry) ? (body.industry as IndustryValue) : f.industry),
+        }))
+      } else {
+        setError(body?.error || 'Could not analyse that website. Type a description below.')
       }
     } catch {
       setError('Network issue. Type a description below.')
@@ -168,7 +176,7 @@ export default function OnboardingPage() {
     <div className="min-h-screen flex flex-col bg-surface font-body-main text-on-surface">
       {/* Header — minimalist editorial */}
       <header className="sticky top-0 w-full z-40 bg-surface/80 backdrop-blur-md flex items-center justify-between px-margin-page h-20">
-        <div className="font-h1-editorial text-[32px] italic text-primary">Bombsell</div>
+        <div className="font-bold text-[20px] tracking-tight text-primary">Bombsell</div>
         <button
           onClick={() => router.push(isEdit ? '/dashboard' : '/')}
           className="font-display-sm text-[12px] tracking-[0.1em] uppercase text-on-surface-variant hover:text-on-surface transition-all"
@@ -218,33 +226,43 @@ function StepIdentity({
   return (
     <section className="space-y-stack-lg">
       <div className="space-y-base">
-        <span className="font-display-sm text-[11px] tracking-widest text-primary uppercase">Step 01 — Identity</span>
-        <h2 className="font-h1-editorial text-[56px] leading-tight">Tell us where to point the loop.</h2>
+        <span className="font-display-sm text-[11px] tracking-widest text-primary uppercase">Step 01 — Your company</span>
+        <h2 className="font-h1-editorial text-[56px] leading-tight">Point the fleet at your market.</h2>
+        <p className="font-body-main text-on-surface-variant max-w-xl">Drop your website and hit Analyse — we&rsquo;ll read it and fill in the rest. Everything below stays editable.</p>
       </div>
 
       <div className="bg-surface-container-lowest hairline-border p-stack-lg space-y-stack-md">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md">
-          <FieldUnderline label="Website">
+        {/* Website + Analyse — the primary action */}
+        <div className="space-y-stack-sm">
+          <label className="font-display-sm text-[10px] tracking-wider text-on-surface-variant uppercase">Company website</label>
+          <div className="flex flex-col sm:flex-row gap-stack-sm">
             <input
               value={form.website_url}
               onChange={(e) => setForm({ ...form, website_url: e.target.value })}
-              onBlur={() => { if (!form.company_name && form.website_url) setForm(f => ({ ...f, company_name: companyNameFromWebsite(f.website_url) })) }}
-              placeholder="bombsell.ai"
-              className="w-full bg-transparent border-b border-outline-variant py-2 font-body-large text-on-surface placeholder:text-outline/40 outline-none focus:border-primary"
+              placeholder="yourcompany.com"
+              inputMode="url"
+              className="flex-1 bg-transparent border-b border-outline-variant py-2 font-body-large text-on-surface placeholder:text-outline/40 outline-none focus:border-primary"
             />
             <button
-              onClick={() => { if (form.website_url && !form.company_name) setForm(f => ({ ...f, company_name: companyNameFromWebsite(f.website_url) })) }}
-              className="absolute right-0 top-1 text-primary font-display-sm text-[10px] tracking-wider uppercase hover:underline"
+              onClick={onAnalyse}
+              disabled={!form.website_url || analysing}
+              className="shrink-0 bg-primary text-on-primary font-display-sm text-[11px] tracking-widest uppercase px-5 py-2.5 hover:bg-primary-container transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
             >
-              Auto-fill
+              <Icon name="psychology" size={16} /> {analysing ? 'Analysing…' : 'Analyse website'}
             </button>
-          </FieldUnderline>
+          </div>
+          {form.website_url
+            ? <p className="font-display-sm text-[9px] text-outline/60 uppercase">{analysing ? 'Reading your site…' : 'Analyse fills in your company name, industry, and what you sell.'}</p>
+            : <p className="font-display-sm text-[9px] text-outline/60 uppercase">No site? You can fill the fields below by hand.</p>}
+        </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-md pt-stack-sm">
           <FieldUnderline label="Company Name">
             <input
               value={form.company_name}
               onChange={(e) => setForm({ ...form, company_name: e.target.value })}
-              placeholder="Bombsell GTM"
+              onBlur={() => { if (!form.company_name && form.website_url) setForm(f => ({ ...f, company_name: companyNameFromWebsite(f.website_url) })) }}
+              placeholder="Acme Inc"
               className="w-full bg-transparent border-b border-outline-variant py-2 font-body-large text-on-surface placeholder:text-outline/40 outline-none focus:border-primary"
             />
           </FieldUnderline>
@@ -260,26 +278,14 @@ function StepIdentity({
         </div>
 
         <div className="space-y-base pt-stack-sm">
-          <div className="flex justify-between items-end">
-            <label className="font-display-sm text-[10px] tracking-wider text-on-surface-variant uppercase">What You Sell</label>
-            <button
-              onClick={onAnalyse}
-              disabled={!form.website_url || !form.industry || analysing}
-              className="font-display-sm text-[10px] text-primary border border-primary/20 px-2 py-0.5 hover:bg-primary hover:text-on-primary transition-colors flex items-center gap-1 disabled:opacity-40"
-            >
-              <Icon name="psychology" size={14} /> {analysing ? 'Analysing…' : 'Analyse'}
-            </button>
-          </div>
+          <label className="font-display-sm text-[10px] tracking-wider text-on-surface-variant uppercase">What you sell</label>
           <textarea
             value={form.services_description}
             onChange={(e) => setForm({ ...form, services_description: e.target.value })}
-            placeholder="Describe your product value prop in detail…"
-            rows={3}
+            placeholder="What you sell, who it helps, the outcomes — or hit Analyse above to draft this from your site."
+            rows={4}
             className="w-full bg-transparent border border-outline-variant/30 p-3 font-body-main text-on-surface resize-none outline-none focus:border-primary"
           />
-          {(!form.website_url || !form.industry) && (
-            <p className="font-display-sm text-[9px] text-outline/60 uppercase">Add website &amp; industry to auto-analyse</p>
-          )}
         </div>
 
         <div className="space-y-base">
@@ -453,7 +459,7 @@ function DoneState({ onOpen }: { onOpen: () => void }) {
       <div className="space-y-base">
         <h2 className="font-h1-editorial text-[72px] text-on-surface">You're live.</h2>
         <p className="font-body-large text-on-surface-variant max-w-md mx-auto opacity-80">
-          The loop is engaged. Our agents are currently indexing target accounts and listening for signal events across 12 channels.
+          You're live. Your agents are indexing target accounts and listening for signals — outbound and content.
         </p>
       </div>
       <div className="pt-10">

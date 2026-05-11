@@ -16,7 +16,7 @@ type LegalPageProps = {
 }
 
 /**
- * Editorial legal page — matches the design system used across /, /agents, /pricing.
+ * Editorial legal page — matches the design system used across /, /docs, /pricing.
  * Numbered sections, hairline dividers, mono labels, single coral accent.
  */
 export function LegalPage({ eyebrow, title, intro, updatedAt, sections }: LegalPageProps) {
@@ -79,8 +79,8 @@ function Nav() {
           <span className="text-[14px] font-semibold tracking-tight">Bombsell</span>
         </Link>
         <div className="flex items-center gap-7">
-          <Link href="/#loop" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">The Loop</Link>
-          <Link href="/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">For agents</Link>
+          <Link href="/#loop" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">How it works</Link>
+          <Link href="/#agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">For agents</Link>
           <Link href="/pricing" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">Pricing</Link>
           <Link href="/api/docs/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">Docs</Link>
           <Link href="/" className="btn-primary h-8 px-4 text-[13px] inline-flex items-center">Start free</Link>

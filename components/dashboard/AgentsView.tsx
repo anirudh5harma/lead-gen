@@ -96,20 +96,33 @@ function AgentStacks() {
           <h3 className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant mb-3 hairline-b pb-2">{ENGINE_LABEL[engine]} · {list.filter(a => a.enabled).length}/{list.length} on</h3>
           <div className="space-y-px bg-outline-variant/30 hairline-border">
             {list.map((a) => (
-              <div key={a.role} className="bg-surface-container-lowest px-stack-md py-3.5 flex items-center gap-stack-md">
-                <button onClick={() => void patch(a.role, { enabled: !a.enabled })} disabled={saving === a.role}
-                  className={`w-9 h-5 rounded-full shrink-0 transition-colors relative ${a.enabled ? 'bg-tertiary' : 'bg-outline-variant'}`} aria-label="toggle">
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${a.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              <div key={a.role} className={`bg-surface-container-lowest px-stack-md py-3.5 flex items-center gap-stack-md transition-opacity ${a.enabled ? '' : 'opacity-55'}`}>
+                {/* on/off switch */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={a.enabled}
+                  aria-label={`${a.role} agent ${a.enabled ? 'on' : 'off'}`}
+                  onClick={() => void patch(a.role, { enabled: !a.enabled })}
+                  disabled={saving === a.role}
+                  className={`relative shrink-0 inline-flex items-center w-10 h-[22px] rounded-full transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60 ${a.enabled ? 'bg-tertiary' : 'bg-outline-variant/70'}`}
+                >
+                  <span className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-[left] duration-150 ${a.enabled ? 'left-[20px]' : 'left-[2px]'}`} />
                 </button>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-label-mono text-label-mono uppercase text-on-surface">{a.role}-agent</span>
-                    {ACTING.has(a.role) && <span className="font-label-mono text-[9px] uppercase text-on-surface-variant" title="acting agent — autonomy applies">acts</span>}
+                    {ACTING.has(a.role) && <span className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant border border-outline-variant/50 rounded px-1 py-px" title="acting agent — autonomy applies">acts</span>}
                   </div>
-                  <p className="font-body-main text-[13px] text-on-surface-variant truncate">{a.description}</p>
+                  <p className="font-body-main text-[13px] text-on-surface-variant line-clamp-1 mt-0.5">{a.description}</p>
                 </div>
-                <select value={a.autonomy} onChange={(e) => void patch(a.role, { autonomy: e.target.value })} disabled={saving === a.role || !a.enabled || !ACTING.has(a.role)}
-                  className="font-label-mono text-[10px] uppercase bg-surface border border-outline-variant/40 rounded px-2 py-1 disabled:opacity-40 shrink-0">
+                <select
+                  value={a.autonomy}
+                  onChange={(e) => void patch(a.role, { autonomy: e.target.value })}
+                  disabled={saving === a.role || !a.enabled || !ACTING.has(a.role)}
+                  title={ACTING.has(a.role) ? 'How much agency this agent gets' : 'Autonomy only applies to acting agents'}
+                  className="font-label-mono text-[10px] uppercase bg-surface border border-outline-variant/50 rounded px-2 py-1.5 disabled:opacity-35 shrink-0 cursor-pointer disabled:cursor-default"
+                >
                   <option value="research_only">Research only</option>
                   <option value="approve_first">Approve first</option>
                   <option value="autopilot">Autopilot</option>

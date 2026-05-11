@@ -15,8 +15,15 @@ type Filter = 'all' | 'hot' | 'sent' | 'replied' | 'booked'
  */
 export default function AccountsView({ leads }: Props) {
   const [filter, setFilter] = useState<Filter>('all')
+  const [signalType, setSignalType] = useState<string>('all')
   const [q, setQ] = useState('')
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+
+  const signalTypes = useMemo(() => {
+    const set = new Set<string>()
+    for (const l of leads) { if (l.signal_type) set.add(l.signal_type) }
+    return [...set].sort()
+  }, [leads])
 
   const filtered = useMemo(() => {
     let xs = leads
@@ -24,12 +31,13 @@ export default function AccountsView({ leads }: Props) {
     if (filter === 'sent') xs = xs.filter(l => l.sent_at && !l.replied_at)
     if (filter === 'replied') xs = xs.filter(l => l.replied_at && !l.booked_at)
     if (filter === 'booked') xs = xs.filter(l => l.booked_at || l.meeting_detected_at)
+    if (signalType !== 'all') xs = xs.filter(l => l.signal_type === signalType)
     if (q.trim()) {
       const k = q.toLowerCase()
       xs = xs.filter(l => l.target_company.toLowerCase().includes(k))
     }
     return xs.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0))
-  }, [leads, filter, q])
+  }, [leads, filter, signalType, q])
 
   const counts = useMemo(() => ({
     all: leads.length,
@@ -59,14 +67,27 @@ export default function AccountsView({ leads }: Props) {
             {label} <span className="opacity-60">{counts[id]}</span>
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-2 hairline-border bg-surface-container-lowest rounded-full px-3 h-8">
-          <Icon name="search" size={14} className="text-on-surface-variant" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search company…"
-            className="bg-transparent border-none outline-none font-body-main text-on-surface placeholder:text-outline w-40"
-          />
+        <div className="ml-auto flex items-center gap-2">
+          {signalTypes.length > 0 && (
+            <select
+              value={signalType}
+              onChange={(e) => setSignalType(e.target.value)}
+              title="Filter by signal type"
+              className="h-8 font-label-mono text-[10px] uppercase tracking-widest bg-surface-container-lowest hairline-border rounded-full px-3 text-on-surface-variant cursor-pointer outline-none"
+            >
+              <option value="all">All signals</option>
+              {signalTypes.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+            </select>
+          )}
+          <div className="flex items-center gap-2 hairline-border bg-surface-container-lowest rounded-full px-3 h-8">
+            <Icon name="search" size={14} className="text-on-surface-variant" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search company…"
+              className="bg-transparent border-none outline-none font-body-main text-on-surface placeholder:text-outline w-40"
+            />
+          </div>
         </div>
       </div>
 
@@ -85,6 +106,7 @@ export default function AccountsView({ leads }: Props) {
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <span className="font-body-main font-medium text-on-surface">{l.target_company}</span>
                     {l.company_domain && <span className="font-label-mono text-[10px] text-outline">{l.company_domain}</span>}
+                    {l.signal_type && <span className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant border border-outline-variant/40 rounded px-1 py-px">{l.signal_type.replace(/_/g, ' ')}</span>}
                   </div>
                   {l.relevance_reason && <p className="font-body-main text-on-surface-variant truncate mt-1">{l.relevance_reason}</p>}
                 </div>

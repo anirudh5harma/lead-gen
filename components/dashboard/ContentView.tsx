@@ -59,8 +59,10 @@ export default function ContentView({ profile }: Props) {
       <div className="flex items-start justify-between gap-stack-lg flex-wrap">
         <div>
           <h2 className="font-h1-editorial text-display-sm text-on-surface mb-2">Content Engine</h2>
-          <p className="font-body-main text-on-surface-variant max-w-2xl">
-            Idea → write → edit → schedule → publish → learn. LinkedIn / X posts for {profile.client_name || profile.company_name}, drafted by the content agents and tuned by what performs.
+          <p className="font-body-main max-w-2xl">
+            <span className='text-primary italic'>Idea → write → edit → schedule → publish → learn</span>
+            <br></br>
+            LinkedIn / X posts for {profile.client_name || profile.company_name}. Tuned by what performs.
           </p>
         </div>
         <div className="flex items-center gap-1 hairline-border rounded-full p-1">

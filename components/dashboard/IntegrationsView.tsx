@@ -73,7 +73,7 @@ export default function IntegrationsView({ profile }: Props) {
     <div className="space-y-12">
       <div>
         <p className="mono mb-2">Connections</p>
-        <h2 className="font-serif text-[34px] leading-tight tracking-tight text-[var(--color-text-1)]">Integrations</h2>
+        <h2 className="text-[30px] leading-tight font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">Integrations</h2>
         <p className="text-[13.5px] text-[var(--color-text-3)] mt-2 max-w-xl">
           Everything Bombsell talks to, in one place. Connect once &mdash; every agent uses what&rsquo;s here.
         </p>
@@ -125,10 +125,10 @@ export default function IntegrationsView({ profile }: Props) {
         <div className="card p-5 mb-4 grid md:grid-cols-[1fr_auto] items-center gap-4">
           <div>
             <div className="mono mb-1">Private preview</div>
-            <div className="text-[13.5px] font-medium">CSV import &amp; export</div>
+            <div className="text-[13.5px] font-medium">Import &amp; Export</div>
             <div className="text-[12.5px] text-[var(--color-text-3)] mt-1">Map CRM exports to Bombsell accounts with human-assisted onboarding while the self-serve importer is disabled.</div>
           </div>
-          <button onClick={() => setModal('csv')} className="btn-accent h-9 px-4 text-[13px]">Import CSV →</button>
+          {/* <button onClick={() => setModal('csv')} className="btn-accent h-9 px-4 text-[13px]">Import CSV →</button> */}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {['HubSpot', 'Salesforce', 'Attio', 'Pipedrive'].map((name) => (
@@ -137,30 +137,9 @@ export default function IntegrationsView({ profile }: Props) {
         </div>
       </Group>
 
-      {/* Signals */}
-      <Group
-        label="03 · Signals"
-        title="Buying signal sources"
-        body="The signal agent polls a curated set of public sources continuously. Add your own via the webhook ingestion endpoint."
-      >
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          {([
-            ['Apollo', true], ['Crunchbase', true], ['LinkedIn', true], ['GitHub', true],
-            ['BuiltWith', false], ['Hunter', false], ['PredictLeads', false], ['Custom Webhook', true],
-          ] as Array<[string, boolean]>).map(([name, on]) => (
-            <ConnectTile
-              key={name}
-              name={name}
-              {...(on ? { connected: true, label: 'managed' as const } : { disabled: true })}
-            />
-          ))}
-        </div>
-        <p className="mono">Signals are managed by Bombsell &mdash; no setup needed. Use the webhook ingestion endpoint to add custom sources.</p>
-      </Group>
-
       {/* Ops */}
       <Group
-        label="04 · Ops"
+        label="03 · Ops"
         title="Notifications &amp; booking"
         body="Slack pings on hot replies, booking links sent on positive intent, custom webhooks for any pipeline."
       >
@@ -181,7 +160,6 @@ export default function IntegrationsView({ profile }: Props) {
             label={profile.calendly_url ? 'configured' : undefined}
             onClickFn={() => setModal('calendly')}
           />
-          <ConnectTile name="Cal.com" onClickFn={() => setModal('calendly')} />
           <ConnectTile name="Webhook" href="/api/docs/agents" label="see docs" />
         </div>
       </Group>
@@ -232,12 +210,11 @@ export default function IntegrationsView({ profile }: Props) {
       <Group
         label="06 · AI models"
         title="Bombsell Default LLM, or bring your own"
-        body="Drafting and content writing run on the Bombsell Default LLM (DeepSeek), billed via credits. Connect your own Claude or ChatGPT key and those calls run on your key — no LLM credit charge."
+        body="Drafting and content writing run on the Bombsell Default LLM, billed via credits. Connect your own Claude or ChatGPT key to avoid LLM credit charge."
       >
         <div className="grid sm:grid-cols-2 gap-2.5">
-          <ConnectTile name="Bombsell Default LLM (DeepSeek)" connected label="active" />
-          <ConnectTile name="Claude (Anthropic)" onClickFn={() => setModal('llm')} />
-          <ConnectTile name="ChatGPT (OpenAI)" onClickFn={() => setModal('llm')} />
+          <ConnectTile name="Bombsell Default LLM" connected label="active" />
+          <ConnectTile name="ChatGPT/Claude" onClickFn={() => setModal('llm')} />
         </div>
       </Group>
 
@@ -245,7 +222,7 @@ export default function IntegrationsView({ profile }: Props) {
       <Group
         label="07 · Agents API"
         title="For developers and AI agents"
-        body="Bombsell speaks the A2A protocol. Issue an agent key to let your AI agent call the loop directly."
+        body="Bombsell speaks the A2A protocol. Issue an agent key to let your AI agent call the fleet directly."
       >
         <div className="card p-5 grid md:grid-cols-2 gap-5">
           <div>
@@ -514,7 +491,7 @@ function Group({
       <div className="grid md:grid-cols-[260px_1fr] gap-10">
         <div>
           <div className="mono mb-2">{label}</div>
-          <h3 className="font-serif text-[22px] leading-tight text-[var(--color-text-1)]" dangerouslySetInnerHTML={{ __html: title }} />
+          <h3 className="text-[18px] leading-tight font-semibold text-[var(--color-text-1)]" dangerouslySetInnerHTML={{ __html: title }} />
           <p className="text-[13px] text-[var(--color-text-3)] mt-2 leading-relaxed">{body}</p>
         </div>
         <div>{children}</div>

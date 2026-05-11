@@ -60,7 +60,7 @@ export default function HomeView({ profile, leads, onNavigate }: Props) {
       <div>
         <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">Workspace · {profile.client_name || profile.company_name}</p>
         <h2 className="font-h1-editorial text-display-sm text-on-surface">
-          What should the loop do <span className="italic text-primary">next</span>?
+          What should the fleet do <span className="italic text-primary">next</span>?
         </h2>
       </div>
 
@@ -186,7 +186,7 @@ function LoopStatusStrip({ onOpenAgents }: { onOpenAgents: () => void }) {
   return (
     <section>
       <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2">
-        <h3 className="font-h1-editorial text-h1-editorial">The Loop, Right Now</h3>
+        <h3 className="font-h1-editorial text-h1-editorial">Your Fleet, Right Now</h3>
         <button onClick={onOpenAgents} className="font-label-mono text-label-mono uppercase tracking-widest text-primary hover:opacity-70 flex items-center gap-1.5">
           Agent fleet <Icon name="arrow_forward" size={14} />
         </button>

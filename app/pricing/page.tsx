@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -22,8 +21,8 @@ const PLANS = [
       'Outbound + Content engines',
       'All agents — compose your own stack',
       'Autopilot (per-agent autonomy)',
-      '3 connected inboxes + Buffer',
-      'Bring your own Claude / ChatGPT key',
+      '3 connected inboxes',
+      'Use default or bring your own LLM',
       '100 outcome credits / month included',
     ],
     cta: 'Start Launch',
@@ -58,7 +57,7 @@ const FAQS: Array<[string, string]> = [
   ['What burns a credit?', 'Outcomes. A positive reply, a booked meeting, a published post (plus a bonus when it performs), and hard third-party costs like verified contacts. Drafting, idea generation, and research-only agent runs are free.'],
   ['What happens when I run out of credits?', 'Outcomes still happen — we never block them. The balance goes negative until your monthly grant renews, or you top up with a credit pack.'],
   ['Is the agent API metered separately?', 'No — agent-to-agent calls draw from the same credit balance, on the same outcome basis. Costs are advertised per tool — see /docs.'],
-  ['Can I use my own LLM?', 'Yes. Connect a Claude or ChatGPT key and drafting / content writing run on your key with no LLM credit charge. Otherwise the Bombsell Default LLM (DeepSeek) is used.'],
+  ['Can I use my own LLM?', 'Yes. Connect a Claude or ChatGPT key and drafting / content writing run on your key with no LLM credit charge. Otherwise the Bombsell Default LLM is used.'],
   ['How is outbound kept safe?', 'Per-account warmup, daily caps, verified contacts, unsubscribe checks, bounce suppression, reply-stop — enforced by the safety agent before anything sends.'],
 ]
 
@@ -119,22 +118,23 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--color-ink-1)]">
+    <div className="relative min-h-screen flex flex-col bg-[var(--color-ink-1)]">
       <Nav signedIn={signedIn} busy={busy} onStart={() => signedIn ? router.push('/dashboard') : void googleStart()} />
 
       <main className="flex-1">
         {/* Hero */}
-        <section className="max-w-6xl mx-auto px-6 pt-20 md:pt-28 pb-16 text-center">
+        <section className="relative overflow-hidden hero-bg">
+        <div className="max-w-[1280px] mx-auto px-margin-page pt-20 md:pt-24 pb-16 text-center">
           <div className="flex items-center justify-center gap-3 mb-8">
             <span className="section-num">01</span>
             <span className="h-px w-10 bg-[var(--color-line-2)]" />
             <span className="mono">Pricing</span>
           </div>
-          <h1 className="editorial-h1 max-w-3xl mx-auto">
+          <h1 className="editorial-h2 max-w-3xl mx-auto">
             Pay for <span className="serif-italic text-[var(--color-accent)]">outcomes</span>, not seats.
           </h1>
           <p className="text-[16px] text-[var(--color-text-3)] mt-6 max-w-xl mx-auto leading-relaxed">
-            Two plans — the price buys features. Everything that varies (leads worked, posts published) is metered in outcome credits, drawn from a shared balance whether a human or your AI agent triggers it.
+            Two plans — the price buys features. Everything that varies (leads worked, posts published) is metered in outcome credits.
           </p>
 
           {/* Billing toggle */}
@@ -142,10 +142,11 @@ export default function PricingPage() {
             <button onClick={() => setAnnual(false)} className={`h-8 px-4 rounded-full text-[12.5px] transition-colors ${!annual ? 'bg-[var(--color-text-1)] text-[var(--color-ink-0)]' : 'text-[var(--color-text-2)]'}`}>Monthly</button>
             <button onClick={() => setAnnual(true)} className={`h-8 px-4 rounded-full text-[12.5px] transition-colors ${annual ? 'bg-[var(--color-text-1)] text-[var(--color-ink-0)]' : 'text-[var(--color-text-2)]'}`}>Annual <span className="text-[var(--color-accent)]">−17%</span></button>
           </div>
+        </div>
         </section>
 
         {/* Plans */}
-        <section className="max-w-3xl mx-auto px-6 pb-8">
+        <section className="max-w-3xl mx-auto px-margin-page pb-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-2xl overflow-hidden">
             {PLANS.map((p) => (
               <div key={p.id} className={`bg-[var(--color-ink-1)] p-7 flex flex-col relative ${'highlight' in p && p.highlight ? 'bg-[var(--color-ink-2)]' : ''}`}>
@@ -186,7 +187,7 @@ export default function PricingPage() {
 
         {/* PAYG */}
         <section className="border-t border-[var(--color-line-1)]">
-          <div className="max-w-6xl mx-auto px-6 py-20 grid md:grid-cols-12 gap-10">
+          <div className="max-w-[1280px] mx-auto px-margin-page py-20 grid md:grid-cols-12 gap-10">
             <div className="md:col-span-4">
               <div className="flex items-center gap-3 mb-6">
                 <span className="section-num">02</span>
@@ -214,7 +215,7 @@ export default function PricingPage() {
 
         {/* FAQ */}
         <section className="border-t border-[var(--color-line-1)]">
-          <div className="max-w-6xl mx-auto px-6 py-20">
+          <div className="max-w-[1280px] mx-auto px-margin-page py-20">
             <div className="flex items-center gap-3 mb-10">
               <span className="section-num">03</span>
               <span className="h-px w-10 bg-[var(--color-line-2)]" />
@@ -243,31 +244,47 @@ export default function PricingPage() {
 /* ─── Shared chrome ───────────────────────────────────────────── */
 
 function Nav({ signedIn, busy, onStart }: { signedIn: boolean; busy: boolean; onStart: () => void }) {
+  const links: Array<[string, string, boolean]> = [
+    ['How it works', '/#loop', false],
+    ['For agents', '/#agents', false],
+    ['For teams', '/#teams', false],
+    ['Pricing', '/pricing', true],
+    ['Docs', '/docs', false],
+  ]
   return (
-    <nav className="sticky top-0 z-30 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/85 backdrop-blur-xl">
-      <div className="max-w-6xl mx-auto h-14 px-6 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <Image src="/logo.svg" alt="Bombsell" width={22} height={22} />
-          <span className="text-[14px] font-semibold tracking-tight">Bombsell</span>
-        </Link>
-        <div className="flex items-center gap-7">
-          <Link href="/#loop" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">The Loop</Link>
-          <Link href="/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">For agents</Link>
-          <span className="hidden md:block text-[13px] font-medium">Pricing</span>
-          <Link href="/api/docs/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">Docs</Link>
-          <button onClick={onStart} disabled={busy} className="btn-primary h-8 px-4 text-[13px] disabled:opacity-60">
-            {busy ? 'Loading…' : signedIn ? 'Dashboard →' : 'Start free'}
+    <header className="sticky top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/15">
+      <nav className="flex justify-between items-center h-16 px-margin-page max-w-[1280px] mx-auto">
+        <Link href="/" className="font-semibold text-[19px] tracking-tight text-on-surface">Bombsell</Link>
+        <div className="hidden md:flex items-center gap-stack-lg">
+          {links.map(([label, href, active]) => (
+            <Link
+              key={label}
+              href={href}
+              className={`font-body-main text-body-main transition-colors cursor-pointer ${active ? 'text-primary font-medium' : 'text-on-surface-variant hover:text-primary'}`}
+            >
+              {label}
+            </Link>
+          ))}
+        </div>
+        <div className="flex items-center gap-stack-md">
+          <button
+            onClick={onStart}
+            disabled={busy}
+            className="bg-primary text-on-primary px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60"
+          >
+            {busy ? 'Loading…' : signedIn ? 'Dashboard →' : 'Start Free'}
           </button>
         </div>
-      </div>
-    </nav>
+      </nav>
+    </header>
   )
 }
+
 
 function SiteFooter() {
   return (
     <footer className="border-t border-[var(--color-line-1)] py-10 mt-10">
-      <div className="max-w-6xl mx-auto px-6 flex flex-wrap gap-x-6 gap-y-2 items-center justify-between text-[12px] text-[var(--color-text-4)]">
+      <div className="max-w-[1280px] mx-auto px-margin-page flex flex-wrap gap-x-6 gap-y-2 items-center justify-between text-[12px] text-[var(--color-text-4)]">
         <span>© {new Date().getFullYear()} Bombsell</span>
         <div className="flex items-center gap-5">
           <Link href="/privacy" className="hover:text-[var(--color-text-2)]">Privacy</Link>

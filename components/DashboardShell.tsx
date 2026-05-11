@@ -145,8 +145,8 @@ function Sidebar({
   return (
     <aside className={`${forceShow ? 'flex w-full h-full' : 'hidden md:flex w-64 fixed left-0 top-0 h-screen'} flex-col bg-surface-container-lowest hairline-r z-50`}>
       <div className="px-6 py-10">
-        <h1 className="font-h1-editorial text-h1-editorial italic text-primary leading-none">Bombsell</h1>
-        <p className="font-label-mono text-[9px] uppercase tracking-tight text-on-surface-variant mt-1">Agentic GTM</p>
+        <h1 className="font-bold text-[20px] tracking-tight text-primary leading-none">Bombsell</h1>
+        <p className="font-label-mono text-[9px] uppercase tracking-[0.18em] text-on-surface-variant mt-1">Agentic GTM</p>
       </div>
 
       {profile.workspaces && profile.workspaces.length > 0 && (
@@ -229,7 +229,7 @@ function TopBar({
         </button>
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-          <span className="font-label-mono text-label-mono uppercase text-on-surface">03 Deployment</span>
+          <span className="font-label-mono text-label-mono uppercase text-on-surface">Fleet live</span>
         </div>
         <div className="hidden sm:block h-4 w-px bg-outline-variant" />
         <span className="hidden sm:block font-label-mono text-[10px] uppercase text-on-surface-variant tracking-wider truncate">{subtitle}</span>

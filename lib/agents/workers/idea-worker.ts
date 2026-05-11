@@ -33,12 +33,12 @@ export async function run(
         // recent signals (via leads the workspace has surfaced)
         const { data: leads } = await supabase
           .from('leads')
-          .select('target_company, relevance_reason, signal_type')
+          .select('target_company, relevance_reason, signal:signals ( signal_type )')
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(12)
         const signalLines = (leads ?? [])
-          .map((l) => `- ${l.target_company ?? 'a company'}: ${l.relevance_reason ?? l.signal_type ?? 'recent activity'}`)
+          .map((l) => `- ${l.target_company ?? 'a company'}: ${l.relevance_reason ?? (l as { signal?: { signal_type?: string } | null }).signal?.signal_type ?? 'recent activity'}`)
           .join('\n') || '- (no recent signals; use the positioning below)'
 
         const system = 'You are a B2B content strategist. Propose sharp, specific LinkedIn/X post angles a founder could publish this week. Be concrete; avoid generic advice. Respond with a JSON object {"ideas":[{"angle","hook","rationale","platform","score"}]} where platform is "linkedin"|"x"|"both" and score is 0-100 (publish-worthiness).'

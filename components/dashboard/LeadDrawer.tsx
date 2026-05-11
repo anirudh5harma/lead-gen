@@ -151,7 +151,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
           )}
           {sent && (
             <div className="border border-tertiary/30 bg-tertiary/10 px-4 py-3 rounded font-body-main text-tertiary">
-              Outreach dispatched. The loop will watch for replies and bookings.
+              Outreach dispatched. The fleet will watch for replies and bookings.
             </div>
           )}
 

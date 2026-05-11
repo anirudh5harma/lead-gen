@@ -1,7 +1,7 @@
 /**
  * BYO LLM key (Claude / ChatGPT) for the workspace. When connected, drafting &
- * content generation run on the user's key (no LLM credit charge). DeepSeek
- * ("Bombsell Default LLM") is used otherwise.
+ * content generation run on the user's key (no LLM credit charge). The
+ * "Bombsell Default LLM" is used otherwise.
  * GET    — list connected providers (api_key never returned)
  * POST   — connect/update: { provider: 'anthropic'|'openai', api_key, model? }
  * DELETE — disconnect: ?provider=anthropic
@@ -24,7 +24,7 @@ export async function GET() {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data } = await ctx.supabase.from('workspace_llm_keys')
     .select('provider, model, is_active, updated_at').eq('workspace_id', ctx.workspaceId)
-  return NextResponse.json({ default: 'Bombsell Default LLM (DeepSeek)', connected: data ?? [] })
+  return NextResponse.json({ default: 'Bombsell Default LLM', connected: data ?? [] })
 }
 
 export async function POST(request: Request) {
