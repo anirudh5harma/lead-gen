@@ -18,20 +18,20 @@ export default async function InternalOpsPage() {
   const summary = await getInternalOpsSummary(service)
 
   return (
-    <main className="min-h-screen bg-[var(--color-ink-1)] text-[var(--color-text-1)] px-6 py-8">
-      <div className="mx-auto max-w-7xl space-y-8">
+    <main className="min-h-screen bg-surface text-on-surface px-margin-page py-8 font-body-main">
+      <div className="mx-auto max-w-[1280px] space-y-8">
         <header className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--color-text-4)]">Internal Ops</p>
+          <p className="font-label-mono text-label-mono uppercase tracking-[0.24em] text-on-surface-variant">Internal Ops</p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Ranking And Supply Diagnostics</h1>
-              <p className="text-sm text-[var(--color-text-3)]">
+              <h1 className="font-h1-editorial text-5xl text-on-surface">Ranking & Supply Diagnostics</h1>
+              <p className="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant mt-1">
                 Generated {new Date(summary.generated_at).toLocaleString()}
               </p>
             </div>
             <a
               href="/api/internal/ops/ranking"
-              className="inline-flex h-10 items-center rounded-full border border-[var(--color-line-1)] px-4 text-sm text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:border-[var(--color-line-2)] transition-colors"
+              className="inline-flex h-10 items-center rounded-full hairline-border px-4 font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
             >
               JSON
             </a>

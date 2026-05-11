@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { ensureBootstrapped, listAgents } from '@/lib/agents/core/registry'
 
-// GET /api/agents - list my agents
+// GET /api/agents - list my agents (with health data from in-memory registry)
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  ensureBootstrapped()
 
   const { data: agents } = await supabase
     .from('agent_identities')
@@ -13,7 +16,16 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
-  return NextResponse.json({ agents: agents ?? [] })
+  // Merge health data from the in-memory registry (matched by agent name)
+  const registryAgents = listAgents()
+  const healthByName = new Map(registryAgents.map(a => [a.name, a.health]))
+
+  const enriched = (agents ?? []).map(agent => ({
+    ...agent,
+    health: healthByName.get(agent.name) ?? null,
+  }))
+
+  return NextResponse.json({ agents: enriched })
 }
 
 // POST /api/agents - register a new agent

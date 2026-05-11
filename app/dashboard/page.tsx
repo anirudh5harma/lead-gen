@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   // Core fields — these exist from migration 001. Used to gate the onboarding redirect.
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('company_name, website_url, services_description, icp_keywords, target_industries, active_client_id, automation_mode')
+    .select('company_name, website_url, services_description, icp_keywords, target_industries, active_client_id, automation_mode, calendly_url')
     .eq('user_id', userId)
     .single()
 
@@ -133,6 +133,7 @@ export default async function DashboardPage() {
         active_client_id: activeClientId,
         automation_mode: (profile as { automation_mode?: 'research_only' | 'approve_first' | 'autopilot' | null }).automation_mode ?? 'approve_first',
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
+        calendly_url: (profile as { calendly_url?: string | null }).calendly_url ?? null,
         workspaces,
       }}
     />

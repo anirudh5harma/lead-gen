@@ -108,7 +108,7 @@ export default function WatchlistManager() {
   }
 
   return (
-    <div className="card bg-white">
+    <div className="card bg-[var(--color-ink-0)]">
       {/* Header */}
       <button
         onClick={() => setOpen(o => !o)}
@@ -145,14 +145,14 @@ export default function WatchlistManager() {
               placeholder="Company name"
               value={form.company_name}
               onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))}
-              className="flex-1 min-w-0 px-3 h-9 rounded-lg bg-white border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
+              className="flex-1 min-w-0 px-3 h-9 rounded-lg bg-[var(--color-ink-0)] border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
             />
             <input
               type="text"
               placeholder="domain.com (optional)"
               value={form.company_domain}
               onChange={e => setForm(f => ({ ...f, company_domain: e.target.value }))}
-              className="w-40 px-3 h-9 rounded-lg bg-white border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
+              className="w-40 px-3 h-9 rounded-lg bg-[var(--color-ink-0)] border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
             />
             <button
               type="submit"
@@ -163,7 +163,7 @@ export default function WatchlistManager() {
             </button>
           </form>
 
-          <div className="rounded-xl border border-dashed border-[var(--color-line-2)] bg-white px-3 py-3">
+          <div className="rounded-xl border border-dashed border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium text-[var(--color-text-1)]">Upload CSV</p>
@@ -171,7 +171,7 @@ export default function WatchlistManager() {
                   Supports company_name/company and company_domain/domain columns.
                 </p>
               </div>
-              <label className="inline-flex h-8 cursor-pointer items-center rounded-full border border-[var(--color-line-2)] bg-white px-3 text-[11px] font-medium text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]">
+              <label className="inline-flex h-8 cursor-pointer items-center rounded-full border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 text-[11px] font-medium text-[var(--color-text-1)] transition-colors hover:bg-[var(--color-ink-2)]">
                 {uploading ? 'Uploading…' : 'Choose CSV'}
                 <input
                   type="file"

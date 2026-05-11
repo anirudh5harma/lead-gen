@@ -32,8 +32,13 @@ export async function POST(request: Request) {
 
   const {
     company_name, industry, target_industries, services_description,
-    website_url, calendly_url, target_signal_types, min_relevance_score, icp_keywords,
+    website_url, calendly_url, target_signal_types, min_relevance_score, icp_keywords, engines,
   } = body as Record<string, unknown>
+
+  const selectedEngines = (Array.isArray(engines)
+    ? engines.filter((e): e is 'outbound' | 'content' => e === 'outbound' || e === 'content')
+    : []) as Array<'outbound' | 'content'>
+  const engineList: Array<'outbound' | 'content'> = selectedEngines.length > 0 ? Array.from(new Set(selectedEngines)) : ['outbound']
 
   const companyName = typeof company_name === 'string' ? company_name.trim() : ''
   const industryName = typeof industry === 'string' ? industry.trim() : ''
@@ -193,6 +198,17 @@ export async function POST(request: Request) {
       completed_notification_sent_at: null,
     })
     if (policyError) console.error('[profile] default live autopilot policy failed:', policyError)
+
+    try {
+      const { seedWorkspaceAgents } = await import('@/lib/agents/core/workspace-agents')
+      await seedWorkspaceAgents(supabase, {
+        workspaceId: activeClientId ?? user.id,
+        userId: user.id,
+        engines: engineList,
+      })
+    } catch (seedError) {
+      console.error('[profile] workspace agent seed failed:', seedError)
+    }
   }
 
   syncMonitoredAccountsFromWorkspaceSources(service).catch(syncError => {

@@ -1,411 +1,280 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { useSectionReveal } from '@/hooks/use-section-reveal'
+import { getPaygPackCredits } from '@/lib/lead-credits'
+
+/**
+ * Pricing — editorial, mono labels, 4-column comparison row.
+ * No blobs, no decorative chrome. Numbered sections.
+ */
 
 const PLANS = [
   {
-    id: 'free' as const,
+    id: 'launch' as const,
     name: 'Launch',
-    price: '$0',
-    period: 'forever',
-    description: 'Getting started.',
+    monthly: 49, annual: 490,
+    tagline: 'Solo operators',
     features: [
-      '10 starter lead credits',
-      'Account agents and Work Inbox',
-      'Live Signal monitoring',
-      'Gmail and Outlook connectors',
-      'Reply and outcome learning',
+      'Outbound + Content engines',
+      'All agents — compose your own stack',
+      'Autopilot (per-agent autonomy)',
+      '3 connected inboxes + Buffer',
+      'Bring your own Claude / ChatGPT key',
+      '100 outcome credits / month included',
     ],
-    cta: 'Get started',
-    highlight: false,
+    cta: 'Start Launch',
   },
   {
-    id: 'growth' as const,
-    name: 'Growth',
-    price: '$49',
-    period: '/mo',
-    annualPrice: '$490',
-    annualPeriod: '/yr',
-    description: 'Founders and growing teams.',
+    id: 'team' as const,
+    name: 'Team',
+    monthly: 149, annual: 1490,
+    tagline: 'Teams',
     features: [
-      '60 lead unlocks/month',
-      'Autopilot Engine',
-      'AI-Powered Lead Discovery',
-      'Marketing content, calendar and integrations',
-      '3 connected inboxes',
-      'PAYG overages at $0.65/lead',
-      'Everything in Launch'
-    ],
-    cta: 'Start Growth',
-    highlight: false,
-  },
-  {
-    id: 'scale' as const,
-    name: 'Scale',
-    price: '$99',
-    period: '/mo',
-    annualPrice: '$990',
-    annualPeriod: '/yr',
-    description: 'Volume, depth and team controls.',
-    features: [
-      '200 lead unlocks/month',
-      'Team features + shared memory',
-      'Custom outreach templates',
+      'Everything in Launch',
+      'Team workspaces &amp; member roles',
+      'Shared pipeline &amp; inbox',
+      'CRM agent (HubSpot / Salesforce / …)',
       '10 connected inboxes',
-      'CRM sync and Slack alerts',
-      'PAYG overages at $0.50/lead',
-      'Everything in Growth'
+      '350 outcome credits / month included',
     ],
-    cta: 'Start Scale',
+    cta: 'Start Team',
     highlight: true,
   },
-  {
-    id: 'enterprise' as const,
-    name: 'Enterprise',
-    price: 'Custom',
-    period: '',
-    description: 'SMBs with custom needs.',
-    features: [
-      'Unlimited lead unlocks',
-      'Unlimited inboxes',
-      'Custom playbooks',
-      'Security review and audit controls',
-      'Priority support',
-    ],
-    cta: 'Talk to us',
-    highlight: false,
-    href: 'mailto:team@bombsell.com?subject=Enterprise%20Plan%20Inquiry',
-  },
+] as const
+
+// Dollar amounts must match CREDIT_TOP_UP_AMOUNTS in lib/lead-credits.ts.
+const PAYG = [
+  { dollars: 25, label: 'Plus' },
+  { dollars: 50, label: 'Pro' },
+  { dollars: 100, label: 'Max' },
 ]
 
-const PAYG_PACKS = [
-  { amount: 20, credits: 25, label: 'Plus' },
-  { amount: 50, credits: 75, label: 'Pro' },
-  { amount: 100, credits: 200, label: 'Max' },
-]
-
-const FAQS = [
-  {
-    q: 'What do credits pay for?',
-    a: 'Credits are used when Bombsell unlocks a lead/contact. Monitoring accounts, reviewing work items, connecting inboxes, and managing settings do not consume credits. Subscription plans include a monthly allocation of lead unlocks.',
-  },
-  {
-    q: 'What happens when I run out of subscription leads?',
-    a: 'You can either upgrade your plan or purchase PAYG credits. Growth overages are $0.65/lead; Scale overages are $0.50/lead. Free users must purchase credits to continue unlocking.',
-  },
-  {
-    q: 'Can I cancel or change my plan anytime?',
-    a: 'Yes. You can upgrade, downgrade, or cancel from your Settings page at any time. Upgrades take effect immediately; downgrades take effect at the end of your current billing cycle.',
-  },
-  {
-    q: 'What is included in the free Launch plan?',
-    a: 'Account agents, Work Inbox, account memory, connected inboxes, approve-first outreach, and safe sending controls. You get 10 starter credits to try lead unlocking.',
-  },
-  {
-    q: 'When should I talk to Bombsell?',
-    a: 'Talk to us when you want custom account-agent playbooks, dedicated data sources, security review, team controls, or CRM history ingestion.',
-  },
-  {
-    q: 'Is this a sales engagement tool?',
-    a: 'Not exactly. Bombsell includes safe outbound, but the product is broader: account context, GTM memory, next-best-action ranking, and execution guardrails.',
-  },
-  {
-    q: 'How is outbound kept safe?',
-    a: 'Automation uses connected inboxes, pacing, daily caps, verified contacts, unsubscribe checks, bounce suppression, reply-stop behavior, and approval modes.',
-  },
+const FAQS: Array<[string, string]> = [
+  ['Why only two plans?', 'The plan price buys features. Everything that varies — leads worked, posts published — is metered in outcome credits, so you pick a tier for the capabilities you need, not a usage bracket.'],
+  ['What burns a credit?', 'Outcomes. A positive reply, a booked meeting, a published post (plus a bonus when it performs), and hard third-party costs like verified contacts. Drafting, idea generation, and research-only agent runs are free.'],
+  ['What happens when I run out of credits?', 'Outcomes still happen — we never block them. The balance goes negative until your monthly grant renews, or you top up with a credit pack.'],
+  ['Is the agent API metered separately?', 'No — agent-to-agent calls draw from the same credit balance, on the same outcome basis. Costs are advertised per tool — see /docs.'],
+  ['Can I use my own LLM?', 'Yes. Connect a Claude or ChatGPT key and drafting / content writing run on your key with no LLM credit charge. Otherwise the Bombsell Default LLM (DeepSeek) is used.'],
+  ['How is outbound kept safe?', 'Per-account warmup, daily caps, verified contacts, unsubscribe checks, bounce suppression, reply-stop — enforced by the safety agent before anything sends.'],
 ]
 
 export default function PricingPage() {
-  const [isSignedIn, setIsSignedIn] = useState(false)
-  const [authLoading, setAuthLoading] = useState(false)
-  const [isAnnual, setIsAnnual] = useState(false)
   const router = useRouter()
-  useSectionReveal()
+  const [signedIn, setSignedIn] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [annual, setAnnual] = useState(false)
 
   useEffect(() => {
-    createClient().auth.getSession().then(({ data }) => {
-      setIsSignedIn(!!data.session)
-    })
+    void createClient().auth.getSession().then(({ data }) => setSignedIn(!!data.session))
   }, [])
 
-  async function startFree() {
-    if (isSignedIn) {
-      router.push('/dashboard')
-      return
-    }
-    setAuthLoading(true)
+  async function googleStart() {
+    setBusy(true)
     const supabase = createClient()
     const callback = new URL('/auth/callback', window.location.origin)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: callback.toString(),
-        queryParams: { access_type: 'offline', prompt: 'consent' },
-      },
+      options: { redirectTo: callback.toString(), queryParams: { access_type: 'offline', prompt: 'consent' } },
     })
-    if (error) setAuthLoading(false)
+    if (error) setBusy(false)
   }
 
-  async function startSubscription(tier: 'growth' | 'scale', period: 'monthly' | 'annual') {
-    if (!isSignedIn) {
-      setAuthLoading(true)
-      const supabase = createClient()
-      const callback = new URL('/auth/callback', window.location.origin)
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: callback.toString(),
-          queryParams: { access_type: 'offline', prompt: 'consent' },
-        },
-      })
-      if (error) setAuthLoading(false)
-      return
-    }
-
-    setAuthLoading(true)
+  async function startCheckout(tier: 'launch' | 'team') {
+    if (!signedIn) return googleStart()
+    setBusy(true)
     try {
       const res = await fetch('/api/billing/subscription/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, period }),
+        body: JSON.stringify({ tier, period: annual ? 'annual' : 'monthly' }),
       })
       const data = await res.json().catch(() => null) as { url?: string; error?: string } | null
-      if (!res.ok || !data?.url) {
-        alert(data?.error ?? 'Unable to start checkout.')
-        setAuthLoading(false)
-        return
-      }
-      window.location.assign(data.url)
+      if (data?.url) window.location.assign(data.url)
+      else { setBusy(false); alert(data?.error ?? 'Could not start checkout.') }
     } catch {
-      alert('Unable to start checkout.')
-      setAuthLoading(false)
+      setBusy(false); alert('Could not start checkout.')
     }
   }
 
+  function action(plan: typeof PLANS[number]) {
+    void startCheckout(plan.id)
+  }
+
+  async function buyCredits(amountDollars: number) {
+    if (!signedIn) return googleStart()
+    setBusy(true)
+    try {
+      const res = await fetch('/api/billing/credits/checkout', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount_dollars: amountDollars }),
+      })
+      const data = await res.json().catch(() => null) as { url?: string; error?: string } | null
+      if (data?.url) window.location.assign(data.url)
+      else { setBusy(false); alert(data?.error ?? 'Could not start checkout.') }
+    } catch { setBusy(false); alert('Could not start checkout.') }
+  }
+
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden paper">
-      <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
-        <div className="blob blob-1" style={{ width: 600, height: 600, top: -200, left: '50%', transform: 'translateX(-50%)', opacity: 0.45 }} />
-      </div>
+    <div className="min-h-screen flex flex-col bg-[var(--color-ink-1)]">
+      <Nav signedIn={signedIn} busy={busy} onStart={() => signedIn ? router.push('/dashboard') : void googleStart()} />
 
-      {/* Navbar */}
-      <nav className="relative z-10 w-full max-w-7xl mx-auto px-6 md:px-8 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <LogoMark />
-          <span className="text-[15px] font-semibold tracking-tight text-[var(--color-text-1)]">Bombsell</span>
-        </Link>
-        <div className="flex items-center gap-6">
-          <Link href="/#platform" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Platform</Link>
-          <Link href="/#differentiators" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Differentiation</Link>
-          <span className="hidden md:block text-[13px] font-medium text-[var(--color-text-1)]">Pricing</span>
-          <Link href="/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-[1px] after:bg-[var(--color-accent)] hover:after:w-full after:transition-all after:duration-300">Agents</Link>
-          {isSignedIn ? (
-            <Link href="/dashboard" className="h-9 px-4 rounded-full btn-primary text-[13px] font-medium inline-flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95 transition-transform">
-              Dashboard <span aria-hidden>→</span>
-            </Link>
-          ) : (
-            <button
-              onClick={startFree}
-              disabled={authLoading}
-              className="h-9 px-4 rounded-full btn-primary text-[13px] font-medium disabled:opacity-60 flex items-center gap-2 hover:scale-105 active:scale-95 transition-transform"
-            >
-              {authLoading ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <GoogleIconSmall />}
-              {authLoading ? 'Signing in…' : 'Start free'}
-            </button>
-          )}
-        </div>
-      </nav>
-
-      <main className="relative z-10 flex-1 flex flex-col items-center px-6 md:px-8 pt-14 md:pt-20 pb-24">
-        <div className="section-reveal reveal-from-bottom text-center mb-16 space-y-4 max-w-2xl fade-in">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pricing</p>
-          <h1 className="text-4xl md:text-6xl font-medium text-[var(--color-text-1)] tracking-[-0.02em] leading-[1.02]">
-            Start for free.<br />
-            <span className="font-serif italic text-gradient">Scale with us.</span>
+      <main className="flex-1">
+        {/* Hero */}
+        <section className="max-w-6xl mx-auto px-6 pt-20 md:pt-28 pb-16 text-center">
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <span className="section-num">01</span>
+            <span className="h-px w-10 bg-[var(--color-line-2)]" />
+            <span className="mono">Pricing</span>
+          </div>
+          <h1 className="editorial-h1 max-w-3xl mx-auto">
+            Pay for <span className="serif-italic text-[var(--color-accent)]">outcomes</span>, not seats.
           </h1>
-          <p className="text-[16px] text-[var(--color-text-2)] max-w-lg mx-auto leading-relaxed">
-            Use Bombsell for free with starter credits. Scale when your GTM needs more volume and depth.
+          <p className="text-[16px] text-[var(--color-text-3)] mt-6 max-w-xl mx-auto leading-relaxed">
+            Two plans — the price buys features. Everything that varies (leads worked, posts published) is metered in outcome credits, drawn from a shared balance whether a human or your AI agent triggers it.
           </p>
 
           {/* Billing toggle */}
-          <div className="inline-flex items-center gap-3 mt-6 p-1 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/50">
-            <button
-              onClick={() => setIsAnnual(false)}
-              className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-all ${!isAnnual ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}`}
-            >
-              Monthly
-            </button>
-            <button
-              onClick={() => setIsAnnual(true)}
-              className={`px-4 py-1.5 rounded-full text-[13px] font-medium transition-all ${isAnnual ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'text-[var(--color-text-3)] hover:text-[var(--color-text-1)]'}`}
-            >
-              Annual <span className="text-[10px] opacity-80">Save 2 months</span>
-            </button>
+          <div className="mt-10 inline-flex items-center gap-1 border border-[var(--color-line-2)] rounded-full p-1">
+            <button onClick={() => setAnnual(false)} className={`h-8 px-4 rounded-full text-[12.5px] transition-colors ${!annual ? 'bg-[var(--color-text-1)] text-[var(--color-ink-0)]' : 'text-[var(--color-text-2)]'}`}>Monthly</button>
+            <button onClick={() => setAnnual(true)} className={`h-8 px-4 rounded-full text-[12.5px] transition-colors ${annual ? 'bg-[var(--color-text-1)] text-[var(--color-ink-0)]' : 'text-[var(--color-text-2)]'}`}>Annual <span className="text-[var(--color-accent)]">−17%</span></button>
           </div>
-        </div>
+        </section>
 
-        <div className="section-reveal reveal-from-bottom w-full max-w-6xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 fade-in-stagger">
-          {PLANS.map(plan => (
-            <div
-              key={plan.id}
-              className={`relative card p-6 flex flex-col gap-5 transition-all ${
-                plan.highlight
-                  ? 'ring-1 ring-[var(--color-accent)]/40 shadow-[0_24px_80px_-24px_var(--color-accent-glow)]'
-                  : 'hover:shadow-md'
-              }`}
-            >
-              {plan.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-[0.15em] px-3 py-1 rounded-full bg-[var(--color-accent)] text-white shadow-md shadow-[var(--color-accent)]/30">
-                  Most popular
+        {/* Plans */}
+        <section className="max-w-3xl mx-auto px-6 pb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-2xl overflow-hidden">
+            {PLANS.map((p) => (
+              <div key={p.id} className={`bg-[var(--color-ink-1)] p-7 flex flex-col relative ${'highlight' in p && p.highlight ? 'bg-[var(--color-ink-2)]' : ''}`}>
+                {'highlight' in p && p.highlight && (
+                  <span className="absolute top-4 right-4 mono text-[var(--color-accent)]">For teams</span>
+                )}
+                <div className="mono mb-3">{p.name}</div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[40px] font-medium tracking-tight">${annual ? Math.round((p.annual ?? 0) / 12) : p.monthly}</span>
+                  <span className="mono">/mo</span>
                 </div>
-              )}
+                {annual && <div className="mono mt-1">${p.annual} billed annually</div>}
+                <p className="text-[13.5px] text-[var(--color-text-3)] mt-3" dangerouslySetInnerHTML={{ __html: p.tagline }} />
 
-              <div>
-                <p className="text-[13px] text-[var(--color-text-3)] font-medium">{plan.name}</p>
-                <div className="flex items-baseline gap-1.5 mt-2.5">
-                  <span className="text-4xl font-medium text-[var(--color-text-1)] tracking-[-0.02em]">
-                    {plan.id === 'growth' || plan.id === 'scale'
-                      ? (isAnnual ? plan.annualPrice : plan.price)
-                      : plan.price}
-                  </span>
-                  <span className="text-[13px] text-[var(--color-text-4)]">
-                    {plan.id === 'growth' || plan.id === 'scale'
-                      ? (isAnnual ? plan.annualPeriod : plan.period)
-                      : plan.period}
-                  </span>
-                </div>
-                <p className="text-[13px] text-[var(--color-text-2)] mt-2 leading-relaxed">{plan.description}</p>
+                <ul className="mt-6 space-y-2.5 text-[13px] text-[var(--color-text-2)] flex-1">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2.5">
+                      <span className="text-[var(--color-accent)] pt-[3px]">◆</span>
+                      <span dangerouslySetInnerHTML={{ __html: f }} />
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  onClick={() => action(p)}
+                  disabled={busy}
+                  className={`mt-7 h-10 text-[13px] disabled:opacity-50 ${'highlight' in p && p.highlight ? 'btn-accent' : 'btn-ghost'}`}
+                >
+                  {p.cta} →
+                </button>
               </div>
+            ))}
+          </div>
+          <p className="text-center text-[12.5px] text-[var(--color-text-3)] mt-4">
+            Need custom volume, security review, or a dedicated workspace? <a href="mailto:team@bombsell.com?subject=Bombsell%20Enterprise" className="text-[var(--color-accent)] hover:underline">Talk to us</a>.
+          </p>
+        </section>
 
-              <div className="hairline" />
-
-              <ul className="flex-1 space-y-2.5">
-                {plan.features.map(f => (
-                  <li key={f} className="flex items-start gap-2.5 text-[13px] text-[var(--color-text-1)] leading-snug">
-                    <span className="w-4 h-4 rounded-full bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)] flex items-center justify-center shrink-0 mt-0.5">
-                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </span>
-                    {f}
-                  </li>
-                ))}
-              </ul>
-
-              {plan.id === 'free' ? (
-                <button
-                  onClick={startFree}
-                  disabled={authLoading}
-                  className="w-full h-11 rounded-full btn-primary text-[13.5px] font-medium disabled:opacity-60"
-                >
-                  {authLoading ? 'Redirecting…' : plan.cta}
-                </button>
-              ) : plan.id === 'enterprise' ? (
-                <a
-                  href={plan.href}
-                  className="w-full h-11 rounded-full btn-ghost text-[13.5px] font-medium inline-flex items-center justify-center"
-                >
-                  {plan.cta}
-                </a>
-              ) : (
-                <button
-                  onClick={() => startSubscription(plan.id, isAnnual ? 'annual' : 'monthly')}
-                  disabled={authLoading}
-                  className={`w-full h-11 rounded-full text-[13.5px] font-medium disabled:opacity-60 ${
-                    plan.highlight ? 'btn-primary' : 'btn-ghost'
-                  }`}
-                >
-                  {authLoading ? 'Starting…' : plan.cta}
-                </button>
-              )}
+        {/* PAYG */}
+        <section className="border-t border-[var(--color-line-1)]">
+          <div className="max-w-6xl mx-auto px-6 py-20 grid md:grid-cols-12 gap-10">
+            <div className="md:col-span-4">
+              <div className="flex items-center gap-3 mb-6">
+                <span className="section-num">02</span>
+                <span className="h-px w-10 bg-[var(--color-line-2)]" />
+                <span className="mono">Pay as you go</span>
+              </div>
+              <h2 className="editorial-h2">Run low? <span className="serif-italic text-[var(--color-accent)]">Top up.</span></h2>
+              <p className="text-[14px] text-[var(--color-text-3)] mt-4 max-w-sm">Add outcome credits any time on top of your monthly grant. No expiry.</p>
             </div>
-          ))}
-        </div>
-
-        {/* PAYG section */}
-        <div className="section-reveal reveal-from-bottom w-full max-w-3xl mt-20">
-          <div className="text-center mb-10 space-y-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Pay-as-you-go</p>
-            <h2 className="text-2xl md:text-3xl font-medium tracking-[-0.02em] text-[var(--color-text-1)] leading-[1.05]">
-              No subscription? No problem.
-            </h2>
-            <p className="text-[14px] text-[var(--color-text-2)] max-w-md mx-auto">
-              Buy lead unlock credits as needed. Credits never expire and roll over month to month.
-            </p>
+            <div className="md:col-span-8 grid sm:grid-cols-3 gap-3">
+              {PAYG.map((p) => {
+                const credits = getPaygPackCredits(p.dollars)
+                return (
+                  <button key={p.dollars} onClick={() => void buyCredits(p.dollars)} disabled={busy} className="card p-5 text-left hover:border-[var(--color-text-1)] transition-colors disabled:opacity-50">
+                    <div className="mono">{p.label}</div>
+                    <div className="text-[28px] font-medium tracking-tight mt-2">${p.dollars}</div>
+                    <div className="mono mt-1">{credits > 0 ? `${credits} credits` : 'credits at checkout'}</div>
+                    {credits > 0 && <div className="text-[12px] text-[var(--color-text-3)] mt-3">${(p.dollars / credits).toFixed(2)} / credit</div>}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            {PAYG_PACKS.map(pack => (
-              <div key={pack.amount} className="card p-4 text-center hover:shadow-md transition-shadow">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--color-text-4)]">{pack.label}</p>
-                <p className="mt-2 text-2xl font-bold text-[var(--color-text-1)]">${pack.amount}</p>
-                <p className="mt-1 text-[13px] text-[var(--color-accent-ring)] font-medium">{pack.credits} unlocks</p>
-                <p className="mt-0.5 text-[11px] text-[var(--color-text-4)]">${(pack.amount / pack.credits).toFixed(2)}/lead</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        </section>
 
-        <p className="mt-12 text-[12px] text-[var(--color-text-3)]">
-          Launch is free to start · Subscriptions include monthly lead allocations · Credits are prepaid and never expire
-        </p>
-
-        <section className="section-reveal reveal-from-bottom w-full max-w-3xl mt-28">
-          <div className="text-center mb-12 space-y-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--color-accent)] font-medium">Questions</p>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-[-0.02em] text-[var(--color-text-1)] leading-[1.05]">
-              What people ask before signing up
-            </h2>
-          </div>
-          <div className="space-y-3">
-            {FAQS.map(item => (
-              <details
-                key={item.q}
-                className="group card px-5 py-4 cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <summary className="flex items-center justify-between list-none text-[14px] font-medium text-[var(--color-text-1)]">
-                  {item.q}
-                  <span className="w-6 h-6 rounded-full bg-[var(--color-ink-2)] text-[var(--color-text-3)] group-open:bg-[var(--color-accent-bg)] group-open:text-[var(--color-accent-ring)] group-open:rotate-45 transition-all text-lg leading-none flex items-center justify-center">+</span>
-                </summary>
-                <p className="mt-3 text-[13.5px] text-[var(--color-text-2)] leading-relaxed">{item.a}</p>
-              </details>
-            ))}
+        {/* FAQ */}
+        <section className="border-t border-[var(--color-line-1)]">
+          <div className="max-w-6xl mx-auto px-6 py-20">
+            <div className="flex items-center gap-3 mb-10">
+              <span className="section-num">03</span>
+              <span className="h-px w-10 bg-[var(--color-line-2)]" />
+              <span className="mono">FAQ</span>
+            </div>
+            <div className="grid md:grid-cols-2 gap-x-14 gap-y-2 max-w-5xl">
+              {FAQS.map(([q, a]) => (
+                <details key={q} className="border-b border-[var(--color-line-1)] py-5 group">
+                  <summary className="flex items-center justify-between cursor-pointer list-none">
+                    <span className="text-[15px] font-medium tracking-tight">{q}</span>
+                    <span className="text-[var(--color-text-3)] group-open:rotate-45 transition-transform">+</span>
+                  </summary>
+                  <p className="text-[13.5px] text-[var(--color-text-3)] mt-3 leading-relaxed">{a}</p>
+                </details>
+              ))}
+            </div>
           </div>
         </section>
       </main>
 
-      <footer className="relative z-10 border-t border-[var(--color-line-1)]">
-        <div className="w-full max-w-7xl mx-auto px-6 md:px-8 py-6 text-xs text-[var(--color-text-3)] text-center">
-          © {new Date().getFullYear()} Bombsell
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }
 
-function GoogleIconSmall() {
+/* ─── Shared chrome ───────────────────────────────────────────── */
+
+function Nav({ signedIn, busy, onStart }: { signedIn: boolean; busy: boolean; onStart: () => void }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" className="shrink-0">
-      <path fill="#ffffff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" opacity="0.92"/>
-      <path fill="#ffffff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" opacity="0.9"/>
-      <path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" opacity="0.85"/>
-      <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-    </svg>
+    <nav className="sticky top-0 z-30 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/85 backdrop-blur-xl">
+      <div className="max-w-6xl mx-auto h-14 px-6 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2.5">
+          <Image src="/logo.svg" alt="Bombsell" width={22} height={22} />
+          <span className="text-[14px] font-semibold tracking-tight">Bombsell</span>
+        </Link>
+        <div className="flex items-center gap-7">
+          <Link href="/#loop" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">The Loop</Link>
+          <Link href="/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">For agents</Link>
+          <span className="hidden md:block text-[13px] font-medium">Pricing</span>
+          <Link href="/api/docs/agents" className="hidden md:block text-[13px] text-[var(--color-text-3)] hover:text-[var(--color-text-1)]">Docs</Link>
+          <button onClick={onStart} disabled={busy} className="btn-primary h-8 px-4 text-[13px] disabled:opacity-60">
+            {busy ? 'Loading…' : signedIn ? 'Dashboard →' : 'Start free'}
+          </button>
+        </div>
+      </div>
+    </nav>
   )
 }
 
-function LogoMark() {
+function SiteFooter() {
   return (
-    <Image
-      src="/logo.svg"
-      alt="Bombsell"
-      width={28}
-      height={28}
-      className="shrink-0"
-    />
+    <footer className="border-t border-[var(--color-line-1)] py-10 mt-10">
+      <div className="max-w-6xl mx-auto px-6 flex flex-wrap gap-x-6 gap-y-2 items-center justify-between text-[12px] text-[var(--color-text-4)]">
+        <span>© {new Date().getFullYear()} Bombsell</span>
+        <div className="flex items-center gap-5">
+          <Link href="/privacy" className="hover:text-[var(--color-text-2)]">Privacy</Link>
+          <Link href="/terms" className="hover:text-[var(--color-text-2)]">Terms</Link>
+          <Link href="/api/docs/agents" className="hover:text-[var(--color-text-2)]">API</Link>
+        </div>
+      </div>
+    </footer>
   )
 }

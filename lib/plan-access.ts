@@ -1,13 +1,21 @@
 import type { SubscriptionTier } from './lead-credits'
 
-const TIER_ORDER: SubscriptionTier[] = ['free', 'growth', 'scale', 'enterprise']
+// Low → high. v2 ships two real tiers (launch, team); legacy tiers are slotted
+// so existing access checks keep behaving sanely.
+const TIER_ORDER: SubscriptionTier[] = ['free', 'launch', 'growth', 'scale', 'team', 'enterprise']
 
 export function tierIndex(tier: SubscriptionTier): number {
-  return TIER_ORDER.indexOf(tier)
+  const i = TIER_ORDER.indexOf(tier)
+  return i === -1 ? 0 : i
 }
 
 export function hasPlanAccess(userTier: SubscriptionTier, requiredTier: SubscriptionTier): boolean {
   return tierIndex(userTier) >= tierIndex(requiredTier)
+}
+
+/** Team plan (or above): team workspaces, member roles, CRM agent. */
+export function hasTeamFeatures(userTier: SubscriptionTier): boolean {
+  return userTier === 'team' || userTier === 'enterprise'
 }
 
 /** Which nav views are gated by tier */

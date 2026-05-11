@@ -8,6 +8,7 @@ import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
+import { debitOutcome } from '@/lib/credits/outcomes'
 import {
   buildBookingReplyBody,
   classifyReplyIntent,
@@ -74,6 +75,14 @@ export async function processInboundReply(params: {
 
   await supabase.from('leads').update(updates).eq('id', lead.id).eq('user_id', userId)
   await stopPendingFollowups(supabase, lead.id, now)
+
+  // Outcome-based credit debits (idempotent per lead). Charge on value events only.
+  const intentName = String(intent.intent)
+  if (booked) {
+    await debitOutcome(supabase, { userId, clientId: lead.client_id ?? null, event: 'outbound_meeting_booked', leadId: lead.id, note: 'meeting booked from reply' })
+  } else if (intentName === 'meeting_requested' || intentName === 'interested') {
+    await debitOutcome(supabase, { userId, clientId: lead.client_id ?? null, event: 'outbound_positive_reply', leadId: lead.id, note: `positive reply (${intentName})` })
+  }
 
   await recordAgentEvent(supabase, {
     userId,

@@ -19,10 +19,23 @@ function getDodoClient(): DodoPayments {
 
 export const PRODUCT_IDS = {
   leadCredits: cleanEnvValue(process.env.DODO_PRODUCT_LEAD_CREDITS),
+  // v2 plans
+  launchMonthly: cleanEnvValue(process.env.DODO_PRODUCT_LAUNCH_MONTHLY),
+  launchAnnual: cleanEnvValue(process.env.DODO_PRODUCT_LAUNCH_ANNUAL),
+  teamMonthly: cleanEnvValue(process.env.DODO_PRODUCT_TEAM_MONTHLY),
+  teamAnnual: cleanEnvValue(process.env.DODO_PRODUCT_TEAM_ANNUAL),
+  // legacy plans (back-compat)
   growthMonthly: cleanEnvValue(process.env.DODO_PRODUCT_GROWTH_MONTHLY),
   growthAnnual: cleanEnvValue(process.env.DODO_PRODUCT_GROWTH_ANNUAL),
   scaleMonthly: cleanEnvValue(process.env.DODO_PRODUCT_SCALE_MONTHLY),
   scaleAnnual: cleanEnvValue(process.env.DODO_PRODUCT_SCALE_ANNUAL),
+}
+
+export type CheckoutTier = 'launch' | 'team' | 'growth' | 'scale'
+
+function subscriptionProductId(tier: CheckoutTier, period: 'monthly' | 'annual'): string {
+  const key = `${tier}${period === 'annual' ? 'Annual' : 'Monthly'}` as keyof typeof PRODUCT_IDS
+  return PRODUCT_IDS[key] ?? ''
 }
 
 export interface DodoPaymentDetails {
@@ -75,12 +88,10 @@ export async function createSubscriptionCheckoutUrl(params: {
   userEmail: string
   userName: string
   userId: string
-  tier: 'growth' | 'scale'
+  tier: CheckoutTier
   period: 'monthly' | 'annual'
 }): Promise<string> {
-  const productId = params.period === 'annual'
-    ? (params.tier === 'growth' ? PRODUCT_IDS.growthAnnual : PRODUCT_IDS.scaleAnnual)
-    : (params.tier === 'growth' ? PRODUCT_IDS.growthMonthly : PRODUCT_IDS.scaleMonthly)
+  const productId = subscriptionProductId(params.tier, params.period)
 
   if (!productId) {
     throw new Error(`Dodo product not configured for ${params.tier}/${params.period}`)

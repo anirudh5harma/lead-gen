@@ -1,191 +1,147 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Lead } from '@/lib/leads'
-import { formatDateTime, StatusBadge, SectionHeader, EmptyState } from './shared'
-import SpotlightCard from '@/components/landing/SpotlightCard'
+import type { UserProfile } from './types'
+import LeadDrawer from './LeadDrawer'
 
-interface Props {
-  leads: Lead[]
-}
+interface Props { profile: UserProfile; leads: Lead[] }
 
-type OriginFilter = 'all' | 'live' | 'explore'
-
+/**
+ * Lead Pipeline — styled after the Stitch "Internal Ops & Review Drawer":
+ * editorial title · Priority Leads table · Sent Outreach table · Review Drawer.
+ */
 export default function OutreachView({ leads }: Props) {
-  const [now] = useState(() => Date.now())
-  const [originFilter, setOriginFilter] = useState<OriginFilter>('all')
-  const day = 24 * 60 * 60 * 1000
-  const last24h = now - day
-  const last7d = now - 7 * day
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [reviewMode, setReviewMode] = useState<'open' | 'review'>('open')
 
-  const filteredLeads = originFilter === 'all' ? leads : leads.filter(l => l.origin === originFilter)
-  const sent = filteredLeads
-    .filter(l => l.status === 'sent')
-    .sort((a, b) => toTime(b.sent_at ?? b.created_at) - toTime(a.sent_at ?? a.created_at))
-  const replied = filteredLeads.filter(l => l.status === 'replied' || l.status === 'booked')
+  const { priority, sentOut } = useMemo(() => ({
+    priority: leads.filter(l => (l.status === 'drafted' || l.status === 'delivered' || l.status === 'unlocked') && !l.sent_at),
+    sentOut: leads.filter(l => l.sent_at),
+  }), [leads])
 
-  const found24h = filteredLeads.filter(l => inWindow(l.created_at, last24h)).length
-  const sent7d = filteredLeads.filter(l => inWindow(l.sent_at, last7d)).length
-  const replied7d = filteredLeads.filter(l => inWindow(l.replied_at, last7d)).length
-  const booked7d = filteredLeads.filter(l => inWindow(l.booked_at, last7d)).length
-  const replyRate = sent7d > 0 ? Math.round((replied7d / sent7d) * 100) : 0
-
-  const originCounts = {
-    all: leads.length,
-    live: leads.filter(l => l.origin === 'live').length,
-    explore: leads.filter(l => l.origin === 'explore').length,
-  }
+  function open(l: Lead, mode: 'open' | 'review') { setReviewMode(mode); setSelectedLead(l) }
 
   return (
-    <div className="space-y-8">
-      {/* Performance */}
-      <section>
-        <SectionHeader
-          title="Performance"
-          subtitle="Recent account flow and outcomes."
-          label="Metrics"
-        />
-        <SpotlightCard className="card overflow-hidden card-hover">
-          <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 flex-1">
-              <Pill label="24h found" value={found24h} />
-              <Pill label="7d sent" value={sent7d} />
-              <Pill label="7d replies" value={replied7d} />
-              <Pill label="7d booked" value={booked7d} />
-              <Pill label="Reply rate" value={`${replyRate}%`} />
-            </div>
-          </div>
-        </SpotlightCard>
+    <div className="font-body-main text-on-surface">
+      <section className="mb-16">
+        <h2 className="font-h1-editorial text-5xl text-on-surface mb-4">Lead Pipeline</h2>
+        <p className="font-body-large text-on-surface-variant max-w-xl leading-relaxed">
+          High-confidence targets identified by the agentic fleet. Review and approve outreach before deployment.
+        </p>
       </section>
 
-      {/* Origin Filter */}
-      <section>
-        <SectionHeader
-          title="Outreach history"
-          subtitle="Track sent outreach and replies by source."
-          label="Activity"
-        />
-        <div className="flex gap-1 mb-4">
-          {([
-            { id: 'all' as const, label: 'All' },
-            { id: 'live' as const, label: `Live signals (${originCounts.live})` },
-            { id: 'explore' as const, label: `Explore (${originCounts.explore})` },
-          ]).map(option => (
-            <button
-              key={option.id}
-              onClick={() => setOriginFilter(option.id)}
-              className={`shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
-                originFilter === option.id
-                  ? 'bg-[var(--color-text-1)] text-white'
-                  : 'bg-white text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] border border-[var(--color-line-1)]'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="card overflow-hidden">
-          {sent.length === 0 ? (
-            <EmptyState
-              title="No sent messages yet"
-              body="Outreach is sent from the work inbox when leads are approved and drafted."
-            />
-          ) : (
-            <div className="divide-y divide-[var(--color-line-1)]">
-              {sent.slice(0, 20).map(lead => (
-                <SentRow key={lead.id} lead={lead} />
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Replied */}
-      {replied.length > 0 && (
+      <div className="space-y-20">
+        {/* Priority Leads */}
         <section>
-          <SectionHeader
-            title="Replied & booked"
-            subtitle="Accounts that responded to outreach."
-          />
-          <div className="card overflow-hidden">
-            <div className="divide-y divide-[var(--color-line-1)]">
-              {replied.slice(0, 15).map(lead => (
-                <RepliedRow key={lead.id} lead={lead} />
-              ))}
-            </div>
+          <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-2">
+            <h3 className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Priority Leads</h3>
+            <span className="font-label-mono text-[10px] uppercase tracking-widest text-primary bg-primary-container/10 px-2 py-1 rounded">{priority.length} Candidates</span>
           </div>
+          {priority.length === 0 ? (
+            <EmptyRow text="No leads waiting for review. The fleet will surface fresh candidates as signals land." />
+          ) : (
+            <table className="w-full text-left font-body-main border-collapse">
+              <thead>
+                <tr className="text-on-surface-variant border-b border-outline-variant/30">
+                  <Th>Contact</Th><Th>Company</Th><Th className="text-center">Confidence</Th><Th className="text-right">Action</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/10">
+                {priority.slice(0, 50).map((l) => (
+                  <tr key={l.id} className="group hover:bg-surface-container-low/40 transition-colors">
+                    <td className="py-6 px-2">
+                      <div className="font-body-large text-on-surface">{l.contact_name || 'Contact unresolved'}</div>
+                      <div className="text-caption font-caption text-on-surface-variant uppercase tracking-wider">{l.contact_title || 'Target stakeholder'}</div>
+                    </td>
+                    <td className="py-6 px-2">
+                      <div className="font-body-main text-on-surface">{l.target_company}</div>
+                      <div className="text-caption font-caption text-on-surface-variant uppercase tracking-wider truncate max-w-[260px]">{l.company_domain || l.relevance_reason || '—'}</div>
+                    </td>
+                    <td className="py-6 px-2 text-center">
+                      <span className="text-tertiary font-label-mono text-lg">{Math.round(l.relevance_score ?? 0)}%</span>
+                    </td>
+                    <td className="py-6 px-2 text-right">
+                      <button onClick={() => open(l, 'review')}
+                        className="bg-primary text-on-primary font-label-mono text-[10px] uppercase tracking-[0.2em] px-6 py-2.5 hover:bg-primary-container transition-all shadow-sm">Review</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
-      )}
-    </div>
-  )
-}
 
-function Pill({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="min-w-[86px] rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-2)]/50 px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">{label}</p>
-      <p className="mt-1 text-base font-semibold text-[var(--color-text-1)]">{value}</p>
-    </div>
-  )
-}
-
-function SentRow({ lead }: { lead: Lead }) {
-  return (
-    <div className="px-5 py-3 hover:bg-[var(--color-ink-2)]/20 transition-colors">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold text-[var(--color-text-1)]">{lead.target_company}</span>
-            <StatusBadge status={lead.status} />
-            {lead.origin && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                lead.origin === 'live' ? 'bg-[var(--color-accent-bg)] text-[var(--color-accent-ring)]' : 'bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
-              }`}>
-                {lead.origin}
-              </span>
-            )}
+        {/* Sent Outreach */}
+        <section>
+          <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-2">
+            <h3 className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Sent Outreach</h3>
           </div>
-          {lead.contact_email && <p className="text-[11px] text-[var(--color-text-4)] mt-0.5">{lead.contact_email}</p>}
-        </div>
-        <span className="text-[10px] text-[var(--color-text-4)] shrink-0">{formatDateTime(lead.sent_at)}</span>
+          {sentOut.length === 0 ? (
+            <EmptyRow text="Nothing dispatched yet. Approved outreach will appear here with live reply tracking." />
+          ) : (
+            <table className="w-full text-left font-body-main border-collapse">
+              <thead>
+                <tr className="text-on-surface-variant border-b border-outline-variant/30">
+                  <Th>Recipient</Th><Th>Status</Th><Th className="text-center">Sent Date</Th><Th className="text-right">Action</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/10">
+                {sentOut.slice(0, 50).map((l) => {
+                  const st = statusOf(l)
+                  return (
+                    <tr key={l.id} className="group hover:bg-surface-container-low/40 transition-colors">
+                      <td className="py-6 px-2">
+                        <div className="font-body-large text-on-surface">{l.contact_name || l.target_company}</div>
+                        <div className="text-caption font-caption text-on-surface-variant uppercase tracking-wider">{l.contact_title ? `${l.contact_title} @ ${l.target_company}` : l.target_company}</div>
+                      </td>
+                      <td className="py-6 px-2">
+                        <span className={`inline-flex items-center gap-2 font-label-mono text-[10px] uppercase tracking-widest ${st.cls}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${st.dot} ${st.pulse ? 'animate-pulse' : ''}`} /> {st.label}
+                        </span>
+                      </td>
+                      <td className="py-6 px-2 text-center text-on-surface-variant font-label-mono text-xs">{fmtDate(l.sent_at)}</td>
+                      <td className="py-6 px-2 text-right">
+                        <button onClick={() => open(l, 'open')}
+                          className="border border-outline text-on-surface font-label-mono text-[10px] uppercase tracking-[0.2em] px-6 py-2.5 hover:bg-surface-container transition-all">View</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </section>
       </div>
+
+      <LeadDrawer lead={selectedLead} mode={reviewMode} onClose={() => setSelectedLead(null)} />
     </div>
   )
 }
 
-function RepliedRow({ lead }: { lead: Lead }) {
+function Th({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <th className={`py-4 px-2 font-label-mono text-[10px] uppercase tracking-widest ${className}`}>{children}</th>
+}
+
+function EmptyRow({ text }: { text: string }) {
   return (
-    <div className="px-5 py-3 hover:bg-[var(--color-ink-2)]/20 transition-colors">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold text-[var(--color-text-1)]">{lead.target_company}</span>
-            <StatusBadge status={lead.status} />
-            {lead.reply_intent && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                lead.reply_intent === 'interested' || lead.reply_intent === 'meeting_requested' || lead.reply_intent === 'meeting_booked' ? 'bg-green-50 text-green-600' :
-                lead.reply_intent === 'not_interested' || lead.reply_intent === 'out_of_office' ? 'bg-red-50 text-red-600' :
-                'bg-[var(--color-ink-2)] text-[var(--color-text-3)]'
-              }`}>{lead.reply_intent.replace(/_/g, ' ')}</span>
-            )}
-          </div>
-          {lead.reply_summary && <p className="text-[11px] text-[var(--color-text-3)] mt-1 line-clamp-2">{lead.reply_summary}</p>}
-        </div>
-        <span className="text-[10px] text-[var(--color-text-4)] shrink-0">{formatDateTime(lead.replied_at)}</span>
-      </div>
+    <div className="bg-surface-container-lowest hairline-border rounded-lg px-6 py-12 text-center">
+      <p className="font-body-main text-on-surface-variant max-w-md mx-auto">{text}</p>
     </div>
   )
 }
 
-function inWindow(value: string | null | undefined, since: number): boolean {
-  if (!value) return false
-  const time = toTime(value)
-  return Number.isFinite(time) && time >= since
+function statusOf(l: Lead): { label: string; cls: string; dot: string; pulse: boolean } {
+  if (l.replied_at) {
+    if (l.reply_intent === 'meeting_requested') return { label: 'Meeting requested', cls: 'text-primary', dot: 'bg-primary', pulse: true }
+    if (l.reply_intent === 'not_interested') return { label: 'Not interested', cls: 'text-on-surface-variant', dot: 'bg-outline-variant', pulse: false }
+    return { label: 'Replied', cls: 'text-tertiary', dot: 'bg-tertiary', pulse: true }
+  }
+  return { label: 'Awaiting reply', cls: 'text-on-surface-variant', dot: 'bg-outline-variant', pulse: false }
 }
 
-function toTime(value: string | null | undefined): number {
-  if (!value) return 0
-  const time = new Date(value).getTime()
-  return Number.isFinite(time) ? time : 0
+function fmtDate(iso?: string | null): string {
+  if (!iso) return '—'
+  try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) }
+  catch { return '—' }
 }

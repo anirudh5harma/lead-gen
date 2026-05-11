@@ -2,10 +2,38 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 const DEFAULT_CREDITS_PER_DOLLAR = 4
 
-export const CREDIT_TOP_UP_AMOUNTS = [20, 50, 100] as const
+export const CREDIT_TOP_UP_AMOUNTS = [25, 50, 100] as const
 export const STARTER_LEAD_CREDITS = 10
 
 export const SUBSCRIPTION_TIERS = {
+  // ── v2 plans (feature tiers; everything variable = outcome credits) ──
+  launch: {
+    id: 'launch',
+    name: 'Launch',
+    monthlyPrice: 49,
+    annualPrice: 490,
+    includedLeads: 100,        // monthly outcome-credit bundle (mirrored to monthly_credit_grant)
+    overageRate: 0,            // overage = buy more credits
+    maxInboxes: 3,
+    hasExplore: true,
+    hasAutoSend: true,
+    hasTeam: false,
+    hasCrmAgent: false,
+  },
+  team: {
+    id: 'team',
+    name: 'Team',
+    monthlyPrice: 149,
+    annualPrice: 1490,
+    includedLeads: 350,
+    overageRate: 0,
+    maxInboxes: 10,
+    hasExplore: true,
+    hasAutoSend: true,
+    hasTeam: true,
+    hasCrmAgent: true,
+  },
+  // ── legacy tiers (kept so existing accounts/links keep working) ──
   free: {
     id: 'free',
     name: 'Launch',
@@ -96,11 +124,11 @@ export function normalizeCreditTopUpAmount(value: unknown): number | null {
 }
 
 export function getPaygPackCredits(amountDollars: number): number {
-  // Non-subscriber PAYG packs: better value at higher amounts
+  // Outcome-credit top-up packs; better value at higher amounts (~$0.42–0.50/credit).
   switch (amountDollars) {
-    case 20: return 25
-    case 50: return 75
-    case 100: return 200
+    case 25: return 50
+    case 50: return 120
+    case 100: return 250
     default: return computeLeadCreditsForDollars(amountDollars)
   }
 }
