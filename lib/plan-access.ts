@@ -20,14 +20,14 @@ export function hasTeamFeatures(userTier: SubscriptionTier): boolean {
 
 /** Which nav views are gated by tier */
 export const VIEW_TIER_REQUIREMENTS: Record<string, SubscriptionTier> = {
-  'sales/explore': 'growth',
-  'marketing/content': 'growth',
-  'marketing/content/posts': 'growth',
-  'marketing/content/blogs': 'growth',
-  'marketing/content/videos': 'growth',
-  'marketing/campaigns': 'growth',
-  'marketing/audience': 'growth',
-  'engine/autopilot': 'growth',
+  'sales/explore': 'launch',
+  'marketing/content': 'launch',
+  'marketing/content/posts': 'launch',
+  'marketing/content/blogs': 'launch',
+  'marketing/content/videos': 'launch',
+  'marketing/campaigns': 'launch',
+  'marketing/audience': 'launch',
+  'engine/autopilot': 'launch',
   'engine/sequences': 'free', // basic sequences for all, custom templates = scale
 }
 
@@ -41,7 +41,7 @@ export function canAccessView(userTier: SubscriptionTier, view: string): boolean
   return hasPlanAccess(userTier, required)
 }
 
-/** Features that need Scale+ */
+/** Legacy feature grouping kept for older route/view checks. */
 export const SCALE_FEATURES = [
   'team',
   'slack',

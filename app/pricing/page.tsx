@@ -35,7 +35,7 @@ const PLANS = [
     features: [
       'Everything in Launch',
       'Team workspaces &amp; member roles',
-      'Shared pipeline &amp; inbox',
+      'Team pipeline &amp; workspace roles',
       'CRM agent (HubSpot / Salesforce / …)',
       '10 connected inboxes',
       '350 outcome credits / month included',

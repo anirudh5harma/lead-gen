@@ -30,7 +30,7 @@ const SIGNALS = [
   ['hiring', 'New VP of Sales hire'],
   ['acquisition', 'Acquisitions & M&A activity'],
   ['expansion', 'Market expansion'],
-  ['regulation', 'Negative mentions of competitor'],
+  ['regulation', 'Regulatory or compliance change'],
 ] as const
 
 interface Form {
@@ -44,6 +44,19 @@ interface Form {
   icp_keywords: string[]
   calendly_url: string
   engines: Array<'outbound' | 'content'>
+}
+
+interface EditableProfile {
+  active_client_id?: string | null
+  company_name?: string | null
+  industry?: string | null
+  website_url?: string | null
+  target_industries?: string[] | null
+  services_description?: string | null
+  calendly_url?: string | null
+  icp_keywords?: string[] | null
+  target_signal_types?: string[] | null
+  min_relevance_score?: number | null
 }
 
 const INITIAL: Form = {
@@ -78,24 +91,49 @@ export default function OnboardingPage() {
 
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('company_name, industry, website_url, target_industries, services_description, calendly_url, icp_keywords, target_signal_types, min_relevance_score')
+        .select('active_client_id, company_name, industry, website_url, target_industries, services_description, calendly_url, icp_keywords, target_signal_types, min_relevance_score')
         .eq('user_id', user.id)
         .single()
 
-      const landingUrl = readLandingPrefill()
+      let workspaceProfile: EditableProfile | null = null
+      const activeClientId = (profile as { active_client_id?: string | null } | null)?.active_client_id ?? null
+      if (activeClientId) {
+        const { data: client } = await supabase
+          .from('client_accounts')
+          .select('name, industry, website_url, target_industries, services_description, calendly_url, icp_keywords, target_signal_types, min_relevance_score')
+          .eq('id', activeClientId)
+          .maybeSingle()
+        if (client) {
+          workspaceProfile = {
+            ...profile,
+            company_name: client.name,
+            industry: client.industry,
+            website_url: client.website_url,
+            target_industries: client.target_industries,
+            services_description: client.services_description,
+            calendly_url: client.calendly_url,
+            icp_keywords: client.icp_keywords,
+            target_signal_types: client.target_signal_types,
+            min_relevance_score: client.min_relevance_score,
+          }
+        }
+      }
 
-      if (profile) {
+      const landingUrl = readLandingPrefill()
+      const editableProfile = workspaceProfile ?? (profile as EditableProfile | null)
+
+      if (editableProfile) {
         setIsEdit(true)
         setForm({
-          company_name:         (profile.company_name as string) || '',
-          industry:             (profile.industry as IndustryValue) || '',
-          website_url:          (profile.website_url as string) || landingUrl,
-          services_description: (profile.services_description as string) || '',
-          target_industries:    (profile.target_industries as IndustryValue[]) || [],
-          target_signal_types:  (profile.target_signal_types as string[]) || INITIAL.target_signal_types,
-          min_relevance_score:  (profile.min_relevance_score as number) || 8,
-          icp_keywords:         (profile.icp_keywords as string[]) || [],
-          calendly_url:         (profile.calendly_url as string) || '',
+          company_name:         (editableProfile.company_name as string) || '',
+          industry:             (editableProfile.industry as IndustryValue) || '',
+          website_url:          (editableProfile.website_url as string) || landingUrl,
+          services_description: (editableProfile.services_description as string) || '',
+          target_industries:    (editableProfile.target_industries as IndustryValue[]) || [],
+          target_signal_types:  (editableProfile.target_signal_types as string[]) || INITIAL.target_signal_types,
+          min_relevance_score:  (editableProfile.min_relevance_score as number) || 8,
+          icp_keywords:         (editableProfile.icp_keywords as string[]) || [],
+          calendly_url:         (editableProfile.calendly_url as string) || '',
           engines:              INITIAL.engines,
         })
       } else if (landingUrl) {
@@ -356,7 +394,7 @@ function StepCalibration({
       </button>
       <div className="space-y-base">
         <span className="font-display-sm text-[11px] tracking-widest text-primary uppercase">Step 02 — Calibration</span>
-        <h2 className="font-h1-editorial text-[56px] leading-tight">Who's a good account?</h2>
+        <h2 className="font-h1-editorial text-[56px] leading-tight">Who&rsquo;s a good account?</h2>
       </div>
 
       <div className="bg-surface-container-lowest hairline-border p-stack-lg space-y-stack-md">
@@ -457,9 +495,9 @@ function DoneState({ onOpen }: { onOpen: () => void }) {
         <div className="absolute inset-0 w-3 h-3 bg-primary rounded-full blur-md opacity-40" />
       </div>
       <div className="space-y-base">
-        <h2 className="font-h1-editorial text-[72px] text-on-surface">You're live.</h2>
+        <h2 className="font-h1-editorial text-[72px] text-on-surface">You&rsquo;re live.</h2>
         <p className="font-body-large text-on-surface-variant max-w-md mx-auto opacity-80">
-          You're live. Your agents are indexing target accounts and listening for signals — outbound and content.
+          You&rsquo;re live. Your agents are indexing target accounts and listening for signals — outbound and content.
         </p>
       </div>
       <div className="pt-10">

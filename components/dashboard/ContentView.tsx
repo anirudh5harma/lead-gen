@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { UserProfile } from './types'
-import Icon from '@/components/Icon'
 
 interface Props { profile: UserProfile }
 

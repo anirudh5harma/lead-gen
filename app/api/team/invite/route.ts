@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   const planCheck = await requireWorkspacePlan(serviceSupabase, {
     userId: user.id,
     clientId: body.client_id,
-    requiredTier: 'scale',
+    requiredTier: 'team',
   })
   if (planCheck instanceof NextResponse) return planCheck
 

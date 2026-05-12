@@ -16,7 +16,7 @@ type AutomationMode = 'research_only' | 'approve_first' | 'autopilot'
  * Profile · ICP · Automation · Billing · Sign out.
  * (Integrations live on their own first-class view.)
  */
-export default function SettingsView({ profile, userTier }: Props) {
+export default function SettingsView({ profile }: Props) {
   const router = useRouter()
   const canUseAutopilot = true   // autopilot available on every plan
   const [mode, setMode] = useState<AutomationMode>(profile.automation_mode ?? 'approve_first')

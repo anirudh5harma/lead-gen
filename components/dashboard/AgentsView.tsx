@@ -73,16 +73,28 @@ function AgentStacks() {
   const [rows, setRows] = useState<WsAgent[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallbackLoad(setRows, setLoaded)
   useEffect(() => { void load() }, [load])
 
   async function patch(role: string, body: Record<string, unknown>) {
     setSaving(role)
+    setError(null)
+    const previous = rows
     setRows(rs => rs.map(r => r.role === role ? { ...r, ...body } as WsAgent : r))
     try {
-      await fetch('/api/workspace-agents', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, ...body }) })
-    } finally { setSaving(null) }
+      const res = await fetch('/api/workspace-agents', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role, ...body }) })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(json.error || 'Could not update agent settings.')
+      }
+    } catch (err) {
+      setRows(previous)
+      setError(err instanceof Error ? err.message : 'Could not update agent settings.')
+    } finally {
+      setSaving(null)
+    }
   }
 
   if (!loaded) return <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">Loading agents…</div>
@@ -91,6 +103,7 @@ function AgentStacks() {
 
   return (
     <div className="space-y-stack-lg">
+      {error && <div className="hairline-border bg-error-container rounded-lg px-4 py-3 font-body-main text-on-error-container">{error}</div>}
       {groups.map(([engine, list]) => list.length === 0 ? null : (
         <section key={engine}>
           <h3 className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant mb-3 hairline-b pb-2">{ENGINE_LABEL[engine]} · {list.filter(a => a.enabled).length}/{list.length} on</h3>

@@ -16,6 +16,7 @@ import { recordGtmMemory } from '@/lib/gtm/memory'
 import { buildOutreachPlan } from '@/lib/gtm/outreach-plan'
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
+import { loadAccessibleLead } from '@/lib/lead-access'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
 import {
@@ -59,12 +60,38 @@ export async function POST(request: Request) {
   }
 
   const [leadRes, profileRes] = await Promise.all([
-    supabase.from('leads').select('id, user_id, client_id, origin, source_kind, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, contact_verified_at, contact_verification_status, feed_snapshot, created_at').eq('id', leadId).eq('user_id', user.id).single(),
+    loadAccessibleLead<{
+      id: string
+      user_id: string
+      client_id: string | null
+      origin: string | null
+      source_kind: string | null
+      target_company: string
+      company_domain: string | null
+      relevance_score: number | null
+      relevance_reason: string | null
+      status: string | null
+      is_unlocked: boolean
+      contact_email: string | null
+      contact_name: string | null
+      contact_title: string | null
+      contact_verified: boolean | null
+      contact_verified_at: string | null
+      contact_verification_status: string | null
+      feed_snapshot: unknown
+      created_at: string | null
+    }>(supabase, {
+      userId: user.id,
+      leadId,
+      select: 'id, user_id, client_id, origin, source_kind, target_company, company_domain, relevance_score, relevance_reason, status, is_unlocked, contact_email, contact_name, contact_title, contact_verified, contact_verified_at, contact_verification_status, feed_snapshot, created_at',
+    }),
     supabase.from('user_profiles').select('company_name, services_description, calendly_url').eq('user_id', user.id).single(),
   ])
 
-  if (!leadRes.data) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
-  if (!leadRes.data.is_unlocked) {
+  if (leadRes.error) return NextResponse.json({ error: leadRes.error }, { status: 500 })
+  if (!leadRes.lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+  const lead = leadRes.lead
+  if (!lead.is_unlocked) {
     return NextResponse.json({ error: 'Unlock this lead first before sending outreach.' }, { status: 403 })
   }
 
@@ -85,21 +112,21 @@ export async function POST(request: Request) {
     ? (draftForRecipients as { stakeholders: Array<{ name?: string; title?: string; email?: string }> }).stakeholders
     : []
   const recipientGroup = buildRecipientGroup([
-    recipientSeed(to, draftStakeholders, leadRes.data),
-    ...(Array.isArray(cc) ? cc.map(email => recipientSeed(email, draftStakeholders, leadRes.data)) : []),
+    recipientSeed(to, draftStakeholders, lead),
+    ...(Array.isArray(cc) ? cc.map(email => recipientSeed(email, draftStakeholders, lead)) : []),
   ])
   if (!recipientGroup) return NextResponse.json({ error: 'At least one valid recipient is required.' }, { status: 400 })
   const normalizedEmailBody = ensureBodyGreetsRecipients(emailBody, recipientGroup.greeting)
-  const triggerSignal = normalizeLeadFeedSnapshot(leadRes.data.feed_snapshot)
+  const triggerSignal = normalizeLeadFeedSnapshot(lead.feed_snapshot)
   const traceType = isFollowUp ? 'followup_send' : 'manual_outreach_send'
-  const leadClientId = (leadRes.data as { client_id?: string | null }).client_id ?? null
+  const leadClientId = lead.client_id ?? null
   const draftQuality = evaluateOutreachDraftQuality({
     subject,
     body: normalizedEmailBody,
     greeting: recipientGroup.greeting,
-    targetCompany: leadRes.data.target_company,
+    targetCompany: lead.target_company,
     signalType: triggerSignal?.signal_type ?? null,
-    signalSummary: triggerSignal?.summary ?? leadRes.data.relevance_reason ?? null,
+    signalSummary: triggerSignal?.summary ?? lead.relevance_reason ?? null,
   })
 
   if (isFollowUp !== true && draftQuality.score < 55) {
@@ -122,7 +149,7 @@ export async function POST(request: Request) {
     }, { status: 422 })
   }
 
-  const clientId = (leadRes.data as { client_id?: string | null }).client_id ?? null
+  const clientId = lead.client_id ?? null
   const workflowRunId = await startWorkflowRun(supabase, {
     userId: user.id,
     clientId,
@@ -142,7 +169,7 @@ export async function POST(request: Request) {
     stepKey: 'graph_sync',
     input: { lead_id: leadId },
   })
-  const graph = await upsertLeadIntoGtmGraph(supabase, leadRes.data, { workflowRunId })
+  const graph = await upsertLeadIntoGtmGraph(supabase, lead, { workflowRunId })
   await finishWorkflowStep(supabase, {
     stepId: graphStepId,
     status: graph ? 'completed' : 'skipped',
@@ -153,16 +180,15 @@ export async function POST(request: Request) {
     } : {},
   })
 
-  const { data: clientProfileForPlan } = clientId
-    ? await supabase
-        .from('client_accounts')
-        .select('name, services_description, calendly_url')
-        .eq('id', clientId)
-        .eq('user_id', user.id)
-        .maybeSingle()
-    : { data: null }
+    const { data: clientProfileForPlan } = clientId
+      ? await supabase
+          .from('client_accounts')
+          .select('name, services_description, calendly_url')
+          .eq('id', clientId)
+          .maybeSingle()
+      : { data: null }
   const outreachPlan = buildOutreachPlan({
-    lead: leadRes.data,
+    lead,
     mode: 'manual',
     senderContext: {
       companyName: (clientProfileForPlan as { name?: string | null } | null)?.name ?? (profileRes.data as { company_name?: string | null } | null)?.company_name ?? null,
@@ -313,10 +339,10 @@ export async function POST(request: Request) {
     userId: user.id,
     clientId,
     leadId,
-    targetCompany: leadRes.data.target_company,
-    companyDomain: (leadRes.data as { company_domain?: string | null }).company_domain ?? null,
-    status: leadRes.data.status,
-    isUnlocked: leadRes.data.is_unlocked,
+    targetCompany: lead.target_company,
+    companyDomain: lead.company_domain ?? null,
+    status: lead.status,
+    isUnlocked: lead.is_unlocked,
     contactVerified: leadContactVerified,
     recipientValidationSafe: recipientValidation.safe && leadContactVerified,
     recipientEmails,
@@ -395,7 +421,6 @@ export async function POST(request: Request) {
           .from('client_accounts')
           .select('name, services_description, calendly_url')
           .eq('id', clientId)
-          .eq('user_id', user.id)
           .maybeSingle()
       : { data: null }
     const outreachContext = resolveOutreachContext({
@@ -438,7 +463,7 @@ export async function POST(request: Request) {
     if (!result) {
       await recordAgentEvent(supabase, {
         userId: user.id,
-        clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+        clientId: lead.client_id ?? null,
         leadId,
         agentName: 'safety',
         eventType: 'send_blocked',
@@ -476,7 +501,7 @@ export async function POST(request: Request) {
         status: 'blocked',
       })
       return NextResponse.json(
-        { error: 'No sending account connected. Go to Settings → Sending Accounts to connect an inbox.' },
+        { error: 'No sending account connected. Go to Integrations → Outreach inboxes to connect an inbox.' },
         { status: 503 }
       )
     }
@@ -505,11 +530,11 @@ export async function POST(request: Request) {
 
     emitCrmLeadEvent({
       userId: user.id,
-      clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+      clientId: lead.client_id ?? null,
       eventType: 'lead.sent',
       payload: {
         lead_id: leadId,
-        target_company: (leadRes.data as { target_company?: string }).target_company ?? '',
+        target_company: lead.target_company ?? '',
         from_email: result.fromEmail,
         message_id: result.messageId,
       },
@@ -529,12 +554,12 @@ export async function POST(request: Request) {
 
     await recordAgentEvent(supabase, {
       userId: user.id,
-      clientId: (leadRes.data as { client_id?: string | null }).client_id ?? null,
+      clientId: lead.client_id ?? null,
       leadId,
       agentName: isFollowUp ? 'followup' : 'sending',
       eventType: isFollowUp ? 'followup_sent' : 'email_sent',
       status: 'completed',
-      title: `${isFollowUp ? 'Sent follow-up' : 'Sent outreach'} to ${(leadRes.data as { target_company?: string }).target_company ?? 'lead'}`,
+      title: `${isFollowUp ? 'Sent follow-up' : 'Sent outreach'} to ${lead.target_company ?? 'lead'}`,
       body: `Sent from ${result.fromEmail} to ${formatRecipientListForLog(recipientGroup)}.`,
       metadata: {
         provider: result.provider,

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { UserProfile } from './types'
 import type { SubscriptionTier } from '@/lib/lead-credits'
-import { hasPlanAccess } from '@/lib/plan-access'
+import { hasTeamFeatures } from '@/lib/plan-access'
 
 interface Props { profile: UserProfile }
 
@@ -17,7 +17,7 @@ interface ConnectedAccount {
  * Integrations — every connection in one place, grouped by purpose.
  *
  *   01 Sending  — Gmail / Outlook OAuth (real)
- *   02 CRM      — CSV import (real); native OAuth marked "soon"
+ *   02 CRM      — bidirectional webhook sync
  *   03 Signals  — managed sources, no setup
  *   04 Ops      — Slack webhook + booking link via in-page modals
  *   05 Agents API — agent key issuance via mailto + docs link
@@ -27,11 +27,12 @@ interface ConnectedAccount {
  */
 export default function IntegrationsView({ profile }: Props) {
   const userTier = normalizeTier(profile.plan)
-  const canUseScale = hasPlanAccess(userTier, 'scale')
+  const canUseTeamOps = hasTeamFeatures(userTier)
+  const canUseCrm = hasTeamFeatures(userTier)
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([])
   const [social, setSocial] = useState<{ managed: boolean; accounts: Array<{ id: string; partner: string; platform: string | null; display_name: string | null; is_active: boolean }> }>({ managed: false, accounts: [] })
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null)
-  const [modal, setModal] = useState<null | 'slack' | 'calendly' | 'agentkey' | 'csv' | 'llm'>(null)
+  const [modal, setModal] = useState<null | 'slack' | 'calendly' | 'agentkey' | 'llm' | 'crm'>(null)
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -119,20 +120,24 @@ export default function IntegrationsView({ profile }: Props) {
       {/* CRM */}
       <Group
         label="02 · CRM"
-        title="Two-way sync"
-        body="Bombsell writes back signals, drafts, and reply outcomes. CRM import is in private preview; native OAuth coming."
+        title="Bidirectional sync"
+        body="Team and custom workspaces can import CRM accounts into Bombsell and export signals, drafts, sends, replies, and bookings back to CRM."
       >
         <div className="card p-5 mb-4 grid md:grid-cols-[1fr_auto] items-center gap-4">
           <div>
-            <div className="mono mb-1">Private preview</div>
-            <div className="text-[13.5px] font-medium">Import &amp; Export</div>
-            <div className="text-[12.5px] text-[var(--color-text-3)] mt-1">Map CRM exports to Bombsell accounts with human-assisted onboarding while the self-serve importer is disabled.</div>
+            <div className="mono mb-1">{canUseCrm ? 'Team workspace' : 'Team/custom only'}</div>
+            <div className="text-[13.5px] font-medium">Inbound CRM import + outbound CRM export</div>
+            <div className="text-[12.5px] text-[var(--color-text-3)] mt-1">Use a CRM workflow webhook to push accounts into Bombsell, and an outbound webhook to write Bombsell outcomes back.</div>
           </div>
-          {/* <button onClick={() => setModal('csv')} className="btn-accent h-9 px-4 text-[13px]">Import CSV →</button> */}
+          {canUseCrm ? (
+            <button onClick={() => setModal('crm')} className="btn-accent h-9 px-4 text-[13px]">Configure sync</button>
+          ) : (
+            <Link href="/pricing" className="btn-ghost h-9 px-4 text-[13px] inline-flex items-center">Upgrade</Link>
+          )}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {['HubSpot', 'Salesforce', 'Attio', 'Pipedrive'].map((name) => (
-            <ConnectTile key={name} name={name} disabled label="OAuth soon" />
+          {['HubSpot', 'Salesforce', 'Pipedrive', 'Zoho'].map((name) => (
+            <ConnectTile key={name} name={name} disabled={!canUseCrm} locked={!canUseCrm} requiredTier="Team" label={canUseCrm ? 'webhook' : undefined} onClickFn={canUseCrm ? () => setModal('crm') : undefined} />
           ))}
         </div>
       </Group>
@@ -148,11 +153,11 @@ export default function IntegrationsView({ profile }: Props) {
             name="Slack"
             connected={!!profile.slack_webhook_url}
             label={profile.slack_webhook_url ? 'configured' : undefined}
-            disabled={!canUseScale}
-            locked={!canUseScale}
-            requiredTier="Scale"
-            href={!canUseScale ? '/pricing' : undefined}
-            onClickFn={canUseScale ? () => setModal('slack') : undefined}
+            disabled={!canUseTeamOps}
+            locked={!canUseTeamOps}
+            requiredTier="Team"
+            href={!canUseTeamOps ? '/pricing' : undefined}
+            onClickFn={canUseTeamOps ? () => setModal('slack') : undefined}
           />
           <ConnectTile
             name="Calendly"
@@ -253,9 +258,77 @@ export default function IntegrationsView({ profile }: Props) {
         <CalendlyModal initial={profile.calendly_url ?? ''} onClose={() => setModal(null)} />
       )}
       {modal === 'agentkey' && <AgentKeyModal onClose={() => setModal(null)} />}
-      {modal === 'csv' && <CsvModal onClose={() => setModal(null)} />}
       {modal === 'llm' && <LlmModal onClose={() => setModal(null)} />}
+      {modal === 'crm' && <CrmModal onClose={() => setModal(null)} />}
     </div>
+  )
+}
+
+function CrmModal({ onClose }: { onClose: () => void }) {
+  const [provider, setProvider] = useState('webhook')
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [enabled, setEnabled] = useState(false)
+  const [importUrl, setImportUrl] = useState('')
+  const [providers, setProviders] = useState<Array<{ id: string; label: string; exportDescription: string; importDescription: string }>>([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    void fetch('/api/settings/crm-sync').then(async (res) => {
+      const data = await res.json().catch(() => ({})) as {
+        provider?: string; webhook_url?: string; enabled?: boolean; import_url?: string;
+        providers?: Array<{ id: string; label: string; exportDescription: string; importDescription: string }>
+        error?: string
+      }
+      if (!res.ok) throw new Error(data.error || 'Could not load CRM sync.')
+      setProvider(data.provider ?? 'webhook')
+      setWebhookUrl(data.webhook_url ?? '')
+      setEnabled(Boolean(data.enabled))
+      setImportUrl(data.import_url ?? '')
+      setProviders(Array.isArray(data.providers) ? data.providers : [])
+    }).catch((error) => setErr(error instanceof Error ? error.message : 'Could not load CRM sync.'))
+  }, [])
+
+  async function save() {
+    setBusy(true); setErr(null)
+    const res = await fetch('/api/settings/crm-sync', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, webhook_url: webhookUrl, enabled: true }),
+    })
+    const data = await res.json().catch(() => ({})) as { import_url?: string; error?: string }
+    setBusy(false)
+    if (!res.ok) { setErr(data.error || 'Could not save CRM sync.'); return }
+    setEnabled(true)
+    setImportUrl(data.import_url ?? importUrl)
+  }
+
+  const preset = providers.find(p => p.id === provider)
+
+  return (
+    <Modal title="Bidirectional CRM sync" onClose={onClose}>
+      <p className="text-[13px] text-[var(--color-text-3)] mb-4">Configure both directions: CRM → Bombsell import webhook, and Bombsell → CRM outcome export webhook.</p>
+      <label className="mono block mb-1">CRM</label>
+      <select value={provider} onChange={(e) => setProvider(e.target.value)}
+        className="w-full h-10 px-3 mb-3 bg-[var(--color-ink-1)] border border-[var(--color-line-2)] rounded-lg text-[13px] outline-none focus:border-[var(--color-text-1)]">
+        {(providers.length ? providers : [{ id: 'webhook', label: 'Generic Webhook', exportDescription: '', importDescription: '' }]).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+      </select>
+      <label className="mono block mb-1">Outbound CRM webhook</label>
+      <input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://your-crm-or-automation-webhook"
+        className="w-full h-10 px-3 mb-3 bg-[var(--color-ink-1)] border border-[var(--color-line-2)] rounded-lg text-[13px] outline-none focus:border-[var(--color-text-1)]" />
+      {importUrl && (
+        <div className="rounded-xl border border-[var(--color-line-2)] bg-[var(--color-ink-2)] p-3">
+          <div className="mono mb-2">Inbound import URL</div>
+          <code className="break-all text-[12px] text-[var(--color-text-1)]">{importUrl}</code>
+        </div>
+      )}
+      {preset && <p className="text-[12px] text-[var(--color-text-3)] mt-3">{preset.importDescription} {preset.exportDescription}</p>}
+      {err && <p className="text-[12px] text-[var(--color-neg)] mt-2">{err}</p>}
+      <div className="mt-5 flex items-center justify-end gap-2">
+        <button onClick={onClose} className="btn-ghost h-9 px-4 text-[12.5px]">Close</button>
+        <button onClick={() => void save()} disabled={busy || !webhookUrl.trim()} className="btn-accent h-9 px-4 text-[12.5px] disabled:opacity-50">{busy ? 'Saving...' : enabled ? 'Save sync' : 'Enable sync'}</button>
+      </div>
+    </Modal>
   )
 }
 
@@ -463,24 +536,6 @@ function AgentKeyModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function CsvModal({ onClose }: { onClose: () => void }) {
-  return (
-    <Modal title="Import CSV" onClose={onClose}>
-      <p className="text-[13px] text-[var(--color-text-3)] mb-4">
-        Drop a CSV exported from your CRM. Bombsell maps companies, dedupes against your live pipeline, and queues them for the match agent.
-      </p>
-      <div className="border-2 border-dashed border-[var(--color-line-2)] rounded-lg p-8 text-center">
-        <p className="mono mb-2">CSV upload</p>
-        <p className="text-[12px] text-[var(--color-text-3)]">Private preview &mdash; reach out for early access.</p>
-      </div>
-      <div className="mt-5 flex items-center justify-end gap-2">
-        <button onClick={onClose} className="btn-ghost h-9 px-4 text-[12.5px]">Close</button>
-        <a href="mailto:team@bombsell.com?subject=CSV%20import%20early%20access" className="btn-accent h-9 px-4 text-[12.5px] inline-flex items-center">Request access</a>
-      </div>
-    </Modal>
-  )
-}
-
 /* ─── Primitives ──────────────────────────────────────────────── */
 
 function Group({
@@ -533,7 +588,7 @@ function ConnectTile({
 }
 
 function normalizeTier(value: string | null | undefined): SubscriptionTier {
-  return value === 'growth' || value === 'scale' || value === 'enterprise' ? value : 'free'
+  return value === 'launch' || value === 'team' || value === 'growth' || value === 'scale' || value === 'enterprise' ? value : 'free'
 }
 
 function ProviderBadge({ name }: { name: string }) {

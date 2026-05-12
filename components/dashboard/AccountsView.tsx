@@ -5,6 +5,7 @@ import type { Lead } from '@/lib/leads'
 import type { UserProfile } from './types'
 import LeadDrawer from './LeadDrawer'
 import Icon from '@/components/Icon'
+import WatchlistManager from '@/components/WatchlistManager'
 
 interface Props { profile: UserProfile; leads: Lead[] }
 
@@ -53,6 +54,8 @@ export default function AccountsView({ leads }: Props) {
         <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-2">Pipeline</p>
         <h2 className="font-h1-editorial text-display-sm text-on-surface">Signals & Accounts</h2>
       </div>
+
+      <WatchlistManager />
 
       {/* Filters */}
       <div className="flex items-center gap-2 flex-wrap">

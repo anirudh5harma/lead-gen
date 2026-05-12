@@ -6,6 +6,7 @@ import { resolveOutreachContext } from '@/lib/outreach-context'
 import { buildGtmContextPack } from '@/lib/gtm/semantic-context'
 import { evaluateOutreachDraftQuality } from '@/lib/gtm/draft-eval'
 import { upsertGtmEvalTrace } from '@/lib/gtm/eval-traces'
+import { loadAccessibleLead } from '@/lib/lead-access'
 import { firstUsableStakeholder, resolveLeadRecipients, upsertOutreachDraft } from '@/lib/outreach-workflow'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import {
@@ -62,14 +63,27 @@ export async function POST(
 
   const targetRoles = await parseTargetRoles(request)
   const { id } = await params
-  const { data: lead, error: leadError } = await supabase
-    .from('leads')
-    .select('id, user_id, client_id, target_company, company_domain, relevance_reason, is_unlocked, contact_email, contact_name, contact_title, contact_verified, feed_snapshot')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .maybeSingle()
+  const serviceSupabase = await createServiceClient()
+  const { lead, error: leadError } = await loadAccessibleLead<{
+    id: string
+    user_id: string
+    client_id: string | null
+    target_company: string
+    company_domain: string | null
+    relevance_reason: string | null
+    is_unlocked: boolean
+    contact_email: string | null
+    contact_name: string | null
+    contact_title: string | null
+    contact_verified: boolean | null
+    feed_snapshot: unknown
+  }>(serviceSupabase, {
+    userId: user.id,
+    leadId: id,
+    select: 'id, user_id, client_id, target_company, company_domain, relevance_reason, is_unlocked, contact_email, contact_name, contact_title, contact_verified, feed_snapshot',
+  })
 
-  if (leadError) return NextResponse.json({ error: leadError.message }, { status: 500 })
+  if (leadError) return NextResponse.json({ error: leadError }, { status: 500 })
   if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
   const [existingDraftRes, profileRes, clientProfileRes] = await Promise.all([
@@ -84,11 +98,10 @@ export async function POST(
       .eq('user_id', user.id)
       .maybeSingle(),
     lead.client_id
-      ? supabase
+      ? serviceSupabase
           .from('client_accounts')
           .select('name, website_url, services_description, calendly_url')
           .eq('id', lead.client_id)
-          .eq('user_id', user.id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
   ])
@@ -102,7 +115,6 @@ export async function POST(
     userProfile: profileRes.data,
     clientProfile: clientProfileRes.data,
   })
-  const serviceSupabase = await createServiceClient()
   const contactResolution = await resolveLeadRecipients(serviceSupabase, {
     lead,
     userId: user.id,

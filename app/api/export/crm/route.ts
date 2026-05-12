@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import {
@@ -17,6 +17,7 @@ async function loadExportContext(request: Request) {
   if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
 
   const { activeClientId } = await getActiveClientContext(supabase, user.id)
+  const serviceSupabase = createAdminClient()
   const { searchParams } = new URL(request.url)
   const provider = normalizeCrmProvider(searchParams.get('provider'))
   const feedParam = searchParams.get('feed')
@@ -34,7 +35,7 @@ async function loadExportContext(request: Request) {
     .filter(Boolean)
   const expectedOrigin = feed === 'crm_import' ? 'crm_import' : feed === 'explore' ? 'explore' : 'live'
 
-  let query = supabase
+  let query = serviceSupabase
     .from('leads')
     .select(`
       origin,
@@ -44,11 +45,10 @@ async function loadExportContext(request: Request) {
       created_at, sent_at, replied_at, booked_at,
       feed_snapshot
     `)
-    .eq('user_id', user.id)
     .neq('status', 'dismissed')
     .order('created_at', { ascending: false })
 
-  query = activeClientId ? query.eq('client_id', activeClientId) : query.is('client_id', null)
+  query = activeClientId ? query.eq('client_id', activeClientId) : query.eq('user_id', user.id).is('client_id', null)
   if (selectedLeadIds.length > 0) query = query.in('id', selectedLeadIds)
   const { data: leads } = await query
 
@@ -79,7 +79,7 @@ async function loadExportContext(request: Request) {
     : []
 
   return {
-    supabase,
+    supabase: serviceSupabase,
     user,
     activeClientId,
     provider,
@@ -109,13 +109,12 @@ export async function POST(request: Request) {
   let crmQuery = context.supabase
     .from('crm_sync_settings')
     .select('provider, webhook_url, enabled')
-    .eq('user_id', context.user.id)
     .eq('enabled', true)
     .limit(1)
 
   crmQuery = context.activeClientId
     ? crmQuery.eq('client_id', context.activeClientId)
-    : crmQuery.is('client_id', null)
+    : crmQuery.eq('user_id', context.user.id).is('client_id', null)
 
   const { data: setting } = await crmQuery.maybeSingle()
   const row = setting as { provider?: string | null; webhook_url?: string | null; enabled?: boolean | null } | null

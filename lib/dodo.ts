@@ -144,6 +144,10 @@ export function getDodoConfigSummary(): {
   environment: DodoEnvironment
   hasApiKey: boolean
   hasLeadCreditsProduct: boolean
+  hasLaunchMonthly: boolean
+  hasLaunchAnnual: boolean
+  hasTeamMonthly: boolean
+  hasTeamAnnual: boolean
   hasGrowthMonthly: boolean
   hasGrowthAnnual: boolean
   hasScaleMonthly: boolean
@@ -154,6 +158,10 @@ export function getDodoConfigSummary(): {
     environment: getDodoEnvironment(),
     hasApiKey: Boolean(cleanEnvValue(process.env.DODO_API_KEY)),
     hasLeadCreditsProduct: Boolean(PRODUCT_IDS.leadCredits),
+    hasLaunchMonthly: Boolean(PRODUCT_IDS.launchMonthly),
+    hasLaunchAnnual: Boolean(PRODUCT_IDS.launchAnnual),
+    hasTeamMonthly: Boolean(PRODUCT_IDS.teamMonthly),
+    hasTeamAnnual: Boolean(PRODUCT_IDS.teamAnnual),
     hasGrowthMonthly: Boolean(PRODUCT_IDS.growthMonthly),
     hasGrowthAnnual: Boolean(PRODUCT_IDS.growthAnnual),
     hasScaleMonthly: Boolean(PRODUCT_IDS.scaleMonthly),

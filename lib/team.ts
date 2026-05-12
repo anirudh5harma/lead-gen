@@ -37,8 +37,10 @@ export interface WorkspaceActivity {
 const INVITE_EXPIRY_HOURS = 72
 const MAX_TEAM_MEMBERS: Record<string, number> = {
   free: 1,
+  launch: 1,
   growth: 1,
   scale: 5,
+  team: 10,
   enterprise: 20,
 }
 

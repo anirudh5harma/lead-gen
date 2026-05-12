@@ -12,7 +12,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'growth')
+  const planCheck = await requirePlan(supabase, 'launch')
   if (planCheck instanceof NextResponse) return planCheck
   const userId = planCheck.userId
 

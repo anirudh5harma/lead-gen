@@ -54,6 +54,10 @@ export async function POST(request: Request) {
       period,
       environment: config.environment,
       hasApiKey: config.hasApiKey,
+      hasLaunchMonthly: config.hasLaunchMonthly,
+      hasLaunchAnnual: config.hasLaunchAnnual,
+      hasTeamMonthly: config.hasTeamMonthly,
+      hasTeamAnnual: config.hasTeamAnnual,
       hasGrowthMonthly: config.hasGrowthMonthly,
       hasScaleMonthly: config.hasScaleMonthly,
     })

@@ -42,7 +42,7 @@ export async function GET() {
     new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
   ))
   const accessPlan = buildWorkspaceAccessPlan({
-    plan: ((profile as { plan?: string | null } | null)?.plan ?? 'free') as 'free' | 'growth' | 'scale' | 'enterprise',
+    plan: ((profile as { plan?: string | null } | null)?.plan ?? 'free') as 'free' | 'launch' | 'growth' | 'scale' | 'team' | 'enterprise',
     activeClientId,
     clients: clients.map(client => ({
       id: client.id,

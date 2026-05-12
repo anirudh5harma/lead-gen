@@ -12,7 +12,7 @@ const BUCKET = 'marketing-content-assets'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'growth')
+  const planCheck = await requirePlan(supabase, 'launch')
   if (planCheck instanceof NextResponse) return planCheck
   const { userId } = planCheck
   const { data: { user } } = await supabase.auth.getUser()
