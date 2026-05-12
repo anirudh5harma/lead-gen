@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Lead } from '@/lib/leads'
 import Icon from '@/components/Icon'
+import { useToast } from '@/components/Toast'
 
 interface LeadDrawerProps {
   lead: Lead | null
@@ -26,15 +27,15 @@ interface DraftState {
  */
 export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerProps) {
   const router = useRouter()
+  const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftState | null>(null)
   const [sent, setSent] = useState(false)
   const [editing, setEditing] = useState(false)
 
   const open = lead != null
 
-  useEffect(() => { setDraft(null); setError(null); setSent(false); setEditing(false) }, [lead?.id])
+  useEffect(() => { setDraft(null); setSent(false); setEditing(false) }, [lead?.id])
 
   useEffect(() => {
     if (!lead || mode !== 'review' || draft || busy) return
@@ -61,7 +62,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
 
   async function unlockLead() {
     if (!lead) return
-    setBusy('unlock'); setError(null)
+    setBusy('unlock')
     try {
       const result = await request<{ contact?: { email?: string | null; name?: string | null; title?: string | null } | null }>(
         `/api/leads/${lead.id}/unlock`, { method: 'POST' },
@@ -70,47 +71,48 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
         setDraft(current => current ? { ...current, to: current.to ?? result.contact?.email ?? null } : current)
       }
       router.refresh()
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not unlock lead.') }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Could not unlock lead.') }
     finally { setBusy(null) }
   }
 
   async function generateDraft() {
     if (!lead) return
-    setBusy('draft'); setError(null)
+    setBusy('draft')
     try {
       const result = await request<{ draft: DraftState }>(`/api/leads/${lead.id}/draft`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       })
       setDraft(result.draft)
       router.refresh()
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not prepare draft.') }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Could not prepare draft.') }
     finally { setBusy(null) }
   }
 
   async function sendDraft() {
     if (!lead || !draft?.to || !draft.subject || !draft.body) return
-    setBusy('send'); setError(null)
+    setBusy('send')
     try {
       await request('/api/outreach/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leadId: lead.id, to: draft.to, cc, subject: draft.subject, body: draft.body }),
       })
       setSent(true)
+      toast.success('Outreach dispatched. The fleet will watch for replies and bookings.')
       router.refresh()
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not send outreach.') }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Could not send outreach.') }
     finally { setBusy(null) }
   }
 
   async function updateStatus(status: 'viewed' | 'dismissed' | 'booked') {
     if (!lead) return
-    setBusy(status); setError(null)
+    setBusy(status)
     try {
       await request(`/api/leads/${lead.id}/status`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
       })
       router.refresh()
       if (status === 'dismissed') onClose()
-    } catch (err) { setError(err instanceof Error ? err.message : `Could not mark ${status}.`) }
+    } catch (err) { toast.error(err instanceof Error ? err.message : `Could not mark ${status}.`) }
     finally { setBusy(null) }
   }
 
@@ -146,15 +148,6 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-8 space-y-12">
-          {error && (
-            <div className="border border-error/30 bg-error-container px-4 py-3 rounded font-body-main text-on-error-container">{error}</div>
-          )}
-          {sent && (
-            <div className="border border-tertiary/30 bg-tertiary/10 px-4 py-3 rounded font-body-main text-tertiary">
-              Outreach dispatched. The fleet will watch for replies and bookings.
-            </div>
-          )}
-
           {/* Verified Intelligence */}
           <section>
             <h5 className="font-label-mono text-[10px] uppercase tracking-[0.3em] text-on-surface-variant mb-6">Verified Intelligence</h5>

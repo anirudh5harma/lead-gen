@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { UserProfile } from './types'
+import { useToast } from '@/components/Toast'
 
 interface Props { profile: UserProfile }
 
@@ -17,7 +18,7 @@ export default function ContentView({ profile }: Props) {
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   const [busy, setBusy] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
+  const toast = useToast()
 
   const loadIdeas = useCallback(async () => {
     const d = await fetch(`${C}?resource=ideas`).then((r) => r.json()).catch(() => ({}))
@@ -31,7 +32,7 @@ export default function ContentView({ profile }: Props) {
   useEffect(() => { void loadIdeas(); void loadPosts() }, [loadIdeas, loadPosts])
 
   async function act(action: string, payload: Record<string, unknown>, label: string) {
-    setBusy(label); setMsg(null)
+    setBusy(label)
     try {
       const res = await fetch(C, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...payload }) })
       const d = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; result?: unknown }
@@ -39,7 +40,7 @@ export default function ContentView({ profile }: Props) {
       await Promise.all([loadIdeas(), loadPosts()])
       return d
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Action failed'); return null
+      toast.error(e instanceof Error ? e.message : 'Action failed'); return null
     } finally { setBusy(null) }
   }
 
@@ -73,8 +74,6 @@ export default function ContentView({ profile }: Props) {
           ))}
         </div>
       </div>
-
-      {msg && <div className="hairline-border bg-surface-container-lowest rounded-lg px-4 py-3 font-body-main text-error">{msg}</div>}
 
       {tab === 'ideas' && (
         <section className="space-y-stack-lg">

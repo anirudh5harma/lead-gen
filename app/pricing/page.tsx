@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getPaygPackCredits } from '@/lib/lead-credits'
+import { useToast } from '@/components/Toast'
 
 /**
  * Pricing — editorial, mono labels, 4-column comparison row.
@@ -63,6 +64,7 @@ const FAQS: Array<[string, string]> = [
 
 export default function PricingPage() {
   const router = useRouter()
+  const toast = useToast()
   const [signedIn, setSignedIn] = useState(false)
   const [busy, setBusy] = useState(false)
   const [annual, setAnnual] = useState(false)
@@ -93,9 +95,9 @@ export default function PricingPage() {
       })
       const data = await res.json().catch(() => null) as { url?: string; error?: string } | null
       if (data?.url) window.location.assign(data.url)
-      else { setBusy(false); alert(data?.error ?? 'Could not start checkout.') }
+      else { setBusy(false); toast.error(data?.error ?? 'Could not start checkout.') }
     } catch {
-      setBusy(false); alert('Could not start checkout.')
+      setBusy(false); toast.error('Could not start checkout.')
     }
   }
 
@@ -113,8 +115,8 @@ export default function PricingPage() {
       })
       const data = await res.json().catch(() => null) as { url?: string; error?: string } | null
       if (data?.url) window.location.assign(data.url)
-      else { setBusy(false); alert(data?.error ?? 'Could not start checkout.') }
-    } catch { setBusy(false); alert('Could not start checkout.') }
+      else { setBusy(false); toast.error(data?.error ?? 'Could not start checkout.') }
+    } catch { setBusy(false); toast.error('Could not start checkout.') }
   }
 
   return (

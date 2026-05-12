@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { UserProfile } from './types'
 import Icon from '@/components/Icon'
+import { useToast } from '@/components/Toast'
 
 interface Props { profile: UserProfile }
 
@@ -73,14 +74,13 @@ function AgentStacks() {
   const [rows, setRows] = useState<WsAgent[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
 
   const load = useCallbackLoad(setRows, setLoaded)
   useEffect(() => { void load() }, [load])
 
   async function patch(role: string, body: Record<string, unknown>) {
     setSaving(role)
-    setError(null)
     const previous = rows
     setRows(rs => rs.map(r => r.role === role ? { ...r, ...body } as WsAgent : r))
     try {
@@ -91,7 +91,7 @@ function AgentStacks() {
       }
     } catch (err) {
       setRows(previous)
-      setError(err instanceof Error ? err.message : 'Could not update agent settings.')
+      toast.error(err instanceof Error ? err.message : 'Could not update agent settings.')
     } finally {
       setSaving(null)
     }
@@ -103,7 +103,6 @@ function AgentStacks() {
 
   return (
     <div className="space-y-stack-lg">
-      {error && <div className="hairline-border bg-error-container rounded-lg px-4 py-3 font-body-main text-on-error-container">{error}</div>}
       {groups.map(([engine, list]) => list.length === 0 ? null : (
         <section key={engine}>
           <h3 className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant mb-3 hairline-b pb-2">{ENGINE_LABEL[engine]} · {list.filter(a => a.enabled).length}/{list.length} on</h3>
@@ -227,12 +226,12 @@ const WF_ICONS = ['auto_awesome', 'bolt', 'troubleshoot', 'dataset_linked', 'hub
 
 function Workflows({ rows }: { rows: WorkflowRow[] }) {
   const router = useRouter()
+  const toast = useToast()
   const [running, setRunning] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
   const [cmd, setCmd] = useState('')
 
   async function runWorkflow(name: string) {
-    setRunning(name); setMessage(null)
+    setRunning(name)
     try {
       const res = await fetch('/api/a2a/workflows', {
         method: 'POST',
@@ -241,10 +240,10 @@ function Workflows({ rows }: { rows: WorkflowRow[] }) {
       })
       const body = await res.json().catch(() => ({})) as { error?: string }
       if (!res.ok) throw new Error(body.error || 'Workflow dispatch failed.')
-      setMessage(`${name} dispatched. Activity will update as agents report progress.`)
+      toast.success(`${name} dispatched. Activity will update as agents report progress.`)
       router.refresh()
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Workflow dispatch failed.')
+      toast.error(err instanceof Error ? err.message : 'Workflow dispatch failed.')
     } finally {
       setRunning(null)
     }
@@ -255,7 +254,7 @@ function Workflows({ rows }: { rows: WorkflowRow[] }) {
     if (!q) return
     const match = rows.find(w => w.name.toLowerCase().includes(q) || w.displayName.toLowerCase().includes(q))
     if (match) { void runWorkflow(match.name); setCmd('') }
-    else setMessage(`No workflow matches “${cmd}”. Try one of: ${rows.map(w => w.name).join(', ')}`)
+    else toast.error(`No workflow matches “${cmd}”. Try one of: ${rows.map(w => w.name).join(', ')}`)
   }
 
   if (rows.length === 0) {
@@ -266,10 +265,6 @@ function Workflows({ rows }: { rows: WorkflowRow[] }) {
 
   return (
     <div className="space-y-section-gap pb-24">
-      {message && (
-        <div className="hairline-border bg-surface-container-lowest rounded-lg px-4 py-3 font-body-main text-on-surface-variant">{message}</div>
-      )}
-
       {/* Active Workflows */}
       <section>
         <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2">
