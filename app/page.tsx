@@ -112,8 +112,8 @@ function Hero({
         <p className="reveal font-label-mono text-label-mono uppercase tracking-[0.2em] text-on-surface-variant mb-stack-md">Agentic GTM</p>
 
         <h1 className="reveal reveal-1 font-h1-editorial font-semibold text-on-surface leading-[1.08] tracking-[-0.02em] text-balance">
-          <span className="block whitespace-nowrap text-[clamp(1rem,4.6vw,3.6rem)]">Building the Future GTM Stack</span>
-          <span className="block text-[clamp(0.6rem,3vw,1.6rem)] pt-4 text-primary italic">Pay for outcomes, not seats.</span>
+          <span className="block sm:whitespace-nowrap text-[clamp(1.75rem,6vw,3.6rem)]">Building the Future GTM Stack</span>
+          <span className="block text-[clamp(1.1rem,2.8vw,1.6rem)] pt-3 sm:pt-4 text-primary italic">Pay for outcomes, not seats.</span>
         </h1>
 
         <br></br>
@@ -125,21 +125,23 @@ function Hero({
           onSubmit={(e) => { e.preventDefault(); onSubmit() }}
           className="reveal reveal-3 relative max-w-xl mx-auto mt-stack-lg group"
         >
-          <div className="bg-surface-container-lowest hairline-border p-stack-sm flex items-center gap-stack-md shadow-sm text-left">
-            <Icon name="search" className="text-on-surface-variant ml-2" />
-            <input
-              className="flex-grow bg-transparent border-none focus:ring-0 font-body-large text-body-large placeholder:text-outline outline-none"
-              placeholder="Enter your company URL"
-              type="text"
-              inputMode="url"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              aria-label="Your company URL"
-            />
+          <div className="bg-surface-container-lowest hairline-border p-stack-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-stack-sm sm:gap-stack-md shadow-sm text-left">
+            <div className="flex items-center gap-stack-md flex-grow min-w-0">
+              <Icon name="search" className="text-on-surface-variant ml-2 shrink-0" />
+              <input
+                className="flex-grow min-w-0 bg-transparent border-none focus:ring-0 font-body-large text-body-large placeholder:text-outline outline-none"
+                placeholder="Enter your company URL"
+                type="text"
+                inputMode="url"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                aria-label="Your company URL"
+              />
+            </div>
             <button
               type="submit"
               disabled={loading}
-              className="bg-primary text-on-primary px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60"
+              className="shrink-0 bg-primary text-on-primary px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60"
             >
               {loading ? 'Loading...' : 'Get Started'}
             </button>
@@ -294,7 +296,7 @@ function ForTeams() {
     <section id="teams" className="max-w-[1280px] mx-auto px-margin-page py-24 md:py-32 border-t border-outline-variant/30">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-gutter items-center">
         <div className="md:col-span-4">
-          <h2 className="font-h1-editorial text-[48px] leading-tight mb-stack-md">For teams</h2>
+          <h2 className="font-h1-editorial text-[32px] md:text-[48px] leading-tight mb-stack-md">For teams</h2>
           <p className="font-body-large text-on-surface-variant mb-stack-lg">Total visibility into why a lead was contacted. Every outreach is backed by a verifiable chain of logic.</p>
           <ul className="space-y-stack-sm">
             {['No black-box AI', 'Verifiable source links', 'Human-in-the-loop ready'].map((t) => (
@@ -387,7 +389,7 @@ function ForAgents() {
           <AgentDiagram />
         </div>
         <div className="md:col-start-9 md:col-span-4 order-1 md:order-2">
-          <h2 className="font-h1-editorial text-[48px] leading-tight mb-stack-md">For agents</h2>
+          <h2 className="font-h1-editorial text-[32px] md:text-[48px] leading-tight mb-stack-md">For agents</h2>
           <p className="font-body-large text-on-surface-variant mb-stack-lg">GTM as tools your agent can call. Compose your own stack over our fleet — or run the full pipeline. Speaks A2A, REST, and MCP.</p>
           <Link href="/docs" className="font-label-mono text-label-mono text-primary inline-flex items-center gap-2 group uppercase tracking-widest">
             Explore the SDK <Icon name="arrow_forward" className="transition-transform group-hover:translate-x-1" size={16} />
@@ -415,7 +417,7 @@ function Integrations() {
   return (
     <section id="integrations" className="max-w-[1280px] mx-auto px-margin-page py-24 md:py-32 border-t border-outline-variant/30">
       <div className="text-center mb-stack-lg">
-        <h2 className="font-h1-editorial text-[48px] leading-tight mb-stack-md">Works with your stack</h2>
+        <h2 className="font-h1-editorial text-[32px] md:text-[48px] leading-tight mb-stack-md">Works with your stack</h2>
         <p className="font-body-large text-on-surface-variant max-w-2xl mx-auto mb-stack-lg">Connect once — every agent uses what&rsquo;s here. No migrations.</p>
         <span className="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-[0.2em]">Connected today</span>
       </div>
@@ -442,8 +444,8 @@ function FinalCta({ loading, onStart }: { loading: boolean; onStart: () => void 
         <p className="font-label-mono text-label-mono uppercase tracking-[0.25em] text-on-surface-variant mb-stack-md">Get started</p>
 
         <h2 className="font-h1-editorial font-semibold text-on-surface leading-[1.08] tracking-[-0.02em] text-balance">
-          <span className="block whitespace-nowrap text-[clamp(1.1rem,4.6vw,3.6rem)]">Stop chasing leads.</span>
-          <span className="block text-[clamp(1.25rem,3vw,2.4rem)] text-primary italic">Get Bombsell.</span>
+          <span className="block sm:whitespace-nowrap text-[clamp(1.875rem,6vw,3.6rem)]">Stop chasing leads.</span>
+          <span className="block text-[clamp(1.4rem,3.4vw,2.4rem)] text-primary italic">Get Bombsell.</span>
         </h2>
 
         <p className="font-body-large text-body-large text-on-surface-variant max-w-xl mx-auto mt-stack-lg leading-relaxed">

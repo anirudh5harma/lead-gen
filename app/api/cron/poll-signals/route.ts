@@ -560,33 +560,43 @@ async function upsertSignalCandidate(
   candidate: CandidateWorkItem,
   shouldProcess: boolean,
 ): Promise<CandidateWorkItem> {
-  const { data, error } = await supabase
-    .from('signal_candidates')
-    .upsert({
-      fingerprint: candidate.fingerprint,
-      title: candidate.item.title,
-      description: candidate.item.description,
-      source_url: candidate.item.link || null,
-      source_name: candidate.item.source,
-      source_type: candidate.junkFilter.source_type,
-      raw_payload_hash: candidate.rawPayloadHash,
-      entity_hints: candidate.junkFilter.entity_hints,
-      junk_filter_output: candidate.junkFilter,
-      filter_decision: candidate.junkFilter.decision,
-      filter_score: candidate.junkFilter.score,
-      rejection_reason: shouldProcess ? null : candidate.shortlistReason,
-      estimated_cost_usd: estimateSourceCost(candidate.item.source),
-      published_at: candidate.item.pubDate ? new Date(candidate.item.pubDate).toISOString() : null,
-      shortlist_score: candidate.rank,
-      shortlist_reason: candidate.shortlistReason,
-      ...(shouldProcess ? {} : {
-        extract_status: 'extract_null',
-        processed_at: new Date().toISOString(),
-      }),
-      last_seen_at: new Date().toISOString(),
-    }, { onConflict: 'fingerprint' })
-    .select('id, extract_status')
-    .single()
+  const basePayload = {
+    fingerprint: candidate.fingerprint,
+    title: candidate.item.title,
+    description: candidate.item.description,
+    source_url: candidate.item.link || null,
+    source_name: candidate.item.source,
+    published_at: candidate.item.pubDate ? new Date(candidate.item.pubDate).toISOString() : null,
+    shortlist_score: candidate.rank,
+    shortlist_reason: candidate.shortlistReason,
+    ...(shouldProcess ? {} : {
+      extract_status: 'extract_null',
+      processed_at: new Date().toISOString(),
+    }),
+    last_seen_at: new Date().toISOString(),
+  }
+  const auditPayload = {
+    source_type: candidate.junkFilter.source_type,
+    raw_payload_hash: candidate.rawPayloadHash,
+    entity_hints: candidate.junkFilter.entity_hints,
+    junk_filter_output: candidate.junkFilter,
+    filter_decision: candidate.junkFilter.decision,
+    filter_score: candidate.junkFilter.score,
+    rejection_reason: shouldProcess ? null : candidate.shortlistReason,
+    estimated_cost_usd: estimateSourceCost(candidate.item.source),
+  }
+
+  let result = await upsertSignalCandidatePayload(supabase, {
+    ...basePayload,
+    ...auditPayload,
+  })
+
+  if (isSignalCandidateSchemaCacheError(result.error)) {
+    console.warn('[poll-signals] signal_candidates audit columns unavailable; retrying candidate upsert without audit metadata')
+    result = await upsertSignalCandidatePayload(supabase, basePayload)
+  }
+
+  const { data, error } = result
   if (error) {
     console.error('[poll-signals] signal_candidates upsert error:', error.message)
   }
@@ -596,6 +606,23 @@ async function upsertSignalCandidate(
     candidateId: row?.id,
     extractStatus: row?.extract_status ?? (shouldProcess ? 'pending' : 'extract_null'),
   }
+}
+
+function upsertSignalCandidatePayload(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  payload: Record<string, unknown>,
+) {
+  return supabase
+    .from('signal_candidates')
+    .upsert(payload, { onConflict: 'fingerprint' })
+    .select('id, extract_status')
+    .single()
+}
+
+function isSignalCandidateSchemaCacheError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false
+  return error.code === 'PGRST204'
+    || /schema cache|could not find .* column/i.test(error.message ?? '')
 }
 
 type ProcessOutcome =
