@@ -69,7 +69,7 @@ export async function run(
         }).select('id').single()
         if (error) throw new Error(error.message)
         await supabase.from('content_ideas').update({ status: 'drafted', updated_at: new Date().toISOString() }).eq('id', ideaId)
-        await recordAgentEvent(supabase, { userId, clientId, agentName: 'message', eventType: 'content.write.completed', status: 'completed', title: `Drafted ${plat} post`, metadata: { postId: post?.id, platform: plat, provider } })
+        await recordAgentEvent(supabase, { userId, clientId, agentName: 'writer', eventType: 'content.write.completed', status: 'completed', title: `Drafted ${plat} post`, metadata: { postId: post?.id, platform: plat, provider } })
         result = { postId: post?.id, platform: plat, hook: parsed.hook ?? null, body }
         break
       }
@@ -119,7 +119,7 @@ export async function run(
           hook, body, status: 'edited', eval_score: ev.score, eval_failed: ev.failed, updated_at: new Date().toISOString(),
         }).eq('id', postId)
         await recordContentEvalTrace(supabase, { userId, clientId, postId, eval: ev, type: 'content_post_quality' })
-        await recordAgentEvent(supabase, { userId, clientId, agentName: 'message', eventType: 'content.edit.completed', status: ev.failed.length ? 'completed' : 'completed', title: `Edited post — score ${ev.score}`, metadata: { postId, score: ev.score, failed: ev.failed } })
+        await recordAgentEvent(supabase, { userId, clientId, agentName: 'editor', eventType: 'content.edit.completed', status: 'completed', title: `Edited post — score ${ev.score}`, metadata: { postId, score: ev.score, failed: ev.failed } })
         result = { postId, score: ev.score, failed: ev.failed }
         break
       }
@@ -136,7 +136,7 @@ export async function run(
         const ev = evaluateContentPost({ platform: plat, hook: post.hook as string | null, body: post.body as string })
         if (ev.score < 50) {
           result = { postId, published: false, reason: 'eval_below_threshold', score: ev.score, failed: ev.failed }
-          await recordAgentEvent(supabase, { userId, clientId, agentName: 'message', eventType: 'content.publish.blocked', status: 'blocked', title: `Post blocked from publishing — eval ${ev.score}`, metadata: { postId, score: ev.score, failed: ev.failed } })
+          await recordAgentEvent(supabase, { userId, clientId, agentName: 'publisher', eventType: 'content.publish.blocked', status: 'blocked', title: `Post blocked from publishing — eval ${ev.score}`, metadata: { postId, score: ev.score, failed: ev.failed } })
           break
         }
         const wantSchedule = dispatch.tool === 'bombsell.content.schedule' && scheduledAt
@@ -163,7 +163,7 @@ export async function run(
           await debitOutcome(supabase, { userId, clientId, event: 'content_post_published', postId, note: `published via ${pub.partner}` })
         }
         await recordAgentEvent(supabase, {
-          userId, clientId, agentName: 'message',
+          userId, clientId, agentName: 'publisher',
           eventType: `content.${pub.status}`, status: pub.status === 'failed' ? 'failed' : 'completed',
           title: pub.status === 'failed' ? `Publish failed: ${pub.error ?? 'unknown'}` : `Post ${pub.status} (${pub.partner})`,
           metadata: { postId, partner: pub.partner, status: pub.status },

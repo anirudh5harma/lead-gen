@@ -11,7 +11,7 @@ interface Props { profile: UserProfile }
  * Fleet — the system view, styled after the Stitch "Fleet Dashboard" and
  * "Loop Workflows" screens.
  *
- *   Fleet     → 11-agent fleet table (status · activity · state)
+ *   Fleet     → full agent fleet table (status · activity · state)
  *   Workflows → active-workflow cards + automation-pipelines table + command bar
  *   Activity  → live event stream
  */

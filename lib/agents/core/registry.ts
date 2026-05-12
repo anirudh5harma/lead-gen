@@ -318,7 +318,9 @@ export function registerSystemAgent(def: typeof SYSTEM_AGENTS[number]): AgentPro
 }
 
 export function getAgent(idOrRole: string): AgentProfile | null {
-  return registry.get(idOrRole) ?? null
+  // Registry is keyed by agent *name* (e.g. "signal-agent"); callers routinely
+  // pass a *role* ("signal"). Resolve either form so dispatch/health lookups work.
+  return registry.get(idOrRole) ?? getAgentByRole(idOrRole as AgentRole) ?? null
 }
 
 export function getAgentByRole(role: AgentRole): AgentProfile | null {
@@ -329,6 +331,12 @@ export function getAgentByRole(role: AgentRole): AgentProfile | null {
   return null
 }
 
+/** Resolve a name-or-role to the registry key (agent name). */
+function resolveAgentId(idOrRole: string): string | null {
+  if (registry.has(idOrRole)) return idOrRole
+  return getAgentByRole(idOrRole as AgentRole)?.id ?? null
+}
+
 export function listAgents(): AgentProfile[] {
   return Array.from(registry.values())
 }
@@ -337,7 +345,9 @@ export function listAgentsByRole(role: AgentRole): AgentProfile[] {
   return Array.from(registry.values()).filter(p => p.role === role)
 }
 
-export function updateAgentHealth(agentId: string, patch: Partial<AgentHealth>): void {
+export function updateAgentHealth(agentIdOrRole: string, patch: Partial<AgentHealth>): void {
+  const agentId = resolveAgentId(agentIdOrRole)
+  if (!agentId) return
   const current = healthStore.get(agentId)
   if (current) {
     healthStore.set(agentId, { ...current, ...patch })
@@ -346,11 +356,13 @@ export function updateAgentHealth(agentId: string, patch: Partial<AgentHealth>):
   }
 }
 
-export function updateAgentStatus(agentId: string, status: AgentStatus): void {
-  updateAgentHealth(agentId, { status, lastHeartbeat: new Date().toISOString() })
+export function updateAgentStatus(agentIdOrRole: string, status: AgentStatus): void {
+  updateAgentHealth(agentIdOrRole, { status, lastHeartbeat: new Date().toISOString() })
 }
 
-export function updateAgentLatency(agentId: string, latencyMs: number): void {
+export function updateAgentLatency(agentIdOrRole: string, latencyMs: number): void {
+  const agentId = resolveAgentId(agentIdOrRole)
+  if (!agentId) return
   const h = healthStore.get(agentId)
   if (h) {
     const prev = h.avgLatencyMs ?? latencyMs

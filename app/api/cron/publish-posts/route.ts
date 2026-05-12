@@ -1,7 +1,11 @@
 /**
  * Cron — publish due social posts (v2 Content engine).
- * Finds posts with status 'edited' or 'scheduled' whose scheduled_at has passed
- * (or that have no schedule yet) and runs the publisher agent on each.
+ * Only acts on posts the user explicitly *scheduled* (status 'scheduled') whose
+ * scheduled_at has passed. Scheduling a post is the user's approval to publish
+ * at that time, so no separate autonomy gate is needed here. Draft/'edited'
+ * posts are left untouched — they're published immediately by an explicit
+ * "Publish now" action or by an autopilot pipeline (operator-worker enforces
+ * publisher autonomy in that path), never auto-published from the composer.
  */
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
@@ -26,8 +30,9 @@ async function run(request: Request) {
   const { data: due } = await supabase
     .from('posts')
     .select('id, user_id, workspace_id, scheduled_at')
-    .in('status', ['edited', 'scheduled'])
-    .or(`scheduled_at.is.null,scheduled_at.lte.${nowIso}`)
+    .eq('status', 'scheduled')
+    .not('scheduled_at', 'is', null)
+    .lte('scheduled_at', nowIso)
     .limit(50)
 
   let published = 0
