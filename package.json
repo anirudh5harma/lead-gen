@@ -9,7 +9,7 @@
     "audit:gtm-mvp": "node scripts/audit-gtm-mvp.mjs",
     "mcp:stdio": "node scripts/mcp-stdio-proxy.mjs",
     "lint": "eslint",
-    "test": "node --test --experimental-strip-types test/**/*.test.ts"
+    "test": "node --test --experimental-strip-types test/**/*.test.ts __tests__/**/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
