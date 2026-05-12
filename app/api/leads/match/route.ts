@@ -542,7 +542,7 @@ async function runMatch(request: Request) {
 }
 
 function normalizeSubscriptionTier(value: unknown): SubscriptionTier {
-  if (value === 'growth' || value === 'scale' || value === 'enterprise') return value
+  if (value === 'launch' || value === 'team' || value === 'growth' || value === 'scale' || value === 'enterprise') return value
   return 'free'
 }
 

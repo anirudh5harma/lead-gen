@@ -35,7 +35,7 @@ export function buildWorkspaceAccessPlan({
 }: WorkspaceAccessInput): WorkspaceAccessPlan {
   const orderedClients = sortClientsByCreatedAt(clients)
   const activeClients = orderedClients.filter(client => !client.is_archived)
-  const maxVisible = Math.max(1, getTierConfig(plan).maxInboxes)
+  const maxVisible = Math.max(1, getTierConfig(plan).maxWorkspaces)
 
   const preferredClient = activeClientId
     ? orderedClients.find(client => client.id === activeClientId) ?? null

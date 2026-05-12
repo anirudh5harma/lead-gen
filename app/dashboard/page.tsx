@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   // Core fields — these exist from migration 001. Used to gate the onboarding redirect.
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('company_name, website_url, services_description, icp_keywords, target_industries, active_client_id, automation_mode')
+    .select('company_name, website_url, services_description, icp_keywords, target_industries, active_client_id, automation_mode, calendly_url')
     .eq('user_id', userId)
     .single()
 
@@ -60,6 +60,7 @@ export default async function DashboardPage() {
       relevance_score,
       relevance_reason,
       status,
+      signal:signals ( signal_type ),
       is_unlocked,
       unlocked_at,
       created_at,
@@ -107,7 +108,11 @@ export default async function DashboardPage() {
     ...(crmLeadsResult.data ?? []),
   ].sort((a, b) => (
     new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
-  ))
+  )).map((l) => {
+    // flatten the embedded signals(signal_type) join onto the row
+    const s = (l as { signal?: { signal_type?: string | null } | null }).signal
+    return { ...l, signal_type: s?.signal_type ?? null }
+  })
 
   const typedLeads = leads as unknown as Lead[]
 
@@ -133,6 +138,7 @@ export default async function DashboardPage() {
         active_client_id: activeClientId,
         automation_mode: (profile as { automation_mode?: 'research_only' | 'approve_first' | 'autopilot' | null }).automation_mode ?? 'approve_first',
         client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
+        calendly_url: (profile as { calendly_url?: string | null }).calendly_url ?? null,
         workspaces,
       }}
     />

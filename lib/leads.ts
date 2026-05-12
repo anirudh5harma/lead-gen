@@ -13,6 +13,7 @@ export interface Lead {
   feed_session_started_at?: string | null
   target_company: string
   company_domain?: string | null
+  signal_type?: string | null
   relevance_score: number
   relevance_reason: string | null
   status: string

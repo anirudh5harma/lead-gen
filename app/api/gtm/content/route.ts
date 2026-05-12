@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'growth')
+  const planCheck = await requirePlan(supabase, 'launch')
   if (planCheck instanceof NextResponse) return planCheck
   const { userId } = planCheck
   const { data: { user } } = await supabase.auth.getUser()
@@ -48,7 +48,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'growth')
+  const planCheck = await requirePlan(supabase, 'launch')
   if (planCheck instanceof NextResponse) return planCheck
   const { userId } = planCheck
   const { data: { user } } = await supabase.auth.getUser()

@@ -3,6 +3,19 @@ import { NextResponse } from 'next/server'
 import type { SubscriptionTier } from './lead-credits'
 import { hasPlanAccess } from './plan-access'
 
+const PLAN_LABELS: Partial<Record<SubscriptionTier, string>> = {
+  free: 'Free',
+  launch: 'Launch',
+  growth: 'Growth',
+  scale: 'Scale',
+  team: 'Team',
+  enterprise: 'Enterprise',
+}
+
+function planLabel(tier: SubscriptionTier): string {
+  return PLAN_LABELS[tier] ?? tier
+}
+
 export async function requirePlan(
   supabase: SupabaseClient,
   requiredTier: SubscriptionTier,
@@ -22,7 +35,7 @@ export async function requirePlan(
 
   if (!hasPlanAccess(tier, requiredTier)) {
     return NextResponse.json(
-      { error: `This feature requires the ${requiredTier} plan.` },
+      { error: `This feature requires the ${planLabel(requiredTier)} plan.` },
       { status: 403 },
     )
   }
@@ -69,7 +82,7 @@ export async function requireWorkspacePlan(
   const tier = (ownerProfile?.plan as SubscriptionTier) || 'free'
   if (!hasPlanAccess(tier, requiredTier)) {
     return NextResponse.json(
-      { error: `This workspace requires the ${requiredTier} plan.` },
+      { error: `This workspace requires the ${planLabel(requiredTier)} plan.` },
       { status: 403 },
     )
   }

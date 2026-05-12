@@ -5,7 +5,7 @@ import { createOAuthState } from '@/lib/oauth/state'
 
 export async function GET() {
   if (process.env.NEXT_PUBLIC_ENABLE_GMAIL_CONNECT !== 'true') {
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard?view=settings&ca_error=gmail_disabled`)
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard?view=integrations&ca_error=gmail_disabled`)
   }
 
   const supabase = await createClient()

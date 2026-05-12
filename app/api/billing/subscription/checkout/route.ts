@@ -21,7 +21,9 @@ export async function POST(request: Request) {
     period?: unknown
   } | null
 
-  const tier = body?.tier === 'growth' || body?.tier === 'scale' ? body.tier : null
+  const tier = (['launch', 'team', 'growth', 'scale'] as const).includes(body?.tier as never)
+    ? (body!.tier as 'launch' | 'team' | 'growth' | 'scale')
+    : null
   const period = body?.period === 'annual' ? 'annual' : 'monthly'
 
   if (!tier) {
@@ -52,6 +54,10 @@ export async function POST(request: Request) {
       period,
       environment: config.environment,
       hasApiKey: config.hasApiKey,
+      hasLaunchMonthly: config.hasLaunchMonthly,
+      hasLaunchAnnual: config.hasLaunchAnnual,
+      hasTeamMonthly: config.hasTeamMonthly,
+      hasTeamAnnual: config.hasTeamAnnual,
       hasGrowthMonthly: config.hasGrowthMonthly,
       hasScaleMonthly: config.hasScaleMonthly,
     })

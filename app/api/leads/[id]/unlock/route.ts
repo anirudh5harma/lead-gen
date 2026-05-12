@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
+import { loadAccessibleLead } from '@/lib/lead-access'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { resolveLeadRecipients } from '@/lib/outreach-workflow'
 
@@ -15,6 +16,7 @@ export async function POST(
 
   const { id } = await params
 
+  const serviceSupabase = await createServiceClient()
   const rl = await checkRateLimit(`unlock:${user.id}`, 120, 3600, { failClosed: true })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -23,33 +25,43 @@ export async function POST(
     )
   }
 
-  const leadRes = await supabase
-    .from('leads')
-    .select('id, user_id, client_id, target_company, company_domain, is_unlocked, contact_email, contact_name, contact_title, contact_verified, feed_snapshot')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+  const leadRes = await loadAccessibleLead<{
+    id: string
+    user_id: string
+    client_id: string | null
+    target_company: string
+    company_domain: string | null
+    is_unlocked: boolean
+    contact_email: string | null
+    contact_name: string | null
+    contact_title: string | null
+    contact_verified: boolean | null
+    feed_snapshot: unknown
+  }>(serviceSupabase, {
+    userId: user.id,
+    leadId: id,
+    select: 'id, user_id, client_id, target_company, company_domain, is_unlocked, contact_email, contact_name, contact_title, contact_verified, feed_snapshot',
+  })
 
-  if (!leadRes.data) {
+  if (leadRes.error) return NextResponse.json({ error: leadRes.error }, { status: 500 })
+  if (!leadRes.lead) {
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
   }
 
-  const serviceSupabase = await createServiceClient()
-
-  if (leadRes.data.is_unlocked) {
-    const enrichment = leadRes.data.contact_email
+  if (leadRes.lead.is_unlocked) {
+    const enrichment = leadRes.lead.contact_email
       ? null
-      : await enrichUnlockedLeadContact(serviceSupabase, leadRes.data as Record<string, unknown>, user.id)
+      : await enrichUnlockedLeadContact(serviceSupabase, leadRes.lead as Record<string, unknown>, user.id)
     return NextResponse.json({
       ok: true,
       alreadyUnlocked: true,
-      contact: leadRes.data.contact_email ? {
-        email: leadRes.data.contact_email,
-        name: leadRes.data.contact_name,
-        title: leadRes.data.contact_title,
-        verified: leadRes.data.contact_verified,
+      contact: leadRes.lead.contact_email ? {
+        email: leadRes.lead.contact_email,
+        name: leadRes.lead.contact_name,
+        title: leadRes.lead.contact_title,
+        verified: leadRes.lead.contact_verified,
       } : enrichment?.contact ?? null,
-      contact_enrichment: enrichment?.debug ?? { skipped: Boolean(leadRes.data.contact_email) },
+      contact_enrichment: enrichment?.debug ?? { skipped: Boolean(leadRes.lead.contact_email) },
     })
   }
 
@@ -75,11 +87,10 @@ export async function POST(
   }
 
   const unlockedAt = new Date().toISOString()
-  const { data: unlockedLead, error: updateError } = await supabase
+  const { data: unlockedLead, error: updateError } = await serviceSupabase
     .from('leads')
     .update({ is_unlocked: true, unlocked_at: unlockedAt })
     .eq('id', id)
-    .eq('user_id', user.id)
     .eq('is_unlocked', false)
     .select('id')
     .maybeSingle()
@@ -102,7 +113,7 @@ export async function POST(
     return NextResponse.json({ ok: true, alreadyUnlocked: true })
   }
 
-  const enrichment = await enrichUnlockedLeadContact(serviceSupabase, leadRes.data as Record<string, unknown>, user.id)
+  const enrichment = await enrichUnlockedLeadContact(serviceSupabase, leadRes.lead as Record<string, unknown>, user.id)
 
   return NextResponse.json({
     ok: true,

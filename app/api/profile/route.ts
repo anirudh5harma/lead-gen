@@ -32,8 +32,13 @@ export async function POST(request: Request) {
 
   const {
     company_name, industry, target_industries, services_description,
-    website_url, calendly_url, target_signal_types, min_relevance_score, icp_keywords,
+    website_url, calendly_url, target_signal_types, min_relevance_score, icp_keywords, engines,
   } = body as Record<string, unknown>
+
+  const selectedEngines = (Array.isArray(engines)
+    ? engines.filter((e): e is 'outbound' | 'content' => e === 'outbound' || e === 'content')
+    : []) as Array<'outbound' | 'content'>
+  const engineList: Array<'outbound' | 'content'> = selectedEngines.length > 0 ? Array.from(new Set(selectedEngines)) : ['outbound']
 
   const companyName = typeof company_name === 'string' ? company_name.trim() : ''
   const industryName = typeof industry === 'string' ? industry.trim() : ''
@@ -94,9 +99,35 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   let activeClientId = (existingProfile as { active_client_id?: string | null } | null)?.active_client_id ?? null
+  let shouldUpdateUserProfile = true
 
   if (activeClientId) {
-    await supabase
+    const { data: activeClient } = await service
+      .from('client_accounts')
+      .select('id, user_id')
+      .eq('id', activeClientId)
+      .maybeSingle()
+
+    if (!activeClient) {
+      return NextResponse.json({ error: 'Active workspace not found' }, { status: 404 })
+    }
+
+    const ownsWorkspace = activeClient.user_id === user.id
+    if (!ownsWorkspace) {
+      const { data: membership } = await service
+        .from('workspace_members')
+        .select('role')
+        .eq('client_id', activeClientId)
+        .eq('user_id', user.id)
+        .not('accepted_at', 'is', null)
+        .maybeSingle()
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        return NextResponse.json({ error: 'Only workspace owners and admins can edit this ICP.' }, { status: 403 })
+      }
+      shouldUpdateUserProfile = false
+    }
+
+    const { error: clientUpdateError } = await service
       .from('client_accounts')
       .update({
         name: companyName,
@@ -111,7 +142,9 @@ export async function POST(request: Request) {
         profile_embedding: embedding ? toVectorLiteral(embedding) : null,
       })
       .eq('id', activeClientId)
-      .eq('user_id', user.id)
+    if (clientUpdateError) {
+      return NextResponse.json({ error: 'Failed to save workspace profile' }, { status: 500 })
+    }
   } else {
     const { data: client, error: clientErr } = await supabase
       .from('client_accounts')
@@ -137,7 +170,7 @@ export async function POST(request: Request) {
     activeClientId = client.id
   }
 
-  const { error } = await supabase.from('user_profiles').upsert({
+  const profilePayload = {
     user_id: user.id,
     company_name: companyName,
     industry: industryName,
@@ -162,7 +195,11 @@ export async function POST(request: Request) {
     auto_send_enabled: (existingProfile as { auto_send_enabled?: boolean } | null)?.auto_send_enabled ?? false,
     automation_mode: (existingProfile as { automation_mode?: string | null } | null)?.automation_mode ?? 'approve_first',
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id' })
+  }
+
+  const { error } = shouldUpdateUserProfile
+    ? await supabase.from('user_profiles').upsert(profilePayload, { onConflict: 'user_id' })
+    : { error: null }
 
   if (error) {
     console.error('Profile save error:', error)
@@ -193,6 +230,17 @@ export async function POST(request: Request) {
       completed_notification_sent_at: null,
     })
     if (policyError) console.error('[profile] default live autopilot policy failed:', policyError)
+
+    try {
+      const { seedWorkspaceAgents } = await import('@/lib/agents/core/workspace-agents')
+      await seedWorkspaceAgents(supabase, {
+        workspaceId: activeClientId ?? user.id,
+        userId: user.id,
+        engines: engineList,
+      })
+    } catch (seedError) {
+      console.error('[profile] workspace agent seed failed:', seedError)
+    }
   }
 
   syncMonitoredAccountsFromWorkspaceSources(service).catch(syncError => {

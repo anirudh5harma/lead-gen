@@ -81,13 +81,21 @@ export async function POST(request: Request) {
   // Handle subscription creation/renewal
   if ((type === 'subscription.created' || type === 'subscription.renewed') && data.metadata?.purchase_type === 'subscription') {
     const userId = data.metadata.user_id
-    const tier = data.metadata.tier as 'growth' | 'scale' | 'enterprise'
+    const tier = data.metadata.tier as 'launch' | 'team' | 'growth' | 'scale' | 'enterprise'
     const period = data.metadata.period as 'monthly' | 'annual'
 
     if (!userId || !tier) {
       console.warn('[dodo webhook] Invalid subscription metadata', data.metadata)
       return NextResponse.json({ ok: true })
     }
+
+    // v2: the plan's included-bundle becomes the monthly outcome-credit grant.
+    const { getTierConfig } = await import('@/lib/lead-credits')
+    const monthlyGrant = (() => {
+      try { return Number(getTierConfig(tier as never).includedLeads) || 0 } catch { return 0 }
+    })()
+
+    const { data: clientRef } = await supabase.from('user_profiles').select('active_client_id').eq('user_id', userId).maybeSingle()
 
     await supabase.from('user_profiles').update({
       plan: tier,
@@ -97,8 +105,26 @@ export async function POST(request: Request) {
       subscription_renews_at: data.next_billing_date ?? null,
       leads_used_this_month: 0,
       leads_reset_at: new Date().toISOString(),
+      monthly_credit_grant: monthlyGrant,
       updated_at: new Date().toISOString(),
     }).eq('user_id', userId)
+
+    // Top up the wallet with this period's grant (created or renewed → grant now).
+    if (monthlyGrant > 0) {
+      try {
+        const { grantCredits } = await import('@/lib/credits/outcomes')
+        await grantCredits(supabase, {
+          userId,
+          clientId: (clientRef?.active_client_id as string | null) ?? null,
+          units: monthlyGrant,
+          event: type === 'subscription.created' ? 'subscription_start_grant' : 'monthly_grant',
+          note: `${tier} plan ${period} ${type === 'subscription.created' ? 'start' : 'renewal'}`,
+        })
+        await supabase.from('user_profiles').update({ credits_granted_at: new Date().toISOString() }).eq('user_id', userId)
+      } catch (e) {
+        console.error('[dodo webhook] credit grant failed', e)
+      }
+    }
 
     await supabase.from('subscriptions').upsert({
       user_id: userId,

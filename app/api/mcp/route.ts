@@ -16,6 +16,14 @@ import {
   sanitizeAutoSendOrigins,
   sanitizeSessionIds,
 } from '@/lib/auto-send-policies'
+import { enrichCompany } from '@/lib/email-finder/enrich'
+import { scoreProfileCandidate } from '@/lib/match-candidates'
+import { classifyReplyIntent } from '@/lib/reply-intelligence'
+import { evaluateOutreachDraftQuality } from '@/lib/gtm/draft-eval'
+import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
+import { listAgents, ensureBootstrapped } from '@/lib/agents/core/registry'
+import { computePerAgentQualityScores } from '@/lib/agents/self-improvement/engine'
+import { dispatchTask } from '@/lib/agents/core/supervisor'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -65,6 +73,18 @@ export async function GET(request: Request) {
       'configure_automation',
       'queue_leads_for_crm',
       'search_signal_timeline',
+      'bombsell_watch_market',
+      'bombsell_reason_account',
+      'bombsell_execute_outreach',
+      'bombsell_get_agent_balance',
+      'bombsell_enrich_contacts',
+      'bombsell_match_candidates',
+      'bombsell_classify_reply',
+      'bombsell_evaluate_draft',
+      'bombsell_check_safety',
+      'bombsell_list_agents',
+      'bombsell_agent_quality',
+      'bombsell_dispatch_agent',
     ],
   }, { headers: corsHeaders() })
 }
@@ -375,6 +395,129 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => jsonToolResult(await a2aGetBalance(ctx)),
+  )
+
+  // ── bombsell_enrich_contacts ──
+  server.registerTool(
+    'bombsell_enrich_contacts',
+    {
+      title: 'Enrich Contacts (A2A)',
+      description: 'Enrich company contacts via multi-provider waterfall. Returns verified contacts with name, title, and email.',
+      inputSchema: {
+        company_name: z.string().min(1).describe('Company name to enrich contacts for.'),
+        company_domain: z.string().optional().describe('Optional company domain for more accurate results.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async args => jsonToolResult(await a2aEnrichContacts(ctx, args)),
+  )
+
+  // ── bombsell_match_candidates ──
+  server.registerTool(
+    'bombsell_match_candidates',
+    {
+      title: 'Match Candidates (A2A)',
+      description: 'Score signal candidates against ICP profile. Returns ranked candidates with match scores.',
+      inputSchema: {
+        candidates: z.array(z.object({
+          company_name: z.string().min(1).describe('Candidate company name.'),
+          signal_type: z.string().min(1).describe('Type of signal (funding, hiring, expansion, etc.).'),
+          source_name: z.string().min(1).describe('Source name of the signal.'),
+          summary: z.string().optional().describe('Optional signal summary text.'),
+        })).min(1).max(200).describe('Array of candidate signals to score.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async args => jsonToolResult(await a2aMatchCandidates(ctx, args)),
+  )
+
+  // ── bombsell_classify_reply ──
+  server.registerTool(
+    'bombsell_classify_reply',
+    {
+      title: 'Classify Reply (A2A)',
+      description: 'Classify the intent of an email reply (positive, negative, booking, out-of-office, etc.).',
+      inputSchema: {
+        subject: z.string().min(1).describe('Reply email subject line.'),
+        body_text: z.string().min(1).describe('Reply email body text.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async args => jsonToolResult(await a2aClassifyReply(ctx, args)),
+  )
+
+  // ── bombsell_evaluate_draft ──
+  server.registerTool(
+    'bombsell_evaluate_draft',
+    {
+      title: 'Evaluate Draft Quality (A2A)',
+      description: 'Evaluate outreach draft quality against best-practice checks. Returns score, passed/failed checks, and version.',
+      inputSchema: {
+        subject: z.string().min(1).describe('Draft subject line.'),
+        body: z.string().min(1).describe('Draft email body.'),
+        greeting: z.string().min(1).describe('Recipient greeting, e.g. "Hi Alex".'),
+        target_company: z.string().min(1).describe('Target company name.'),
+        signal_type: z.string().optional().describe('Optional signal type for alignment check.'),
+        signal_summary: z.string().optional().describe('Optional signal summary for keyword alignment.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async args => jsonToolResult(await a2aEvaluateDraft(ctx, args)),
+  )
+
+  // ── bombsell_check_safety ──
+  server.registerTool(
+    'bombsell_check_safety',
+    {
+      title: 'Check Safety (A2A)',
+      description: 'Run outbound policy check against company domain and recipient email. Returns allow/block/review decision with reasons.',
+      inputSchema: {
+        company_domain: z.string().min(1).describe('Company domain to check against blocked lists.'),
+        recipient_email: z.string().email().describe('Recipient email to check for unsubscribes and bounces.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async args => jsonToolResult(await a2aCheckSafety(ctx, args)),
+  )
+
+  // ── bombsell_list_agents ──
+  server.registerTool(
+    'bombsell_list_agents',
+    {
+      title: 'List Agents (A2A)',
+      description: 'List all registered Bombsell agents with their roles, status, health, and capabilities.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => jsonToolResult(await a2aListAgents()),
+  )
+
+  // ── bombsell_agent_quality ──
+  server.registerTool(
+    'bombsell_agent_quality',
+    {
+      title: 'Agent Quality Scores (A2A)',
+      description: 'Get per-agent quality scores computed from eval traces. Includes tasks completed, avg quality, latency, and improvement velocity.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => jsonToolResult(await a2aAgentQuality(ctx)),
+  )
+
+  // ── bombsell_dispatch_agent ──
+  server.registerTool(
+    'bombsell_dispatch_agent',
+    {
+      title: 'Dispatch Agent (A2A)',
+      description: 'Dispatch a task to a Bombsell agent by role. Returns task ID, status, credits consumed, and latency.',
+      inputSchema: {
+        role: z.string().min(1).describe('Agent role to dispatch to (signal, match, enrich, outreach, safety, reply, booking, followup, insight, crm, operator).'),
+        tool: z.string().min(1).describe('Fully qualified tool name, e.g. bombsell.match.rank.'),
+        arguments: z.record(z.string(), z.unknown()).optional().describe('Tool arguments as a key-value object.'),
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false },
+    },
+    async args => jsonToolResult(await a2aDispatchAgent(ctx, args)),
   )
 
   server.registerTool(
@@ -1162,6 +1305,201 @@ async function a2aGetBalance(ctx: McpContext) {
       requests_per_hour: tierRow.data?.requests_per_hour ?? 1000,
       requests_per_day: tierRow.data?.requests_per_day ?? 10000,
     },
+  }
+}
+
+// ── New A2A Tool Handlers ──
+
+async function a2aEnrichContacts(ctx: McpContext, args: {
+  company_name: string
+  company_domain?: string
+}) {
+  const domain = args.company_domain ?? null
+  const result = await enrichCompany(args.company_name, domain, ctx.supabase)
+
+  return {
+    contact_count: result.contacts.length,
+    resolved_domain: result.resolvedDomain,
+    from_cache: result.fromCache,
+    contacts: result.contacts.map(c => ({
+      name: c.name,
+      title: c.title,
+      email: c.email,
+      verified: c.verified,
+      source: c.source,
+      linkedin_url: c.linkedin_url,
+    })),
+  }
+}
+
+async function a2aMatchCandidates(_ctx: McpContext, args: {
+  candidates: Array<{
+    company_name: string
+    signal_type: string
+    source_name: string
+    summary?: string
+  }>
+}) {
+  const scored = args.candidates.map(c => {
+    const signalCandidate = {
+      id: `${c.company_name}:${c.signal_type}`,
+      company_name: c.company_name,
+      signal_type: c.signal_type,
+      source_name: c.source_name,
+      summary: c.summary ?? null,
+      headline: null,
+      published_at: new Date().toISOString(),
+      novelty_key: null,
+      cluster_score: 0,
+      corroborating_source_count: 1,
+      company_domain: null,
+    }
+    const score = scoreProfileCandidate({ signal: signalCandidate })
+    return {
+      company_name: c.company_name,
+      signal_type: c.signal_type,
+      source_name: c.source_name,
+      summary: c.summary ?? null,
+      match_score: score,
+    }
+  })
+
+  scored.sort((a, b) => b.match_score - a.match_score)
+
+  return {
+    scored_candidates: scored,
+    count: scored.length,
+  }
+}
+
+async function a2aClassifyReply(_ctx: McpContext, args: {
+  subject: string
+  body_text: string
+}) {
+  const result = classifyReplyIntent({ subject: args.subject, text: args.body_text })
+  return {
+    intent: result.intent,
+    confidence: result.confidence,
+    summary: result.summary,
+  }
+}
+
+async function a2aEvaluateDraft(_ctx: McpContext, args: {
+  subject: string
+  body: string
+  greeting: string
+  target_company: string
+  signal_type?: string
+  signal_summary?: string
+}) {
+  const result = evaluateOutreachDraftQuality({
+    subject: args.subject,
+    body: args.body,
+    greeting: args.greeting,
+    targetCompany: args.target_company,
+    signalType: args.signal_type ?? null,
+    signalSummary: args.signal_summary ?? null,
+  })
+
+  return {
+    score: result.score,
+    checks: result.checks,
+    failed: result.failed,
+    version: result.version,
+  }
+}
+
+async function a2aCheckSafety(ctx: McpContext, args: {
+  company_domain: string
+  recipient_email: string
+}) {
+  const domain = args.company_domain.trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+
+  const decision = await evaluateOutboundPolicy(ctx.supabase, {
+    userId: ctx.userId,
+    targetCompany: domain,
+    companyDomain: domain,
+    recipientEmails: [args.recipient_email],
+    requireVerifiedContact: false,
+  })
+
+  const normalizedDecision =
+    decision.decision === 'allowed' ? 'allow' :
+    decision.decision === 'blocked' ? 'block' :
+    'review'
+
+  return {
+    decision: normalizedDecision,
+    reasons: decision.reasons,
+  }
+}
+
+async function a2aListAgents() {
+  ensureBootstrapped()
+  const agents = listAgents()
+  return {
+    agents: agents.map(a => ({
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      description: a.description,
+      status: a.health.status,
+      health: {
+        status: a.health.status,
+        last_heartbeat: a.health.lastHeartbeat,
+        consecutive_failures: a.health.consecutiveFailures,
+        avg_latency_ms: a.health.avgLatencyMs,
+      },
+      version: a.version,
+      capabilities: a.capabilities,
+      api_endpoint: a.apiEndpoint,
+      scopes: a.scopes,
+    })),
+    count: agents.length,
+  }
+}
+
+async function a2aAgentQuality(ctx: McpContext) {
+  ensureBootstrapped()
+  const clientId = await resolveClientId(ctx, null)
+  const scores = await computePerAgentQualityScores(ctx.supabase, ctx.userId, clientId)
+  return {
+    quality_scores: scores,
+    count: scores.length,
+  }
+}
+
+async function a2aDispatchAgent(ctx: McpContext, args: {
+  role: string
+  tool: string
+  arguments?: Record<string, unknown>
+}) {
+  requireScope(ctx, 'bombsell:write:safe')
+  ensureBootstrapped()
+  const clientId = await resolveClientId(ctx, null)
+
+  const output = await dispatchTask(ctx.supabase, {
+    userId: ctx.userId,
+    clientId,
+    role: args.role as import('@/lib/agents/protocol/types').AgentRole,
+    task: {
+      tool: args.tool,
+      arguments: args.arguments ?? {},
+    },
+    sessionId: crypto.randomUUID(),
+  })
+
+  return {
+    task_id: output.taskId,
+    status: output.status,
+    result: output.result ?? null,
+    error: output.error ?? null,
+    credits_consumed: output.creditsConsumed,
+    latency_ms: output.latencyMs,
+    trace_id: output.traceId,
   }
 }
 

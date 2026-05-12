@@ -24,11 +24,11 @@ export type AgentEventStatus =
   | 'needs_approval'
 
 export interface AgentEventInput {
-  userId: string
+  userId?: string | null
   clientId?: string | null
   runId?: string | null
   leadId?: string | null
-  agentName: AgentName
+  agentName: AgentName | string
   eventType: string
   status: AgentEventStatus
   title: string
@@ -44,7 +44,7 @@ export async function recordAgentEvent(
   if (!title) return
 
   const { error } = await supabase.from('agent_events').insert({
-    user_id: input.userId,
+    user_id: input.userId ?? null,
     client_id: input.clientId ?? null,
     run_id: input.runId ?? null,
     lead_id: input.leadId ?? null,
@@ -61,24 +61,26 @@ export async function recordAgentEvent(
     console.error('[agent-events] insert failed:', error.message)
   }
 
-  await recordGtmEvent(supabase, {
-    userId: input.userId,
-    clientId: input.clientId ?? null,
-    entityType: input.leadId ? 'lead' : input.runId ? 'agent_run' : null,
-    entityId: input.leadId ?? input.runId ?? null,
-    eventType: `agent.${input.eventType.trim().slice(0, 80)}`,
-    source: `agent:${input.agentName}`,
-    payload: {
-      run_id: input.runId ?? null,
-      lead_id: input.leadId ?? null,
-      agent_name: input.agentName,
-      status: input.status,
-      title,
-      body: input.body?.trim().slice(0, 1000) || null,
-      metadata: input.metadata ?? {},
-    },
-    idempotencyKey: eventIdempotencyKey(['agent', input.runId, input.leadId, input.eventType, input.status, title]),
-  })
+  if (input.userId) {
+    await recordGtmEvent(supabase, {
+      userId: input.userId,
+      clientId: input.clientId ?? null,
+      entityType: input.leadId ? 'lead' : input.runId ? 'agent_run' : null,
+      entityId: input.leadId ?? input.runId ?? null,
+      eventType: `agent.${input.eventType.trim().slice(0, 80)}`,
+      source: `agent:${input.agentName}`,
+      payload: {
+        run_id: input.runId ?? null,
+        lead_id: input.leadId ?? null,
+        agent_name: input.agentName,
+        status: input.status,
+        title,
+        body: input.body?.trim().slice(0, 1000) || null,
+        metadata: input.metadata ?? {},
+      },
+      idempotencyKey: eventIdempotencyKey(['agent', input.runId, input.leadId, input.eventType, input.status, title]),
+    })
+  }
 }
 
 export async function startAgentRun(
@@ -86,7 +88,7 @@ export async function startAgentRun(
   input: {
     userId: string
     clientId?: string | null
-    agentName: AgentName
+    agentName: AgentName | string
     runType: string
     input?: Record<string, unknown>
   },

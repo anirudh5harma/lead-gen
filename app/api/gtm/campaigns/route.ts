@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'growth')
+  const planCheck = await requirePlan(supabase, 'launch')
   if (planCheck instanceof NextResponse) return planCheck
   const { userId } = planCheck
 
@@ -64,7 +64,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'growth')
+  const planCheck = await requirePlan(supabase, 'launch')
   if (planCheck instanceof NextResponse) return planCheck
   const { userId } = planCheck
   const rate = await checkRateLimit(`marketing:campaign:create:${userId}`, 30, 60 * 60, { failClosed: true })

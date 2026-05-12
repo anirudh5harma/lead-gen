@@ -4,7 +4,7 @@ import { requirePlan } from '@/lib/api-plan-guard'
 
 export async function PATCH(request: Request) {
   const supabase = await createClient()
-  const planCheck = await requirePlan(supabase, 'scale')
+  const planCheck = await requirePlan(supabase, 'team')
   if (planCheck instanceof NextResponse) return planCheck
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

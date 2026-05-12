@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 type EvalTraceStatus = 'passed' | 'blocked' | 'failed' | 'warning'
-type EvalTraceType = 'manual_outreach_send' | 'automation_send' | 'followup_send' | 'policy_simulation' | 'draft_quality'
+type EvalTraceType =
+  | 'manual_outreach_send' | 'automation_send' | 'followup_send' | 'policy_simulation' | 'draft_quality'
+  | 'content_post_quality' | 'content_engagement'
 
 export function classifyFailureTaxonomy(input: {
   reasons?: string[] | null
@@ -62,10 +64,12 @@ export async function upsertGtmEvalTrace(
     reasons,
     draftQualityScore: input.draftQualityScore ?? null,
   })
+  const postId = (input.metadata?.postId as string | undefined) ?? null
   const row = {
     user_id: input.userId,
     client_id: input.clientId ?? null,
     lead_id: input.leadId ?? null,
+    post_id: postId,
     workflow_run_id: input.workflowRunId ?? null,
     trace_type: input.traceType,
     status: input.status,

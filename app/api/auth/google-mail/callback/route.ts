@@ -14,12 +14,12 @@ export async function GET(request: Request) {
   const error = searchParams.get('error')
 
   if (error || !code || !state) {
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=google_denied`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=integrations&ca_error=google_denied`)
   }
 
   const userId = verifyOAuthState(state)
   if (!userId) {
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=invalid_state`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=integrations&ca_error=invalid_state`)
   }
 
   try {
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     const email = tokens.email.trim().toLowerCase()
 
     if (!await canConnectSendingAccount(supabase, userId, 'gmail', email)) {
-      return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=max_accounts`)
+      return NextResponse.redirect(`${BASE}/dashboard?view=integrations&ca_error=max_accounts`)
     }
 
     // Upsert the account first so we have an ID to update
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     }, { onConflict: 'user_id,provider,email' }).select('id').single()
     if (accountError) {
       if (accountError.message.includes('connected sending account limit exceeded')) {
-        return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=max_accounts`)
+        return NextResponse.redirect(`${BASE}/dashboard?view=integrations&ca_error=max_accounts`)
       }
       throw new Error(accountError.message)
     }
@@ -63,9 +63,9 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_connected=gmail`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=integrations&ca_connected=gmail`)
   } catch (err) {
     console.error('[google-mail/callback]', err)
-    return NextResponse.redirect(`${BASE}/dashboard?view=settings&ca_error=google_failed`)
+    return NextResponse.redirect(`${BASE}/dashboard?view=integrations&ca_error=google_failed`)
   }
 }

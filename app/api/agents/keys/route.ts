@@ -107,6 +107,7 @@ export async function DELETE(request: Request) {
 
 function planToAgentRateLimitTier(plan: string): string {
   if (plan === 'enterprise') return 'enterprise'
+  if (plan === 'team') return 'scale'
   if (plan === 'scale') return 'scale'
   if (plan === 'growth') return 'growth'
   return 'launch'

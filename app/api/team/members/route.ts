@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const planCheck = await requireWorkspacePlan(serviceSupabase, {
     userId: user.id,
     clientId,
-    requiredTier: 'scale',
+    requiredTier: 'team',
   })
   if (planCheck instanceof NextResponse) return planCheck
 
@@ -40,7 +40,7 @@ export async function DELETE(request: Request) {
   const planCheck = await requireWorkspacePlan(serviceSupabase, {
     userId: user.id,
     clientId: body.client_id,
-    requiredTier: 'scale',
+    requiredTier: 'team',
   })
   if (planCheck instanceof NextResponse) return planCheck
 

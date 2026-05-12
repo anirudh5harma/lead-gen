@@ -522,11 +522,12 @@ export async function emitCrmLeadEvent(params: {
   let query = supabase
     .from('crm_sync_settings')
     .select('provider, webhook_url, enabled')
-    .eq('user_id', userId)
     .eq('enabled', true)
     .limit(1)
 
-  query = clientId ? query.eq('client_id', clientId) : query.is('client_id', null)
+  query = clientId
+    ? query.eq('client_id', clientId)
+    : query.eq('user_id', userId).is('client_id', null)
 
   const { data: setting } = await query.maybeSingle()
   const row = setting as { provider?: string | null; webhook_url?: string | null } | null

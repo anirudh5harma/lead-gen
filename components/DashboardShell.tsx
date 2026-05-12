@@ -1,248 +1,131 @@
 'use client'
 
-import { useMemo, useState, useTransition, useEffect } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import type { Lead } from '@/lib/leads'
 import type { View, UserProfile } from './dashboard/types'
-import Sidebar from './dashboard/Sidebar'
-import HomeView from './dashboard/HomeView'
-import InboxView from './dashboard/InboxView'
-import OutreachView from './dashboard/OutreachView'
-import ExploreView from './dashboard/ExploreView'
-import MarketingView from './dashboard/MarketingView'
-import CampaignsView from './dashboard/CampaignsView'
-import AudienceView from './dashboard/AudienceView'
-import PipelineView from './dashboard/PipelineView'
-import AnalyticsView from './dashboard/AnalyticsView'
-import AccountsView from './dashboard/AccountsView'
-import AutopilotView from './dashboard/AutopilotView'
-import SequencesView from './dashboard/SequencesView'
-import SettingsView from './dashboard/SettingsView'
-import PlanGate from './PlanGate'
-import { canAccessView } from '@/lib/plan-access'
 import type { SubscriptionTier } from '@/lib/lead-credits'
-
-const VIEW_TITLES: Record<View, string> = {
-  home:                       'Home',
-  'sales/inbox':              'Work Inbox',
-  'sales/outreach':           'Outreach',
-  'sales/explore':            'Explore',
-  'marketing/content':        'Content Overview',
-  'marketing/content/posts':  'Posts',
-  'marketing/content/blogs':  'Blogs',
-  'marketing/content/videos': 'Videos',
-  'marketing/campaigns':      'Campaigns',
-  'marketing/audience':       'Audience',
-  'revenue/pipeline':         'Pipeline',
-  'revenue/analytics':        'Analytics',
-  accounts:                   'Accounts',
-  'engine/autopilot':         'Autopilot',
-  'engine/sequences':         'Sequences',
-  settings:                   'Settings',
-}
-
-const VIEW_SUBTITLES: Record<View, string> = {
-  home:                       'GTM snapshot and quick actions.',
-  'sales/inbox':              'The highest-value account moves to review next.',
-  'sales/outreach':           'Drafts, sent messages, and reply tracking.',
-  'sales/explore':            'Search companies and import from CRM.',
-  'marketing/content':        'Marketing calendar, distribution mix, and account readiness.',
-  'marketing/content/posts':  'Social posts for LinkedIn and X.',
-  'marketing/content/blogs':  'Long-form articles and blog drafts.',
-  'marketing/content/videos': 'Video scripts and production-ready concepts.',
-  'marketing/campaigns':      'Group content into campaigns with timelines.',
-  'marketing/audience':       'ICP performance and persona analytics.',
-  'revenue/pipeline':         'Deal stages and revenue-ready opportunities.',
-  'revenue/analytics':        'Funnel metrics, conversion rates, and trends.',
-  accounts:                   'Context, signals, people, and next actions by account.',
-  'engine/autopilot':         'Automated sending rules and follow-up management.',
-  'engine/sequences':         'Reusable outreach templates and guidance.',
-  settings:                   'ICP, inboxes, credits, and integrations.',
-}
-
-const ALL_VIEWS: View[] = [
-  'home',
-  'sales/inbox', 'sales/outreach', 'sales/explore',
-  'marketing/content', 'marketing/content/posts', 'marketing/content/blogs', 'marketing/content/videos',
-  'marketing/campaigns', 'marketing/audience',
-  'revenue/pipeline', 'revenue/analytics',
-  'accounts',
-  'engine/autopilot', 'engine/sequences',
-  'settings',
-]
+import Icon from '@/components/Icon'
+import HomeView from './dashboard/HomeView'
+import AccountsView from './dashboard/AccountsView'
+import OutreachView from './dashboard/OutreachView'
+import AgentsView from './dashboard/AgentsView'
+import IntegrationsView from './dashboard/IntegrationsView'
+import SettingsView from './dashboard/SettingsView'
+import ContentView from './dashboard/ContentView'
 
 interface Props {
   initialLeads: Lead[]
   userProfile: UserProfile
 }
 
+type NavEntry = { id: View; label: string; sub: string; icon: string; group?: string }
+
+const VIEWS: NavEntry[] = [
+  { id: 'home',         label: 'Home',         sub: 'Today’s queue and command bar.',                          icon: 'sync_alt' },
+  { id: 'outreach',     label: 'Pipeline',     sub: 'Outbound — priority leads, drafts, sent, replies.',       icon: 'mail',    group: 'Outbound' },
+  { id: 'accounts',     label: 'Signals',      sub: 'Outbound — accounts, signals, fit scores.',               icon: 'sensors', group: 'Outbound' },
+  { id: 'content',      label: 'Content',      sub: 'Content engine — ideas, composer, calendar, performance.', icon: 'edit_note', group: 'Content' },
+  { id: 'agents',       label: 'Agents',       sub: 'Agent stacks, fleet, pipelines, and live activity.',      icon: 'smart_toy', group: 'System' },
+  { id: 'integrations', label: 'Integrations', sub: 'Sending, social, CRM, signals — all in one place.',       icon: 'hub',     group: 'System' },
+  { id: 'settings',     label: 'Settings',     sub: 'Profile, billing, team, and preferences.',                icon: 'settings', group: 'System' },
+]
+
+const VALID_VIEWS = new Set(VIEWS.map(v => v.id))
+
+function normalizeView(input: string | null): View {
+  if (!input) return 'home'
+  if (VALID_VIEWS.has(input as View)) return input as View
+  if (input.startsWith('sales/')) return input.endsWith('outreach') ? 'outreach' : 'home'
+  if (input.startsWith('marketing/') || input.startsWith('content/')) return 'content'
+  if (input.startsWith('revenue/')) return 'accounts'
+  if (input.startsWith('engine/')) return 'agents'
+  return 'home'
+}
+
 export default function DashboardShell({ initialLeads, userProfile }: Props) {
-  const userTier = (userProfile.plan as SubscriptionTier) || 'free'
-
-  const [activeView, setActiveView] = useState<View>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      const requestedView = params.get('view')
-      if (requestedView && (ALL_VIEWS as string[]).includes(requestedView)) {
-        const v = requestedView as View
-        return canAccessView(userTier, v) ? v : 'home'
-      }
-    }
-    return 'home'
-  })
-  const [isRefreshing, startTransition] = useTransition()
   const router = useRouter()
+  const [, startTransition] = useTransition()
+  const [activeView, setActiveView] = useState<View>(() => {
+    if (typeof window === 'undefined') return 'home'
+    return normalizeView(new URLSearchParams(window.location.search).get('view'))
+  })
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
-  const [leadCreditBalance, setLeadCreditBalance] = useState(userProfile.lead_credit_balance ?? 0)
-  const displayProfile = useMemo(() => ({ ...userProfile, lead_credit_balance: leadCreditBalance }), [leadCreditBalance, userProfile])
+  const userTier = useMemo<SubscriptionTier>(() => {
+    const plan = (userProfile.plan ?? 'free') as SubscriptionTier
+    return ['free', 'launch', 'team', 'growth', 'scale', 'enterprise'].includes(plan) ? plan : 'free'
+  }, [userProfile.plan])
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const paymentId = params.get('payment_id') ?? params.get('paymentId') ?? params.get('dodo_payment_id') ?? ''
-    const checkoutSessionId = params.get('checkout_session_id') ?? params.get('checkout_session') ?? params.get('session_id') ?? params.get('checkout_id') ?? ''
-    const isCreditReturn = params.get('credits') === '1'
-
-    if (isCreditReturn && (paymentId || checkoutSessionId)) {
-      let cancelled = false
-      ;(async () => {
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const res = await fetch('/api/billing/credits/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ payment_id: paymentId || undefined, checkout_session_id: checkoutSessionId || undefined }),
-          }).catch(() => null)
-          const data = await res?.json().catch(() => null) as { balance?: number; pending?: boolean } | null
-          if (cancelled) return
-          if (res?.ok && typeof data?.balance === 'number') { setLeadCreditBalance(data.balance); router.refresh(); break }
-          if (res && !data?.pending && res.status !== 409) break
-          await new Promise(r => setTimeout(r, 1500))
-        }
-        if (!cancelled) window.history.replaceState({}, '', window.location.pathname)
-      })()
-      return () => { cancelled = true }
+    function onPopState() {
+      setActiveView(normalizeView(new URLSearchParams(window.location.search).get('view')))
     }
-    if (window.location.search.includes('view=')) window.history.replaceState({}, '', window.location.pathname)
-  }, [router])
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
-  function refresh() { startTransition(() => router.refresh()) }
+  useEffect(() => {
+    if (mobileNavOpen) {
+      const prev = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      return () => { document.body.style.overflow = prev }
+    }
+  }, [mobileNavOpen])
 
   function navigate(v: View) {
-    if (!canAccessView(userTier, v)) return
     setActiveView(v)
+    setMobileNavOpen(false)
     const url = new URL(window.location.href)
     url.searchParams.set('view', v)
     window.history.replaceState({}, '', url.toString())
   }
 
+  function refresh() { startTransition(() => router.refresh()) }
+
+  async function logout() {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/')
+  }
+
+  const titleMeta = VIEWS.find(v => v.id === activeView) ?? VIEWS[0]
+  const credits = userProfile.lead_credit_balance ?? 0
+
   return (
-    <div className="flex min-h-screen relative">
-      {/* Ambient background — matching landing page */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute inset-x-0 top-0 h-[600px] opacity-[0.22]"
-          style={{ background: 'radial-gradient(ellipse 70% 50% at 50% -5%, var(--color-ink-3), transparent)' }} />
-        <div className="absolute inset-0 dot-grid opacity-[0.18]" />
-      </div>
+    <div className="min-h-screen flex bg-surface font-body-main text-on-surface">
+      {/* Desktop sidebar */}
+      <Sidebar profile={userProfile} activeView={activeView} onNavigate={navigate} />
 
-      <Sidebar
-        companyName={userProfile.client_name || userProfile.company_name}
-        userEmail={userProfile.email}
-        activeView={activeView}
-        onNavigate={navigate}
-        workspaces={userProfile.workspaces ?? []}
-        activeClientId={userProfile.active_client_id ?? null}
-        userTier={userTier}
-      />
-
-      <div className="flex-1 min-w-0 flex flex-col relative z-10">
-        {/* Top bar */}
-        <header className="sticky top-0 z-20 h-16 border-b border-[var(--color-line-1)] bg-[var(--color-ink-1)]/80 backdrop-blur-xl">
-          <div className="h-full flex items-center px-6 gap-5 pl-16 md:pl-6">
-            <div className="min-w-0">
-              <h1 className="text-[15px] font-semibold text-[var(--color-text-1)] tracking-tight truncate">{VIEW_TITLES[activeView]}</h1>
-              <p className="text-[11px] text-[var(--color-text-3)] truncate">{VIEW_SUBTITLES[activeView]}</p>
-            </div>
-
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                onClick={refresh}
-                disabled={isRefreshing}
-                className="h-9 w-9 inline-flex items-center justify-center rounded-full text-[var(--color-text-2)] hover:text-[var(--color-text-1)] hover:bg-[var(--color-ink-2)] disabled:opacity-50 transition-colors"
-                title="Refresh"
-              >
-                <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0A8.003 8.003 0 014.582 15M19.419 15H15" />
-                </svg>
-              </button>
-              <button
-                onClick={() => navigate('settings')}
-                className="hidden sm:inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-white px-3 text-[12px] font-semibold text-[var(--color-text-2)] hover:border-[var(--color-accent)]/40 hover:text-[var(--color-text-1)] transition-colors shadow-[0_1px_0_#0000000a]"
-                title="Lead credit balance"
-              >
-                <span className="tabular-nums text-[var(--color-accent-ring)]">{leadCreditBalance}</span>
-                <span>credits</span>
-              </button>
-              <button
-                onClick={() => navigate('settings')}
-                className="hidden sm:inline-flex h-9 px-3.5 rounded-full btn-primary text-[12.5px] font-semibold items-center gap-1.5 hover:scale-[1.02] active:scale-[0.98] transition-transform"
-              >
-                Add credits
-              </button>
-              <LogoutButton />
-            </div>
+      {/* Mobile drawer */}
+      {mobileNavOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-on-surface/40 md:hidden" onClick={() => setMobileNavOpen(false)} />
+          <div className="fixed inset-y-0 left-0 z-50 w-64 md:hidden">
+            <Sidebar profile={userProfile} activeView={activeView} onNavigate={navigate} forceShow />
           </div>
-        </header>
+        </>
+      )}
 
-        {/* View content */}
-        <main className="flex-1 overflow-auto scroll-smooth px-6 py-8 pb-20">
-          <div className="max-w-6xl mx-auto fade-in">
-            {activeView === 'home' && <HomeView leads={initialLeads} onNavigate={navigate} />}
-            {activeView === 'sales/inbox' && <InboxView leads={initialLeads} onNavigate={navigate} />}
-            {activeView === 'sales/outreach' && <OutreachView leads={initialLeads} />}
-            {activeView === 'sales/explore' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="AI-Powered Lead Discovery">
-                <ExploreView leads={initialLeads} />
-              </PlanGate>
-            )}
-            {activeView === 'marketing/content' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
-                <MarketingView hub="overview" />
-              </PlanGate>
-            )}
-            {activeView === 'marketing/content/posts' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
-                <MarketingView hub="posts" />
-              </PlanGate>
-            )}
-            {activeView === 'marketing/content/blogs' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
-                <MarketingView hub="blogs" />
-              </PlanGate>
-            )}
-            {activeView === 'marketing/content/videos' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Content Hub">
-                <MarketingView hub="videos" />
-              </PlanGate>
-            )}
-            {activeView === 'marketing/campaigns' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Campaigns">
-                <CampaignsView />
-              </PlanGate>
-            )}
-            {activeView === 'marketing/audience' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="Marketing Audience">
-                <AudienceView leads={initialLeads} />
-              </PlanGate>
-            )}
-            {activeView === 'revenue/pipeline' && <PipelineView leads={initialLeads} />}
-            {activeView === 'revenue/analytics' && <AnalyticsView leads={initialLeads} />}
-            {activeView === 'accounts' && <AccountsView />}
-            {activeView === 'engine/autopilot' && (
-              <PlanGate userTier={userTier} requiredTier="growth" featureName="Autopilot Engine">
-                <AutopilotView leads={initialLeads} />
-              </PlanGate>
-            )}
-            {activeView === 'engine/sequences' && <SequencesView />}
-            {activeView === 'settings' && <SettingsView profile={displayProfile} />}
+      <div className="flex-1 min-w-0 flex flex-col md:pl-64">
+        <TopBar
+          subtitle={titleMeta.sub}
+          onRefresh={refresh}
+          onMenu={() => setMobileNavOpen(true)}
+          onLogout={() => void logout()}
+          credits={credits}
+        />
+
+        <main className="flex-1">
+          <div className="max-w-[1280px] mx-auto px-margin-page py-stack-lg">
+            {activeView === 'home'         && <HomeView profile={userProfile} leads={initialLeads} onNavigate={navigate} />}
+            {activeView === 'accounts'     && <AccountsView profile={userProfile} leads={initialLeads} />}
+            {activeView === 'outreach'     && <OutreachView profile={userProfile} leads={initialLeads} />}
+            {activeView === 'content'      && <ContentView profile={userProfile} />}
+            {activeView === 'agents'       && <AgentsView profile={userProfile} />}
+            {activeView === 'integrations' && <IntegrationsView profile={userProfile} />}
+            {activeView === 'settings'     && <SettingsView profile={userProfile} userTier={userTier} />}
           </div>
         </main>
       </div>
@@ -250,24 +133,121 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
   )
 }
 
-function LogoutButton() {
-  const [loading, setLoading] = useState(false)
-  async function logout() {
-    setLoading(true)
-    const supabase = (await import('@/lib/supabase/client')).createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
+/* ─── Sidebar ─────────────────────────────────────────────────── */
+
+function Sidebar({
+  profile, activeView, onNavigate, forceShow,
+}: {
+  profile: UserProfile; activeView: View; onNavigate: (v: View) => void; forceShow?: boolean;
+}) {
+  const initials = (profile.client_name || profile.company_name || 'BS')
+    .split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
   return (
-    <button
-      onClick={logout}
-      disabled={loading}
-      className="h-9 w-9 inline-flex items-center justify-center rounded-full text-[var(--color-text-2)] hover:text-[var(--color-sig-regulation)] hover:bg-[var(--color-ink-2)] disabled:opacity-50 transition-colors"
-      title="Sign out"
-    >
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-      </svg>
-    </button>
+    <aside className={`${forceShow ? 'flex w-full h-full' : 'hidden md:flex w-64 fixed left-0 top-0 h-screen'} flex-col bg-surface-container-lowest hairline-r z-50`}>
+      <div className="px-6 py-10">
+        <h1 className="font-bold text-[20px] tracking-tight text-primary leading-none">Bombsell</h1>
+        <p className="font-label-mono text-[9px] uppercase tracking-[0.18em] text-on-surface-variant mt-1">Agentic GTM</p>
+      </div>
+
+      {profile.workspaces && profile.workspaces.length > 0 && (
+        <div className="px-4 mb-3">
+          <label className="font-label-mono text-[9px] uppercase tracking-widest text-outline-variant px-1">Workspace</label>
+          <select
+            value={profile.active_client_id ?? ''}
+            onChange={async (e) => {
+              const id = e.target.value
+              if (!id) return
+              await fetch('/api/clients', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activeClientId: id }) })
+              window.location.reload()
+            }}
+            className="mt-1 w-full font-label-mono text-[11px] uppercase bg-surface-container border border-outline-variant/40 rounded px-2 py-1.5"
+          >
+            {!profile.active_client_id && <option value="">Personal</option>}
+            {profile.workspaces.map((w) => <option key={w.client_id} value={w.client_id}>{w.name} · {w.role}</option>)}
+          </select>
+        </div>
+      )}
+
+      <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+        {VIEWS.map((v, i) => {
+          const active = activeView === v.id
+          const showGroup = v.group && v.group !== VIEWS[i - 1]?.group
+          return (
+            <div key={v.id}>
+              {showGroup && <p className="px-3 pt-4 pb-1 font-label-mono text-[9px] uppercase tracking-widest text-outline-variant">{v.group}</p>}
+              <button
+                onClick={() => onNavigate(v.id)}
+                className={`group w-full flex items-center gap-3 px-3 py-2 rounded transition-colors font-label-mono text-label-mono uppercase tracking-wider ${
+                  active
+                    ? 'bg-secondary-container text-on-secondary-container'
+                    : 'text-on-surface-variant hover:bg-surface-container'
+                }`}
+              >
+                <Icon name={v.icon} size={20} fill={active} />
+                <span>{v.label}</span>
+              </button>
+            </div>
+          )
+        })}
+      </nav>
+
+      <div className="mt-auto">
+        <button
+          onClick={() => onNavigate('settings')}
+          className="mx-4 mb-6 w-[calc(100%-2rem)] p-3 bg-surface-container rounded-lg hairline-border flex items-center justify-between group hover:bg-surface-container-high transition-colors text-left"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded bg-primary text-on-primary flex items-center justify-center font-bold text-xs shrink-0">{initials}</div>
+            <div className="flex flex-col min-w-0">
+              <p className="font-label-mono text-[10px] text-on-surface uppercase truncate leading-tight">{profile.client_name || profile.company_name}</p>
+              <p className="font-label-mono text-[9px] text-primary uppercase leading-tight">{profile.plan ?? 'free'} plan</p>
+            </div>
+          </div>
+          <Icon name="settings" size={18} className="text-on-surface-variant group-hover:text-primary transition-colors shrink-0" />
+        </button>
+      </div>
+    </aside>
+  )
+}
+
+/* ─── Top bar ─────────────────────────────────────────────────── */
+
+function TopBar({
+  subtitle, onRefresh, onMenu, onLogout, credits,
+}: {
+  subtitle: string; onRefresh: () => void; onMenu: () => void; onLogout: () => void; credits: number;
+}) {
+  return (
+    <header className="sticky top-0 z-40 h-14 bg-surface-container-low/80 backdrop-blur-md hairline-b flex items-center justify-between px-margin-page">
+      <div className="flex items-center gap-stack-md min-w-0">
+        <button
+          onClick={onMenu}
+          className="md:hidden -ml-2 h-9 w-9 inline-flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container"
+          aria-label="Open menu"
+        >
+          <Icon name="menu" size={20} />
+        </button>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+          <span className="font-label-mono text-label-mono uppercase text-on-surface">Fleet live</span>
+        </div>
+        <div className="hidden sm:block h-4 w-px bg-outline-variant" />
+        <span className="hidden sm:block font-label-mono text-[10px] uppercase text-on-surface-variant tracking-wider truncate">{subtitle}</span>
+      </div>
+      <div className="flex items-center gap-stack-lg shrink-0">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-lowest hairline-border rounded-full">
+          <Icon name="database" size={16} className="text-primary" />
+          <span className="font-label-mono text-[10px] uppercase text-on-surface">Credits: {credits}</span>
+        </div>
+        <button
+          onClick={onRefresh}
+          className="h-8 w-8 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors"
+          title="Refresh" aria-label="Refresh"
+        >
+          <Icon name="refresh" size={18} />
+        </button>
+        <button onClick={onLogout} className="font-label-mono text-label-mono uppercase text-on-surface-variant hover:text-primary transition-colors">Logout</button>
+      </div>
+    </header>
   )
 }

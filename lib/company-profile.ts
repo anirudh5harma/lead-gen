@@ -49,16 +49,16 @@ export async function resolveServicesDescription(params: {
 }
 
 export async function suggestServicesDescriptionFromWebsite(params: {
-  companyName: string
-  industry: string
+  companyName?: string
+  industry?: string
   websiteUrl?: unknown
 }): Promise<ServicesDescriptionResult | null> {
   const websiteUrl = normalizeCompanyWebsiteUrl(params.websiteUrl)
   if (!websiteUrl) return null
 
   const websiteDescription = await describeWebsite({
-    companyName: params.companyName,
-    industry: params.industry,
+    companyName: params.companyName ?? '',
+    industry: params.industry ?? '',
     websiteUrl,
     manualHint: '',
   })
@@ -69,6 +69,72 @@ export async function suggestServicesDescriptionFromWebsite(params: {
     websiteUrl,
     source: 'website',
   }
+}
+
+export interface CompanyAnalysis {
+  description: string
+  companyName: string | null
+  industry: string | null   // one of `allowedIndustries`, or null if none fit
+  websiteUrl: string
+}
+
+/**
+ * Scrape a company website (Firecrawl) and frame a crisp profile: a 2–4 sentence
+ * "what you sell" description, a clean company name, and the closest-matching
+ * industry from the provided list. Used by onboarding's "Analyse" action.
+ */
+export async function analyzeCompanyWebsite(params: {
+  websiteUrl: unknown
+  allowedIndustries?: string[]
+  companyHint?: string
+}): Promise<CompanyAnalysis | null> {
+  const websiteUrl = normalizeCompanyWebsiteUrl(params.websiteUrl)
+  if (!websiteUrl) return null
+  const markdown = await scrapeWebsiteMarkdown(websiteUrl)
+  if (!markdown) return null
+
+  const allowed = (params.allowedIndustries ?? []).filter(Boolean)
+  const fallbackName = params.companyHint?.trim() || companyNameFromHost(websiteUrl)
+
+  try {
+    const { complete, parseJsonLoose } = await import('./llm')
+    const { text } = await complete({
+      system: 'You analyze a company website and return a tight JSON profile for B2B outreach. Be specific and factual; never invent details. Respond with ONLY a JSON object.',
+      prompt: [
+        `Website: ${websiteUrl}`,
+        params.companyHint ? `Hint — company name may be: ${params.companyHint}` : '',
+        allowed.length ? `Pick "industry" as exactly one of: ${allowed.join(', ')} — or "" if none fit.` : 'Set "industry" to a short lowercase category, or "".',
+        '',
+        'Website content:',
+        markdown.slice(0, 6000),
+        '',
+        'Return: {"company_name": string, "industry": string, "description": string} where "description" is 2-4 plain-English sentences on what the company sells, who it helps, and the outcomes — no markdown.',
+      ].filter(Boolean).join('\n'),
+      json: true,
+      maxTokens: 360,
+      timeoutMs: 22_000,
+    })
+    const parsed = parseJsonLoose<{ company_name?: string; industry?: string; description?: string }>(text)
+    const description = cleanDescription(parsed?.description ?? '') || fallbackWebsiteDescription(markdown)
+    if (!description) return null
+    const industry = parsed?.industry && allowed.includes(parsed.industry) ? parsed.industry : (allowed.length === 0 ? (parsed?.industry?.trim() || null) : null)
+    return {
+      description,
+      companyName: (parsed?.company_name?.trim() || fallbackName) || null,
+      industry,
+      websiteUrl,
+    }
+  } catch {
+    const description = fallbackWebsiteDescription(markdown)
+    return description ? { description, companyName: fallbackName || null, industry: null, websiteUrl } : null
+  }
+}
+
+function companyNameFromHost(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').split('.')[0]
+    return host.charAt(0).toUpperCase() + host.slice(1)
+  } catch { return '' }
 }
 
 async function describeWebsite(params: {

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { recordOutcomeLearning, type GtmOutcome } from '@/lib/gtm/outcome-learning'
+import { loadAccessibleLead } from '@/lib/lead-access'
 
 const VALID_STATUSES = ['new', 'viewed', 'drafted', 'sent', 'replied', 'booked', 'dismissed'] as const
 type LeadStatus = typeof VALID_STATUSES[number]
@@ -27,11 +28,24 @@ export async function PATCH(
   if (s === 'replied') updates.replied_at = new Date().toISOString()
   if (s === 'booked')  updates.booked_at  = new Date().toISOString()
 
-  const { data: lead, error } = await supabase
+  const serviceSupabase = await createServiceClient()
+  const access = await loadAccessibleLead<{
+    id: string
+    user_id: string
+    client_id: string | null
+    target_company: string
+  }>(serviceSupabase, {
+    userId: user.id,
+    leadId: id,
+    select: 'id, user_id, client_id, target_company',
+  })
+  if (access.error) return NextResponse.json({ error: access.error }, { status: 500 })
+  if (!access.lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
+  const { data: lead, error } = await serviceSupabase
     .from('leads')
     .update(updates)
     .eq('id', id)
-    .eq('user_id', user.id)
     .select('id, client_id, target_company, status')
     .single()
 
@@ -56,7 +70,6 @@ export async function PATCH(
 
   const learningOutcome = statusToLearningOutcome(s)
   if (learningOutcome) {
-    const serviceSupabase = await createServiceClient()
     recordOutcomeLearning(serviceSupabase, {
       userId: user.id,
       clientId: (lead as { client_id?: string | null } | null)?.client_id ?? null,
