@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/Icon'
+import { useToast } from '@/components/Toast'
 
 /**
  * Bombsell landing — editorial, command-led. Mirrors the Stitch
@@ -13,11 +14,11 @@ import Icon from '@/components/Icon'
  */
 export default function LandingPage() {
   const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
   const [website, setWebsite] = useState('')
+  const toast = useToast()
 
   async function startWith(prefill?: string) {
-    setLoading(true); setErr(null)
+    setLoading(true)
     const url = normalize(prefill ?? website)
     if (url) window.localStorage.setItem('bombsell:onboarding:website_url', url)
     const supabase = createClient()
@@ -29,7 +30,7 @@ export default function LandingPage() {
         queryParams: { access_type: 'offline', prompt: 'consent' },
       },
     })
-    if (error) { setErr(error.message); setLoading(false) }
+    if (error) { toast.error(error.message); setLoading(false) }
   }
 
   return (
@@ -41,7 +42,6 @@ export default function LandingPage() {
           website={website}
           setWebsite={setWebsite}
           loading={loading}
-          err={err}
           onSubmit={() => void startWith(website)}
         />
         <TheLoop />
@@ -100,10 +100,10 @@ function TopNav({ loading, onStart }: { loading: boolean; onStart: () => void })
 /* ─── 01 Hero ─────────────────────────────────────────────────── */
 
 function Hero({
-  website, setWebsite, loading, err, onSubmit,
+  website, setWebsite, loading, onSubmit,
 }: {
   website: string; setWebsite: (s: string) => void;
-  loading: boolean; err: string | null; onSubmit: () => void;
+  loading: boolean; onSubmit: () => void;
 }) {
   return (
     <section className="relative overflow-hidden hero-bg pt-32">
@@ -147,8 +147,6 @@ function Hero({
             </button>
           </div>
         </form>
-
-        {err && <p className="mt-3 font-label-mono text-label-mono text-error">{err}</p>}
       </div>
 
       <div className="mt-section-gap flex justify-center">

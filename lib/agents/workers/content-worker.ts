@@ -140,20 +140,36 @@ export async function run(
           break
         }
         const wantSchedule = dispatch.tool === 'bombsell.content.schedule' && scheduledAt
+        if (wantSchedule) {
+          await supabase.from('posts').update({
+            status: 'scheduled',
+            scheduled_at: scheduledAt,
+            error_message: null,
+            updated_at: new Date().toISOString(),
+          }).eq('id', postId)
+          await recordAgentEvent(supabase, {
+            userId, clientId, agentName: 'publisher',
+            eventType: 'content.scheduled', status: 'completed',
+            title: 'Post scheduled',
+            metadata: { postId, scheduledAt },
+          })
+          result = { postId, status: 'scheduled', partner: null, partnerPostId: null, error: null }
+          break
+        }
         const adapter = await getSocialAdapter(supabase, workspaceId, plat)
         const pub = await adapter.publish({
           platform: plat,
           body: [post.hook ? `${post.hook}\n\n` : '', post.body].join('').trim(),
           thread: Array.isArray(post.thread) ? (post.thread as string[]) : undefined,
           media: Array.isArray(post.media) ? (post.media as Array<{ url: string; alt?: string }>) : undefined,
-          scheduledAt: wantSchedule ? scheduledAt : null,
+          scheduledAt: null,
         })
         await supabase.from('posts').update({
           status: pub.status === 'failed' ? 'failed' : pub.status,
           partner: pub.partner,
           partner_post_id: pub.partnerPostId ?? null,
           external_id: pub.externalId ?? null,
-          scheduled_at: wantSchedule ? scheduledAt : null,
+          scheduled_at: null,
           published_at: pub.status === 'published' ? new Date().toISOString() : null,
           error_message: pub.error ?? null,
           updated_at: new Date().toISOString(),

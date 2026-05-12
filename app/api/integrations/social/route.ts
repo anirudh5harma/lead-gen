@@ -23,10 +23,18 @@ async function workspace() {
 export async function GET() {
   const ctx = await workspace()
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { data } = await ctx.supabase.from('social_accounts')
+  const managed = postformeEnabled()
+  const { data, error } = await ctx.supabase.from('social_accounts')
     .select('id, partner, platform, display_name, is_active, created_at, updated_at')
     .eq('workspace_id', ctx.workspaceId).order('updated_at', { ascending: false })
-  return NextResponse.json({ accounts: data ?? [], managed: postformeEnabled() })
+  if (error) {
+    return NextResponse.json({ accounts: [], managed, error: error.message }, { status: 500 })
+  }
+  return NextResponse.json({
+    accounts: data ?? [],
+    managed,
+    managed_reason: managed ? null : 'POSTFORME_API_KEY is not configured in this deployment.',
+  })
 }
 
 export async function POST(request: Request) {

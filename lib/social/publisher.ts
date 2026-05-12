@@ -241,6 +241,7 @@ export async function getSocialAdapter(
     const pfmRows = rows.filter((r) => r.partner === 'postforme' && (!platform || !r.platform || r.platform === platform))
     const accountIds = pfmRows.map((r) => r.external_account_id as string).filter(Boolean)
     if (accountIds.length > 0) return new PostForMeAdapter(accountIds)
+    return new PostForMeAdapter([])
   }
 
   const row = rows.find((r) => r.partner !== 'postforme' && (!platform || !r.platform || r.platform === platform)) ?? rows.find((r) => r.partner !== 'postforme')

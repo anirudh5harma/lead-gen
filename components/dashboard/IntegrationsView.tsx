@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { UserProfile } from './types'
 import type { SubscriptionTier } from '@/lib/lead-credits'
 import { hasTeamFeatures } from '@/lib/plan-access'
+import { useToast } from '@/components/Toast'
 
 interface Props { profile: UserProfile }
 
@@ -30,18 +31,26 @@ export default function IntegrationsView({ profile }: Props) {
   const canUseTeamOps = hasTeamFeatures(userTier)
   const canUseCrm = hasTeamFeatures(userTier)
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([])
-  const [social, setSocial] = useState<{ managed: boolean; accounts: Array<{ id: string; partner: string; platform: string | null; display_name: string | null; is_active: boolean }> }>({ managed: false, accounts: [] })
+  const [social, setSocial] = useState<{ managed: boolean; managed_reason?: string | null; error?: string | null; accounts: Array<{ id: string; partner: string; platform: string | null; display_name: string | null; is_active: boolean }> }>({ managed: false, accounts: [] })
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null)
   const [modal, setModal] = useState<null | 'slack' | 'calendly' | 'agentkey' | 'llm' | 'crm'>(null)
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
+  const toast = useToast()
 
   useEffect(() => {
     void fetch('/api/connected-accounts').then(r => r.json()).then(d => {
       if (Array.isArray(d?.accounts)) setAccounts(d.accounts)
     }).catch(() => {})
     void fetch('/api/integrations/social').then(r => r.json()).then(d => {
-      setSocial({ managed: !!d?.managed, accounts: Array.isArray(d?.accounts) ? d.accounts : [] })
+      if (typeof d?.error === 'string' && d.error) toast.error(`Social publishing could not load: ${d.error}`)
+      setSocial({
+        managed: !!d?.managed,
+        managed_reason: typeof d?.managed_reason === 'string' ? d.managed_reason : null,
+        error: null,
+        accounts: Array.isArray(d?.accounts) ? d.accounts : [],
+      })
     }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function connectSocial(platform: 'linkedin' | 'x') {
@@ -50,8 +59,8 @@ export default function IntegrationsView({ profile }: Props) {
       const res = await fetch('/api/integrations/social/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platform }) })
       const d = await res.json().catch(() => ({})) as { url?: string; error?: string }
       if (d.url) window.location.assign(d.url)
-      else { setConnectingPlatform(null); alert(d.error ?? 'Could not start connection.') }
-    } catch { setConnectingPlatform(null); alert('Could not start connection.') }
+      else { setConnectingPlatform(null); toast.error(d.error ?? 'Could not start connection.') }
+    } catch { setConnectingPlatform(null); toast.error('Could not start connection.') }
   }
 
   async function disconnectAccount(id: string) {
@@ -63,6 +72,7 @@ export default function IntegrationsView({ profile }: Props) {
         body: JSON.stringify({ id }),
       })
       if (res.ok) setAccounts(current => current.filter(account => account.id !== id))
+      else toast.error('Could not disconnect account.')
     } finally {
       setDisconnectingId(null)
     }
@@ -206,7 +216,7 @@ export default function IntegrationsView({ profile }: Props) {
           </div>
         ) : (
           <div className="card p-5 text-[13px] text-[var(--color-text-3)]">
-            Social publishing isn&rsquo;t configured yet. Until it&rsquo;s enabled, content posts stay as drafts in the Content tab — you can copy and publish them by hand.
+            {social.managed_reason ?? 'Social publishing isn’t configured yet. Until it’s enabled, content posts stay as drafts in the Content tab — you can copy and publish them by hand.'}
           </div>
         )}
       </Group>
@@ -271,7 +281,7 @@ function CrmModal({ onClose }: { onClose: () => void }) {
   const [importUrl, setImportUrl] = useState('')
   const [providers, setProviders] = useState<Array<{ id: string; label: string; exportDescription: string; importDescription: string }>>([])
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const toast = useToast()
 
   useEffect(() => {
     void fetch('/api/settings/crm-sync').then(async (res) => {
@@ -286,11 +296,12 @@ function CrmModal({ onClose }: { onClose: () => void }) {
       setEnabled(Boolean(data.enabled))
       setImportUrl(data.import_url ?? '')
       setProviders(Array.isArray(data.providers) ? data.providers : [])
-    }).catch((error) => setErr(error instanceof Error ? error.message : 'Could not load CRM sync.'))
+    }).catch((error) => toast.error(error instanceof Error ? error.message : 'Could not load CRM sync.'))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function save() {
-    setBusy(true); setErr(null)
+    setBusy(true)
     const res = await fetch('/api/settings/crm-sync', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -298,9 +309,10 @@ function CrmModal({ onClose }: { onClose: () => void }) {
     })
     const data = await res.json().catch(() => ({})) as { import_url?: string; error?: string }
     setBusy(false)
-    if (!res.ok) { setErr(data.error || 'Could not save CRM sync.'); return }
+    if (!res.ok) { toast.error(data.error || 'Could not save CRM sync.'); return }
     setEnabled(true)
     setImportUrl(data.import_url ?? importUrl)
+    toast.success('CRM sync saved.')
   }
 
   const preset = providers.find(p => p.id === provider)
@@ -323,7 +335,6 @@ function CrmModal({ onClose }: { onClose: () => void }) {
         </div>
       )}
       {preset && <p className="text-[12px] text-[var(--color-text-3)] mt-3">{preset.importDescription} {preset.exportDescription}</p>}
-      {err && <p className="text-[12px] text-[var(--color-neg)] mt-2">{err}</p>}
       <div className="mt-5 flex items-center justify-end gap-2">
         <button onClick={onClose} className="btn-ghost h-9 px-4 text-[12.5px]">Close</button>
         <button onClick={() => void save()} disabled={busy || !webhookUrl.trim()} className="btn-accent h-9 px-4 text-[12.5px] disabled:opacity-50">{busy ? 'Saving...' : enabled ? 'Save sync' : 'Enable sync'}</button>
@@ -337,15 +348,15 @@ function LlmModal({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('')
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const toast = useToast()
   async function save() {
-    if (!apiKey) { setErr('API key required.'); return }
-    setBusy(true); setErr(null)
+    if (!apiKey) { toast.error('API key required.'); return }
+    setBusy(true)
     const res = await fetch('/api/integrations/llm', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider, api_key: apiKey, model: model || undefined }),
     })
-    if (!res.ok) { const b = await res.json().catch(() => ({})); setErr(b?.error || 'Could not save.'); setBusy(false); return }
+    if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(b?.error || 'Could not save.'); setBusy(false); return }
     onClose(); window.location.reload()
   }
   return (
@@ -363,7 +374,6 @@ function LlmModal({ onClose }: { onClose: () => void }) {
       <label className="mono block mb-1">Model <span className="text-[var(--color-text-3)]">(optional)</span></label>
       <input value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === 'anthropic' ? 'claude-sonnet-4-6' : 'gpt-4o'}
         className="w-full h-10 px-3 bg-[var(--color-ink-1)] border border-[var(--color-line-2)] rounded-lg text-[13px] outline-none focus:border-[var(--color-text-1)]" />
-      {err && <p className="text-[12px] text-[var(--color-neg)] mt-2">{err}</p>}
       <div className="mt-5 flex items-center justify-end gap-2">
         <button onClick={onClose} className="btn-ghost h-9 px-4 text-[12.5px]">Cancel</button>
         <button onClick={() => void save()} disabled={busy} className="btn-accent h-9 px-4 text-[12.5px] disabled:opacity-50">{busy ? 'Saving…' : 'Connect'}</button>
@@ -397,9 +407,9 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 function SlackModal({ initial, onClose }: { initial: string; onClose: () => void }) {
   const [url, setUrl] = useState(initial)
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const toast = useToast()
   async function save() {
-    setBusy(true); setErr(null)
+    setBusy(true)
     const res = await fetch('/api/settings/slack-webhook', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -407,7 +417,7 @@ function SlackModal({ initial, onClose }: { initial: string; onClose: () => void
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      setErr(body?.error || 'Could not save. Check the URL and try again.')
+      toast.error(body?.error || 'Could not save. Check the URL and try again.')
       setBusy(false); return
     }
     onClose(); window.location.reload()
@@ -420,7 +430,6 @@ function SlackModal({ initial, onClose }: { initial: string; onClose: () => void
         placeholder="https://hooks.slack.com/services/..."
         className="w-full h-10 px-3 bg-[var(--color-ink-1)] border border-[var(--color-line-2)] rounded-lg text-[13px] outline-none focus:border-[var(--color-text-1)]"
       />
-      {err && <p className="text-[12px] text-[var(--color-neg)] mt-2">{err}</p>}
       <div className="mt-5 flex items-center justify-end gap-2">
         <button onClick={onClose} className="btn-ghost h-9 px-4 text-[12.5px]">Cancel</button>
         <button onClick={save} disabled={busy} className="btn-accent h-9 px-4 text-[12.5px] disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
@@ -432,9 +441,9 @@ function SlackModal({ initial, onClose }: { initial: string; onClose: () => void
 function CalendlyModal({ initial, onClose }: { initial: string; onClose: () => void }) {
   const [url, setUrl] = useState(initial)
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const toast = useToast()
   async function save() {
-    setBusy(true); setErr(null)
+    setBusy(true)
     const res = await fetch('/api/profile/field', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -442,7 +451,7 @@ function CalendlyModal({ initial, onClose }: { initial: string; onClose: () => v
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      setErr(body?.error || 'Could not save. Check the URL and try again.')
+      toast.error(body?.error || 'Could not save. Check the URL and try again.')
       setBusy(false); return
     }
     onClose(); window.location.reload()
@@ -455,7 +464,6 @@ function CalendlyModal({ initial, onClose }: { initial: string; onClose: () => v
         placeholder="https://cal.com/you  ·  https://calendly.com/you"
         className="w-full h-10 px-3 bg-[var(--color-ink-1)] border border-[var(--color-line-2)] rounded-lg text-[13px] outline-none focus:border-[var(--color-text-1)]"
       />
-      {err && <p className="text-[12px] text-[var(--color-neg)] mt-2">{err}</p>}
       <div className="mt-5 flex items-center justify-end gap-2">
         <button onClick={onClose} className="btn-ghost h-9 px-4 text-[12.5px]">Cancel</button>
         <button onClick={save} disabled={busy} className="btn-accent h-9 px-4 text-[12.5px] disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
@@ -467,10 +475,10 @@ function CalendlyModal({ initial, onClose }: { initial: string; onClose: () => v
 function AgentKeyModal({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [apiKey, setApiKey] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const toast = useToast()
 
   async function issueKey() {
-    setBusy(true); setErr(null)
+    setBusy(true)
     try {
       const agentsRes = await fetch('/api/agents')
       const agentsJson = await agentsRes.json().catch(() => ({})) as { agents?: Array<{ id: string }> }
@@ -504,7 +512,7 @@ function AgentKeyModal({ onClose }: { onClose: () => void }) {
       if (!keyRes.ok || !keyJson.api_key) throw new Error(keyJson.error || 'Could not issue agent key.')
       setApiKey(keyJson.api_key)
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not issue agent key.')
+      toast.error(error instanceof Error ? error.message : 'Could not issue agent key.')
     } finally {
       setBusy(false)
     }
@@ -525,7 +533,6 @@ function AgentKeyModal({ onClose }: { onClose: () => void }) {
           <code className="break-all text-[12px] text-[var(--color-text-1)]">{apiKey}</code>
         </div>
       )}
-      {err && <p className="mt-3 text-[12px] text-[var(--color-neg)]">{err}</p>}
       <div className="mt-5 flex items-center justify-end gap-2">
         <Link href="/api/docs/agents" className="btn-ghost h-9 px-4 text-[12.5px] inline-flex items-center">API docs →</Link>
         <button onClick={() => void issueKey()} disabled={busy} className="btn-accent h-9 px-4 text-[12.5px] disabled:opacity-50">

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Icon from '@/components/Icon'
+import { useToast } from '@/components/Toast'
 
 /**
  * Onboarding — editorial 2-step calibration flow, styled after the Stitch
@@ -80,7 +81,7 @@ export default function OnboardingPage() {
   const [analysing, setAnalysing] = useState(false)
   const [isEdit, setIsEdit] = useState(false)
   const [done, setDone] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
   const [form, setForm] = useState<Form>(INITIAL)
 
   useEffect(() => {
@@ -144,8 +145,8 @@ export default function OnboardingPage() {
   }, [])
 
   async function autoFillFromWebsite() {
-    if (!form.website_url) { setError('Add your company website first.'); return }
-    setAnalysing(true); setError(null)
+    if (!form.website_url) { toast.error('Add your company website first.'); return }
+    setAnalysing(true)
     try {
       const res = await fetch('/api/profile/website-suggestion', {
         method: 'POST',
@@ -166,10 +167,10 @@ export default function OnboardingPage() {
           industry: f.industry || (body.industry && (INDUSTRIES as readonly (readonly [string, string])[]).some(([v]) => v === body.industry) ? (body.industry as IndustryValue) : f.industry),
         }))
       } else {
-        setError(body?.error || 'Could not analyse that website. Type a description below.')
+        toast.error(body?.error || 'Could not analyse that website. Type a description below.')
       }
     } catch {
-      setError('Network issue. Type a description below.')
+      toast.error('Network issue. Type a description below.')
     } finally {
       setAnalysing(false)
     }
@@ -184,7 +185,7 @@ export default function OnboardingPage() {
   ]
 
   async function submit() {
-    setSaving(true); setError(null)
+    setSaving(true)
     const res = await fetch('/api/profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -192,7 +193,7 @@ export default function OnboardingPage() {
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      setError(body?.error || 'Something went wrong.')
+      toast.error(body?.error || 'Something went wrong.')
       setSaving(false); return
     }
     window.localStorage.removeItem('bombsell:onboarding:website_url')
@@ -232,7 +233,6 @@ export default function OnboardingPage() {
             onAnalyse={() => void autoFillFromWebsite()}
             canContinue={stepValid[0]}
             onContinue={() => setStep(1)}
-            error={error}
           />
         ) : (
           <StepCalibration
@@ -243,7 +243,6 @@ export default function OnboardingPage() {
             isEdit={isEdit}
             onFinalize={() => void submit()}
             onBack={() => setStep(0)}
-            error={error}
           />
         )}
       </main>
@@ -254,11 +253,11 @@ export default function OnboardingPage() {
 /* ─── Step 01: Identity ───────────────────────────────────────── */
 
 function StepIdentity({
-  form, setForm, analysing, onAnalyse, canContinue, onContinue, error,
+  form, setForm, analysing, onAnalyse, canContinue, onContinue,
 }: {
   form: Form; setForm: React.Dispatch<React.SetStateAction<Form>>;
   analysing: boolean; onAnalyse: () => void;
-  canContinue: boolean; onContinue: () => void; error: string | null;
+  canContinue: boolean; onContinue: () => void;
 }) {
   // first 5 industries shown as Stitch-style chips, rest behind ChipPicker expand
   return (
@@ -344,8 +343,6 @@ function StepIdentity({
           </div>
         </div>
 
-        {error && <p className="font-label-mono text-label-mono text-error uppercase">{error}</p>}
-
         <div className="pt-stack-md flex justify-end">
           <button
             onClick={() => canContinue && onContinue()}
@@ -363,11 +360,11 @@ function StepIdentity({
 /* ─── Step 02: Calibration ────────────────────────────────────── */
 
 function StepCalibration({
-  form, setForm, canFinalize, saving, isEdit, onFinalize, onBack, error,
+  form, setForm, canFinalize, saving, isEdit, onFinalize, onBack,
 }: {
   form: Form; setForm: React.Dispatch<React.SetStateAction<Form>>;
   canFinalize: boolean; saving: boolean; isEdit: boolean;
-  onFinalize: () => void; onBack: () => void; error: string | null;
+  onFinalize: () => void; onBack: () => void;
 }) {
   function toggleTarget(v: IndustryValue) {
     setForm((f) => ({
@@ -468,8 +465,6 @@ function StepCalibration({
             <span>Precision</span>
           </div>
         </div>
-
-        {error && <p className="font-label-mono text-label-mono text-error uppercase">{error}</p>}
 
         <div className="pt-stack-md flex justify-end">
           <button

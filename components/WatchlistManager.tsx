@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, FormEvent } from 'react'
 import { useState, useEffect } from 'react'
+import { useToast } from '@/components/Toast'
 
 interface WatchlistCompany {
   id: string
@@ -18,8 +19,7 @@ export default function WatchlistManager() {
   const [adding, setAdding] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [form, setForm] = useState({ company_name: '', company_domain: '', notes: '' })
-  const [error, setError] = useState<string | null>(null)
-  const [uploadMsg, setUploadMsg] = useState<string | null>(null)
+  const toast = useToast()
 
   useEffect(() => {
     fetch('/api/watchlist')
@@ -32,7 +32,6 @@ export default function WatchlistManager() {
     e.preventDefault()
     if (!form.company_name.trim()) return
     setAdding(true)
-    setError(null)
 
     const res = await fetch('/api/watchlist', {
       method: 'POST',
@@ -43,7 +42,7 @@ export default function WatchlistManager() {
     const data = await res.json()
 
     if (!res.ok) {
-      setError(data.error || 'Failed to add company')
+      toast.error(data.error || 'Failed to add company')
       setAdding(false)
       return
     }
@@ -59,14 +58,12 @@ export default function WatchlistManager() {
     if (!file) return
 
     setUploading(true)
-    setError(null)
-    setUploadMsg(null)
 
     try {
       const text = await file.text()
       const companies = parseWatchlistCsv(text)
       if (companies.length === 0) {
-        setError('No company rows found. Use columns like company_name and company_domain, or name,domain.')
+        toast.error('No company rows found. Use columns like company_name and company_domain, or name,domain.')
         return
       }
 
@@ -83,14 +80,14 @@ export default function WatchlistManager() {
       } | null
 
       if (!res.ok) {
-        setError(data?.error || 'Failed to upload watchlist CSV')
+        toast.error(data?.error || 'Failed to upload watchlist CSV')
         return
       }
 
       setCompanies(prev => mergeCompanies(data?.companies ?? [], prev))
-      setUploadMsg(`Imported ${data?.inserted ?? data?.companies?.length ?? 0} companies${data?.skipped ? `, skipped ${data.skipped}` : ''}.`)
+      toast.success(`Imported ${data?.inserted ?? data?.companies?.length ?? 0} companies${data?.skipped ? `, skipped ${data.skipped}` : ''}.`)
     } catch {
-      setError('Failed to read watchlist CSV')
+      toast.error('Failed to read watchlist CSV')
     } finally {
       setUploading(false)
     }
@@ -104,6 +101,8 @@ export default function WatchlistManager() {
     })
     if (res.ok) {
       setCompanies(prev => prev.filter(c => c.id !== id))
+    } else {
+      toast.error('Failed to remove company')
     }
   }
 
@@ -182,10 +181,7 @@ export default function WatchlistManager() {
                 />
               </label>
             </div>
-            {uploadMsg && <p className="mt-2 text-[11px] text-[var(--color-sig-funding)]">{uploadMsg}</p>}
           </div>
-
-          {error && <p className="text-xs text-[var(--color-sig-regulation)]">{error}</p>}
 
           {/* Company list */}
           {loading ? (

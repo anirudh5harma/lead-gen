@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { validateEnv } from "@/lib/env";
 import { Analytics } from "@vercel/analytics/next"
+import { ToastProvider } from "@/components/Toast";
 import { Geist, Geist_Mono, Instrument_Serif, Manrope } from "next/font/google";
 
 if (typeof window === 'undefined') {
@@ -55,7 +56,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-[var(--color-ink-1)] text-[var(--color-text-1)] font-sans">
-        {children}
+        <ToastProvider>{children}</ToastProvider>
         <Analytics />
       </body>
     </html>

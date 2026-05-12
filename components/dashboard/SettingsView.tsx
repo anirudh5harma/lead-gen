@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { UserProfile } from './types'
 import type { SubscriptionTier } from '@/lib/lead-credits'
 import { createClient } from '@/lib/supabase/client'
+import { useToast } from '@/components/Toast'
 
 interface Props { profile: UserProfile; userTier: SubscriptionTier }
 
@@ -18,19 +19,18 @@ type AutomationMode = 'research_only' | 'approve_first' | 'autopilot'
  */
 export default function SettingsView({ profile }: Props) {
   const router = useRouter()
+  const toast = useToast()
   const canUseAutopilot = true   // autopilot available on every plan
   const [mode, setMode] = useState<AutomationMode>(profile.automation_mode ?? 'approve_first')
   const [savingMode, setSavingMode] = useState(false)
-  const [modeError, setModeError] = useState<string | null>(null)
   const [billingBusy, setBillingBusy] = useState(false)
   const [sessionBusy, setSessionBusy] = useState(false)
-  const [billingError, setBillingError] = useState<string | null>(null)
 
   async function saveMode(next: AutomationMode) {
     if (next === mode) return
     const previous = mode
     setMode(next)            // optimistic
-    setSavingMode(true); setModeError(null)
+    setSavingMode(true)
     const res = await fetch('/api/profile/field', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -39,13 +39,13 @@ export default function SettingsView({ profile }: Props) {
     setSavingMode(false)
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      setModeError(body?.error || 'Could not save automation mode.')
+      toast.error(body?.error || 'Could not save automation mode.')
       setMode(previous)      // revert
     }
   }
 
   async function openBillingPortal() {
-    setBillingBusy(true); setBillingError(null)
+    setBillingBusy(true)
     try {
       const res = await fetch('/api/billing/portal', { method: 'POST' })
       const data = await res.json().catch(() => ({})) as { url?: string; error?: string }
@@ -53,9 +53,9 @@ export default function SettingsView({ profile }: Props) {
         window.location.assign(data.url)
         return
       }
-      setBillingError(data.error || 'Could not open billing portal.')
+      toast.error(data.error || 'Could not open billing portal.')
     } catch {
-      setBillingError('Could not open billing portal.')
+      toast.error('Could not open billing portal.')
     } finally {
       setBillingBusy(false)
     }
@@ -114,7 +114,6 @@ export default function SettingsView({ profile }: Props) {
             </button>
           ))}
         </div>
-        {modeError && <p className="text-[12px] text-[var(--color-neg)] mt-3">{modeError}</p>}
         {savingMode && <p className="mono mt-3">Saving…</p>}
       </Block>
 
@@ -128,7 +127,6 @@ export default function SettingsView({ profile }: Props) {
             {billingBusy ? 'Opening...' : 'Billing portal'}
           </button>
         </div>
-        {billingError && <p className="text-[12px] text-[var(--color-neg)] mt-3">{billingError}</p>}
       </Block>
 
       <Block label="05" title="Credits & outcomes">
