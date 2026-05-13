@@ -2,15 +2,15 @@
   "crons": [
     {
       "path": "/api/cron/poll-signals",
-      "schedule": "0 * * * *"
+      "schedule": "0 */6 * * *"
     },
     {
       "path": "/api/leads/match",
-      "schedule": "10 * * * *"
+      "schedule": "10 */6 * * *"
     },
     {
       "path": "/api/cron/deliver-leads",
-      "schedule": "20 * * * *"
+      "schedule": "20 */6 * * *"
     },
     {
       "path": "/api/cron/send-followups",
@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/cron/enrich-contacts",
-      "schedule": "40 * * * *"
+      "schedule": "40 */6 * * *"
     },
     {
       "path": "/api/cron/send-automation",
