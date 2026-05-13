@@ -108,7 +108,11 @@ export async function recordSourceRunMetrics(
 
   const { error } = await supabase.from('gtm_source_runs').insert(rows)
   if (error) {
-    console.error('[source-ledger] insert failed:', error.message)
+    if (isMissingSourceLedgerTable(error)) {
+      console.warn('[source-ledger] gtm_source_runs unavailable; apply migration 073_source_ledger_runtime_repair.sql and reload Supabase schema cache')
+    } else {
+      console.error('[source-ledger] insert failed:', error.message)
+    }
   }
 
   await Promise.all(input.metrics.map(metric => Promise.all([
@@ -145,6 +149,12 @@ export async function recordSourceRunMetrics(
       idempotencyKey: eventIdempotencyKey(['source', input.cronRunId, metric.sourceName, finishedAt]),
     }),
   ])))
+}
+
+function isMissingSourceLedgerTable(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false
+  return error.code === 'PGRST205'
+    || /schema cache|could not find the table|relation .*gtm_source_runs.* does not exist|gtm_source_runs/i.test(error.message ?? '')
 }
 
 function sourcePriority(metric: SourceLedgerMetrics): number {
