@@ -9,8 +9,26 @@ export const runtime = 'nodejs'
 const BATCH_SIZE = 50
 const SIGNAL_LOOKBACK_MINUTES = 15
 
+type WebhookSignalRow = {
+  id: string
+  company_name: string | null
+  company_domain: string | null
+  signal_type: string | null
+  headline: string | null
+  summary: string | null
+  cluster_score?: number | string | null
+  published_at: string | null
+  created_at?: string | null
+}
+
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
+}
+
+function isSchemaCacheError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false
+  return error.code === 'PGRST204'
+    || /schema cache|could not find .* column/i.test(error.message ?? '')
 }
 
 function signalMatchesFilter(
@@ -60,14 +78,32 @@ async function runDeliverWebhooks(request: Request) {
   try {
     const lookback = new Date(Date.now() - SIGNAL_LOOKBACK_MINUTES * 60 * 1000).toISOString()
 
-    // Find signals created in the last 15 minutes that haven't been broadcast yet
-    const { data: signals, error: sigErr } = await supabase
+    // Find signals created in the last 15 minutes that haven't been broadcast yet.
+    // Older databases may lack webhook/cluster tracking columns until migration 072 lands;
+    // keep delivery alive by falling back to published_at and omitting optional score fields.
+    let canMarkBroadcast = true
+    const primarySignals = await supabase
       .from('signals')
       .select('id, company_name, company_domain, signal_type, headline, summary, cluster_score, published_at, created_at')
       .gte('created_at', lookback)
       .is('webhook_broadcast_at', null)
       .order('created_at', { ascending: true })
       .limit(BATCH_SIZE)
+    let signals = primarySignals.data as WebhookSignalRow[] | null
+    let sigErr = primarySignals.error
+
+    if (isSchemaCacheError(sigErr)) {
+      console.warn('[deliver-webhooks] signals webhook/cluster columns unavailable in schema cache; retrying with published_at fallback')
+      canMarkBroadcast = false
+      const fallbackSignals = await supabase
+        .from('signals')
+        .select('id, company_name, company_domain, signal_type, headline, summary, published_at')
+        .gte('published_at', lookback)
+        .order('published_at', { ascending: true })
+        .limit(BATCH_SIZE)
+      signals = fallbackSignals.data as WebhookSignalRow[] | null
+      sigErr = fallbackSignals.error
+    }
 
     if (sigErr) {
       await finishCronRun(supabase, runId, { status: 'error', errorMessage: sigErr.message })
@@ -94,7 +130,10 @@ async function runDeliverWebhooks(request: Request) {
     if (!subscriptions || subscriptions.length === 0) {
       // Mark signals as broadcast even if no subscriptions exist
       const signalIds = signals.map(s => s.id)
-      await supabase.from('signals').update({ webhook_broadcast_at: new Date().toISOString() }).in('id', signalIds)
+      if (canMarkBroadcast) {
+        const { error } = await supabase.from('signals').update({ webhook_broadcast_at: new Date().toISOString() }).in('id', signalIds)
+        if (isSchemaCacheError(error)) canMarkBroadcast = false
+      }
 
       await finishCronRun(supabase, runId, { status: 'success', metrics: { signals: signals.length, delivered: 0, failed: 0, reason: 'No active subscriptions' } })
       return NextResponse.json({ signals: signals.length, delivered: 0, failed: 0, reason: 'No active subscriptions' })
@@ -165,10 +204,15 @@ async function runDeliverWebhooks(request: Request) {
 
     // Mark all processed signals as broadcast
     if (broadcastedSignalIds.size > 0) {
-      await supabase
-        .from('signals')
-        .update({ webhook_broadcast_at: new Date().toISOString() })
-        .in('id', Array.from(broadcastedSignalIds))
+      if (canMarkBroadcast) {
+        const { error } = await supabase
+          .from('signals')
+          .update({ webhook_broadcast_at: new Date().toISOString() })
+          .in('id', Array.from(broadcastedSignalIds))
+        if (isSchemaCacheError(error)) {
+          console.warn('[deliver-webhooks] webhook_broadcast_at unavailable in schema cache; processed signals were not marked broadcast')
+        }
+      }
     }
 
     const metrics = {

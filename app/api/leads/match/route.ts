@@ -36,6 +36,12 @@ function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
 }
 
+function isSchemaCacheError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false
+  return error.code === 'PGRST204'
+    || /schema cache|could not find .* column/i.test(error.message ?? '')
+}
+
 export async function GET(request: Request) {
   return runMatch(request)
 }
@@ -55,12 +61,26 @@ async function runMatch(request: Request) {
   try {
     const windowStart = new Date(Date.now() - DEDUPE_WINDOW_HOURS * 60 * 60 * 1000).toISOString()
 
-    const { data: recentSignals, error: sigErr } = await supabase
+    const primarySignals = await supabase
       .from('signals')
       .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain, novelty_key, published_at, source_name, cluster_score, corroborating_source_count')
       .gte('published_at', windowStart)
       .order('published_at', { ascending: false })
       .limit(RECENT_SIGNAL_LIMIT)
+    let recentSignals = primarySignals.data as MatchSignalCandidate[] | null
+    let sigErr = primarySignals.error
+
+    if (isSchemaCacheError(sigErr)) {
+      console.warn('[match-leads] signals cluster columns unavailable in schema cache; retrying signal fetch without cluster metadata')
+      const fallbackSignals = await supabase
+        .from('signals')
+        .select('id, company_name, signal_type, summary, headline, signal_embedding, company_domain, novelty_key, published_at, source_name')
+        .gte('published_at', windowStart)
+        .order('published_at', { ascending: false })
+        .limit(RECENT_SIGNAL_LIMIT)
+      recentSignals = fallbackSignals.data as MatchSignalCandidate[] | null
+      sigErr = fallbackSignals.error
+    }
 
     if (sigErr || !recentSignals?.length) {
       const payload = { queued: 0, reason: 'No signals found' }

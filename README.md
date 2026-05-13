@@ -114,12 +114,12 @@ Schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/vercel.j
 
 | Path | Schedule (UTC) | Purpose |
 |---|---|---|
-| `/api/cron/poll-signals` | `0 0,12 * * *` | Ingest signals; opportunistically kicks match + delivery |
-| `/api/leads/match` | `10 0,12 * * *` | Fallback/backfill: populate the delivery backlog |
-| `/api/cron/deliver-leads` | `20 0,12 * * *` | Fallback/backfill: batch queued leads into feeds |
+| `/api/cron/poll-signals` | `0 * * * *` | Ingest signals; opportunistically kicks match + delivery |
+| `/api/leads/match` | `10 * * * *` | Fallback/backfill: populate the delivery backlog |
+| `/api/cron/deliver-leads` | `20 * * * *` | Fallback/backfill: batch queued leads into feeds |
 | `/api/cron/send-followups` | `30 0,12 * * *` | Send due follow-ups |
 | `/api/cron/send-automation` | `*/15 * * * *` | Process the outbound automation queue |
-| `/api/cron/enrich-contacts` | `40 0,12 * * *` | Backfill / validate contacts |
+| `/api/cron/enrich-contacts` | `40 * * * *` | Backfill / validate contacts |
 | `/api/cron/renew-inbox-watches` | `0 3 * * *` | Renew Gmail / Outlook push subscriptions |
 | `/api/cron/publish-content` | `*/10 * * * *` | Publish due distribution jobs |
 | `/api/cron/poll-avatar-videos` | `*/10 * * * *` | Poll avatar-video render jobs |
@@ -163,6 +163,7 @@ SQL migrations live in `supabase/migrations/`. Apply them before deploying code 
 - `066_content_engine.sql` — `content_ideas`, `posts`, `social_accounts`, `workspace_llm_keys`, content eval traces
 - `067_outcome_credits_and_plans.sql` — `credit_ledger`, monthly credit grants
 - `068_team_rls_and_plan_relabel.sql` — team RLS, plan relabel
+- `072_signals_runtime_contract_repair.sql` — reasserts the runtime `signals` schema contract and reloads PostgREST
 
 > `055_*` and `056_*` exist twice (an explore/autopilot migration and a marketing/content one share each prefix). They are applied in this deployment; treat the prefix as historical and keep new migrations strictly increasing.
 

@@ -88,6 +88,10 @@ type RecentSignalRow = {
   cluster_score?: number | string | null
 }
 
+type SignalSchemaState = {
+  clusterMetadataAvailable: boolean
+}
+
 function isAuthorized(request: Request): boolean {
   return request.headers.get('authorization') === `Bearer ${process.env.CRON_SECRET}`
 }
@@ -139,6 +143,7 @@ async function runPoll(request: Request) {
     previously_processed: 0,
   }
   const insertedCompanies: Array<{ name: string; domain: string | null }> = []
+  const signalSchemaState: SignalSchemaState = { clusterMetadataAvailable: true }
 
   // ── 1. Collect all RSS items ──────────────────────────────────────
 
@@ -250,7 +255,7 @@ async function runPoll(request: Request) {
     const batch = candidatesToProcess.slice(i, i + PROCESS_BATCH_SIZE)
     const results = await Promise.allSettled(batch.map(async candidate => ({
       candidate,
-      outcome: await processItem(candidate, supabase),
+      outcome: await processItem(candidate, supabase, signalSchemaState),
     })))
     for (const result of results) {
       if (result.status === 'fulfilled') {
@@ -367,14 +372,12 @@ async function runPoll(request: Request) {
             published_at:     new Date().toISOString(),
             signal_embedding: toVectorLiteral(embedding),
           }
-          let { error } = await supabase.from('signals').insert(baseInsertPayload)
-
-          if (isSchemaCacheError(error)) {
-            console.warn('[poll-signals] signals cluster columns unavailable in schema cache; retrying job board insert without cluster metadata')
-            const fallbackInsertPayload = stripSignalClusterMetadata(baseInsertPayload)
-            const fallbackInsert = await supabase.from('signals').insert(fallbackInsertPayload)
-            error = fallbackInsert.error
-          }
+          const { error } = await insertSignalWithClusterFallback(
+            supabase,
+            baseInsertPayload,
+            signalSchemaState,
+            'retrying job board insert without cluster metadata',
+          )
 
           if (error) {
             console.error('[poll-signals] job board insert error:', error.message)
@@ -661,6 +664,27 @@ function stripSignalClusterMetadata(payload: Record<string, unknown>): Record<st
   return fallbackPayload
 }
 
+async function insertSignalWithClusterFallback(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  payload: Record<string, unknown>,
+  schemaState: SignalSchemaState,
+  fallbackReason: string,
+): Promise<{ error: { message: string; code?: string } | null }> {
+  const insertPayload = schemaState.clusterMetadataAvailable
+    ? payload
+    : stripSignalClusterMetadata(payload)
+  let { error } = await supabase.from('signals').insert(insertPayload)
+
+  if (schemaState.clusterMetadataAvailable && isSchemaCacheError(error)) {
+    schemaState.clusterMetadataAvailable = false
+    console.warn(`[poll-signals] signals cluster columns unavailable in schema cache; ${fallbackReason}`)
+    const fallbackInsert = await supabase.from('signals').insert(stripSignalClusterMetadata(payload))
+    error = fallbackInsert.error
+  }
+
+  return { error }
+}
+
 type ProcessOutcome =
   | { status: 'inserted'; companyName: string; companyDomain: string | null }
   | { status: 'duplicate' }
@@ -672,7 +696,8 @@ type ProcessOutcome =
 
 async function processItem(
   candidate: CandidateWorkItem,
-  supabase: Awaited<ReturnType<typeof createServiceClient>>
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  schemaState: SignalSchemaState,
 ): Promise<ProcessOutcome> {
   const { item, candidateId } = candidate
   if (item.link) {
@@ -723,9 +748,12 @@ async function processItem(
   })
   const noveltyWindowStart = new Date(new Date(pubDate).getTime() - (72 * 60 * 60 * 1000)).toISOString()
 
+  const recentSignalColumns = schemaState.clusterMetadataAvailable
+    ? 'id, novelty_key, headline, summary, company_name, company_domain, funding_amount, source_name, corroborating_source_count, cluster_score'
+    : 'id, novelty_key, headline, summary, company_name, company_domain, funding_amount, source_name'
   const recentSignalsQuery = supabase
     .from('signals')
-    .select('id, novelty_key, headline, summary, company_name, company_domain, funding_amount, source_name, corroborating_source_count, cluster_score')
+    .select(recentSignalColumns)
     .gte('published_at', noveltyWindowStart)
     .order('published_at', { ascending: false })
     .limit(12)
@@ -736,6 +764,7 @@ async function processItem(
   let recentSignals = recentSignalsResult.data as RecentSignalRow[] | null
 
   if (isSchemaCacheError(recentSignalsResult.error)) {
+    schemaState.clusterMetadataAvailable = false
     console.warn('[poll-signals] signals cluster columns unavailable in schema cache; retrying duplicate lookup without cluster metadata')
     const fallbackRecentSignalsQuery = supabase
       .from('signals')
@@ -771,7 +800,7 @@ async function processItem(
   )
 
   if (duplicateSignal) {
-    await updateDuplicateClusterSignal(supabase, duplicateSignal, {
+    await updateDuplicateClusterSignal(supabase, duplicateSignal, schemaState, {
       noveltyKey,
       sourceName: item.source,
       sourceType: candidate.junkFilter.source_type,
@@ -825,14 +854,12 @@ async function processItem(
     published_at:     pubDate,
     signal_embedding: toVectorLiteral(embedding),
   }
-  let { error } = await supabase.from('signals').insert(baseInsertPayload)
-
-  if (isSchemaCacheError(error)) {
-    console.warn('[poll-signals] signals cluster columns unavailable in schema cache; retrying insert without cluster metadata')
-    const fallbackInsertPayload = stripSignalClusterMetadata(baseInsertPayload)
-    const fallbackInsert = await supabase.from('signals').insert(fallbackInsertPayload)
-    error = fallbackInsert.error
-  }
+  const { error } = await insertSignalWithClusterFallback(
+    supabase,
+    baseInsertPayload,
+    schemaState,
+    'retrying insert without cluster metadata',
+  )
 
   if (error) {
     if (error.code === '23505' || error.message.includes('signals_source_url_idx')) {
@@ -938,6 +965,7 @@ async function updateDuplicateClusterSignal(
     corroborating_source_count?: number | string | null
     cluster_score?: number | string | null
   },
+  schemaState: SignalSchemaState,
   input: {
     noveltyKey: string
     sourceName: string
@@ -947,6 +975,7 @@ async function updateDuplicateClusterSignal(
   },
 ): Promise<void> {
   if (!duplicateSignal.id) return
+  if (!schemaState.clusterMetadataAvailable) return
   const corroboratingSourceCount = Math.max(
     Number(duplicateSignal.corroborating_source_count ?? 1),
     computeCorroboratingSourceCount(input.recentSignals, input.sourceName),
@@ -971,6 +1000,7 @@ async function updateDuplicateClusterSignal(
 
   if (isSchemaCacheError(error)) {
     console.warn('[poll-signals] signals cluster columns unavailable in schema cache; skipping duplicate cluster metadata update')
+    schemaState.clusterMetadataAvailable = false
     error = null
   }
 
