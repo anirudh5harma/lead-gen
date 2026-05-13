@@ -164,6 +164,7 @@ SQL migrations live in `supabase/migrations/`. Apply them before deploying code 
 - `067_outcome_credits_and_plans.sql` — `credit_ledger`, monthly credit grants
 - `068_team_rls_and_plan_relabel.sql` — team RLS, plan relabel
 - `072_signals_runtime_contract_repair.sql` — reasserts the runtime `signals` schema contract and reloads PostgREST
+- `073_source_ledger_runtime_repair.sql` — reasserts source-ledger runtime tables and reloads PostgREST
 
 > `055_*` and `056_*` exist twice (an explore/autopilot migration and a marketing/content one share each prefix). They are applied in this deployment; treat the prefix as historical and keep new migrations strictly increasing.
 
