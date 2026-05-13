@@ -114,7 +114,7 @@ Schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/vercel.j
 
 | Path | Schedule (UTC) | Purpose |
 |---|---|---|
-| `/api/cron/poll-signals` | `0 * * * *` | Ingest signals; opportunistically kicks match + delivery |
+| `/api/cron/poll-signals` | `0 * * * *` | Ingest a bounded batch of fresh signals |
 | `/api/leads/match` | `10 * * * *` | Fallback/backfill: populate the delivery backlog |
 | `/api/cron/deliver-leads` | `20 * * * *` | Fallback/backfill: batch queued leads into feeds |
 | `/api/cron/send-followups` | `30 0,12 * * *` | Send due follow-ups |

@@ -29,14 +29,16 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 const QUERY_BATCH_SIZE = 5
-const MAX_CANDIDATES_PER_RUN = 260
+const MAX_CANDIDATES_PER_RUN = 120
+const MAX_REJECTED_CANDIDATES_PER_RUN = 160
+const MAX_CANDIDATES_TO_PROCESS_PER_RUN = 35
 const PROCESS_BATCH_SIZE = 5
 const EXTRACT_TIMEOUT_MS = 12_000
 const MONITORED_COMPANY_LIMIT = 220
-const JOB_BOARD_COMPANY_LIMIT = 160
+const JOB_BOARD_COMPANY_LIMIT = 50
 const JOB_BOARD_BATCH_SIZE = 16
-const MATCH_TRIGGER_TIMEOUT_MS = 150_000
-const DELIVERY_TRIGGER_TIMEOUT_MS = 90_000
+const PROCESSING_STOP_AFTER_MS = 210_000
+const JOB_BOARD_STOP_AFTER_MS = 240_000
 
 const EVENT_KEYWORDS: Record<string, RegExp> = {
   funding: /\b(raise[sd]?|funding|financing|series [a-z]|seed round|venture capital|investment)\b/i,
@@ -109,6 +111,7 @@ async function runPoll(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const startedMs = Date.now()
   const supabase = await createServiceClient()
   const runId = await startCronRun(supabase, 'poll_signals')
   const runStartedAt = new Date().toISOString()
@@ -141,6 +144,8 @@ async function runPoll(request: Request) {
     monitored_accounts_seeded: 0,
     monitored_accounts_selected: 0,
     previously_processed: 0,
+    deferred_candidates: 0,
+    time_budget_exhausted: false,
   }
   const insertedCompanies: Array<{ name: string; domain: string | null }> = []
   const signalSchemaState: SignalSchemaState = { clusterMetadataAvailable: true }
@@ -242,7 +247,7 @@ async function runPoll(request: Request) {
     candidates.rejected.map(candidate => upsertSignalCandidate(supabase, candidate, false))
   )
 
-  const candidatesToProcess = persistedCandidates.filter(candidate => {
+  const pendingCandidates = persistedCandidates.filter(candidate => {
     if (['inserted', 'duplicate', 'extract_null', 'embed_error'].includes(candidate.extractStatus ?? 'pending')) {
       stats.previously_processed++
       skipped++
@@ -250,8 +255,15 @@ async function runPoll(request: Request) {
     }
     return true
   })
+  const candidatesToProcess = pendingCandidates.slice(0, MAX_CANDIDATES_TO_PROCESS_PER_RUN)
+  stats.deferred_candidates = Math.max(0, pendingCandidates.length - candidatesToProcess.length)
 
   for (let i = 0; i < candidatesToProcess.length; i += PROCESS_BATCH_SIZE) {
+    if (elapsedMs(startedMs) > PROCESSING_STOP_AFTER_MS) {
+      stats.time_budget_exhausted = true
+      stats.deferred_candidates += candidatesToProcess.length - i
+      break
+    }
     const batch = candidatesToProcess.slice(i, i + PROCESS_BATCH_SIZE)
     const results = await Promise.allSettled(batch.map(async candidate => ({
       candidate,
@@ -311,13 +323,19 @@ async function runPoll(request: Request) {
   // For each watchlisted or recently discovered company, check Lever/Greenhouse.
   // If they have 5+ open roles, create a hiring signal (once per 7 days).
 
-  const jobBoardCompanies = monitoredCompanies.slice(0, JOB_BOARD_COMPANY_LIMIT)
+  const jobBoardCompanies = elapsedMs(startedMs) < JOB_BOARD_STOP_AFTER_MS
+    ? monitoredCompanies.slice(0, JOB_BOARD_COMPANY_LIMIT)
+    : []
   if (jobBoardCompanies.length) {
     stats.job_board_checked = jobBoardCompanies.length
     sourceLedger.addFetched('job_board', jobBoardCompanies.length)
     const jobBoardInserted: string[] = []
 
     for (let i = 0; i < jobBoardCompanies.length; i += JOB_BOARD_BATCH_SIZE) {
+      if (elapsedMs(startedMs) > JOB_BOARD_STOP_AFTER_MS) {
+        stats.time_budget_exhausted = true
+        break
+      }
       const batch = jobBoardCompanies.slice(i, i + JOB_BOARD_BATCH_SIZE)
       const jobBoardResults = await Promise.allSettled(
         batch.map(async entry => {
@@ -407,20 +425,11 @@ async function runPoll(request: Request) {
     }
   }
 
-  // ── 4. Kick off lead matching ─────────────────────────────────────
-  let matchTriggered = false
-  let matchResult: DownstreamTriggerResult | null = null
-  let deliveryTriggered = false
-  let deliveryResult: DownstreamTriggerResult | null = null
+  // ── 4. Record matched monitored companies ─────────────────────────
+  // Matching and delivery run on their own hourly schedules. Keeping this
+  // cron focused on ingestion prevents FreshRSS backlog spikes from timing out.
   if (inserted > 0) {
     await markMonitoredCompanySignalsByKey(supabase, insertedCompanies)
-    matchTriggered = true
-    matchResult = await triggerDownstreamCron(request.url, '/api/leads/match', MATCH_TRIGGER_TIMEOUT_MS)
-
-    if (matchResult.ok) {
-      deliveryTriggered = true
-      deliveryResult = await triggerDownstreamCron(request.url, '/api/cron/deliver-leads', DELIVERY_TRIGGER_TIMEOUT_MS)
-    }
   }
 
   const payload = {
@@ -428,12 +437,13 @@ async function runPoll(request: Request) {
     skipped,
     stats,
     source_metrics: sourceLedger.values(),
-    match_triggered: matchTriggered,
-    match_result: matchResult,
-    delivery_triggered: deliveryTriggered,
-    delivery_result: deliveryResult,
+    match_triggered: false,
+    match_result: null,
+    delivery_triggered: false,
+    delivery_result: null,
+    elapsed_ms: elapsedMs(startedMs),
   }
-  console.log('[poll-signals] stats', { inserted, skipped, ...stats, match_triggered: matchTriggered })
+  console.log('[poll-signals] stats', { inserted, skipped, ...stats, match_triggered: false })
   await recordSourceRunMetrics(supabase, {
     cronRunId: runId,
     metrics: sourceLedger.values(),
@@ -447,40 +457,6 @@ async function runPoll(request: Request) {
     await finishCronRun(supabase, runId, { status: 'error', errorMessage: message })
     console.error('[poll-signals]', message)
     return NextResponse.json({ error: message }, { status: 500 })
-  }
-}
-
-interface DownstreamTriggerResult {
-  ok: boolean
-  status?: number
-  error?: string
-  body?: unknown
-}
-
-async function triggerDownstreamCron(
-  requestUrl: string,
-  path: string,
-  timeoutMs: number,
-): Promise<DownstreamTriggerResult> {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return { ok: false, error: 'CRON_SECRET is not configured' }
-
-  const url = new URL(path, requestUrl)
-  try {
-    const response = await fetch(url.toString(), {
-      method: 'POST',
-      headers: { authorization: `Bearer ${secret}` },
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-    const body = await response.json().catch(() => null)
-    if (!response.ok) {
-      console.error(`[poll-signals] downstream ${path} failed:`, response.status, body)
-    }
-    return { ok: response.ok, status: response.status, body }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(`[poll-signals] downstream ${path} trigger error:`, message)
-    return { ok: false, error: message }
   }
 }
 
@@ -575,8 +551,12 @@ function shortlistItems(allItems: RSSItem[]): ShortlistResult {
     dedupedCount: deduped.length + rejected.length,
     rejectedCount: rejected.length,
     items: deduped.slice(0, MAX_CANDIDATES_PER_RUN),
-    rejected: rejected.slice(0, MAX_CANDIDATES_PER_RUN),
+    rejected: rejected.slice(0, MAX_REJECTED_CANDIDATES_PER_RUN),
   }
+}
+
+function elapsedMs(startedMs: number): number {
+  return Date.now() - startedMs
 }
 
 async function upsertSignalCandidate(

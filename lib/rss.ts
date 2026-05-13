@@ -16,6 +16,7 @@ export interface RSSFeedConfig {
 interface RSSFetchOptions {
   quiet?: boolean
   timeoutMs?: number
+  maxItems?: number
 }
 
 /**
@@ -301,7 +302,7 @@ export async function fetchRSSItems(
       if (!options.quiet) console.error(`Google News RSS failed for "${query}": ${res.status}`)
       return []
     }
-    return await parseRSSXML(await res.text(), 'google_news')
+    return limitItems(await parseRSSXML(await res.text(), 'google_news'), options.maxItems)
   } catch (e) {
     logFetchError(`Google News fetch error for "${query}"`, e, options.quiet)
     return []
@@ -326,7 +327,7 @@ export async function fetchRSSFromUrl(
       if (!options.quiet) console.error(`RSS fetch failed (${source}): ${res.status}`)
       return []
     }
-    return await parseRSSXML(await res.text(), source)
+    return limitItems(await parseRSSXML(await res.text(), source), options.maxItems)
   } catch (e) {
     logFetchError(`RSS fetch error (${source})`, e, options.quiet)
     return []
@@ -346,4 +347,9 @@ function logFetchError(label: string, error: unknown, quiet?: boolean) {
 function isTimeoutError(error: unknown, message: string): boolean {
   if (error instanceof DOMException && error.name === 'TimeoutError') return true
   return /aborted|timeout|timed out/i.test(message)
+}
+
+function limitItems(items: RSSItem[], maxItems?: number): RSSItem[] {
+  if (!maxItems || maxItems <= 0) return items
+  return items.slice(0, maxItems)
 }
