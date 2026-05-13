@@ -28,6 +28,9 @@ const COMPANY_OWNED_CONCURRENCY = 8
 const COMPANY_FEED_CONCURRENCY = 3
 const CURATED_FEED_CONCURRENCY = 6
 const CONFIGURED_FEED_CONCURRENCY = 6
+const CONFIGURED_FEED_MAX_ITEMS_PER_FEED = 80
+const CONFIGURED_FEED_MAX_TOTAL_ITEMS = 500
+const CURATED_FEED_MAX_ITEMS_PER_FEED = 40
 
 const GDELT_QUERIES = [
   '(startup OR company) (raises OR funding OR "Series A" OR "seed round")',
@@ -214,6 +217,7 @@ export async function fetchCuratedInternetItems(): Promise<RSSItem[]> {
     quiet: true,
     timeoutMs: 7000,
     filter: true,
+    maxItemsPerFeed: CURATED_FEED_MAX_ITEMS_PER_FEED,
   })
 }
 
@@ -224,8 +228,9 @@ export async function fetchConfiguredRssItems(): Promise<RSSItem[]> {
   return fetchConfiguredFeedSet(feeds, CONFIGURED_FEED_CONCURRENCY, {
     quiet: true,
     timeoutMs: 7000,
-    filter: false,
-  })
+    filter: true,
+    maxItemsPerFeed: CONFIGURED_FEED_MAX_ITEMS_PER_FEED,
+  }).then(items => items.slice(0, CONFIGURED_FEED_MAX_TOTAL_ITEMS))
 }
 
 export async function fetchMonitoredCompanyNewsItems(companies: CompanySeed[]): Promise<RSSItem[]> {
@@ -295,6 +300,7 @@ async function fetchConfiguredFeedSet(
     quiet: boolean
     timeoutMs: number
     filter: boolean
+    maxItemsPerFeed?: number
   },
 ): Promise<RSSItem[]> {
   const results = await mapWithConcurrency(
@@ -303,6 +309,7 @@ async function fetchConfiguredFeedSet(
     feed => fetchRSSFromUrl(feed.url, feed.source, {
       quiet: options.quiet,
       timeoutMs: options.timeoutMs,
+      maxItems: options.maxItemsPerFeed,
     }),
   )
 
