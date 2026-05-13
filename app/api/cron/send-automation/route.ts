@@ -10,7 +10,7 @@ import { resolveOutreachContext, scheduleFollowupAt } from '@/lib/outreach-conte
 import { sendAutomationLifecycleEmail } from '@/lib/resend'
 import { finishCronRun, startCronRun } from '@/lib/cron-runs'
 import { finishAgentRun, recordAgentEvent, startAgentRun } from '@/lib/agent-events'
-import { buildRecipientGroup, ensureBodyGreetsRecipients, formatRecipientListForLog, type OutreachRecipientGroup } from '@/lib/outreach-recipients'
+import { buildRecipientGroup, ensureBodyGreetsRecipients, formatRecipientListForLog, mergeRecipientStakeholders, type OutreachRecipientGroup } from '@/lib/outreach-recipients'
 import { upsertLeadIntoGtmGraph, recordGtmTouchpoint, type LeadGraphResult } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
@@ -1294,6 +1294,11 @@ async function getOrCreateAutomationDraft(
     outreachPlan?: OutreachPlan
   },
 ): Promise<{ subject: string; body: string; recipientGroup: OutreachRecipientGroup | null }> {
+  const signal = normalizeLeadFeedSnapshot(params.lead.feed_snapshot ?? null)
+  const outreachContext = resolveOutreachContext({
+    userProfile: params.profile,
+    clientProfile: params.clientProfile,
+  })
   const { data: existing } = await supabase
     .from('outreach_drafts')
     .select('subject, body, stakeholders')
@@ -1303,23 +1308,38 @@ async function getOrCreateAutomationDraft(
     const existingStakeholders = Array.isArray((existing as { stakeholders?: unknown }).stakeholders)
       ? (existing as { stakeholders: Array<Partial<{ name: string; title: string; email: string; confidence: string; source: string }> | null> }).stakeholders
       : []
-    const recipientGroup = buildRecipientGroup(existingStakeholders.length > 0 ? existingStakeholders : [primaryLeadContact(params.lead)])
+    let stakeholders = existingStakeholders.map(stakeholder => ({
+      name: stakeholder?.name ?? '',
+      title: stakeholder?.title ?? 'Decision Maker',
+      email: stakeholder?.email ?? '',
+      confidence: stakeholder?.confidence ?? 'medium',
+      source: stakeholder?.source ?? 'existing_draft',
+    }))
+    if (stakeholders.length < 3) {
+      const refreshedContacts = await resolveLeadRecipients(supabase, {
+        lead: params.lead,
+        userId: params.userId,
+        servicesDescription: outreachContext.servicesDescription,
+        signalType: signal?.signal_type ?? null,
+        signalDomain: signal?.company_domain ?? null,
+        consumeCreditIfLocked: false,
+        requireVerified: true,
+        preferLeadContact: false,
+        maxContacts: 3,
+      })
+      stakeholders = mergeRecipientStakeholders(stakeholders, refreshedContacts.stakeholders).slice(0, 3)
+    }
+    const recipientGroup = buildRecipientGroup(stakeholders.length > 0 ? stakeholders : [primaryLeadContact(params.lead)])
     if (recipientGroup) {
       const repairedBody = ensureBodyGreetsRecipients(existing.body, recipientGroup.greeting)
-      if (repairedBody !== existing.body) {
+      if (repairedBody !== existing.body || stakeholders.length !== existingStakeholders.length) {
         await upsertOutreachDraft(supabase, {
           leadId: params.lead.id as string,
           userId: params.userId,
           clientId: (params.lead.client_id as string | null | undefined) ?? null,
           subject: existing.subject,
           body: repairedBody,
-          stakeholders: existingStakeholders.map(stakeholder => ({
-            name: stakeholder?.name ?? '',
-            title: stakeholder?.title ?? 'Decision Maker',
-            email: stakeholder?.email ?? '',
-            confidence: stakeholder?.confidence ?? 'medium',
-            source: stakeholder?.source ?? 'existing_draft',
-          })),
+          stakeholders,
           greeting: recipientGroup.greeting,
         }).catch(error => console.error('[send-automation] failed to repair existing draft:', error))
       }
@@ -1331,11 +1351,6 @@ async function getOrCreateAutomationDraft(
     }
   }
 
-  const signal = normalizeLeadFeedSnapshot(params.lead.feed_snapshot ?? null)
-  const outreachContext = resolveOutreachContext({
-    userProfile: params.profile,
-    clientProfile: params.clientProfile,
-  })
   const contactResolution = await resolveLeadRecipients(supabase, {
     lead: params.lead,
     userId: params.userId,
@@ -1344,6 +1359,7 @@ async function getOrCreateAutomationDraft(
     signalDomain: signal?.company_domain ?? null,
     consumeCreditIfLocked: false,
     requireVerified: true,
+    preferLeadContact: false,
     maxContacts: 3,
   })
   const stakeholders = contactResolution.stakeholders

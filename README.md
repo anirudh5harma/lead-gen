@@ -114,12 +114,12 @@ Schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/vercel.j
 
 | Path | Schedule (UTC) | Purpose |
 |---|---|---|
-| `/api/cron/poll-signals` | `0 * * * *` | Ingest a bounded batch of fresh signals |
-| `/api/leads/match` | `10 * * * *` | Fallback/backfill: populate the delivery backlog |
-| `/api/cron/deliver-leads` | `20 * * * *` | Fallback/backfill: batch queued leads into feeds |
+| `/api/cron/poll-signals` | `0 */6 * * *` | Ingest a bounded batch of fresh signals |
+| `/api/leads/match` | `10 */6 * * *` | Fallback/backfill: populate the delivery backlog |
+| `/api/cron/deliver-leads` | `20 */6 * * *` | Fallback/backfill: batch queued leads into feeds |
 | `/api/cron/send-followups` | `30 0,12 * * *` | Send due follow-ups |
 | `/api/cron/send-automation` | `*/15 * * * *` | Process the outbound automation queue |
-| `/api/cron/enrich-contacts` | `40 * * * *` | Backfill / validate contacts |
+| `/api/cron/enrich-contacts` | `40 */6 * * *` | Backfill / validate contacts |
 | `/api/cron/renew-inbox-watches` | `0 3 * * *` | Renew Gmail / Outlook push subscriptions |
 | `/api/cron/publish-content` | `*/10 * * * *` | Publish due distribution jobs |
 | `/api/cron/poll-avatar-videos` | `*/10 * * * *` | Poll avatar-video render jobs |
