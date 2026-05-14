@@ -228,6 +228,10 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     try {
       if (command.type === 'navigate') {
         navigate(command.view, command.sectionId)
+        // Content view tabs: switch to the requested sub-section
+        if (command.view === 'content' && command.tab) {
+          setContentVoiceCommand({ nonce: Date.now(), tab: command.tab as 'ideas' | 'composer' | 'calendar' | 'performance' })
+        }
         toast.info(command.summary)
         setVoiceMessage(command.summary)
         return

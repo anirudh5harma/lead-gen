@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { resolveRemoteControlPrincipal } from '@/lib/remote-control/auth'
 import { handleRemoteDashboardCommand } from '@/lib/remote-control/dashboard'
 import { consumeRemoteControlLink } from '@/lib/remote-control/linking'
-import { transcribeAudio } from '@/lib/remote-control/transcription'
+import { transcribeAudio, normalizeAudioContentType } from '@/lib/remote-control/transcription'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -116,7 +116,7 @@ async function resolveTelegramTranscript(message: TelegramMessage): Promise<stri
   return transcribeAudio({
     data: await audioResponse.arrayBuffer(),
     filename: filePath.split('/').pop() || 'telegram-voice.ogg',
-    contentType: file.mime_type || audioResponse.headers.get('content-type') || 'audio/ogg',
+    contentType: normalizeAudioContentType(file.mime_type) || audioResponse.headers.get('content-type') || 'audio/ogg',
   })
 }
 

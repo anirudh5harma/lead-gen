@@ -37,7 +37,7 @@ export interface DashboardCommandLead {
 }
 
 export type DashboardCommand =
-  | { type: 'navigate'; view: DashboardView; summary: string; sectionId?: string; sectionLabel?: string }
+  | { type: 'navigate'; view: DashboardView; summary: string; sectionId?: string; sectionLabel?: string; tab?: string }
   | { type: 'refresh'; summary: string }
   | { type: 'search'; query: string; summary: string }
   | { type: 'lead'; action: Exclude<LeadCommandAction, 'status'>; leadId: string; leadLabel: string; summary: string; requiresConfirmation?: boolean }
@@ -349,7 +349,8 @@ export async function classifyDashboardCommandClient(
           type: 'navigate', view,
           sectionId: vi.sectionId,
           sectionLabel: vi.sectionId ? vi.target : undefined,
-          summary: `Open ${viewLabels[view]}`,
+          tab: vi.tab,
+          summary: `Open ${viewLabels[view]}${vi.tab ? ` → ${vi.tab}` : ''}`,
         },
       }
     }

@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { verifyDiscordRequest } from '@/lib/remote-control/discord'
 import { resolveRemoteControlPrincipal } from '@/lib/remote-control/auth'
 import { handleRemoteDashboardCommand } from '@/lib/remote-control/dashboard'
-import { transcribeAudio } from '@/lib/remote-control/transcription'
+import { transcribeAudio, normalizeAudioContentType } from '@/lib/remote-control/transcription'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -114,7 +114,7 @@ async function resolveDiscordTranscript(interaction: DiscordInteraction): Promis
   return transcribeAudio({
     data: await response.arrayBuffer(),
     filename: attachment.filename || 'discord-voice.ogg',
-    contentType: attachment.content_type || response.headers.get('content-type') || 'audio/ogg',
+    contentType: normalizeAudioContentType(attachment.content_type) || response.headers.get('content-type') || 'audio/ogg',
   })
 }
 

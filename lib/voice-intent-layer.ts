@@ -56,6 +56,8 @@ export interface VoiceIntent {
   view?: DashboardView
   /** Optional section within a view (for navigate). */
   sectionId?: string
+  /** Optional tab within a view. Content: 'ideas' | 'composer' | 'calendar' | 'performance'. */
+  tab?: string
   /** Search query (for search). */
   query?: string
   /** LLM confidence or classification note. */
@@ -151,7 +153,13 @@ VIEW: accounts
   Account signals, hot fits, watchlist. Keywords: signals, hot accounts, watchlist, fit score, lead score, account list
 
 VIEW: content
-  Content ideas, composer, calendar, performance. Keywords: content idea, post idea, composer, calendar, content calendar, performance, published posts
+  Content ideas, composer, calendar, performance.
+  TABS: ideas (content ideas queue), composer (draft editor), calendar (scheduling), performance (metrics).
+  Keywords: content idea, post idea, composer, calendar, content calendar, performance, published posts, metrics, schedule
+  Examples: "go to content ideas" → view="content", tab="ideas"
+  "open the composer" → view="content", tab="composer"
+  "show content calendar" → view="content", tab="calendar"
+  "how is my content performing" → view="content", tab="performance"
 
 VIEW: agents
   Agent fleet, agent status, workflows. Keywords: agents, fleet, agent status, agent activity, workflow
@@ -220,6 +228,7 @@ Return ONLY valid JSON matching this TypeScript type:
   "status"?: string,
   "view"?: string,
   "sectionId"?: string,
+  "tab"?: string,
   "query"?: string,
   "note"?: string
 }`
@@ -310,6 +319,7 @@ export async function classifyVoiceIntent(
       status?: string
       view?: string
       sectionId?: string
+      tab?: string
       query?: string
       note?: string
     }>(result.text)
@@ -355,6 +365,7 @@ export async function classifyVoiceIntent(
         status,
         view,
         sectionId: parsed.sectionId?.trim() || undefined,
+        tab: parsed.tab?.trim() || undefined,
         query: parsed.query?.trim() || undefined,
         note: parsed.note?.trim() || undefined,
       },

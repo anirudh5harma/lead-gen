@@ -192,10 +192,21 @@ export async function handleRemoteDashboardCommand(
     // ── Navigation / search / refresh ─────────────────────────────────────
     case 'navigate': {
       const view = vi.view || 'home'
+      const tabHint = vi.tab ? ` → ${vi.tab}` : ''
+      const viewDescriptions: Record<string, string> = {
+        home: 'Home is your daily queue and command bar.',
+        accounts: 'Accounts shows your buying signals, hot fits, and watchlist.',
+        outreach: 'Outreach is your pipeline — drafts, sent emails, and replies.',
+        content: `Content is your publishing engine — the ${vi.tab || 'ideas'} tab has your post angles.`,
+        agents: 'Agents shows your fleet status, activity, and workflows.',
+        integrations: 'Integrations is where you connect social accounts, email, CRM, and Slack.',
+        settings: 'Settings has your billing, profile, team, and automation config.',
+      }
+      const desc = viewDescriptions[view] || ''
       return {
         ok: true,
         transcript,
-        response: `Open ${view}. Use the dashboard to view it.`,
+        response: tailorResponse(`${desc} Open the Bombsell dashboard → ${view}${tabHint} to see it.`, vi.sentiment),
       }
     }
 
@@ -225,7 +236,15 @@ export async function handleRemoteDashboardCommand(
       return {
         ok: false,
         transcript,
-        response: tailorResponse('You can say things like:\n• "show pipeline" or "show content ideas"\n• "draft an email for Acme"\n• "unlock Stripe" or "send outreach to Tesla"\n• "mark Acme as booked" or "dismiss lead 3"\n• "approve idea 1" or "draft idea 2"\n• "go to settings" or "search for fintech"', vi.sentiment),
+        response: tailorResponse(
+          'Here\'s what I can do from here:\n' +
+          '📊 Pipeline: "show pipeline", "draft email for Acme", "send outreach to Stripe", "mark Tesla as booked"\n' +
+          '💡 Content: "show content ideas", "approve idea 1", "draft idea 2", "go to composer"\n' +
+          '🔍 Search: "do we have signals from Google", "find companies in fintech"\n' +
+          '🧭 Navigate: "go to settings", "where are signals", "how to connect Gmail", "show content calendar"\n' +
+          'You can also send voice notes instead of typing.',
+          vi.sentiment,
+        ),
       }
 
     default:
