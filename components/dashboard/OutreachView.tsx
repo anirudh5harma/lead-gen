@@ -1,17 +1,17 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Lead } from '@/lib/leads'
 import type { UserProfile } from './types'
 import LeadDrawer from './LeadDrawer'
 
-interface Props { profile: UserProfile; leads: Lead[] }
+interface Props { profile: UserProfile; leads: Lead[]; focusLeadId?: string | null }
 
 /**
  * Lead Pipeline — styled after the Stitch "Internal Ops & Review Drawer":
  * editorial title · Priority Leads table · Sent Outreach table · Review Drawer.
  */
-export default function OutreachView({ leads }: Props) {
+export default function OutreachView({ leads, focusLeadId }: Props) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [reviewMode, setReviewMode] = useState<'open' | 'review'>('open')
 
@@ -19,6 +19,14 @@ export default function OutreachView({ leads }: Props) {
     priority: leads.filter(l => (l.status === 'drafted' || l.status === 'delivered' || l.status === 'unlocked') && !l.sent_at),
     sentOut: leads.filter(l => l.sent_at),
   }), [leads])
+
+  useEffect(() => {
+    if (!focusLeadId) return
+    const handle = window.setTimeout(() => {
+      document.getElementById(`pipeline-lead-${focusLeadId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 120)
+    return () => window.clearTimeout(handle)
+  }, [focusLeadId])
 
   function open(l: Lead, mode: 'open' | 'review') { setReviewMode(mode); setSelectedLead(l) }
 
@@ -49,7 +57,7 @@ export default function OutreachView({ leads }: Props) {
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
                 {priority.slice(0, 50).map((l) => (
-                  <tr key={l.id} className="group hover:bg-surface-container-low/40 transition-colors">
+                  <tr key={l.id} id={`pipeline-lead-${l.id}`} className="scroll-mt-24 group hover:bg-surface-container-low/40 transition-colors">
                     <td className="py-6 px-2">
                       <div className="font-body-large text-on-surface">{l.contact_name || 'Contact unresolved'}</div>
                       <div className="text-caption font-caption text-on-surface-variant uppercase tracking-wider">{l.contact_title || 'Target stakeholder'}</div>
@@ -90,7 +98,7 @@ export default function OutreachView({ leads }: Props) {
                 {sentOut.slice(0, 50).map((l) => {
                   const st = statusOf(l)
                   return (
-                    <tr key={l.id} className="group hover:bg-surface-container-low/40 transition-colors">
+                    <tr key={l.id} id={`pipeline-lead-${l.id}`} className="scroll-mt-24 group hover:bg-surface-container-low/40 transition-colors">
                       <td className="py-6 px-2">
                         <div className="font-body-large text-on-surface">{l.contact_name || l.target_company}</div>
                         <div className="text-caption font-caption text-on-surface-variant uppercase tracking-wider">{l.contact_title ? `${l.contact_title} @ ${l.target_company}` : l.target_company}</div>

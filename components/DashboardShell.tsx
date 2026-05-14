@@ -13,6 +13,12 @@ import {
   type DashboardCommand,
   type DashboardCommandInterpretation,
 } from '@/lib/dashboard-command-layer'
+import {
+  interpretDashboardConversation,
+  rankConversationPipelineLeads,
+  type DashboardConversationAction,
+  type DashboardConversationCollection,
+} from '@/lib/dashboard-conversation-layer'
 import Icon from '@/components/Icon'
 import LeadDrawer from './dashboard/LeadDrawer'
 import { useToast } from '@/components/Toast'
@@ -22,7 +28,7 @@ import OutreachView from './dashboard/OutreachView'
 import AgentsView from './dashboard/AgentsView'
 import IntegrationsView from './dashboard/IntegrationsView'
 import SettingsView from './dashboard/SettingsView'
-import ContentView from './dashboard/ContentView'
+import ContentView, { type ContentIdea, type ContentVoiceCommand } from './dashboard/ContentView'
 
 interface Props {
   initialLeads: Lead[]
@@ -84,6 +90,14 @@ function normalizeView(input: string | null): View {
   return 'home'
 }
 
+function sameContentIdeaList(a: ContentIdea[], b: ContentIdea[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((idea, index) => {
+    const other = b[index]
+    return other?.id === idea.id && other.status === idea.status && other.score === idea.score && other.angle === idea.angle
+  })
+}
+
 export default function DashboardShell({ initialLeads, userProfile }: Props) {
   const router = useRouter()
   const toast = useToast()
@@ -102,6 +116,10 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
   const [globalLeadMode, setGlobalLeadMode] = useState<DrawerMode>('open')
   const [commandSearch, setCommandSearch] = useState<{ query: string; nonce: number } | null>(null)
   const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null)
+  const [lastVoiceCollection, setLastVoiceCollection] = useState<DashboardConversationCollection | null>(null)
+  const [contentIdeasForVoice, setContentIdeasForVoice] = useState<ContentIdea[]>([])
+  const [contentVoiceCommand, setContentVoiceCommand] = useState<ContentVoiceCommand | null>(null)
+  const [pipelineFocusLeadId, setPipelineFocusLeadId] = useState<string | null>(null)
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const transcriptRef = useRef('')
   const keyListeningRef = useRef(false)
@@ -149,6 +167,21 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     booked_at: lead.booked_at,
   })), [initialLeads])
 
+  const pipelineLeadsForVoice = useMemo(() => rankConversationPipelineLeads(commandLeads), [commandLeads])
+
+  const conversationContext = useMemo(() => ({
+    activeView,
+    lastCollection: lastVoiceCollection,
+    contentIdeas: contentIdeasForVoice.map(idea => ({
+      id: idea.id,
+      angle: idea.angle,
+      platform: idea.platform,
+      score: idea.score,
+      status: idea.status,
+    })),
+    pipelineLeads: pipelineLeadsForVoice,
+  }), [activeView, contentIdeasForVoice, lastVoiceCollection, pipelineLeadsForVoice])
+
   const navigate = useCallback((v: View, sectionId?: string) => {
     setActiveView(v)
     setMobileNavOpen(false)
@@ -179,6 +212,14 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     if (!response.ok) throw new Error(json.error || `Request failed with ${response.status}`)
     return json
   }, [])
+
+  const fetchContentIdeasForVoice = useCallback(async () => {
+    const json = await request<{ ideas?: ContentIdea[] }>('/api/content?resource=ideas')
+    const ideas = (Array.isArray(json.ideas) ? json.ideas : [])
+      .filter(idea => idea.status === 'proposed' || idea.status === 'approved')
+    setContentIdeasForVoice(ideas)
+    return ideas
+  }, [request])
 
   const executeDashboardCommand = useCallback(async (command: DashboardCommand) => {
     setVoiceStatus('processing')
@@ -276,6 +317,112 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     }
   }, [activeView, leadById, navigate, refresh, request, toast])
 
+  const dashboardCommandFromConversationAction = useCallback((action: DashboardConversationAction): DashboardCommand | null => {
+    if (action.type !== 'pipeline_item') return null
+    if (action.action === 'status') {
+      return {
+        type: 'lead',
+        action: 'status',
+        status: action.status,
+        leadId: action.leadId,
+        leadLabel: action.leadLabel,
+        summary: action.summary,
+        requiresConfirmation: action.requiresConfirmation,
+      }
+    }
+    return {
+      type: 'lead',
+      action: action.action === 'details' ? 'open' : action.action,
+      leadId: action.leadId,
+      leadLabel: action.leadLabel,
+      summary: action.summary,
+      requiresConfirmation: action.requiresConfirmation,
+    }
+  }, [])
+
+  const executeDashboardConversationAction = useCallback(async (action: DashboardConversationAction) => {
+    setVoiceStatus('processing')
+    setVoiceMessage(action.summary)
+    voiceBusyRef.current = true
+    try {
+      if (action.type === 'show_collection') {
+        setLastVoiceCollection(action.collection)
+        if (action.collection === 'contentIdeas') {
+          navigate('content')
+          setContentVoiceCommand({ nonce: Date.now(), tab: 'ideas', reload: true })
+          const ideas = await fetchContentIdeasForVoice()
+          const message = ideas.length
+            ? `Showing ${ideas.length} content idea${ideas.length === 1 ? '' : 's'}. Say "approve idea 1", "reject idea 1", or "draft idea 1".`
+            : 'Showing Content. No active ideas are queued yet.'
+          toast.info(message)
+          setVoiceMessage(message)
+          return
+        }
+
+        const [firstLead] = pipelineLeadsForVoice
+        setPipelineFocusLeadId(firstLead?.id ?? null)
+        navigate('outreach')
+        const message = pipelineLeadsForVoice.length
+          ? `Showing ${pipelineLeadsForVoice.length} pipeline item${pipelineLeadsForVoice.length === 1 ? '' : 's'}. Say "show lead 1", "draft lead 1", "unlock lead 1", or "send lead 1".`
+          : 'Showing Pipeline. There are no active pipeline items.'
+        toast.info(message)
+        setVoiceMessage(message)
+        return
+      }
+
+      if (action.type === 'content_idea') {
+        setLastVoiceCollection('contentIdeas')
+        navigate('content')
+        if (action.action === 'approve' || action.action === 'reject') {
+          const status = action.action === 'approve' ? 'approved' : 'rejected'
+          await request('/api/content', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set_idea_status', ideaId: action.ideaId, status }),
+          })
+          await fetchContentIdeasForVoice()
+          setContentVoiceCommand({ nonce: Date.now(), tab: 'ideas', reload: true })
+          const message = `${status === 'approved' ? 'Approved' : 'Rejected'} idea ${action.index}.`
+          toast.success(message)
+          setVoiceMessage(message)
+          return
+        }
+
+        await request('/api/content', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'write', ideaId: action.ideaId }),
+        })
+        await fetchContentIdeasForVoice()
+        setContentVoiceCommand({ nonce: Date.now(), tab: 'composer', reload: true })
+        const message = `Drafted idea ${action.index}. Opening Composer.`
+        toast.success(message)
+        setVoiceMessage(message)
+        return
+      }
+
+      const command = dashboardCommandFromConversationAction(action)
+      if (!command) throw new Error('That action is not available yet.')
+      setLastVoiceCollection('pipeline')
+      setPipelineFocusLeadId(action.leadId)
+      navigate('outreach')
+      await executeDashboardCommand(command)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Command failed.'
+      toast.error(message)
+      setVoiceStatus('error')
+      setVoiceMessage(message)
+      return
+    } finally {
+      voiceBusyRef.current = false
+      window.setTimeout(() => setVoiceStatus(current => current === 'processing' ? 'idle' : current), 1200)
+    }
+  }, [dashboardCommandFromConversationAction, executeDashboardCommand, fetchContentIdeasForVoice, navigate, pipelineLeadsForVoice, request, toast])
+
+  const handleContentVisibleContextChange = useCallback(({ ideas }: { ideas: ContentIdea[] }) => {
+    setContentIdeasForVoice(current => sameContentIdeaList(current, ideas) ? current : ideas)
+  }, [])
+
   const runInterpretedTranscript = useCallback((spokenText: string) => {
     const transcript = spokenText.trim()
     if (!transcript || voiceBusyRef.current) return
@@ -314,6 +461,26 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
       }
     }
 
+    const conversation = interpretDashboardConversation(transcript, conversationContext)
+    if (conversation.kind === 'action') {
+      setClarification(null)
+      const command = dashboardCommandFromConversationAction(conversation.action)
+      if (command && 'requiresConfirmation' in command && command.requiresConfirmation) {
+        setPendingCommand(command)
+        setVoiceStatus('confirm')
+        setVoiceMessage(`Confirm to run: ${command.summary}`)
+      } else {
+        void executeDashboardConversationAction(conversation.action)
+      }
+      return
+    }
+    if (conversation.kind === 'clarify') {
+      setClarification(null)
+      setVoiceStatus('clarify')
+      setVoiceMessage(conversation.reason)
+      return
+    }
+
     const result = interpretDashboardCommand({ transcript, activeView, leads: commandLeads })
     if (result.kind === 'command') {
       setClarification(null)
@@ -336,7 +503,16 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
 
     setVoiceStatus('error')
     setVoiceMessage(result.reason)
-  }, [activeView, clarification, commandLeads, executeDashboardCommand, pendingCommand])
+  }, [
+    activeView,
+    clarification,
+    commandLeads,
+    conversationContext,
+    dashboardCommandFromConversationAction,
+    executeDashboardCommand,
+    executeDashboardConversationAction,
+    pendingCommand,
+  ])
 
   const stopVoice = useCallback(() => {
     keyListeningRef.current = false
@@ -470,8 +646,14 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
           <div className="max-w-[1280px] mx-auto px-margin-page py-stack-lg">
             {activeView === 'home'         && <HomeView key={`home-${commandSearch?.nonce ?? 0}`} profile={userProfile} leads={initialLeads} onNavigate={navigate} commandSearch={commandSearch} />}
             {activeView === 'accounts'     && <AccountsView key={`accounts-${commandSearch?.nonce ?? 0}`} profile={userProfile} leads={initialLeads} commandSearch={commandSearch} />}
-            {activeView === 'outreach'     && <OutreachView profile={userProfile} leads={initialLeads} />}
-            {activeView === 'content'      && <ContentView profile={userProfile} />}
+            {activeView === 'outreach'     && <OutreachView profile={userProfile} leads={initialLeads} focusLeadId={pipelineFocusLeadId} />}
+            {activeView === 'content'      && (
+              <ContentView
+                profile={userProfile}
+                voiceCommand={contentVoiceCommand}
+                onVisibleContextChange={handleContentVisibleContextChange}
+              />
+            )}
             {activeView === 'agents'       && <AgentsView profile={userProfile} />}
             {activeView === 'integrations' && <IntegrationsView profile={userProfile} />}
             {activeView === 'settings'     && <SettingsView profile={userProfile} userTier={userTier} />}

@@ -19,6 +19,16 @@ import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import { sendWithConnectedAccount } from '@/lib/oauth/sender'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { recordOutcomeLearning, type GtmOutcome } from '@/lib/gtm/outcome-learning'
+import { dispatchTask } from '@/lib/agents/core/supervisor'
+import {
+  formatContentIdeasForChat,
+  formatLeadDetailsForChat,
+  formatPipelineForChat,
+  numberedItem,
+  parseRemoteConversationIntent,
+  rankRemotePipelineLeads,
+  type RemoteContentIdea,
+} from './conversation'
 
 export interface RemoteCommandResult {
   ok: boolean
@@ -68,7 +78,29 @@ export async function handleRemoteDashboardCommand(
 
   const cleanTranscript = stripConfirmationPrefix(transcript)
   const confirmed = input.confirmed === true || cleanTranscript !== transcript
-  const leads = await loadRemoteLeads(supabase, input.userId, input.clientId ?? null)
+
+  const activeClientId = input.clientId ?? await loadActiveClientId(supabase, input.userId)
+  let cachedLeads: Lead[] | null = null
+  const getLeads = async () => {
+    cachedLeads ??= await loadRemoteLeads(supabase, input.userId, activeClientId)
+    return cachedLeads
+  }
+
+  const remoteIntent = parseRemoteConversationIntent(cleanTranscript)
+  if (remoteIntent) {
+    const remoteResult = await executeRemoteConversationIntent(supabase, {
+      userId: input.userId,
+      clientId: activeClientId,
+      intent: remoteIntent,
+      confirmed,
+      getLeads,
+      transcript,
+      cleanTranscript,
+    })
+    if (remoteResult) return remoteResult
+  }
+
+  const leads = await getLeads()
   const interpretation = interpretDashboardCommand({
     transcript: cleanTranscript,
     activeView: 'home',
@@ -101,6 +133,93 @@ export async function handleRemoteDashboardCommand(
   return { ok: true, transcript, command, response }
 }
 
+async function executeRemoteConversationIntent(
+  supabase: ServiceSupabase,
+  input: {
+    userId: string
+    clientId: string | null
+    intent: NonNullable<ReturnType<typeof parseRemoteConversationIntent>>
+    confirmed: boolean
+    getLeads: () => Promise<Lead[]>
+    transcript: string
+    cleanTranscript: string
+  },
+): Promise<RemoteCommandResult | null> {
+  if (input.intent.type === 'list_content_ideas') {
+    const ideas = await loadRemoteContentIdeas(supabase, input.userId, input.clientId)
+    return {
+      ok: true,
+      transcript: input.transcript,
+      response: formatContentIdeasForChat(ideas),
+    }
+  }
+
+  if (input.intent.type === 'content_idea_action') {
+    const ideas = await loadRemoteContentIdeas(supabase, input.userId, input.clientId)
+    const idea = numberedItem(ideas, input.intent.index)
+    if (!idea) {
+      return {
+        ok: false,
+        transcript: input.transcript,
+        response: `I only found ${ideas.length} active content idea${ideas.length === 1 ? '' : 's'}. Reply "list content ideas" to see the current list.`,
+      }
+    }
+    const response = await executeRemoteContentIdeaAction(supabase, {
+      userId: input.userId,
+      clientId: input.clientId,
+      idea,
+      index: input.intent.index,
+      action: input.intent.action,
+    })
+    return { ok: true, transcript: input.transcript, response }
+  }
+
+  if (input.intent.type === 'list_pipeline') {
+    const leads = await input.getLeads()
+    return {
+      ok: true,
+      transcript: input.transcript,
+      response: formatPipelineForChat(leads),
+    }
+  }
+
+  if (input.intent.type === 'lead_index_action') {
+    const rankedLeads = rankRemotePipelineLeads(await input.getLeads())
+    const lead = numberedItem(rankedLeads, input.intent.index)
+    if (!lead) {
+      return {
+        ok: false,
+        transcript: input.transcript,
+        response: `I only found ${rankedLeads.length} active pipeline item${rankedLeads.length === 1 ? '' : 's'}. Reply "show pipeline" to see the current list.`,
+      }
+    }
+
+    if (input.intent.action === 'details') {
+      return {
+        ok: true,
+        transcript: input.transcript,
+        response: formatLeadDetailsForChat(lead, input.intent.index),
+      }
+    }
+
+    const command = leadIndexDashboardCommand(input.intent, lead)
+    if ('requiresConfirmation' in command && command.requiresConfirmation && !input.confirmed) {
+      return {
+        ok: false,
+        transcript: input.transcript,
+        command,
+        needsConfirmation: true,
+        response: `Confirmation required. Reply: confirm ${input.cleanTranscript}`,
+      }
+    }
+
+    const response = await executeRemoteCommand(supabase, input.userId, command)
+    return { ok: true, transcript: input.transcript, command, response }
+  }
+
+  return null
+}
+
 async function loadRemoteLeads(
   supabase: ServiceSupabase,
   userId: string,
@@ -121,6 +240,23 @@ async function loadRemoteLeads(
   const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as Lead[]
+}
+
+async function loadRemoteContentIdeas(
+  supabase: ServiceSupabase,
+  userId: string,
+  clientId: string | null,
+): Promise<RemoteContentIdea[]> {
+  const workspaceId = clientId ?? userId
+  const { data, error } = await supabase
+    .from('content_ideas')
+    .select('id, source, platform, angle, hook, rationale, score, status, created_at')
+    .eq('workspace_id', workspaceId)
+    .order('score', { ascending: false })
+    .limit(50)
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as RemoteContentIdea[])
+    .filter(idea => !idea.status || idea.status === 'proposed' || idea.status === 'approved')
 }
 
 async function loadActiveClientId(supabase: ServiceSupabase, userId: string): Promise<string | null> {
@@ -151,6 +287,72 @@ async function executeRemoteCommand(
   if (command.action === 'status') return updateLeadStatus(supabase, userId, command.leadId, command.status)
 
   return 'Command recognized, but no remote action is available for it yet.'
+}
+
+function leadIndexDashboardCommand(
+  intent: Extract<NonNullable<ReturnType<typeof parseRemoteConversationIntent>>, { type: 'lead_index_action' }>,
+  lead: Lead,
+): DashboardCommand {
+  const leadLabel = lead.target_company
+  if (intent.action === 'status') {
+    const status = intent.status ?? 'viewed'
+    return {
+      type: 'lead',
+      action: 'status',
+      status,
+      leadId: lead.id,
+      leadLabel,
+      summary: `Mark ${leadLabel} ${status}`,
+      requiresConfirmation: status === 'dismissed',
+    }
+  }
+  const action = intent.action === 'unlock' ? 'unlock' : intent.action === 'send' ? 'send' : 'draft'
+  return {
+    type: 'lead',
+    action,
+    leadId: lead.id,
+    leadLabel,
+    summary: action === 'draft'
+      ? `Prepare outreach draft for ${leadLabel}`
+      : action === 'unlock'
+        ? `Unlock contact for ${leadLabel}`
+        : `Send outreach for ${leadLabel}`,
+    requiresConfirmation: action === 'send',
+  }
+}
+
+async function executeRemoteContentIdeaAction(
+  supabase: ServiceSupabase,
+  input: {
+    userId: string
+    clientId: string | null
+    idea: RemoteContentIdea
+    index: number
+    action: 'approve' | 'reject' | 'draft'
+  },
+): Promise<string> {
+  const workspaceId = input.clientId ?? input.userId
+  if (input.action === 'approve' || input.action === 'reject') {
+    const nextStatus = input.action === 'approve' ? 'approved' : 'rejected'
+    const { error } = await supabase
+      .from('content_ideas')
+      .update({ status: nextStatus, updated_at: new Date().toISOString() })
+      .eq('id', input.idea.id)
+      .eq('workspace_id', workspaceId)
+    if (error) throw new Error(error.message)
+
+    return `${nextStatus === 'approved' ? 'Approved' : 'Rejected'} idea ${input.index}: ${input.idea.angle}.`
+  }
+
+  const out = await dispatchTask(supabase, {
+    userId: input.userId,
+    clientId: input.clientId,
+    role: 'writer',
+    task: { tool: 'bombsell.content.write', arguments: { ideaId: input.idea.id, platform: input.idea.platform ?? undefined } },
+    sessionId: 'remote-control-content-write',
+  })
+  if (out.status !== 'completed') throw new Error(out.error || 'Could not draft that content idea.')
+  return `Drafted idea ${input.index}: ${input.idea.angle}. Reply "list content ideas" to keep working through the queue.`
 }
 
 async function unlockLead(supabase: ServiceSupabase, userId: string, leadId: string): Promise<string> {
