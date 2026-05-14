@@ -1,9 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lead } from '@/lib/leads'
-import {
-  interpretDashboardCommand,
-  type DashboardCommand,
-} from '@/lib/dashboard-command-layer'
+import type { DashboardCommand, LeadStatusCommand } from '@/lib/dashboard-command-layer'
+import { classifyVoiceIntent, isVoiceConfirmation, isVoiceCancellation } from '@/lib/voice-intent-layer'
+import type { VoiceSentiment } from '@/lib/voice-intent-layer'
 import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
 import { loadAccessibleLead } from '@/lib/lead-access'
 import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
@@ -25,9 +24,9 @@ import {
   formatLeadDetailsForChat,
   formatPipelineForChat,
   numberedItem,
-  parseRemoteConversationIntent,
   rankRemotePipelineLeads,
   type RemoteContentIdea,
+  type RemotePipelineLead,
 } from './conversation'
 
 export interface RemoteCommandResult {
@@ -86,139 +85,219 @@ export async function handleRemoteDashboardCommand(
     return cachedLeads
   }
 
-  const remoteIntent = parseRemoteConversationIntent(cleanTranscript)
-  if (remoteIntent) {
-    const remoteResult = await executeRemoteConversationIntent(supabase, {
-      userId: input.userId,
-      clientId: activeClientId,
-      intent: remoteIntent,
-      confirmed,
-      getLeads,
-      transcript,
-      cleanTranscript,
-    })
-    if (remoteResult) return remoteResult
-  }
+  // Classify the utterance using LLM (with fast-path bypass for confirm/cancel)
+  const classification = await classifyVoiceIntent(cleanTranscript)
+  const vi = classification.intent
 
-  const leads = await getLeads()
-  const interpretation = interpretDashboardCommand({
-    transcript: cleanTranscript,
-    activeView: 'home',
-    leads,
-  })
-
-  if (interpretation.kind === 'unsupported') {
-    return { ok: false, transcript, response: interpretation.reason }
-  }
-  if (interpretation.kind === 'clarify') {
-    return {
-      ok: false,
-      transcript,
-      response: `${interpretation.reason} Reply with one of: ${interpretation.options.map(option => option.label).join(', ')}.`,
-    }
-  }
-
-  const command = interpretation.command
-  if ('requiresConfirmation' in command && command.requiresConfirmation && !confirmed) {
-    return {
-      ok: false,
-      transcript,
-      command,
-      needsConfirmation: true,
-      response: `Confirmation required. Reply: confirm ${cleanTranscript}`,
-    }
-  }
-
-  const response = await executeRemoteCommand(supabase, input.userId, command)
-  return { ok: true, transcript, command, response }
-}
-
-async function executeRemoteConversationIntent(
-  supabase: ServiceSupabase,
-  input: {
-    userId: string
-    clientId: string | null
-    intent: NonNullable<ReturnType<typeof parseRemoteConversationIntent>>
-    confirmed: boolean
-    getLeads: () => Promise<Lead[]>
-    transcript: string
-    cleanTranscript: string
-  },
-): Promise<RemoteCommandResult | null> {
-  if (input.intent.type === 'list_content_ideas') {
-    const ideas = await loadRemoteContentIdeas(supabase, input.userId, input.clientId)
-    return {
-      ok: true,
-      transcript: input.transcript,
-      response: formatContentIdeasForChat(ideas),
-    }
-  }
-
-  if (input.intent.type === 'content_idea_action') {
-    const ideas = await loadRemoteContentIdeas(supabase, input.userId, input.clientId)
-    const idea = numberedItem(ideas, input.intent.index)
-    if (!idea) {
-      return {
-        ok: false,
-        transcript: input.transcript,
-        response: `I only found ${ideas.length} active content idea${ideas.length === 1 ? '' : 's'}. Reply "list content ideas" to see the current list.`,
-      }
-    }
-    const response = await executeRemoteContentIdeaAction(supabase, {
-      userId: input.userId,
-      clientId: input.clientId,
-      idea,
-      index: input.intent.index,
-      action: input.intent.action,
-    })
-    return { ok: true, transcript: input.transcript, response }
-  }
-
-  if (input.intent.type === 'list_pipeline') {
-    const leads = await input.getLeads()
-    return {
-      ok: true,
-      transcript: input.transcript,
-      response: formatPipelineForChat(leads),
-    }
-  }
-
-  if (input.intent.type === 'lead_index_action') {
-    const rankedLeads = rankRemotePipelineLeads(await input.getLeads())
-    const lead = numberedItem(rankedLeads, input.intent.index)
-    if (!lead) {
-      return {
-        ok: false,
-        transcript: input.transcript,
-        response: `I only found ${rankedLeads.length} active pipeline item${rankedLeads.length === 1 ? '' : 's'}. Reply "show pipeline" to see the current list.`,
-      }
+  switch (vi.intent) {
+    // ── Pipeline ──────────────────────────────────────────────────────────
+    case 'list_pipeline': {
+      const leads = await getLeads()
+      return { ok: true, transcript, response: formatPipelineForChat(leads) }
     }
 
-    if (input.intent.action === 'details') {
+    case 'lead_details': {
+      const lead = await resolveLeadByVoiceIntent(vi, await getLeads(), supabase, input.userId)
+      if ('response' in lead) return lead
       return {
         ok: true,
-        transcript: input.transcript,
-        response: formatLeadDetailsForChat(lead, input.intent.index),
+        transcript,
+        response: formatLeadDetailsForChat(lead, vi.index),
       }
     }
 
-    const command = leadIndexDashboardCommand(input.intent, lead)
-    if ('requiresConfirmation' in command && command.requiresConfirmation && !input.confirmed) {
+    case 'lead_draft': {
+      const lead = await resolveLeadByVoiceIntent(vi, await getLeads(), supabase, input.userId)
+      if ('response' in lead) return lead
+      const draft = await ensureRemoteDraft(supabase, input.userId, lead.id)
+      return {
+        ok: true,
+        transcript,
+        response: `Prepared draft for ${draft.targetCompany}: "${draft.subject}" to ${draft.to ?? 'an unresolved recipient'}.`,
+      }
+    }
+
+    case 'lead_unlock': {
+      const lead = await resolveLeadByVoiceIntent(vi, await getLeads(), supabase, input.userId)
+      if ('response' in lead) return lead
+      const response = await unlockLead(supabase, input.userId, lead.id)
+      return { ok: true, transcript, response }
+    }
+
+    case 'lead_send': {
+      const lead = await resolveLeadByVoiceIntent(vi, await getLeads(), supabase, input.userId)
+      if ('response' in lead) return lead
+      if (!confirmed) {
+        return {
+          ok: false,
+          transcript,
+          needsConfirmation: true,
+          response: `Confirmation required. Reply: confirm ${cleanTranscript}`,
+        }
+      }
+      const response = await sendDraft(supabase, input.userId, lead.id)
+      return { ok: true, transcript, response }
+    }
+
+    case 'lead_status': {
+      const status = vi.status ?? 'viewed'
+      const lead = await resolveLeadByVoiceIntent(vi, await getLeads(), supabase, input.userId)
+      if ('response' in lead) return lead
+      if (status === 'dismissed' && !confirmed) {
+        return {
+          ok: false,
+          transcript,
+          needsConfirmation: true,
+          response: `Confirmation required. Reply: confirm ${cleanTranscript}`,
+        }
+      }
+      const response = await updateLeadStatus(supabase, input.userId, lead.id, status)
+      return { ok: true, transcript, response }
+    }
+
+    // ── Content ideas ─────────────────────────────────────────────────────
+    case 'list_content_ideas': {
+      const ideas = await loadRemoteContentIdeas(supabase, input.userId, activeClientId)
+      return { ok: true, transcript, response: formatContentIdeasForChat(ideas) }
+    }
+
+    case 'content_idea_approve':
+    case 'content_idea_reject':
+    case 'content_idea_draft': {
+      const action = vi.intent === 'content_idea_approve' ? 'approve'
+        : vi.intent === 'content_idea_reject' ? 'reject' : 'draft'
+      const index = vi.index
+      if (!index) {
+        return { ok: false, transcript, response: 'Which idea number? Say "approve idea 2" for example.' }
+      }
+      const ideas = await loadRemoteContentIdeas(supabase, input.userId, activeClientId)
+      const idea = numberedItem(ideas, index)
+      if (!idea) {
+        return {
+          ok: false,
+          transcript,
+          response: `I only found ${ideas.length} active content idea${ideas.length === 1 ? '' : 's'}. Reply "list content ideas" to see the current list.`,
+        }
+      }
+      const response = await executeRemoteContentIdeaAction(supabase, {
+        userId: input.userId,
+        clientId: activeClientId,
+        idea,
+        index,
+        action,
+      })
+      return { ok: true, transcript, response }
+    }
+
+    // ── Navigation / search / refresh ─────────────────────────────────────
+    case 'navigate': {
+      const view = vi.view || 'home'
+      return {
+        ok: true,
+        transcript,
+        response: `Open ${view}. Use the dashboard to view it.`,
+      }
+    }
+
+    case 'search': {
+      const query = vi.query || ''
+      return {
+        ok: true,
+        transcript,
+        response: query
+          ? `Search is dashboard-only. Open Bombsell and search for "${query}".`
+          : 'What would you like to search for?',
+      }
+    }
+
+    case 'refresh':
+      return { ok: true, transcript, response: 'Dashboard data will refresh the next time you open it.' }
+
+    // ── Confirm / cancel ──────────────────────────────────────────────────
+    case 'confirm':
+      return { ok: false, transcript, response: 'Nothing to confirm right now.' }
+
+    case 'cancel':
+      return { ok: false, transcript, response: 'Nothing to cancel right now.' }
+
+    // ── Help / unknown ────────────────────────────────────────────────────
+    case 'help':
       return {
         ok: false,
-        transcript: input.transcript,
-        command,
-        needsConfirmation: true,
-        response: `Confirmation required. Reply: confirm ${input.cleanTranscript}`,
+        transcript,
+        response: tailorResponse('You can say things like:\n• "show pipeline" or "show content ideas"\n• "draft an email for Acme"\n• "unlock Stripe" or "send outreach to Tesla"\n• "mark Acme as booked" or "dismiss lead 3"\n• "approve idea 1" or "draft idea 2"\n• "go to settings" or "search for fintech"', vi.sentiment),
+      }
+
+    default:
+      return {
+        ok: false,
+        transcript,
+        response: tailorResponse(vi.note || 'Try "show pipeline", "draft outreach for a company", or "approve idea 1".', vi.sentiment),
+      }
+  }
+}
+
+// ─── Lead resolution (by LLM-extracted name or index) ──────────────────────
+
+async function resolveLeadByVoiceIntent(
+  vi: { target?: string; index?: number },
+  leads: Lead[],
+  _supabase: ServiceSupabase,
+  _userId: string,
+): Promise<Lead | RemoteCommandResult> {
+  // Try by index first
+  if (vi.index && vi.index > 0) {
+    const ranked = rankRemotePipelineLeads(leads)
+    const lead = numberedItem(ranked, vi.index)
+    if (lead) return lead as Lead
+  }
+
+  // Try by name (fuzzy match)
+  if (vi.target) {
+    const target = vi.target.toLowerCase().trim()
+    // Exact match
+    const exact = leads.find(l => l.target_company.toLowerCase() === target)
+    if (exact) return exact
+
+    // Starts with
+    const startsWith = leads.filter(l => l.target_company.toLowerCase().startsWith(target))
+    if (startsWith.length === 1) return startsWith[0]
+    if (startsWith.length > 1) {
+      return {
+        ok: false,
+        transcript: '',
+        response: `I found multiple companies starting with "${vi.target}": ${startsWith.map(l => l.target_company).join(', ')}. Which one?`,
       }
     }
 
-    const response = await executeRemoteCommand(supabase, input.userId, command)
-    return { ok: true, transcript: input.transcript, command, response }
+    // Contains
+    const contains = leads.filter(l => l.target_company.toLowerCase().includes(target))
+    if (contains.length === 1) return contains[0]
+    if (contains.length > 1) {
+      return {
+        ok: false,
+        transcript: '',
+        response: `I found multiple matches for "${vi.target}": ${contains.map(l => l.target_company).join(', ')}. Which one?`,
+      }
+    }
   }
 
-  return null
+  // Top lead fallback
+  if (!vi.target && !vi.index) {
+    const sorted = [...leads].sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0))
+    if (sorted.length > 0) return sorted[0]
+  }
+
+  return {
+    ok: false,
+    transcript: '',
+    response: vi.target
+      ? `Could not find "${vi.target}" in the current pipeline. Say "show pipeline" to see what's loaded.`
+      : 'Which company should I use? Say the name or number from the pipeline.',
+  }
 }
+
+// ─── Data loading ─────────────────────────────────────────────────────────
 
 async function loadRemoteLeads(
   supabase: ServiceSupabase,
@@ -268,58 +347,7 @@ async function loadActiveClientId(supabase: ServiceSupabase, userId: string): Pr
   return (data as { active_client_id?: string | null } | null)?.active_client_id ?? null
 }
 
-async function executeRemoteCommand(
-  supabase: ServiceSupabase,
-  userId: string,
-  command: DashboardCommand,
-): Promise<string> {
-  if (command.type === 'navigate') return `${command.summary}. Open the dashboard to view it.`
-  if (command.type === 'refresh') return 'Dashboard data will refresh the next time you open it.'
-  if (command.type === 'search') return `Search is dashboard-only. Open Bombsell and search for "${command.query}".`
-
-  if (command.action === 'open' || command.action === 'review') {
-    return `${command.summary}. Open the dashboard lead drawer to review details.`
-  }
-
-  if (command.action === 'unlock') return unlockLead(supabase, userId, command.leadId)
-  if (command.action === 'draft') return prepareDraft(supabase, userId, command.leadId)
-  if (command.action === 'send') return sendDraft(supabase, userId, command.leadId)
-  if (command.action === 'status') return updateLeadStatus(supabase, userId, command.leadId, command.status)
-
-  return 'Command recognized, but no remote action is available for it yet.'
-}
-
-function leadIndexDashboardCommand(
-  intent: Extract<NonNullable<ReturnType<typeof parseRemoteConversationIntent>>, { type: 'lead_index_action' }>,
-  lead: Lead,
-): DashboardCommand {
-  const leadLabel = lead.target_company
-  if (intent.action === 'status') {
-    const status = intent.status ?? 'viewed'
-    return {
-      type: 'lead',
-      action: 'status',
-      status,
-      leadId: lead.id,
-      leadLabel,
-      summary: `Mark ${leadLabel} ${status}`,
-      requiresConfirmation: status === 'dismissed',
-    }
-  }
-  const action = intent.action === 'unlock' ? 'unlock' : intent.action === 'send' ? 'send' : 'draft'
-  return {
-    type: 'lead',
-    action,
-    leadId: lead.id,
-    leadLabel,
-    summary: action === 'draft'
-      ? `Prepare outreach draft for ${leadLabel}`
-      : action === 'unlock'
-        ? `Unlock contact for ${leadLabel}`
-        : `Send outreach for ${leadLabel}`,
-    requiresConfirmation: action === 'send',
-  }
-}
+// ─── Content idea actions ──────────────────────────────────────────────────
 
 async function executeRemoteContentIdeaAction(
   supabase: ServiceSupabase,
@@ -355,6 +383,8 @@ async function executeRemoteContentIdeaAction(
   return `Drafted idea ${input.index}: ${input.idea.angle}. Reply "list content ideas" to keep working through the queue.`
 }
 
+// ─── Lead actions ─────────────────────────────────────────────────────────
+
 async function unlockLead(supabase: ServiceSupabase, userId: string, leadId: string): Promise<string> {
   const { lead, error } = await loadAccessibleLead<Lead & { user_id: string; contact_verified?: boolean | null }>(supabase, {
     userId,
@@ -387,11 +417,6 @@ async function unlockLead(supabase: ServiceSupabase, userId: string, leadId: str
   }
 
   return `Unlocked ${lead.target_company}.`
-}
-
-async function prepareDraft(supabase: ServiceSupabase, userId: string, leadId: string): Promise<string> {
-  const draft = await ensureRemoteDraft(supabase, userId, leadId)
-  return `Prepared draft for ${draft.targetCompany}: "${draft.subject}" to ${draft.to ?? 'an unresolved recipient'}.`
 }
 
 async function sendDraft(supabase: ServiceSupabase, userId: string, leadId: string): Promise<string> {
@@ -471,7 +496,7 @@ async function updateLeadStatus(
   supabase: ServiceSupabase,
   userId: string,
   leadId: string,
-  status: 'viewed' | 'dismissed' | 'booked' | 'sent' | 'replied',
+  status: LeadStatusCommand,
 ): Promise<string> {
   const { lead, error: accessError } = await loadAccessibleLead<Lead & { user_id: string; client_id?: string | null }>(supabase, {
     userId,
@@ -510,6 +535,8 @@ async function updateLeadStatus(
 
   return `Marked ${lead.target_company} ${status}.`
 }
+
+// ─── Draft generation ─────────────────────────────────────────────────────
 
 async function ensureRemoteDraft(
   supabase: ServiceSupabase,
@@ -670,6 +697,8 @@ async function ensureRemoteDraft(
   }
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
 async function loadSenderContext(
   supabase: ServiceSupabase,
   userId: string,
@@ -714,4 +743,25 @@ function normalizeStakeholders(
     confidence: stakeholder.confidence ?? 'medium',
     source: stakeholder.source ?? 'remote_control',
   }))
+}
+
+/**
+ * Adapt a response message based on the user's detected sentiment.
+ * Urgent responses are prefixed with acknowledgment, confused users
+ * get extra guidance, frustrated users get empathy, curious users
+ * get encouragement to explore.
+ */
+function tailorResponse(base: string, sentiment: VoiceSentiment): string {
+  switch (sentiment) {
+    case 'urgent':
+      return 'Got it — ' + base.charAt(0).toLowerCase() + base.slice(1)
+    case 'confused':
+      return base + '\n\nNeed more help? Try saying "help" for a full list of what I can do, or ask me a specific question about your pipeline.'
+    case 'frustrated':
+      return 'I hear you. ' + base
+    case 'curious':
+      return base + '\n\nFeel free to explore — you can also try navigating to different views, searching for companies, or managing your content ideas.'
+    default:
+      return base
+  }
 }

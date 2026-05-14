@@ -23,7 +23,7 @@ type Platform = ContentPlatform
 
 const PLATFORM_GUIDE: Record<Platform, string> = {
   linkedin: 'LinkedIn: 1–3 short paragraphs, a strong first-line hook, line breaks for skimming, max ~1 hashtag, end with a question or soft CTA. No "I am thrilled to announce".',
-  x: 'X/Twitter: ≤280 chars per post, punchy hook, plain language, at most 1 link. If the idea needs more room, return a "thread" array of follow-on posts.',
+  x: 'X/Twitter: ≤280 chars per post. Write like a sharp, opinionated founder — contrarian takes, hot observations, numbered insights, or "unpopular opinion" framing. Short punchy sentences. No corporate jargon, no fluff, no "thread 🧵" emoji. Every word earns its place. If the idea needs more room, return a "thread" array of follow-on posts where each post is self-contained and scroll-stopping.',
 }
 
 export async function run(
