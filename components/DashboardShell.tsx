@@ -1,12 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Lead } from '@/lib/leads'
 import type { View, UserProfile } from './dashboard/types'
 import type { SubscriptionTier } from '@/lib/lead-credits'
+import {
+  interpretDashboardCommand,
+  isVoiceCancellation,
+  isVoiceConfirmation,
+  type DashboardCommand,
+  type DashboardCommandInterpretation,
+} from '@/lib/dashboard-command-layer'
 import Icon from '@/components/Icon'
+import LeadDrawer from './dashboard/LeadDrawer'
+import { useToast } from '@/components/Toast'
 import HomeView from './dashboard/HomeView'
 import AccountsView from './dashboard/AccountsView'
 import OutreachView from './dashboard/OutreachView'
@@ -21,6 +30,37 @@ interface Props {
 }
 
 type NavEntry = { id: View; label: string; sub: string; icon: string; group?: string }
+type DrawerMode = 'open' | 'review'
+type VoiceStatus = 'idle' | 'listening' | 'processing' | 'confirm' | 'clarify' | 'error'
+
+type BrowserSpeechRecognitionResult = {
+  isFinal?: boolean
+  0?: { transcript?: string }
+}
+
+type BrowserSpeechRecognitionEvent = {
+  results: {
+    length: number
+    [index: number]: BrowserSpeechRecognitionResult
+  }
+}
+
+type BrowserSpeechRecognition = {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
+  onerror: ((event: { error?: string }) => void) | null
+  onend: (() => void) | null
+  start: () => void
+  stop: () => void
+  abort: () => void
+}
+
+type BrowserSpeechRecognitionWindow = Window & {
+  SpeechRecognition?: new () => BrowserSpeechRecognition
+  webkitSpeechRecognition?: new () => BrowserSpeechRecognition
+}
 
 const VIEWS: NavEntry[] = [
   { id: 'home',         label: 'Home',         sub: 'Today’s queue and command bar.',                          icon: 'sync_alt' },
@@ -46,12 +86,26 @@ function normalizeView(input: string | null): View {
 
 export default function DashboardShell({ initialLeads, userProfile }: Props) {
   const router = useRouter()
+  const toast = useToast()
   const [, startTransition] = useTransition()
   const [activeView, setActiveView] = useState<View>(() => {
     if (typeof window === 'undefined') return 'home'
     return normalizeView(new URLSearchParams(window.location.search).get('view'))
   })
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle')
+  const [voiceTranscript, setVoiceTranscript] = useState('')
+  const [voiceMessage, setVoiceMessage] = useState('Hold V and say a command.')
+  const [pendingCommand, setPendingCommand] = useState<DashboardCommand | null>(null)
+  const [clarification, setClarification] = useState<Extract<DashboardCommandInterpretation, { kind: 'clarify' }> | null>(null)
+  const [globalLead, setGlobalLead] = useState<Lead | null>(null)
+  const [globalLeadMode, setGlobalLeadMode] = useState<DrawerMode>('open')
+  const [commandSearch, setCommandSearch] = useState<{ query: string; nonce: number } | null>(null)
+  const [pendingScrollTarget, setPendingScrollTarget] = useState<string | null>(null)
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const transcriptRef = useRef('')
+  const keyListeningRef = useRef(false)
+  const voiceBusyRef = useRef(false)
 
   const userTier = useMemo<SubscriptionTier>(() => {
     const plan = (userProfile.plan ?? 'free') as SubscriptionTier
@@ -61,9 +115,15 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
   useEffect(() => {
     function onPopState() {
       setActiveView(normalizeView(new URLSearchParams(window.location.search).get('view')))
+      setPendingScrollTarget(window.location.hash.replace(/^#/, '') || null)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '')
+    if (hash) setPendingScrollTarget(hash)
   }, [])
 
   useEffect(() => {
@@ -74,15 +134,301 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     }
   }, [mobileNavOpen])
 
-  function navigate(v: View) {
+  const leadById = useMemo(() => new Map(initialLeads.map(lead => [lead.id, lead])), [initialLeads])
+
+  const commandLeads = useMemo(() => initialLeads.map(lead => ({
+    id: lead.id,
+    target_company: lead.target_company,
+    company_domain: lead.company_domain,
+    contact_name: lead.contact_name,
+    contact_title: lead.contact_title,
+    relevance_score: lead.relevance_score,
+    status: lead.status,
+    sent_at: lead.sent_at,
+    replied_at: lead.replied_at,
+    booked_at: lead.booked_at,
+  })), [initialLeads])
+
+  const navigate = useCallback((v: View, sectionId?: string) => {
     setActiveView(v)
     setMobileNavOpen(false)
+    setPendingScrollTarget(sectionId ?? null)
     const url = new URL(window.location.href)
     url.searchParams.set('view', v)
+    url.hash = sectionId ? `#${sectionId}` : ''
     window.history.replaceState({}, '', url.toString())
-  }
+  }, [])
 
-  function refresh() { startTransition(() => router.refresh()) }
+  useEffect(() => {
+    if (!pendingScrollTarget) return
+    const handle = window.setTimeout(() => {
+      const target = document.getElementById(pendingScrollTarget)
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      setPendingScrollTarget(null)
+    }, 80)
+    return () => window.clearTimeout(handle)
+  }, [activeView, pendingScrollTarget])
+
+  const refresh = useCallback(() => { startTransition(() => router.refresh()) }, [router, startTransition])
+
+  const request = useCallback(async function request<T>(input: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(input, init)
+    const json = await response.json().catch(() => ({})) as T & { error?: string }
+    if (!response.ok) throw new Error(json.error || `Request failed with ${response.status}`)
+    return json
+  }, [])
+
+  const executeDashboardCommand = useCallback(async (command: DashboardCommand) => {
+    setVoiceStatus('processing')
+    setVoiceMessage(command.summary)
+    voiceBusyRef.current = true
+    try {
+      if (command.type === 'navigate') {
+        navigate(command.view, command.sectionId)
+        toast.info(command.summary)
+        setVoiceMessage(command.summary)
+        return
+      }
+
+      if (command.type === 'refresh') {
+        refresh()
+        toast.info('Dashboard refresh started.')
+        setVoiceMessage('Dashboard refresh started.')
+        return
+      }
+
+      if (command.type === 'search') {
+        setCommandSearch(current => ({ query: command.query, nonce: (current?.nonce ?? 0) + 1 }))
+        navigate(activeView === 'accounts' ? 'accounts' : 'home')
+        setVoiceMessage(command.summary)
+        return
+      }
+
+      const lead = leadById.get(command.leadId)
+      if (!lead) throw new Error('That lead is no longer loaded. Refresh and try again.')
+
+      if (command.action === 'open' || command.action === 'review' || command.action === 'draft') {
+        setGlobalLead(lead)
+        setGlobalLeadMode(command.action === 'open' ? 'open' : 'review')
+        setVoiceMessage(command.summary)
+        return
+      }
+
+      if (command.action === 'unlock') {
+        setGlobalLead(lead)
+        setGlobalLeadMode('open')
+        await request(`/api/leads/${lead.id}/unlock`, { method: 'POST' })
+        refresh()
+        toast.success(`Unlocked contact for ${lead.target_company}.`)
+        setVoiceMessage(`Unlocked contact for ${lead.target_company}.`)
+        return
+      }
+
+      if (command.action === 'status') {
+        await request(`/api/leads/${lead.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: command.status }),
+        })
+        refresh()
+        if (command.status === 'dismissed') setGlobalLead(null)
+        toast.success(`Marked ${lead.target_company} ${command.status}.`)
+        setVoiceMessage(`Marked ${lead.target_company} ${command.status}.`)
+        return
+      }
+
+      if (command.action === 'send') {
+        const draftResult = await request<{
+          draft?: { to?: string | null; cc?: Array<{ email?: string | null }>; subject?: string; body?: string }
+        }>(`/api/leads/${lead.id}/draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        })
+        const draft = draftResult.draft
+        if (!draft?.to || !draft.subject || !draft.body) throw new Error('The draft does not have a complete recipient, subject, and body.')
+        await request('/api/outreach/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            leadId: lead.id,
+            to: draft.to,
+            cc: draft.cc?.map(item => item.email).filter((email): email is string => Boolean(email)) ?? [],
+            subject: draft.subject,
+            body: draft.body,
+          }),
+        })
+        refresh()
+        toast.success(`Outreach sent for ${lead.target_company}.`)
+        setVoiceMessage(`Outreach sent for ${lead.target_company}.`)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Command failed.'
+      toast.error(message)
+      setVoiceStatus('error')
+      setVoiceMessage(message)
+      return
+    } finally {
+      voiceBusyRef.current = false
+      window.setTimeout(() => setVoiceStatus(current => current === 'processing' ? 'idle' : current), 1200)
+    }
+  }, [activeView, leadById, navigate, refresh, request, toast])
+
+  const runInterpretedTranscript = useCallback((spokenText: string) => {
+    const transcript = spokenText.trim()
+    if (!transcript || voiceBusyRef.current) return
+
+    setVoiceTranscript(transcript)
+    if (pendingCommand) {
+      if (isVoiceConfirmation(transcript)) {
+        const command = pendingCommand
+        setPendingCommand(null)
+        setClarification(null)
+        void executeDashboardCommand(command)
+        return
+      }
+      if (isVoiceCancellation(transcript)) {
+        setPendingCommand(null)
+        setVoiceStatus('idle')
+        setVoiceMessage('Command cancelled.')
+        return
+      }
+      setVoiceStatus('confirm')
+      setVoiceMessage(`Say "confirm" to run: ${pendingCommand.summary}`)
+      return
+    }
+
+    if (clarification) {
+      const normalized = transcript.toLowerCase()
+      const option = clarification.options.find((item, index) => (
+        normalized.includes(item.label.toLowerCase()) ||
+        normalized === `${index + 1}` ||
+        normalized.includes(`option ${index + 1}`)
+      ))
+      if (option) {
+        setClarification(null)
+        void executeDashboardCommand(option.command)
+        return
+      }
+    }
+
+    const result = interpretDashboardCommand({ transcript, activeView, leads: commandLeads })
+    if (result.kind === 'command') {
+      setClarification(null)
+      if ('requiresConfirmation' in result.command && result.command.requiresConfirmation) {
+        setPendingCommand(result.command)
+        setVoiceStatus('confirm')
+        setVoiceMessage(`Confirm to run: ${result.command.summary}`)
+      } else {
+        void executeDashboardCommand(result.command)
+      }
+      return
+    }
+
+    if (result.kind === 'clarify') {
+      setClarification(result)
+      setVoiceStatus('clarify')
+      setVoiceMessage(result.reason)
+      return
+    }
+
+    setVoiceStatus('error')
+    setVoiceMessage(result.reason)
+  }, [activeView, clarification, commandLeads, executeDashboardCommand, pendingCommand])
+
+  const stopVoice = useCallback(() => {
+    keyListeningRef.current = false
+    const recognition = recognitionRef.current
+    if (!recognition) return
+    try {
+      recognition.stop()
+    } catch {
+      recognition.abort()
+    }
+  }, [])
+
+  const startVoice = useCallback(() => {
+    if (keyListeningRef.current || voiceBusyRef.current) return
+    const SpeechRecognition = (window as BrowserSpeechRecognitionWindow).SpeechRecognition
+      ?? (window as BrowserSpeechRecognitionWindow).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setVoiceStatus('error')
+      setVoiceMessage('Voice commands need a browser with speech recognition support. Try Chrome or Edge.')
+      return
+    }
+
+    transcriptRef.current = ''
+    setVoiceTranscript('')
+    setVoiceStatus('listening')
+    setVoiceMessage(pendingCommand ? `Say "confirm" or "cancel".` : 'Listening. Release V to run the command.')
+
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
+    recognition.onresult = (event) => {
+      let text = ''
+      for (let index = 0; index < event.results.length; index += 1) {
+        text += `${event.results[index]?.[0]?.transcript ?? ''} `
+      }
+      transcriptRef.current = text.trim()
+      setVoiceTranscript(transcriptRef.current)
+    }
+    recognition.onerror = (event) => {
+      setVoiceStatus('error')
+      setVoiceMessage(event.error === 'not-allowed' ? 'Microphone access was blocked.' : 'Voice recognition failed. Try again.')
+    }
+    recognition.onend = () => {
+      recognitionRef.current = null
+      const transcript = transcriptRef.current.trim()
+      if (transcript) {
+        runInterpretedTranscript(transcript)
+      } else {
+        setVoiceStatus(current => current === 'listening' ? 'idle' : current)
+        setVoiceMessage('No command was heard.')
+      }
+    }
+    recognitionRef.current = recognition
+    keyListeningRef.current = true
+    try {
+      recognition.start()
+    } catch {
+      keyListeningRef.current = false
+      setVoiceStatus('error')
+      setVoiceMessage('Could not start voice recognition.')
+    }
+  }, [pendingCommand, runInterpretedTranscript])
+
+  useEffect(() => {
+    function isEditableTarget(target: EventTarget | null) {
+      const element = target as HTMLElement | null
+      if (!element) return false
+      const tag = element.tagName.toLowerCase()
+      return element.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select'
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 'v' || event.repeat || event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return
+      event.preventDefault()
+      startVoice()
+    }
+
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 'v') return
+      event.preventDefault()
+      stopVoice()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      recognitionRef.current?.abort()
+    }
+  }, [startVoice, stopVoice])
 
   async function logout() {
     const supabase = createClient()
@@ -115,12 +461,15 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
           onMenu={() => setMobileNavOpen(true)}
           onLogout={() => void logout()}
           credits={credits}
+          voiceStatus={voiceStatus}
+          onVoiceStart={startVoice}
+          onVoiceStop={stopVoice}
         />
 
         <main className="flex-1">
           <div className="max-w-[1280px] mx-auto px-margin-page py-stack-lg">
-            {activeView === 'home'         && <HomeView profile={userProfile} leads={initialLeads} onNavigate={navigate} />}
-            {activeView === 'accounts'     && <AccountsView profile={userProfile} leads={initialLeads} />}
+            {activeView === 'home'         && <HomeView key={`home-${commandSearch?.nonce ?? 0}`} profile={userProfile} leads={initialLeads} onNavigate={navigate} commandSearch={commandSearch} />}
+            {activeView === 'accounts'     && <AccountsView key={`accounts-${commandSearch?.nonce ?? 0}`} profile={userProfile} leads={initialLeads} commandSearch={commandSearch} />}
             {activeView === 'outreach'     && <OutreachView profile={userProfile} leads={initialLeads} />}
             {activeView === 'content'      && <ContentView profile={userProfile} />}
             {activeView === 'agents'       && <AgentsView profile={userProfile} />}
@@ -129,6 +478,22 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
           </div>
         </main>
       </div>
+      <VoiceCommandSurface
+        status={voiceStatus}
+        transcript={voiceTranscript}
+        message={voiceMessage}
+        pendingCommand={pendingCommand}
+        clarification={clarification}
+        onConfirm={() => {
+          if (!pendingCommand) return
+          const command = pendingCommand
+          setPendingCommand(null)
+          void executeDashboardCommand(command)
+        }}
+        onCancel={() => { setPendingCommand(null); setClarification(null); setVoiceStatus('idle'); setVoiceMessage('Command cancelled.') }}
+        onRunOption={(command) => { setClarification(null); void executeDashboardCommand(command) }}
+      />
+      <LeadDrawer lead={globalLead} mode={globalLeadMode} onClose={() => setGlobalLead(null)} />
     </div>
   )
 }
@@ -213,9 +578,10 @@ function Sidebar({
 /* ─── Top bar ─────────────────────────────────────────────────── */
 
 function TopBar({
-  subtitle, onRefresh, onMenu, onLogout, credits,
+  subtitle, onRefresh, onMenu, onLogout, credits, voiceStatus, onVoiceStart, onVoiceStop,
 }: {
   subtitle: string; onRefresh: () => void; onMenu: () => void; onLogout: () => void; credits: number;
+  voiceStatus: VoiceStatus; onVoiceStart: () => void; onVoiceStop: () => void;
 }) {
   return (
     <header className="sticky top-0 z-40 h-14 bg-surface-container-low/80 backdrop-blur-md hairline-b flex items-center justify-between px-margin-page">
@@ -235,6 +601,24 @@ function TopBar({
         <span className="hidden sm:block font-label-mono text-[10px] uppercase text-on-surface-variant tracking-wider truncate">{subtitle}</span>
       </div>
       <div className="flex items-center gap-stack-lg shrink-0">
+        <button
+          onMouseDown={onVoiceStart}
+          onMouseUp={onVoiceStop}
+          onMouseLeave={onVoiceStop}
+          onTouchStart={(event) => { event.preventDefault(); onVoiceStart() }}
+          onTouchEnd={(event) => { event.preventDefault(); onVoiceStop() }}
+          className={`inline-flex h-8 items-center gap-2 rounded-full px-3 font-label-mono text-[10px] uppercase tracking-widest transition-colors ${
+            voiceStatus === 'listening'
+              ? 'bg-primary text-on-primary'
+              : 'bg-surface-container-lowest text-on-surface-variant hairline-border hover:text-primary'
+          }`}
+          title="Hold V to speak a dashboard command"
+          aria-label="Hold to speak a dashboard command"
+        >
+          <Icon name="mic" size={15} />
+          <span className="hidden sm:inline">Hold V</span>
+          <span className="sm:hidden">Voice</span>
+        </button>
         <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-lowest hairline-border rounded-full">
           <Icon name="database" size={16} className="text-primary" />
           <span className="font-label-mono text-[10px] uppercase text-on-surface">Credits: {credits}</span>
@@ -249,5 +633,73 @@ function TopBar({
         <button onClick={onLogout} className="font-label-mono text-label-mono uppercase text-on-surface-variant hover:text-primary transition-colors">Logout</button>
       </div>
     </header>
+  )
+}
+
+function VoiceCommandSurface({
+  status, transcript, message, pendingCommand, clarification, onConfirm, onCancel, onRunOption,
+}: {
+  status: VoiceStatus
+  transcript: string
+  message: string
+  pendingCommand: DashboardCommand | null
+  clarification: Extract<DashboardCommandInterpretation, { kind: 'clarify' }> | null
+  onConfirm: () => void
+  onCancel: () => void
+  onRunOption: (command: DashboardCommand) => void
+}) {
+  const visible = status !== 'idle' || Boolean(transcript) || Boolean(pendingCommand) || Boolean(clarification)
+  if (!visible) return null
+
+  return (
+    <div className="fixed bottom-5 left-1/2 z-[90] w-[min(92vw,38rem)] -translate-x-1/2 rounded-lg border border-outline-variant bg-surface-container-lowest shadow-2xl">
+      <div className="flex items-start gap-4 p-4">
+        <div className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+          status === 'listening' ? 'bg-primary text-on-primary' : status === 'error' ? 'bg-error-container text-on-error-container' : 'bg-secondary-container text-on-secondary-container'
+        }`}>
+          <Icon name={status === 'error' ? 'error' : 'mic'} size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+              {status === 'listening' ? 'Listening' : status === 'confirm' ? 'Confirm action' : status === 'clarify' ? 'Clarify' : status === 'processing' ? 'Running' : 'Voice command'}
+            </span>
+            {status === 'listening' && <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />}
+          </div>
+          <p className="mt-1 font-body-main text-on-surface">{message}</p>
+          {transcript && <p className="mt-2 truncate font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Heard: {transcript}</p>}
+          {!transcript && status === 'listening' && (
+            <p className="mt-2 font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
+              Try: show pipeline · prepare draft for top lead · unlock Acme
+            </p>
+          )}
+          {clarification && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {clarification.options.map((option) => (
+                <button
+                  key={`${option.command.type}-${option.command.summary}`}
+                  onClick={() => onRunOption(option.command)}
+                  className="rounded border border-outline-variant px-3 py-1.5 font-label-mono text-[10px] uppercase tracking-wider text-on-surface hover:bg-surface-container"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {(pendingCommand || clarification) && (
+          <div className="flex shrink-0 items-center gap-2">
+            {pendingCommand && (
+              <button onClick={onConfirm} className="rounded bg-primary px-3 py-2 font-label-mono text-[10px] uppercase tracking-wider text-on-primary hover:bg-primary-container">
+                Confirm
+              </button>
+            )}
+            <button onClick={onCancel} className="rounded border border-outline-variant px-3 py-2 font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant hover:bg-surface-container">
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

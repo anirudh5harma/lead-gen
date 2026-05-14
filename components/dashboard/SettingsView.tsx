@@ -76,20 +76,20 @@ export default function SettingsView({ profile }: Props) {
         <h2 className="text-[30px] leading-tight font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">Settings</h2>
       </div>
 
-      <Block label="01" title="Profile">
+      <Block id="settings-profile" label="01" title="Profile">
         <Row k="Workspace" v={profile.client_name || profile.company_name} />
         <Row k="Email" v={profile.email ?? '—'} />
         <Row k="Website" v={profile.website_url ?? '—'} />
       </Block>
 
-      <Block label="02" title="ICP">
+      <Block id="settings-icp" label="02" title="ICP">
         <Row k="Description" v={profile.services_description || '—'} multiline />
         <Row k="Keywords" v={(profile.icp_keywords ?? []).join(' · ') || '—'} />
         <Row k="Industries" v={(profile.target_industries ?? []).join(' · ') || '—'} />
         <div className="pt-2"><Link href="/onboarding" className="text-[12.5px] text-[var(--color-accent)] hover:underline">Edit ICP →</Link></div>
       </Block>
 
-      <Block label="03" title="Automation">
+      <Block id="settings-automation" label="03" title="Automation">
         <p className="text-[13px] text-[var(--color-text-3)] mb-4">Choose how much agency you give the fleet. Available on every plan; change it any time.</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {([
@@ -117,7 +117,7 @@ export default function SettingsView({ profile }: Props) {
         {savingMode && <p className="mono mt-3">Saving…</p>}
       </Block>
 
-      <Block label="04" title="Billing">
+      <Block id="settings-billing" label="04" title="Billing">
         <Row k="Plan" v={<span className="capitalize">{profile.plan ?? 'free'}</span>} />
         <Row k="Credits" v={String(profile.lead_credit_balance ?? 0)} />
         <Row k="Used this month" v={String(profile.leads_used_this_month ?? 0)} />
@@ -129,11 +129,11 @@ export default function SettingsView({ profile }: Props) {
         </div>
       </Block>
 
-      <Block label="05" title="Credits & outcomes">
+      <Block id="settings-credits" label="05" title="Credits & outcomes">
         <CreditLedger />
       </Block>
 
-      <Block label="06" title="Session">
+      <Block id="settings-session" label="06" title="Session">
         <button onClick={() => void signOut()} disabled={sessionBusy} className="btn-ghost h-8 px-4 text-[12.5px] disabled:opacity-50">
           {sessionBusy ? 'Signing out...' : 'Sign out'}
         </button>
@@ -176,9 +176,9 @@ function fmtDate(iso: string): string {
   try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) } catch { return '—' }
 }
 
-function Block({ label, title, children }: { label: string; title: string; children: React.ReactNode }) {
+function Block({ id, label, title, children }: { id?: string; label: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-[var(--color-line-1)] pt-8">
+    <section id={id} className="scroll-mt-20 border-t border-[var(--color-line-1)] pt-8">
       <div className="grid grid-cols-[60px_1fr] gap-6">
         <div className="mono pt-1">{label}</div>
         <div>

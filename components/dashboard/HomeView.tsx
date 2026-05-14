@@ -10,6 +10,7 @@ interface Props {
   profile: UserProfile
   leads: Lead[]
   onNavigate: (v: View) => void
+  commandSearch?: { query: string; nonce: number } | null
 }
 
 /**
@@ -19,8 +20,8 @@ interface Props {
  *   3. Today queue (top-priority accounts to act on)
  *   4. Loop status strip (which agents are live right now)
  */
-export default function HomeView({ profile, leads, onNavigate }: Props) {
-  const [q, setQ] = useState('')
+export default function HomeView({ profile, leads, onNavigate, commandSearch }: Props) {
+  const [q, setQ] = useState(commandSearch?.query ?? '')
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 

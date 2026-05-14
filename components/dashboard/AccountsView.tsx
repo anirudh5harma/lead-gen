@@ -7,17 +7,17 @@ import LeadDrawer from './LeadDrawer'
 import Icon from '@/components/Icon'
 import WatchlistManager from '@/components/WatchlistManager'
 
-interface Props { profile: UserProfile; leads: Lead[] }
+interface Props { profile: UserProfile; leads: Lead[]; commandSearch?: { query: string; nonce: number } | null }
 
 type Filter = 'all' | 'hot' | 'sent' | 'replied' | 'booked'
 
 /**
  * Signals — account pipeline as a single scannable list, Stitch editorial system.
  */
-export default function AccountsView({ leads }: Props) {
+export default function AccountsView({ leads, commandSearch }: Props) {
   const [filter, setFilter] = useState<Filter>('all')
   const [signalType, setSignalType] = useState<string>('all')
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(commandSearch?.query ?? '')
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
 
   const signalTypes = useMemo(() => {
