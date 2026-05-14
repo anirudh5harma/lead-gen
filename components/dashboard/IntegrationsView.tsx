@@ -14,6 +14,19 @@ interface ConnectedAccount {
   display_name?: string | null; is_active: boolean; last_used_at?: string | null;
 }
 
+interface RemoteConnection {
+  provider: 'telegram' | 'discord'
+  providerUserId: string
+  username: string | null
+  enabled: boolean
+  createdAt: string
+}
+
+interface RemoteControlState {
+  configured: { telegram: boolean; discord: boolean }
+  connections: RemoteConnection[]
+}
+
 /**
  * Integrations — every connection in one place, grouped by purpose.
  *
@@ -32,8 +45,9 @@ export default function IntegrationsView({ profile }: Props) {
   const canUseCrm = hasTeamFeatures(userTier)
   const [accounts, setAccounts] = useState<ConnectedAccount[]>([])
   const [social, setSocial] = useState<{ managed: boolean; managed_reason?: string | null; error?: string | null; accounts: Array<{ id: string; partner: string; platform: string | null; display_name: string | null; is_active: boolean }> }>({ managed: false, accounts: [] })
+  const [remoteControl, setRemoteControl] = useState<RemoteControlState>({ configured: { telegram: false, discord: false }, connections: [] })
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null)
-  const [modal, setModal] = useState<null | 'slack' | 'calendly' | 'agentkey' | 'llm' | 'crm'>(null)
+  const [modal, setModal] = useState<null | 'slack' | 'calendly' | 'agentkey' | 'llm' | 'crm' | 'remote'>(null)
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
   const toast = useToast()
 
@@ -50,8 +64,23 @@ export default function IntegrationsView({ profile }: Props) {
         accounts: Array.isArray(d?.accounts) ? d.accounts : [],
       })
     }).catch(() => {})
+    void loadRemoteControl()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function loadRemoteControl() {
+    const res = await fetch('/api/remote-control/connect')
+    const data = await res.json().catch(() => ({})) as Partial<RemoteControlState>
+    if (res.ok) {
+      setRemoteControl({
+        configured: {
+          telegram: Boolean(data.configured?.telegram),
+          discord: Boolean(data.configured?.discord),
+        },
+        connections: Array.isArray(data.connections) ? data.connections : [],
+      })
+    }
+  }
 
   async function connectSocial(platform: 'linkedin' | 'x') {
     setConnectingPlatform(platform)
@@ -92,6 +121,7 @@ export default function IntegrationsView({ profile }: Props) {
 
       {/* Sending */}
       <Group
+        id="integrations-sending"
         label="01 · Sending"
         title="Outreach inboxes"
         body="Bombsell sends from your real inbox. Per-account warmup and daily limits enforced by the safety agent."
@@ -129,6 +159,7 @@ export default function IntegrationsView({ profile }: Props) {
 
       {/* CRM */}
       <Group
+        id="integrations-crm"
         label="02 · CRM"
         title="Bidirectional sync"
         body="Team and custom workspaces can import CRM accounts into Bombsell and export signals, drafts, sends, replies, and bookings back to CRM."
@@ -152,9 +183,45 @@ export default function IntegrationsView({ profile }: Props) {
         </div>
       </Group>
 
+      {/* Remote control */}
+      <Group
+        id="integrations-remote"
+        label="03 · Remote control"
+        title="Operate Bombsell from chat"
+        body="Send text commands or voice notes from Telegram and Discord. Bombsell confirms risky actions before sending or dismissing."
+      >
+        <div className="card p-5 mb-4 grid md:grid-cols-[1fr_auto] items-center gap-4">
+          <div>
+            <div className="mono mb-1">Voice + text commands</div>
+            <div className="text-[13.5px] font-medium">Telegram and Discord remote command center</div>
+            <div className="text-[12.5px] text-[var(--color-text-3)] mt-1">
+              Try “prepare draft for the top lead”, “unlock Acme”, or “confirm send outreach to Acme”.
+            </div>
+          </div>
+          <button onClick={() => setModal('remote')} className="btn-accent h-9 px-4 text-[13px]">Configure remote</button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <ConnectTile
+            name="Telegram"
+            connected={remoteControl.connections.some(connection => connection.provider === 'telegram' && connection.enabled)}
+            disabled={!remoteControl.configured.telegram}
+            label={!remoteControl.configured.telegram ? 'not enabled' : undefined}
+            onClickFn={remoteControl.configured.telegram ? () => setModal('remote') : undefined}
+          />
+          <ConnectTile
+            name="Discord"
+            connected={remoteControl.connections.some(connection => connection.provider === 'discord' && connection.enabled)}
+            disabled={!remoteControl.configured.discord}
+            label={!remoteControl.configured.discord ? 'not enabled' : undefined}
+            onClickFn={remoteControl.configured.discord ? () => setModal('remote') : undefined}
+          />
+        </div>
+      </Group>
+
       {/* Ops */}
       <Group
-        label="03 · Ops"
+        id="integrations-ops"
+        label="04 · Ops"
         title="Notifications &amp; booking"
         body="Slack pings on hot replies, booking links sent on positive intent, custom webhooks for any pipeline."
       >
@@ -181,6 +248,7 @@ export default function IntegrationsView({ profile }: Props) {
 
       {/* Content publishing */}
       <Group
+        id="integrations-social"
         label="05 · Content publishing"
         title="Connect your social accounts"
         body="Connect LinkedIn and X — the publisher agent posts on your behalf. Nothing to install."
@@ -223,6 +291,7 @@ export default function IntegrationsView({ profile }: Props) {
 
       {/* AI models */}
       <Group
+        id="integrations-ai"
         label="06 · AI models"
         title="Bombsell Default LLM, or bring your own"
         body="Drafting and content writing run on the Bombsell Default LLM, billed via credits. Connect your own Claude or ChatGPT key to avoid LLM credit charge."
@@ -235,6 +304,7 @@ export default function IntegrationsView({ profile }: Props) {
 
       {/* Agents API */}
       <Group
+        id="integrations-agents-api"
         label="07 · Agents API"
         title="For developers and AI agents"
         body="Bombsell speaks the A2A protocol. Issue an agent key to let your AI agent call the fleet directly."
@@ -270,6 +340,139 @@ export default function IntegrationsView({ profile }: Props) {
       {modal === 'agentkey' && <AgentKeyModal onClose={() => setModal(null)} />}
       {modal === 'llm' && <LlmModal onClose={() => setModal(null)} />}
       {modal === 'crm' && <CrmModal onClose={() => setModal(null)} />}
+      {modal === 'remote' && <RemoteControlModal state={remoteControl} onRefresh={() => void loadRemoteControl()} onClose={() => setModal(null)} />}
+    </div>
+  )
+}
+
+function RemoteControlModal({
+  state, onRefresh, onClose,
+}: {
+  state: RemoteControlState
+  onRefresh: () => void
+  onClose: () => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [telegramUrl, setTelegramUrl] = useState<string | null>(null)
+  const toast = useToast()
+
+  async function connect(provider: 'telegram' | 'discord') {
+    setBusy(provider)
+    setTelegramUrl(null)
+    try {
+      const res = await fetch('/api/remote-control/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      })
+      const data = await res.json().catch(() => ({})) as { url?: string; error?: string }
+      if (!res.ok || !data.url) throw new Error(data.error || 'Could not start remote-control connection.')
+      if (provider === 'telegram') {
+        setTelegramUrl(data.url)
+        window.open(data.url, '_blank', 'noopener,noreferrer')
+      } else {
+        window.location.assign(data.url)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not start remote-control connection.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function disconnect(provider: 'telegram' | 'discord') {
+    setBusy(`disconnect-${provider}`)
+    try {
+      const res = await fetch('/api/remote-control/connect', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      })
+      if (!res.ok) throw new Error('Could not disconnect remote control.')
+      onRefresh()
+      toast.success(`${provider === 'telegram' ? 'Telegram' : 'Discord'} remote control disconnected.`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not disconnect remote control.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const telegram = state.connections.find(connection => connection.provider === 'telegram' && connection.enabled)
+  const discord = state.connections.find(connection => connection.provider === 'discord' && connection.enabled)
+
+  return (
+    <Modal title="Remote control" onClose={onClose}>
+      <p className="text-[13px] text-[var(--color-text-3)] mb-4">
+        Connect your chat account once. After that, send Bombsell commands or voice notes from Telegram or Discord.
+      </p>
+      <div className="space-y-3">
+        <RemoteProviderRow
+          name="Telegram"
+          configured={state.configured.telegram}
+          connection={telegram}
+          busy={busy === 'telegram' || busy === 'disconnect-telegram'}
+          onConnect={() => void connect('telegram')}
+          onDisconnect={() => void disconnect('telegram')}
+        />
+        <RemoteProviderRow
+          name="Discord"
+          configured={state.configured.discord}
+          connection={discord}
+          busy={busy === 'discord' || busy === 'disconnect-discord'}
+          onConnect={() => void connect('discord')}
+          onDisconnect={() => void disconnect('discord')}
+        />
+      </div>
+      {telegramUrl && (
+        <div className="mt-4 rounded-xl border border-[var(--color-line-2)] bg-[var(--color-ink-2)] p-3">
+          <div className="mono mb-1">Telegram link</div>
+          <a href={telegramUrl} target="_blank" rel="noreferrer" className="text-[13px] text-primary hover:underline">Open Bombsell bot →</a>
+        </div>
+      )}
+      <div className="mt-5 rounded-xl border border-[var(--color-line-2)] bg-[var(--color-ink-2)] p-3">
+        <div className="mono mb-2">Examples</div>
+        <ul className="text-[12.5px] text-[var(--color-text-2)] space-y-1">
+          <li>prepare draft for the top lead</li>
+          <li>unlock Acme Robotics</li>
+          <li>mark Acme booked</li>
+          <li>confirm send outreach to Acme Robotics</li>
+        </ul>
+      </div>
+      <div className="mt-5 flex items-center justify-end gap-2">
+        <button onClick={() => { onRefresh(); onClose() }} className="btn-accent h-9 px-4 text-[12.5px]">Done</button>
+      </div>
+    </Modal>
+  )
+}
+
+function RemoteProviderRow({
+  name, configured, connection, busy, onConnect, onDisconnect,
+}: {
+  name: 'Telegram' | 'Discord'
+  configured: boolean
+  connection?: RemoteConnection
+  busy: boolean
+  onConnect: () => void
+  onDisconnect: () => void
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-3 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[13.5px] font-medium">{name}</div>
+        <div className="text-[12px] text-[var(--color-text-3)] truncate">
+          {!configured ? 'Not enabled for this deployment' : connection ? connection.username || connection.providerUserId : 'Not connected'}
+        </div>
+      </div>
+      {connection ? (
+        <button onClick={onDisconnect} disabled={busy} className="btn-ghost h-8 px-3 text-[12px] disabled:opacity-50">
+          {busy ? 'Working...' : 'Disconnect'}
+        </button>
+      ) : (
+        <button onClick={onConnect} disabled={busy || !configured} className="btn-accent h-8 px-3 text-[12px] disabled:opacity-50">
+          {busy ? 'Opening...' : 'Connect'}
+        </button>
+      )}
     </div>
   )
 }
@@ -546,10 +749,10 @@ function AgentKeyModal({ onClose }: { onClose: () => void }) {
 /* ─── Primitives ──────────────────────────────────────────────── */
 
 function Group({
-  label, title, body, children,
-}: { label: string; title: string; body: string; children: React.ReactNode }) {
+  id, label, title, body, children,
+}: { id?: string; label: string; title: string; body: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-[var(--color-line-1)] pt-10">
+    <section id={id} className="scroll-mt-20 border-t border-[var(--color-line-1)] pt-10">
       <div className="grid md:grid-cols-[260px_1fr] gap-10">
         <div>
           <div className="mono mb-2">{label}</div>
