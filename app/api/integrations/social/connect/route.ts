@@ -20,16 +20,29 @@ export async function POST(request: Request) {
   const platform = (body?.platform === 'linkedin' || body?.platform === 'x') ? (body.platform as PostForMePlatform) : null
   if (!platform) return NextResponse.json({ error: 'platform must be "linkedin" or "x"' }, { status: 400 })
 
-  // pending row so the callback can find/activate it
-  await supabase.from('social_accounts').upsert({
-    workspace_id: workspaceId, user_id: user.id, partner: 'postforme', platform,
-    api_key: null, external_account_id: null, display_name: `${platform} (connecting…)`,
-    is_active: false, metadata: {}, updated_at: new Date().toISOString(),
-  }, { onConflict: 'workspace_id,partner,platform' })
-
   const origin = new URL(request.url).origin
   const redirectUrl = `${origin}/api/auth/postforme/callback?platform=${platform}`
   const conn = await createConnectUrl({ platform, redirectUrl, externalId: workspaceId })
-  if (!conn.ok || !conn.url) return NextResponse.json({ error: conn.error ?? 'Could not start connect flow' }, { status: 502 })
+  if (!conn.ok || !conn.url) {
+    const status = conn.status && conn.status >= 500 ? 503 : 502
+    const detail = conn.requestId ? ` Provider request id: ${conn.requestId}.` : ''
+    return NextResponse.json({
+      error: `Social account connection is temporarily unavailable from Post for Me.${detail}`,
+      provider_error: conn.error ?? 'Could not start connect flow',
+      provider_status: conn.status ?? null,
+      provider_request_id: conn.requestId ?? null,
+    }, { status })
+  }
+
+  // pending row so the callback can find/activate it. Create this only after
+  // the provider returns an auth URL, otherwise failed attempts leave stale
+  // "connecting..." accounts in the dashboard.
+  const { error: pendingError } = await supabase.from('social_accounts').upsert({
+    workspace_id: workspaceId, user_id: user.id, partner: 'postforme', platform,
+    api_key: null, external_account_id: null, display_name: `${platform} (connecting...)`,
+    is_active: false, metadata: {}, updated_at: new Date().toISOString(),
+  }, { onConflict: 'workspace_id,partner,platform' })
+  if (pendingError) return NextResponse.json({ error: pendingError.message }, { status: 500 })
+
   return NextResponse.json({ url: conn.url })
 }

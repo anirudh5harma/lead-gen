@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  interpretDashboardConversation,
+  classifyDashboardConversation,
   type DashboardConversationContext,
 } from '../lib/dashboard-conversation-layer.ts'
 

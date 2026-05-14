@@ -30,13 +30,19 @@ function headers(): Record<string, string> {
   return { 'content-type': 'application/json', authorization: `Bearer ${process.env.POSTFORME_API_KEY ?? ''}` }
 }
 
-async function call<T>(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
+async function call<T>(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<{ ok: boolean; status: number; data: T | null; error?: string; requestId?: string }> {
   try {
     const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...headers(), ...(init.headers as Record<string, string> | undefined) }, signal: AbortSignal.timeout(init.timeoutMs ?? 20_000) })
     const data = await res.json().catch(() => null) as T | null
     if (!res.ok) {
-      const msg = (data as { message?: string; error?: string } | null)
-      return { ok: false, status: res.status, data, error: msg?.message ?? msg?.error ?? `Post for Me ${res.status}` }
+      const msg = (data as { message?: string; error?: string; request_id?: string } | null)
+      return {
+        ok: false,
+        status: res.status,
+        data,
+        error: msg?.message ?? msg?.error ?? `Post for Me ${res.status}`,
+        requestId: msg?.request_id ?? res.headers.get('x-request-id') ?? undefined,
+      }
     }
     return { ok: true, status: res.status, data }
   } catch (e) {
@@ -54,7 +60,7 @@ export type PostForMePlatform = 'linkedin' | 'x'
  *  the Post for Me dashboard** — set it to `https://<app>/api/auth/postforme/callback`.
  *  Quickstart projects reject `redirect_url_override`; only White Label projects
  *  allow it, so we only send `redirectUrl` when `POSTFORME_WHITE_LABEL=true`. */
-export async function createConnectUrl(opts: { platform: PostForMePlatform; redirectUrl?: string; externalId: string }): Promise<{ ok: boolean; url?: string; error?: string }> {
+export async function createConnectUrl(opts: { platform: PostForMePlatform; redirectUrl?: string; externalId: string }): Promise<{ ok: boolean; url?: string; error?: string; status?: number; requestId?: string }> {
   const allowOverride = (process.env.POSTFORME_WHITE_LABEL ?? '').toLowerCase() === 'true'
   const body: Record<string, unknown> = {
     platform: opts.platform,
@@ -70,7 +76,14 @@ export async function createConnectUrl(opts: { platform: PostForMePlatform; redi
   }
   if (allowOverride && opts.redirectUrl) body.redirect_url_override = opts.redirectUrl
   const r = await call<{ url?: string; platform?: string }>(`/v1/social-accounts/auth-url`, { method: 'POST', body: JSON.stringify(body) })
-  if (!r.ok || !r.data?.url) return { ok: false, error: r.error ?? 'Could not start Post for Me connect flow' }
+  if (!r.ok || !r.data?.url) {
+    return {
+      ok: false,
+      status: r.status,
+      requestId: r.requestId,
+      error: r.error ?? 'Could not start Post for Me connect flow',
+    }
+  }
   return { ok: true, url: r.data.url }
 }
 

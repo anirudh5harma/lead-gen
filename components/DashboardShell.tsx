@@ -7,14 +7,14 @@ import type { Lead } from '@/lib/leads'
 import type { View, UserProfile } from './dashboard/types'
 import type { SubscriptionTier } from '@/lib/lead-credits'
 import {
-  interpretDashboardCommand,
+  classifyDashboardCommandClient,
   isVoiceCancellation,
   isVoiceConfirmation,
   type DashboardCommand,
   type DashboardCommandInterpretation,
 } from '@/lib/dashboard-command-layer'
 import {
-  interpretDashboardConversation,
+  classifyDashboardConversationClient,
   rankConversationPipelineLeads,
   type DashboardConversationAction,
   type DashboardConversationCollection,
@@ -242,7 +242,8 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
 
       if (command.type === 'search') {
         setCommandSearch(current => ({ query: command.query, nonce: (current?.nonce ?? 0) + 1 }))
-        navigate(activeView === 'accounts' ? 'accounts' : 'home')
+        // Voice search is always for companies/signals — navigate to Accounts view
+        navigate('accounts')
         setVoiceMessage(command.summary)
         return
       }
@@ -423,11 +424,16 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     setContentIdeasForVoice(current => sameContentIdeaList(current, ideas) ? current : ideas)
   }, [])
 
-  const runInterpretedTranscript = useCallback((spokenText: string) => {
+  const runInterpretedTranscript = useCallback(async (spokenText: string) => {
     const transcript = spokenText.trim()
     if (!transcript || voiceBusyRef.current) return
 
     setVoiceTranscript(transcript)
+    // Clear any previous search so the user sees fresh results on next command
+    if (commandSearch) setCommandSearch(null)
+    // Optimistic feedback: show transcript immediately while LLM classifies
+    setVoiceStatus('processing')
+    setVoiceMessage(`Heard: "${transcript.slice(0, 80)}${transcript.length > 80 ? '...' : ''}"`)
     if (pendingCommand) {
       if (isVoiceConfirmation(transcript)) {
         const command = pendingCommand
@@ -461,7 +467,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
       }
     }
 
-    const conversation = interpretDashboardConversation(transcript, conversationContext)
+    const conversation = await classifyDashboardConversationClient(transcript, conversationContext)
     if (conversation.kind === 'action') {
       setClarification(null)
       const command = dashboardCommandFromConversationAction(conversation.action)
@@ -481,7 +487,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
       return
     }
 
-    const result = interpretDashboardCommand({ transcript, activeView, leads: commandLeads })
+    const result = await classifyDashboardCommandClient({ transcript, activeView, leads: commandLeads })
     if (result.kind === 'command') {
       setClarification(null)
       if ('requiresConfirmation' in result.command && result.command.requiresConfirmation) {
@@ -507,6 +513,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
     activeView,
     clarification,
     commandLeads,
+    commandSearch,
     conversationContext,
     dashboardCommandFromConversationAction,
     executeDashboardCommand,
