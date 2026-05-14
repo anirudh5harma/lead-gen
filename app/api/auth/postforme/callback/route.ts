@@ -13,7 +13,6 @@ import { listAccounts } from '@/lib/social/postforme'
 
 export async function GET(request: Request) {
   const url = new URL(request.url)
-  const rawPlatform = url.searchParams.get('platform')
   const error = url.searchParams.get('error')
   const dash = `${url.origin}/dashboard?view=integrations`
 
@@ -26,7 +25,6 @@ export async function GET(request: Request) {
   const workspaceId = (profileRow?.active_client_id as string | null) ?? user.id
 
   // List ALL connected accounts from Post for Me for this workspace.
-  // This is resilient to the platform param being stripped by Post for Me's redirect.
   const accounts = await listAccounts({ externalId: workspaceId })
   if (accounts.length === 0) return NextResponse.redirect(`${dash}&social_error=no_accounts`)
 
@@ -37,13 +35,22 @@ export async function GET(request: Request) {
       : null
     if (!platform) continue
 
-    // Upsert: activate if a row exists, create if it doesn't.
-    const { error: upsertError } = await supabase.from('social_accounts').upsert({
+    // Query-then-upsert: avoid ON CONFLICT mismatches with the
+    // COALESCE(platform, 'all') unique index.
+    const { data: existing } = await supabase
+      .from('social_accounts')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('partner', 'postforme')
+      .eq('platform', platform)
+      .maybeSingle()
+
+    const row = {
       workspace_id: workspaceId,
       user_id: user.id,
-      partner: 'postforme',
+      partner: 'postforme' as const,
       platform,
-      api_key: null,
+      api_key: null as string | null,
       external_account_id: account.id,
       display_name: account.username ?? platform,
       is_active: true,
@@ -54,8 +61,20 @@ export async function GET(request: Request) {
         postforme_platform: account.platform,
       },
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'workspace_id,partner,platform' })
-    if (!upsertError) activated++
+    }
+
+    if (existing) {
+      const { error: updateError } = await supabase
+        .from('social_accounts')
+        .update(row)
+        .eq('id', existing.id)
+      if (!updateError) activated++
+    } else {
+      const { error: insertError } = await supabase
+        .from('social_accounts')
+        .insert(row)
+      if (!insertError) activated++
+    }
   }
 
   if (activated === 0) return NextResponse.redirect(`${dash}&social_error=activation_failed`)

@@ -37,11 +37,25 @@ export async function POST(request: Request) {
   // pending row so the callback can find/activate it. Create this only after
   // the provider returns an auth URL, otherwise failed attempts leave stale
   // "connecting..." accounts in the dashboard.
-  const { error: pendingError } = await supabase.from('social_accounts').upsert({
+  // Query-then-upsert avoids ON CONFLICT mismatch with the
+  // COALESCE(platform, 'all') unique index.
+  const { data: existing } = await supabase
+    .from('social_accounts')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .eq('partner', 'postforme')
+    .eq('platform', platform)
+    .maybeSingle()
+
+  const row = {
     workspace_id: workspaceId, user_id: user.id, partner: 'postforme', platform,
     api_key: null, external_account_id: null, display_name: `${platform} (connecting...)`,
     is_active: false, metadata: {}, updated_at: new Date().toISOString(),
-  }, { onConflict: 'workspace_id,partner,platform' })
+  }
+
+  const { error: pendingError } = existing
+    ? await supabase.from('social_accounts').update(row).eq('id', existing.id)
+    : await supabase.from('social_accounts').insert(row)
   if (pendingError) return NextResponse.json({ error: pendingError.message }, { status: 500 })
 
   return NextResponse.json({ url: conn.url })
