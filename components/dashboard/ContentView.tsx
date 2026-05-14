@@ -6,16 +6,24 @@ import { useToast } from '@/components/Toast'
 
 interface Props { profile: UserProfile }
 
-interface Idea { id: string; source: string | null; platform: string | null; angle: string; hook: string | null; rationale: string | null; score: number; status: string; created_at: string }
+export interface ContentIdea { id: string; source: string | null; platform: string | null; angle: string; hook: string | null; rationale: string | null; score: number; status: string; created_at: string }
 interface Post { id: string; idea_id: string | null; platform: string; status: string; hook: string | null; body: string; thread: string[] | null; eval_score: number | null; eval_failed: string[]; scheduled_at: string | null; published_at: string | null; partner: string | null; metrics: Record<string, number> | null; metrics_fetched_at: string | null; error_message: string | null; created_at: string; updated_at: string }
 
 type Tab = 'ideas' | 'composer' | 'calendar' | 'performance'
+export type ContentVoiceCommand = { nonce: number; tab?: Tab; focusIdeaId?: string | null; focusPostId?: string | null; reload?: boolean }
 
 const C = '/api/content'
 
-export default function ContentView({ profile }: Props) {
+export default function ContentView({
+  profile,
+  voiceCommand,
+  onVisibleContextChange,
+}: Props & {
+  voiceCommand?: ContentVoiceCommand | null
+  onVisibleContextChange?: (context: { ideas: ContentIdea[]; drafts: Post[] }) => void
+}) {
   const [tab, setTab] = useState<Tab>('ideas')
-  const [ideas, setIdeas] = useState<Idea[]>([])
+  const [ideas, setIdeas] = useState<ContentIdea[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const toast = useToast()
@@ -30,6 +38,22 @@ export default function ContentView({ profile }: Props) {
   }, [])
 
   useEffect(() => { void loadIdeas(); void loadPosts() }, [loadIdeas, loadPosts])
+
+  useEffect(() => {
+    if (!voiceCommand) return
+    if (voiceCommand.tab) setTab(voiceCommand.tab)
+    if (voiceCommand.reload) void Promise.all([loadIdeas(), loadPosts()])
+    const targetId = voiceCommand.focusIdeaId
+      ? `content-idea-${voiceCommand.focusIdeaId}`
+      : voiceCommand.focusPostId
+        ? `content-post-${voiceCommand.focusPostId}`
+        : null
+    if (!targetId) return
+    const handle = window.setTimeout(() => {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 120)
+    return () => window.clearTimeout(handle)
+  }, [loadIdeas, loadPosts, voiceCommand])
 
   async function act(action: string, payload: Record<string, unknown>, label: string) {
     setBusy(label)
@@ -53,6 +77,10 @@ export default function ContentView({ profile }: Props) {
   const drafts = posts.filter((p) => p.status === 'draft' || p.status === 'edited')
   const scheduled = posts.filter((p) => p.status === 'scheduled')
   const published = posts.filter((p) => p.status === 'published')
+
+  useEffect(() => {
+    onVisibleContextChange?.({ ideas: proposed, drafts })
+  }, [drafts, onVisibleContextChange, proposed])
 
   return (
     <div className="space-y-section-gap">
@@ -89,7 +117,7 @@ export default function ContentView({ profile }: Props) {
           ) : (
             <div className="space-y-px bg-outline-variant/30 hairline-border">
               {proposed.map((i) => (
-                <div key={i.id} className="bg-surface-container-lowest p-stack-md">
+                <div key={i.id} id={`content-idea-${i.id}`} className="scroll-mt-24 bg-surface-container-lowest p-stack-md">
                   <div className="flex items-start justify-between gap-stack-md">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -178,7 +206,7 @@ function PostEditor({ post, busy, onSave, onEdit, onSchedule, onPublish }: {
   const [body, setBody] = useState(post.body)
   const [when, setWhen] = useState('')
   return (
-    <div className="hairline-border bg-surface-container-lowest p-stack-md space-y-stack-md">
+    <div id={`content-post-${post.id}`} className="scroll-mt-24 hairline-border bg-surface-container-lowest p-stack-md space-y-stack-md">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="font-label-mono text-[9px] uppercase tracking-widest text-primary">{post.platform}</span>
