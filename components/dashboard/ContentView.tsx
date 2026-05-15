@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { UserProfile } from './types'
 import { useToast } from '@/components/Toast'
 
@@ -11,6 +11,14 @@ interface Post { id: string; idea_id: string | null; platform: string; status: s
 
 type Tab = 'ideas' | 'composer' | 'calendar' | 'performance'
 export type ContentVoiceCommand = { nonce: number; tab?: Tab; focusIdeaId?: string | null; focusPostId?: string | null; reload?: boolean }
+
+interface SocialAccount {
+  id: string
+  partner: string
+  platform: string | null
+  display_name: string | null
+  is_active: boolean
+}
 
 const C = '/api/content'
 
@@ -25,8 +33,17 @@ export default function ContentView({
   const [tab, setTab] = useState<Tab>('ideas')
   const [ideas, setIdeas] = useState<ContentIdea[]>([])
   const [posts, setPosts] = useState<Post[]>([])
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const toast = useToast()
+
+  const connectedPlatforms = useMemo(() => {
+    const set = new Set<string>()
+    for (const a of socialAccounts) {
+      if (a.is_active && a.platform) set.add(a.platform)
+    }
+    return set
+  }, [socialAccounts])
 
   const loadIdeas = useCallback(async () => {
     const d = await fetch(`${C}?resource=ideas`).then((r) => r.json()).catch(() => ({}))
@@ -37,7 +54,15 @@ export default function ContentView({
     setPosts(Array.isArray(d?.posts) ? d.posts : [])
   }, [])
 
-  useEffect(() => { void loadIdeas(); void loadPosts() }, [loadIdeas, loadPosts])
+  useEffect(() => {
+    void loadIdeas(); void loadPosts()
+    void fetch('/api/integrations/social')
+      .then(r => r.json())
+      .then(d => {
+        if (Array.isArray(d?.accounts)) setSocialAccounts(d.accounts as SocialAccount[])
+      })
+      .catch(() => {})
+  }, [loadIdeas, loadPosts])
 
   useEffect(() => {
     if (!voiceCommand) return
@@ -55,13 +80,14 @@ export default function ContentView({
     return () => window.clearTimeout(handle)
   }, [loadIdeas, loadPosts, voiceCommand])
 
-  async function act(action: string, payload: Record<string, unknown>, label: string) {
+  async function act(action: string, payload: Record<string, unknown>, label: string, successMsg?: string) {
     setBusy(label)
     try {
       const res = await fetch(C, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...payload }) })
       const d = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; result?: unknown }
       if (!res.ok || d.ok === false) throw new Error(d.error || 'Action failed')
       await Promise.all([loadIdeas(), loadPosts()])
+      if (successMsg) toast.success(successMsg)
       return d
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Action failed'); return null
@@ -69,8 +95,13 @@ export default function ContentView({
   }
 
   async function patchPost(postId: string, patch: Record<string, unknown>) {
-    await fetch(C, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId, ...patch }) })
-    await loadPosts()
+    const res = await fetch(C, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId, ...patch }) })
+    if (res.ok) {
+      await loadPosts()
+      toast.success('Draft saved.')
+    } else {
+      toast.error('Failed to save draft.')
+    }
   }
 
   const proposed = ideas.filter((i) => i.status === 'proposed' || i.status === 'approved')
@@ -106,7 +137,7 @@ export default function ContentView({
       {tab === 'ideas' && (
         <section className="space-y-stack-lg">
           <div className="flex items-center gap-3">
-            <button onClick={() => void act('generate_ideas', { count: 5 }, 'gen')} disabled={busy === 'gen'}
+            <button onClick={() => void act('generate_ideas', { count: 5 }, 'gen', 'Ideas generated.')} disabled={busy === 'gen'}
               className="bg-primary text-on-primary px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60">
               {busy === 'gen' ? 'Generating…' : 'Generate ideas'}
             </button>
@@ -129,9 +160,9 @@ export default function ContentView({
                       {i.hook && <p className="font-body-main text-on-surface-variant mt-1 text-[13px]">Hook: {i.hook}</p>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {i.status !== 'approved' && <button onClick={() => void act('set_idea_status', { ideaId: i.id, status: 'approved' }, `appr-${i.id}`)} className="font-label-mono text-[10px] uppercase border border-outline-variant px-2 py-1 rounded hover:bg-surface-container">Approve</button>}
-                      <button onClick={() => void act('set_idea_status', { ideaId: i.id, status: 'rejected' }, `rej-${i.id}`)} className="font-label-mono text-[10px] uppercase text-on-surface-variant hover:text-error">Reject</button>
-                      <button onClick={async () => { const d = await act('write', { ideaId: i.id }, `wr-${i.id}`); if (d) setTab('composer') }} disabled={busy === `wr-${i.id}`}
+                      {i.status !== 'approved' && <button onClick={() => void act('set_idea_status', { ideaId: i.id, status: 'approved' }, `appr-${i.id}`, 'Idea approved.')} className="font-label-mono text-[10px] uppercase border border-outline-variant px-2 py-1 rounded hover:bg-surface-container">Approve</button>}
+                      <button onClick={() => void act('set_idea_status', { ideaId: i.id, status: 'rejected' }, `rej-${i.id}`, 'Idea rejected.')} className="font-label-mono text-[10px] uppercase text-on-surface-variant hover:text-error">Reject</button>
+                      <button onClick={async () => { const d = await act('write', { ideaId: i.id }, `wr-${i.id}`, 'Draft created.'); if (d) setTab('composer') }} disabled={busy === `wr-${i.id}`}
                         className="font-label-mono text-[10px] uppercase bg-secondary-container text-on-secondary-container px-2 py-1 rounded disabled:opacity-60">{busy === `wr-${i.id}` ? 'Drafting…' : 'Draft post'}</button>
                     </div>
                   </div>
@@ -144,12 +175,13 @@ export default function ContentView({
 
       {tab === 'composer' && (
         <section className="space-y-stack-lg">
-          {drafts.length === 0 ? <Empty text="No drafts. Approve an idea and hit “Draft post”." /> : drafts.map((p) => (
-            <PostEditor key={p.id} post={p} busy={busy}
+          {drafts.length === 0 ? <Empty text="No drafts. Approve an idea and hit 'Draft post'." /> : drafts.map((p) => (
+            <PostEditor key={p.id} post={p} busy={busy} connectedPlatforms={connectedPlatforms}
               onSave={(hook, body) => void patchPost(p.id, { hook, body })}
-              onEdit={() => void act('edit', { postId: p.id }, `ed-${p.id}`)}
-              onSchedule={(when) => void act('schedule', { postId: p.id, scheduledAt: when }, `sc-${p.id}`)}
-              onPublish={() => void act('publish', { postId: p.id }, `pub-${p.id}`)} />
+              onEdit={() => void act('edit', { postId: p.id }, `ed-${p.id}`, 'Draft edited.')}
+              onSchedule={(when) => void act('schedule', { postId: p.id, scheduledAt: when }, `sc-${p.id}`, 'Post scheduled.')}
+              onPublish={() => void act('publish', { postId: p.id }, `pub-${p.id}`, 'Post published.')}
+              onDelete={() => void act('delete_post', { postId: p.id }, `del-${p.id}`, 'Draft rejected.')} />
           ))}
         </section>
       )}
@@ -167,7 +199,7 @@ export default function ContentView({
 
       {tab === 'performance' && (
         <section className="space-y-stack-lg">
-          <button onClick={() => void act('metrics', { limit: 25 }, 'metrics')} disabled={busy === 'metrics'}
+          <button onClick={() => void act('metrics', { limit: 25 }, 'metrics', 'Metrics refreshed.')} disabled={busy === 'metrics'}
             className="font-label-mono text-[10px] uppercase border border-outline-variant px-3 py-1.5 rounded hover:bg-surface-container disabled:opacity-60">
             {busy === 'metrics' ? 'Refreshing…' : 'Refresh metrics'}
           </button>
@@ -197,14 +229,31 @@ export default function ContentView({
   )
 }
 
-function PostEditor({ post, busy, onSave, onEdit, onSchedule, onPublish }: {
-  post: Post; busy: string | null
+function PostEditor({ post, busy, connectedPlatforms, onSave, onEdit, onSchedule, onPublish, onDelete }: {
+  post: Post; busy: string | null; connectedPlatforms: Set<string>
   onSave: (hook: string, body: string) => void
-  onEdit: () => void; onSchedule: (when: string) => void; onPublish: () => void
+  onEdit: () => void; onSchedule: (when: string) => void; onPublish: () => void; onDelete: () => void
 }) {
   const [hook, setHook] = useState(post.hook ?? '')
   const [body, setBody] = useState(post.body)
   const [when, setWhen] = useState('')
+  const toast = useToast()
+  const platformConnected = connectedPlatforms.has(post.platform)
+  function handleSchedule() {
+    if (!when) return
+    if (!platformConnected) {
+      toast.error(`Connect your ${post.platform} account in Integrations → Content publishing before scheduling.`)
+      return
+    }
+    onSchedule(new Date(when).toISOString())
+  }
+  function handlePublish() {
+    if (!platformConnected) {
+      toast.error(`Connect your ${post.platform} account in Integrations → Content publishing before publishing.`)
+      return
+    }
+    onPublish()
+  }
   return (
     <div id={`content-post-${post.id}`} className="scroll-mt-24 hairline-border bg-surface-container-lowest p-stack-md space-y-stack-md">
       <div className="flex items-center justify-between">
@@ -224,8 +273,10 @@ function PostEditor({ post, busy, onSave, onEdit, onSchedule, onPublish }: {
         <button onClick={onEdit} disabled={busy === `ed-${post.id}`} className="font-label-mono text-[10px] uppercase border border-outline-variant px-3 py-1.5 rounded hover:bg-surface-container disabled:opacity-60">{busy === `ed-${post.id}` ? 'Editing…' : 'Run editor'}</button>
         <span className="h-4 w-px bg-outline-variant mx-1" />
         <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="font-label-mono text-[11px] bg-surface border border-outline-variant/40 rounded px-2 py-1" />
-        <button onClick={() => when && onSchedule(new Date(when).toISOString())} disabled={!when || busy === `sc-${post.id}`} className="font-label-mono text-[10px] uppercase border border-outline-variant px-3 py-1.5 rounded hover:bg-surface-container disabled:opacity-40">{busy === `sc-${post.id}` ? 'Scheduling…' : 'Schedule'}</button>
-        <button onClick={onPublish} disabled={busy === `pub-${post.id}`} className="font-label-mono text-[10px] uppercase bg-primary text-on-primary px-3 py-1.5 rounded hover:bg-primary-container disabled:opacity-60">{busy === `pub-${post.id}` ? 'Publishing…' : 'Publish now'}</button>
+        <button onClick={handleSchedule} disabled={!when || busy === `sc-${post.id}`} className="font-label-mono text-[10px] uppercase border border-outline-variant px-3 py-1.5 rounded hover:bg-surface-container disabled:opacity-40">{busy === `sc-${post.id}` ? 'Scheduling…' : 'Schedule'}</button>
+        <button onClick={handlePublish} disabled={busy === `pub-${post.id}`} className="font-label-mono text-[10px] uppercase bg-primary text-on-primary px-3 py-1.5 rounded hover:bg-primary-container disabled:opacity-60">{busy === `pub-${post.id}` ? 'Publishing…' : 'Publish now'}</button>
+        <span className="h-4 w-px bg-outline-variant mx-1" />
+        <button onClick={onDelete} disabled={busy === `del-${post.id}`} className="font-label-mono text-[10px] uppercase text-on-surface-variant hover:text-error disabled:opacity-60">{busy === `del-${post.id}` ? 'Deleting…' : 'Reject'}</button>
       </div>
       {post.error_message && <p className="font-label-mono text-[10px] text-error">{post.error_message}</p>}
     </div>

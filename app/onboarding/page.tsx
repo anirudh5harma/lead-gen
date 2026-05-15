@@ -166,6 +166,7 @@ export default function OnboardingPage() {
           company_name: f.company_name || (body.company_name ?? f.company_name),
           industry: f.industry || (body.industry && (INDUSTRIES as readonly (readonly [string, string])[]).some(([v]) => v === body.industry) ? (body.industry as IndustryValue) : f.industry),
         }))
+        toast.success('Website analysed and fields filled.')
       } else {
         toast.error(body?.error || 'Could not analyse that website. Type a description below.')
       }
@@ -196,6 +197,7 @@ export default function OnboardingPage() {
       toast.error(body?.error || 'Something went wrong.')
       setSaving(false); return
     }
+    toast.success(isEdit ? 'Profile updated.' : 'Setup complete. You\'re live.')
     window.localStorage.removeItem('bombsell:onboarding:website_url')
     if (isEdit) router.push('/dashboard')
     else setDone(true)

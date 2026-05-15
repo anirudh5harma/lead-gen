@@ -20,6 +20,8 @@ export interface WorkspaceAgentConfig {
   enabled: boolean
   autonomy: Autonomy
   config: Record<string, unknown>
+  health: string | null
+  lastRunAt: string | null
 }
 
 export type WorkspaceAgentMap = Map<AgentRole, WorkspaceAgentConfig>
@@ -34,10 +36,11 @@ function defaultConfigFor(role: AgentRole): WorkspaceAgentConfig {
   return {
     role,
     engine: AGENT_ENGINE[role],
-    // add-ons (insight/crm/repurpose/engagement) are off until explicitly enabled
     enabled: !ADDON_ROLES.has(role),
     autonomy: 'approve_first',
     config: {},
+    health: null,
+    lastRunAt: null,
   }
 }
 
@@ -58,7 +61,7 @@ export async function loadWorkspaceAgents(
   const map = defaultWorkspaceAgentMap()
   const { data, error } = await supabase
     .from('workspace_agents')
-    .select('agent_role, engine, enabled, autonomy, config')
+    .select('agent_role, engine, enabled, autonomy, config, health, last_run_at')
     .eq('workspace_id', workspaceId)
   if (error || !data) return map
   for (const row of data) {
@@ -69,6 +72,8 @@ export async function loadWorkspaceAgents(
       enabled: row.enabled !== false,
       autonomy: (row.autonomy as Autonomy) ?? 'approve_first',
       config: (row.config as Record<string, unknown>) ?? {},
+      health: (row.health as string) ?? null,
+      lastRunAt: (row.last_run_at as string) ?? null,
     })
   }
   return map

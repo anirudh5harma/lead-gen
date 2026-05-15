@@ -2,7 +2,7 @@
  * Content Agent Worker — covers the writer / editor / publisher / engagement /
  * repurpose roles (all under the `bombsell.content.*` tool namespace).
  * Tools:
- *   bombsell.content.write      — draft a post from an idea
+ *   bombsell.content.write      — draft a post from an idea (handles 'both' platform)
  *   bombsell.content.thread     — expand a post into a thread (X)
  *   bombsell.content.edit       — brand-voice & format pass + eval
  *   bombsell.content.schedule   — schedule via posting partner
@@ -40,37 +40,49 @@ export async function run(
     switch (dispatch.tool) {
       // ── write ────────────────────────────────────────────────────────────────
       case 'bombsell.content.write': {
-        const { ideaId, platform } = dispatch.args as { ideaId?: string; platform?: Platform }
+        const { ideaId, platform: overridePlatform } = dispatch.args as { ideaId?: string; platform?: Platform }
         if (!ideaId) throw new Error('ideaId required')
         const { data: idea } = await supabase
           .from('content_ideas').select('id, angle, hook, rationale, platform').eq('id', ideaId).eq('workspace_id', workspaceId).maybeSingle()
         if (!idea) throw new Error('idea not found')
-        const plat: Platform = platform ?? (idea.platform === 'x' ? 'x' : 'linkedin')
+
+        // Resolve target platforms: 'both' → ['linkedin', 'x']; otherwise single-element
+        const rawPlatform = overridePlatform ?? (idea.platform as string) ?? 'linkedin'
+        const platforms: Platform[] = rawPlatform === 'both'
+          ? ['linkedin', 'x']
+          : [(rawPlatform === 'x' ? 'x' : 'linkedin')]
+
         const { data: profile } = await supabase.from('user_profiles').select('company_name, services_description').eq('user_id', userId).maybeSingle()
         const wsAgents = await loadWorkspaceAgents(supabase, workspaceId)
         const voice = (getAgentConfig(wsAgents, 'writer').voice as string) ?? ''
 
-        const system = `You write high-performing social posts. ${PLATFORM_GUIDE[plat]} ${voice ? `Brand voice: ${voice}.` : ''} Respond with JSON {"hook": "...", "body": "...", "thread": ["...", "..."]} where "thread" is optional and only for X when needed.`
-        const prompt = [
-          `Company: ${profile?.company_name ?? ''} — ${profile?.services_description ?? ''}`,
-          `Angle: ${idea.angle}`,
-          idea.hook ? `Suggested hook: ${idea.hook}` : '',
-          idea.rationale ? `Why it works: ${idea.rationale}` : '',
-          `Platform: ${plat}`,
-        ].filter(Boolean).join('\n')
-        const { text, provider } = await complete({ system, prompt, json: true, maxTokens: 900, temperature: 0.7, supabase, workspaceId })
-        const parsed = parseJsonLoose<{ hook?: string; body?: string; thread?: string[] }>(text) ?? {}
-        const body = (parsed.body ?? '').trim() || idea.angle
-        const { data: post, error } = await supabase.from('posts').insert({
-          workspace_id: workspaceId, user_id: userId, idea_id: ideaId, platform: plat,
-          status: 'draft', hook: parsed.hook ?? null, body,
-          thread: Array.isArray(parsed.thread) && parsed.thread.length ? parsed.thread : null,
-          metadata: { llm_provider: provider },
-        }).select('id').single()
-        if (error) throw new Error(error.message)
+        const generated: Array<{ postId: string; platform: Platform; hook: string | null; body: string }> = []
+
+        for (const plat of platforms) {
+          const system = `You write high-performing social posts. ${PLATFORM_GUIDE[plat]} ${voice ? `Brand voice: ${voice}.` : ''} Respond with JSON {"hook": "...", "body": "...", "thread": ["...", "..."]} where "thread" is optional and only for X when needed.`
+          const prompt = [
+            `Company: ${profile?.company_name ?? ''} — ${profile?.services_description ?? ''}`,
+            `Angle: ${idea.angle}`,
+            idea.hook ? `Suggested hook: ${idea.hook}` : '',
+            idea.rationale ? `Why it works: ${idea.rationale}` : '',
+            `Platform: ${plat}`,
+          ].filter(Boolean).join('\n')
+          const { text, provider } = await complete({ system, prompt, json: true, maxTokens: 900, temperature: 0.7, supabase, workspaceId })
+          const parsed = parseJsonLoose<{ hook?: string; body?: string; thread?: string[] }>(text) ?? {}
+          const body = (parsed.body ?? '').trim() || idea.angle
+          const { data: post, error } = await supabase.from('posts').insert({
+            workspace_id: workspaceId, user_id: userId, idea_id: ideaId, platform: plat,
+            status: 'draft', hook: parsed.hook ?? null, body,
+            thread: Array.isArray(parsed.thread) && parsed.thread.length ? parsed.thread : null,
+            metadata: { llm_provider: provider },
+          }).select('id').single()
+          if (error) throw new Error(error.message)
+          generated.push({ postId: post?.id, platform: plat, hook: parsed.hook ?? null, body })
+          await recordAgentEvent(supabase, { userId, clientId, agentName: 'writer', eventType: 'content.write.completed', status: 'completed', title: `Drafted ${plat} post`, metadata: { postId: post?.id, platform: plat, provider } })
+        }
+
         await supabase.from('content_ideas').update({ status: 'drafted', updated_at: new Date().toISOString() }).eq('id', ideaId)
-        await recordAgentEvent(supabase, { userId, clientId, agentName: 'writer', eventType: 'content.write.completed', status: 'completed', title: `Drafted ${plat} post`, metadata: { postId: post?.id, platform: plat, provider } })
-        result = { postId: post?.id, platform: plat, hook: parsed.hook ?? null, body }
+        result = { posts: generated.map(g => ({ postId: g.postId, platform: g.platform, hook: g.hook, body: g.body })) }
         break
       }
 

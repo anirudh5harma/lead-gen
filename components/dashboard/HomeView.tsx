@@ -169,16 +169,16 @@ function WhatsWorking() {
 }
 
 function LoopStatusStrip({ onOpenAgents }: { onOpenAgents: () => void }) {
-  const [agents, setAgents] = useState<Array<{ role: string; status: string; lastHeartbeat: string | null }>>([])
+  const [agents, setAgents] = useState<Array<{ role: string; status: string; lastRunAt: string | null }>>([])
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    void fetch('/api/a2a/agents').then(r => r.json()).then(d => {
+    void fetch('/api/workspace-agents').then(r => r.json()).then(d => {
       const xs = Array.isArray(d?.agents) ? d.agents : []
-      setAgents(xs.slice(0, 4).map((a: { role?: string; health?: { status?: string; lastHeartbeat?: string | null } }) => ({
+      setAgents(xs.slice(0, 4).map((a: { role?: string; health?: string | null; lastRunAt?: string | null }) => ({
         role: String(a.role ?? '—'),
-        status: String(a.health?.status ?? 'idle'),
-        lastHeartbeat: a.health?.lastHeartbeat ?? null,
+        status: a.health ?? 'idle',
+        lastRunAt: a.lastRunAt ?? null,
       })))
       setLoaded(true)
     }).catch(() => setLoaded(true))
@@ -198,7 +198,7 @@ function LoopStatusStrip({ onOpenAgents }: { onOpenAgents: () => void }) {
         </div>
       ) : agents.length === 0 ? (
         <div className="hairline-border rounded-lg p-6 text-center font-body-main text-on-surface-variant">
-          Agent fleet is warming up. Open <button onClick={onOpenAgents} className="text-primary underline">Fleet</button> to see live status.
+          Agent fleet is warming up. Open <button onClick={onOpenAgents} className="text-primary underline">Agents</button> to see live status.
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -208,7 +208,7 @@ function LoopStatusStrip({ onOpenAgents }: { onOpenAgents: () => void }) {
                 <span className={`agent-status-dot ${a.status === 'running' ? 'bg-tertiary' : a.status === 'degraded' ? 'bg-secondary' : 'bg-outline-variant'}`} />
                 <span className="font-label-mono text-label-mono uppercase text-on-surface">{a.role}-agent</span>
               </div>
-              <div className="font-label-mono text-[10px] text-on-surface-variant mt-1.5 uppercase">{a.lastHeartbeat ? `last ${relTime(a.lastHeartbeat)}` : a.status}</div>
+              <div className="font-label-mono text-[10px] text-on-surface-variant mt-1.5 uppercase">{a.lastRunAt ? `last ${relTime(a.lastRunAt)}` : a.status}</div>
             </div>
           ))}
         </div>

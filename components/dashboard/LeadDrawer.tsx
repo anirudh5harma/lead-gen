@@ -38,10 +38,10 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
   useEffect(() => { setDraft(null); setSent(false); setEditing(false) }, [lead?.id])
 
   useEffect(() => {
-    if (!lead || mode !== 'review' || draft || busy) return
+    if (!lead || draft || busy) return
     void generateDraft()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lead?.id, mode])
+  }, [lead?.id])
 
   useEffect(() => {
     if (!lead) return
@@ -70,6 +70,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
       if (result.contact?.email) {
         setDraft(current => current ? { ...current, to: current.to ?? result.contact?.email ?? null } : current)
       }
+      toast.success('Lead unlocked.')
       router.refresh()
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Could not unlock lead.') }
     finally { setBusy(null) }
@@ -83,6 +84,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
       })
       setDraft(result.draft)
+      toast.success('Draft prepared.')
       router.refresh()
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Could not prepare draft.') }
     finally { setBusy(null) }
@@ -110,6 +112,8 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
       await request(`/api/leads/${lead.id}/status`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
       })
+      const messages: Record<typeof status, string> = { viewed: 'Marked as viewed.', dismissed: 'Lead dismissed.', booked: 'Marked as booked.' }
+      toast.success(messages[status])
       router.refresh()
       if (status === 'dismissed') onClose()
     } catch (err) { toast.error(err instanceof Error ? err.message : `Could not mark ${status}.`) }
@@ -136,7 +140,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
         {/* Header */}
         <div className="p-8 border-b border-outline-variant flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h4 className="font-h1-editorial text-3xl">{isReview ? 'Review Outreach' : 'Outreach Detail'}</h4>
+            <h4 className="font-h1-editorial text-3xl">{lead?.sent_at ? 'Sent Outreach' : isReview ? 'Review Outreach' : 'Outreach Detail'}</h4>
             <p className="font-label-mono text-[10px] uppercase tracking-[0.2em] text-primary mt-2 truncate">
               {lead?.contact_name || lead?.target_company || '—'}{lead?.target_company && lead?.contact_name ? ` · ${lead.target_company}` : ''}
             </p>
@@ -177,11 +181,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
                     <Icon name="lock_open" size={14} /> {busy === 'unlock' ? 'Unlocking…' : 'Unlock'}
                   </button>
                 )}
-                <button onClick={() => void generateDraft()} disabled={busy != null}
-                  className="text-on-surface-variant font-label-mono text-[10px] uppercase tracking-widest flex items-center gap-1.5 hover:text-primary disabled:opacity-40">
-                  <Icon name="autorenew" size={14} /> {busy === 'draft' ? 'Drafting…' : draft ? 'Regenerate' : 'Prepare'}
-                </button>
-                {draft && (
+                {draft && !lead?.sent_at && (
                   <button onClick={() => setEditing(e => !e)}
                     className="text-primary font-label-mono text-[10px] uppercase tracking-widest flex items-center gap-1.5 hover:underline">
                     <Icon name="edit" size={14} /> {editing ? 'Done editing' : 'Manual edit'}
@@ -211,14 +211,20 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
                   <div className="space-y-4 whitespace-pre-wrap text-on-surface-variant">{draft.body}</div>
                 )}
                 {cc.length > 0 && <p className="mt-6 font-label-mono text-[10px] uppercase text-on-surface-variant">cc · {cc.join(', ')}</p>}
+                {!lead?.sent_at && (
+                  <button onClick={() => void generateDraft()} disabled={busy != null}
+                    className="mt-4 font-label-mono text-[9px] uppercase tracking-wider text-on-surface-variant/60 hover:text-primary disabled:opacity-40">
+                    {busy === 'draft' ? 'Regenerating…' : 'Regenerate draft'}
+                  </button>
+                )}
+              </div>
+            ) : busy === 'draft' ? (
+              <div className="bg-surface-container-lowest border border-outline-variant p-10 text-center rounded-lg">
+                <p className="font-body-main text-on-surface-variant">Preparing draft…</p>
               </div>
             ) : (
               <div className="bg-surface-container-lowest border border-outline-variant p-10 text-center rounded-lg">
-                <p className="font-body-main text-on-surface-variant mb-4">No draft loaded in this session.</p>
-                <button onClick={() => void generateDraft()} disabled={busy != null}
-                  className="bg-primary text-on-primary font-label-mono text-[10px] uppercase tracking-[0.2em] px-6 py-2.5 hover:bg-primary-container transition-colors disabled:opacity-50">
-                  {busy === 'draft' ? 'Preparing…' : 'Prepare draft'}
-                </button>
+                <p className="font-body-main text-on-surface-variant">Could not load draft. Try closing and reopening this lead.</p>
               </div>
             )}
 
