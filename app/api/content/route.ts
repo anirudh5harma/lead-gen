@@ -11,6 +11,7 @@
  *   - 'publish'         { postId }                       → dispatch content.publish
  *   - 'repurpose'       { postId? }                      → dispatch content.repurpose
  *   - 'set_idea_status' { ideaId, status }               → update content_ideas
+ *   - 'delete_post'     { postId }                       → delete post
  * PATCH { postId, hook?, body?, scheduledAt? }           → manual post edit
  */
 import { NextResponse } from 'next/server'
@@ -96,6 +97,12 @@ export async function POST(request: Request) {
         const status = body?.status as string | undefined
         if (!body?.ideaId || !status || !['proposed', 'approved', 'rejected', 'drafted'].includes(status)) return NextResponse.json({ error: 'ideaId & valid status required' }, { status: 400 })
         const { error } = await c.supabase.from('content_ideas').update({ status, updated_at: new Date().toISOString() }).eq('id', body.ideaId).eq('workspace_id', c.workspaceId)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ ok: true })
+      }
+      case 'delete_post': {
+        if (!body?.postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+        const { error } = await c.supabase.from('posts').delete().eq('id', body.postId).eq('workspace_id', c.workspaceId)
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         return NextResponse.json({ ok: true })
       }

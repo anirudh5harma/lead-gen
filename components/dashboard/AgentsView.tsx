@@ -12,27 +12,21 @@ interface Props { profile: UserProfile }
  * Fleet — the system view, styled after the Stitch "Fleet Dashboard" and
  * "Loop Workflows" screens.
  *
- *   Fleet     → full agent fleet table (status · activity · state)
+ *   Stacks    → per-agent enable/autonomy + live health status from DB
  *   Workflows → active-workflow cards + automation-pipelines table + command bar
  *   Activity  → live event stream
  */
-type AgentsTab = 'config' | 'fleet' | 'workflows' | 'activity'
+type AgentsTab = 'config' | 'workflows' | 'activity'
 
 export default function AgentsView({ profile }: Props) {
   const [tab, setTab] = useState<AgentsTab>('config')
-  const [agents, setAgents] = useState<AgentRow[]>([])
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([])
 
   useEffect(() => {
-    void fetch('/api/a2a/agents').then(r => r.json()).then(d => {
-      setAgents(Array.isArray(d?.agents) ? d.agents.map(asAgentRow) : [])
-    }).catch(() => {})
     void fetch('/api/a2a/workflows').then(r => r.json()).then(d => {
       setWorkflows(Array.isArray(d?.workflows) ? d.workflows : [])
     }).catch(() => {})
   }, [])
-
-  const running = agents.filter(a => a.status === 'running').length
 
   return (
     <div className="space-y-section-gap">
@@ -44,7 +38,7 @@ export default function AgentsView({ profile }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-1 hairline-border rounded-full p-1">
-          {([['config', 'Stacks'], ['fleet', 'Fleet'], ['workflows', 'Pipelines'], ['activity', 'Activity']] as Array<[AgentsTab, string]>).map(([id, label]) => (
+          {([['config', 'Stacks'], ['workflows', 'Pipelines'], ['activity', 'Activity']] as Array<[AgentsTab, string]>).map(([id, label]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -57,7 +51,6 @@ export default function AgentsView({ profile }: Props) {
       </div>
 
       {tab === 'config' && <AgentStacks />}
-      {tab === 'fleet' && <Fleet agents={agents} running={running} />}
       {tab === 'workflows' && <Workflows rows={workflows} />}
       {tab === 'activity' && <Activity />}
     </div>
@@ -66,7 +59,7 @@ export default function AgentsView({ profile }: Props) {
 
 /* ─── Stacks (per-workspace agent config) ─────────────────────── */
 
-interface WsAgent { role: string; engine: 'outbound' | 'content' | 'shared'; enabled: boolean; autonomy: 'research_only' | 'approve_first' | 'autopilot'; name: string; description: string; capabilities: string[] }
+interface WsAgent { role: string; engine: 'outbound' | 'content' | 'shared'; enabled: boolean; autonomy: 'research_only' | 'approve_first' | 'autopilot'; name: string; description: string; capabilities: string[]; health: string | null; lastRunAt: string | null }
 const ENGINE_LABEL: Record<string, string> = { outbound: 'Outbound engine', content: 'Content engine', shared: 'Shared · add-ons · control' }
 const ACTING = new Set(['outreach', 'booking', 'followup', 'publisher', 'crm'])
 
@@ -109,6 +102,10 @@ function AgentStacks() {
           <div className="space-y-px bg-outline-variant/30 hairline-border">
             {list.map((a) => (
               <div key={a.role} className={`bg-surface-container-lowest px-stack-md py-3.5 flex items-center gap-stack-md transition-opacity ${a.enabled ? '' : 'opacity-55'}`}>
+                {/* status dot */}
+                <span className={`shrink-0 w-2 h-2 rounded-full ${
+                  a.health === 'running' ? 'bg-tertiary animate-pulse' : a.health === 'degraded' ? 'bg-secondary' : 'bg-outline-variant'
+                }`} title={a.health ?? 'idle'} />
                 {/* on/off switch */}
                 <button
                   type="button"
@@ -127,6 +124,7 @@ function AgentStacks() {
                     {ACTING.has(a.role) && <span className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant border border-outline-variant/50 rounded px-1 py-px" title="acting agent — autonomy applies">acts</span>}
                   </div>
                   <p className="font-body-main text-[13px] text-on-surface-variant line-clamp-1 mt-0.5">{a.description}</p>
+                  {a.lastRunAt && <p className="font-label-mono text-[9px] uppercase tracking-wider text-on-surface-variant/60 mt-0.5">{relativeTime(a.lastRunAt)}</p>}
                 </div>
                 <select
                   value={a.autonomy}
@@ -158,60 +156,6 @@ function useCallbackLoad(setRows: (r: WsAgent[]) => void, setLoaded: (b: boolean
     } catch { /* ignore */ }
     setLoaded(true)
   }, [setRows, setLoaded])
-}
-
-/* ─── Fleet ───────────────────────────────────────────────────── */
-
-function Fleet({ agents, running }: { agents: AgentRow[]; running: number }) {
-  if (agents.length === 0) {
-    return <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">Loading agents…</div>
-  }
-  return (
-    <div className="bg-surface-container-lowest hairline-border rounded-lg overflow-hidden">
-      <div className="bg-surface-container-low/30 px-6 py-3 hairline-b flex justify-between items-center">
-        <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Active Agents • {agents.length} · {running} running</span>
-        <div className="flex items-center gap-2 font-label-mono text-[9px] uppercase text-on-surface-variant">
-          <Icon name="refresh" size={14} /><span>Auto-update enabled</span>
-        </div>
-      </div>
-      <div className="divide-y divide-[rgba(26,24,22,0.07)]">
-        {agents.map((a) => (
-          <div key={a.role} className="flex items-center px-6 py-5 hover:bg-surface-container-low transition-colors group">
-            <div className="w-44 sm:w-52 flex items-center gap-4 shrink-0">
-              <span className={`agent-status-dot ${a.status === 'running' ? 'bg-tertiary' : a.status === 'degraded' ? 'bg-secondary' : 'bg-outline-variant'}`} />
-              <span className="font-label-mono text-label-mono uppercase text-on-surface truncate">{a.role}-agent</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-on-surface-variant font-body-main truncate">{a.description || `v${a.version} · ${a.capabilities} tools`}</p>
-            </div>
-            <div className="w-28 flex justify-end shrink-0">
-              <span className={`font-label-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded ${
-                a.status === 'running' ? 'bg-tertiary/10 text-tertiary' : 'bg-surface-container-high text-on-surface-variant'
-              }`}>{a.status === 'running' ? 'Running' : a.status === 'degraded' ? 'Degraded' : 'Idle'}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-interface AgentRow {
-  role: string; name: string; status: string; version: string; description: string; capabilities: number
-}
-function asAgentRow(a: unknown): AgentRow {
-  const x = a as Record<string, unknown>
-  const health = x.health as { status?: string } | undefined
-  const version = x.version as { semver?: string } | undefined
-  const caps = Array.isArray(x.capabilities) ? x.capabilities.length : 0
-  return {
-    role: String(x.role ?? '—'),
-    name: String(x.name ?? '—'),
-    status: (health?.status ?? 'idle'),
-    version: version?.semver ?? '0.0.0',
-    description: String(x.description ?? ''),
-    capabilities: caps,
-  }
 }
 
 /* ─── Workflows ───────────────────────────────────────────────── */
@@ -416,6 +360,17 @@ function Activity() {
 function formatTime(iso: string): string {
   const d = new Date(iso)
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  const s = Math.round(ms / 1000)
+  if (s < 60) return 'just now'
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.round(h / 24)
+  return `${d}d ago`
 }
 function pad(n: number) { return n.toString().padStart(2, '0') }
 function statusPill(status: string): string {

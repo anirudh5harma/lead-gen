@@ -50,6 +50,8 @@ export async function GET() {
     name: META.get(a.role)?.name ?? `${a.role}-agent`,
     description: META.get(a.role)?.description ?? '',
     capabilities: META.get(a.role)?.capabilities ?? [],
+    health: a.health,
+    lastRunAt: a.lastRunAt,
   })).sort((x, y) => (ENGINE_ORDER[x.engine] - ENGINE_ORDER[y.engine]) || x.role.localeCompare(y.role))
   return NextResponse.json({ agents })
 }

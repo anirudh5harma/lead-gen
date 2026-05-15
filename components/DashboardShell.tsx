@@ -73,7 +73,7 @@ const VIEWS: NavEntry[] = [
   { id: 'outreach',     label: 'Pipeline',     sub: 'Outbound — priority leads, drafts, sent, replies.',       icon: 'mail',    group: 'Outbound' },
   { id: 'accounts',     label: 'Signals',      sub: 'Outbound — accounts, signals, fit scores.',               icon: 'sensors', group: 'Outbound' },
   { id: 'content',      label: 'Content',      sub: 'Content engine — ideas, composer, calendar, performance.', icon: 'edit_note', group: 'Content' },
-  { id: 'agents',       label: 'Agents',       sub: 'Agent stacks, fleet, pipelines, and live activity.',      icon: 'smart_toy', group: 'System' },
+  { id: 'agents',       label: 'Agents',       sub: 'Agent stacks, pipelines, and live activity.',      icon: 'smart_toy', group: 'System' },
   { id: 'integrations', label: 'Integrations', sub: 'Sending, social, CRM, signals — all in one place.',       icon: 'hub',     group: 'System' },
   { id: 'settings',     label: 'Settings',     sub: 'Profile, billing, team, and preferences.',                icon: 'settings', group: 'System' },
 ]
