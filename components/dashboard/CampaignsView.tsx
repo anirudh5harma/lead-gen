@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Lead } from '@/lib/leads'
-import Icon from '@/components/Icon'
 import { useToast } from '@/components/Toast'
 import {
   type CampaignMetrics,
@@ -280,7 +279,7 @@ export default function CampaignsView({ profile }: Props) {
       <section>
         <div className="flex items-end justify-between mb-stack-lg hairline-b pb-2 gap-3 flex-wrap">
           <div>
-            <p className="font-label-mono text-label-mono uppercase tracking-[0.2em] text-on-surface-variant">Prompt to campaign</p>
+            <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">Prompt to campaign</p>
             <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-1">What do you want to sell, and to whom?</h3>
           </div>
           <button onClick={() => void createCampaignFromPrompt()} disabled={buildingFromPrompt || !promptDraft.prompt.trim()} className={PRIMARY_BTN}>
@@ -314,8 +313,8 @@ export default function CampaignsView({ profile }: Props) {
       </section>
 
       {/* Board + detail */}
-      <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-stack-lg items-start">
-        <section>
+      <div className="grid lg:grid-cols-[minmax(300px,360px)_1fr] gap-stack-lg items-start">
+        <section className="lg:sticky lg:top-6">
           <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2 gap-3 flex-wrap">
             <h3 className="font-h1-editorial text-h1-editorial">Campaigns</h3>
             <span className={BADGE_ACCENT}>{campaigns.length} Motions</span>
@@ -331,32 +330,32 @@ export default function CampaignsView({ profile }: Props) {
               <div className="divide-y divide-[rgba(26,24,22,0.07)]">
                 {campaigns.map(campaign => {
                   const active = selected?.id === campaign.id
+                  const targets = campaign.target_counts?.total ?? 0
+                  const sent = campaign.target_counts?.sent ?? 0
+                  const replies = campaign.target_counts?.replied ?? 0
+                  const content = (campaign.content_counts?.total ?? 0) + (campaign.asset_counts?.total ?? 0)
                   return (
                     <button
                       key={campaign.id}
                       onClick={() => setSelectedId(campaign.id)}
-                      className={`w-full text-left px-6 py-5 transition-colors ${active ? 'bg-secondary-container/40' : 'hover:bg-surface-container-low'}`}
+                      aria-current={active}
+                      className={`relative w-full text-left px-5 py-4 transition-colors ${active ? 'bg-surface-container-low' : 'hover:bg-surface-container-low/60'}`}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                            <span className="font-body-main font-medium text-on-surface">{campaign.name}</span>
-                            <span className={BADGE}>{campaign.status}</span>
-                          </div>
-                          <p className="font-body-main text-on-surface-variant truncate text-[13px]">
-                            {campaign.objective || campaign.narrative || campaign.trigger || campaign.segment}
-                          </p>
-                          <p className="font-label-mono text-[10px] uppercase tracking-widest text-outline mt-2">
-                            {campaign.readiness?.stage ?? 'strategy'} · {campaign.readiness?.missing.length ?? 0} constraints
-                          </p>
+                      {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] bg-primary rounded-r" />}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="font-body-main font-medium text-on-surface truncate">{campaign.name}</span>
+                          <span className={BADGE}>{campaign.status}</span>
                         </div>
-                        <Icon name="chevron_right" size={18} className="text-on-surface-variant shrink-0 mt-1" />
-                      </div>
-                      <div className="mt-4 grid grid-cols-4 gap-2">
-                        <Tiny label="Targets" value={campaign.target_counts?.total ?? 0} />
-                        <Tiny label="Sent" value={campaign.target_counts?.sent ?? 0} />
-                        <Tiny label="Replies" value={campaign.target_counts?.replied ?? 0} />
-                        <Tiny label="Content" value={(campaign.content_counts?.total ?? 0) + (campaign.asset_counts?.total ?? 0)} />
+                        <p className="font-body-main text-on-surface-variant truncate text-[12.5px]">
+                          {campaign.objective || campaign.narrative || campaign.trigger || campaign.segment || '—'}
+                        </p>
+                        <div className="mt-2 flex items-center gap-3 font-label-mono text-[10px] uppercase tracking-widest text-outline">
+                          <span>{targets} tgt</span>
+                          <span>{sent} sent</span>
+                          <span>{replies} rep</span>
+                          <span>{content} cnt</span>
+                        </div>
                       </div>
                     </button>
                   )
@@ -366,26 +365,23 @@ export default function CampaignsView({ profile }: Props) {
           )}
         </section>
 
-        <section className="space-y-stack-lg">
-          {selected ? (
-            <CampaignDetail
-              campaign={selected}
-              loading={detailLoading}
-              targets={currentTargets}
-              links={detail?.content_links ?? []}
-              assets={detail?.assets ?? []}
-              onStatus={action => void updateStatus(selected.id, action)}
-              onRemove={() => setRemoveCampaign(selected)}
-              onDiscover={() => void discoverMore(selected)}
-              discovering={discoveringId === selected.id}
-            />
-          ) : (
-            <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
-              Select or create a campaign to see execution lanes.
-            </div>
-          )}
-
-        </section>
+        {selected ? (
+          <CampaignDetail
+            campaign={selected}
+            loading={detailLoading}
+            targets={currentTargets}
+            links={detail?.content_links ?? []}
+            assets={detail?.assets ?? []}
+            onStatus={action => void updateStatus(selected.id, action)}
+            onRemove={() => setRemoveCampaign(selected)}
+            onDiscover={() => void discoverMore(selected)}
+            discovering={discoveringId === selected.id}
+          />
+        ) : (
+          <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
+            Select or create a campaign to see execution lanes.
+          </div>
+        )}
       </div>
       {removeCampaign && (
         <RemoveCampaignModal
@@ -414,21 +410,31 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
     ? ` · ${Math.round(Number(progress.completion) || 0)}%`
     : ''
   return (
-    <section className="bg-surface-container-lowest hairline-border rounded-lg p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">
+    <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-lg">
+      <div className="flex items-start justify-between gap-stack-md flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
             Selected campaign {loading ? '· syncing…' : ''}
           </p>
-          <h3 className="font-h1-editorial text-[22px] text-on-surface mt-2 tracking-[-0.02em]">{campaign.name}</h3>
-          <p className="font-body-main text-on-surface-variant mt-2 text-[13px]">
+          <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2">{campaign.name}</h3>
+          <p className="font-body-main text-on-surface-variant mt-2 text-[13px] max-w-prose">
             {readiness?.nextAction ?? 'Choose the next GTM constraint to remove.'}
           </p>
         </div>
-        <span className={BADGE}>{campaign.status}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={BADGE}>{campaign.status}</span>
+          {campaign.status !== 'active' && (
+            <button onClick={() => onStatus('activate')} disabled={!readiness?.canLaunch} className={PRIMARY_BTN}>
+              Activate
+            </button>
+          )}
+          {campaign.status === 'active' && (
+            <button onClick={() => onStatus('pause')} className={GHOST_BTN}>Pause</button>
+          )}
+        </div>
       </div>
 
-      <div className="mt-6 grid gap-stack-md">
+      <div className="mt-stack-lg grid md:grid-cols-2 gap-x-stack-lg gap-y-stack-md">
         <Field label="Objective" value={campaign.objective || campaign.name} />
         <Field label="Audience" value={campaign.segment} />
         <Field label="Trigger" value={campaign.trigger} />
@@ -500,19 +506,11 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
         />
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        {campaign.status !== 'active' && (
-          <button onClick={() => onStatus('activate')} disabled={!readiness?.canLaunch} className={PRIMARY_BTN}>
-            Activate
-          </button>
-        )}
-        {campaign.status === 'active' && (
-          <button onClick={() => onStatus('pause')} className={GHOST_BTN}>Pause</button>
-        )}
+      <div className="mt-stack-lg pt-stack-md hairline-t flex flex-wrap items-center justify-end gap-2">
         {campaign.status !== 'completed' && (
-          <button onClick={() => onStatus('complete')} className={GHOST_BTN}>Complete</button>
+          <button onClick={() => onStatus('complete')} className={GHOST_BTN}>Mark complete</button>
         )}
-        <button onClick={onRemove} className={GHOST_BTN}>Remove</button>
+        <button onClick={onRemove} className={`${GHOST_BTN} text-on-surface-variant hover:text-error`}>Remove</button>
       </div>
     </section>
   )
@@ -588,8 +586,8 @@ function RemoveCampaignModal({ campaign, onClose, onConfirm }: { campaign: Campa
       <section className="relative w-full max-w-[460px] bg-surface-container-lowest hairline-border rounded-lg p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="font-label-mono text-[10px] uppercase tracking-[0.25em] text-on-surface-variant">Remove campaign</p>
-            <h3 className="font-h1-editorial text-[22px] text-on-surface mt-2">{campaign.name}</h3>
+            <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">Remove campaign</p>
+            <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2">{campaign.name}</h3>
           </div>
           <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface text-[20px] leading-none" aria-label="Close">×</button>
         </div>
