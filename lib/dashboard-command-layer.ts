@@ -6,17 +6,18 @@
  * this file handles lead resolution (fuzzy matching company names)
  * and command construction.
  */
-import { classifyVoiceIntent, classifyVoiceIntentClient, isVoiceConfirmation, isVoiceCancellation } from '@/lib/voice-intent-layer'
-import type { VoiceIntent } from '@/lib/voice-intent-layer'
+import { classifyVoiceIntentClient } from '@/lib/voice-intent-client'
+import { isVoiceCancellation, isVoiceConfirmation } from '@/lib/voice-intent-core'
+import type { VoiceIntent } from '@/lib/voice-intent-core'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type DashboardView =
   | 'home'
+  | 'campaigns'
   | 'outreach'
   | 'accounts'
   | 'content'
-  | 'agents'
   | 'integrations'
   | 'settings'
 
@@ -162,141 +163,8 @@ function cleanupLeadTarget(value: string): string {
 export async function classifyDashboardCommand(
   input: InterpretDashboardCommandInput,
 ): Promise<DashboardCommandInterpretation> {
-  const classification = await classifyVoiceIntent(input.transcript, {
-    activeView: input.activeView,
-  })
-  const vi = classification.intent
-
-  switch (vi.intent) {
-    case 'confirm':
-      return { kind: 'unsupported', reason: 'Nothing to confirm right now.' }
-
-    case 'cancel':
-      return { kind: 'unsupported', reason: 'Nothing to cancel right now.' }
-
-    case 'refresh':
-      return {
-        kind: 'command',
-        command: { type: 'refresh', summary: 'Refresh dashboard data' },
-      }
-
-    case 'search': {
-      const query = vi.query || ''
-      if (!query) return { kind: 'unsupported', reason: 'What would you like to search for?' }
-      return {
-        kind: 'command',
-        command: { type: 'search', query, summary: `Search for "${query}"` },
-      }
-    }
-
-    case 'navigate': {
-      const view = vi.view || 'home'
-      const viewLabels: Record<DashboardView, string> = {
-        home: 'Home', outreach: 'Outreach', accounts: 'Accounts',
-        content: 'Content', agents: 'Agents', integrations: 'Integrations',
-        settings: 'Settings',
-      }
-      return {
-        kind: 'command',
-        command: {
-          type: 'navigate',
-          view,
-          sectionId: vi.sectionId,
-          sectionLabel: vi.sectionId ? vi.target : undefined,
-          summary: `Open ${viewLabels[view]}`,
-        },
-      }
-    }
-
-    case 'help':
-      return {
-        kind: 'unsupported',
-        reason: 'Try commands like "show pipeline", "draft outreach for Acme", "approve idea 1", "go to settings", or "search for fintech companies".',
-      }
-
-    case 'lead_details':
-    case 'lead_draft':
-    case 'lead_unlock':
-    case 'lead_send':
-    case 'lead_status': {
-      const action = leadIntentToAction(vi.intent)
-      if (!action) return { kind: 'unsupported', reason: vi.note || 'Could not determine what to do with this lead.' }
-
-      // Resolve by index first, then by name
-      const leads = input.leads
-      let targetLead: DashboardCommandLead | null = null
-      let resolvedBy = ''
-
-      if (vi.index && vi.index > 0) {
-        targetLead = leads[vi.index - 1] ?? null
-        resolvedBy = `index ${vi.index}`
-      }
-
-      if (!targetLead && vi.target) {
-        const cleaned = cleanupLeadTarget(vi.target)
-        const resolved = resolveLeadTarget(cleaned, leads)
-        if (resolved.kind === 'match') {
-          targetLead = resolved.lead
-          resolvedBy = `"${cleaned}"`
-        } else {
-          return resolved // clarify or unsupported
-        }
-      }
-
-      if (!targetLead) {
-        return {
-          kind: 'unsupported',
-          reason: vi.target
-            ? `Could not find "${vi.target}" in the current pipeline.`
-            : 'Which lead should I use? Say the company name or number.',
-        }
-      }
-
-      const leadLabel = targetLead.target_company
-      const requiresConfirmation = action === 'send'
-
-      if (vi.intent === 'lead_status') {
-        const status = vi.status || 'viewed'
-        return {
-          kind: 'command',
-          command: {
-            type: 'lead',
-            action: 'status',
-            status,
-            leadId: targetLead.id,
-            leadLabel,
-            summary: `Mark ${leadLabel} ${status}`,
-            requiresConfirmation: status === 'dismissed',
-          },
-        }
-      }
-
-      const summaries: Record<string, string> = {
-        details: `Open ${leadLabel}`,
-        draft: `Prepare outreach draft for ${leadLabel}`,
-        unlock: `Unlock contact for ${leadLabel}`,
-        send: `Send outreach for ${leadLabel}`,
-      }
-
-      return {
-        kind: 'command',
-        command: {
-          type: 'lead',
-          action,
-          leadId: targetLead.id,
-          leadLabel,
-          summary: summaries[action] || `${action} ${leadLabel}`,
-          requiresConfirmation,
-        },
-      }
-    }
-
-    default:
-      return {
-        kind: 'unsupported',
-        reason: vi.note || 'Try commands like "show pipeline", "draft outreach for Acme", or "go to settings".',
-      }
-  }
+  void input
+  return { kind: 'unsupported', reason: 'Server-side dashboard command classification moved behind /api/voice/classify. Use classifyDashboardCommandClient in the dashboard.' }
 }
 
 function leadIntentToAction(intent: VoiceIntent['intent']): Exclude<LeadCommandAction, 'status'> | null {
@@ -339,8 +207,8 @@ export async function classifyDashboardCommandClient(
     case 'navigate': {
       const view = vi.view || 'home'
       const viewLabels: Record<DashboardView, string> = {
-        home: 'Home', outreach: 'Outreach', accounts: 'Accounts',
-        content: 'Content', agents: 'Agents', integrations: 'Integrations',
+        home: 'Home', campaigns: 'Campaigns', outreach: 'Outreach', accounts: 'Accounts',
+        content: 'Content', integrations: 'Integrations',
         settings: 'Settings',
       }
       return {

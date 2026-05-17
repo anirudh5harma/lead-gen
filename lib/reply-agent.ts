@@ -8,6 +8,7 @@ import { upsertLeadIntoGtmGraph, recordGtmTouchpoint } from '@/lib/gtm/graph'
 import { bodyPreview } from '@/lib/gtm/identity'
 import { recordGtmMemory } from '@/lib/gtm/memory'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
+import { updateCampaignTargetsForLead } from '@/lib/gtm/campaign-attribution'
 import { debitOutcome } from '@/lib/credits/outcomes'
 import {
   buildBookingReplyBody,
@@ -74,6 +75,17 @@ export async function processInboundReply(params: {
   }
 
   await supabase.from('leads').update(updates).eq('id', lead.id).eq('user_id', userId)
+  updateCampaignTargetsForLead(supabase, {
+    userId,
+    lead: {
+      id: lead.id,
+      client_id: lead.client_id ?? null,
+      target_company: lead.target_company ?? '',
+      status: nextStatus,
+      replied_at: now,
+      booked_at: booked ? now : null,
+    },
+  }).catch(() => {})
   await stopPendingFollowups(supabase, lead.id, now)
 
   // Outcome-based credit debits (idempotent per lead). Charge on value events only.

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { emitCrmLeadEvent } from '@/lib/crm-sync'
 import { recordOutcomeLearning, type GtmOutcome } from '@/lib/gtm/outcome-learning'
+import { updateCampaignTargetsForLead } from '@/lib/gtm/campaign-attribution'
 import { loadAccessibleLead } from '@/lib/lead-access'
 
 const VALID_STATUSES = ['new', 'viewed', 'drafted', 'sent', 'replied', 'booked', 'dismissed'] as const
@@ -50,6 +51,19 @@ export async function PATCH(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  updateCampaignTargetsForLead(serviceSupabase, {
+    userId: user.id,
+    lead: {
+      id,
+      target_company: (lead as { target_company?: string } | null)?.target_company ?? '',
+      client_id: (lead as { client_id?: string | null } | null)?.client_id ?? null,
+      status,
+      sent_at: s === 'sent' ? String(updates.sent_at) : null,
+      replied_at: s === 'replied' ? String(updates.replied_at) : null,
+      booked_at: s === 'booked' ? String(updates.booked_at) : null,
+    },
+  }).catch(() => {})
 
   const eventType = status === 'replied'
     ? 'lead.replied'

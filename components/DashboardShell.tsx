@@ -23,9 +23,9 @@ import Icon from '@/components/Icon'
 import LeadDrawer from './dashboard/LeadDrawer'
 import { useToast } from '@/components/Toast'
 import HomeView from './dashboard/HomeView'
+import CampaignsView from './dashboard/CampaignsView'
 import AccountsView from './dashboard/AccountsView'
 import OutreachView from './dashboard/OutreachView'
-import AgentsView from './dashboard/AgentsView'
 import IntegrationsView from './dashboard/IntegrationsView'
 import SettingsView from './dashboard/SettingsView'
 import ContentView, { type ContentIdea, type ContentVoiceCommand } from './dashboard/ContentView'
@@ -70,11 +70,11 @@ type BrowserSpeechRecognitionWindow = Window & {
 
 const VIEWS: NavEntry[] = [
   { id: 'home',         label: 'Home',         sub: 'Today’s queue and command bar.',                          icon: 'sync_alt' },
-  { id: 'outreach',     label: 'Pipeline',     sub: 'Outbound — priority leads, drafts, sent, replies.',       icon: 'mail',    group: 'Outbound' },
-  { id: 'accounts',     label: 'Signals',      sub: 'Outbound — accounts, signals, fit scores.',               icon: 'sensors', group: 'Outbound' },
-  { id: 'content',      label: 'Content',      sub: 'Content engine — ideas, composer, calendar, performance.', icon: 'edit_note', group: 'Content' },
-  { id: 'agents',       label: 'Agents',       sub: 'Agent stacks, pipelines, and live activity.',      icon: 'smart_toy', group: 'System' },
-  { id: 'integrations', label: 'Integrations', sub: 'Sending, social, CRM, signals — all in one place.',       icon: 'hub',     group: 'System' },
+  { id: 'campaigns',    label: 'Campaigns',    sub: 'GTM motions — audience, trigger, narrative, channels.',    icon: 'campaign', group: 'GTM' },
+  { id: 'outreach',     label: 'Pipeline',     sub: 'Outbound — priority leads, drafts, sent, replies.',       icon: 'mail',    group: 'GTM' },
+  { id: 'accounts',     label: 'Signals',      sub: 'Outbound — accounts, signals, fit scores.',               icon: 'sensors', group: 'GTM' },
+  { id: 'content',      label: 'Content',      sub: 'Content engine — ideas, composer, calendar, performance.', icon: 'edit_note', group: 'GTM' },
+  { id: 'integrations', label: 'Integrations', sub: 'Sending, social, CRM, signals, agents API.',              icon: 'hub',     group: 'System' },
   { id: 'settings',     label: 'Settings',     sub: 'Profile, billing, team, and preferences.',                icon: 'settings', group: 'System' },
 ]
 
@@ -86,7 +86,7 @@ function normalizeView(input: string | null): View {
   if (input.startsWith('sales/')) return input.endsWith('outreach') ? 'outreach' : 'home'
   if (input.startsWith('marketing/') || input.startsWith('content/')) return 'content'
   if (input.startsWith('revenue/')) return 'accounts'
-  if (input.startsWith('engine/')) return 'agents'
+  if (input.startsWith('engine/') || input === 'agents') return 'integrations'
   return 'home'
 }
 
@@ -320,7 +320,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
       voiceBusyRef.current = false
       window.setTimeout(() => setVoiceStatus(current => current === 'processing' ? 'idle' : current), 1200)
     }
-  }, [activeView, leadById, navigate, refresh, request, toast])
+  }, [leadById, navigate, refresh, request, toast])
 
   const dashboardCommandFromConversationAction = useCallback((action: DashboardConversationAction): DashboardCommand | null => {
     if (action.type !== 'pipeline_item') return null
@@ -656,6 +656,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
         <main className="flex-1">
           <div className="max-w-[1280px] mx-auto px-margin-page py-stack-lg">
             {activeView === 'home'         && <HomeView key={`home-${commandSearch?.nonce ?? 0}`} profile={userProfile} leads={initialLeads} onNavigate={navigate} commandSearch={commandSearch} />}
+            {activeView === 'campaigns'    && <CampaignsView profile={userProfile} leads={initialLeads} />}
             {activeView === 'accounts'     && <AccountsView key={`accounts-${commandSearch?.nonce ?? 0}`} profile={userProfile} leads={initialLeads} commandSearch={commandSearch} />}
             {activeView === 'outreach'     && <OutreachView profile={userProfile} leads={initialLeads} focusLeadId={pipelineFocusLeadId} />}
             {activeView === 'content'      && (
@@ -665,7 +666,6 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
                 onVisibleContextChange={handleContentVisibleContextChange}
               />
             )}
-            {activeView === 'agents'       && <AgentsView profile={userProfile} />}
             {activeView === 'integrations' && <IntegrationsView profile={userProfile} />}
             {activeView === 'settings'     && <SettingsView profile={userProfile} userTier={userTier} />}
           </div>

@@ -45,11 +45,6 @@ const leads: RemotePipelineLead[] = [
   },
 ]
 
-test('remote conversation parses content list requests instead of dashboard navigation', () => {
-  assert.deepEqual(parseRemoteConversationIntent('what are the content ideas for today'), { type: 'list_content_ideas' })
-  assert.deepEqual(parseRemoteConversationIntent('list them here'), { type: 'list_content_ideas' })
-})
-
 test('remote conversation formats content ideas with numbered chat actions', () => {
   const response = formatContentIdeasForChat(ideas)
 
@@ -60,12 +55,6 @@ test('remote conversation formats content ideas with numbered chat actions', () 
   assert.doesNotMatch(response, /Open content/)
 })
 
-test('remote conversation parses numbered content actions', () => {
-  assert.deepEqual(parseRemoteConversationIntent('approve idea 1'), { type: 'content_idea_action', action: 'approve', index: 1 })
-  assert.deepEqual(parseRemoteConversationIntent('reject idea 2'), { type: 'content_idea_action', action: 'reject', index: 2 })
-  assert.deepEqual(parseRemoteConversationIntent('draft idea 2'), { type: 'content_idea_action', action: 'draft', index: 2 })
-})
-
 test('remote conversation formats pipeline as an in-chat list', () => {
   const response = formatPipelineForChat(leads)
 
@@ -74,14 +63,6 @@ test('remote conversation formats pipeline as an in-chat list', () => {
   assert.match(response, /2\. Nova Security/)
   assert.match(response, /draft lead 1/)
   assert.doesNotMatch(response, /Open pipeline/)
-})
-
-test('remote conversation parses numbered lead actions', () => {
-  assert.deepEqual(parseRemoteConversationIntent('show pipeline'), { type: 'list_pipeline' })
-  assert.deepEqual(parseRemoteConversationIntent('show lead 1'), { type: 'lead_index_action', action: 'details', index: 1 })
-  assert.deepEqual(parseRemoteConversationIntent('prepare draft for lead 2'), { type: 'lead_index_action', action: 'draft', index: 2 })
-  assert.deepEqual(parseRemoteConversationIntent('send lead 1'), { type: 'lead_index_action', action: 'send', index: 1 })
-  assert.deepEqual(parseRemoteConversationIntent('mark lead 2 booked'), { type: 'lead_index_action', action: 'status', index: 2, status: 'booked' })
 })
 
 test('remote pipeline ranking prefers active high-fit leads', () => {

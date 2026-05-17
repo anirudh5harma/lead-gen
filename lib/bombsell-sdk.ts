@@ -73,6 +73,21 @@ export interface SafetyDecision {
   decision: string; reasons: string[]
 }
 
+export interface CampaignSummary {
+  id: string
+  name: string
+  status: string
+  objective?: string | null
+  segment?: string | null
+  trigger?: string | null
+  narrative?: string | null
+  channels?: string[] | null
+  readiness?: { stage: string; canLaunch: boolean; missing: string[]; nextAction: string }
+  target_counts?: Record<string, number>
+  content_counts?: Record<string, number>
+  asset_counts?: Record<string, number>
+}
+
 export interface AgentQualityScore {
   agentId: string; role: string; tasksCompleted: number; tasksFailed: number
   avgQualityScore: number; avgLatencyMs: number; improvementVelocity: number
@@ -212,6 +227,78 @@ export class Bombsell {
       this.dispatch('engagement', 'bombsell.content.metrics', opts ?? {}) as Promise<TaskResult>,
     repurpose: (postId?: string) =>
       this.dispatch('repurpose', 'bombsell.content.repurpose', { postId }) as Promise<TaskResult>,
+  }
+
+  // ── Campaign orchestration ───────────────────────────────────────────────
+
+  campaigns = {
+    list: async (opts?: { status?: string; clientId?: string; limit?: number }): Promise<{ campaigns: CampaignSummary[]; metrics?: Record<string, number> }> => {
+      const params = new URLSearchParams()
+      if (opts?.status) params.set('status', opts.status)
+      if (opts?.clientId) params.set('client_id', opts.clientId)
+      if (opts?.limit) params.set('limit', String(opts.limit))
+      const res = await this.fetch('/api/gtm/campaigns' + (params.size ? `?${params.toString()}` : ''))
+      return res.json() as Promise<{ campaigns: CampaignSummary[]; metrics?: Record<string, number> }>
+    },
+    get: async (campaignId: string): Promise<{ campaign: CampaignSummary; targets: unknown[]; content_links: unknown[]; assets: unknown[] }> => {
+      const res = await this.fetch('/api/gtm/campaigns/' + encodeURIComponent(campaignId))
+      return res.json() as Promise<{ campaign: CampaignSummary; targets: unknown[]; content_links: unknown[]; assets: unknown[] }>
+    },
+    create: async (campaign: {
+      name: string; objective?: string; segment?: string; trigger?: string; narrative?: string
+      offer?: string; success_metric?: string; channels?: string[]
+    }): Promise<{ campaign: CampaignSummary }> => {
+      const res = await this.fetch('/api/gtm/campaigns', {
+        method: 'POST',
+        body: JSON.stringify(campaign),
+      })
+      return res.json() as Promise<{ campaign: CampaignSummary }>
+    },
+    fromPrompt: async (prompt: string, opts?: { targetCount?: number; channels?: string[] }): Promise<{
+      campaign: CampaignSummary
+      discovery: { provider: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
+      leads: unknown[]
+      targets: unknown[]
+    }> => {
+      const res = await this.fetch('/api/gtm/campaigns/from-prompt', {
+        method: 'POST',
+        body: JSON.stringify({
+          prompt,
+          target_count: opts?.targetCount,
+          channels: opts?.channels,
+        }),
+      })
+      return res.json() as Promise<{
+        campaign: CampaignSummary
+        discovery: { provider: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
+        leads: unknown[]
+        targets: unknown[]
+      }>
+    },
+    enrollTargets: async (campaignId: string, leadIds: string[], status?: 'proposed' | 'enrolled'): Promise<{ targets: unknown[]; count: number }> => {
+      const res = await this.fetch('/api/gtm/campaigns/' + encodeURIComponent(campaignId) + '/targets', {
+        method: 'POST',
+        body: JSON.stringify({ lead_ids: leadIds, status }),
+      })
+      return res.json() as Promise<{ targets: unknown[]; count: number }>
+    },
+    linkContent: async (
+      campaignId: string,
+      content: { kind: 'content_idea' | 'post' | 'gtm_content_idea' | 'gtm_campaign_asset'; id: string; channel?: string; status?: string; rationale?: string },
+    ): Promise<{ link: unknown }> => {
+      const res = await this.fetch('/api/gtm/campaigns/' + encodeURIComponent(campaignId) + '/content', {
+        method: 'POST',
+        body: JSON.stringify(content),
+      })
+      return res.json() as Promise<{ link: unknown }>
+    },
+    updateStatus: async (campaignId: string, action: 'activate' | 'pause' | 'complete' | 'dismiss'): Promise<{ campaign: CampaignSummary }> => {
+      const res = await this.fetch('/api/gtm/campaigns/' + encodeURIComponent(campaignId), {
+        method: 'PATCH',
+        body: JSON.stringify({ action }),
+      })
+      return res.json() as Promise<{ campaign: CampaignSummary }>
+    },
   }
 
   // ── Workflows ────────────────────────────────────────────────────────────

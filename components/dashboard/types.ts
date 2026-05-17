@@ -7,10 +7,10 @@
  */
 export type View =
   | 'home'         // command bar + queue (the primary workspace)
+  | 'campaigns'    // GTM orchestration — audience, trigger, content, outbound, outcomes
   | 'accounts'     // account-centric pipeline (Outbound · Signals)
   | 'outreach'     // drafts, sent, replies (Outbound · Pipeline)
   | 'content'      // Content engine — ideas, composer, calendar, performance
-  | 'agents'       // agent stacks + fleet + pipelines + activity
   | 'integrations' // every connection (sending, CRM, signals, social, ops, agents-API) in one place
   | 'settings'     // profile, billing, team, plans
 

@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { getActiveClientContext } from '@/lib/client-context'
 import { createClient } from '@/lib/supabase/server'
 import { requirePlan } from '@/lib/api-plan-guard'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { buildCampaignMetrics, buildCampaignReadiness, summarizeCampaignCounts } from '@/lib/gtm/campaigns'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+type OptionalSupabaseRows<T> = { data: T[] | null; error: { code?: string; message?: string } | null }
+
+function optionalRows<T>(result: OptionalSupabaseRows<T>): T[] {
+  if (!result.error) return result.data ?? []
+  if (result.error.code === '42P01' || /does not exist/i.test(result.error.message ?? '')) return []
+  throw result.error
+}
+
+export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const planCheck = await requirePlan(supabase, 'launch')
   if (planCheck instanceof NextResponse) return planCheck
@@ -16,17 +26,34 @@ export async function GET() {
 
   const clientFilter = activeClientId ? { client_id: activeClientId } : {}
 
-  const [campaignsRes, ideasRes] = await Promise.all([
-    supabase
-      .from('gtm_campaigns')
-      .select('id, name, segment, trigger, narrative, status, created_at, updated_at')
-      .eq('user_id', userId)
-      .match(clientFilter)
-      .order('created_at', { ascending: false })
-      .limit(50),
+  const requestedStatus = request.nextUrl.searchParams.get('status')
+  const limit = boundedNumber(request.nextUrl.searchParams.get('limit'), 1, 100, 50)
+  let campaignsQuery = supabase
+    .from('gtm_campaigns')
+    .select('id, name, objective, segment, trigger, narrative, offer, success_metric, channels, status, starts_at, ends_at, learnings, created_at, updated_at')
+    .eq('user_id', userId)
+    .match(clientFilter)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (requestedStatus && ['draft', 'active', 'paused', 'completed', 'dismissed'].includes(requestedStatus)) {
+    campaignsQuery = campaignsQuery.eq('status', requestedStatus)
+  }
+
+  const [campaignsRes, assetsRes, targetsRes, linksRes] = await Promise.all([
+    campaignsQuery,
     supabase
       .from('gtm_campaign_assets')
       .select('campaign_id, status')
+      .eq('user_id', userId)
+      .match(clientFilter),
+    supabase
+      .from('gtm_campaign_targets')
+      .select('campaign_id, status')
+      .eq('user_id', userId)
+      .match(clientFilter),
+    supabase
+      .from('gtm_campaign_content_links')
+      .select('campaign_id, status, channel')
       .eq('user_id', userId)
       .match(clientFilter),
   ])
@@ -34,32 +61,32 @@ export async function GET() {
   if (campaignsRes.error) {
     return NextResponse.json({ error: campaignsRes.error.message }, { status: 500 })
   }
-
-  const campaigns = (campaignsRes.data ?? [])
-  const assets = (ideasRes.data ?? []) as Array<{ campaign_id: string; status: string }>
-
-  const campaignsWithCounts = campaigns.map(c => {
-    const campaignAssets = assets.filter(a => a.campaign_id === c.id)
-    return {
-      ...c,
-      asset_counts: {
-        total: campaignAssets.length,
-        draft: campaignAssets.filter(a => a.status === 'draft').length,
-        approved: campaignAssets.filter(a => a.status === 'approved').length,
-        published: campaignAssets.filter(a => a.status === 'published').length,
-      },
-    }
-  })
-
-  const metrics = {
-    total: campaigns.length,
-    draft: campaigns.filter(c => c.status === 'draft').length,
-    active: campaigns.filter(c => c.status === 'active').length,
-    completed: campaigns.filter(c => c.status === 'completed').length,
-    assets: assets.length,
+  if (assetsRes.error) {
+    return NextResponse.json({ error: assetsRes.error.message }, { status: 500 })
   }
 
+  const campaigns = (campaignsRes.data ?? [])
+  const assets = (assetsRes.data ?? []) as Array<{ campaign_id: string; status: string }>
+  const targets = optionalRows(targetsRes) as Array<{ campaign_id: string; status: string }>
+  const links = optionalRows(linksRes) as Array<{ campaign_id: string; status: string; channel?: string | null }>
+  const campaignsWithCounts = summarizeCampaignCounts(campaigns, { targets, links, assets }).map(campaign => ({
+    ...campaign,
+    readiness: buildCampaignReadiness({
+      campaign,
+      targetCount: campaign.target_counts.total,
+      contentCount: campaign.content_counts.total,
+      approvedAssetCount: campaign.asset_counts.approved + campaign.asset_counts.published,
+    }),
+  }))
+  const metrics = buildCampaignMetrics(campaigns, { targets, links, assets })
+
   return NextResponse.json({ campaigns: campaignsWithCounts, metrics })
+}
+
+function boundedNumber(value: string | null, min: number, max: number, fallback: number): number {
+  const parsed = value ? Number(value) : fallback
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.round(parsed)))
 }
 
 export async function POST(request: Request) {
@@ -75,6 +102,10 @@ export async function POST(request: Request) {
     segment?: string
     trigger?: string
     narrative?: string
+    objective?: string
+    offer?: string
+    success_metric?: string
+    channels?: string[]
     content_idea_ids?: string[]
   } | null
 
@@ -87,6 +118,9 @@ export async function POST(request: Request) {
   const segment = body.segment?.trim() ?? 'All accounts'
   const trigger = body.trigger?.trim() ?? 'Market timing signal'
   const narrative = body.narrative?.trim() ?? 'Signal-backed outreach leveraging recent market movement'
+  const channels = Array.isArray(body.channels) && body.channels.length
+    ? Array.from(new Set(body.channels.filter(channel => typeof channel === 'string' && channel.trim()).map(channel => channel.trim()))).slice(0, 6)
+    : ['email', 'linkedin', 'content']
 
   const { data: campaign, error } = await supabase
     .from('gtm_campaigns')
@@ -94,12 +128,16 @@ export async function POST(request: Request) {
       user_id: userId,
       client_id: activeClientId,
       name: body.name.trim(),
+      objective: body.objective?.trim() || body.name.trim(),
       segment,
       trigger,
       narrative,
-      status: 'active',
+      offer: body.offer?.trim() || null,
+      success_metric: body.success_metric?.trim() || 'Meetings booked from this motion',
+      channels,
+      status: 'draft',
     })
-    .select('id, name, segment, trigger, narrative, status, created_at, updated_at')
+    .select('id, name, objective, segment, trigger, narrative, offer, success_metric, channels, status, starts_at, ends_at, learnings, created_at, updated_at')
     .single()
 
   if (error) {

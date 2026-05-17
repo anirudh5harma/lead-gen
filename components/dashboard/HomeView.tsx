@@ -18,7 +18,7 @@ interface Props {
  *   1. Command bar (filters the queue live; ⌘K to focus)
  *   2. Counters strip
  *   3. Today queue (top-priority accounts to act on)
- *   4. Loop status strip (which agents are live right now)
+ *   4. Automation health strip (background workers live right now)
  */
 export default function HomeView({ profile, leads, onNavigate, commandSearch }: Props) {
   const [q, setQ] = useState(commandSearch?.query ?? '')
@@ -130,7 +130,7 @@ export default function HomeView({ profile, leads, onNavigate, commandSearch }: 
       </section>
 
       <WhatsWorking />
-      <LoopStatusStrip onOpenAgents={() => onNavigate('agents')} />
+      <LoopStatusStrip onOpenAgents={() => onNavigate('integrations')} />
       <LeadDrawer lead={selectedLead} onClose={() => setSelectedLead(null)} />
     </div>
   )
@@ -187,9 +187,9 @@ function LoopStatusStrip({ onOpenAgents }: { onOpenAgents: () => void }) {
   return (
     <section>
       <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2">
-        <h3 className="font-h1-editorial text-h1-editorial">Your Fleet, Right Now</h3>
+        <h3 className="font-h1-editorial text-h1-editorial">Automation Health</h3>
         <button onClick={onOpenAgents} className="font-label-mono text-label-mono uppercase tracking-widest text-primary hover:opacity-70 flex items-center gap-1.5">
-          Agent fleet <Icon name="arrow_forward" size={14} />
+          Integrations <Icon name="arrow_forward" size={14} />
         </button>
       </div>
       {!loaded ? (
@@ -198,7 +198,7 @@ function LoopStatusStrip({ onOpenAgents }: { onOpenAgents: () => void }) {
         </div>
       ) : agents.length === 0 ? (
         <div className="hairline-border rounded-lg p-6 text-center font-body-main text-on-surface-variant">
-          Agent fleet is warming up. Open <button onClick={onOpenAgents} className="text-primary underline">Agents</button> to see live status.
+          Background automation is warming up. Open <button onClick={onOpenAgents} className="text-primary underline">Integrations</button> to review connected systems.
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
