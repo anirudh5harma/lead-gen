@@ -44,17 +44,19 @@ test('buildCampaignReadiness explains what blocks launch and what to do next', (
 
   assert.equal(draft.stage, 'strategy')
   assert.equal(draft.canLaunch, false)
-  assert.deepEqual(draft.missing, ['audience', 'narrative', 'targets', 'content_air_cover'])
+  assert.deepEqual(draft.missing, ['audience', 'narrative', 'targets'])
+  assert.deepEqual(draft.recommendations, ['content_air_cover'])
   assert.match(draft.nextAction, /Define the audience/)
 
   const ready = buildCampaignReadiness({
     campaign: { id: 'camp', status: 'draft', name: 'AI infra founder launch', segment: 'AI infra founders', trigger: 'funding', narrative: 'Hiring GTM after funding creates urgency' },
     targetCount: 12,
-    contentCount: 1,
+    contentCount: 0,
     approvedAssetCount: 0,
   })
 
   assert.equal(ready.stage, 'launch-ready')
   assert.equal(ready.canLaunch, true)
   assert.deepEqual(ready.missing, [])
+  assert.deepEqual(ready.recommendations, ['content_air_cover'])
 })

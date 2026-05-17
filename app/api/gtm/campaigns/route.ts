@@ -37,6 +37,8 @@ export async function GET(request: NextRequest) {
     .limit(limit)
   if (requestedStatus && ['draft', 'active', 'paused', 'completed', 'dismissed'].includes(requestedStatus)) {
     campaignsQuery = campaignsQuery.eq('status', requestedStatus)
+  } else {
+    campaignsQuery = campaignsQuery.neq('status', 'dismissed')
   }
 
   const [campaignsRes, assetsRes, targetsRes, linksRes] = await Promise.all([

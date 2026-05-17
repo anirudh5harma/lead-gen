@@ -2,6 +2,8 @@ export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed' | 'dism
 export type CampaignTargetStatus = 'proposed' | 'enrolled' | 'drafted' | 'approved' | 'sent' | 'replied' | 'booked' | 'dismissed' | 'blocked'
 export type CampaignContentStatus = 'linked' | 'drafted' | 'approved' | 'scheduled' | 'published' | 'dismissed'
 export type CampaignAssetStatus = 'draft' | 'approved' | 'published' | 'dismissed'
+export type CampaignReadinessMissing = 'objective' | 'audience' | 'trigger' | 'narrative' | 'targets'
+export type CampaignReadinessRecommendation = 'content_air_cover'
 
 export interface CampaignRowLike {
   id: string
@@ -95,7 +97,8 @@ export type CampaignReadinessStage = 'strategy' | 'audience' | 'content' | 'laun
 export interface CampaignReadiness {
   stage: CampaignReadinessStage
   canLaunch: boolean
-  missing: Array<'objective' | 'audience' | 'trigger' | 'narrative' | 'targets' | 'content_air_cover'>
+  missing: CampaignReadinessMissing[]
+  recommendations: CampaignReadinessRecommendation[]
   nextAction: string
 }
 
@@ -234,43 +237,40 @@ export function buildCampaignReadiness(input: {
 }): CampaignReadiness {
   const { campaign, targetCount, contentCount } = input
   const missing: CampaignReadiness['missing'] = []
+  const recommendations: CampaignReadiness['recommendations'] = []
   if (!hasMeaning(campaign.objective) && !hasMeaning(campaign.name)) missing.push('objective')
   if (!hasMeaning(campaign.segment)) missing.push('audience')
   if (!hasMeaning(campaign.trigger)) missing.push('trigger')
   if (!hasMeaning(campaign.narrative)) missing.push('narrative')
   if (targetCount <= 0) missing.push('targets')
-  if (contentCount + (input.approvedAssetCount ?? 0) <= 0) missing.push('content_air_cover')
+  if (contentCount + (input.approvedAssetCount ?? 0) <= 0) recommendations.push('content_air_cover')
 
   if (campaign.status === 'active') {
-    return { stage: 'live', canLaunch: true, missing, nextAction: missing.length ? nextActionFor(missing[0]) : 'Review replies, meetings, content engagement, and objections before scaling the next batch.' }
+    return { stage: 'live', canLaunch: true, missing, recommendations, nextAction: missing.length ? nextActionFor(missing[0]) : 'Review replies, meetings, content engagement, and objections before scaling the next batch.' }
   }
   if (campaign.status === 'completed') {
-    return { stage: 'learning', canLaunch: false, missing, nextAction: 'Consolidate learnings: winning hook, best segment, objections, and the next campaign to launch.' }
+    return { stage: 'learning', canLaunch: false, missing, recommendations, nextAction: 'Consolidate learnings: winning hook, best segment, objections, and the next campaign to launch.' }
   }
   if (missing.includes('audience') || missing.includes('trigger') || missing.includes('narrative') || missing.includes('objective')) {
-    return { stage: 'strategy', canLaunch: false, missing, nextAction: nextActionFor(missing[0]) }
+    return { stage: 'strategy', canLaunch: false, missing, recommendations, nextAction: nextActionFor(missing[0]) }
   }
   if (missing.includes('targets')) {
-    return { stage: 'audience', canLaunch: false, missing, nextAction: nextActionFor('targets') }
+    return { stage: 'audience', canLaunch: false, missing, recommendations, nextAction: nextActionFor('targets') }
   }
-  if (missing.includes('content_air_cover')) {
-    return { stage: 'content', canLaunch: false, missing, nextAction: nextActionFor('content_air_cover') }
-  }
-  return { stage: 'launch-ready', canLaunch: true, missing, nextAction: 'Launch a small batch, watch reply quality, then scale what works.' }
+  return { stage: 'launch-ready', canLaunch: true, missing, recommendations, nextAction: 'Launch a small batch, watch reply quality, then scale what works.' }
 }
 
 function hasMeaning(value: unknown): boolean {
   return typeof value === 'string' ? value.trim().length > 0 : Boolean(value)
 }
 
-function nextActionFor(missing: CampaignReadiness['missing'][number] | undefined): string {
+function nextActionFor(missing: CampaignReadinessMissing | undefined): string {
   switch (missing) {
     case 'objective': return 'Define the outcome: booked meetings, pipeline, validation, reactivation, expansion, or launch awareness.'
     case 'audience': return 'Define the audience tightly enough to choose targets without guessing.'
     case 'trigger': return 'Choose the reason-now signal that makes this campaign timely.'
     case 'narrative': return 'Write the campaign narrative: pain hypothesis, proof, offer, and CTA.'
     case 'targets': return 'Enroll a small, high-fit batch from Pipeline before launching.'
-    case 'content_air_cover': return 'Attach or draft at least one content asset so outbound has narrative air cover.'
     default: return 'Review the campaign motion and choose the next constraint to remove.'
   }
 }

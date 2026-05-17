@@ -5,7 +5,6 @@ import type { Lead } from '@/lib/leads'
 import Icon from '@/components/Icon'
 import { useToast } from '@/components/Toast'
 import {
-  rankCampaignLeadCandidates,
   type CampaignMetrics,
   type CampaignReadiness,
   type CampaignTargetLike,
@@ -28,6 +27,7 @@ type Campaign = {
   success_metric?: string | null
   channels?: string[] | null
   status: string
+  learnings?: Record<string, unknown> | null
   created_at: string
   updated_at?: string | null
   readiness?: CampaignReadiness
@@ -96,41 +96,27 @@ const EMPTY_METRICS: CampaignMetrics = {
   content_published: 0,
 }
 
-const CHANNELS = ['email', 'linkedin', 'content', 'founder-led']
-
 const INPUT_CLS = 'w-full bg-surface border border-outline-variant/40 rounded px-3 py-2 font-body-main text-[13px] text-on-surface outline-none focus:border-primary transition-colors'
 const PRIMARY_BTN = 'bg-primary text-on-primary font-label-mono text-[10px] uppercase tracking-[0.2em] px-5 py-2.5 hover:bg-primary-container transition-all disabled:opacity-50'
 const GHOST_BTN = 'border border-outline text-on-surface font-label-mono text-[10px] uppercase tracking-[0.2em] px-4 py-2 hover:bg-surface-container transition-all disabled:opacity-50'
 const BADGE = 'font-label-mono text-[9px] uppercase tracking-widest bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded'
 const BADGE_ACCENT = 'font-label-mono text-[9px] uppercase tracking-widest bg-primary-container/10 text-primary px-1.5 py-0.5 rounded'
 
-export default function CampaignsView({ profile, leads }: Props) {
+export default function CampaignsView({ profile }: Props) {
   const toast = useToast()
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [metrics, setMetrics] = useState<CampaignMetrics>(EMPTY_METRICS)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<CampaignDetailResponse | null>(null)
   const [promptDraft, setPromptDraft] = useState({
     prompt: '',
     target_count: 10,
   })
-  const [form, setForm] = useState({
-    name: '',
-    objective: '',
-    segment: '',
-    trigger: '',
-    narrative: '',
-    offer: '',
-    success_metric: 'Meetings booked from this motion',
-    channels: ['email', 'linkedin', 'content'],
-  })
-  const [contentForm, setContentForm] = useState({ kind: 'content_idea', id: '', channel: 'linkedin', rationale: '' })
-  const [enrollingLeadId, setEnrollingLeadId] = useState<string | null>(null)
-  const [linkingContent, setLinkingContent] = useState(false)
   const [buildingFromPrompt, setBuildingFromPrompt] = useState(false)
+  const [discoveringId, setDiscoveringId] = useState<string | null>(null)
+  const [removeCampaign, setRemoveCampaign] = useState<Campaign | null>(null)
 
   const loadCampaigns = useCallback(async function loadCampaigns() {
     setLoading(true)
@@ -173,32 +159,6 @@ export default function CampaignsView({ profile, leads }: Props) {
     else setDetail(null)
   }, [loadCampaignDetail, selectedId])
 
-  async function createCampaign() {
-    if (!form.name.trim()) return toast.error('Name the campaign first.')
-    if (!form.objective.trim()) return toast.error('Define the campaign objective.')
-    if (!form.segment.trim()) return toast.error('Define the audience.')
-    if (!form.trigger.trim()) return toast.error('Define the why-now trigger.')
-    if (!form.narrative.trim()) return toast.error('Write the narrative before creating the motion.')
-    setSaving(true)
-    try {
-      const res = await fetch('/api/gtm/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-      const data = await res.json().catch(() => ({})) as { campaign?: Campaign; error?: string }
-      if (!res.ok || !data.campaign) throw new Error(data.error ?? 'Campaign could not be created')
-      setForm({ name: '', objective: '', segment: '', trigger: '', narrative: '', offer: '', success_metric: 'Meetings booked from this motion', channels: ['email', 'linkedin', 'content'] })
-      setSelectedId(data.campaign.id)
-      toast.success('Campaign created as a draft motion.')
-      await loadCampaigns()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Campaign could not be created')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function createCampaignFromPrompt() {
     const prompt = promptDraft.prompt.trim()
     if (prompt.length < 12) return toast.error('Describe the campaign requirement in a little more detail.')
@@ -211,7 +171,7 @@ export default function CampaignsView({ profile, leads }: Props) {
       })
       const data = await res.json().catch(() => ({})) as {
         campaign?: Campaign
-        discovery?: { status?: string; generated?: number; inserted?: number; credit_blocked?: number; error?: string | null }
+        discovery?: { status?: string; mode?: string; generated?: number; inserted?: number; credit_blocked?: number; error?: string | null }
         error?: string
       }
       if (!res.ok || !data.campaign) throw new Error(data.error ?? 'Campaign could not be built from prompt')
@@ -223,6 +183,8 @@ export default function CampaignsView({ profile, leads }: Props) {
       const inserted = data.discovery?.inserted ?? 0
       if (data.discovery?.status === 'not_configured') {
         toast.success('Campaign draft created. Exa is not configured yet, so no targets were discovered.')
+      } else if (data.discovery?.mode === 'webset' && data.discovery.status === 'running') {
+        toast.success('Campaign draft created. Webset discovery is running; sync it from the campaign detail.')
       } else if (data.discovery?.credit_blocked) {
         toast.success(`Campaign built with ${inserted} proposed targets. Lead credits stopped additional target creation.`)
       } else {
@@ -235,7 +197,39 @@ export default function CampaignsView({ profile, leads }: Props) {
     }
   }
 
-  async function updateStatus(campaignId: string, action: 'activate' | 'pause' | 'complete') {
+  async function discoverMore(campaign: Campaign) {
+    setDiscoveringId(campaign.id)
+    try {
+      const requested = requestedTargetCount(campaign)
+      const res = await fetch(`/api/gtm/campaigns/${campaign.id}/discover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_count: requested }),
+      })
+      const data = await res.json().catch(() => ({})) as {
+        discovery?: { mode?: string; status?: string; inserted?: number; generated?: number; credit_blocked?: number; error?: string | null }
+        error?: string
+      }
+      if (!res.ok) throw new Error(data.error ?? 'Campaign discovery could not run')
+      await loadCampaigns()
+      await loadCampaignDetail(campaign.id)
+      if (data.discovery?.error) {
+        toast.error(data.discovery.error)
+      } else if (data.discovery?.mode === 'webset' && data.discovery.status === 'running') {
+        toast.success('Webset discovery is still running. Newly available targets were synced.')
+      } else if (data.discovery?.credit_blocked) {
+        toast.success(`Synced ${data.discovery.inserted ?? 0} targets before lead credits stopped discovery.`)
+      } else {
+        toast.success(`Synced ${data.discovery?.inserted ?? data.discovery?.generated ?? 0} campaign targets.`)
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Campaign discovery could not run')
+    } finally {
+      setDiscoveringId(null)
+    }
+  }
+
+  async function updateStatus(campaignId: string, action: 'activate' | 'pause' | 'complete' | 'dismiss') {
     try {
       const res = await fetch(`/api/gtm/campaigns/${campaignId}`, {
         method: 'PATCH',
@@ -244,6 +238,14 @@ export default function CampaignsView({ profile, leads }: Props) {
       })
       const data = await res.json().catch(() => ({})) as { error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Campaign status could not be updated')
+      if (action === 'dismiss') {
+        setDetail(null)
+        setSelectedId(null)
+        setRemoveCampaign(null)
+        toast.success('Campaign removed from the dashboard.')
+        await loadCampaigns()
+        return
+      }
       await loadCampaigns()
       await loadCampaignDetail(campaignId)
     } catch (error) {
@@ -251,105 +253,48 @@ export default function CampaignsView({ profile, leads }: Props) {
     }
   }
 
-  async function enrollLead(leadId: string) {
-    if (!selectedId) return
-    setEnrollingLeadId(leadId)
-    try {
-      const res = await fetch(`/api/gtm/campaigns/${selectedId}/targets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lead_ids: [leadId] }),
-      })
-      const data = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(data.error ?? 'Lead could not be enrolled')
-      toast.success('Lead enrolled into campaign.')
-      await loadCampaigns()
-      await loadCampaignDetail(selectedId)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Lead could not be enrolled')
-    } finally {
-      setEnrollingLeadId(null)
-    }
-  }
-
-  async function attachContent() {
-    if (!selectedId) return
-    if (!contentForm.id.trim()) return toast.error('Paste a content or asset ID to attach.')
-    setLinkingContent(true)
-    try {
-      const res = await fetch(`/api/gtm/campaigns/${selectedId}/content`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(contentForm),
-      })
-      const data = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(data.error ?? 'Content could not be attached')
-      setContentForm(form => ({ ...form, id: '', rationale: '' }))
-      toast.success('Content attached to campaign.')
-      await loadCampaigns()
-      await loadCampaignDetail(selectedId)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Content could not be attached')
-    } finally {
-      setLinkingContent(false)
-    }
-  }
-
   const selected = detail?.campaign ?? campaigns.find(c => c.id === selectedId) ?? campaigns[0] ?? null
   const currentTargets = useMemo(() => detail?.targets ?? [], [detail?.targets])
-  const candidateLeads = useMemo(
-    () => rankCampaignLeadCandidates(leads, currentTargets, selected?.id ?? '').slice(0, 7),
-    [leads, currentTargets, selected?.id],
-  )
   const activeWorkspace = profile.client_name || profile.company_name || 'this workspace'
+  const activeOrDraft = metrics.active + metrics.draft
 
   return (
     <div className="space-y-section-gap font-body-main text-on-surface">
       {/* Header */}
-      <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-stack-lg items-start">
-        <section>
-          <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">GTM orchestration · {activeWorkspace}</p>
-          <h2 className="font-h1-editorial text-display-sm text-on-surface">
-            Campaigns
-          </h2>
-          <p className="font-body-main text-on-surface-variant mt-3 max-w-2xl leading-relaxed">
-            Campaigns are the operating layer for Bombsell: one objective, one audience, one why-now trigger, one narrative, coordinated outbound targets, content air cover, and measured outcomes.
-          </p>
-        </section>
-        <section className="hairline-border bg-surface-container-lowest rounded-lg p-5">
-          <div className="grid grid-cols-3 gap-stack-md">
-            <Metric label="Active" value={metrics.active} />
-            <Metric label="Targets" value={metrics.targets} />
-            <Metric label="Booked" value={metrics.booked} />
-          </div>
-          <div className="mt-stack-md grid grid-cols-3 gap-stack-md">
-            <Metric label="Replies" value={metrics.replied} />
-            <Metric label="Content" value={metrics.content} />
-            <Metric label="Published" value={metrics.content_published} />
-          </div>
-        </section>
+      <div>
+        <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">Workspace · {activeWorkspace}</p>
+        <h2 className="font-h1-editorial text-display-sm text-on-surface">
+          Run your <span className="italic text-primary">GTM motions</span>.
+        </h2>
+      </div>
+
+      {/* Counters */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-outline-variant/30 border border-outline-variant/30">
+        <Stat label="Live / Draft" value={activeOrDraft} />
+        <Stat label="Targets" value={metrics.targets} />
+        <Stat label="Replied" value={metrics.replied} />
+        <Stat label="Booked" value={metrics.booked} />
       </div>
 
       {/* Prompt motion */}
       <section>
-        <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-2 gap-3 flex-wrap">
+        <div className="flex items-end justify-between mb-stack-lg hairline-b pb-2 gap-3 flex-wrap">
           <div>
-            <p className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Prompt to campaign</p>
-            <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2">Describe the motion</h3>
-            <p className="font-body-main text-on-surface-variant mt-2 text-[13px]">Bombsell creates the draft, searches Exa for evidence-backed accounts, and stages proposed targets.</p>
+            <p className="font-label-mono text-label-mono uppercase tracking-[0.2em] text-on-surface-variant">Prompt to campaign</p>
+            <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-1">What do you want to sell, and to whom?</h3>
           </div>
           <button onClick={() => void createCampaignFromPrompt()} disabled={buildingFromPrompt || !promptDraft.prompt.trim()} className={PRIMARY_BTN}>
-            {buildingFromPrompt ? 'Building…' : 'Build with Exa'}
+            {buildingFromPrompt ? 'Building…' : 'Build campaign'}
           </button>
         </div>
         <div className="hairline-border bg-surface-container-lowest rounded-lg p-5 grid gap-stack-md">
           <label className="block">
-            <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant block mb-1.5">Requirement</span>
+            <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant block mb-1.5">Campaign prompt</span>
             <textarea
               value={promptDraft.prompt}
               onChange={event => setPromptDraft(current => ({ ...current, prompt: event.target.value }))}
               placeholder="Find Series A/B vertical SaaS companies in the US that are hiring RevOps leaders, and build a campaign around reducing outbound waste with signal-based prospecting."
-              className={`${INPUT_CLS} min-h-[118px] resize-y`}
+              className={`${INPUT_CLS} min-h-[108px] resize-y`}
             />
           </label>
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -358,66 +303,12 @@ export default function CampaignsView({ profile, leads }: Props) {
               <input
                 type="number"
                 min={1}
-                max={20}
+                max={100}
                 value={promptDraft.target_count}
-                onChange={event => setPromptDraft(current => ({ ...current, target_count: Math.max(1, Math.min(20, Number(event.target.value) || 10)) }))}
+                onChange={event => setPromptDraft(current => ({ ...current, target_count: Math.max(1, Math.min(100, Number(event.target.value) || 10)) }))}
                 className={`${INPUT_CLS} w-24`}
               />
             </label>
-            <p className="font-body-main text-on-surface-variant text-[12px] max-w-xl">
-              Proposed targets still stay behind campaign readiness, contact verification, and outreach approval gates.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Create motion */}
-      <section>
-        <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-2 gap-3 flex-wrap">
-          <div>
-            <p className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Create a motion</p>
-            <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2">Strategy before sequence</h3>
-            <p className="font-body-main text-on-surface-variant mt-2 text-[13px]">A campaign starts as a draft until targets and content are attached.</p>
-          </div>
-          <button onClick={() => void createCampaign()} disabled={saving} className={PRIMARY_BTN}>
-            {saving ? 'Creating…' : 'Create draft'}
-          </button>
-        </div>
-        <div className="hairline-border bg-surface-container-lowest rounded-lg p-5 grid md:grid-cols-2 gap-stack-md">
-          <Input label="Name" value={form.name} onChange={name => setForm(f => ({ ...f, name }))} placeholder="Series A pipeline acceleration" />
-          <Input label="Objective" value={form.objective} onChange={objective => setForm(f => ({ ...f, objective }))} placeholder="Book 8 founder meetings in AI infra" />
-          <Input label="Audience" value={form.segment} onChange={segment => setForm(f => ({ ...f, segment }))} placeholder="Seed/Series A AI infrastructure founders" />
-          <Input label="Why-now trigger" value={form.trigger} onChange={trigger => setForm(f => ({ ...f, trigger }))} placeholder="Funding, hiring, launch, competitor movement" />
-          <Input label="Offer" value={form.offer} onChange={offer => setForm(f => ({ ...f, offer }))} placeholder="Free GTM teardown / pipeline sprint / intro audit" />
-          <Input label="Success metric" value={form.success_metric} onChange={success_metric => setForm(f => ({ ...f, success_metric }))} placeholder="Meetings booked, replies, qualified opps" />
-          <label className="block md:col-span-2">
-            <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant block mb-1.5">Narrative</span>
-            <textarea
-              value={form.narrative}
-              onChange={event => setForm(f => ({ ...f, narrative: event.target.value }))}
-              placeholder="Pain hypothesis, proof, offer, CTA, and why this audience should care now."
-              className={`${INPUT_CLS} min-h-[96px] resize-y`}
-            />
-          </label>
-          <div className="md:col-span-2 flex flex-wrap gap-2">
-            <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant self-center mr-2">Channels</span>
-            {CHANNELS.map(channel => {
-              const checked = form.channels.includes(channel)
-              return (
-                <button
-                  key={channel}
-                  type="button"
-                  onClick={() => setForm(f => ({ ...f, channels: checked ? f.channels.filter(item => item !== channel) : [...f.channels, channel] }))}
-                  className={`font-label-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded transition-colors ${
-                    checked
-                      ? 'bg-primary-container/10 text-primary border border-primary/30'
-                      : 'border border-outline-variant text-on-surface-variant hover:bg-surface-container'
-                  }`}
-                >
-                  {channel}
-                </button>
-              )
-            })}
           </div>
         </div>
       </section>
@@ -425,15 +316,15 @@ export default function CampaignsView({ profile, leads }: Props) {
       {/* Board + detail */}
       <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-stack-lg items-start">
         <section>
-          <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-2">
-            <h3 className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Campaign Board</h3>
+          <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2 gap-3 flex-wrap">
+            <h3 className="font-h1-editorial text-h1-editorial">Campaigns</h3>
             <span className={BADGE_ACCENT}>{campaigns.length} Motions</span>
           </div>
           {loading ? (
             <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">Loading campaigns…</div>
           ) : campaigns.length === 0 ? (
             <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
-              No campaigns yet. Create the first motion to coordinate outbound and content around one GTM thesis.
+              No campaigns yet. Describe the first motion above.
             </div>
           ) : (
             <div className="bg-surface-container-lowest hairline-border rounded-lg overflow-hidden">
@@ -484,6 +375,9 @@ export default function CampaignsView({ profile, leads }: Props) {
               links={detail?.content_links ?? []}
               assets={detail?.assets ?? []}
               onStatus={action => void updateStatus(selected.id, action)}
+              onRemove={() => setRemoveCampaign(selected)}
+              onDiscover={() => void discoverMore(selected)}
+              discovering={discoveringId === selected.id}
             />
           ) : (
             <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
@@ -491,103 +385,34 @@ export default function CampaignsView({ profile, leads }: Props) {
             </div>
           )}
 
-          {/* Enroll leads */}
-          <section>
-            <div className="flex items-center justify-between mb-6 border-b border-outline-variant pb-2">
-              <div>
-                <p className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Outbound Targets</p>
-                <h4 className="font-h1-editorial text-[20px] text-on-surface mt-1.5">Enroll priority leads</h4>
-              </div>
-              <span className={BADGE}>Pipeline bridge</span>
-            </div>
-            <div className="bg-surface-container-lowest hairline-border rounded-lg p-4">
-              {candidateLeads.length === 0 ? (
-                <p className="font-body-main text-on-surface-variant text-[13px]">
-                  No eligible pipeline leads available, or all visible leads are already in this campaign.
-                </p>
-              ) : (
-                <div className="divide-y divide-[rgba(26,24,22,0.07)]">
-                  {candidateLeads.map(lead => (
-                    <div key={lead.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                      <div className="min-w-0">
-                        <div className="font-body-main font-medium text-on-surface truncate">{lead.target_company}</div>
-                        <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">
-                          {lead.status ?? 'new'} · score {lead.relevance_score ?? 0}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => void enrollLead(lead.id)}
-                        disabled={!selected || enrollingLeadId === lead.id}
-                        className={GHOST_BTN}
-                      >
-                        {enrollingLeadId === lead.id ? 'Adding…' : 'Enroll'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Attach content */}
-          <section>
-            <div className="flex items-center justify-between mb-6 border-b border-outline-variant pb-2">
-              <div>
-                <p className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Content Air Cover</p>
-                <h4 className="font-h1-editorial text-[20px] text-on-surface mt-1.5">Attach assets to the same motion</h4>
-              </div>
-              <span className={BADGE}>Content bridge</span>
-            </div>
-            <div className="bg-surface-container-lowest hairline-border rounded-lg p-4 grid md:grid-cols-[0.75fr_1fr_0.7fr] gap-stack-sm">
-              <select
-                value={contentForm.kind}
-                onChange={event => setContentForm(f => ({ ...f, kind: event.target.value }))}
-                className={INPUT_CLS}
-              >
-                <option value="content_idea">Content idea</option>
-                <option value="post">Post</option>
-                <option value="gtm_content_idea">GTM idea</option>
-                <option value="gtm_campaign_asset">Campaign asset</option>
-              </select>
-              <input
-                value={contentForm.id}
-                onChange={event => setContentForm(f => ({ ...f, id: event.target.value }))}
-                placeholder="Paste content/asset ID"
-                className={INPUT_CLS}
-              />
-              <select
-                value={contentForm.channel}
-                onChange={event => setContentForm(f => ({ ...f, channel: event.target.value }))}
-                className={INPUT_CLS}
-              >
-                {CHANNELS.map(channel => <option key={channel} value={channel}>{channel}</option>)}
-              </select>
-              <input
-                value={contentForm.rationale}
-                onChange={event => setContentForm(f => ({ ...f, rationale: event.target.value }))}
-                placeholder="Why this asset supports the narrative"
-                className={`${INPUT_CLS} md:col-span-2`}
-              />
-              <button
-                onClick={() => void attachContent()}
-                disabled={!selected || linkingContent}
-                className={GHOST_BTN}
-              >
-                {linkingContent ? 'Attaching…' : 'Attach content'}
-              </button>
-              <p className="md:col-span-3 font-body-main text-on-surface-variant text-[12px] mt-1">
-                This bridges the current split content architecture safely instead of pretending all content lives in one table.
-              </p>
-            </div>
-          </section>
         </section>
       </div>
+      {removeCampaign && (
+        <RemoveCampaignModal
+          campaign={removeCampaign}
+          onClose={() => setRemoveCampaign(null)}
+          onConfirm={() => void updateStatus(removeCampaign.id, 'dismiss')}
+        />
+      )}
     </div>
   )
 }
 
-function CampaignDetail({ campaign, loading, targets, links, assets, onStatus }: { campaign: Campaign; loading: boolean; targets: CampaignTarget[]; links: CampaignContentLink[]; assets: CampaignAsset[]; onStatus: (action: 'activate' | 'pause' | 'complete') => void }) {
+function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, onRemove, onDiscover, discovering }: { campaign: Campaign; loading: boolean; targets: CampaignTarget[]; links: CampaignContentLink[]; assets: CampaignAsset[]; onStatus: (action: 'activate' | 'pause' | 'complete') => void; onRemove: () => void; onDiscover: () => void; discovering: boolean }) {
   const readiness = campaign.readiness
+  const discovery = campaign.learnings ?? {}
+  const discoveryStatus = typeof discovery.discovery_status === 'string' ? discovery.discovery_status : null
+  const discoveryError = typeof discovery.discovery_error === 'string' ? discovery.discovery_error : null
+  const discoveryMode = typeof discovery.discovery_mode === 'string' ? discovery.discovery_mode : null
+  const discoveredCount = typeof discovery.discovered_count === 'number' ? discovery.discovered_count : null
+  const requestedCount = requestedTargetCount(campaign)
+  const needsDiscovery = requestedCount > targets.length || discoveryStatus === 'running' || Boolean(discoveryError)
+  const progress = typeof discovery.exa_webset_progress === 'object' && discovery.exa_webset_progress !== null
+    ? discovery.exa_webset_progress as { found?: unknown; completion?: unknown }
+    : null
+  const progressLabel = progress?.completion !== undefined
+    ? ` · ${Math.round(Number(progress.completion) || 0)}%`
+    : ''
   return (
     <section className="bg-surface-container-lowest hairline-border rounded-lg p-6">
       <div className="flex items-start justify-between gap-4">
@@ -624,9 +449,33 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus }:
           </div>
           <div className="flex flex-wrap gap-1.5 justify-end">
             {(readiness?.missing ?? []).map(item => <span key={item} className={BADGE}>{item.replaceAll('_', ' ')}</span>)}
+            {(readiness?.recommendations ?? []).map(item => <span key={item} className={BADGE_ACCENT}>{item.replaceAll('_', ' ')}</span>)}
           </div>
         </div>
       </div>
+
+      {(discoveryStatus || discoveryError || discoveredCount !== null) && (
+        <div className="mt-3 hairline-border bg-surface-container-low/40 rounded-lg p-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="font-body-main font-medium text-on-surface text-[13px]">
+                Discovery: {discoveryStatus ?? 'pending'}{discoveryMode ? ` · ${discoveryMode}` : ''}
+              </div>
+              <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">
+                {targets.length || discoveredCount || 0} / {requestedCount} targets{progressLabel}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {discoveryError && <span className={BADGE}>needs retry</span>}
+              {needsDiscovery && (
+                <button onClick={onDiscover} disabled={discovering} className={GHOST_BTN}>
+                  {discovering ? 'Syncing…' : discoveryMode === 'webset' ? 'Sync targets' : 'Find more'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-4 gap-stack-sm">
         <Tiny label="Enrolled" value={campaign.target_counts?.enrolled ?? targets.length} />
@@ -663,6 +512,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus }:
         {campaign.status !== 'completed' && (
           <button onClick={() => onStatus('complete')} className={GHOST_BTN}>Complete</button>
         )}
+        <button onClick={onRemove} className={GHOST_BTN}>Remove</button>
       </div>
     </section>
   )
@@ -696,20 +546,11 @@ function Lane({ title, empty, items }: { title: string; empty: string; items: Ar
   )
 }
 
-function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <label className="block">
-      <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant block mb-1.5">{label}</span>
-      <input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} className={INPUT_CLS} />
-    </label>
-  )
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <div className="font-display-sm text-[28px] leading-none text-on-surface">{value}</div>
-      <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-1.5">{label}</div>
+    <div className="bg-surface-container-lowest px-5 py-4">
+      <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className="font-display-sm text-display-sm text-on-surface mt-1">{value}</div>
     </div>
   )
 }
@@ -730,4 +571,42 @@ function Field({ label, value }: { label: string; value?: string | null }) {
       <div className="font-body-main text-on-surface text-[13.5px] leading-relaxed">{value || <span className="text-on-surface-variant italic">Not set</span>}</div>
     </div>
   )
+}
+
+function RemoveCampaignModal({ campaign, onClose, onConfirm }: { campaign: Campaign; onClose: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-5">
+      <button className="absolute inset-0 bg-on-surface/40 cursor-default" onClick={onClose} aria-label="Close remove campaign confirmation" />
+      <section className="relative w-full max-w-[460px] bg-surface-container-lowest hairline-border rounded-lg p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="font-label-mono text-[10px] uppercase tracking-[0.25em] text-on-surface-variant">Remove campaign</p>
+            <h3 className="font-h1-editorial text-[22px] text-on-surface mt-2">{campaign.name}</h3>
+          </div>
+          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface text-[20px] leading-none" aria-label="Close">×</button>
+        </div>
+        <p className="font-body-main text-on-surface-variant text-[13.5px] leading-relaxed mt-4">
+          This removes the campaign from the dashboard. Existing leads, target history, replies, and bookings are preserved.
+        </p>
+        <div className="mt-6 flex items-center justify-end gap-2">
+          <button onClick={onClose} className={GHOST_BTN}>Cancel</button>
+          <button onClick={onConfirm} className={PRIMARY_BTN}>Remove</button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function requestedTargetCount(campaign: Campaign): number {
+  const value = campaign.learnings?.requested_count
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(100, Math.round(parsed))) : 10
 }

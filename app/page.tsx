@@ -107,7 +107,13 @@ function Hero({
 }) {
   return (
     <section className="relative overflow-hidden hero-bg pt-32">
-      <div className="max-w-[1280px] mx-auto px-margin-page pt-stack-lg pb-section-gap">
+      {/* Decorative depth layer — sits behind everything */}
+      <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+        <span className="float-orb orb-primary drift-slow" style={{ width: 520, height: 520, top: -120, left: '8%' }} />
+        <span className="float-orb orb-tertiary" style={{ width: 420, height: 420, top: 40, right: '6%' }} />
+        <span className="float-orb orb-soft drift-slower" style={{ width: 640, height: 640, top: 260, left: '38%' }} />
+      </div>
+      <div className="relative max-w-[1280px] mx-auto px-margin-page pt-stack-lg pb-section-gap" style={{ zIndex: 1 }}>
       <div className="max-w-[1120px] mx-auto text-center">
         <p className="reveal font-label-mono text-label-mono uppercase tracking-[0.2em] text-on-surface-variant mb-stack-md">Agentic GTM</p>
 
@@ -125,7 +131,9 @@ function Hero({
           onSubmit={(e) => { e.preventDefault(); onSubmit() }}
           className="reveal reveal-3 relative max-w-xl mx-auto mt-stack-lg group"
         >
-          <div className="bg-surface-container-lowest hairline-border p-stack-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-stack-sm sm:gap-stack-md shadow-sm text-left">
+          {/* Offset card behind input — abstracts the form forward */}
+          <span aria-hidden className="absolute inset-0 hairline-border bg-surface-container-low/80 -z-10" style={{ transform: 'translate(8px, 10px) rotate(0.4deg)' }} />
+          <div className="relative bg-surface-container-lowest hairline-border p-stack-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-stack-sm sm:gap-stack-md depth-stack text-left">
             <div className="flex items-center gap-stack-md flex-grow min-w-0">
               <Icon name="search" className="text-on-surface-variant ml-2 shrink-0" />
               <input
@@ -150,7 +158,13 @@ function Hero({
       </div>
 
       <div className="mt-section-gap flex justify-center">
-        <HeroDiagram />
+        <div className="relative layer-stack max-w-[480px] w-full rounded-lg">
+          <span aria-hidden className="layer-back rounded-lg" />
+          <span aria-hidden className="layer-back-2 rounded-lg" />
+          <div className="layer-front bg-surface-container-lowest/80 backdrop-blur-sm hairline-border rounded-lg p-stack-md depth-stack">
+            <HeroDiagram />
+          </div>
+        </div>
       </div>
 
       <div className="reveal reveal-4 mt-section-gap marquee-mask border-y border-outline-variant/30 py-stack-md">
@@ -257,7 +271,7 @@ function LoopGrid({ id, title, badge, steps, dark }: { id?: string; title: strin
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-px bg-outline-variant/30 border border-outline-variant/30">
           {steps.map((s) => (
-            <div key={s.n} className="bg-surface p-stack-md min-h-[152px] flex flex-col hover:bg-surface-container-lowest transition-colors cursor-default">
+            <div key={s.n} className="relative bg-surface p-stack-md min-h-[152px] flex flex-col hover:bg-surface-container-lowest depth-lift cursor-default">
               <span className="font-label-mono text-label-mono text-primary">{s.n}</span>
               <div className="mt-auto">
                 <div className="text-primary font-label-mono text-[11px] tracking-[0.1em] mb-1 uppercase">{s.action}</div>
@@ -291,8 +305,9 @@ const SIGNAL_FEED: Array<{ t: string; tag: string; tone: 'primary' | 'tertiary';
 
 function ForTeams() {
   return (
-    <section id="teams" className="max-w-[1280px] mx-auto px-margin-page py-24 md:py-32 border-t border-outline-variant/30">
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-gutter items-center">
+    <section id="teams" className="relative max-w-[1280px] mx-auto px-margin-page py-24 md:py-32 border-t border-outline-variant/30">
+      <span aria-hidden className="float-orb orb-tertiary drift-slower" style={{ width: 460, height: 460, top: 80, right: '-4%', zIndex: 0 }} />
+      <div className="relative grid grid-cols-1 md:grid-cols-12 gap-gutter items-center" style={{ zIndex: 1 }}>
         <div className="md:col-span-4">
           <h2 className="font-h1-editorial text-[32px] md:text-[48px] leading-tight mb-stack-md">For teams</h2>
           <p className="font-body-large text-on-surface-variant mb-stack-lg">Total visibility into why a lead was contacted. Every outreach is backed by a verifiable chain of logic.</p>
@@ -305,7 +320,9 @@ function ForTeams() {
           </ul>
         </div>
 
-        <div className="md:col-start-6 md:col-span-7 grid-block panel-soft p-4">
+        <div className="md:col-start-6 md:col-span-7 layer-stack rounded-lg">
+          <span aria-hidden className="layer-back rounded-lg" />
+          <div className="layer-front grid-block panel-soft p-4 depth-stack">
           <div className="flex items-center justify-between border-b border-outline-variant pb-2 mb-4">
             <div className="font-label-mono text-[10px] text-outline flex items-center gap-2 uppercase tracking-wider">
               <Icon name="monitor_heart" size={12} /> Live Signal Feed
@@ -332,6 +349,7 @@ function ForTeams() {
               </div>
             ))}
           </div>
+          </div>
         </div>
       </div>
     </section>
@@ -344,7 +362,10 @@ const AGENT_TOOLS = ['signal', 'enrich', 'match', 'draft', 'send', 'write', 'pub
 
 function AgentDiagram() {
   return (
-    <div className="grid-block panel-soft p-stack-lg">
+    <div className="layer-stack rounded-lg">
+    <span aria-hidden className="layer-back rounded-lg" />
+    <span aria-hidden className="layer-back-2 rounded-lg" />
+    <div className="layer-front grid-block panel-soft p-stack-lg depth-stack">
       <svg viewBox="0 0 520 300" className="w-full" role="img" aria-label="Your agent calls the Bombsell API, which exposes GTM steps as tools">
         {/* connectors */}
         <g className="stroke-outline-variant/50" strokeWidth="1.5" fill="none">
@@ -376,13 +397,15 @@ function AgentDiagram() {
       </svg>
       <p className="mt-stack-sm font-label-mono text-[10px] text-on-surface-variant uppercase tracking-widest">Every GTM step is a tool — call one, a few, or the whole pipeline.</p>
     </div>
+    </div>
   )
 }
 
 function ForAgents() {
   return (
-    <section id="agents" className="max-w-[1280px] mx-auto px-margin-page py-24 md:py-32">
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-gutter items-center">
+    <section id="agents" className="relative max-w-[1280px] mx-auto px-margin-page py-24 md:py-32">
+      <span aria-hidden className="float-orb orb-primary drift-slow" style={{ width: 420, height: 420, top: 120, left: '-3%', zIndex: 0 }} />
+      <div className="relative grid grid-cols-1 md:grid-cols-12 gap-gutter items-center" style={{ zIndex: 1 }}>
         <div className="md:col-span-6 order-2 md:order-1">
           <AgentDiagram />
         </div>
@@ -421,7 +444,7 @@ function Integrations() {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-gutter">
         {INTEGRATIONS.map((it) => (
-          <div key={it.name} className="bg-surface-container-lowest hairline-border p-6 flex flex-col items-center justify-center gap-3 hover:border-primary/50 transition-colors group cursor-default">
+          <div key={it.name} className="bg-surface-container-lowest hairline-border p-6 flex flex-col items-center justify-center gap-3 hover:border-primary/50 depth-lift group cursor-default">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={`https://www.google.com/s2/favicons?domain=${it.domain}&sz=64`} alt={`${it.name} logo`} width={24} height={24} className="h-6 w-6 rounded-sm" loading="lazy" />
             <span className="font-label-mono text-label-mono uppercase">{it.name}</span>
@@ -437,8 +460,11 @@ function Integrations() {
 
 function FinalCta({ loading, onStart }: { loading: boolean; onStart: () => void }) {
   return (
-    <section className="bg-surface-container-low border-t border-outline-variant/30">
-      <div className="max-w-[1120px] mx-auto px-margin-page py-[120px] md:py-[150px] text-center">
+    <section className="relative overflow-hidden bg-surface-container-low border-t border-outline-variant/30">
+      <span aria-hidden className="absolute pointer-events-none" style={{ width: 720, height: 720, top: -120, left: 'calc(50% - 360px)', zIndex: 0 }}>
+        <span className="float-orb orb-primary drift-slower" style={{ inset: 0, width: '100%', height: '100%' }} />
+      </span>
+      <div className="relative max-w-[1120px] mx-auto px-margin-page py-[120px] md:py-[150px] text-center" style={{ zIndex: 1 }}>
         <p className="font-label-mono text-label-mono uppercase tracking-[0.25em] text-on-surface-variant mb-stack-md">Get started</p>
 
         <h2 className="font-h1-editorial font-semibold text-on-surface leading-[1.08] tracking-[-0.02em] text-balance">

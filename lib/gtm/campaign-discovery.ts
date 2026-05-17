@@ -1,6 +1,7 @@
 import type { LeadSignalType } from '@/lib/lead-sources'
 
-export type CampaignDiscoveryProviderStatus = 'ready' | 'not_configured' | 'provider_error'
+export type CampaignDiscoveryMode = 'search' | 'webset'
+export type CampaignDiscoveryProviderStatus = 'ready' | 'running' | 'not_configured' | 'provider_error'
 
 export interface CampaignDiscoveryBrief {
   prompt: string
@@ -34,8 +35,19 @@ export interface CampaignDiscoveryCandidate {
 
 export interface CampaignDiscoveryResult {
   provider: 'exa'
+  mode?: CampaignDiscoveryMode
   status: CampaignDiscoveryProviderStatus
   requestId?: string | null
+  requestIds?: string[]
+  websetId?: string | null
+  websetSearchId?: string | null
+  websetStatus?: string | null
+  progress?: {
+    found?: number
+    analyzed?: number
+    completion?: number
+    timeLeft?: number
+  } | null
   candidates: CampaignDiscoveryCandidate[]
   error?: string | null
 }
@@ -60,6 +72,11 @@ export interface ExaSearchPayload {
 const SIGNAL_TYPES: Array<CampaignDiscoveryCandidate['signal_type']> = ['funding', 'acquisition', 'expansion', 'regulation', 'hiring']
 const CHANNELS = ['email', 'linkedin', 'content'] as const
 const EXA_SEARCH_TYPES = ['auto', 'neural', 'fast', 'deep-lite', 'deep', 'deep-reasoning', 'instant'] as const
+export const EXA_WEBSET_TARGET_THRESHOLD = 25
+
+export function chooseCampaignDiscoveryMode(count: number): CampaignDiscoveryMode {
+  return boundedNumber(count, 1, 100, 10) >= EXA_WEBSET_TARGET_THRESHOLD ? 'webset' : 'search'
+}
 
 export function buildCampaignBriefFromPrompt(prompt: string): CampaignDiscoveryBrief {
   const cleanPrompt = collapseWhitespace(prompt).slice(0, 3000)
@@ -92,15 +109,16 @@ export function buildExaCampaignSearchPayload(params: {
   brief: CampaignDiscoveryBrief
   count: number
   searchType?: string | null
+  query?: string | null
 }): ExaSearchPayload {
   const numResults = boundedNumber(params.count * 3, 10, 40, 20)
   const type = isExaSearchType(params.searchType) ? params.searchType : 'auto'
   const [query, ...additionalQueries] = params.brief.queries
-  const primaryQuery = query || params.brief.prompt
+  const primaryQuery = collapseWhitespace(params.query ?? '') || query || params.brief.prompt
 
   return {
     query: primaryQuery,
-    ...(additionalQueries.length ? { additionalQueries } : {}),
+    ...(params.query ? {} : additionalQueries.length ? { additionalQueries } : {}),
     type,
     numResults,
     contents: {
@@ -133,8 +151,6 @@ export function buildExaCampaignSearchPayload(params: {
               relevance_reason: { type: 'string' },
               relevance_score: { type: 'number' },
               source_url: { type: ['string', 'null'] },
-              source_name: { type: ['string', 'null'] },
-              published_at: { type: ['string', 'null'] },
               evidence: { type: 'array', items: { type: 'string' } },
             },
             required: ['company_name', 'signal_type', 'headline', 'summary', 'relevance_reason', 'relevance_score', 'evidence'],
@@ -155,10 +171,43 @@ export function buildExaCampaignSearchPayload(params: {
   }
 }
 
+export function buildExaCampaignWebsetPayload(params: {
+  brief: CampaignDiscoveryBrief
+  count: number
+  campaignId: string
+}): Record<string, unknown> {
+  return {
+    title: params.brief.name,
+    externalId: `gtm-campaign-${params.campaignId}`,
+    metadata: {
+      source: 'campaign_prompt',
+      campaign_id: params.campaignId,
+      prompt: params.brief.prompt.slice(0, 500),
+    },
+    search: {
+      query: params.brief.prompt,
+      count: boundedNumber(params.count, EXA_WEBSET_TARGET_THRESHOLD, 100, EXA_WEBSET_TARGET_THRESHOLD),
+      entity: { type: 'company' },
+      criteria: [
+        { description: `Company matches this audience: ${params.brief.segment}` },
+        { description: `Company has evidence of this buying trigger: ${params.brief.trigger}` },
+        { description: `Company is relevant to this campaign narrative: ${params.brief.narrative}` },
+      ],
+      recall: true,
+      behavior: 'override',
+      metadata: {
+        source: 'campaign_prompt',
+        campaign_id: params.campaignId,
+      },
+    },
+  }
+}
+
 export function extractExaCampaignCandidates(params: {
   response: unknown
   brief: CampaignDiscoveryBrief
   maxCandidates: number
+  excludeKeys?: Set<string>
 }): CampaignDiscoveryCandidate[] {
   const object = asRecord(params.response) ?? {}
   const output = asRecord(object.output)
@@ -177,6 +226,32 @@ export function extractExaCampaignCandidates(params: {
     const candidate = normalizeCampaignDiscoveryCandidate(raw, results)
     if (!candidate) continue
     const key = campaignDiscoveryCompanyKey(candidate.company_name, candidate.company_domain)
+    if (params.excludeKeys?.has(key)) continue
+    if (seen.has(key)) continue
+    seen.add(key)
+    candidates.push(candidate)
+    if (candidates.length >= params.maxCandidates) break
+  }
+
+  return candidates
+}
+
+export function extractExaWebsetCampaignCandidates(params: {
+  response: unknown
+  brief: CampaignDiscoveryBrief
+  maxCandidates: number
+  excludeKeys?: Set<string>
+}): CampaignDiscoveryCandidate[] {
+  const object = asRecord(params.response) ?? {}
+  const items = Array.isArray(object.data) ? object.data : Array.isArray(object.items) ? object.items : []
+  const seen = new Set<string>()
+  const candidates: CampaignDiscoveryCandidate[] = []
+
+  for (const item of items) {
+    const candidate = normalizeWebsetItemCandidate(item, params.brief)
+    if (!candidate) continue
+    const key = campaignDiscoveryCompanyKey(candidate.company_name, candidate.company_domain)
+    if (params.excludeKeys?.has(key)) continue
     if (seen.has(key)) continue
     seen.add(key)
     candidates.push(candidate)
@@ -229,7 +304,8 @@ function normalizeCampaignDiscoveryCandidate(raw: unknown, searchResults: unknow
   const headline = stringValue(row.headline) || `${companyName} matches this campaign motion`
   const summary = stringValue(row.summary) || evidence[0] || `Evidence suggests ${companyName} may match the campaign prompt.`
   const relevanceReason = stringValue(row.relevance_reason) || summary
-  const score = boundedNumber(row.relevance_score, 1, 10, scoreFromEvidence(evidence, sourceUrl, companyDomain))
+  const evidenceScore = scoreFromEvidence(evidence, sourceUrl, companyDomain)
+  const score = Math.max(evidenceScore, boundedNumber(row.relevance_score, 1, 10, evidenceScore))
 
   return {
     company_name: companyName.slice(0, 180),
@@ -246,6 +322,55 @@ function normalizeCampaignDiscoveryCandidate(raw: unknown, searchResults: unknow
     provider: 'exa',
     provider_record_id: stringValue(row.id) || sourceUrl,
     raw_payload: row,
+  }
+}
+
+function normalizeWebsetItemCandidate(raw: unknown, brief: CampaignDiscoveryBrief): CampaignDiscoveryCandidate | null {
+  const item = asRecord(raw)
+  if (!item) return null
+  const properties = asRecord(item.properties) ?? {}
+  const company = asRecord(properties.company) ?? {}
+  const evaluations = Array.isArray(item.evaluations) ? item.evaluations : []
+  const references = evaluations.flatMap(evaluation => {
+    const row = asRecord(evaluation)
+    return Array.isArray(row?.references) ? row.references : []
+  })
+  const enrichments = Array.isArray(item.enrichments) ? item.enrichments : []
+  const enrichmentReferences = enrichments.flatMap(enrichment => {
+    const row = asRecord(enrichment)
+    return Array.isArray(row?.references) ? row.references : []
+  })
+  const firstReference = [...references, ...enrichmentReferences].map(asRecord).find(Boolean) ?? null
+  const sourceUrl = normalizeUrl(properties.url) ?? normalizeUrl(company.website) ?? normalizeUrl(firstReference?.url)
+  const companyDomain = normalizeDomain(company.domain ?? company.website) ?? domainFromUrl(sourceUrl)
+  const companyName = stringValue(company.name ?? properties.name ?? properties.title) || companyFromTitle(stringValue(properties.description)) || companyDomain
+  if (!companyName || isPlaceholderCompany(companyName)) return null
+
+  const evidence = [
+    ...evaluations.map(evaluation => stringValue(asRecord(evaluation)?.reasoning)),
+    ...references.map(reference => stringValue(asRecord(reference)?.snippet)),
+    ...enrichmentReferences.map(reference => stringValue(asRecord(reference)?.snippet)),
+    stringValue(properties.description),
+  ].filter(Boolean).slice(0, 4)
+  const satisfied = evaluations.some(evaluation => stringValue(asRecord(evaluation)?.satisfied).toLowerCase() === 'yes')
+  const summary = stringValue(properties.description) || evidence[0] || `${companyName} matched the Websets campaign criteria.`
+  const signalType = inferSignalType(`${brief.trigger} ${summary} ${evidence.join(' ')}`)
+
+  return {
+    company_name: companyName.slice(0, 180),
+    company_domain: companyDomain,
+    signal_type: signalType,
+    headline: `${companyName} matched ${brief.trigger}`.slice(0, 240),
+    summary: summary.slice(0, 1000),
+    relevance_reason: (evidence[0] || summary).slice(0, 1000),
+    relevance_score: satisfied ? 9 : scoreFromEvidence(evidence, sourceUrl, companyDomain),
+    source_url: sourceUrl,
+    source_name: sourceNameFromUrl(sourceUrl) || 'exa_websets',
+    published_at: normalizeDate(item.updatedAt ?? item.createdAt),
+    evidence,
+    provider: 'exa',
+    provider_record_id: stringValue(item.id) || sourceUrl,
+    raw_payload: item,
   }
 }
 

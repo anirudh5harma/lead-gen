@@ -31,18 +31,21 @@ export default function OutreachView({ leads, focusLeadId }: Props) {
   function open(l: Lead, mode: 'open' | 'review') { setReviewMode(mode); setSelectedLead(l) }
 
   return (
-    <div className="font-body-main text-on-surface">
-      <section className="mb-16">
-        <h2 className="font-h1-editorial text-5xl text-on-surface mb-4">Lead Pipeline</h2>
-        <p className="font-body-large text-on-surface-variant max-w-xl leading-relaxed">
-          High-confidence targets identified by the agentic fleet. Review and approve outreach before deployment.
+    <div className="space-y-section-gap font-body-main text-on-surface">
+      <div>
+        <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">Outreach</p>
+        <h2 className="font-h1-editorial text-display-sm text-on-surface">
+          The <span className="italic text-primary">lead</span> pipeline.
+        </h2>
+        <p className="font-body-main text-on-surface-variant max-w-xl mt-stack-md">
+          High-confidence targets surfaced by the fleet. Review and approve outreach before it ships.
         </p>
-      </section>
+      </div>
 
       <div className="space-y-20">
         {/* Priority Leads */}
         <section>
-          <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-2">
+          <div className="flex items-center justify-between mb-8 hairline-b pb-2">
             <h3 className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Priority Leads</h3>
             <span className="font-label-mono text-[10px] uppercase tracking-widest text-primary bg-primary-container/10 px-2 py-1 rounded">{priority.length} Candidates</span>
           </div>
@@ -82,7 +85,7 @@ export default function OutreachView({ leads, focusLeadId }: Props) {
 
         {/* Sent Outreach */}
         <section>
-          <div className="flex items-center justify-between mb-8 border-b border-outline-variant pb-2">
+          <div className="flex items-center justify-between mb-8 hairline-b pb-2">
             <h3 className="font-label-mono text-label-mono uppercase tracking-[0.3em] text-on-surface-variant">Sent Outreach</h3>
           </div>
           {sentOut.length === 0 ? (

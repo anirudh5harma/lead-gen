@@ -82,7 +82,7 @@ export interface CampaignSummary {
   trigger?: string | null
   narrative?: string | null
   channels?: string[] | null
-  readiness?: { stage: string; canLaunch: boolean; missing: string[]; nextAction: string }
+  readiness?: { stage: string; canLaunch: boolean; missing: string[]; recommendations?: string[]; nextAction: string }
   target_counts?: Record<string, number>
   content_counts?: Record<string, number>
   asset_counts?: Record<string, number>
@@ -256,7 +256,7 @@ export class Bombsell {
     },
     fromPrompt: async (prompt: string, opts?: { targetCount?: number; channels?: string[] }): Promise<{
       campaign: CampaignSummary
-      discovery: { provider: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
+      discovery: { provider: string; mode?: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
       leads: unknown[]
       targets: unknown[]
     }> => {
@@ -270,7 +270,22 @@ export class Bombsell {
       })
       return res.json() as Promise<{
         campaign: CampaignSummary
-        discovery: { provider: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
+        discovery: { provider: string; mode?: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
+        leads: unknown[]
+        targets: unknown[]
+      }>
+    },
+    discover: async (campaignId: string, opts?: { targetCount?: number }): Promise<{
+      discovery: { provider: string; mode?: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
+      leads: unknown[]
+      targets: unknown[]
+    }> => {
+      const res = await this.fetch('/api/gtm/campaigns/' + encodeURIComponent(campaignId) + '/discover', {
+        method: 'POST',
+        body: JSON.stringify({ target_count: opts?.targetCount }),
+      })
+      return res.json() as Promise<{
+        discovery: { provider: string; mode?: string; status: string; generated: number; inserted: number; skipped: number; credits_used: number; credit_blocked: number }
         leads: unknown[]
         targets: unknown[]
       }>

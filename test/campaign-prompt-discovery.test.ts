@@ -3,9 +3,12 @@ import test from 'node:test'
 import {
   buildCampaignBriefFromPrompt,
   buildExaCampaignSearchPayload,
+  buildExaCampaignWebsetPayload,
   campaignDiscoveryCompanyKey,
   campaignDiscoveryResultKey,
+  chooseCampaignDiscoveryMode,
   extractExaCampaignCandidates,
+  extractExaWebsetCampaignCandidates,
 } from '../lib/gtm/campaign-discovery.ts'
 
 test('prompt campaign brief turns a natural language requirement into launch fields and Exa queries', () => {
@@ -30,6 +33,23 @@ test('Exa search payload requests structured grounded company candidates', () =>
   assert.match(JSON.stringify(payload.outputSchema), /companies/)
   assert.match(payload.systemPrompt, /evidence only/)
   assert.match(JSON.stringify(payload.contents), /highlights/)
+})
+
+test('campaign discovery uses Search below 25 targets and Websets at 25 or more', () => {
+  assert.equal(chooseCampaignDiscoveryMode(10), 'search')
+  assert.equal(chooseCampaignDiscoveryMode(24), 'search')
+  assert.equal(chooseCampaignDiscoveryMode(25), 'webset')
+  assert.equal(chooseCampaignDiscoveryMode(100), 'webset')
+})
+
+test('Exa Webset payload starts an async company search for large campaigns', () => {
+  const brief = buildCampaignBriefFromPrompt('Find 50 Series A B2B SaaS companies hiring sales leaders.')
+  const payload = buildExaCampaignWebsetPayload({ brief, count: 50, campaignId: 'campaign_1' })
+
+  assert.equal(payload.externalId, 'gtm-campaign-campaign_1')
+  assert.equal((payload.search as { count: number }).count, 50)
+  assert.deepEqual((payload.search as { entity: { type: string } }).entity, { type: 'company' })
+  assert.match(JSON.stringify((payload.search as { criteria: unknown }).criteria), /buying trigger/i)
 })
 
 test('Exa structured output is normalized, deduped, scored, and source-backed', () => {
@@ -77,6 +97,42 @@ test('Exa structured output is normalized, deduped, scored, and source-backed', 
   assert.equal(candidates[0].signal_type, 'hiring')
   assert.equal(candidates[0].relevance_score, 9)
   assert.equal(candidates[0].source_url, 'https://news.example.com/nimbus-hiring')
+})
+
+test('Exa Webset items normalize into source-backed campaign candidates', () => {
+  const brief = buildCampaignBriefFromPrompt('Find Series A companies hiring GTM leaders.')
+  const candidates = extractExaWebsetCampaignCandidates({
+    brief,
+    maxCandidates: 3,
+    response: {
+      data: [
+        {
+          id: 'wsi_1',
+          properties: {
+            type: 'company',
+            url: 'https://nimbusledger.com',
+            description: 'Nimbus Ledger is hiring GTM leaders after raising Series A.',
+            company: { name: 'Nimbus Ledger', website: 'https://nimbusledger.com' },
+          },
+          evaluations: [
+            {
+              criterion: 'Company has evidence of hiring',
+              satisfied: 'yes',
+              reasoning: 'Nimbus Ledger lists GTM leadership openings.',
+              references: [{ title: 'Careers', snippet: 'VP Sales opening', url: 'https://nimbusledger.com/careers' }],
+            },
+          ],
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+    },
+  })
+
+  assert.equal(candidates.length, 1)
+  assert.equal(candidates[0].company_name, 'Nimbus Ledger')
+  assert.equal(candidates[0].company_domain, 'nimbusledger.com')
+  assert.equal(candidates[0].signal_type, 'hiring')
+  assert.equal(candidates[0].relevance_score, 9)
 })
 
 test('campaign discovery keys are stable and campaign-scoped', () => {
