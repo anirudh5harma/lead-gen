@@ -45,6 +45,7 @@ export default function LandingPage() {
           onSubmit={() => void startWith(website)}
         />
         <TheLoop />
+        <WorkflowShowcase />
         <ForAgents />
         <ForTeams />
         <Integrations />
@@ -60,7 +61,8 @@ export default function LandingPage() {
 
 function TopNav({ loading, onStart }: { loading: boolean; onStart: () => void }) {
   const links: Array<[string, string, boolean]> = [
-    ['How it works', '#loop', true],
+    ['Workflows', '#workflows', true],
+    ['How it works', '#loop', false],
     ['For agents', '#agents', false],
     ['For teams', '#teams', false],
     ['Pricing', '/pricing', false],
@@ -118,13 +120,13 @@ function Hero({
         <p className="reveal font-label-mono text-label-mono uppercase tracking-[0.2em] text-on-surface-variant mb-stack-md">Agentic GTM</p>
 
         <h1 className="reveal reveal-1 font-h1-editorial font-semibold text-on-surface leading-[1.08] tracking-[-0.02em] text-balance">
-          <span className="block sm:whitespace-nowrap text-[clamp(1.75rem,6vw,3.6rem)]">Building the Future GTM Stack</span>
+          <span className="block sm:whitespace-nowrap text-[clamp(1.75rem,6vw,3.6rem)]">Building the Future GTM stack</span>
           <span className="block text-[clamp(1.1rem,2.8vw,1.6rem)] pt-3 sm:pt-4 text-primary italic">Pay for outcomes, not seats.</span>
         </h1>
 
         <br></br>
         <p className="reveal reveal-2 font-body-large text-body-large text-on-surface-variant max-w-2xl mx-auto mt-stack-lg leading-relaxed">
-          A fleet of agents running 24/7. You <b>pay when it works</b>.
+          A fleet of agents running outbound, content and campaigns - 24/7.
         </p>
 
         <form
@@ -158,12 +160,8 @@ function Hero({
       </div>
 
       <div className="mt-section-gap flex justify-center">
-        <div className="relative layer-stack max-w-[480px] w-full rounded-lg">
-          <span aria-hidden className="layer-back rounded-lg" />
-          <span aria-hidden className="layer-back-2 rounded-lg" />
-          <div className="layer-front bg-surface-container-lowest/80 backdrop-blur-sm hairline-border rounded-lg p-stack-md depth-stack">
-            <HeroDiagram />
-          </div>
+        <div className="reveal reveal-2 relative max-w-[760px] w-full">
+          <HeroDiagram />
         </div>
       </div>
 
@@ -187,50 +185,176 @@ function Hero({
   )
 }
 
-/* --- Hero illustration: the GTM flywheel, as a stack with a feedback loop --- */
+/* --- Hero illustration: chain-assembly pipeline (SIGNAL → ENGINES → DRAFT → OUTCOMES + reward loop) --- */
 
-function DiagBar({ x, y, w, label, accent, cls }: { x: number; y: number; w: number; label: string; accent?: 'primary' | 'tertiary'; cls: string }) {
-  const stroke = accent === 'primary' ? 'stroke-primary' : accent === 'tertiary' ? 'stroke-tertiary' : 'stroke-outline-variant'
-  const text = accent === 'primary' ? 'fill-primary' : accent === 'tertiary' ? 'fill-tertiary' : 'fill-on-surface-variant'
-  return (
-    <g className={cls}>
-      <rect x={x} y={y} width={w} height={34} rx={8} className={`fill-surface-container-lowest ${stroke}`} strokeWidth="1.5" />
-      <text x={x + w / 2} y={y + 21} textAnchor="middle" className={text} style={{ fontFamily: 'var(--font-label-mono)', fontSize: 10.5, letterSpacing: 1.4 }}>{label}</text>
-    </g>
-  )
-}
-function DiagDown({ x, y1, y2, cls }: { x: number; y1: number; y2: number; cls: string }) {
-  return <line x1={x} y1={y1} x2={x} y2={y2} className={`stroke-outline-variant ${cls}`} strokeWidth="1.75" markerEnd="url(#hd-arrow)" />
-}
+const HERO_SIGNALS: Array<{ tag: string; text: string; accent: 'primary' | 'tertiary' }> = [
+  { tag: 'HIRE',    text: 'Stripe · VP Growth',  accent: 'primary' },
+  { tag: 'FUND',    text: 'Retool · $45M C',     accent: 'tertiary' },
+  { tag: 'LAUNCH',  text: 'Linear · v2 ships',   accent: 'primary' },
+  { tag: 'PODCAST', text: 'Ramp · Acquired',     accent: 'tertiary' },
+  { tag: 'CHURN',   text: 'Competitor · price',  accent: 'primary' },
+]
 
 function HeroDiagram() {
-  const [n, setN] = useState(0)
+  const [active, setActive] = useState(0)
+  const [sigIdx, setSigIdx] = useState(0)
+
   useEffect(() => {
-    let id: ReturnType<typeof setInterval> | undefined
-    const t = setTimeout(() => {
-      let i = 0
-      id = setInterval(() => { i += 1; setN(i); if (i >= 7 && id) clearInterval(id) }, 260)
-    }, 450)
-    return () => { clearTimeout(t); if (id) clearInterval(id) }
+    const e = setInterval(() => setActive(v => (v + 1) % 3), 1800)
+    const s = setInterval(() => setSigIdx(v => (v + 1) % HERO_SIGNALS.length), 2400)
+    return () => { clearInterval(e); clearInterval(s) }
   }, [])
-  const cls = (step: number, dir: 'up' | 'left' | 'right' = 'up') => (n >= step ? `fx-${dir}` : 'fx-pre')
-  const fade = (step: number) => (n >= step ? 'fx-fade' : 'fx-pre')
+
+  const sigA = HERO_SIGNALS[sigIdx]
+  const sigB = HERO_SIGNALS[(sigIdx + 1) % HERO_SIGNALS.length]
+  const engineLabels: Array<{ name: string; accent: 'primary' | 'tertiary' }> = [
+    { name: 'OUTBOUND',  accent: 'primary' },
+    { name: 'CONTENT',   accent: 'tertiary' },
+    { name: 'CAMPAIGNS', accent: 'primary' },
+  ]
+
   return (
-    <svg viewBox="0 0 400 196" className="w-full max-w-[440px] select-none" role="img" aria-label="GTM flywheel: buying signals feed the Outbound and Content engines; outcomes feed a reward loop that tunes the fleet">
+    <svg viewBox="0 0 800 400" className="w-full select-none" role="img" aria-label="Bombsell pipeline: signal feeds engines that produce drafts and outcomes; reward loop tunes the fleet">
       <defs>
-        <marker id="hd-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0 0 L10 5 L0 10 z" className="fill-outline-variant" />
+        <marker id="hd-tip" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--color-primary)" />
         </marker>
+        <pattern id="hd-grid" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" className="fill-outline-variant/25" />
+        </pattern>
+        {/* tile gradients — gentle diagonal warm shifts */}
+        <linearGradient id="hd-bg-1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--color-surface-container-lowest)" />
+          <stop offset="1" stopColor="var(--color-surface-container-low)" />
+        </linearGradient>
+        <linearGradient id="hd-bg-2" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--color-surface-container-low)" />
+          <stop offset="1" stopColor="var(--color-surface-container)" />
+        </linearGradient>
+        <linearGradient id="hd-bg-3" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--color-surface-container)" />
+          <stop offset="1" stopColor="var(--color-surface-container-high)" />
+        </linearGradient>
+        <linearGradient id="hd-bg-4" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--color-surface-container-lowest)" />
+          <stop offset="0.6" stopColor="var(--color-surface-container-lowest)" />
+          <stop offset="1" stopColor="var(--color-surface-container-low)" />
+        </linearGradient>
+        {/* top-edge inner highlight — fakes light catching the top */}
+        <linearGradient id="hd-sheen" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.4" />
+          <stop offset="0.18" stopColor="#ffffff" stopOpacity="0" />
+        </linearGradient>
       </defs>
-      <DiagBar x={30} y={6} w={290} label="BUYING SIGNALS" cls={cls(1)} />
-      <DiagDown x={175} y1={40} y2={62} cls={cls(2)} />
-      <DiagBar x={30} y={66} w={140} label="OUTBOUND" accent="primary" cls={cls(3, 'left')} />
-      <DiagBar x={180} y={66} w={140} label="CONTENT" accent="tertiary" cls={cls(3, 'right')} />
-      <DiagDown x={100} y1={100} y2={122} cls={cls(4)} />
-      <DiagDown x={250} y1={100} y2={122} cls={cls(4)} />
-      <DiagBar x={30} y={126} w={290} label="OUTCOMES -> REWARD LOOP" accent="primary" cls={cls(5)} />
-      <path d="M 320 143 C 356 143, 356 23, 322 23" fill="none" strokeWidth="1.75" className={`stroke-outline-variant ${cls(6, 'right')}`} markerEnd="url(#hd-arrow)" />
-      <text x="380" y="84" textAnchor="middle" transform="rotate(90 380 84)" className={`fill-on-surface-variant ${fade(7)}`} style={{ fontFamily: 'var(--font-label-mono)', fontSize: 7.5, letterSpacing: 1.5 }}>TUNES THE FLEET</text>
+
+      {/* Backdrop dotted field */}
+      <rect className="hd-soft hd-d-0" x="0" y="0" width="800" height="400" fill="url(#hd-grid)" />
+
+      {/* ───── TILE 01: SIGNAL — soft peach (primary-fixed), slides from far left ───── */}
+      <g className="hd-anim hd-glide-l hd-d-1">
+        <rect x={20} y={70} width={170} height={172} rx={16} fill="url(#hd-bg-1)" stroke="var(--color-outline-variant)" strokeWidth="1" strokeOpacity="0.7" />
+        <text x={44} y={102} className="fill-primary" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 11, letterSpacing: 2, opacity: 0.8 }}>01</text>
+        <text x={44} y={134} className="fill-on-surface" style={{ fontFamily: 'var(--font-h1-editorial)', fontSize: 26, letterSpacing: -0.5, fontWeight: 600 }}>SIGNAL</text>
+        <g>
+          <circle cx={160} cy={92} r={3.5} className="fill-primary">
+            <animate attributeName="opacity" values="1;0.3;1" dur="1.4s" repeatCount="indefinite" />
+          </circle>
+          <text x={150} y={96} textAnchor="end" className="fill-primary" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 9, letterSpacing: 1.4 }}>LIVE</text>
+        </g>
+        <line x1={44} y1={148} x2={166} y2={148} stroke="var(--color-on-surface)" strokeWidth="0.75" opacity={0.18} />
+        <g key={`sig-${sigIdx}`} className="hd-soft">
+          <text x={44} y={168} className="fill-primary" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 9, letterSpacing: 1.4, opacity: 0.85 }}>{sigA.tag}</text>
+          <text x={44} y={184} className="fill-on-surface" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 10, letterSpacing: 0.3 }}>{sigA.text}</text>
+          <text x={44} y={204} className="fill-on-surface-variant" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 9, letterSpacing: 0.8, opacity: 0.7 }}>▸ {sigB.tag}</text>
+        </g>
+      </g>
+
+      {/* Connector A */}
+      <line className="hd-link hd-d-2" pathLength="100" x1={196} y1={145} x2={216} y2={145} stroke="var(--color-on-surface-variant)" strokeWidth="1.75" strokeLinecap="round" markerEnd="url(#hd-tip)" opacity={0.7} />
+
+      {/* ───── TILE 02: ENGINES — warm beige (surface-container-high), drops from top ───── */}
+      <g className="hd-anim hd-glide-u hd-d-3">
+        <rect x={220} y={70} width={170} height={172} rx={16} fill="url(#hd-bg-2)" stroke="var(--color-outline-variant)" strokeWidth="1" strokeOpacity="0.7" />
+        <text x={244} y={102} className="fill-on-surface-variant" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 11, letterSpacing: 2, opacity: 0.7 }}>02</text>
+        <text x={244} y={134} className="fill-on-surface" style={{ fontFamily: 'var(--font-h1-editorial)', fontSize: 24, letterSpacing: -0.5, fontWeight: 600 }}>ENGINES</text>
+        {engineLabels.map((eng, i) => {
+          const isActive = active === i
+          const ac = eng.accent
+          const y = 152 + i * 20
+          const strokeCls = isActive ? (ac === 'primary' ? 'stroke-primary' : 'stroke-tertiary') : 'stroke-outline-variant/30'
+          const textCls = isActive ? (ac === 'primary' ? 'fill-primary' : 'fill-tertiary') : 'fill-on-surface-variant'
+          const dotCls = ac === 'primary' ? 'fill-primary' : 'fill-tertiary'
+          return (
+            <g key={eng.name}>
+              <rect x={244} y={y} width={122} height={16} rx={5} className={`fill-surface-container-lowest ${strokeCls}`} strokeWidth={isActive ? 1.4 : 1} />
+              <circle cx={256} cy={y + 8} r={2.4} className={dotCls} opacity={isActive ? 1 : 0.35}>
+                {isActive && <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite" />}
+              </circle>
+              <text x={268} y={y + 12} className={textCls} style={{ fontFamily: 'var(--font-label-mono)', fontSize: 9.5, letterSpacing: 1.4, fontWeight: isActive ? 600 : 400 }}>{eng.name}</text>
+            </g>
+          )
+        })}
+      </g>
+
+      {/* Connector B */}
+      <line className="hd-link hd-d-4" pathLength="100" x1={396} y1={145} x2={416} y2={145} stroke="var(--color-on-surface-variant)" strokeWidth="1.75" strokeLinecap="round" markerEnd="url(#hd-tip)" opacity={0.7} />
+
+      {/* ───── TILE 03: DRAFT — soft mint (tertiary-fixed), rises from bottom ───── */}
+      <g className="hd-anim hd-glide-d hd-d-5">
+        <rect x={420} y={70} width={170} height={172} rx={16} fill="url(#hd-bg-3)" stroke="var(--color-outline-variant)" strokeWidth="1" strokeOpacity="0.7" />
+        <text x={444} y={102} className="fill-tertiary" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>03</text>
+        <text x={444} y={134} className="fill-on-surface" style={{ fontFamily: 'var(--font-h1-editorial)', fontSize: 26, letterSpacing: -0.5, fontWeight: 600 }}>DRAFT</text>
+        <line x1={444} y1={148} x2={566} y2={148} stroke="var(--color-on-surface)" strokeWidth="0.75" opacity={0.18} />
+        <rect x={444} y={158} width={118} height={3} rx={1.5} className="fill-on-surface" opacity={0.55} />
+        <rect x={444} y={168} width={96}  height={2.5} rx={1.25} className="fill-on-surface" opacity={0.35} />
+        <rect x={444} y={176} width={108} height={2.5} rx={1.25} className="fill-on-surface" opacity={0.35} />
+        <rect x={444} y={184} width={78}  height={2.5} rx={1.25} className="fill-on-surface" opacity={0.35} />
+        <rect x={444} y={192} width={58}  height={2.5} rx={1.25} className="fill-on-surface" opacity={0.25} />
+        <rect x={444} y={202} width={102} height={14} rx={4} className="fill-primary" opacity={0.92} />
+        <text x={450} y={212} className="fill-on-primary" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 9, letterSpacing: 1.4 }}>READY · 84/100</text>
+      </g>
+
+      {/* Connector C */}
+      <line className="hd-link hd-d-6" pathLength="100" x1={596} y1={145} x2={616} y2={145} stroke="var(--color-on-surface-variant)" strokeWidth="1.75" strokeLinecap="round" markerEnd="url(#hd-tip)" opacity={0.7} />
+
+      {/* ───── TILE 04: OUTCOMES — soft outline, slides from far right ───── */}
+      <g className="hd-anim hd-glide-r hd-d-7">
+        <rect x={620} y={70} width={160} height={172} rx={16} fill="url(#hd-bg-4)" stroke="var(--color-outline-variant)" strokeWidth="1" strokeOpacity="0.7" />
+        <text x={644} y={102} className="fill-on-surface-variant" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 11, letterSpacing: 2, opacity: 0.7 }}>04</text>
+        <text x={644} y={134} className="fill-on-surface" style={{ fontFamily: 'var(--font-h1-editorial)', fontSize: 19, letterSpacing: -0.4, fontWeight: 600 }}>OUTCOMES</text>
+        {([
+          { label: 'SENT',   value: '124', pct: 0.85, fill: 'fill-on-surface',  bar: 'fill-on-surface' },
+          { label: 'REPLY',  value: '42',  pct: 0.42, fill: 'fill-primary',     bar: 'fill-primary' },
+          { label: 'BOOKED', value: '11',  pct: 0.18, fill: 'fill-tertiary',    bar: 'fill-tertiary' },
+        ]).map((m, i) => {
+          const y = 158 + i * 22
+          const w = 112
+          return (
+            <g key={m.label}>
+              <text x={644} y={y} className="fill-on-surface-variant" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 9, letterSpacing: 1.2 }}>{m.label}</text>
+              <text x={756} y={y} textAnchor="end" className={m.fill} style={{ fontFamily: 'var(--font-label-mono)', fontSize: 13, letterSpacing: 0.5, fontWeight: 700 }}>{m.value}</text>
+              <rect x={644} y={y + 5} width={w} height={3} rx={1.5} className="fill-outline-variant/35" />
+              <rect x={644} y={y + 5} width={0} height={3} rx={1.5} className={m.bar}>
+                <animate attributeName="width" from="0" to={w * m.pct} dur="1s" begin="2.05s" fill="freeze" />
+              </rect>
+            </g>
+          )
+        })}
+      </g>
+
+      {/* ───── Reward loop arc beneath ───── */}
+      <g className="hd-arc hd-d-9">
+        <path id="hd-loop-path" d="M 720 272 Q 400 376 80 272" fill="none" stroke="var(--color-on-surface-variant)" strokeWidth="1.25" strokeDasharray="3 6" strokeLinecap="round" markerEnd="url(#hd-tip)" opacity={0.45} />
+      </g>
+      <g className="hd-soft hd-d-10">
+        <circle r={4.5} className="fill-primary">
+          <animateMotion dur="5.4s" repeatCount="indefinite" begin="2.8s">
+            <mpath href="#hd-loop-path" />
+          </animateMotion>
+          <animate attributeName="opacity" values="0.5;1;0.5" dur="5.4s" repeatCount="indefinite" begin="2.8s" />
+        </circle>
+        <text x={400} y={390} textAnchor="middle" className="fill-on-surface-variant" style={{ fontFamily: 'var(--font-label-mono)', fontSize: 11, letterSpacing: 4, opacity: 0.7 }}>REWARD LOOP · TUNES THE FLEET</text>
+      </g>
     </svg>
   )
 }
@@ -291,6 +415,275 @@ function TheLoop() {
       <LoopGrid id="loop" title="The Outbound loop" badge="E2E autonomous pipeline" steps={OUTBOUND_LOOP} />
       <LoopGrid id="content-loop" title="The Content loop" badge="LinkedIn & X · always-on" steps={CONTENT_LOOP} dark />
     </>
+  )
+}
+
+/* --- 02b Workflow showcase ------------------------------------- */
+
+type WorkflowRow = {
+  id: string
+  tag: string
+  title: string
+  lead: string
+  bullets: string[]
+  cta: { label: string; href: string }
+  mock: 'outbound' | 'content' | 'campaign'
+  reverse?: boolean
+}
+
+const WORKFLOW_ROWS: WorkflowRow[] = [
+  {
+    id: 'outbound',
+    tag: 'Engine 01 · Outbound',
+    title: 'Every send carries its receipts.',
+    lead: 'Buying signals become verified contacts, drafted outreach, and reply triage — with the chain of logic the team can defend in a review meeting.',
+    bullets: [
+      'Live signal feed: hires, funding, podcasts, product launches.',
+      'Verified contact with provenance — no guessed emails.',
+      'Reply triage routes to booked, follow-up, or stop.',
+    ],
+    cta: { label: 'See the outbound loop', href: '#loop' },
+    mock: 'outbound',
+  },
+  {
+    id: 'content',
+    tag: 'Engine 02 · Content',
+    title: 'Always-on publishing in your brand voice.',
+    lead: 'Ideas tuned to what already worked, drafts written per platform, edits in your voice, scheduled and measured — so the calendar never goes dark.',
+    bullets: [
+      'Per-platform drafts for LinkedIn and X with brand-voice edits.',
+      'A queue that learns which angles convert into replies.',
+      'Engagement data feeds back into the next batch.',
+    ],
+    cta: { label: 'See the content loop', href: '#content-loop' },
+    mock: 'content',
+    reverse: true,
+  },
+  {
+    id: 'campaigns',
+    tag: 'Engine 03 · Campaigns',
+    title: 'Triggered motions with air cover.',
+    lead: 'Wrap outbound and content into a single motion behind one trigger. Targets, drafts, and companion posts move together — and the learning loop tightens the next batch.',
+    bullets: [
+      'One trigger orchestrates targets, drafts, and content.',
+      'Content air cover supports outbound replies on the same theme.',
+      'Outcome data — sent, replied, booked — feeds the next batch.',
+    ],
+    cta: { label: 'Open a campaign motion', href: '/pricing' },
+    mock: 'campaign',
+  },
+]
+
+function WorkflowShowcase() {
+  return (
+    <section id="workflows" className="relative max-w-[1280px] mx-auto px-margin-page py-24 md:py-32 border-t border-outline-variant/30">
+      <span aria-hidden className="float-orb orb-soft drift-slower" style={{ width: 560, height: 560, top: 80, left: '32%', zIndex: 0 }} />
+      <div className="relative" style={{ zIndex: 1 }}>
+        <div className="max-w-[760px] mb-section-gap">
+          <p className="font-label-mono text-label-mono uppercase tracking-[0.25em] text-on-surface-variant mb-stack-md">Three engines, one fleet</p>
+          <h2 className="font-h1-editorial text-[32px] md:text-[52px] leading-[1.05] tracking-[-0.02em]">
+            Outbound. Content. Campaigns.
+          </h2>
+          <p className="font-body-large text-on-surface-variant mt-stack-md max-w-xl">
+            Verifiable steps you can audit, hand off, or hand back. Pick one, compose all three.
+          </p>
+        </div>
+        <div className="flex flex-col gap-[clamp(64px,8vw,128px)]">
+          {WORKFLOW_ROWS.map(row => <WorkflowRowView key={row.id} row={row} />)}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function WorkflowRowView({ row }: { row: WorkflowRow }) {
+  return (
+    <div id={row.id} className="grid grid-cols-1 md:grid-cols-12 gap-gutter items-center">
+      <div className={`md:col-span-5 ${row.reverse ? 'md:order-2 md:col-start-8 md:pl-stack-lg' : ''}`}>
+        <p className="font-label-mono text-label-mono uppercase tracking-[0.22em] text-primary mb-stack-md">{row.tag}</p>
+        <h3 className="font-h1-editorial text-[26px] md:text-[36px] leading-[1.1] tracking-[-0.015em] mb-stack-md">{row.title}</h3>
+        <p className="font-body-large text-on-surface-variant leading-relaxed mb-stack-lg">{row.lead}</p>
+        <ul className="space-y-stack-sm mb-stack-lg">
+          {row.bullets.map(b => (
+            <li key={b} className="flex gap-3 items-start font-body-main text-on-surface">
+              <span className="mt-2 w-1.5 h-1.5 bg-primary shrink-0" />
+              <span>{b}</span>
+            </li>
+          ))}
+        </ul>
+        <Link href={row.cta.href} className="font-label-mono text-label-mono text-primary inline-flex items-center gap-2 group uppercase tracking-widest">
+          {row.cta.label} <Icon name="arrow_forward" className="transition-transform group-hover:translate-x-1" size={16} />
+        </Link>
+      </div>
+      <div className={`md:col-span-6 ${row.reverse ? 'md:order-1 md:col-start-1' : 'md:col-start-7'}`}>
+        <WorkflowMock kind={row.mock} />
+      </div>
+    </div>
+  )
+}
+
+function WorkflowMock({ kind }: { kind: WorkflowRow['mock'] }) {
+  return (
+    <div className="layer-stack rounded-lg">
+      <span aria-hidden className="layer-back rounded-lg" />
+      <span aria-hidden className="layer-back-2 rounded-lg" />
+      <div className="layer-front grid-block panel-soft p-stack-md md:p-stack-lg depth-stack">
+        {kind === 'outbound' && <OutboundMock />}
+        {kind === 'content' && <ContentMock />}
+        {kind === 'campaign' && <CampaignMock />}
+      </div>
+    </div>
+  )
+}
+
+function MockChrome({ title, badge }: { title: string; badge: string }) {
+  return (
+    <div className="flex items-center justify-between border-b border-outline-variant/40 pb-2 mb-stack-md">
+      <div className="flex items-center gap-2 font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+        <span className="w-1.5 h-1.5 rounded-full bg-primary" /> {title}
+      </div>
+      <span className="font-label-mono text-[9px] uppercase tracking-widest bg-primary-container/10 text-primary px-1.5 py-0.5 rounded">{badge}</span>
+    </div>
+  )
+}
+
+function StatTile({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'primary' | 'tertiary' }) {
+  const valueClass = tone === 'primary' ? 'text-primary' : tone === 'tertiary' ? 'text-tertiary' : 'text-on-surface'
+  return (
+    <div className="bg-surface-container-lowest hairline-border rounded p-2.5 min-w-0">
+      <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">{label}</div>
+      <div className={`font-body-main text-[14px] mt-0.5 truncate ${valueClass}`}>{value}</div>
+    </div>
+  )
+}
+
+function OutboundMock() {
+  return (
+    <div>
+      <MockChrome title="Lead drawer · Ramp" badge="Evidence" />
+      <div className="grid grid-cols-2 gap-2 mb-stack-md">
+        <StatTile label="Trigger" value="VP Growth hire" tone="primary" />
+        <StatTile label="Source" value="LinkedIn · 88/100" tone="tertiary" />
+        <StatTile label="Signal age" value="2h ago" />
+        <StatTile label="Fit" value="9/10 · live" />
+      </div>
+      <div className="bg-surface-container-lowest hairline-border rounded p-3 mb-stack-md">
+        <div className="flex items-center gap-2 mb-2">
+          <Icon name="schedule_send" size={16} className="text-primary" />
+          <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Next best action</span>
+        </div>
+        <div className="font-body-main text-on-surface">Approve and dispatch</div>
+        <div className="font-body-main text-on-surface-variant text-[12.5px] mt-1">Recipient verified, evidence linked, draft passed quality gate (84/100).</div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-surface-container-lowest hairline-border rounded p-2">
+          <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">Subject</div>
+          <div className="font-body-main text-[13px] text-on-surface mt-0.5 truncate">Headcount for the new GTM motion</div>
+        </div>
+        <div className="bg-surface-container-lowest hairline-border rounded p-2">
+          <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">CTA</div>
+          <div className="font-body-main text-[13px] text-on-surface mt-0.5 truncate">15-minute compare notes</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ContentMock() {
+  const queue: Array<{ time: string; channel: string; angle: string; tone: 'primary' | 'tertiary' }> = [
+    { time: 'Tue 09:10', channel: 'LinkedIn', angle: 'Hidden cost of stalled pipelines', tone: 'primary' },
+    { time: 'Tue 17:40', channel: 'X', angle: 'Why teams wait too long to switch', tone: 'tertiary' },
+    { time: 'Wed 08:55', channel: 'LinkedIn', angle: 'Founder note: 3 reply patterns', tone: 'primary' },
+  ]
+  const bars = [42, 68, 35, 84, 56, 73, 49]
+  return (
+    <div>
+      <MockChrome title="Content composer" badge="Brand voice 91" />
+      <div className="bg-surface-container-lowest hairline-border rounded p-3 mb-stack-md">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="font-label-mono text-[9px] uppercase tracking-widest bg-primary-container/10 text-primary px-1.5 py-0.5 rounded">LinkedIn</span>
+          <span className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">draft 2 of 3</span>
+        </div>
+        <div className="font-body-main text-on-surface text-[13.5px] leading-relaxed">
+          The pipelines that win this quarter aren&apos;t the loudest. They&apos;re the ones that learn the fastest — every reply tunes the next send.
+        </div>
+        <div className="mt-2 flex gap-1.5">
+          <span className="font-label-mono text-[9px] uppercase tracking-widest bg-tertiary/10 text-tertiary px-1.5 py-0.5 rounded">on voice</span>
+          <span className="font-label-mono text-[9px] uppercase tracking-widest bg-primary-container/10 text-primary px-1.5 py-0.5 rounded">hook strong</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-stack-md">
+        <div className="bg-surface-container-lowest hairline-border rounded p-2.5">
+          <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant mb-1">Queue</div>
+          {queue.map(item => (
+            <div key={item.time} className="flex items-center gap-2 py-1 border-b border-outline-variant/20 last:border-0">
+              <span className="font-label-mono text-[9px] uppercase tracking-widest text-outline shrink-0">{item.time}</span>
+              <span className={`font-label-mono text-[9px] uppercase tracking-widest px-1 rounded ${item.tone === 'tertiary' ? 'bg-tertiary/10 text-tertiary' : 'bg-primary-container/10 text-primary'}`}>{item.channel}</span>
+              <span className="font-body-main text-[12px] text-on-surface truncate">{item.angle}</span>
+            </div>
+          ))}
+        </div>
+        <div className="bg-surface-container-lowest hairline-border rounded p-2.5">
+          <div className="flex items-center justify-between mb-1">
+            <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">Engagement</div>
+            <div className="font-label-mono text-[9px] uppercase tracking-widest text-primary">last 7</div>
+          </div>
+          <div className="flex items-end gap-1 h-[64px]">
+            {bars.map((b, i) => (
+              <span key={i} className={`flex-1 rounded-t ${i === 3 ? 'bg-primary' : 'bg-primary/30'}`} style={{ height: `${b}%` }} />
+            ))}
+          </div>
+          <div className="font-body-main text-[12px] text-on-surface-variant mt-1">Wed peak · 1.6× baseline reply</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CampaignMock() {
+  return (
+    <div>
+      <MockChrome title="Campaign · Series-C operators" badge="42% reply" />
+      <div className="grid grid-cols-4 gap-2 mb-stack-md">
+        <StatTile label="Enrolled" value="38" />
+        <StatTile label="Sent" value="24" tone="primary" />
+        <StatTile label="Replied" value="11" tone="primary" />
+        <StatTile label="Booked" value="4" tone="tertiary" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-surface-container-lowest hairline-border rounded p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">Learning loop</div>
+            <span className="font-label-mono text-[9px] uppercase tracking-widest bg-primary-container/10 text-primary px-1.5 py-0.5 rounded">42% reply</span>
+          </div>
+          <div className="font-body-main text-on-surface text-[13px] mb-2">Outcome data is shaping the next batch.</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <StatTile label="Signal" value="Funding" />
+            <StatTile label="Persona" value="Revenue" />
+            <StatTile label="Booked" value="17%" tone="tertiary" />
+            <StatTile label="Content" value="3 attached" />
+          </div>
+        </div>
+        <div className="bg-surface-container-lowest hairline-border rounded p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">Content air cover</div>
+            <span className="font-label-mono text-[9px] uppercase tracking-widest bg-tertiary/10 text-tertiary px-1.5 py-0.5 rounded">support</span>
+          </div>
+          <div className="space-y-1.5">
+            {[
+              { title: 'Why this funding moment matters', meta: 'LinkedIn · Revenue' },
+              { title: 'The hidden cost of stalled pipelines', meta: 'Founder post · pain' },
+              { title: 'Common objection: why teams wait', meta: 'Objection · reply support' },
+            ].map(item => (
+              <div key={item.title} className="bg-surface hairline-border rounded p-2">
+                <div className="font-body-main text-[12.5px] text-on-surface truncate">{item.title}</div>
+                <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant mt-0.5">{item.meta}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -468,12 +861,12 @@ function FinalCta({ loading, onStart }: { loading: boolean; onStart: () => void 
         <p className="font-label-mono text-label-mono uppercase tracking-[0.25em] text-on-surface-variant mb-stack-md">Get started</p>
 
         <h2 className="font-h1-editorial font-semibold text-on-surface leading-[1.08] tracking-[-0.02em] text-balance">
-          <span className="block sm:whitespace-nowrap text-[clamp(1.875rem,6vw,3.6rem)]">Stop chasing leads.</span>
+          <span className="block sm:whitespace-nowrap text-[clamp(1.875rem,6vw,3.6rem)]">Run GTM on the move.</span>
           <span className="block text-[clamp(1.4rem,3.4vw,2.4rem)] text-primary italic">Get Bombsell.</span>
         </h2>
 
         <p className="font-body-large text-body-large text-on-surface-variant max-w-xl mx-auto mt-stack-lg leading-relaxed">
-          Outbound and Content, run by a fleet of agents - composable, on autopilot when you want it. Start free, no card.
+          A fleet of agents running outbound, content, and campaign motions - composable, on autopilot when you want it. Start free, no card.
         </p>
 
         <div className="mt-stack-lg flex flex-col sm:flex-row justify-center gap-stack-md">
@@ -506,7 +899,7 @@ function Footer() {
           <div className="font-bold text-[19px] tracking-tight text-on-surface">Bombsell</div>
           <p className="font-body-main text-on-surface-variant max-w-[220px]">© {new Date().getFullYear()} Bombsell.</p>
         </div>
-        <FootCol title="Product" links={[['How it works', '#loop'], ['Pricing', '/pricing'], ['Integrations', '#integrations']]} />
+        <FootCol title="Product" links={[['Workflows', '#workflows'], ['How it works', '#loop'], ['Pricing', '/pricing'], ['Integrations', '#integrations']]} />
         <FootCol title="Developers" links={[['API Docs', '/docs'], ['SDK Reference', '/docs'], ['Status', '/docs']]} />
         <FootCol title="Company" links={[['About', '/'], ['Privacy', '/privacy'], ['Terms', '/terms']]} />
       </div>
