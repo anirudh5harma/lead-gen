@@ -397,6 +397,14 @@ export default function CampaignsView({ profile }: Props) {
 function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, onRemove, onDiscover, discovering }: { campaign: Campaign; loading: boolean; targets: CampaignTarget[]; links: CampaignContentLink[]; assets: CampaignAsset[]; onStatus: (action: 'activate' | 'pause' | 'complete') => void; onRemove: () => void; onDiscover: () => void; discovering: boolean }) {
   const readiness = campaign.readiness
   const discovery = campaign.learnings ?? {}
+  const contentItems = [
+    ...links.map(link => ({ id: link.id, title: linkedContentLabel(link), meta: `${link.channel ?? 'content'} · ${link.status ?? 'linked'}` })),
+    ...assets.map(asset => ({ id: asset.id, title: asset.title || asset.asset_type || 'Campaign asset', meta: `${asset.channel ?? 'content'} · ${asset.status ?? 'draft'}` })),
+  ]
+  const campaignLearning = buildCampaignLearning(campaign, targets, contentItems.length)
+  const airCover = contentItems.length > 0
+    ? contentItems.slice(0, 3).map(item => ({ title: item.title, meta: item.meta }))
+    : buildContentAirCover(campaign, campaignLearning)
   const discoveryStatus = typeof discovery.discovery_status === 'string' ? discovery.discovery_status : null
   const discoveryError = typeof discovery.discovery_error === 'string' ? discovery.discovery_error : null
   const discoveryMode = typeof discovery.discovery_mode === 'string' ? discovery.discovery_mode : null
@@ -490,19 +498,25 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
         <Tiny label="Booked" value={campaign.target_counts?.booked ?? 0} />
       </div>
 
+      <div className="mt-6 grid lg:grid-cols-2 gap-stack-md">
+        <LearningPanel learning={campaignLearning} />
+        <AirCoverPanel items={airCover} hasContent={contentItems.length > 0} />
+      </div>
+
       <div className="mt-6 grid md:grid-cols-2 gap-stack-md">
         <Lane
           title="Targets"
           empty="No targets enrolled yet."
-          items={targets.map(target => ({ id: target.id, title: target.lead?.target_company ?? target.lead_id, meta: target.status ?? 'enrolled' }))}
+          items={targets.map(target => ({
+            id: target.id,
+            title: target.lead?.target_company ?? target.lead_id,
+            meta: `${target.status ?? 'enrolled'} · ${targetNextAction(target)}`,
+          }))}
         />
         <Lane
           title="Content"
           empty="No content attached yet."
-          items={[
-            ...links.map(link => ({ id: link.id, title: linkedContentLabel(link), meta: `${link.channel ?? 'content'} · ${link.status ?? 'linked'}` })),
-            ...assets.map(asset => ({ id: asset.id, title: asset.title || asset.asset_type || 'Campaign asset', meta: `${asset.channel ?? 'content'} · ${asset.status ?? 'draft'}` })),
-          ]}
+          items={contentItems}
         />
       </div>
 
@@ -522,6 +536,134 @@ function linkedContentLabel(link: CampaignContentLink) {
   if (link.gtm_content_idea_id) return `GTM idea ${link.gtm_content_idea_id.slice(0, 8)}`
   if (link.gtm_campaign_asset_id) return `Campaign asset ${link.gtm_campaign_asset_id.slice(0, 8)}`
   return 'Linked content'
+}
+
+type CampaignLearning = {
+  replyRate: number
+  bookingRate: number
+  bestSignal: string
+  bestPersona: string
+  stage: string
+  nextMove: string
+  bullets: Array<{ label: string; value: string }>
+}
+
+function LearningPanel({ learning }: { learning: CampaignLearning }) {
+  return (
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Learning loop</p>
+          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1">{learning.stage}</p>
+        </div>
+        <span className={BADGE_ACCENT}>{learning.replyRate}% reply</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {learning.bullets.map(item => (
+          <div key={item.label} className="bg-surface-container-lowest hairline-border rounded p-2 min-w-0">
+            <div className="font-label-mono text-[9px] uppercase tracking-widest text-on-surface-variant">{item.label}</div>
+            <div className="font-body-main text-on-surface text-[13px] mt-0.5 truncate">{item.value}</div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 font-body-main text-on-surface-variant text-[12.5px] leading-relaxed">{learning.nextMove}</p>
+    </div>
+  )
+}
+
+function AirCoverPanel({ items, hasContent }: { items: Array<{ title: string; meta: string }>; hasContent: boolean }) {
+  return (
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Content air cover</p>
+          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1">{hasContent ? 'Assets attached' : 'Suggested companion assets'}</p>
+        </div>
+        <span className={hasContent ? BADGE_ACCENT : BADGE}>campaign support</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {items.map(item => (
+          <div key={item.title} className="bg-surface-container-lowest hairline-border rounded p-2">
+            <div className="font-body-main font-medium text-on-surface text-[13px] truncate">{item.title}</div>
+            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{item.meta}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function buildCampaignLearning(campaign: Campaign, targets: CampaignTarget[], contentCount: number): CampaignLearning {
+  const counts = campaign.target_counts
+  const sent = counts?.sent ?? targets.filter(target => target.status === 'sent' || target.lead?.sent_at).length
+  const replied = counts?.replied ?? targets.filter(target => target.status === 'replied' || target.lead?.replied_at).length
+  const booked = counts?.booked ?? targets.filter(target => target.status === 'booked' || target.lead?.booked_at).length
+  const denominator = Math.max(1, sent + replied + booked)
+  const replyRate = Math.round((replied / denominator) * 100)
+  const bookingRate = Math.round((booked / denominator) * 100)
+  const signal = campaign.trigger || mostCommon(targets.map(target => target.lead?.signal_type ?? null)) || 'Signal fit pending'
+  const persona = mostCommon(targets.map(target => inferPersona(target.lead?.contact_title))) || 'Target persona pending'
+  const hasOutcomes = sent + replied + booked > 0
+  const hasContent = contentCount > 0
+  return {
+    replyRate,
+    bookingRate,
+    bestSignal: signal,
+    bestPersona: persona,
+    stage: hasOutcomes ? 'Outcome data is shaping the next batch.' : 'Awaiting first send outcomes.',
+    nextMove: hasOutcomes
+      ? 'Use replies, bookings, and dismissals to tighten the next target batch before scaling.'
+      : hasContent
+        ? 'Launch a small batch, then compare reply quality against the attached content support.'
+        : 'Add light content support or launch a small batch and let reply quality decide the next move.',
+    bullets: [
+      { label: 'Signal', value: signal },
+      { label: 'Persona', value: persona },
+      { label: 'Booked', value: `${bookingRate}%` },
+      { label: 'Content', value: hasContent ? `${contentCount} attached` : 'none yet' },
+    ],
+  }
+}
+
+function buildContentAirCover(campaign: Campaign, learning: CampaignLearning): Array<{ title: string; meta: string }> {
+  const trigger = campaign.trigger || learning.bestSignal
+  const audience = campaign.segment || learning.bestPersona
+  const offer = campaign.offer || 'the campaign offer'
+  return [
+    { title: `${trigger}: why this buying moment matters`, meta: `LinkedIn · ${audience}` },
+    { title: `The hidden cost behind ${offer}`, meta: 'Founder post · pain hypothesis' },
+    { title: `Common objection: why teams wait too long`, meta: 'Objection post · reply support' },
+  ]
+}
+
+function targetNextAction(target: CampaignTarget): string {
+  const lead = target.lead
+  if (target.status === 'booked' || lead?.booked_at) return 'record outcome'
+  if (target.status === 'replied' || lead?.replied_at) return 'handle reply'
+  if (target.status === 'sent' || lead?.sent_at) return 'watch reply'
+  if (target.status === 'drafted' || target.status === 'approved') return 'approve send'
+  if (target.status === 'blocked') return 'review block'
+  return 'prepare outreach'
+}
+
+function mostCommon(values: Array<string | null | undefined>): string | null {
+  const counts = new Map<string, number>()
+  for (const raw of values) {
+    const value = raw?.trim()
+    if (!value) continue
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+}
+
+function inferPersona(title?: string | null): string | null {
+  const value = (title ?? '').toLowerCase()
+  if (!value) return null
+  if (value.includes('founder') || value.includes('ceo') || value.includes('chief')) return 'Executive'
+  if (value.includes('sales') || value.includes('revenue') || value.includes('growth')) return 'Revenue'
+  if (value.includes('marketing') || value.includes('demand')) return 'Marketing'
+  if (value.includes('ops') || value.includes('operations')) return 'Operations'
+  return 'GTM'
 }
 
 function Lane({ title, empty, items }: { title: string; empty: string; items: Array<{ id: string; title: string; meta: string }> }) {
