@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Lead } from '@/lib/leads'
 import type { DashboardCommand, LeadStatusCommand } from '@/lib/dashboard-command-layer'
-import { classifyVoiceIntent, isVoiceConfirmation, isVoiceCancellation } from '@/lib/voice-intent-layer'
+import { classifyVoiceIntent } from '@/lib/voice-intent-layer'
 import type { VoiceSentiment } from '@/lib/voice-intent-layer'
 import { consumeLeadCredit, refundLeadCredit } from '@/lib/lead-credits'
 import { loadAccessibleLead } from '@/lib/lead-access'
@@ -26,7 +26,6 @@ import {
   numberedItem,
   rankRemotePipelineLeads,
   type RemoteContentIdea,
-  type RemotePipelineLead,
 } from './conversation'
 
 export interface RemoteCommandResult {
@@ -195,6 +194,7 @@ export async function handleRemoteDashboardCommand(
       const tabHint = vi.tab ? ` → ${vi.tab}` : ''
       const viewDescriptions: Record<string, string> = {
         home: 'Home is your daily queue and command bar.',
+        campaigns: 'Campaigns is your GTM orchestration layer — objectives, audiences, triggers, narratives, targets, content air cover, and outcomes.',
         accounts: 'Accounts shows your buying signals, hot fits, and watchlist.',
         outreach: 'Outreach is your pipeline — drafts, sent emails, and replies.',
         content: `Content is your publishing engine — the ${vi.tab || 'ideas'} tab has your post angles.`,
@@ -239,6 +239,7 @@ export async function handleRemoteDashboardCommand(
         response: tailorResponse(
           'Here\'s what I can do from here:\n' +
           '📊 Pipeline: "show pipeline", "draft email for Acme", "send outreach to Stripe", "mark Tesla as booked"\n' +
+          '🎯 Campaigns: "take me to campaigns", "where do I build a GTM motion"\n' +
           '💡 Content: "show content ideas", "approve idea 1", "draft idea 2", "go to composer"\n' +
           '🔍 Search: "do we have signals from Google", "find companies in fintech"\n' +
           '🧭 Navigate: "go to settings", "where are signals", "how to connect Gmail", "show content calendar"\n' +
@@ -264,6 +265,9 @@ async function resolveLeadByVoiceIntent(
   _supabase: ServiceSupabase,
   _userId: string,
 ): Promise<Lead | RemoteCommandResult> {
+  void _supabase
+  void _userId
+
   // Try by index first
   if (vi.index && vi.index > 0) {
     const ranked = rankRemotePipelineLeads(leads)

@@ -112,10 +112,12 @@ export default function IntegrationsView({ profile }: Props) {
   return (
     <div className="space-y-12">
       <div>
-        <p className="mono mb-2">Connections</p>
-        <h2 className="text-[30px] leading-tight font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">Integrations</h2>
-        <p className="text-[13.5px] text-[var(--color-text-3)] mt-2 max-w-xl">
-          Everything Bombsell talks to, in one place. Connect once &mdash; every agent uses what&rsquo;s here.
+        <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">Connections</p>
+        <h2 className="font-h1-editorial text-display-sm text-on-surface">
+          The <span className="italic text-primary">integrations</span> hub.
+        </h2>
+        <p className="font-body-main text-on-surface-variant mt-stack-md max-w-xl">
+          Everything Bombsell talks to, in one place. Connect once — every agent uses what&rsquo;s here.
         </p>
       </div>
 
@@ -127,22 +129,25 @@ export default function IntegrationsView({ profile }: Props) {
         body="Bombsell sends from your real inbox. Per-account warmup and daily limits enforced by the safety agent."
       >
         {sending.length > 0 && (
-          <div className="card overflow-hidden mb-4">
-            <div className="px-5">
+          <div className="bg-surface-container-low/50 hairline-border rounded-lg overflow-hidden mb-4">
+            <div className="divide-y divide-[rgba(26,24,22,0.07)]">
               {sending.map((a) => (
-                <div key={a.id} className="list-row grid-cols-[auto_1fr_auto_auto] gap-4">
-                  <ProviderBadge name={a.provider} />
+                <div key={a.id} className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 px-5 py-3.5 hover:bg-surface-container-lowest transition-colors">
+                  <ProviderBadge name={a.provider} size={32} />
                   <div className="min-w-0">
-                    <div className="text-[13.5px] font-medium">{a.email}</div>
-                    <div className="mono">{a.display_name ?? a.provider}</div>
+                    <div className="text-[13.5px] font-medium text-on-surface truncate">{a.email}</div>
+                    <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{a.display_name ?? a.provider}</div>
                   </div>
-                  <span className={`pill ${a.is_active ? 'pill-pos' : 'pill-warn'}`}>{a.is_active ? 'active' : 'paused'}</span>
+                  <span className={`font-label-mono text-[10px] uppercase tracking-widest inline-flex items-center gap-1.5 ${a.is_active ? 'text-tertiary' : 'text-on-surface-variant'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${a.is_active ? 'bg-tertiary' : 'bg-outline-variant'}`} />
+                    {a.is_active ? 'active' : 'paused'}
+                  </span>
                   <button
                     onClick={() => void disconnectAccount(a.id)}
                     disabled={disconnectingId === a.id}
-                    className="btn-ghost h-7 px-3 text-[12px] disabled:opacity-50"
+                    className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-error transition-colors disabled:opacity-50"
                   >
-                    {disconnectingId === a.id ? 'Removing...' : 'Disconnect'}
+                    {disconnectingId === a.id ? 'Removing…' : 'Disconnect'}
                   </button>
                 </div>
               ))}
@@ -164,11 +169,11 @@ export default function IntegrationsView({ profile }: Props) {
         title="Bidirectional sync"
         body="Team and custom workspaces can import CRM accounts into Bombsell and export signals, drafts, sends, replies, and bookings back to CRM."
       >
-        <div className="card p-5 mb-4 grid md:grid-cols-[1fr_auto] items-center gap-4">
+        <div className="bg-surface-container-low/50 hairline-border rounded-lg p-5 mb-4 grid md:grid-cols-[1fr_auto] items-center gap-4">
           <div>
-            <div className="mono mb-1">{canUseCrm ? 'Team workspace' : 'Team/custom only'}</div>
-            <div className="text-[13.5px] font-medium">Inbound CRM import + outbound CRM export</div>
-            <div className="text-[12.5px] text-[var(--color-text-3)] mt-1">Use a CRM workflow webhook to push accounts into Bombsell, and an outbound webhook to write Bombsell outcomes back.</div>
+            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">{canUseCrm ? 'Team workspace' : 'Team/custom only'}</div>
+            <div className="text-[13.5px] font-medium text-on-surface">Inbound CRM import + outbound CRM export</div>
+            <div className="text-[12.5px] text-on-surface-variant mt-1">Use a CRM workflow webhook to push accounts into Bombsell, and an outbound webhook to write Bombsell outcomes back.</div>
           </div>
           {canUseCrm ? (
             <button onClick={() => setModal('crm')} className="btn-accent h-9 px-4 text-[13px]">Configure sync</button>
@@ -190,11 +195,11 @@ export default function IntegrationsView({ profile }: Props) {
         title="Operate Bombsell from chat"
         body="Send text commands or voice notes from Telegram and Discord. Bombsell confirms risky actions before sending or dismissing."
       >
-        <div className="card p-5 mb-4 grid md:grid-cols-[1fr_auto] items-center gap-4">
+        <div className="bg-surface-container-low/50 hairline-border rounded-lg p-5 mb-4 grid md:grid-cols-[1fr_auto] items-center gap-4">
           <div>
-            <div className="mono mb-1">Voice + text commands</div>
-            <div className="text-[13.5px] font-medium">Telegram and Discord remote command center</div>
-            <div className="text-[12.5px] text-[var(--color-text-3)] mt-1">
+            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">Voice + text commands</div>
+            <div className="text-[13.5px] font-medium text-on-surface">Telegram and Discord remote command center</div>
+            <div className="text-[12.5px] text-on-surface-variant mt-1">
               Try “prepare draft for the top lead”, “unlock Acme”, or “confirm send outreach to Acme”.
             </div>
           </div>
@@ -256,34 +261,33 @@ export default function IntegrationsView({ profile }: Props) {
         {social.managed ? (
           <div className="space-y-3">
             {social.accounts.filter(a => a.is_active).length > 0 && (
-              <div className="card divide-y divide-[var(--color-line-1)]">
+              <div className="bg-surface-container-low/50 hairline-border rounded-lg overflow-hidden divide-y divide-[rgba(26,24,22,0.07)]">
                 {social.accounts.filter(a => a.is_active).map((a) => (
-                  <div key={a.id} className="flex items-center justify-between px-4 py-3">
+                  <div key={a.id} className="flex items-center justify-between px-4 py-3 hover:bg-surface-container-lowest transition-colors">
                     <div className="flex items-center gap-3">
-                      <ProviderBadge name={a.platform === 'x' ? 'x' : 'linkedin'} />
-                      <div className="text-[13px] text-[var(--color-text-1)]">{a.display_name ?? a.platform} <span className="mono ml-1">{a.platform}</span></div>
+                      <ProviderBadge name={a.platform === 'x' ? 'x' : 'linkedin'} size={32} />
+                      <div>
+                        <div className="text-[13px] text-on-surface">{a.display_name ?? a.platform}</div>
+                        <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{a.platform}</div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="pill pill-pos">connected</span>
-                      <button onClick={async () => { if (!a.platform) return; await fetch(`/api/integrations/social?partner=postforme&platform=${a.platform}`, { method: 'DELETE' }); window.location.reload() }} className="text-[12px] text-[var(--color-text-3)] hover:text-[var(--color-neg)]">Disconnect</button>
+                      <span className="font-label-mono text-[10px] uppercase tracking-widest text-tertiary inline-flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-tertiary" /> connected
+                      </span>
+                      <button onClick={async () => { if (!a.platform) return; await fetch(`/api/integrations/social?partner=postforme&platform=${a.platform}`, { method: 'DELETE' }); window.location.reload() }} className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-error transition-colors">Disconnect</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            <div className="grid sm:grid-cols-2 gap-2.5">
-              <button onClick={() => void connectSocial('linkedin')} disabled={connectingPlatform != null} className="card p-4 text-left hover:border-[var(--color-text-1)] transition-colors disabled:opacity-50 flex items-center justify-between">
-                <span className="text-[13.5px] font-medium">LinkedIn</span>
-                <span className="text-[12px] text-[var(--color-accent)]">{connectingPlatform === 'linkedin' ? 'Connecting…' : 'Connect →'}</span>
-              </button>
-              <button onClick={() => void connectSocial('x')} disabled={connectingPlatform != null} className="card p-4 text-left hover:border-[var(--color-text-1)] transition-colors disabled:opacity-50 flex items-center justify-between">
-                <span className="text-[13.5px] font-medium">X (Twitter)</span>
-                <span className="text-[12px] text-[var(--color-accent)]">{connectingPlatform === 'x' ? 'Connecting…' : 'Connect →'}</span>
-              </button>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <ConnectTile name="LinkedIn" onClickFn={() => void connectSocial('linkedin')} label={connectingPlatform === 'linkedin' ? 'Connecting…' : undefined} disabled={connectingPlatform != null && connectingPlatform !== 'linkedin'} />
+              <ConnectTile name="X" onClickFn={() => void connectSocial('x')} label={connectingPlatform === 'x' ? 'Connecting…' : undefined} disabled={connectingPlatform != null && connectingPlatform !== 'x'} />
             </div>
           </div>
         ) : (
-          <div className="card p-5 text-[13px] text-[var(--color-text-3)]">
+          <div className="bg-surface-container-low/50 hairline-border rounded-lg p-5 text-[13px] text-on-surface-variant">
             {social.managed_reason ?? 'Social publishing isn’t configured yet. Until it’s enabled, content posts stay as drafts in the Content tab — you can copy and publish them by hand.'}
           </div>
         )}
@@ -309,10 +313,10 @@ export default function IntegrationsView({ profile }: Props) {
         title="For developers and AI agents"
         body="Bombsell speaks the A2A protocol. Issue an agent key to let your AI agent call the fleet directly."
       >
-        <div className="card p-5 grid md:grid-cols-2 gap-5">
+        <div className="bg-surface-container-low/50 hairline-border rounded-lg p-5 grid md:grid-cols-2 gap-5">
           <div>
-            <div className="mono mb-2">Endpoints</div>
-            <ul className="text-[13px] space-y-1.5 font-mono text-[var(--color-text-2)]">
+            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-2">Endpoints</div>
+            <ul className="text-[13px] space-y-1.5 font-mono text-on-surface-variant">
               <li>GET&nbsp;&nbsp;/api/a2a/agents</li>
               <li>POST /api/a2a/workflows</li>
               <li>POST /api/agents/:role/dispatch</li>
@@ -320,8 +324,8 @@ export default function IntegrationsView({ profile }: Props) {
             </ul>
           </div>
           <div>
-            <div className="mono mb-2">Get started</div>
-            <p className="text-[13px] text-[var(--color-text-3)] mb-3">Issue an agent key, then call the SDK or hit the REST endpoints directly.</p>
+            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-2">Get started</div>
+            <p className="text-[13px] text-on-surface-variant mb-3">Issue an agent key, then call the SDK or hit the REST endpoints directly.</p>
             <div className="flex items-center gap-2">
               <button onClick={() => setModal('agentkey')} className="btn-accent h-8 px-4 text-[12.5px]">Issue agent key</button>
               <Link href="/api/docs/agents" className="btn-ghost h-8 px-4 text-[12.5px] inline-flex items-center">API docs →</Link>
@@ -752,12 +756,12 @@ function Group({
   id, label, title, body, children,
 }: { id?: string; label: string; title: string; body: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-20 border-t border-[var(--color-line-1)] pt-10">
+    <section id={id} className="scroll-mt-20 hairline-t pt-10">
       <div className="grid md:grid-cols-[260px_1fr] gap-10">
         <div>
-          <div className="mono mb-2">{label}</div>
-          <h3 className="text-[18px] leading-tight font-semibold text-[var(--color-text-1)]" dangerouslySetInnerHTML={{ __html: title }} />
-          <p className="text-[13px] text-[var(--color-text-3)] mt-2 leading-relaxed">{body}</p>
+          <div className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant mb-2">{label}</div>
+          <h3 className="text-[18px] leading-tight font-semibold text-on-surface" dangerouslySetInnerHTML={{ __html: title }} />
+          <p className="text-[13px] text-on-surface-variant mt-2 leading-relaxed">{body}</p>
         </div>
         <div>{children}</div>
       </div>
@@ -771,29 +775,49 @@ function ConnectTile({
   name: string; href?: string; connected?: boolean; disabled?: boolean; locked?: boolean; label?: string; requiredTier?: string;
   onClickFn?: () => void;
 }) {
-  const status = connected ? (
-    <span className="pill pill-pos">{label ?? 'connected'}</span>
+  const actionable = !disabled && (!!onClickFn || !!href)
+
+  const statusNode = connected ? (
+    <span className="inline-flex items-center gap-1.5 font-label-mono text-[10px] uppercase tracking-widest text-tertiary">
+      <span className="w-1.5 h-1.5 rounded-full bg-tertiary" />
+      {label ?? 'connected'}
+    </span>
   ) : locked ? (
-    <span className="pill">{requiredTier ?? 'Upgrade'}</span>
+    <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant border border-outline-variant/40 rounded px-1.5 py-0.5">
+      {requiredTier ?? 'Upgrade'}
+    </span>
   ) : disabled ? (
-    <span className="pill">{label ?? 'soon'}</span>
+    <span className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+      {label ?? 'Soon'}
+    </span>
   ) : (
-    <span className="text-[12px] text-[var(--color-accent)]">{label ?? 'Connect →'}</span>
+    <span className="font-label-mono text-[10px] uppercase tracking-widest text-primary inline-flex items-center gap-1">
+      {label ?? 'Connect'} <span aria-hidden>→</span>
+    </span>
   )
 
   const inner = (
-    <div className={`card px-4 py-3.5 flex items-center justify-between transition-colors ${disabled ? 'opacity-60' : 'hover:border-[var(--color-line-3)]'}`}>
-      <div className="flex items-center gap-2.5">
-        <ProviderBadge name={name.toLowerCase()} />
-        <span className="text-[13px] font-medium">{name}</span>
+    <div
+      className={`relative rounded-lg hairline-border bg-surface-container-low/60 px-stack-md py-4 h-full flex flex-col gap-3 transition-all ${
+        disabled ? 'opacity-60' : actionable ? 'depth-lift hover:border-outline-variant/70 hover:bg-surface-container-lowest cursor-pointer' : ''
+      } ${connected ? 'border-tertiary/40' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <ProviderBadge name={name.toLowerCase()} size={36} />
+        {connected && (
+          <span className="font-label-mono text-[9px] uppercase tracking-widest text-tertiary bg-tertiary/10 px-1.5 py-0.5 rounded">on</span>
+        )}
       </div>
-      {status}
+      <div className="flex items-end justify-between gap-2 mt-auto">
+        <span className="text-[13.5px] font-medium text-on-surface truncate">{name}</span>
+        {statusNode}
+      </div>
     </div>
   )
 
   if (disabled && !href) return <div>{inner}</div>
   if (onClickFn) return <button onClick={onClickFn} className="text-left w-full">{inner}</button>
-  if (href) return <a href={href}>{inner}</a>
+  if (href) return <a href={href} className="block">{inner}</a>
   return <div>{inner}</div>
 }
 
@@ -801,11 +825,62 @@ function normalizeTier(value: string | null | undefined): SubscriptionTier {
   return value === 'launch' || value === 'team' || value === 'growth' || value === 'scale' || value === 'enterprise' ? value : 'free'
 }
 
-function ProviderBadge({ name }: { name: string }) {
+const PROVIDER_DOMAINS: Record<string, string> = {
+  gmail: 'gmail.com',
+  google: 'google.com',
+  outlook: 'outlook.com',
+  microsoft: 'microsoft.com',
+  resend: 'resend.com',
+  ses: 'aws.amazon.com',
+  hubspot: 'hubspot.com',
+  salesforce: 'salesforce.com',
+  pipedrive: 'pipedrive.com',
+  zoho: 'zoho.com',
+  telegram: 'telegram.org',
+  discord: 'discord.com',
+  slack: 'slack.com',
+  calendly: 'calendly.com',
+  webhook: 'webhooks.dev',
+  linkedin: 'linkedin.com',
+  x: 'x.com',
+  twitter: 'x.com',
+  chatgpt: 'openai.com',
+  openai: 'openai.com',
+  anthropic: 'anthropic.com',
+  claude: 'anthropic.com',
+  'chatgpt/claude': 'anthropic.com',
+}
+
+function providerDomain(rawName: string): string | null {
+  const key = rawName.toLowerCase().trim()
+  if (PROVIDER_DOMAINS[key]) return PROVIDER_DOMAINS[key]
+  for (const k of Object.keys(PROVIDER_DOMAINS)) {
+    if (key.includes(k)) return PROVIDER_DOMAINS[k]
+  }
+  return null
+}
+
+function ProviderBadge({ name, size = 28 }: { name: string; size?: number }) {
+  const domain = providerDomain(name)
   const letter = (name || '?').slice(0, 1).toUpperCase()
   return (
-    <span className="w-7 h-7 rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)] inline-flex items-center justify-center text-[12px] font-semibold">
-      {letter}
+    <span
+      className="inline-flex items-center justify-center rounded-md bg-surface-container-low hairline-border overflow-hidden shrink-0"
+      style={{ width: size, height: size }}
+    >
+      {domain ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
+          alt=""
+          width={Math.round(size * 0.6)}
+          height={Math.round(size * 0.6)}
+          loading="lazy"
+          className="rounded-sm"
+        />
+      ) : (
+        <span className="text-on-surface-variant text-[12px] font-semibold">{letter}</span>
+      )}
     </span>
   )
 }

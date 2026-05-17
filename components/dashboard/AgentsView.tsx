@@ -32,9 +32,12 @@ export default function AgentsView({ profile }: Props) {
     <div className="space-y-section-gap">
       <div className="flex items-start justify-between gap-stack-lg flex-wrap">
         <div>
-          <h2 className="font-h1-editorial text-display-sm text-on-surface mb-2">Agents</h2>
-          <p className="font-body-main text-on-surface-variant max-w-2xl">
-            Every agent runs independently — toggle which ones power {profile.client_name || profile.company_name}&rsquo;s Outbound and Content engines, set how much agency each gets, run pipelines, and watch live activity.
+          <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">Fleet · {profile.client_name || profile.company_name}</p>
+          <h2 className="font-h1-editorial text-display-sm text-on-surface">
+            The <span className="italic text-primary">agents</span> at work.
+          </h2>
+          <p className="font-body-main text-on-surface-variant max-w-2xl mt-stack-md">
+            Toggle which agents power Outbound and Content, set autonomy, run pipelines, watch live activity.
           </p>
         </div>
         <div className="flex items-center gap-1 hairline-border rounded-full p-1">

@@ -72,8 +72,10 @@ export default function SettingsView({ profile }: Props) {
   return (
     <div className="space-y-12 max-w-3xl">
       <div>
-        <p className="mono mb-2">Account</p>
-        <h2 className="text-[30px] leading-tight font-semibold tracking-[-0.02em] text-[var(--color-text-1)]">Settings</h2>
+        <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">Account</p>
+        <h2 className="font-h1-editorial text-display-sm text-on-surface">
+          Workspace <span className="italic text-primary">settings</span>.
+        </h2>
       </div>
 
       <Block id="settings-profile" label="01" title="Profile">

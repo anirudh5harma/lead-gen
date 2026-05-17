@@ -24,15 +24,26 @@ import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import { listAgents, ensureBootstrapped } from '@/lib/agents/core/registry'
 import { computePerAgentQualityScores } from '@/lib/agents/self-improvement/engine'
 import { dispatchTask } from '@/lib/agents/core/supervisor'
+import { buildCampaignReadiness, buildCampaignMetrics, summarizeCampaignCounts } from '@/lib/gtm/campaigns'
+import { updateCampaignTargetsForLead } from '@/lib/gtm/campaign-attribution'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const VALID_LEAD_STATUSES = ['new', 'viewed', 'drafted', 'sent', 'replied', 'booked', 'dismissed'] as const
 const VALID_ORIGINS = ['live', 'explore', 'crm_import'] as const
+const VALID_CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'completed', 'dismissed'] as const
+const VALID_CAMPAIGN_ACTIONS = ['activate', 'pause', 'complete', 'dismiss'] as const
+const VALID_CAMPAIGN_TARGET_STATUSES = ['proposed', 'enrolled'] as const
+const VALID_CAMPAIGN_CONTENT_KINDS = ['content_idea', 'post', 'gtm_content_idea', 'gtm_campaign_asset'] as const
+const VALID_CAMPAIGN_CONTENT_STATUSES = ['linked', 'drafted', 'approved', 'scheduled', 'published', 'dismissed'] as const
+const CAMPAIGN_SELECT = 'id, name, objective, segment, trigger, narrative, offer, success_metric, channels, status, starts_at, ends_at, learnings, created_at, updated_at'
 
 type LeadStatus = typeof VALID_LEAD_STATUSES[number]
 type LeadOrigin = typeof VALID_ORIGINS[number]
+type CampaignStatus = typeof VALID_CAMPAIGN_STATUSES[number]
+type CampaignAction = typeof VALID_CAMPAIGN_ACTIONS[number]
+type CampaignContentKind = typeof VALID_CAMPAIGN_CONTENT_KINDS[number]
 
 interface McpContext {
   token: string
@@ -40,6 +51,8 @@ interface McpContext {
   supabase: SupabaseClient
   scopes: Set<string>
 }
+
+type ClientFilter = { client_id?: string }
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -63,6 +76,12 @@ export async function GET(request: Request) {
       'list_leads',
       'get_lead',
       'update_lead_status',
+      'list_campaigns',
+      'get_campaign',
+      'create_campaign',
+      'enroll_campaign_targets',
+      'link_campaign_content',
+      'update_campaign_status',
       'list_watchlist',
       'add_watchlist_company',
       'list_feed_sessions',
@@ -204,6 +223,132 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
       },
     },
     async args => jsonToolResult(await updateLeadStatus(ctx, args)),
+  )
+
+  server.registerTool(
+    'list_campaigns',
+    {
+      title: 'List Campaigns',
+      description: 'List GTM campaigns with readiness, target/content counts, and outcome metrics for the active workspace.',
+      inputSchema: {
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+        status: z.enum(VALID_CAMPAIGN_STATUSES).optional().describe('Optional campaign status filter.'),
+        limit: z.number().min(1).max(100).optional().describe('Maximum campaigns to return. Default 25.'),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await listCampaigns(ctx, args)),
+  )
+
+  server.registerTool(
+    'get_campaign',
+    {
+      title: 'Get Campaign',
+      description: 'Fetch one GTM campaign with enrolled leads, linked content, campaign assets, readiness, and current outcome status.',
+      inputSchema: {
+        campaign_id: z.string().min(1).describe('Campaign id.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await getCampaign(ctx, args)),
+  )
+
+  server.registerTool(
+    'create_campaign',
+    {
+      title: 'Create Campaign',
+      description: 'Create a draft GTM campaign motion with objective, audience, why-now trigger, narrative, offer, success metric, and channels.',
+      inputSchema: {
+        name: z.string().min(1).describe('Campaign name.'),
+        objective: z.string().optional().describe('Outcome this campaign should produce.'),
+        segment: z.string().optional().describe('Target audience segment.'),
+        trigger: z.string().optional().describe('Why-now buying signal or trigger.'),
+        narrative: z.string().optional().describe('Campaign narrative: pain hypothesis, proof, offer, and CTA.'),
+        offer: z.string().optional().describe('Optional offer or CTA.'),
+        success_metric: z.string().optional().describe('Optional success metric. Default: meetings booked from this motion.'),
+        channels: z.array(z.string()).optional().describe('Channels to coordinate. Default email, LinkedIn, content.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await createCampaign(ctx, args)),
+  )
+
+  server.registerTool(
+    'enroll_campaign_targets',
+    {
+      title: 'Enroll Campaign Targets',
+      description: 'Enroll one or more accessible lead ids into a GTM campaign target lane.',
+      inputSchema: {
+        campaign_id: z.string().min(1).describe('Campaign id.'),
+        lead_ids: z.array(z.string()).min(1).max(100).describe('Lead ids to enroll.'),
+        status: z.enum(VALID_CAMPAIGN_TARGET_STATUSES).optional().describe('Initial target status. Default enrolled.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await enrollCampaignTargets(ctx, args)),
+  )
+
+  server.registerTool(
+    'link_campaign_content',
+    {
+      title: 'Link Campaign Content',
+      description: 'Attach a content idea, post, GTM content idea, or campaign asset to a GTM campaign.',
+      inputSchema: {
+        campaign_id: z.string().min(1).describe('Campaign id.'),
+        kind: z.enum(VALID_CAMPAIGN_CONTENT_KINDS).describe('Content object kind.'),
+        content_id: z.string().min(1).describe('Content, post, idea, or asset id.'),
+        channel: z.string().optional().describe('Channel this content supports. Default linkedin.'),
+        status: z.enum(VALID_CAMPAIGN_CONTENT_STATUSES).optional().describe('Campaign content status. Default linked.'),
+        rationale: z.string().optional().describe('Why this asset supports the campaign narrative.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await linkCampaignContent(ctx, args)),
+  )
+
+  server.registerTool(
+    'update_campaign_status',
+    {
+      title: 'Update Campaign Status',
+      description: 'Activate, pause, complete, or dismiss a GTM campaign after readiness and launch criteria are satisfied.',
+      inputSchema: {
+        campaign_id: z.string().min(1).describe('Campaign id.'),
+        action: z.enum(VALID_CAMPAIGN_ACTIONS).describe('Status action to apply.'),
+        client_id: z.string().optional().describe('Optional client workspace id. Defaults to active workspace.'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async args => jsonToolResult(await updateCampaignStatus(ctx, args)),
   )
 
   server.registerTool(
@@ -583,6 +728,7 @@ function createBombsellMcpServer(ctx: McpContext): McpServer {
 
   registerJsonResource(server, 'workspace-profile', 'bombsell://workspace/profile', 'Workspace GTM profile', 'Current user profile, active client workspace, ICP, and agent guidance.', () => getGtmContext(ctx))
   registerJsonResource(server, 'recent-leads', 'bombsell://leads/recent', 'Recent leads', 'Recent non-dismissed leads for the active workspace.', () => listLeads(ctx, { limit: 25 }))
+  registerJsonResource(server, 'campaigns', 'bombsell://campaigns', 'Campaigns', 'Recent GTM campaigns with readiness and outcome counts for the active workspace.', () => listCampaigns(ctx, { limit: 25 }))
   registerJsonResource(server, 'work-items', 'bombsell://work-items', 'Work items', 'Current GTM agent work queue for the active workspace.', () => listWorkItems(ctx, { limit: 30 }))
   registerJsonResource(server, 'watchlist', 'bombsell://watchlist', 'Watchlist', 'Watchlisted companies for the active workspace.', () => listWatchlist(ctx, {}))
   registerJsonResource(server, 'feed-sessions', 'bombsell://feed-sessions', 'Source sessions', 'Recent source-session groupings for batch and CRM-imported leads.', () => listFeedSessions(ctx, {}))
@@ -669,6 +815,7 @@ async function getGtmContext(ctx: McpContext) {
     clients: clients ?? [],
     guidance: [
       'Use list_leads for current live-signal, batch, CRM-queued opportunities, reply intent, and booked-meeting outcomes.',
+      'Use list_campaigns and get_campaign to understand GTM motions before changing lead status, drafting content, or scaling outreach.',
       'Use list_work_items for the current agent work queue, then get_account_state when an account needs deeper context.',
       'Use update_lead_status only when the user or calling workflow has decided the lead state should change.',
       'Use configure_automation to set safe outbound automation after the user has connected a sending inbox.',
@@ -734,13 +881,300 @@ async function updateLeadStatus(ctx: McpContext, args: { lead_id: string; status
     .update(updates)
     .eq('user_id', ctx.userId)
     .eq('id', args.lead_id)
-    .select('id, target_company, status, sent_at, replied_at, booked_at')
+    .select('id, client_id, target_company, status, sent_at, replied_at, booked_at')
     .maybeSingle()
 
   if (error) throw new Error(error.message)
   if (!data) throw new Error('Lead not found')
 
+  await updateCampaignTargetsForLead(ctx.supabase, {
+    userId: ctx.userId,
+    lead: {
+      id: data.id,
+      client_id: data.client_id ?? null,
+      target_company: data.target_company ?? '',
+      status: data.status,
+      sent_at: data.sent_at,
+      replied_at: data.replied_at,
+      booked_at: data.booked_at,
+    },
+  })
+
   return { ok: true, lead: data }
+}
+
+async function listCampaigns(ctx: McpContext, args: {
+  client_id?: string
+  status?: CampaignStatus
+  limit?: number
+}) {
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const limit = boundedNumber(args.limit, 1, 100, 25)
+  const clientFilter = clientId ? { client_id: clientId } : {}
+
+  let campaignsQuery = ctx.supabase
+    .from('gtm_campaigns')
+    .select(CAMPAIGN_SELECT)
+    .eq('user_id', ctx.userId)
+    .match(clientFilter)
+    .order('updated_at', { ascending: false })
+    .limit(limit)
+  if (args.status) campaignsQuery = campaignsQuery.eq('status', args.status)
+
+  const [campaignsRes, assetsRes, targetsRes, linksRes] = await Promise.all([
+    campaignsQuery,
+    ctx.supabase.from('gtm_campaign_assets').select('campaign_id, status').eq('user_id', ctx.userId).match(clientFilter),
+    ctx.supabase.from('gtm_campaign_targets').select('campaign_id, status').eq('user_id', ctx.userId).match(clientFilter),
+    ctx.supabase.from('gtm_campaign_content_links').select('campaign_id, status, channel').eq('user_id', ctx.userId).match(clientFilter),
+  ])
+
+  if (campaignsRes.error) throw new Error(campaignsRes.error.message)
+  if (assetsRes.error) throw new Error(assetsRes.error.message)
+  const campaigns = campaignsRes.data ?? []
+  const assets = assetsRes.data ?? []
+  const targets = optionalRows(targetsRes)
+  const links = optionalRows(linksRes)
+  const campaignsWithReadiness = summarizeCampaignCounts(campaigns, { targets, links, assets }).map(campaign => ({
+    ...campaign,
+    readiness: buildCampaignReadiness({
+      campaign,
+      targetCount: campaign.target_counts.total,
+      contentCount: campaign.content_counts.total,
+      approvedAssetCount: campaign.asset_counts.approved + campaign.asset_counts.published,
+    }),
+  }))
+
+  return {
+    campaigns: campaignsWithReadiness,
+    metrics: buildCampaignMetrics(campaigns, { targets, links, assets }),
+  }
+}
+
+async function getCampaign(ctx: McpContext, args: { campaign_id: string; client_id?: string }) {
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const clientFilter = clientId ? { client_id: clientId } : {}
+
+  const { data: campaign, error } = await ctx.supabase
+    .from('gtm_campaigns')
+    .select(CAMPAIGN_SELECT)
+    .eq('id', args.campaign_id)
+    .eq('user_id', ctx.userId)
+    .match(clientFilter)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!campaign) throw new Error('Campaign not found')
+
+  const [targetsRes, linksRes, assetsRes] = await Promise.all([
+    ctx.supabase
+      .from('gtm_campaign_targets')
+      .select('id, campaign_id, lead_id, status, rationale, created_at, lead:leads(id, target_company, company_domain, relevance_score, relevance_reason, status, sent_at, replied_at, booked_at, contact_email, contact_name, contact_title, created_at)')
+      .eq('campaign_id', args.campaign_id)
+      .eq('user_id', ctx.userId)
+      .match(clientFilter)
+      .order('created_at', { ascending: false }),
+    ctx.supabase
+      .from('gtm_campaign_content_links')
+      .select('id, campaign_id, content_idea_id, post_id, gtm_content_idea_id, gtm_campaign_asset_id, channel, status, rationale, created_at')
+      .eq('campaign_id', args.campaign_id)
+      .eq('user_id', ctx.userId)
+      .match(clientFilter)
+      .order('created_at', { ascending: false }),
+    ctx.supabase
+      .from('gtm_campaign_assets')
+      .select('id, campaign_id, content_idea_id, asset_type, title, body, channel, status, created_at')
+      .eq('campaign_id', args.campaign_id)
+      .eq('user_id', ctx.userId)
+      .match(clientFilter)
+      .order('created_at', { ascending: false }),
+  ])
+
+  const targets = optionalRows(targetsRes)
+  const contentLinks = optionalRows(linksRes)
+  const assets = assetsRes.error ? [] : assetsRes.data ?? []
+  const readiness = buildCampaignReadiness({
+    campaign,
+    targetCount: targets.length,
+    contentCount: contentLinks.length,
+    approvedAssetCount: assets.filter(asset => ['approved', 'published'].includes(String(asset.status ?? ''))).length,
+  })
+
+  return { campaign: { ...campaign, readiness }, targets, content_links: contentLinks, assets }
+}
+
+async function createCampaign(ctx: McpContext, args: {
+  name: string
+  objective?: string
+  segment?: string
+  trigger?: string
+  narrative?: string
+  offer?: string
+  success_metric?: string
+  channels?: string[]
+  client_id?: string
+}) {
+  requireScope(ctx, 'bombsell:write:safe')
+  const name = args.name.trim()
+  if (!name) throw new Error('Campaign name is required')
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const channels = sanitizeCampaignChannels(args.channels)
+
+  const { data, error } = await ctx.supabase
+    .from('gtm_campaigns')
+    .insert({
+      user_id: ctx.userId,
+      client_id: clientId,
+      name,
+      objective: optionalString(args.objective) ?? name,
+      segment: optionalString(args.segment) ?? 'All accounts',
+      trigger: optionalString(args.trigger) ?? 'Market timing signal',
+      narrative: optionalString(args.narrative) ?? 'Signal-backed outreach leveraging recent market movement',
+      offer: optionalString(args.offer),
+      success_metric: optionalString(args.success_metric) ?? 'Meetings booked from this motion',
+      channels,
+      status: 'draft',
+    })
+    .select(CAMPAIGN_SELECT)
+    .single()
+  if (error) throw new Error(error.message)
+
+  return {
+    ok: true,
+    campaign: {
+      ...data,
+      readiness: buildCampaignReadiness({ campaign: data, targetCount: 0, contentCount: 0, approvedAssetCount: 0 }),
+    },
+  }
+}
+
+async function enrollCampaignTargets(ctx: McpContext, args: {
+  campaign_id: string
+  lead_ids: string[]
+  status?: 'proposed' | 'enrolled'
+  client_id?: string
+}) {
+  requireScope(ctx, 'bombsell:write:safe')
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const clientFilter = clientId ? { client_id: clientId } : {}
+  await assertCampaignAccessible(ctx, args.campaign_id, clientFilter)
+
+  const leadIds = uniqueNonEmpty(args.lead_ids).slice(0, 100)
+  if (leadIds.length === 0) throw new Error('lead_ids must include at least one id')
+  let leadQuery = ctx.supabase.from('leads').select('id').eq('user_id', ctx.userId).in('id', leadIds)
+  leadQuery = clientId ? leadQuery.eq('client_id', clientId) : leadQuery.is('client_id', null)
+  const { data: leads, error } = await leadQuery
+  if (error) throw new Error(error.message)
+
+  const allowedLeadIds = new Set((leads ?? []).map(lead => lead.id as string))
+  const rows = leadIds
+    .filter(leadId => allowedLeadIds.has(leadId))
+    .map(leadId => ({
+      campaign_id: args.campaign_id,
+      user_id: ctx.userId,
+      client_id: clientId,
+      lead_id: leadId,
+      status: args.status ?? 'enrolled',
+    }))
+  if (rows.length === 0) throw new Error('No matching leads found for this workspace')
+
+  const { data, error: upsertError } = await ctx.supabase
+    .from('gtm_campaign_targets')
+    .upsert(rows, { onConflict: 'campaign_id,lead_id' })
+    .select('id, campaign_id, lead_id, status, created_at')
+  if (upsertError) throw new Error(upsertError.message)
+
+  return { ok: true, targets: data ?? [], count: rows.length, skipped: leadIds.length - rows.length }
+}
+
+async function linkCampaignContent(ctx: McpContext, args: {
+  campaign_id: string
+  kind: CampaignContentKind
+  content_id: string
+  channel?: string
+  status?: string
+  rationale?: string
+  client_id?: string
+}) {
+  requireScope(ctx, 'bombsell:write:safe')
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const clientFilter = clientId ? { client_id: clientId } : {}
+  await assertCampaignAccessible(ctx, args.campaign_id, clientFilter)
+
+  const column = campaignContentColumn(args.kind)
+  const table = campaignContentTable(args.kind)
+  let contentQuery = ctx.supabase.from(table).select('id').eq('id', args.content_id)
+  if (args.kind === 'content_idea' || args.kind === 'post') {
+    contentQuery = contentQuery.eq('workspace_id', clientId ?? ctx.userId)
+  } else {
+    contentQuery = contentQuery.eq('user_id', ctx.userId).match(clientFilter)
+  }
+  const { data: content, error: contentError } = await contentQuery.maybeSingle()
+  if (contentError) throw new Error(contentError.message)
+  if (!content) throw new Error('Content not found for this workspace')
+
+  const row = {
+    campaign_id: args.campaign_id,
+    user_id: ctx.userId,
+    client_id: clientId,
+    [column]: args.content_id,
+    channel: optionalString(args.channel) ?? 'linkedin',
+    status: VALID_CAMPAIGN_CONTENT_STATUSES.includes(args.status as typeof VALID_CAMPAIGN_CONTENT_STATUSES[number]) ? args.status : 'linked',
+    rationale: optionalString(args.rationale),
+  }
+
+  const { data: existing, error: existingError } = await ctx.supabase
+    .from('gtm_campaign_content_links')
+    .select('id')
+    .eq('campaign_id', args.campaign_id)
+    .eq(column, args.content_id)
+    .eq('user_id', ctx.userId)
+    .match(clientFilter)
+    .maybeSingle()
+  if (existingError) throw new Error(existingError.message)
+
+  const select = 'id, campaign_id, content_idea_id, post_id, gtm_content_idea_id, gtm_campaign_asset_id, channel, status, rationale, created_at'
+  const result = existing
+    ? await ctx.supabase.from('gtm_campaign_content_links').update(row).eq('id', existing.id).select(select).single()
+    : await ctx.supabase.from('gtm_campaign_content_links').insert(row).select(select).single()
+  if (result.error) throw new Error(result.error.message)
+
+  return { ok: true, link: result.data }
+}
+
+async function updateCampaignStatus(ctx: McpContext, args: {
+  campaign_id: string
+  action: CampaignAction
+  client_id?: string
+}) {
+  requireScope(ctx, 'bombsell:write:safe')
+  const clientId = await resolveClientId(ctx, optionalString(args.client_id))
+  const clientFilter = clientId ? { client_id: clientId } : {}
+  const statusMap: Record<CampaignAction, CampaignStatus> = {
+    activate: 'active',
+    pause: 'paused',
+    complete: 'completed',
+    dismiss: 'dismissed',
+  }
+
+  if (args.action === 'activate') {
+    const detail = await getCampaign(ctx, { campaign_id: args.campaign_id, client_id: clientId ?? undefined })
+    if (!detail.campaign.readiness.canLaunch) {
+      return { ok: false, error: `Campaign is not launch-ready: ${detail.campaign.readiness.nextAction}`, readiness: detail.campaign.readiness }
+    }
+  } else {
+    await assertCampaignAccessible(ctx, args.campaign_id, clientFilter)
+  }
+
+  const { data, error } = await ctx.supabase
+    .from('gtm_campaigns')
+    .update({ status: statusMap[args.action] })
+    .eq('id', args.campaign_id)
+    .eq('user_id', ctx.userId)
+    .match(clientFilter)
+    .select(CAMPAIGN_SELECT)
+    .single()
+  if (error) throw new Error(error.message)
+
+  return { ok: true, campaign: data }
 }
 
 async function listWatchlist(ctx: McpContext, args: { client_id?: string; limit?: number }) {
@@ -1500,6 +1934,60 @@ async function a2aDispatchAgent(ctx: McpContext, args: {
     credits_consumed: output.creditsConsumed,
     latency_ms: output.latencyMs,
     trace_id: output.traceId,
+  }
+}
+
+type OptionalSupabaseRows<T> = { data: T[] | null; error: { code?: string; message?: string } | null }
+
+function optionalRows<T>(result: OptionalSupabaseRows<T>): T[] {
+  if (!result.error) return result.data ?? []
+  if (result.error.code === '42P01' || /does not exist/i.test(result.error.message ?? '')) return []
+  throw new Error(result.error.message ?? 'Query failed')
+}
+
+function sanitizeCampaignChannels(value: unknown): string[] {
+  if (!Array.isArray(value)) return ['email', 'linkedin', 'content']
+  const channels = Array.from(new Set(value
+    .filter((channel): channel is string => typeof channel === 'string' && channel.trim().length > 0)
+    .map(channel => channel.trim())))
+    .slice(0, 6)
+  return channels.length ? channels : ['email', 'linkedin', 'content']
+}
+
+function uniqueNonEmpty(values: unknown): string[] {
+  if (!Array.isArray(values)) return []
+  return Array.from(new Set(values
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map(value => value.trim())))
+}
+
+async function assertCampaignAccessible(ctx: McpContext, campaignId: string, clientFilter: ClientFilter) {
+  const { data, error } = await ctx.supabase
+    .from('gtm_campaigns')
+    .select('id')
+    .eq('id', campaignId)
+    .eq('user_id', ctx.userId)
+    .match(clientFilter)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('Campaign not found')
+}
+
+function campaignContentColumn(kind: CampaignContentKind): string {
+  switch (kind) {
+    case 'content_idea': return 'content_idea_id'
+    case 'post': return 'post_id'
+    case 'gtm_content_idea': return 'gtm_content_idea_id'
+    case 'gtm_campaign_asset': return 'gtm_campaign_asset_id'
+  }
+}
+
+function campaignContentTable(kind: CampaignContentKind): string {
+  switch (kind) {
+    case 'content_idea': return 'content_ideas'
+    case 'post': return 'posts'
+    case 'gtm_content_idea': return 'gtm_content_ideas'
+    case 'gtm_campaign_asset': return 'gtm_campaign_assets'
   }
 }
 

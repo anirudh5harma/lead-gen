@@ -16,6 +16,7 @@ import { recordGtmMemory } from '@/lib/gtm/memory'
 import { buildOutreachPlan } from '@/lib/gtm/outreach-plan'
 import { markLatestOutreachPlanStatus, persistOutreachPlan } from '@/lib/gtm/outreach-plan-store'
 import { recordOutcomeLearning } from '@/lib/gtm/outcome-learning'
+import { updateCampaignTargetsForLead } from '@/lib/gtm/campaign-attribution'
 import { loadAccessibleLead } from '@/lib/lead-access'
 import { evaluateOutboundPolicy } from '@/lib/policies/outbound'
 import { persistLeadRecipientVerification, validateOutboundRecipients } from '@/lib/outbound-recipient-validation'
@@ -527,6 +528,17 @@ export async function POST(request: Request) {
       from_email:      result.fromEmail,
       gmail_thread_id: result.threadId,
     }).eq('id', leadId)
+
+    updateCampaignTargetsForLead(supabase, {
+      userId: user.id,
+      lead: {
+        id: leadId,
+        client_id: lead.client_id ?? null,
+        target_company: lead.target_company,
+        status: 'sent',
+        sent_at: now,
+      },
+    }).catch(() => {})
 
     emitCrmLeadEvent({
       userId: user.id,

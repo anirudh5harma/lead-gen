@@ -99,12 +99,34 @@ export function ensureBodyGreetsRecipients(body: string, greeting: string): stri
   const salutationPattern = /^(?:hi|hey|hello)\s+[^,\n]{1,80},\s*|^[A-Z][A-Za-z.'-]*(?:\s+and\s+[A-Z][A-Za-z.'-]*|(?:,\s*(?:and\s+)?[A-Z][A-Za-z.'-]*){0,6}),\s*/i
   if (explicitGreetingPattern.test(first)) {
     paragraphs[0] = first.replace(explicitGreetingPattern, `${cleanGreeting}, `)
+    paragraphs[0] = stripDuplicateNameAfterGreeting(paragraphs[0], cleanGreeting)
   } else if (salutationPattern.test(first)) {
     paragraphs[0] = first.replace(salutationPattern, `${cleanGreeting}, `)
+    // Strip any greeting name that immediately follows the salutation replacement.
+    // e.g. "Jeff and Hammad, Hammad, noticed..." → "Jeff and Hammad, noticed..."
+    paragraphs[0] = stripDuplicateNameAfterGreeting(paragraphs[0], cleanGreeting)
   } else {
     paragraphs[0] = `${cleanGreeting}, ${first}`
   }
   return paragraphs.join('\n\n')
+}
+
+function stripDuplicateNameAfterGreeting(text: string, greeting: string): string {
+  // After a salutation replacement, strip any greeting name that immediately follows.
+  // e.g. "Jeff and Hammad, Hammad, noticed..." → "Jeff and Hammad, noticed..."
+  //      "Jeff and Hammad, Jeff, thanks..." → "Jeff and Hammad, thanks..."
+  const names = greeting.split(/\s+and\s+|\s*,\s*/).map(n => n.trim()).filter(Boolean)
+  if (names.length <= 1) return text
+  const greetingPrefix = `${greeting}, `
+  if (!text.startsWith(greetingPrefix)) return text
+  const after = text.slice(greetingPrefix.length)
+  for (const name of names) {
+    const dupPattern = new RegExp(`^${escapeRegExp(name)}\\b\\s*,?\\s*`, 'i')
+    if (dupPattern.test(after)) {
+      return greetingPrefix + after.replace(dupPattern, '')
+    }
+  }
+  return text
 }
 
 function collapseRepeatedGreeting(value: string, greeting: string): string {
@@ -119,6 +141,9 @@ function collapseRepeatedGreeting(value: string, greeting: string): string {
     const duplicateFirstName = new RegExp(`^${escapeRegExp(greeting)}\\s*,\\s*${escapeRegExp(firstName)}\\b\\s*,?\\s*`, 'i')
     collapsed = collapsed.replace(duplicateFirstName, `${greeting}, `)
   }
+  // Also strip any greeting name that immediately follows the greeting.
+  // e.g. "Jeff and Hammad, Hammad, noticed..." → "Jeff and Hammad, noticed..."
+  collapsed = stripDuplicateNameAfterGreeting(collapsed, greeting)
   return collapsed
 }
 

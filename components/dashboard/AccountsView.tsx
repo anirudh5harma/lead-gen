@@ -51,8 +51,10 @@ export default function AccountsView({ leads, commandSearch }: Props) {
   return (
     <div className="space-y-stack-lg font-body-main text-on-surface">
       <div>
-        <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-2">Pipeline</p>
-        <h2 className="font-h1-editorial text-display-sm text-on-surface">Signals & Accounts</h2>
+        <p className="font-label-mono text-label-mono uppercase text-on-surface-variant mb-3">Pipeline</p>
+        <h2 className="font-h1-editorial text-display-sm text-on-surface">
+          Signals & <span className="italic text-primary">accounts</span>
+        </h2>
       </div>
 
       <WatchlistManager />
