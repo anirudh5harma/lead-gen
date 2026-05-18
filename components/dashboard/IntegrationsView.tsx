@@ -132,20 +132,20 @@ export default function IntegrationsView({ profile }: Props) {
           <div className="bg-surface-container-low/50 hairline-border rounded-lg overflow-hidden mb-4">
             <div className="divide-y divide-[rgba(26,24,22,0.07)]">
               {sending.map((a) => (
-                <div key={a.id} className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 px-5 py-3.5 hover:bg-surface-container-lowest transition-colors">
+                <div key={a.id} className="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3.5 hover:bg-surface-container-lowest transition-colors flex-wrap">
                   <ProviderBadge name={a.provider} size={32} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="text-[13.5px] font-medium text-on-surface truncate">{a.email}</div>
                     <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{a.display_name ?? a.provider}</div>
                   </div>
-                  <span className={`font-label-mono text-[10px] uppercase tracking-widest inline-flex items-center gap-1.5 ${a.is_active ? 'text-tertiary' : 'text-on-surface-variant'}`}>
+                  <span className={`font-label-mono text-[10px] uppercase tracking-widest inline-flex items-center gap-1.5 shrink-0 ${a.is_active ? 'text-tertiary' : 'text-on-surface-variant'}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${a.is_active ? 'bg-tertiary' : 'bg-outline-variant'}`} />
                     {a.is_active ? 'active' : 'paused'}
                   </span>
                   <button
                     onClick={() => void disconnectAccount(a.id)}
                     disabled={disconnectingId === a.id}
-                    className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-error transition-colors disabled:opacity-50"
+                    className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-error transition-colors disabled:opacity-50 shrink-0"
                   >
                     {disconnectingId === a.id ? 'Removing…' : 'Disconnect'}
                   </button>
@@ -598,12 +598,12 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 sm:px-6 py-4">
       <div className="absolute inset-0 bg-[var(--color-text-1)]/40" onClick={onClose} />
-      <div className="relative card p-6 w-full max-w-md">
-        <div className="flex items-baseline justify-between mb-5">
+      <div className="relative card p-5 sm:p-6 w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto">
+        <div className="flex items-baseline justify-between mb-5 gap-3">
           <h3 className="text-[16px] font-medium tracking-tight">{title}</h3>
-          <button onClick={onClose} className="text-[var(--color-text-3)] hover:text-[var(--color-text-1)] text-[18px] leading-none" aria-label="Close">×</button>
+          <button onClick={onClose} className="text-[var(--color-text-3)] hover:text-[var(--color-text-1)] text-[18px] leading-none shrink-0" aria-label="Close">×</button>
         </div>
         {children}
       </div>
@@ -756,8 +756,8 @@ function Group({
   id, label, title, body, children,
 }: { id?: string; label: string; title: string; body: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-20 hairline-t pt-10">
-      <div className="grid md:grid-cols-[260px_1fr] gap-10">
+    <section id={id} className="scroll-mt-20 hairline-t pt-8 md:pt-10">
+      <div className="grid md:grid-cols-[260px_1fr] gap-6 md:gap-10">
         <div>
           <div className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant mb-2">{label}</div>
           <h3 className="text-[18px] leading-tight font-semibold text-on-surface" dangerouslySetInnerHTML={{ __html: title }} />

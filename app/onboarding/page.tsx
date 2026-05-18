@@ -266,7 +266,7 @@ function StepIdentity({
     <section className="space-y-stack-lg">
       <div className="space-y-base">
         <span className="font-display-sm text-[11px] tracking-widest text-primary uppercase">Step 01 — Your company</span>
-        <h2 className="font-h1-editorial text-[56px] leading-tight">Point the fleet at your market.</h2>
+        <h2 className="font-h1-editorial text-[clamp(2rem,7vw,56px)] leading-tight">Point the fleet at your market.</h2>
         <p className="font-body-main text-on-surface-variant max-w-xl">Drop your website and hit Analyse — we&rsquo;ll read it and fill in the rest. Everything below stays editable.</p>
       </div>
 
@@ -393,7 +393,7 @@ function StepCalibration({
       </button>
       <div className="space-y-base">
         <span className="font-display-sm text-[11px] tracking-widest text-primary uppercase">Step 02 — Calibration</span>
-        <h2 className="font-h1-editorial text-[56px] leading-tight">Who&rsquo;s a good account?</h2>
+        <h2 className="font-h1-editorial text-[clamp(2rem,7vw,56px)] leading-tight">Who&rsquo;s a good account?</h2>
       </div>
 
       <div className="bg-surface-container-lowest hairline-border p-stack-lg space-y-stack-md">
@@ -492,7 +492,7 @@ function DoneState({ onOpen }: { onOpen: () => void }) {
         <div className="absolute inset-0 w-3 h-3 bg-primary rounded-full blur-md opacity-40" />
       </div>
       <div className="space-y-base">
-        <h2 className="font-h1-editorial text-[72px] text-on-surface">You&rsquo;re live.</h2>
+        <h2 className="font-h1-editorial text-[clamp(2.5rem,9vw,72px)] text-on-surface">You&rsquo;re live.</h2>
         <p className="font-body-large text-on-surface-variant max-w-md mx-auto opacity-80">
           You&rsquo;re live. Your agents are indexing target accounts and listening for signals — outbound and content.
         </p>

@@ -125,13 +125,15 @@ export default function ContentView({
             Idea → write → edit → schedule → publish → learn. LinkedIn & X posts, tuned by what performs.
           </p>
         </div>
-        <div className="flex items-center gap-1 hairline-border rounded-full p-1">
-          {(['ideas', 'composer', 'calendar', 'performance'] as Tab[]).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`h-8 px-4 rounded-full font-label-mono text-label-mono uppercase tracking-wider transition-colors ${tab === t ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:text-on-surface'}`}>
-              {t}{t === 'ideas' && proposed.length ? ` · ${proposed.length}` : ''}{t === 'composer' && drafts.length ? ` · ${drafts.length}` : ''}
-            </button>
-          ))}
+        <div className="-mx-2 sm:mx-0 overflow-x-auto sm:overflow-visible">
+          <div className="inline-flex items-center gap-1 hairline-border rounded-full p-1 mx-2 sm:mx-0 whitespace-nowrap">
+            {(['ideas', 'composer', 'calendar', 'performance'] as Tab[]).map((t) => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`h-8 px-3 sm:px-4 rounded-full font-label-mono text-label-mono uppercase tracking-wider transition-colors ${tab === t ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:text-on-surface'}`}>
+                {t}{t === 'ideas' && proposed.length ? ` · ${proposed.length}` : ''}{t === 'composer' && drafts.length ? ` · ${drafts.length}` : ''}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -206,19 +208,31 @@ export default function ContentView({
           </button>
           {published.length === 0 ? <Empty text="No published posts to measure yet." /> : (
             <div className="hairline-border bg-surface-container-lowest">
-              <div className="grid grid-cols-12 px-stack-md py-3 hairline-b bg-surface-container-low font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
+              <div className="hidden md:grid grid-cols-12 px-stack-md py-3 hairline-b bg-surface-container-low font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">
                 <div className="col-span-5">Post</div><div className="col-span-1 text-right">Impr.</div><div className="col-span-1 text-right">Likes</div><div className="col-span-1 text-right">Comm.</div><div className="col-span-1 text-right">Reposts</div><div className="col-span-3 text-right">Published</div>
               </div>
               {published.map((p) => {
                 const m = p.metrics ?? {}
                 return (
-                  <div key={p.id} className="grid grid-cols-12 px-stack-md py-3 items-center hairline-b last:border-0">
-                    <div className="col-span-5 min-w-0"><p className="font-body-main truncate text-on-surface">{p.hook || p.body.slice(0, 80)}</p><span className="font-label-mono text-[9px] uppercase text-on-surface-variant">{p.platform}</span></div>
-                    <div className="col-span-1 text-right font-label-mono text-[12px]">{m.impressions ?? '—'}</div>
-                    <div className="col-span-1 text-right font-label-mono text-[12px]">{m.likes ?? '—'}</div>
-                    <div className="col-span-1 text-right font-label-mono text-[12px]">{m.comments ?? '—'}</div>
-                    <div className="col-span-1 text-right font-label-mono text-[12px]">{m.reposts ?? '—'}</div>
-                    <div className="col-span-3 text-right font-label-mono text-[11px] text-on-surface-variant">{fmt(p.published_at)}</div>
+                  <div key={p.id} className="px-stack-md py-3 hairline-b last:border-0 md:grid md:grid-cols-12 md:items-center">
+                    <div className="md:col-span-5 min-w-0">
+                      <p className="font-body-main truncate text-on-surface">{p.hook || p.body.slice(0, 80)}</p>
+                      <span className="font-label-mono text-[9px] uppercase text-on-surface-variant">{p.platform}</span>
+                    </div>
+                    {/* Mobile: stat grid */}
+                    <div className="mt-2 md:hidden grid grid-cols-4 gap-2 font-label-mono text-[11px]">
+                      <div><span className="block text-[9px] uppercase text-on-surface-variant">Impr.</span>{m.impressions ?? '—'}</div>
+                      <div><span className="block text-[9px] uppercase text-on-surface-variant">Likes</span>{m.likes ?? '—'}</div>
+                      <div><span className="block text-[9px] uppercase text-on-surface-variant">Comm.</span>{m.comments ?? '—'}</div>
+                      <div><span className="block text-[9px] uppercase text-on-surface-variant">Reposts</span>{m.reposts ?? '—'}</div>
+                    </div>
+                    <div className="mt-2 md:hidden font-label-mono text-[11px] text-on-surface-variant">Published {fmt(p.published_at)}</div>
+                    {/* Desktop: inline columns */}
+                    <div className="hidden md:block md:col-span-1 text-right font-label-mono text-[12px]">{m.impressions ?? '—'}</div>
+                    <div className="hidden md:block md:col-span-1 text-right font-label-mono text-[12px]">{m.likes ?? '—'}</div>
+                    <div className="hidden md:block md:col-span-1 text-right font-label-mono text-[12px]">{m.comments ?? '—'}</div>
+                    <div className="hidden md:block md:col-span-1 text-right font-label-mono text-[12px]">{m.reposts ?? '—'}</div>
+                    <div className="hidden md:block md:col-span-3 text-right font-label-mono text-[11px] text-on-surface-variant">{fmt(p.published_at)}</div>
                   </div>
                 )
               })}
@@ -257,8 +271,8 @@ function PostEditor({ post, busy, connectedPlatforms, onSave, onEdit, onSchedule
   }
   return (
     <div id={`content-post-${post.id}`} className="scroll-mt-24 hairline-border bg-surface-container-lowest p-stack-md space-y-stack-md">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-label-mono text-[9px] uppercase tracking-widest text-primary">{post.platform}</span>
           <span className="font-label-mono text-[9px] uppercase text-on-surface-variant">{post.status}</span>
           {typeof post.eval_score === 'number' && <span className={`font-label-mono text-[9px] uppercase px-1.5 py-0.5 rounded ${post.eval_score >= 80 ? 'bg-tertiary/10 text-tertiary' : 'bg-surface-container-high text-on-surface-variant'}`}>eval {post.eval_score}</span>}

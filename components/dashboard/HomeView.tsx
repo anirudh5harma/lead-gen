@@ -66,16 +66,16 @@ export default function HomeView({ profile, leads, onNavigate, commandSearch }: 
       </div>
 
       {/* Command bar */}
-      <div className="hairline-border bg-surface-container-lowest px-6 py-4 flex items-center gap-4 rounded-lg max-w-3xl shadow-sm focus-within:border-primary/30 transition-colors">
-        <Icon name="search" size={20} className="text-on-surface-variant" />
+      <div className="hairline-border bg-surface-container-lowest px-4 sm:px-6 py-3 sm:py-4 flex items-center gap-3 sm:gap-4 rounded-lg max-w-3xl shadow-sm focus-within:border-primary/30 transition-colors">
+        <Icon name="search" size={20} className="text-on-surface-variant shrink-0" />
         <input
           ref={inputRef}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Filter accounts: company, contact, signal reason…"
-          className="bg-transparent border-none outline-none w-full font-body-large text-on-surface placeholder:text-outline"
+          placeholder="Filter accounts…"
+          className="bg-transparent border-none outline-none w-full font-body-large text-on-surface placeholder:text-outline min-w-0"
         />
-        <span className="font-label-mono text-[9px] border border-outline-variant px-1.5 py-0.5 rounded opacity-50 uppercase shrink-0">⌘K</span>
+        <span className="font-label-mono text-[9px] border border-outline-variant px-1.5 py-0.5 rounded opacity-50 uppercase shrink-0 hidden sm:inline">⌘K</span>
       </div>
 
       {/* Counters */}
@@ -108,9 +108,9 @@ export default function HomeView({ profile, leads, onNavigate, commandSearch }: 
           <div className="bg-surface-container-lowest hairline-border rounded-lg overflow-hidden">
             <div className="divide-y divide-[rgba(26,24,22,0.07)]">
               {today.map((l) => (
-                <div key={l.id} className="flex items-center px-6 py-5 gap-4 hover:bg-surface-container-low transition-colors group">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2.5 flex-wrap">
+                <div key={l.id} className="flex items-start sm:items-center px-4 sm:px-6 py-4 sm:py-5 gap-3 sm:gap-4 hover:bg-surface-container-low transition-colors group flex-wrap sm:flex-nowrap">
+                  <div className="flex-1 min-w-0 order-1">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-body-main font-medium text-on-surface">{l.target_company}</span>
                       {typeof l.relevance_score === 'number' && (
                         <span className="font-label-mono text-[9px] uppercase tracking-widest bg-primary-container/10 text-primary px-1.5 py-0.5 rounded">{Math.round(l.relevance_score)} fit</span>
@@ -118,10 +118,10 @@ export default function HomeView({ profile, leads, onNavigate, commandSearch }: 
                       {l.replied_at && <span className="font-label-mono text-[9px] uppercase tracking-widest bg-tertiary/10 text-tertiary px-1.5 py-0.5 rounded">Replied</span>}
                       {l.sent_at && !l.replied_at && <span className="font-label-mono text-[9px] uppercase tracking-widest bg-surface-container-high text-on-surface-variant px-1.5 py-0.5 rounded">Sent</span>}
                     </div>
-                    {l.relevance_reason && <p className="font-body-main text-on-surface-variant truncate mt-1">{l.relevance_reason}</p>}
+                    {l.relevance_reason && <p className="font-body-main text-on-surface-variant truncate mt-1 text-[13px] sm:text-base">{l.relevance_reason}</p>}
                   </div>
-                  <span className="font-label-mono text-[10px] text-outline shrink-0">{relTime(l.created_at)}</span>
-                  <button onClick={() => setSelectedLead(l)} className="border border-outline text-on-surface font-label-mono text-[10px] uppercase tracking-[0.2em] px-4 py-2 hover:bg-surface-container transition-all shrink-0">Open</button>
+                  <span className="font-label-mono text-[10px] text-outline shrink-0 order-2 sm:order-2 ml-auto sm:ml-0">{relTime(l.created_at)}</span>
+                  <button onClick={() => setSelectedLead(l)} className="border border-outline text-on-surface font-label-mono text-[10px] uppercase tracking-[0.2em] px-4 py-2 hover:bg-surface-container transition-all shrink-0 order-3 w-full sm:w-auto">Open</button>
                 </div>
               ))}
             </div>
