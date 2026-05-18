@@ -68,9 +68,18 @@ function TopNav({ loading, onStart }: { loading: boolean; onStart: () => void })
     ['Pricing', '/pricing', false],
     ['Docs', '/docs', false],
   ]
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    if (!mobileOpen) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [mobileOpen])
+
   return (
     <header className="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/15">
-      <nav className="flex justify-between items-center h-16 px-margin-page max-w-[1280px] mx-auto">
+      <nav className="flex justify-between items-center h-16 px-margin-page max-w-[1280px] mx-auto gap-3">
         <Link href="/" className="font-semibold text-[19px] tracking-tight text-on-surface">Bombsell</Link>
         <div className="hidden md:flex items-center gap-stack-lg">
           {links.map(([label, href, active]) => (
@@ -85,16 +94,50 @@ function TopNav({ loading, onStart }: { loading: boolean; onStart: () => void })
             </a>
           ))}
         </div>
-        <div className="flex items-center gap-stack-md">
+        <div className="flex items-center gap-stack-sm sm:gap-stack-md shrink-0">
           <button
             onClick={onStart}
             disabled={loading}
-            className="bg-primary text-on-primary px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60"
+            className="bg-primary text-on-primary px-3 sm:px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60 whitespace-nowrap"
           >
             {loading ? 'Signing in…' : 'Start Free'}
           </button>
+          <button
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={mobileOpen}
+            className="md:hidden tap-target inline-flex h-10 w-10 items-center justify-center rounded text-on-surface hover:bg-surface-container-low transition-colors"
+          >
+            <Icon name="menu" size={22} />
+          </button>
         </div>
       </nav>
+
+      {mobileOpen && (
+        <>
+          <button
+            aria-label="Close menu"
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden fixed inset-0 z-40 bg-on-surface/40"
+          />
+          <div className="md:hidden fixed inset-x-0 top-16 z-50 bg-surface border-b border-outline-variant/15 shadow-lg">
+            <div className="flex flex-col px-margin-page py-stack-md gap-1">
+              {links.map(([label, href, active]) => (
+                <a
+                  key={label}
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  className={`py-3 font-body-main text-body-main border-b border-outline-variant/15 last:border-b-0 ${
+                    active ? 'text-primary font-medium' : 'text-on-surface'
+                  }`}
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </header>
   )
 }
@@ -108,7 +151,7 @@ function Hero({
   loading: boolean; onSubmit: () => void;
 }) {
   return (
-    <section className="relative overflow-hidden hero-bg pt-32">
+    <section className="relative overflow-hidden hero-bg pt-24 md:pt-32">
       {/* Decorative depth layer — sits behind everything */}
       <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ zIndex: 0 }}>
         <span className="float-orb orb-primary drift-slow" style={{ width: 520, height: 520, top: -120, left: '8%' }} />
@@ -729,16 +772,16 @@ function ForTeams() {
             {SIGNAL_FEED.map((r) => (
               <div
                 key={r.t}
-                className={`flex items-center h-10 px-2 gap-4 border-b border-outline-variant/10 transition-colors ${
+                className={`flex items-center min-h-10 py-2 px-2 gap-2 sm:gap-4 border-b border-outline-variant/10 transition-colors ${
                   r.highlight ? 'bg-primary/5' : 'hover:bg-surface-container-low'
                 }`}
               >
-                <span className="font-label-mono text-[10px] text-outline shrink-0">{r.t}</span>
-                <span className={`font-label-mono text-[10px] px-1.5 rounded-sm uppercase ${
+                <span className="font-label-mono text-[10px] text-outline shrink-0 hidden sm:inline">{r.t}</span>
+                <span className={`font-label-mono text-[10px] px-1.5 rounded-sm uppercase shrink-0 ${
                   r.tone === 'tertiary' ? 'bg-tertiary-container/10 text-tertiary' : 'bg-primary-container/10 text-primary'
                 }`}>{r.tag}</span>
-                <span className={`font-body-main truncate ${r.highlight ? 'text-primary' : 'text-on-surface'}`}>{r.text}</span>
-                <span className="ml-auto font-label-mono text-[10px] text-primary uppercase shrink-0">{r.status}</span>
+                <span className={`font-body-main truncate min-w-0 flex-1 text-[13px] sm:text-base ${r.highlight ? 'text-primary' : 'text-on-surface'}`}>{r.text}</span>
+                <span className="ml-auto font-label-mono text-[10px] text-primary uppercase shrink-0 hidden xs:inline sm:inline">{r.status}</span>
               </div>
             ))}
           </div>

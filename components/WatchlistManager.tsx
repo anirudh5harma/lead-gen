@@ -138,7 +138,7 @@ export default function WatchlistManager() {
       {open && (
         <div className="px-4 pb-4 space-y-3 border-t border-[var(--color-line-1)] pt-3">
           {/* Add form */}
-          <form onSubmit={addCompany} className="flex gap-2">
+          <form onSubmit={addCompany} className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               placeholder="Company name"
@@ -151,7 +151,7 @@ export default function WatchlistManager() {
               placeholder="domain.com (optional)"
               value={form.company_domain}
               onChange={e => setForm(f => ({ ...f, company_domain: e.target.value }))}
-              className="w-40 px-3 h-9 rounded-lg bg-[var(--color-ink-0)] border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
+              className="sm:w-40 min-w-0 px-3 h-9 rounded-lg bg-[var(--color-ink-0)] border border-[var(--color-line-2)] text-sm text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 transition-colors"
             />
             <button
               type="submit"
@@ -214,7 +214,7 @@ export default function WatchlistManager() {
                   <button
                     onClick={() => removeCompany(c.id)}
                     aria-label="Remove"
-                    className="opacity-0 group-hover:opacity-100 text-[var(--color-text-4)] hover:text-[var(--color-sig-regulation)] transition-all p-1 shrink-0"
+                    className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-[var(--color-text-4)] hover:text-[var(--color-sig-regulation)] transition-all p-1 shrink-0"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

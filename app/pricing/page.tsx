@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getPaygPackCredits } from '@/lib/lead-credits'
 import { useToast } from '@/components/Toast'
+import Icon from '@/components/Icon'
 
 /**
  * Pricing — editorial, mono labels, 4-column comparison row.
@@ -253,9 +254,18 @@ function Nav({ signedIn, busy, onStart }: { signedIn: boolean; busy: boolean; on
     ['Pricing', '/pricing', true],
     ['Docs', '/docs', false],
   ]
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    if (!mobileOpen) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [mobileOpen])
+
   return (
     <header className="sticky top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/15">
-      <nav className="flex justify-between items-center h-16 px-margin-page max-w-[1280px] mx-auto">
+      <nav className="flex justify-between items-center h-16 px-margin-page max-w-[1280px] mx-auto gap-3">
         <Link href="/" className="font-semibold text-[19px] tracking-tight text-on-surface">Bombsell</Link>
         <div className="hidden md:flex items-center gap-stack-lg">
           {links.map(([label, href, active]) => (
@@ -268,16 +278,50 @@ function Nav({ signedIn, busy, onStart }: { signedIn: boolean; busy: boolean; on
             </Link>
           ))}
         </div>
-        <div className="flex items-center gap-stack-md">
+        <div className="flex items-center gap-stack-sm sm:gap-stack-md shrink-0">
           <button
             onClick={onStart}
             disabled={busy}
-            className="bg-primary text-on-primary px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60"
+            className="bg-primary text-on-primary px-3 sm:px-stack-md py-stack-sm font-label-mono text-label-mono uppercase tracking-widest hover:bg-primary-container transition-colors disabled:opacity-60 whitespace-nowrap"
           >
             {busy ? 'Loading…' : signedIn ? 'Dashboard →' : 'Start Free'}
           </button>
+          <button
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={mobileOpen}
+            className="md:hidden tap-target inline-flex h-10 w-10 items-center justify-center rounded text-on-surface hover:bg-surface-container-low transition-colors"
+          >
+            <Icon name="menu" size={22} />
+          </button>
         </div>
       </nav>
+
+      {mobileOpen && (
+        <>
+          <button
+            aria-label="Close menu"
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden fixed inset-0 z-40 bg-on-surface/40"
+          />
+          <div className="md:hidden fixed inset-x-0 top-16 z-50 bg-surface border-b border-outline-variant/15 shadow-lg">
+            <div className="flex flex-col px-margin-page py-stack-md gap-1">
+              {links.map(([label, href, active]) => (
+                <Link
+                  key={label}
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  className={`py-3 font-body-main text-body-main border-b border-outline-variant/15 last:border-b-0 ${
+                    active ? 'text-primary font-medium' : 'text-on-surface'
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </header>
   )
 }

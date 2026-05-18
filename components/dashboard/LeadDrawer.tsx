@@ -142,20 +142,20 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
         className="drawer-panel fixed top-0 right-0 h-full w-full max-w-xl bg-surface border-l border-outline-variant z-[70] shadow-2xl flex flex-col font-body-main text-on-surface"
       >
         {/* Header */}
-        <div className="p-8 border-b border-outline-variant flex items-center justify-between gap-4">
+        <div className="p-5 sm:p-8 border-b border-outline-variant flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h4 className="font-h1-editorial text-3xl">{lead?.sent_at ? 'Sent Outreach' : isReview ? 'Review Outreach' : 'Outreach Detail'}</h4>
+            <h4 className="font-h1-editorial text-2xl sm:text-3xl">{lead?.sent_at ? 'Sent Outreach' : isReview ? 'Review Outreach' : 'Outreach Detail'}</h4>
             <p className="font-label-mono text-[10px] uppercase tracking-[0.2em] text-primary mt-2 truncate">
               {lead?.contact_name || lead?.target_company || '—'}{lead?.target_company && lead?.contact_name ? ` · ${lead.target_company}` : ''}
             </p>
           </div>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors p-2 shrink-0" aria-label="Close">
+          <button onClick={onClose} className="text-on-surface-variant hover:text-on-surface transition-colors p-2 shrink-0 tap-target" aria-label="Close">
             <Icon name="close" size={20} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-12">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-8 space-y-8 sm:space-y-12">
           {/* Verified Intelligence */}
           <section>
             <div className="flex items-center justify-between gap-4 mb-6">
@@ -219,7 +219,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
             </div>
 
             {draft ? (
-              <div className="bg-surface-container-lowest border border-outline-variant p-8 font-body-main text-on-surface-variant leading-relaxed shadow-sm rounded-lg">
+              <div className="bg-surface-container-lowest border border-outline-variant p-5 sm:p-8 font-body-main text-on-surface-variant leading-relaxed shadow-sm rounded-lg">
                 <div className="mb-8 pb-4 border-b border-outline-variant/30">
                   <span className="font-label-mono text-[10px] uppercase text-on-surface-variant">Subject:</span>
                   {editing ? (
@@ -268,14 +268,14 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
         </div>
 
         {/* Footer */}
-        <div className="p-8 border-t border-outline-variant bg-surface-container-low/50 flex gap-4">
+        <div className="p-4 sm:p-8 border-t border-outline-variant bg-surface-container-low/50 flex gap-3 sm:gap-4">
           <button onClick={onClose}
-            className="flex-1 border border-outline text-on-surface font-label-mono text-[10px] uppercase tracking-[0.2em] py-4 hover:bg-surface-container transition-all">
+            className="flex-1 border border-outline text-on-surface font-label-mono text-[10px] uppercase tracking-[0.2em] py-3 sm:py-4 hover:bg-surface-container transition-all">
             {sent || !isReview ? 'Close' : 'Cancel'}
           </button>
           {isReview && (
             <button onClick={() => void sendDraft()} disabled={busy != null || !draft?.to || !draft.subject || !draft.body}
-              className="flex-[2] bg-primary text-on-primary font-label-mono text-[10px] uppercase tracking-[0.2em] py-4 hover:bg-primary-container transition-all shadow-lg disabled:opacity-50">
+              className="flex-[2] bg-primary text-on-primary font-label-mono text-[10px] uppercase tracking-[0.2em] px-2 py-3 sm:py-4 hover:bg-primary-container transition-all shadow-lg disabled:opacity-50">
               {busy === 'send' ? 'Dispatching…' : 'Approve & Dispatch'}
             </button>
           )}

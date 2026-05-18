@@ -777,30 +777,30 @@ function TopBar({
   voiceStatus: VoiceStatus; onVoiceStart: () => void; onVoiceStop: () => void;
 }) {
   return (
-    <header className="sticky top-0 z-40 h-14 bg-surface-container-low/80 backdrop-blur-md hairline-b flex items-center justify-between px-margin-page">
-      <div className="flex items-center gap-stack-md min-w-0">
+    <header className="sticky top-0 z-40 h-14 bg-surface-container-low/80 backdrop-blur-md hairline-b flex items-center justify-between px-margin-page gap-2">
+      <div className="flex items-center gap-stack-sm sm:gap-stack-md min-w-0 flex-1">
         <button
           onClick={onMenu}
-          className="md:hidden -ml-2 h-9 w-9 inline-flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container"
+          className="md:hidden tap-target -ml-2 h-10 w-10 inline-flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container shrink-0"
           aria-label="Open menu"
         >
           <Icon name="menu" size={20} />
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
           <span className="font-label-mono text-label-mono uppercase text-on-surface">Fleet live</span>
         </div>
-        <div className="hidden sm:block h-4 w-px bg-outline-variant" />
-        <span className="hidden sm:block font-label-mono text-[10px] uppercase text-on-surface-variant tracking-wider truncate">{subtitle}</span>
+        <div className="hidden md:block h-4 w-px bg-outline-variant" />
+        <span className="hidden md:block font-label-mono text-[10px] uppercase text-on-surface-variant tracking-wider truncate">{subtitle}</span>
       </div>
-      <div className="flex items-center gap-stack-lg shrink-0">
+      <div className="flex items-center gap-2 sm:gap-stack-md md:gap-stack-lg shrink-0">
         <button
           onMouseDown={onVoiceStart}
           onMouseUp={onVoiceStop}
           onMouseLeave={onVoiceStop}
           onTouchStart={(event) => { event.preventDefault(); onVoiceStart() }}
           onTouchEnd={(event) => { event.preventDefault(); onVoiceStop() }}
-          className={`inline-flex h-8 items-center gap-2 rounded-full px-3 font-label-mono text-[10px] uppercase tracking-widest transition-colors ${
+          className={`inline-flex h-8 items-center gap-1.5 sm:gap-2 rounded-full px-2.5 sm:px-3 font-label-mono text-[10px] uppercase tracking-widest transition-colors ${
             voiceStatus === 'listening'
               ? 'bg-primary text-on-primary'
               : 'bg-surface-container-lowest text-on-surface-variant hairline-border hover:text-primary'
@@ -809,12 +809,14 @@ function TopBar({
           aria-label="Hold to speak a dashboard command"
         >
           <Icon name="mic" size={15} />
-          <span className="hidden sm:inline">Hold V</span>
-          <span className="sm:hidden">Voice</span>
+          <span className="hidden md:inline">Hold V</span>
+          <span className="hidden sm:inline md:hidden">Voice</span>
         </button>
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container-lowest hairline-border rounded-full">
+        <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 bg-surface-container-lowest hairline-border rounded-full">
           <Icon name="database" size={16} className="text-primary" />
-          <span className="font-label-mono text-[10px] uppercase text-on-surface">Credits: {credits}</span>
+          <span className="font-label-mono text-[10px] uppercase text-on-surface">
+            <span className="hidden sm:inline">Credits: </span>{credits}
+          </span>
         </div>
         <button
           onClick={onRefresh}
@@ -823,7 +825,7 @@ function TopBar({
         >
           <Icon name="refresh" size={18} />
         </button>
-        <button onClick={onLogout} className="font-label-mono text-label-mono uppercase text-on-surface-variant hover:text-primary transition-colors">Logout</button>
+        <button onClick={onLogout} className="hidden sm:inline font-label-mono text-label-mono uppercase text-on-surface-variant hover:text-primary transition-colors">Logout</button>
       </div>
     </header>
   )

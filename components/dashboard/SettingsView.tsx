@@ -162,10 +162,10 @@ function CreditLedger() {
       ) : (
         <div className="border-t border-[var(--color-line-1)]">
           {data.entries.map((e) => (
-            <div key={e.id} className="grid grid-cols-[1fr_auto_auto] gap-3 items-baseline border-b border-[var(--color-line-1)] py-2">
-              <span className="text-[12.5px] text-[var(--color-text-1)]">{e.event_type.replace(/_/g, ' ')}{e.note ? ` — ${e.note}` : ''}</span>
+            <div key={e.id} className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_auto_auto] gap-x-3 gap-y-0.5 items-baseline border-b border-[var(--color-line-1)] py-2">
+              <span className="text-[12.5px] text-[var(--color-text-1)] break-words">{e.event_type.replace(/_/g, ' ')}{e.note ? ` — ${e.note}` : ''}</span>
               <span className={`mono ${e.direction === 'grant' ? 'text-[var(--color-pos,#2a7)]' : 'text-[var(--color-text-3)]'}`}>{e.direction === 'grant' ? '+' : '−'}{e.units}</span>
-              <span className="mono">{fmtDate(e.created_at)}</span>
+              <span className="mono col-span-2 sm:col-span-1 sm:text-right">{fmtDate(e.created_at)}</span>
             </div>
           ))}
         </div>
@@ -181,9 +181,9 @@ function fmtDate(iso: string): string {
 function Block({ id, label, title, children }: { id?: string; label: string; title: string; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-20 border-t border-[var(--color-line-1)] pt-8">
-      <div className="grid grid-cols-[60px_1fr] gap-6">
+      <div className="grid grid-cols-[40px_1fr] sm:grid-cols-[60px_1fr] gap-4 sm:gap-6">
         <div className="mono pt-1">{label}</div>
-        <div>
+        <div className="min-w-0">
           <h3 className="text-[18px] leading-tight font-semibold mb-5 text-[var(--color-text-1)]">{title}</h3>
           <div className="space-y-3">{children}</div>
         </div>
@@ -194,7 +194,7 @@ function Block({ id, label, title, children }: { id?: string; label: string; tit
 
 function Row({ k, v, multiline }: { k: string; v: React.ReactNode; multiline?: boolean }) {
   return (
-    <div className={`grid ${multiline ? 'grid-cols-1 md:grid-cols-[160px_1fr]' : 'grid-cols-[160px_1fr]'} gap-3 items-baseline border-b border-[var(--color-line-1)] pb-3`}>
+    <div className={`grid ${multiline ? 'grid-cols-1 md:grid-cols-[160px_1fr]' : 'grid-cols-1 sm:grid-cols-[140px_1fr] md:grid-cols-[160px_1fr]'} gap-1 sm:gap-3 sm:items-baseline border-b border-[var(--color-line-1)] pb-3`}>
       <span className="mono">{k}</span>
       <span className="text-[13.5px] text-[var(--color-text-1)] break-words">{v}</span>
     </div>

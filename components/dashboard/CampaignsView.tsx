@@ -418,7 +418,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
     ? ` · ${Math.round(Number(progress.completion) || 0)}%`
     : ''
   return (
-    <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-lg">
+    <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-md md:p-stack-lg">
       <div className="flex items-start justify-between gap-stack-md flex-wrap">
         <div className="min-w-0 flex-1">
           <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
@@ -491,7 +491,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-4 gap-stack-sm">
+      <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-stack-sm">
         <Tiny label="Enrolled" value={campaign.target_counts?.enrolled ?? targets.length} />
         <Tiny label="Sent" value={campaign.target_counts?.sent ?? 0} />
         <Tiny label="Replied" value={campaign.target_counts?.replied ?? 0} />
