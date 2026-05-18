@@ -116,6 +116,10 @@ export default function CampaignsView({ profile }: Props) {
   const [buildingFromPrompt, setBuildingFromPrompt] = useState(false)
   const [discoveringId, setDiscoveringId] = useState<string | null>(null)
   const [removeCampaign, setRemoveCampaign] = useState<Campaign | null>(null)
+  // Master-detail: on mobile, show only one pane at a time. Auto-selecting the
+  // first campaign on load shouldn't yank the user into the detail — only
+  // explicit selects (clicking a row, building a campaign) flip this on.
+  const [mobileShowDetail, setMobileShowDetail] = useState(false)
 
   const loadCampaigns = useCallback(async function loadCampaigns() {
     setLoading(true)
@@ -176,6 +180,7 @@ export default function CampaignsView({ profile }: Props) {
       if (!res.ok || !data.campaign) throw new Error(data.error ?? 'Campaign could not be built from prompt')
       setPromptDraft({ prompt: '', target_count: 10 })
       setSelectedId(data.campaign.id)
+      setMobileShowDetail(true)
       await loadCampaigns()
       await loadCampaignDetail(data.campaign.id)
       const generated = data.discovery?.generated ?? 0
@@ -241,6 +246,7 @@ export default function CampaignsView({ profile }: Props) {
         setDetail(null)
         setSelectedId(null)
         setRemoveCampaign(null)
+        setMobileShowDetail(false)
         toast.success('Campaign removed from the dashboard.')
         await loadCampaigns()
         return
@@ -312,9 +318,9 @@ export default function CampaignsView({ profile }: Props) {
         </div>
       </section>
 
-      {/* Board + detail */}
+      {/* Board + detail — master/detail on mobile, side-by-side on lg+ */}
       <div className="grid lg:grid-cols-[minmax(300px,360px)_1fr] gap-stack-lg items-start">
-        <section className="lg:sticky lg:top-6">
+        <section className={`lg:sticky lg:top-6 lg:block ${mobileShowDetail ? 'hidden' : ''}`}>
           <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2 gap-3 flex-wrap">
             <h3 className="font-h1-editorial text-h1-editorial">Campaigns</h3>
             <span className={BADGE_ACCENT}>{campaigns.length} Motions</span>
@@ -337,25 +343,28 @@ export default function CampaignsView({ profile }: Props) {
                   return (
                     <button
                       key={campaign.id}
-                      onClick={() => setSelectedId(campaign.id)}
+                      onClick={() => { setSelectedId(campaign.id); setMobileShowDetail(true) }}
                       aria-current={active}
-                      className={`relative w-full text-left px-5 py-4 transition-colors ${active ? 'bg-surface-container-low' : 'hover:bg-surface-container-low/60'}`}
+                      className={`relative w-full text-left px-5 py-4 transition-colors ${active ? 'bg-surface-container-low lg:bg-surface-container-low' : 'hover:bg-surface-container-low/60'}`}
                     >
-                      {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] bg-primary rounded-r" />}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="font-body-main font-medium text-on-surface truncate">{campaign.name}</span>
-                          <span className={BADGE}>{campaign.status}</span>
+                      {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] bg-primary rounded-r hidden lg:block" />}
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="font-body-main font-medium text-on-surface truncate">{campaign.name}</span>
+                            <span className={BADGE}>{campaign.status}</span>
+                          </div>
+                          <p className="font-body-main text-on-surface-variant truncate text-[12.5px]">
+                            {campaign.objective || campaign.narrative || campaign.trigger || campaign.segment || '—'}
+                          </p>
+                          <div className="mt-2 flex items-center gap-3 font-label-mono text-[10px] uppercase tracking-widest text-outline">
+                            <span>{targets} tgt</span>
+                            <span>{sent} sent</span>
+                            <span>{replies} rep</span>
+                            <span>{content} cnt</span>
+                          </div>
                         </div>
-                        <p className="font-body-main text-on-surface-variant truncate text-[12.5px]">
-                          {campaign.objective || campaign.narrative || campaign.trigger || campaign.segment || '—'}
-                        </p>
-                        <div className="mt-2 flex items-center gap-3 font-label-mono text-[10px] uppercase tracking-widest text-outline">
-                          <span>{targets} tgt</span>
-                          <span>{sent} sent</span>
-                          <span>{replies} rep</span>
-                          <span>{content} cnt</span>
-                        </div>
+                        <span aria-hidden className="lg:hidden text-on-surface-variant text-lg leading-none shrink-0">›</span>
                       </div>
                     </button>
                   )
@@ -365,23 +374,26 @@ export default function CampaignsView({ profile }: Props) {
           )}
         </section>
 
-        {selected ? (
-          <CampaignDetail
-            campaign={selected}
-            loading={detailLoading}
-            targets={currentTargets}
-            links={detail?.content_links ?? []}
-            assets={detail?.assets ?? []}
-            onStatus={action => void updateStatus(selected.id, action)}
-            onRemove={() => setRemoveCampaign(selected)}
-            onDiscover={() => void discoverMore(selected)}
-            discovering={discoveringId === selected.id}
-          />
-        ) : (
-          <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
-            Select or create a campaign to see execution lanes.
-          </div>
-        )}
+        <div className={`lg:block ${mobileShowDetail ? '' : 'hidden'}`}>
+          {selected ? (
+            <CampaignDetail
+              campaign={selected}
+              loading={detailLoading}
+              targets={currentTargets}
+              links={detail?.content_links ?? []}
+              assets={detail?.assets ?? []}
+              onStatus={action => void updateStatus(selected.id, action)}
+              onRemove={() => setRemoveCampaign(selected)}
+              onDiscover={() => void discoverMore(selected)}
+              discovering={discoveringId === selected.id}
+              onMobileBack={() => setMobileShowDetail(false)}
+            />
+          ) : (
+            <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
+              Select or create a campaign to see execution lanes.
+            </div>
+          )}
+        </div>
       </div>
       {removeCampaign && (
         <RemoveCampaignModal
@@ -394,7 +406,7 @@ export default function CampaignsView({ profile }: Props) {
   )
 }
 
-function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, onRemove, onDiscover, discovering }: { campaign: Campaign; loading: boolean; targets: CampaignTarget[]; links: CampaignContentLink[]; assets: CampaignAsset[]; onStatus: (action: 'activate' | 'pause' | 'complete') => void; onRemove: () => void; onDiscover: () => void; discovering: boolean }) {
+function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, onRemove, onDiscover, discovering, onMobileBack }: { campaign: Campaign; loading: boolean; targets: CampaignTarget[]; links: CampaignContentLink[]; assets: CampaignAsset[]; onStatus: (action: 'activate' | 'pause' | 'complete') => void; onRemove: () => void; onDiscover: () => void; discovering: boolean; onMobileBack?: () => void }) {
   const readiness = campaign.readiness
   const discovery = campaign.learnings ?? {}
   const contentItems = [
@@ -419,6 +431,14 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
     : ''
   return (
     <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-md md:p-stack-lg">
+      {onMobileBack && (
+        <button
+          onClick={onMobileBack}
+          className="lg:hidden mb-stack-md inline-flex items-center gap-1.5 font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+        >
+          <span aria-hidden>‹</span> All campaigns
+        </button>
+      )}
       <div className="flex items-start justify-between gap-stack-md flex-wrap">
         <div className="min-w-0 flex-1">
           <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
@@ -429,7 +449,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
             {readiness?.nextAction ?? 'Choose the next GTM constraint to remove.'}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <span className={BADGE}>{campaign.status}</span>
           {campaign.status !== 'active' && (
             <button onClick={() => onStatus('activate')} disabled={!readiness?.canLaunch} className={PRIMARY_BTN}>
