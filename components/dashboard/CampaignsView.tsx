@@ -444,7 +444,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
           <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
             Selected campaign {loading ? '· syncing…' : ''}
           </p>
-          <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2 break-words">{campaign.name}</h3>
+          <h3 className="font-h1-editorial text-[clamp(1.5rem,5vw,34px)] leading-tight text-on-surface mt-2 break-words">{campaign.name}</h3>
           <p className="font-body-main text-on-surface-variant mt-2 text-[13px] max-w-prose break-words">
             {readiness?.nextAction ?? 'Choose the next GTM constraint to remove.'}
           </p>
@@ -462,7 +462,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
         </div>
       </div>
 
-      <div className="mt-stack-lg grid md:grid-cols-2 gap-x-stack-lg gap-y-stack-md">
+      <div className="mt-stack-lg grid grid-cols-1 md:grid-cols-2 gap-x-stack-lg gap-y-stack-md min-w-0">
         <Field label="Objective" value={campaign.objective || campaign.name} />
         <Field label="Audience" value={campaign.segment} />
         <Field label="Trigger" value={campaign.trigger} />
@@ -518,12 +518,12 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
         <Tiny label="Booked" value={campaign.target_counts?.booked ?? 0} />
       </div>
 
-      <div className="mt-6 grid lg:grid-cols-2 gap-stack-md">
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-stack-md min-w-0">
         <LearningPanel learning={campaignLearning} />
         <AirCoverPanel items={airCover} hasContent={contentItems.length > 0} />
       </div>
 
-      <div className="mt-6 grid md:grid-cols-2 gap-stack-md">
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-stack-md min-w-0">
         <Lane
           title="Targets"
           empty="No targets enrolled yet."
@@ -570,13 +570,13 @@ type CampaignLearning = {
 
 function LearningPanel({ learning }: { learning: CampaignLearning }) {
   return (
-    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4">
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4 min-w-0">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Learning loop</p>
-          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1">{learning.stage}</p>
+          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1 break-words">{learning.stage}</p>
         </div>
-        <span className={BADGE_ACCENT}>{learning.replyRate}% reply</span>
+        <span className={`${BADGE_ACCENT} shrink-0 whitespace-nowrap`}>{learning.replyRate}% reply</span>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {learning.bullets.map(item => (
@@ -586,26 +586,26 @@ function LearningPanel({ learning }: { learning: CampaignLearning }) {
           </div>
         ))}
       </div>
-      <p className="mt-3 font-body-main text-on-surface-variant text-[12.5px] leading-relaxed">{learning.nextMove}</p>
+      <p className="mt-3 font-body-main text-on-surface-variant text-[12.5px] leading-relaxed break-words">{learning.nextMove}</p>
     </div>
   )
 }
 
 function AirCoverPanel({ items, hasContent }: { items: Array<{ title: string; meta: string }>; hasContent: boolean }) {
   return (
-    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4">
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4 min-w-0">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Content air cover</p>
-          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1">{hasContent ? 'Assets attached' : 'Suggested companion assets'}</p>
+          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1 break-words">{hasContent ? 'Assets attached' : 'Suggested companion assets'}</p>
         </div>
-        <span className={hasContent ? BADGE_ACCENT : BADGE}>campaign support</span>
+        <span className={`${hasContent ? BADGE_ACCENT : BADGE} shrink-0 whitespace-nowrap`}>campaign support</span>
       </div>
       <div className="mt-3 space-y-2">
         {items.map(item => (
-          <div key={item.title} className="bg-surface-container-lowest hairline-border rounded p-2">
+          <div key={item.title} className="bg-surface-container-lowest hairline-border rounded p-2 min-w-0">
             <div className="font-body-main font-medium text-on-surface text-[13px] truncate">{item.title}</div>
-            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{item.meta}</div>
+            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5 break-words">{item.meta}</div>
           </div>
         ))}
       </div>
@@ -688,16 +688,16 @@ function inferPersona(title?: string | null): string | null {
 
 function Lane({ title, empty, items }: { title: string; empty: string; items: Array<{ id: string; title: string; meta: string }> }) {
   return (
-    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-3">
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-3 min-w-0">
       <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-2">{title}</div>
       {items.length === 0 ? (
         <div className="font-body-main text-on-surface-variant text-[12.5px]">{empty}</div>
       ) : (
         <div className="space-y-2">
           {items.slice(0, 5).map(item => (
-            <div key={item.id} className="bg-surface-container-lowest hairline-border rounded p-2">
+            <div key={item.id} className="bg-surface-container-lowest hairline-border rounded p-2 min-w-0">
               <div className="font-body-main font-medium text-on-surface text-[13px] truncate">{item.title}</div>
-              <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{item.meta}</div>
+              <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5 break-words">{item.meta}</div>
             </div>
           ))}
         </div>
