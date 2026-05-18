@@ -319,8 +319,8 @@ export default function CampaignsView({ profile }: Props) {
       </section>
 
       {/* Board + detail — master/detail on mobile, side-by-side on lg+ */}
-      <div className="grid lg:grid-cols-[minmax(300px,360px)_1fr] gap-stack-lg items-start">
-        <section className={`lg:sticky lg:top-6 lg:block ${mobileShowDetail ? 'hidden' : ''}`}>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] gap-stack-lg items-start min-w-0">
+        <section className={`min-w-0 lg:sticky lg:top-6 lg:block ${mobileShowDetail ? 'hidden' : ''}`}>
           <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2 gap-3 flex-wrap">
             <h3 className="font-h1-editorial text-h1-editorial">Campaigns</h3>
             <span className={BADGE_ACCENT}>{campaigns.length} Motions</span>
@@ -345,19 +345,19 @@ export default function CampaignsView({ profile }: Props) {
                       key={campaign.id}
                       onClick={() => { setSelectedId(campaign.id); setMobileShowDetail(true) }}
                       aria-current={active}
-                      className={`relative w-full text-left px-5 py-4 transition-colors ${active ? 'bg-surface-container-low lg:bg-surface-container-low' : 'hover:bg-surface-container-low/60'}`}
+                      className={`relative w-full text-left px-4 sm:px-5 py-4 transition-colors ${active ? 'bg-surface-container-low lg:bg-surface-container-low' : 'hover:bg-surface-container-low/60'}`}
                     >
                       {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] bg-primary rounded-r hidden lg:block" />}
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="font-body-main font-medium text-on-surface truncate">{campaign.name}</span>
-                            <span className={BADGE}>{campaign.status}</span>
+                          <div className="flex items-center gap-2 mb-1 min-w-0">
+                            <span className="font-body-main font-medium text-on-surface truncate min-w-0 flex-1">{campaign.name}</span>
+                            <span className={`${BADGE} shrink-0`}>{campaign.status}</span>
                           </div>
                           <p className="font-body-main text-on-surface-variant truncate text-[12.5px]">
                             {campaign.objective || campaign.narrative || campaign.trigger || campaign.segment || '—'}
                           </p>
-                          <div className="mt-2 flex items-center gap-3 font-label-mono text-[10px] uppercase tracking-widest text-outline">
+                          <div className="mt-2 flex items-center gap-3 font-label-mono text-[10px] uppercase tracking-widest text-outline flex-wrap">
                             <span>{targets} tgt</span>
                             <span>{sent} sent</span>
                             <span>{replies} rep</span>
@@ -374,7 +374,7 @@ export default function CampaignsView({ profile }: Props) {
           )}
         </section>
 
-        <div className={`lg:block ${mobileShowDetail ? '' : 'hidden'}`}>
+        <div className={`min-w-0 lg:block ${mobileShowDetail ? '' : 'hidden'}`}>
           {selected ? (
             <CampaignDetail
               campaign={selected}
@@ -430,7 +430,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
     ? ` · ${Math.round(Number(progress.completion) || 0)}%`
     : ''
   return (
-    <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-md md:p-stack-lg">
+    <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-md md:p-stack-lg min-w-0">
       {onMobileBack && (
         <button
           onClick={onMobileBack}
@@ -444,8 +444,8 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
           <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
             Selected campaign {loading ? '· syncing…' : ''}
           </p>
-          <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2">{campaign.name}</h3>
-          <p className="font-body-main text-on-surface-variant mt-2 text-[13px] max-w-prose">
+          <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2 break-words">{campaign.name}</h3>
+          <p className="font-body-main text-on-surface-variant mt-2 text-[13px] max-w-prose break-words">
             {readiness?.nextAction ?? 'Choose the next GTM constraint to remove.'}
           </p>
         </div>
@@ -726,9 +726,9 @@ function Tiny({ label, value }: { label: string; value: number }) {
 
 function Field({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">{label}</div>
-      <div className="font-body-main text-on-surface text-[13.5px] leading-relaxed">{value || <span className="text-on-surface-variant italic">Not set</span>}</div>
+      <div className="font-body-main text-on-surface text-[13.5px] leading-relaxed break-words">{value || <span className="text-on-surface-variant italic">Not set</span>}</div>
     </div>
   )
 }
