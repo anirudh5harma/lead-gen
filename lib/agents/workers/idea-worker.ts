@@ -8,6 +8,7 @@ import { recordAgentEvent } from '@/lib/agent-events'
 import type { WorkerTaskDispatch, WorkerTaskResult } from '../protocol/types'
 import { resolveWorkspaceId } from '../core/workspace-agents'
 import { complete, parseJsonLoose } from '@/lib/llm'
+import { collectPrivateCompanyNames, sanitizePublicCompanyReferences } from '@/lib/gtm/content-company-privacy'
 
 interface IdeaDraft { angle: string; hook?: string; rationale?: string; platform?: 'linkedin' | 'x' | 'both'; score?: number }
 
@@ -37,11 +38,15 @@ export async function run(
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(12)
+        const privateCompanyNames = collectPrivateCompanyNames({
+          ownCompanyName: profile?.company_name ?? null,
+          leadCompanyNames: (leads ?? []).map(lead => lead.target_company),
+        })
         const signalLines = (leads ?? [])
           .map((l) => `- ${l.target_company ?? 'a company'}: ${l.relevance_reason ?? (l as { signal?: { signal_type?: string } | null }).signal?.signal_type ?? 'recent activity'}`)
           .join('\n') || '- (no recent signals; use the positioning below)'
 
-        const system = 'You are a B2B content strategist. Propose sharp, specific LinkedIn/X post angles a founder could publish this week. Be concrete; avoid generic advice. Respond with a JSON object {"ideas":[{"angle","hook","rationale","platform","score"}]} where platform is "linkedin"|"x"|"both" and score is 0-100 (publish-worthiness).'
+        const system = 'You are a B2B content strategist. Propose sharp, specific LinkedIn/X post angles a founder could publish this week. Be concrete; avoid generic advice. Recent lead company names are private inspiration only; do not include third-party company, lead, account, customer, or prospect names in public angles, hooks, or post copy. Respond with a JSON object {"ideas":[{"angle","hook","rationale","platform","score"}]} where platform is "linkedin"|"x"|"both" and score is 0-100 (publish-worthiness).'
         const prompt = [
           `Company: ${profile?.company_name ?? 'the company'}`,
           `What they do: ${profile?.services_description ?? '(unspecified)'}`,
@@ -61,17 +66,20 @@ export async function run(
         let inserted = 0
         for (const idea of ideas) {
           if (!idea?.angle) continue
+          const angle = sanitizePublicCompanyReferences(idea.angle, privateCompanyNames).slice(0, 600)
+          const hook = idea.hook ? sanitizePublicCompanyReferences(idea.hook, privateCompanyNames).slice(0, 400) : null
+          const rationale = idea.rationale ? sanitizePublicCompanyReferences(idea.rationale, privateCompanyNames).slice(0, 800) : null
           const { error } = await supabase.from('content_ideas').insert({
             workspace_id: workspaceId,
             user_id: userId,
             source: topic ? 'trend' : 'signal',
             platform: platform ?? (idea.platform === 'x' || idea.platform === 'both' ? idea.platform : 'linkedin'),
-            angle: idea.angle.slice(0, 600),
-            hook: idea.hook?.slice(0, 400) ?? null,
-            rationale: idea.rationale?.slice(0, 800) ?? null,
+            angle,
+            hook,
+            rationale,
             score: typeof idea.score === 'number' ? Math.max(0, Math.min(100, idea.score)) : 60,
             status: 'proposed',
-            metadata: { llm_provider: provider },
+            metadata: { llm_provider: provider, no_public_company_names: true },
           })
           if (!error) inserted++
         }

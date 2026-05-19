@@ -1,6 +1,6 @@
-import { normalizeLeadFeedSnapshot } from '@/lib/lead-sources'
-import { buildSignalIntelligence } from './signal-intelligence'
-import { accountKey, normalizeDomain, normalizeEntityName } from './identity'
+import { normalizeLeadFeedSnapshot } from '../lead-sources.ts'
+import { buildSignalIntelligence } from './signal-intelligence.ts'
+import { accountKey, normalizeDomain, normalizeEntityName } from './identity.ts'
 
 export interface OutreachPlan {
   version: 'outreach_plan_v1'
@@ -81,8 +81,11 @@ export function buildOutreachPlan(input: {
     (contactVerified ? 12 : 0) +
     (unlocked ? 8 : 0),
   )
+  const hardAutonomousChecksPassed = safetyChecks
+    .filter(check => check.name === 'lead_unlocked' || check.name === 'recipient_present')
+    .every(check => check.passed)
   const autonomousReady = input.mode === 'autonomous'
-    ? confidence >= 62 && safetyChecks.every(check => check.passed) && !riskFlags.includes('contact_not_verified')
+    ? hardAutonomousChecksPassed
     : confidence >= 45 && safetyChecks.some(check => check.name === 'recipient_present' && check.passed)
 
   return {

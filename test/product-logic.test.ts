@@ -44,6 +44,7 @@ import { buildApolloPersonTitles, contactTitleMatchesRoles, normalizeRoleSelecti
 import { apolloCompanyMatchesFilters } from '../lib/apollo.ts'
 import { isPublishModeQueueEligible, selectPreferredDistributionAccount } from '../lib/distribution.ts'
 import { buildRevenueSnapshot } from '../lib/revenue-ux.ts'
+import { buildOutreachPlan } from '../lib/gtm/outreach-plan.ts'
 
 test('free workspace keeps only the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -1381,6 +1382,30 @@ test('revenue snapshot flags no-send state and proposes outreach action', () => 
   assert.equal(snapshot.windows.sent30d, 0)
   assert.equal(snapshot.notWorking.some(item => item.id === 'no-sends'), true)
   assert.equal(snapshot.actions.some(action => action.id === 'send-first-batch'), true)
+})
+
+test('autonomous outreach plans do not require review for sendable matched leads', () => {
+  const plan = buildOutreachPlan({
+    mode: 'autonomous',
+    lead: {
+      id: 'lead-1',
+      target_company: 'Acme',
+      relevance_score: 7,
+      relevance_reason: 'Hiring GTM leadership and expanding outbound.',
+      is_unlocked: true,
+      contact_email: 'buyer@acme.example',
+      contact_verified: false,
+      status: 'new',
+      created_at: '2026-05-01T00:00:00.000Z',
+    },
+    senderContext: {
+      companyName: 'Bombsell',
+      servicesDescription: 'Signal-led outbound automation',
+    },
+  })
+
+  assert.equal(plan.requires_review, false)
+  assert.ok(plan.risk_flags.includes('contact_not_verified'))
 })
 
 test('revenue snapshot marks healthy activity when sends replies and bookings are present', () => {

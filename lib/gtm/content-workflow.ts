@@ -18,6 +18,11 @@ import {
   type MarketingContentType,
   type MarketingDraftSettings,
 } from './content-planning'
+import {
+  collectPrivateCompanyNames,
+  inferPrivateCompanyNamesFromText,
+  sanitizePublicCompanyReferences,
+} from './content-company-privacy'
 import { upsertGtmEntityEmbedding } from './semantic-context'
 
 export type { MarketingContentTab, MarketingContentType, MarketingDraftSettings } from './content-planning'
@@ -711,9 +716,16 @@ async function generateContentIdeas(
 
   const context = await buildContentContextSnapshot(supabase, input)
   await storeContentContextSnapshot(supabase, input, context)
+  const privateCompanyNames = collectPrivateCompanyNames({
+    ownCompanyName: context.company.name,
+    leadCompanyNames: context.recentSignals.map(signal => signal.company),
+  })
 
   const pillars = await ensureContentPillars(supabase, input, context)
-  const generatedIdeas = await generateCreativeIdeas(context, pillars)
+  const generatedIdeas = sanitizeGeneratedIdeasForCompanyPrivacy(
+    await generateCreativeIdeas(context, pillars),
+    privateCompanyNames,
+  )
   if (generatedIdeas.length === 0) return
 
   const scoredIdeas = applyDailySuggestionCaps(scoreAndDedupeIdeas(generatedIdeas, context), remainingByTab)
@@ -721,6 +733,7 @@ async function generateContentIdeas(
       batchDate,
       rank,
       inspiration: inspirationForIdea(context, idea),
+      privateCompanyNames,
     }))
 
   if (scoredIdeas.length === 0) return
@@ -1078,6 +1091,7 @@ async function generateCreativeIdeas(context: ContentContextSnapshot, pillars: C
         'You are Bombsell’s creative GTM content strategist.',
         'Generate original, useful content ideas grounded only in supplied context.',
         'Every idea must cite a memory insight, ICP pain, or recent signal. Avoid templates, empty thought leadership, and invented claims.',
+        'Lead and account company names are private inspiration only; do not include third-party company names in public-facing titles, angles, briefs, or post copy.',
         'Use inspiration patterns only as structural guidance; do not copy source wording, full outlines, or video footage.',
         'For videos, create concise original avatar-led concepts that can become scripts of 75 spoken words or less and run 30 seconds or less.',
         'Return only valid JSON.',
@@ -1185,10 +1199,14 @@ function buildGeneratedIdeaRow(
     batchDate: string
     rank: number
     inspiration: Array<{ label: string; value: string }>
+    privateCompanyNames: string[]
   },
 ) {
   const tab = tabForContentType(idea.contentType)
   const draftSettings = defaultDraftSettingsForContentType(idea.contentType)
+  const angle = sanitizePublicCompanyReferences(formatGeneratedIdeaAngle(idea), options.privateCompanyNames)
+  const draftBrief = sanitizePublicCompanyReferences(idea.draftBrief || idea.angle || idea.title, options.privateCompanyNames)
+  const whyNow = sanitizePublicCompanyReferences(idea.whyNow, options.privateCompanyNames)
   return {
     user_id: userId,
     client_id: clientId,
@@ -1205,12 +1223,12 @@ function buildGeneratedIdeaRow(
     suggestion_rank: options.rank,
     draft_settings: draftSettings,
     audience: idea.audience.slice(0, 240) || audienceForContentType(idea.contentType),
-    angle: formatGeneratedIdeaAngle(idea).slice(0, 500),
-    pillar: idea.pillar.slice(0, 180) || null,
+    angle: angle.slice(0, 500),
+    pillar: sanitizePublicCompanyReferences(idea.pillar, options.privateCompanyNames).slice(0, 180) || null,
     idea_format: idea.format.slice(0, 120) || null,
-    why_now: idea.whyNow.slice(0, 800) || null,
+    why_now: whyNow.slice(0, 800) || null,
     proof_points: [
-      { label: 'Content brief', value: idea.draftBrief || idea.angle || idea.title },
+      { label: 'Content brief', value: draftBrief },
       ...idea.sourceInsights,
       ...options.inspiration,
     ].slice(0, 6),
@@ -1219,8 +1237,8 @@ function buildGeneratedIdeaRow(
     score,
     scoring_debug: { ...debug, daily_cap: DAILY_SUGGESTION_CAP, tab },
     compliance_flags: idea.contentType === 'video_script'
-      ? { ai_avatar: true, inspiration_only: true, source_footage_allowed: false, requires_ai_label: true }
-      : { inspiration_only: true },
+      ? { ai_avatar: true, inspiration_only: true, source_footage_allowed: false, requires_ai_label: true, no_public_company_names: true, private_company_names: options.privateCompanyNames.slice(0, 40) }
+      : { inspiration_only: true, no_public_company_names: true, private_company_names: options.privateCompanyNames.slice(0, 40) },
     status: 'new',
     draft: {},
   }
@@ -1230,12 +1248,14 @@ async function generateDraftForIdea(idea: ContentIdeaRow, settings?: MarketingDr
   const proof = normalizeProofPoints(idea.proof_points)
   const insights = normalizeProofPoints(idea.source_insights)
   const draftSettings = normalizeDraftSettings(settings ?? (idea as { draft_settings?: unknown }).draft_settings, idea.content_type)
+  const privateCompanyNames = privateCompanyNamesForIdea(idea, proof, insights)
   try {
     const text = await completePrompt({
       system: [
         'You are Bombsell’s senior B2B content strategist.',
         'Write original, specific marketing copy from the provided idea brief.',
         'Do not use a reusable template. Do not invent proof, customer claims, metrics, or named examples.',
+        'Proof points may contain private lead/account company names for context. Do not name third-party companies, leads, accounts, customers, or prospects in public post titles or body copy; generalize them as market signals, one account, a buyer, or a team.',
         'Preserve emojis and links only when requested by draft settings or source assets.',
         'If the content type is video_script, write only a concise AI-avatar spoken script plus a one-line caption. Keep the spoken script at 75 words or less and 30 seconds or less.',
         'Return only valid JSON with "title" and "body" string fields.',
@@ -1267,19 +1287,23 @@ async function generateDraftForIdea(idea: ContentIdeaRow, settings?: MarketingDr
     })
     const parsed = JSON.parse(text) as { title?: unknown; body?: unknown }
     if (typeof parsed.title === 'string' && typeof parsed.body === 'string') {
-      return { title: parsed.title.slice(0, 240), body: clampBodyForContentType(idea.content_type, parsed.body) }
+      return {
+        title: sanitizePublicCompanyReferences(parsed.title, privateCompanyNames).slice(0, 240),
+        body: clampBodyForContentType(idea.content_type, sanitizePublicCompanyReferences(parsed.body, privateCompanyNames)),
+      }
     }
   } catch (error) {
     console.error('[content-workflow] suggested draft generation failed:', error)
   }
 
+  const fallbackBody = sanitizePublicCompanyReferences([
+    idea.angle,
+    stringValue(idea.why_now),
+    insights.map(point => `${point.label}: ${point.value}`).join('\n'),
+  ].filter(Boolean).join('\n\n'), privateCompanyNames)
   return {
-    title: idea.angle,
-    body: [
-      idea.angle,
-      stringValue(idea.why_now),
-      insights.map(point => `${point.label}: ${point.value}`).join('\n'),
-    ].filter(Boolean).join('\n\n'),
+    title: sanitizePublicCompanyReferences(idea.angle, privateCompanyNames),
+    body: fallbackBody,
   }
 }
 
@@ -1556,6 +1580,34 @@ function normalizeGeneratedIdeas(value: unknown): GeneratedContentIdea[] {
       }
     })
     .filter((idea): idea is GeneratedContentIdea => Boolean(idea))
+}
+
+function sanitizeGeneratedIdeasForCompanyPrivacy(
+  ideas: GeneratedContentIdea[],
+  privateCompanyNames: string[],
+): GeneratedContentIdea[] {
+  if (privateCompanyNames.length === 0) return ideas
+  return ideas.map(idea => ({
+    ...idea,
+    title: sanitizePublicCompanyReferences(idea.title, privateCompanyNames),
+    pillar: sanitizePublicCompanyReferences(idea.pillar, privateCompanyNames),
+    whyNow: sanitizePublicCompanyReferences(idea.whyNow, privateCompanyNames),
+    angle: sanitizePublicCompanyReferences(idea.angle, privateCompanyNames),
+    draftBrief: sanitizePublicCompanyReferences(idea.draftBrief, privateCompanyNames),
+  }))
+}
+
+function privateCompanyNamesForIdea(
+  idea: ContentIdeaRow,
+  proof: Array<{ label: string; value: string }>,
+  insights: Array<{ label: string; value: string }>,
+): string[] {
+  const flags = normalizeRecord((idea as { compliance_flags?: unknown }).compliance_flags)
+  const fromFlags = stringArray(flags.private_company_names)
+  const fromEvidence = inferPrivateCompanyNamesFromText(
+    proof.concat(insights).map(point => point.value),
+  )
+  return [...new Set([...fromFlags, ...fromEvidence])]
 }
 
 function normalizeContentType(value: string): MarketingContentType | null {
