@@ -34,11 +34,15 @@ export async function POST(request: NextRequest) {
 
   // ── 1. Ingest recent agent feedback ────────────────────────────────────────
   try {
+    // supervisor records the task-completion event with status='completed'
+    // (see lib/agents/core/supervisor.ts:429); filtering on 'success' here
+    // silently dropped every event so the feedback loop never ingested
+    // anything.
     const recentEvents = await supabase
       .from('agent_events')
       .select('*')
       .eq('event_type', 'task.completed')
-      .eq('status', 'success')
+      .eq('status', 'completed')
       .order('created_at', { ascending: false })
       .limit(100)
 
@@ -107,22 +111,29 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 2b. Per-workspace reward loop ───────────────────────────────────────────
+  // Runs for both engines so the content side gets its own tuning log entry +
+  // hint application path. applyWorkspaceTuning is engine-agnostic in shape —
+  // outbound hints come from gtm_eval_traces, content hints from
+  // content_engagement traces (see engine.ts §applyWorkspaceTuning).
   try {
     const workspaces = await listActiveWorkspaces(supabase, 7)
+    const engines: Array<'outbound' | 'content'> = ['outbound', 'content']
     let tuned = 0
     let totalChanges = 0
     for (const ws of workspaces) {
-      try {
-        const r = await applyWorkspaceTuning(supabase, {
-          workspaceId: ws.workspaceId, userId: ws.userId, clientId: ws.clientId, engine: 'outbound',
-        })
-        if (r.hints > 0 || r.changes.length > 0) tuned++
-        totalChanges += r.changes.length
-      } catch (e) {
-        errors.push(`Workspace tuning ${ws.workspaceId}: ${e instanceof Error ? e.message : String(e)}`)
+      for (const engine of engines) {
+        try {
+          const r = await applyWorkspaceTuning(supabase, {
+            workspaceId: ws.workspaceId, userId: ws.userId, clientId: ws.clientId, engine,
+          })
+          if (r.hints > 0 || r.changes.length > 0) tuned++
+          totalChanges += r.changes.length
+        } catch (e) {
+          errors.push(`Workspace tuning ${ws.workspaceId} (${engine}): ${e instanceof Error ? e.message : String(e)}`)
+        }
       }
     }
-    results.push(`Per-workspace reward loop: ${workspaces.length} active workspaces, ${tuned} tuned, ${totalChanges} changes applied`)
+    results.push(`Per-workspace reward loop: ${workspaces.length} active workspaces × ${engines.length} engines, ${tuned} tuned, ${totalChanges} changes applied`)
   } catch (e) {
     errors.push(`Per-workspace reward loop: ${e instanceof Error ? e.message : String(e)}`)
   }

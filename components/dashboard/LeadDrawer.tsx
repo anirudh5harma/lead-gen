@@ -131,10 +131,13 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
 
   return (
     <>
-      {/* Overlay */}
+      {/* Overlay — `bg-on-surface/45` matches the other modal scrims in the
+          app (DashboardShell mobile nav, CampaignsView remove confirm). The
+          earlier /10 value was so faint the drawer looked like it floated
+          on top of fully visible content. */}
       <div
         onClick={onClose}
-        className={`fixed inset-0 bg-on-surface/10 backdrop-blur-sm z-[60] transition-opacity ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        className={`fixed inset-0 bg-on-surface/45 backdrop-blur-sm z-[60] transition-opacity ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
       />
       {/* Drawer */}
       <aside

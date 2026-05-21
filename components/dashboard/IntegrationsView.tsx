@@ -598,9 +598,9 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
-      <div className="absolute inset-0 bg-[var(--color-text-1)]/40" onClick={onClose} />
-      <div className="relative card p-6 w-full max-w-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-6 py-8">
+      <div className="absolute inset-0 bg-on-surface/45 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative card p-6 w-full max-w-md max-h-[calc(100vh-4rem)] overflow-y-auto">
         <div className="flex items-baseline justify-between mb-5">
           <h3 className="text-[16px] font-medium tracking-tight">{title}</h3>
           <button onClick={onClose} className="text-[var(--color-text-3)] hover:text-[var(--color-text-1)] text-[18px] leading-none" aria-label="Close">×</button>

@@ -11,6 +11,7 @@ import { useToast } from '@/components/Toast'
 interface Props { profile: UserProfile; userTier: SubscriptionTier }
 
 type AutomationMode = 'research_only' | 'approve_first' | 'autopilot'
+type Engine = 'outbound' | 'content'
 
 /**
  * Settings — minimal, single-column.
@@ -21,26 +22,50 @@ export default function SettingsView({ profile }: Props) {
   const router = useRouter()
   const toast = useToast()
   const canUseAutopilot = true   // autopilot available on every plan
-  const [mode, setMode] = useState<AutomationMode>(profile.automation_mode ?? 'approve_first')
-  const [savingMode, setSavingMode] = useState(false)
+
+  // Two engines, two modes — outbound + content can run on different autonomy.
+  // Initial outbound seed from the profile keeps the UI honest on first paint;
+  // content needs a server fetch since it lives on workspace_agents.
+  const [outboundMode, setOutboundMode] = useState<AutomationMode>(profile.automation_mode ?? 'approve_first')
+  const [contentMode, setContentMode] = useState<AutomationMode>('approve_first')
+  const [savingEngine, setSavingEngine] = useState<Engine | null>(null)
+  const [loadingEngines, setLoadingEngines] = useState(true)
   const [billingBusy, setBillingBusy] = useState(false)
   const [sessionBusy, setSessionBusy] = useState(false)
 
-  async function saveMode(next: AutomationMode) {
-    if (next === mode) return
-    const previous = mode
-    setMode(next)            // optimistic
-    setSavingMode(true)
-    const res = await fetch('/api/profile/field', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ automation_mode: next }),
-    })
-    setSavingMode(false)
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      toast.error(body?.error || 'Could not save automation mode.')
-      setMode(previous)      // revert
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/engine-autopilot')
+      .then(r => r.json())
+      .then((data: { outbound?: AutomationMode; content?: AutomationMode }) => {
+        if (cancelled) return
+        if (data?.outbound) setOutboundMode(data.outbound)
+        if (data?.content) setContentMode(data.content)
+      })
+      .catch(() => { /* keep optimistic defaults */ })
+      .finally(() => { if (!cancelled) setLoadingEngines(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  async function saveEngineMode(engine: Engine, next: AutomationMode) {
+    const current = engine === 'outbound' ? outboundMode : contentMode
+    if (next === current) return
+    const setter = engine === 'outbound' ? setOutboundMode : setContentMode
+    setter(next)            // optimistic
+    setSavingEngine(engine)
+    try {
+      const res = await fetch('/api/engine-autopilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engine, mode: next }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string }
+        toast.error(body?.error || `Could not save ${engine} mode.`)
+        setter(current)      // revert
+      }
+    } finally {
+      setSavingEngine(null)
     }
   }
 
@@ -92,31 +117,39 @@ export default function SettingsView({ profile }: Props) {
       </Block>
 
       <Block id="settings-automation" label="03" title="Automation">
-        <p className="text-[13px] text-[var(--color-text-3)] mb-4">Choose how much agency you give the fleet. Available on every plan; change it any time.</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {([
+        <p className="text-[13px] text-[var(--color-text-3)] mb-5">Choose how much agency each engine gets. Available on every plan; change it any time.</p>
+
+        <EngineModePicker
+          engine="outbound"
+          label="Outbound engine"
+          subLabel="Signal → enrich → draft → send → book"
+          mode={outboundMode}
+          saving={savingEngine === 'outbound' || loadingEngines}
+          canUseAutopilot={canUseAutopilot}
+          options={[
             ['research_only', 'Research only', 'Surface accounts. No drafts, no sends.'],
             ['approve_first', 'Approve first', 'Drafts written, you approve before sending.'],
             ['autopilot', 'Autopilot', 'Drafts and sends automatically with safety checks.'],
-          ] as Array<[AutomationMode, string, string]>).map(([id, t, d]) => (
-            <button
-              key={id}
-              onClick={() => void saveMode(id)}
-              disabled={savingMode || (id === 'autopilot' && !canUseAutopilot)}
-              className={`card text-left p-4 transition-colors disabled:opacity-50 ${
-                mode === id ? 'border-[var(--color-text-1)]' : 'hover:border-[var(--color-line-3)]'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className={`dot ${mode === id ? 'dot-running' : 'dot-idle'}`} />
-                <span className="text-[13.5px] font-medium">{t}</span>
-                {id === 'autopilot' && !canUseAutopilot && <span className="pill ml-auto">Growth</span>}
-              </div>
-              <p className="text-[12.5px] text-[var(--color-text-3)] mt-2">{d}</p>
-            </button>
-          ))}
+          ]}
+          onChange={(next) => void saveEngineMode('outbound', next)}
+        />
+
+        <div className="mt-6">
+          <EngineModePicker
+            engine="content"
+            label="Content engine"
+            subLabel="Idea → write → edit → schedule → publish"
+            mode={contentMode}
+            saving={savingEngine === 'content' || loadingEngines}
+            canUseAutopilot={canUseAutopilot}
+            options={[
+              ['research_only', 'Research only', 'Ideas only. No drafts, no posts.'],
+              ['approve_first', 'Approve first', 'Drafts written, you publish manually.'],
+              ['autopilot', 'Autopilot', 'Drafts and publishes on schedule.'],
+            ]}
+            onChange={(next) => void saveEngineMode('content', next)}
+          />
         </div>
-        {savingMode && <p className="mono mt-3">Saving…</p>}
       </Block>
 
       <Block id="settings-billing" label="04" title="Billing">
@@ -176,6 +209,57 @@ function CreditLedger() {
 
 function fmtDate(iso: string): string {
   try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) } catch { return '—' }
+}
+
+function EngineModePicker({
+  engine,
+  label,
+  subLabel,
+  mode,
+  saving,
+  canUseAutopilot,
+  options,
+  onChange,
+}: {
+  engine: Engine
+  label: string
+  subLabel: string
+  mode: AutomationMode
+  saving: boolean
+  canUseAutopilot: boolean
+  options: Array<[AutomationMode, string, string]>
+  onChange: (next: AutomationMode) => void
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <div>
+          <h4 className="text-[14px] font-semibold text-[var(--color-text-1)]">{label}</h4>
+          <p className="text-[12px] text-[var(--color-text-3)] mt-0.5">{subLabel}</p>
+        </div>
+        {saving && <span className="mono text-[var(--color-text-3)]">Saving…</span>}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {options.map(([id, t, d]) => (
+          <button
+            key={`${engine}-${id}`}
+            onClick={() => onChange(id)}
+            disabled={saving || (id === 'autopilot' && !canUseAutopilot)}
+            className={`card text-left p-4 transition-colors disabled:opacity-50 ${
+              mode === id ? 'border-[var(--color-text-1)]' : 'hover:border-[var(--color-line-3)]'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`dot ${mode === id ? 'dot-running' : 'dot-idle'}`} />
+              <span className="text-[13.5px] font-medium">{t}</span>
+              {id === 'autopilot' && !canUseAutopilot && <span className="pill ml-auto">Growth</span>}
+            </div>
+            <p className="text-[12.5px] text-[var(--color-text-3)] mt-2">{d}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function Block({ id, label, title, children }: { id?: string; label: string; title: string; children: React.ReactNode }) {
