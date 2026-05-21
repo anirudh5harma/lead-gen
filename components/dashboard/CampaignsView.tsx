@@ -116,6 +116,10 @@ export default function CampaignsView({ profile }: Props) {
   const [buildingFromPrompt, setBuildingFromPrompt] = useState(false)
   const [discoveringId, setDiscoveringId] = useState<string | null>(null)
   const [removeCampaign, setRemoveCampaign] = useState<Campaign | null>(null)
+  // Master-detail: on mobile, show only one pane at a time. Auto-selecting the
+  // first campaign on load shouldn't yank the user into the detail — only
+  // explicit selects (clicking a row, building a campaign) flip this on.
+  const [mobileShowDetail, setMobileShowDetail] = useState(false)
 
   const loadCampaigns = useCallback(async function loadCampaigns() {
     setLoading(true)
@@ -176,6 +180,7 @@ export default function CampaignsView({ profile }: Props) {
       if (!res.ok || !data.campaign) throw new Error(data.error ?? 'Campaign could not be built from prompt')
       setPromptDraft({ prompt: '', target_count: 10 })
       setSelectedId(data.campaign.id)
+      setMobileShowDetail(true)
       await loadCampaigns()
       await loadCampaignDetail(data.campaign.id)
       const generated = data.discovery?.generated ?? 0
@@ -241,6 +246,7 @@ export default function CampaignsView({ profile }: Props) {
         setDetail(null)
         setSelectedId(null)
         setRemoveCampaign(null)
+        setMobileShowDetail(false)
         toast.success('Campaign removed from the dashboard.')
         await loadCampaigns()
         return
@@ -312,9 +318,9 @@ export default function CampaignsView({ profile }: Props) {
         </div>
       </section>
 
-      {/* Board + detail */}
-      <div className="grid lg:grid-cols-[minmax(300px,360px)_1fr] gap-stack-lg items-start">
-        <section className="lg:sticky lg:top-6">
+      {/* Board + detail — master/detail on mobile, side-by-side on lg+ */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] gap-stack-lg items-start min-w-0">
+        <section className={`min-w-0 lg:sticky lg:top-6 lg:block ${mobileShowDetail ? 'hidden' : ''}`}>
           <div className="flex items-baseline justify-between mb-stack-lg hairline-b pb-2 gap-3 flex-wrap">
             <h3 className="font-h1-editorial text-h1-editorial">Campaigns</h3>
             <span className={BADGE_ACCENT}>{campaigns.length} Motions</span>
@@ -337,25 +343,28 @@ export default function CampaignsView({ profile }: Props) {
                   return (
                     <button
                       key={campaign.id}
-                      onClick={() => setSelectedId(campaign.id)}
+                      onClick={() => { setSelectedId(campaign.id); setMobileShowDetail(true) }}
                       aria-current={active}
-                      className={`relative w-full text-left px-5 py-4 transition-colors ${active ? 'bg-surface-container-low' : 'hover:bg-surface-container-low/60'}`}
+                      className={`relative w-full text-left px-4 sm:px-5 py-4 transition-colors ${active ? 'bg-surface-container-low lg:bg-surface-container-low' : 'hover:bg-surface-container-low/60'}`}
                     >
-                      {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] bg-primary rounded-r" />}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="font-body-main font-medium text-on-surface truncate">{campaign.name}</span>
-                          <span className={BADGE}>{campaign.status}</span>
+                      {active && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] bg-primary rounded-r hidden lg:block" />}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1 min-w-0">
+                            <span className="font-body-main font-medium text-on-surface truncate min-w-0 flex-1">{campaign.name}</span>
+                            <span className={`${BADGE} shrink-0`}>{campaign.status}</span>
+                          </div>
+                          <p className="font-body-main text-on-surface-variant truncate text-[12.5px]">
+                            {campaign.objective || campaign.narrative || campaign.trigger || campaign.segment || '—'}
+                          </p>
+                          <div className="mt-2 flex items-center gap-3 font-label-mono text-[10px] uppercase tracking-widest text-outline flex-wrap">
+                            <span>{targets} tgt</span>
+                            <span>{sent} sent</span>
+                            <span>{replies} rep</span>
+                            <span>{content} cnt</span>
+                          </div>
                         </div>
-                        <p className="font-body-main text-on-surface-variant truncate text-[12.5px]">
-                          {campaign.objective || campaign.narrative || campaign.trigger || campaign.segment || '—'}
-                        </p>
-                        <div className="mt-2 flex items-center gap-3 font-label-mono text-[10px] uppercase tracking-widest text-outline">
-                          <span>{targets} tgt</span>
-                          <span>{sent} sent</span>
-                          <span>{replies} rep</span>
-                          <span>{content} cnt</span>
-                        </div>
+                        <span aria-hidden className="lg:hidden text-on-surface-variant text-lg leading-none shrink-0">›</span>
                       </div>
                     </button>
                   )
@@ -365,23 +374,26 @@ export default function CampaignsView({ profile }: Props) {
           )}
         </section>
 
-        {selected ? (
-          <CampaignDetail
-            campaign={selected}
-            loading={detailLoading}
-            targets={currentTargets}
-            links={detail?.content_links ?? []}
-            assets={detail?.assets ?? []}
-            onStatus={action => void updateStatus(selected.id, action)}
-            onRemove={() => setRemoveCampaign(selected)}
-            onDiscover={() => void discoverMore(selected)}
-            discovering={discoveringId === selected.id}
-          />
-        ) : (
-          <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
-            Select or create a campaign to see execution lanes.
-          </div>
-        )}
+        <div className={`min-w-0 lg:block ${mobileShowDetail ? '' : 'hidden'}`}>
+          {selected ? (
+            <CampaignDetail
+              campaign={selected}
+              loading={detailLoading}
+              targets={currentTargets}
+              links={detail?.content_links ?? []}
+              assets={detail?.assets ?? []}
+              onStatus={action => void updateStatus(selected.id, action)}
+              onRemove={() => setRemoveCampaign(selected)}
+              onDiscover={() => void discoverMore(selected)}
+              discovering={discoveringId === selected.id}
+              onMobileBack={() => setMobileShowDetail(false)}
+            />
+          ) : (
+            <div className="bg-surface-container-lowest hairline-border rounded-lg p-12 text-center font-body-main text-on-surface-variant">
+              Select or create a campaign to see execution lanes.
+            </div>
+          )}
+        </div>
       </div>
       {removeCampaign && (
         <RemoveCampaignModal
@@ -394,7 +406,7 @@ export default function CampaignsView({ profile }: Props) {
   )
 }
 
-function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, onRemove, onDiscover, discovering }: { campaign: Campaign; loading: boolean; targets: CampaignTarget[]; links: CampaignContentLink[]; assets: CampaignAsset[]; onStatus: (action: 'activate' | 'pause' | 'complete') => void; onRemove: () => void; onDiscover: () => void; discovering: boolean }) {
+function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, onRemove, onDiscover, discovering, onMobileBack }: { campaign: Campaign; loading: boolean; targets: CampaignTarget[]; links: CampaignContentLink[]; assets: CampaignAsset[]; onStatus: (action: 'activate' | 'pause' | 'complete') => void; onRemove: () => void; onDiscover: () => void; discovering: boolean; onMobileBack?: () => void }) {
   const readiness = campaign.readiness
   const discovery = campaign.learnings ?? {}
   const contentItems = [
@@ -418,18 +430,26 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
     ? ` · ${Math.round(Number(progress.completion) || 0)}%`
     : ''
   return (
-    <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-lg">
+    <section className="bg-surface-container-lowest hairline-border rounded-lg p-stack-md md:p-stack-lg min-w-0">
+      {onMobileBack && (
+        <button
+          onClick={onMobileBack}
+          className="lg:hidden mb-stack-md inline-flex items-center gap-1.5 font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+        >
+          <span aria-hidden>‹</span> All campaigns
+        </button>
+      )}
       <div className="flex items-start justify-between gap-stack-md flex-wrap">
         <div className="min-w-0 flex-1">
           <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">
             Selected campaign {loading ? '· syncing…' : ''}
           </p>
-          <h3 className="font-h1-editorial text-h1-editorial text-on-surface mt-2">{campaign.name}</h3>
-          <p className="font-body-main text-on-surface-variant mt-2 text-[13px] max-w-prose">
+          <h3 className="font-h1-editorial text-[clamp(1.5rem,5vw,34px)] leading-tight text-on-surface mt-2 break-words">{campaign.name}</h3>
+          <p className="font-body-main text-on-surface-variant mt-2 text-[13px] max-w-prose break-words">
             {readiness?.nextAction ?? 'Choose the next GTM constraint to remove.'}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <span className={BADGE}>{campaign.status}</span>
           {campaign.status !== 'active' && (
             <button onClick={() => onStatus('activate')} disabled={!readiness?.canLaunch} className={PRIMARY_BTN}>
@@ -442,7 +462,7 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
         </div>
       </div>
 
-      <div className="mt-stack-lg grid md:grid-cols-2 gap-x-stack-lg gap-y-stack-md">
+      <div className="mt-stack-lg grid grid-cols-1 md:grid-cols-2 gap-x-stack-lg gap-y-stack-md min-w-0">
         <Field label="Objective" value={campaign.objective || campaign.name} />
         <Field label="Audience" value={campaign.segment} />
         <Field label="Trigger" value={campaign.trigger} />
@@ -491,19 +511,19 @@ function CampaignDetail({ campaign, loading, targets, links, assets, onStatus, o
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-4 gap-stack-sm">
+      <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-stack-sm">
         <Tiny label="Enrolled" value={campaign.target_counts?.enrolled ?? targets.length} />
         <Tiny label="Sent" value={campaign.target_counts?.sent ?? 0} />
         <Tiny label="Replied" value={campaign.target_counts?.replied ?? 0} />
         <Tiny label="Booked" value={campaign.target_counts?.booked ?? 0} />
       </div>
 
-      <div className="mt-6 grid lg:grid-cols-2 gap-stack-md">
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-stack-md min-w-0">
         <LearningPanel learning={campaignLearning} />
         <AirCoverPanel items={airCover} hasContent={contentItems.length > 0} />
       </div>
 
-      <div className="mt-6 grid md:grid-cols-2 gap-stack-md">
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-stack-md min-w-0">
         <Lane
           title="Targets"
           empty="No targets enrolled yet."
@@ -550,13 +570,13 @@ type CampaignLearning = {
 
 function LearningPanel({ learning }: { learning: CampaignLearning }) {
   return (
-    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4">
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4 min-w-0">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Learning loop</p>
-          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1">{learning.stage}</p>
+          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1 break-words">{learning.stage}</p>
         </div>
-        <span className={BADGE_ACCENT}>{learning.replyRate}% reply</span>
+        <span className={`${BADGE_ACCENT} shrink-0 whitespace-nowrap`}>{learning.replyRate}% reply</span>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {learning.bullets.map(item => (
@@ -566,26 +586,26 @@ function LearningPanel({ learning }: { learning: CampaignLearning }) {
           </div>
         ))}
       </div>
-      <p className="mt-3 font-body-main text-on-surface-variant text-[12.5px] leading-relaxed">{learning.nextMove}</p>
+      <p className="mt-3 font-body-main text-on-surface-variant text-[12.5px] leading-relaxed break-words">{learning.nextMove}</p>
     </div>
   )
 }
 
 function AirCoverPanel({ items, hasContent }: { items: Array<{ title: string; meta: string }>; hasContent: boolean }) {
   return (
-    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4">
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-4 min-w-0">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant">Content air cover</p>
-          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1">{hasContent ? 'Assets attached' : 'Suggested companion assets'}</p>
+          <p className="font-body-main font-medium text-on-surface text-[13px] mt-1 break-words">{hasContent ? 'Assets attached' : 'Suggested companion assets'}</p>
         </div>
-        <span className={hasContent ? BADGE_ACCENT : BADGE}>campaign support</span>
+        <span className={`${hasContent ? BADGE_ACCENT : BADGE} shrink-0 whitespace-nowrap`}>campaign support</span>
       </div>
       <div className="mt-3 space-y-2">
         {items.map(item => (
-          <div key={item.title} className="bg-surface-container-lowest hairline-border rounded p-2">
+          <div key={item.title} className="bg-surface-container-lowest hairline-border rounded p-2 min-w-0">
             <div className="font-body-main font-medium text-on-surface text-[13px] truncate">{item.title}</div>
-            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{item.meta}</div>
+            <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5 break-words">{item.meta}</div>
           </div>
         ))}
       </div>
@@ -668,16 +688,16 @@ function inferPersona(title?: string | null): string | null {
 
 function Lane({ title, empty, items }: { title: string; empty: string; items: Array<{ id: string; title: string; meta: string }> }) {
   return (
-    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-3">
+    <div className="hairline-border bg-surface-container-low/40 rounded-lg p-3 min-w-0">
       <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-2">{title}</div>
       {items.length === 0 ? (
         <div className="font-body-main text-on-surface-variant text-[12.5px]">{empty}</div>
       ) : (
         <div className="space-y-2">
           {items.slice(0, 5).map(item => (
-            <div key={item.id} className="bg-surface-container-lowest hairline-border rounded p-2">
+            <div key={item.id} className="bg-surface-container-lowest hairline-border rounded p-2 min-w-0">
               <div className="font-body-main font-medium text-on-surface text-[13px] truncate">{item.title}</div>
-              <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5">{item.meta}</div>
+              <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mt-0.5 break-words">{item.meta}</div>
             </div>
           ))}
         </div>
@@ -706,9 +726,9 @@ function Tiny({ label, value }: { label: string; value: number }) {
 
 function Field({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className="font-label-mono text-[10px] uppercase tracking-widest text-on-surface-variant mb-1">{label}</div>
-      <div className="font-body-main text-on-surface text-[13.5px] leading-relaxed">{value || <span className="text-on-surface-variant italic">Not set</span>}</div>
+      <div className="font-body-main text-on-surface text-[13.5px] leading-relaxed break-words">{value || <span className="text-on-surface-variant italic">Not set</span>}</div>
     </div>
   )
 }

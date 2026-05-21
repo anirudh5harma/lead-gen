@@ -101,6 +101,7 @@
   --spacing-gutter: 24px;
   --spacing-stack-lg: 32px;
   --spacing-section-gap: 64px;
+  /* Page gutter — held narrow on mobile via media-query overrides below. */
   --spacing-margin-page: 40px;
   --spacing-container-max: 1280px;
 
@@ -369,6 +370,27 @@ select:focus, select:focus-visible {
 /* Backwards-compat: any legacy class references silently no-op */
 .dot-grid { background: none !important; }
 .blob { display: none !important; }
+
+/* ── Responsive page gutter ─────────────────────────────────────
+   Tailwind 4's `@theme inline` bakes 40px into `.px-margin-page` at
+   build time, so override the class directly for narrower viewports.
+   Mobile: 16px · Tablet: 24px · Desktop+ keeps the 40px default. */
+@media (max-width: 639px) {
+  .px-margin-page { padding-inline: 16px; }
+  .pl-margin-page { padding-left: 16px; }
+  .pr-margin-page { padding-right: 16px; }
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  .px-margin-page { padding-inline: 24px; }
+  .pl-margin-page { padding-left: 24px; }
+  .pr-margin-page { padding-right: 24px; }
+}
+
+/* Touch-friendly: keep tap targets at least 44x44 on coarse pointers.
+   Applied opt-in via .tap-target — used by icon-only mobile buttons. */
+@media (pointer: coarse) {
+  .tap-target { min-height: 44px; min-width: 44px; }
+}
 
 /* ── Stitch hairlines (warm ink @ 7%) ──────────────────────────── */
 .hairline-border { border: 1px solid rgba(26, 24, 22, 0.07); }

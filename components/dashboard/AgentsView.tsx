@@ -40,16 +40,18 @@ export default function AgentsView({ profile }: Props) {
             Toggle which agents power Outbound and Content, set autonomy, run pipelines, watch live activity.
           </p>
         </div>
-        <div className="flex items-center gap-1 hairline-border rounded-full p-1">
-          {([['config', 'Stacks'], ['workflows', 'Pipelines'], ['activity', 'Activity']] as Array<[AgentsTab, string]>).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`h-8 px-4 rounded-full font-label-mono text-label-mono uppercase tracking-wider transition-colors ${
-                tab === id ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >{label}</button>
-          ))}
+        <div className="-mx-2 sm:mx-0 overflow-x-auto sm:overflow-visible">
+          <div className="inline-flex items-center gap-1 hairline-border rounded-full p-1 mx-2 sm:mx-0 whitespace-nowrap">
+            {([['config', 'Stacks'], ['workflows', 'Pipelines'], ['activity', 'Activity']] as Array<[AgentsTab, string]>).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                className={`h-8 px-3 sm:px-4 rounded-full font-label-mono text-label-mono uppercase tracking-wider transition-colors ${
+                  tab === id ? 'bg-secondary-container text-on-secondary-container' : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >{label}</button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -220,7 +222,7 @@ function Workflows({ rows }: { rows: WorkflowRow[] }) {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 hairline-border overflow-hidden">
           {active.map((w, i) => (
-            <div key={w.name} className={`bg-surface-container-lowest p-stack-lg flex flex-col h-full group ${i < active.length - 1 ? 'hairline-r' : ''}`}>
+            <div key={w.name} className={`bg-surface-container-lowest p-stack-md md:p-stack-lg flex flex-col h-full group ${i < active.length - 1 ? 'hairline-b md:border-b-0 md:hairline-r' : ''}`}>
               <span className="font-label-mono text-label-mono text-on-surface-variant mb-base uppercase">WF-{String(i + 1).padStart(3, '0')}</span>
               <h3 className="font-display-sm text-display-sm mb-stack-md group-hover:text-primary transition-colors">{w.displayName}</h3>
               <p className="font-body-main text-on-surface-variant mb-stack-lg flex-grow">{w.description}</p>
@@ -246,7 +248,7 @@ function Workflows({ rows }: { rows: WorkflowRow[] }) {
           </span>
         </div>
         <div className="hairline-border bg-surface-container-lowest">
-          <div className="grid grid-cols-12 px-stack-md py-3 hairline-b bg-surface-container-low font-label-mono text-[10px] text-on-surface-variant uppercase tracking-widest">
+          <div className="hidden md:grid grid-cols-12 px-stack-md py-3 hairline-b bg-surface-container-low font-label-mono text-[10px] text-on-surface-variant uppercase tracking-widest">
             <div className="col-span-5">Pipeline Identity</div>
             <div className="col-span-2">Status</div>
             <div className="col-span-2 text-right">Steps</div>
@@ -258,19 +260,24 @@ function Workflows({ rows }: { rows: WorkflowRow[] }) {
               key={w.name}
               onClick={() => void runWorkflow(w.name)}
               disabled={running != null}
-              className={`w-full grid grid-cols-12 px-stack-md h-12 items-center hover:bg-surface-container-high transition-colors group disabled:opacity-60 text-left ${i < rows.length - 1 ? 'hairline-b' : ''}`}
+              className={`w-full text-left px-stack-md py-3 md:py-0 md:h-12 hover:bg-surface-container-high transition-colors group disabled:opacity-60 ${i < rows.length - 1 ? 'hairline-b' : ''} md:grid md:grid-cols-12 md:items-center md:gap-2`}
             >
-              <div className="col-span-5 flex items-center gap-3 min-w-0">
+              <div className="md:col-span-5 flex items-center gap-3 min-w-0">
                 <Icon name={WF_ICONS[i % WF_ICONS.length]} size={18} className="text-primary shrink-0" />
                 <span className="font-body-main font-medium truncate">{w.displayName}</span>
               </div>
-              <div className="col-span-2 flex items-center gap-2">
+              <div className="mt-2 md:mt-0 md:col-span-2 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-tertiary" />
                 <span className="font-label-mono text-label-mono">{running === w.name ? 'Dispatching' : 'Ready'}</span>
               </div>
-              <div className="col-span-2 text-right font-label-mono text-[12px]">{w.steps.length} steps</div>
-              <div className="col-span-1 text-right font-label-mono text-[12px] text-on-surface-variant">~{w.estimatedCredits}</div>
-              <div className="col-span-2 text-right font-label-mono text-[12px] text-on-surface-variant">~{Math.round(w.estimatedLatencyMs / 1000)}s</div>
+              <div className="md:hidden mt-1 flex items-center gap-3 font-label-mono text-[11px] text-on-surface-variant">
+                <span>{w.steps.length} steps</span>
+                <span>~{w.estimatedCredits} cr</span>
+                <span>~{Math.round(w.estimatedLatencyMs / 1000)}s</span>
+              </div>
+              <div className="hidden md:block md:col-span-2 text-right font-label-mono text-[12px]">{w.steps.length} steps</div>
+              <div className="hidden md:block md:col-span-1 text-right font-label-mono text-[12px] text-on-surface-variant">~{w.estimatedCredits}</div>
+              <div className="hidden md:block md:col-span-2 text-right font-label-mono text-[12px] text-on-surface-variant">~{Math.round(w.estimatedLatencyMs / 1000)}s</div>
             </button>
           ))}
         </div>
@@ -347,11 +354,13 @@ function Activity() {
       ) : (
         <div className="divide-y divide-[rgba(26,24,22,0.07)] max-h-[480px] overflow-y-auto">
           {events.map((e) => (
-            <div key={e.id} className="flex items-center px-6 py-3.5 gap-4 hover:bg-surface-container-low transition-colors">
-              <span className="font-label-mono text-[10px] text-outline shrink-0 w-16">{formatTime(e.created_at)}</span>
-              <span className="font-label-mono text-label-mono uppercase text-on-surface shrink-0 w-32 truncate">{e.agent_name}</span>
-              <span className={`font-label-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded shrink-0 ${statusPill(e.status)}`}>{e.status}</span>
-              <span className="font-body-main text-on-surface-variant truncate flex-1">{e.title || e.event_type}</span>
+            <div key={e.id} className="px-4 sm:px-6 py-3.5 hover:bg-surface-container-low transition-colors sm:flex sm:items-center sm:gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="font-label-mono text-[10px] text-outline shrink-0 sm:w-16">{formatTime(e.created_at)}</span>
+                <span className="font-label-mono text-label-mono uppercase text-on-surface truncate sm:w-32">{e.agent_name}</span>
+                <span className={`font-label-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded shrink-0 ${statusPill(e.status)}`}>{e.status}</span>
+              </div>
+              <span className="mt-1 sm:mt-0 block font-body-main text-on-surface-variant truncate sm:flex-1">{e.title || e.event_type}</span>
             </div>
           ))}
         </div>
