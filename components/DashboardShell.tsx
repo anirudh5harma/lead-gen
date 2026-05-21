@@ -634,7 +634,7 @@ export default function DashboardShell({ initialLeads, userProfile }: Props) {
       {/* Mobile drawer */}
       {mobileNavOpen && (
         <>
-          <div className="fixed inset-0 z-40 bg-on-surface/40 md:hidden" onClick={() => setMobileNavOpen(false)} />
+          <div className="fixed inset-0 z-40 bg-on-surface/45 backdrop-blur-sm md:hidden" onClick={() => setMobileNavOpen(false)} />
           <div className="fixed inset-y-0 left-0 z-50 w-64 md:hidden">
             <Sidebar profile={userProfile} activeView={activeView} onNavigate={navigate} forceShow />
           </div>

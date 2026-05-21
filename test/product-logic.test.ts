@@ -45,6 +45,7 @@ import { apolloCompanyMatchesFilters } from '../lib/apollo.ts'
 import { isPublishModeQueueEligible, selectPreferredDistributionAccount } from '../lib/distribution.ts'
 import { buildRevenueSnapshot } from '../lib/revenue-ux.ts'
 import { buildOutreachPlan } from '../lib/gtm/outreach-plan.ts'
+import { isBillingPeriodStillActive, isMonthlyGrantDue, resolveBillingPeriodStart } from '../lib/billing-period.ts'
 
 test('free workspace keeps only the active workspace visible', () => {
   const plan = buildWorkspaceAccessPlan({
@@ -59,6 +60,35 @@ test('free workspace keeps only the active workspace visible', () => {
   assert.deepEqual(plan.visibleClientIds, ['client_b'])
   assert.equal(plan.keepClientId, 'client_b')
   assert.deepEqual(plan.archiveClientIds, ['client_a'])
+})
+
+test('billing period start prefers provider payment timestamp over processing time', () => {
+  const fallback = new Date('2026-05-19T12:00:00.000Z')
+  const startedAt = resolveBillingPeriodStart({
+    payment_date: '2026-05-17T08:30:00.000Z',
+    created_at: '2026-05-18T08:30:00.000Z',
+  }, fallback)
+
+  assert.equal(startedAt, '2026-05-17T08:30:00.000Z')
+})
+
+test('monthly grant due date follows payment day rather than the first of month', () => {
+  assert.equal(
+    isMonthlyGrantDue('2026-01-31T10:00:00.000Z', new Date('2026-02-27T10:00:00.000Z')),
+    false,
+  )
+  assert.equal(
+    isMonthlyGrantDue('2026-01-31T10:00:00.000Z', new Date('2026-02-28T10:00:00.000Z')),
+    true,
+  )
+  assert.equal(
+    isBillingPeriodStillActive('2026-02-28T10:00:01.000Z', new Date('2026-02-28T10:00:00.000Z')),
+    true,
+  )
+  assert.equal(
+    isBillingPeriodStillActive('2026-02-28T10:00:00.000Z', new Date('2026-02-28T10:00:00.000Z')),
+    false,
+  )
 })
 
 test('free workspace falls back to the oldest available workspace when active is missing', () => {

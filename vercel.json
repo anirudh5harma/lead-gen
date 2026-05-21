@@ -33,10 +33,6 @@
       "schedule": "*/10 * * * *"
     },
     {
-      "path": "/api/cron/poll-avatar-videos",
-      "schedule": "*/10 * * * *"
-    },
-    {
       "path": "/api/cron/ingest-content-inspiration",
       "schedule": "15 2 * * *"
     },
@@ -59,6 +55,10 @@
     {
       "path": "/api/cron/generate-content-ideas",
       "schedule": "5 6 * * *"
+    },
+    {
+      "path": "/api/cron/run-content-pipeline",
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/cron/grant-monthly-credits",

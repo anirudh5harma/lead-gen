@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { Webhook } from 'standardwebhooks'
 import { addLeadCreditsForPayment } from '@/lib/lead-credits'
+import { resolveBillingPeriodStart } from '@/lib/billing-period'
 
 export const runtime = 'nodejs'
 
@@ -14,12 +15,19 @@ interface DodoWebhookPayload {
     total_amount?: number
     status?: string
     next_billing_date?: string
+    payment_date?: string
+    paid_at?: string
+    current_period_start?: string
+    billing_period_start?: string
+    period_start?: string
+    created_at?: string
+    created?: string | number
     customer: {
       customer_id: string
       email: string
     }
     metadata?: Record<string, string>
-  }
+  } & Record<string, unknown>
 }
 
 export async function POST(request: Request) {
@@ -83,6 +91,9 @@ export async function POST(request: Request) {
     const userId = data.metadata.user_id
     const tier = data.metadata.tier as 'launch' | 'team' | 'growth' | 'scale' | 'enterprise'
     const period = data.metadata.period as 'monthly' | 'annual'
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const billingPeriodStartedAt = resolveBillingPeriodStart(data, now)
 
     if (!userId || !tier) {
       console.warn('[dodo webhook] Invalid subscription metadata', data.metadata)
@@ -104,9 +115,9 @@ export async function POST(request: Request) {
       subscription_external_id: data.subscription_id ?? null,
       subscription_renews_at: data.next_billing_date ?? null,
       leads_used_this_month: 0,
-      leads_reset_at: new Date().toISOString(),
+      leads_reset_at: billingPeriodStartedAt,
       monthly_credit_grant: monthlyGrant,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     }).eq('user_id', userId)
 
     // Top up the wallet with this period's grant (created or renewed → grant now).
@@ -120,7 +131,7 @@ export async function POST(request: Request) {
           event: type === 'subscription.created' ? 'subscription_start_grant' : 'monthly_grant',
           note: `${tier} plan ${period} ${type === 'subscription.created' ? 'start' : 'renewal'}`,
         })
-        await supabase.from('user_profiles').update({ credits_granted_at: new Date().toISOString() }).eq('user_id', userId)
+        await supabase.from('user_profiles').update({ credits_granted_at: billingPeriodStartedAt }).eq('user_id', userId)
       } catch (e) {
         console.error('[dodo webhook] credit grant failed', e)
       }
@@ -133,7 +144,7 @@ export async function POST(request: Request) {
       plan: tier,
       status: 'active',
       next_billing_date: data.next_billing_date ?? null,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     }, { onConflict: 'user_id' })
 
     return NextResponse.json({ ok: true })

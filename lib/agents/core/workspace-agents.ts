@@ -10,7 +10,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AgentRole } from '../protocol/types'
 import {
   AGENT_ENGINE, ADDON_ROLES, type Engine, type Autonomy,
-  ENGINE_PIPELINES,
 } from './engines'
 import { SYSTEM_AGENTS } from './registry'
 
@@ -92,39 +91,102 @@ export function getAgentConfig(map: WorkspaceAgentMap, role: AgentRole): Record<
 }
 
 /**
- * Seed `workspace_agents` rows for the given engines. Idempotent — uses upsert
- * on (workspace_id, agent_role) and never downgrades an existing row.
+ * Seed `workspace_agents` rows for every known system agent role. Roles that
+ * belong to one of the workspace's selected engines (plus all `shared` roles)
+ * are enabled by default; everything else is seeded disabled so the row exists
+ * but stays dormant until the user opts in via Agents → Stacks. Add-on roles
+ * (CRM, insight, repurpose, engagement) remain off until the user enables them
+ * explicitly, regardless of engine selection.
+ *
+ * Idempotent on `(workspace_id, agent_role)` — never downgrades an existing
+ * row. Pass `reconcileEnabled: true` to re-align the `enabled` flag of
+ * existing rows after a workspace switches engines.
  */
 export async function seedWorkspaceAgents(
   supabase: SupabaseClient,
-  opts: { workspaceId: string; userId: string; engines: Array<Exclude<Engine, 'shared'>> },
+  opts: {
+    workspaceId: string
+    userId: string
+    engines: Array<Exclude<Engine, 'shared'>>
+    /**
+     * When true, also updates the `enabled` flag of existing rows to match the
+     * engine selection. Use this when a workspace changes engines post-seed.
+     * Add-on roles are never auto-enabled, and rows the user has explicitly
+     * toggled stay untouched as long as they already match what we'd set.
+     */
+    reconcileEnabled?: boolean
+  },
 ): Promise<void> {
-  const roles = new Set<AgentRole>()
-  for (const engine of opts.engines) {
-    for (const step of ENGINE_PIPELINES[engine]) roles.add(step.role)
-  }
-  // always include the operator (pipeline runner)
-  roles.add('operator')
+  const selectedEngines = new Set<Engine>(opts.engines)
+  selectedEngines.add('shared')
+
+  const desiredEnabled = (role: AgentRole) =>
+    !ADDON_ROLES.has(role) && selectedEngines.has(AGENT_ENGINE[role])
 
   const { data: existing } = await supabase
     .from('workspace_agents')
-    .select('agent_role')
+    .select('agent_role, enabled')
     .eq('workspace_id', opts.workspaceId)
-  const have = new Set((existing ?? []).map((r) => r.agent_role as string))
+  const existingByRole = new Map(
+    (existing ?? []).map((r) => [r.agent_role as AgentRole, { enabled: r.enabled as boolean }]),
+  )
 
-  const rows = [...roles]
-    .filter((role) => !have.has(role))
-    .map((role) => ({
+  const allRoles: AgentRole[] = (Object.keys(AGENT_ENGINE) as AgentRole[])
+  // Touch the operator first so the pipeline runner is always present.
+  allRoles.sort((a, b) => (a === 'operator' ? -1 : b === 'operator' ? 1 : 0))
+
+  const inserts: Array<{
+    workspace_id: string
+    user_id: string
+    agent_role: AgentRole
+    engine: Engine
+    enabled: boolean
+    autonomy: Autonomy
+    config: Record<string, unknown>
+  }> = []
+
+  for (const role of allRoles) {
+    if (existingByRole.has(role)) continue
+    inserts.push({
       workspace_id: opts.workspaceId,
       user_id: opts.userId,
       agent_role: role,
       engine: AGENT_ENGINE[role],
-      enabled: !ADDON_ROLES.has(role),
-      autonomy: 'approve_first' as Autonomy,
+      enabled: desiredEnabled(role),
+      autonomy: 'approve_first',
       config: {},
-    }))
-  if (rows.length === 0) return
-  await supabase.from('workspace_agents').upsert(rows, { onConflict: 'workspace_id,agent_role' })
+    })
+  }
+  if (inserts.length > 0) {
+    await supabase.from('workspace_agents').upsert(inserts, { onConflict: 'workspace_id,agent_role' })
+  }
+
+  if (opts.reconcileEnabled) {
+    // Flip `enabled` for non-addon roles whose engine selection changed. We
+    // intentionally leave add-on roles alone (they require explicit opt-in)
+    // and never downgrade a role the user manually disabled when engine is
+    // still selected — that lives in the per-row UI.
+    for (const role of allRoles) {
+      if (ADDON_ROLES.has(role)) continue
+      const want = desiredEnabled(role)
+      const have = existingByRole.get(role)
+      if (have && have.enabled !== want && !want) {
+        // engine deselected → turn role off
+        await supabase
+          .from('workspace_agents')
+          .update({ enabled: false, updated_at: new Date().toISOString() })
+          .eq('workspace_id', opts.workspaceId)
+          .eq('agent_role', role)
+      } else if (have && have.enabled !== want && want) {
+        // engine newly selected → turn role on
+        await supabase
+          .from('workspace_agents')
+          .update({ enabled: true, updated_at: new Date().toISOString() })
+          .eq('workspace_id', opts.workspaceId)
+          .eq('agent_role', role)
+      }
+    }
+  }
 }
 
 /** Update one workspace agent (enable/disable, autonomy, or config merge). */

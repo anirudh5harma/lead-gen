@@ -230,17 +230,22 @@ export async function POST(request: Request) {
       completed_notification_sent_at: null,
     })
     if (policyError) console.error('[profile] default live autopilot policy failed:', policyError)
+  }
 
-    try {
-      const { seedWorkspaceAgents } = await import('@/lib/agents/core/workspace-agents')
-      await seedWorkspaceAgents(supabase, {
-        workspaceId: activeClientId ?? user.id,
-        userId: user.id,
-        engines: engineList,
-      })
-    } catch (seedError) {
-      console.error('[profile] workspace agent seed failed:', seedError)
-    }
+  // Seed/reconcile workspace_agents on every save so engine changes flow
+  // through (re-saving with engines=['outbound','content'] turns the content
+  // roles on; previously only the first save seeded anything and engine edits
+  // were silently dropped).
+  try {
+    const { seedWorkspaceAgents } = await import('@/lib/agents/core/workspace-agents')
+    await seedWorkspaceAgents(supabase, {
+      workspaceId: activeClientId ?? user.id,
+      userId: user.id,
+      engines: engineList,
+      reconcileEnabled: Boolean(existingProfile),
+    })
+  } catch (seedError) {
+    console.error('[profile] workspace agent seed failed:', seedError)
   }
 
   syncMonitoredAccountsFromWorkspaceSources(service).catch(syncError => {

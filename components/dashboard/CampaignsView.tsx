@@ -743,9 +743,9 @@ function RemoveCampaignModal({ campaign, onClose, onConfirm }: { campaign: Campa
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-5">
-      <button className="absolute inset-0 bg-on-surface/40 cursor-default" onClick={onClose} aria-label="Close remove campaign confirmation" />
-      <section className="relative w-full max-w-[460px] bg-surface-container-lowest hairline-border rounded-lg p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-5 py-8">
+      <button className="absolute inset-0 bg-on-surface/45 backdrop-blur-sm cursor-default" onClick={onClose} aria-label="Close remove campaign confirmation" />
+      <section className="relative w-full max-w-[460px] bg-surface-container-lowest hairline-border rounded-lg p-6 shadow-xl max-h-[calc(100vh-4rem)] overflow-y-auto">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="font-label-mono text-label-mono uppercase tracking-widest text-on-surface-variant">Remove campaign</p>
