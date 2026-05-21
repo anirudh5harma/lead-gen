@@ -137,7 +137,7 @@ export default function LeadDrawer({ lead, mode = 'open', onClose }: LeadDrawerP
           on top of fully visible content. */}
       <div
         onClick={onClose}
-        className={`fixed inset-0 bg-on-surface/45 backdrop-blur-sm z-[60] transition-opacity ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        className={`fixed inset-0 h-full bg-on-surface/45 backdrop-blur-sm z-[60] transition-opacity ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
       />
       {/* Drawer */}
       <aside
