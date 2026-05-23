@@ -12,7 +12,23 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // pivot-v2: legacy code is archived for reference, not built.
+    "legacy/**",
   ]),
+  {
+    rules: {
+      // Honour the underscore-prefix convention for intentionally-unused
+      // parameters (e.g. stubs that satisfy an interface contract).
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

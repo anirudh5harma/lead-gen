@@ -28,15 +28,19 @@ legacy/          # Archived previous implementation. Do not import.
 
 ## Foundation status
 
-| Area                                  | State        |
-|---------------------------------------|--------------|
-| Directory structure                   | ✅ landed    |
-| Database schema (12 migrations)       | ✅ landed    |
-| Five primitives (Zod)                 | ✅ landed    |
-| Event bus (typed registry + adapter)  | ⏳ next      |
-| Durable workflow runtime              | ⏳ next      |
-| Agent fabric + MCP envelope           | ⏳ next      |
-| Channels (email / LinkedIn / X / ...) | ⏳ later     |
+| Area                                       | State     |
+|--------------------------------------------|-----------|
+| Directory structure                        | ✅ landed |
+| Database schema (12 migrations)            | ✅ landed |
+| Five primitives (Zod)                      | ✅ landed |
+| Event bus (typed registry + dev adapter)   | ✅ landed |
+| Durable workflow runtime (dev adapter)     | ✅ landed |
+| Agent fabric (tools, memory, eval, reps)   | ✅ landed |
+| MCP envelope                               | ✅ landed |
+| Production adapters (NATS, Restate)        | ⏳ stubs  |
+| Concrete role agents + first Rep           | ⏳ next   |
+| Channels (email / LinkedIn / X / ...)      | ⏳ later  |
+| First Play end-to-end                      | ⏳ later  |
 
 ## Local development
 
