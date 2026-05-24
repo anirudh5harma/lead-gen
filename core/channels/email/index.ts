@@ -68,3 +68,30 @@ export type {
   OutlookSendInput,
   OutlookCredentials,
 } from "./adapters/outlook.ts";
+export {
+  createOutlookSubscription,
+  renewOutlookSubscription,
+  deleteOutlookSubscription,
+  loadSubscription as loadOutlookSubscription,
+  fetchOutlookMessage,
+  graphMessageToInbound,
+  isValidClientState,
+  OutlookSubscriptionError,
+} from "./outlook-subscription.ts";
+export type {
+  OutlookSubscription,
+  OutlookSubscriptionRecord,
+  OutlookChangeNotification,
+  OutlookNotificationBatch,
+  GraphMessage,
+} from "./outlook-subscription.ts";
+export {
+  parseSnsEnvelope,
+  parseSnsNotification,
+  SnsParseError,
+} from "./ses-inbound.ts";
+export type {
+  SnsMessageEnvelope,
+  SnsParsedNotification,
+  SesNotification,
+} from "./ses-inbound.ts";
