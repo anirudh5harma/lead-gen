@@ -40,9 +40,9 @@ legacy/          # Archived previous implementation. Do not import.
 | MCP envelope                                        | ✅ landed |
 | Knowledge graph nodes + edges + first 13 Tools      | ✅ landed |
 | Concrete memory adapters + outcome feedback bridge  | ✅ landed |
+| LLM client (DeepSeek V4 Pro) + LLM-backed judge     | ✅ landed |
 | Production adapters (NATS, Restate)                 | ⏳ stubs  |
-| LLM client + LLM-backed judge                       | ⏳ next   |
-| First channel: owned-domain email                   | ⏳ later  |
+| First channel: owned-domain email                   | ⏳ next   |
 | First Rep + Play end-to-end                         | ⏳ later  |
 
 ## Local development
@@ -72,3 +72,14 @@ npm test                  # runs in-memory tests; DB-backed tests skip
 DATABASE_URL=... npm test # runs every test, including Postgres event bus
                           # and workflow runtime integration tests
 ```
+
+### LLM
+
+DeepSeek V4 Pro is the single default for every LLM call — drafting, hot-path judges, classification. Workspaces can BYO Anthropic / OpenAI keys, but the platform default is DeepSeek (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) "Opinionated Tech Stack").
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+export DEEPSEEK_MODEL=deepseek-v4-pro   # optional override
+```
+
+The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` interface so swapping providers is a single-file change.

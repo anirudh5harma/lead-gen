@@ -136,7 +136,7 @@ The hardest part of "on autopilot reliably" is the second word. The design treat
 | Transactional DB | **Postgres 17** + **pgvector** | Workspace-RLS isolation, vector search co-located |
 | Analytics / event log | **ClickHouse** | Replay + agent observability + outcome attribution |
 | Object storage | **S3** (or Cloudflare R2) | Raw artifacts, generated assets |
-| LLMs | **Claude Sonnet 4.6** (default reasoning), **Claude Haiku 4.5** (judges, classification, eval), **BYO** Anthropic/OpenAI/DeepSeek keys | Sonnet for generation quality; Haiku for hot-path evals at scale |
+| LLMs | **DeepSeek V4 Pro** as the single default for drafting, reasoning, hot-path judges, classification, and dedup. **BYO** Anthropic / OpenAI keys for workspaces that want them. | One vendor, one billing relationship, one set of guardrails. DeepSeek pricing absorbs the "judge every generation" workload that would otherwise need a Sonnet/Haiku-style tier split. Provider-agnostic LLM client in `core/agents/llm/` keeps swap-out cheap. |
 | Tool protocol | **MCP** end-to-end | Every integration is an MCP server; UI and external agents share tools |
 | Observability | **OpenTelemetry** + **Braintrust** for evals | OTel for system traces, Braintrust for prompt/eval lifecycle |
 | Email infra | **Resend / Postmark** for transactional; **owned domains via AWS SES** for outbound at volume | Separate transactional and prospecting reputation |
