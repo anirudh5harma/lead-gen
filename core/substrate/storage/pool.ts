@@ -53,10 +53,21 @@ export function getPool(): Pool {
 
 /**
  * Test helper: close + clear the singleton so a fresh `getPool()` reads
- * env again. Safe to call even if no pool was created.
+ * env again. Safe to call even if no pool was created or if the underlying
+ * pool was already closed by something else (e.g. a test fixture).
  */
 export async function resetPool(): Promise<void> {
   const pool = _pool;
   _pool = null;
-  if (pool) await pool.end();
+  if (pool) {
+    try {
+      await pool.end();
+    } catch (err) {
+      // pg throws 'Called end on pool more than once' if the pool is
+      // already closed. Swallow that one case — anything else re-throws.
+      if (!(err instanceof Error && /more than once/.test(err.message))) {
+        throw err;
+      }
+    }
+  }
 }

@@ -34,11 +34,13 @@ export interface CreateBombsellMcpServerOptions {
 }
 
 function isZodObject(s: unknown): s is z.ZodObject<z.ZodRawShape> {
-  return (
-    typeof s === "object" &&
-    s !== null &&
-    (s as { _def?: { typeName?: string } })._def?.typeName === "ZodObject"
-  );
+  // Zod 4: object schemas expose `.shape` and carry `_def.type === "object"`.
+  // Zod 3 used `_def.typeName === "ZodObject"`. Check both for resilience.
+  if (typeof s !== "object" || s === null) return false;
+  const def = (s as { _def?: { type?: string; typeName?: string } })._def;
+  if (def?.type === "object" || def?.typeName === "ZodObject") return true;
+  const shape = (s as { shape?: unknown }).shape;
+  return typeof shape === "object" && shape !== null;
 }
 
 export function createBombsellMcpServer(
