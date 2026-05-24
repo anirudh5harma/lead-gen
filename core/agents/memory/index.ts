@@ -8,3 +8,14 @@
  */
 
 export * from "./types.ts";
+export * from "./adapters/index.ts";
+export {
+  wireOutcomeFeedback,
+  DEFAULT_SCORE_DELTAS,
+} from "./bridges.ts";
+export type {
+  OutcomeAttributionFetcher,
+  ScoreDeltas,
+  WireOutcomeFeedbackOptions,
+  WiredOutcomeFeedback,
+} from "./bridges.ts";

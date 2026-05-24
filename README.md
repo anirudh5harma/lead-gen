@@ -38,10 +38,10 @@ legacy/          # Archived previous implementation. Do not import.
 | Storage layer (pg pool + workspace-scoped sessions) | ✅ landed |
 | Agent fabric (tools, memory, eval, reps)            | ✅ landed |
 | MCP envelope                                        | ✅ landed |
+| Knowledge graph nodes + edges + first 13 Tools      | ✅ landed |
+| Concrete memory adapters + outcome feedback bridge  | ✅ landed |
 | Production adapters (NATS, Restate)                 | ⏳ stubs  |
-| Knowledge graph queries + first real Tools          | ⏳ next   |
-| Concrete memory adapters (Postgres-backed)          | ⏳ next   |
-| LLM client + LLM-backed judge                       | ⏳ later  |
+| LLM client + LLM-backed judge                       | ⏳ next   |
 | First channel: owned-domain email                   | ⏳ later  |
 | First Rep + Play end-to-end                         | ⏳ later  |
 
