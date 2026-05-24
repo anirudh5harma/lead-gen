@@ -28,19 +28,22 @@ legacy/          # Archived previous implementation. Do not import.
 
 ## Foundation status
 
-| Area                                       | State     |
-|--------------------------------------------|-----------|
-| Directory structure                        | ✅ landed |
-| Database schema (12 migrations)            | ✅ landed |
-| Five primitives (Zod)                      | ✅ landed |
-| Event bus (typed registry + dev adapter)   | ✅ landed |
-| Durable workflow runtime (dev adapter)     | ✅ landed |
-| Agent fabric (tools, memory, eval, reps)   | ✅ landed |
-| MCP envelope                               | ✅ landed |
-| Production adapters (NATS, Restate)        | ⏳ stubs  |
-| Concrete role agents + first Rep           | ⏳ next   |
-| Channels (email / LinkedIn / X / ...)      | ⏳ later  |
-| First Play end-to-end                      | ⏳ later  |
+| Area                                                | State     |
+|-----------------------------------------------------|-----------|
+| Directory structure                                 | ✅ landed |
+| Database schema (13 migrations) + migration runner  | ✅ landed |
+| Five primitives (Zod)                               | ✅ landed |
+| Event bus (in-memory + Postgres via LISTEN/NOTIFY)  | ✅ landed |
+| Durable workflow runtime (in-process + Postgres)    | ✅ landed |
+| Storage layer (pg pool + workspace-scoped sessions) | ✅ landed |
+| Agent fabric (tools, memory, eval, reps)            | ✅ landed |
+| MCP envelope                                        | ✅ landed |
+| Production adapters (NATS, Restate)                 | ⏳ stubs  |
+| Knowledge graph queries + first real Tools          | ⏳ next   |
+| Concrete memory adapters (Postgres-backed)          | ⏳ next   |
+| LLM client + LLM-backed judge                       | ⏳ later  |
+| First channel: owned-domain email                   | ⏳ later  |
+| First Rep + Play end-to-end                         | ⏳ later  |
 
 ## Local development
 
@@ -50,4 +53,22 @@ npm run dev      # http://localhost:3000
 npm run build    # production build sanity check
 ```
 
-Database migrations in `db/migrations/` are ordered SQL files. Apply them in order against a Postgres 16+ instance with the `pgvector`, `citext`, and `pgcrypto` extensions available. A Supabase migration shim or a direct `psql` runner both work — the foundation has no migration tool opinion yet.
+### Database
+
+Postgres 16+ with `pgvector`, `citext`, and `pgcrypto`. Set `DATABASE_URL` and apply migrations:
+
+```bash
+export DATABASE_URL='postgresql://user:pass@127.0.0.1:5432/bombsell_dev'
+npm run migrate           # apply pending migrations
+npm run migrate -- --dry  # list what would apply
+```
+
+The runner records each applied file (with a checksum) in `schema_migrations` and refuses to re-apply an edited file — create a new migration instead.
+
+### Tests
+
+```bash
+npm test                  # runs in-memory tests; DB-backed tests skip
+DATABASE_URL=... npm test # runs every test, including Postgres event bus
+                          # and workflow runtime integration tests
+```

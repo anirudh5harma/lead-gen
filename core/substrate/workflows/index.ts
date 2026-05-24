@@ -22,3 +22,5 @@ export { createInProcessWorkflowRuntime } from "./adapters/in-process.ts";
 export type { InProcessWorkflowRuntimeOptions } from "./adapters/in-process.ts";
 export { createRestateWorkflowRuntime } from "./adapters/restate.ts";
 export type { RestateRuntimeOptions } from "./adapters/restate.ts";
+export { createPostgresWorkflowRuntime } from "./adapters/postgres.ts";
+export type { PostgresWorkflowRuntimeOptions } from "./adapters/postgres.ts";

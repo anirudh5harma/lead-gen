@@ -22,3 +22,8 @@ export type {
 } from "./adapters/in-memory.ts";
 export { createNatsEventBus } from "./adapters/nats.ts";
 export type { NatsEventBusOptions } from "./adapters/nats.ts";
+export { createPostgresEventBus } from "./adapters/postgres.ts";
+export type {
+  PostgresEventBus,
+  PostgresEventBusOptions,
+} from "./adapters/postgres.ts";
