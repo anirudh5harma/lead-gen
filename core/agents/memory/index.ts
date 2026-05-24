@@ -19,3 +19,5 @@ export type {
   WireOutcomeFeedbackOptions,
   WiredOutcomeFeedback,
 } from "./bridges.ts";
+export { createPostgresOutcomeAttribution } from "./attribution.ts";
+export type { PostgresAttributionOptions } from "./attribution.ts";

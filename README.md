@@ -44,8 +44,10 @@ legacy/          # Archived previous implementation. Do not import.
 | Email channel (SES owned-domain + Outlook OAuth)    | ✅ landed |
 | Transactional email (Resend)                        | ✅ landed |
 | First Rep + Play end-to-end ("Maya", Series A cold) | ✅ landed |
+| Reply intake + classification → procedural feedback | ✅ landed |
 | Production adapters (NATS, Restate)                 | ⏳ stubs  |
-| Reply intake + classification → procedural feedback | ⏳ next   |
+| Webhook routes (Outlook subscription, SES inbound)  | ⏳ next   |
+| Surface layer (UI: morning brief, approvals, ...)   | ⏳ next   |
 | LinkedIn / X / voice channels                       | ⏳ later  |
 
 ## Local development

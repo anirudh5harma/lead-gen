@@ -26,6 +26,23 @@ export {
 } from "./send.ts";
 export type { EmailChannelDeps } from "./send.ts";
 export { handleBounce } from "./bounces.ts";
+export { handleInboundEmail } from "./reply.ts";
+export type {
+  InboundEmail,
+  HandleInboundDeps,
+  HandleInboundResult,
+} from "./reply.ts";
+export {
+  createDeepSeekIntentClassifier,
+  createFixedIntentClassifier,
+} from "./intent.ts";
+export type {
+  IntentClassifier,
+  IntentClassifierInput,
+  IntentClassification,
+  ReplyIntent,
+  DeepSeekIntentClassifierOptions,
+} from "./intent.ts";
 export {
   createTransactionalSender,
 } from "./transactional.ts";
