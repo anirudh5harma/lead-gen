@@ -2,8 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { composeRep } from "../core/agents/reps/compose.ts";
-import { writerStub } from "../core/agents/reps/roles/writer.ts";
+import type { RoleAgent } from "../core/agents/reps/types.ts";
 import type { Rep } from "../core/primitives/rep.ts";
+
+const inlineWriterStub: RoleAgent<unknown, unknown> = {
+  kind: "writer",
+  name: "writer.test_stub",
+  async invoke() {
+    throw new Error("test stub");
+  },
+};
 
 function fakeRep(): Rep {
   return {
@@ -27,7 +35,7 @@ function fakeRep(): Rep {
 
 test("composeRep: exposes bound roles", () => {
   const rep = fakeRep();
-  const composed = composeRep(rep, { writer: writerStub });
+  const composed = composeRep(rep, { writer: inlineWriterStub });
   assert.equal(composed.role("writer").kind, "writer");
 });
 

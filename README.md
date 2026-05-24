@@ -43,8 +43,9 @@ legacy/          # Archived previous implementation. Do not import.
 | LLM client (DeepSeek V4 Pro) + LLM-backed judge     | ✅ landed |
 | Email channel (SES owned-domain + Outlook OAuth)    | ✅ landed |
 | Transactional email (Resend)                        | ✅ landed |
+| First Rep + Play end-to-end ("Maya", Series A cold) | ✅ landed |
 | Production adapters (NATS, Restate)                 | ⏳ stubs  |
-| First Rep + Play end-to-end                         | ⏳ next   |
+| Reply intake + classification → procedural feedback | ⏳ next   |
 | LinkedIn / X / voice channels                       | ⏳ later  |
 
 ## Local development
