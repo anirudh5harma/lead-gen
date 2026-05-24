@@ -31,7 +31,7 @@ legacy/          # Archived previous implementation. Do not import.
 | Area                                                | State     |
 |-----------------------------------------------------|-----------|
 | Directory structure                                 | ✅ landed |
-| Database schema (13 migrations) + migration runner  | ✅ landed |
+| Database schema (14 migrations) + migration runner  | ✅ landed |
 | Five primitives (Zod)                               | ✅ landed |
 | Event bus (in-memory + Postgres via LISTEN/NOTIFY)  | ✅ landed |
 | Durable workflow runtime (in-process + Postgres)    | ✅ landed |
@@ -41,9 +41,11 @@ legacy/          # Archived previous implementation. Do not import.
 | Knowledge graph nodes + edges + first 13 Tools      | ✅ landed |
 | Concrete memory adapters + outcome feedback bridge  | ✅ landed |
 | LLM client (DeepSeek V4 Pro) + LLM-backed judge     | ✅ landed |
+| Email channel (SES owned-domain + Outlook OAuth)    | ✅ landed |
+| Transactional email (Resend)                        | ✅ landed |
 | Production adapters (NATS, Restate)                 | ⏳ stubs  |
-| First channel: owned-domain email                   | ⏳ next   |
-| First Rep + Play end-to-end                         | ⏳ later  |
+| First Rep + Play end-to-end                         | ⏳ next   |
+| LinkedIn / X / voice channels                       | ⏳ later  |
 
 ## Local development
 

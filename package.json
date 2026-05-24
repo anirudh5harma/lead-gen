@@ -11,6 +11,7 @@
     "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1053.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.0",
