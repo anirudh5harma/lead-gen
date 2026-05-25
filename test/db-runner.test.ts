@@ -30,6 +30,13 @@ test("migration runner: applies all foundation migrations and creates expected t
       "outcomes",
       "channel_accounts",
       "sending_domains",
+      // 015 — signal ingestion
+      "workspace_icps",
+      "tracked_companies",
+      "workspace_tracked_companies",
+      "workspace_source_configs",
+      "workspace_ingestion_budgets",
+      "signal_overflow",
     ];
     const { rows } = await fx.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables

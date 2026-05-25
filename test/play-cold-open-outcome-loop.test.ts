@@ -238,20 +238,11 @@ test("outcome loop: cold open → positive reply → procedural exemplar score b
     assert.equal(top[0].win_count, 1);
     assert.equal(top[0].loss_count, 0);
 
-    // The full event chain shows up in the events table.
-    const { rows: events } = await fx.pool.query<{ event_type: string }>(
-      `select event_type from events
-        where workspace_id = $1
-          and event_type in (
-            'draft.judged','message.queued','message.sent',
-            'reply.received','reply.classified',
-            'outcome.recorded','rep.memory.procedural.updated'
-          )
-        order by occurred_at asc`,
-      [workspace_id],
-    );
-    const types = events.map((e) => e.event_type);
-    for (const expected of [
+    // The full event chain shows up in the events table. The procedural-
+    // memory update event is published asynchronously by the bridge after
+    // applyOutcome bumps the score, so poll for it explicitly rather than
+    // racing the bus delivery.
+    const expectedTypes = [
       "draft.judged",
       "message.queued",
       "message.sent",
@@ -259,9 +250,17 @@ test("outcome loop: cold open → positive reply → procedural exemplar score b
       "reply.classified",
       "outcome.recorded",
       "rep.memory.procedural.updated",
-    ]) {
-      assert.ok(types.includes(expected), `expected event ${expected}`);
-    }
+    ];
+    await until(async () => {
+      const { rows } = await fx.pool.query<{ event_type: string }>(
+        `select event_type from events
+          where workspace_id = $1
+            and event_type = any($2::text[])`,
+        [workspace_id, expectedTypes],
+      );
+      const present = new Set(rows.map((r) => r.event_type));
+      return expectedTypes.every((t) => present.has(t));
+    }, { timeout: 5_000 });
 
     await wired.unsubscribe();
   } finally {

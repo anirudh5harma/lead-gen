@@ -4,36 +4,53 @@
 
 The Signal primitive is the platform's *input*. Every Play, Rep, and outcome chain downstream is reactive — they fire because a signal landed. Today signals only exist when hand-inserted; this design turns the system from demand-driven to **continuously fed**, with cost discipline so the bill stays predictable.
 
+**Primary product focus: hiring signals across the web.** Users want a live picture of who in their domain is hiring for what — so the ATS adapters (Greenhouse, Lever, Ashby, plus HN "Who is hiring" and career-page RSS) are first-class. Funding / leadership / M&A / launches stay in the mix as auxiliary signals.
+
 Goals:
 
-1. **Coverage**: capture all 12 signal kinds the schema already names — funding, hiring, leadership change, product launch, acquisition, churn risk, competitor move, podcast / press mention, regulation, expansion, layoff.
-2. **Quality**: high signal-to-noise. Better to miss a marginal item than burn a Rep's reputation on a noisy match.
+1. **Hiring intelligence at scale**: track every job posting we can legally see across thousands of companies; surface what roles, functions, seniorities, and trends matter to each workspace.
+2. **Cover the rest of the 12 kinds** the schema already names — funding, leadership change, product launch, acquisition, churn risk, competitor move, podcast / press mention, regulation, expansion, layoff — with secondary sources.
 3. **Cost discipline**: free sources cover ~80% of value. Paid sources only when they uniquely unlock a kind no free source touches.
 4. **Architecture-honest**: no Vercel crons for orchestration; ingestion runs on the durable workflow runtime, typed events at every boundary.
 
 ---
 
-## Source matrix
+## Source matrix (decisions baked in)
 
-Each cell shows the **best-fit signal kinds** for the source, and the cost tier. Sources rated by *unique value per dollar*, not just total signals.
+### Phase 1 — hiring-first
 
-| Source                            | Best for                                                          | Cost     | Phase |
-|-----------------------------------|-------------------------------------------------------------------|----------|-------|
-| **SEC EDGAR** (Atom + filings)    | funding (S-1), acquisition (S-4, 8-K item 2.01), leadership_change (8-K item 5.02), regulation (10-K risk factors) | Free     | 1     |
-| **HackerNews** (Algolia search)   | product_launch (Show HN), competitor_move, press_mention, podcast_mention | Free     | 1     |
-| **ProductHunt** (GraphQL)         | product_launch                                                    | Free     | 1     |
-| **Greenhouse / Lever / Ashby** public board APIs | hiring, expansion, leadership_change (key role hires)   | Free     | 1     |
-| **GDELT** Doc API                 | press_mention, regulation, churn_risk, competitor_move (broad news) | Free     | 1     |
-| **RSS** (TechCrunch, Verge, custom company blogs, Substack) | press_mention, product_launch, funding (news), leadership_change | Free     | 1     |
-| **Google News RSS** (per-keyword) | press_mention, podcast_mention, competitor_move                   | Free     | 1     |
-| **Reddit JSON** (subreddit feeds) | competitor_move, churn_risk (user complaints), regulation         | Free     | 1     |
-| **Bluesky / Mastodon**            | early-adopter social mentions                                     | Free     | 1.5   |
-| **X / Twitter API Basic**         | competitor_move, product_launch, leadership_change (real-time)    | $200/mo  | 2     |
-| **Listen Notes** API              | podcast_mention                                                   | $30+/mo  | 2     |
-| **Crunchbase API**                | funding (deep historical), people moves                           | $$$/mo   | 3 (skip) |
-| **LinkedIn scraping**             | hiring (broad), leadership_change                                  | $$$/mo   | 3 (skip) |
+| Source                          | Best for                                                                  | Cost | Notes |
+|---------------------------------|---------------------------------------------------------------------------|------|-------|
+| **Greenhouse** public board API | hiring (broad — thousands of tech companies use Greenhouse)               | Free | Polled per company; we maintain a curated catalog (see Q3 decision) |
+| **Lever** public board API      | hiring                                                                    | Free | Same per-company pattern |
+| **Ashby** public board API      | hiring (growing, mid-market)                                              | Free | Same per-company pattern |
+| **Workable** public board       | hiring (SMB + startups)                                                   | Free | Same per-company pattern |
+| **HackerNews "Who is hiring"**  | hiring (monthly thread; high-signal startup roles)                         | Free | Algolia API to fetch comments |
+| **Career-page RSS** generic     | hiring (companies that don't use a known ATS — fallback)                   | Free | Generic Atom/RSS parser |
+| **SEC EDGAR**                   | funding (S-1), acquisition (S-4, 8-K item 2.01), leadership_change (5.02), layoff (WARN-Act adjacent) | Free | Auxiliary |
+| **HackerNews** front + Show HN  | product_launch, competitor_move, press_mention                            | Free | Algolia API |
+| **ProductHunt** GraphQL         | product_launch                                                            | Free | |
+| **RSS** (TC, Verge, custom blogs, Substack, Google News per-keyword) | press_mention, funding (news), leadership_change | Free | Generic adapter |
+| **Reddit JSON** (subreddit)     | competitor_move, churn_risk (user complaints), regulation                 | Free | |
 
-**Phase 1 covers all 12 signal kinds with $0 of source cost.** The only spend in Phase 1 is LLM classification — and that's metered + budgeted per workspace.
+### Phase 1.5
+
+| Source                | Best for                              | Cost | Why deferred |
+|-----------------------|---------------------------------------|------|--------------|
+| **GDELT** Doc API     | broad news, regulation, M&A           | Free | Noisy; let RSS + Google News stress-test the news bucket first |
+| **Bluesky / Mastodon**| social mentions (early-adopter)       | Free | Low volume in tech persona today; revisit when X is decided |
+
+### Phase 2
+
+| Source                  | Best for                                          | Cost     |
+|-------------------------|---------------------------------------------------|----------|
+| **X / Twitter API Basic** | competitor_move, product_launch, real-time mentions | $200/mo |
+| **Listen Notes**          | podcast_mention                                   | $30+/mo |
+
+### Skip
+
+- **Crunchbase / PitchBook** — paid + slow; SEC EDGAR + RSS + GDELT cover ~80% of what they offer for outbound.
+- **LinkedIn scraping** — risky, costly, and reproduces what the ATS adapters already see.
 
 ---
 
@@ -41,87 +58,130 @@ Each cell shows the **best-fit signal kinds** for the source, and the cost tier.
 
 Cost discipline is enforced by splitting ingestion into two stages: a cheap polling stage that runs everywhere, and an expensive LLM-classification stage that only runs on items that survive cheap filters.
 
-### Stage 1 — Ingest candidates  (no LLM, high volume)
+### Stage 1 — Ingest candidates  (cheap, high volume)
 
 For each `(workspace, source)` pair, a durable workflow polls on a cadence:
 
 1. Adapter fetches items since the stored cursor.
 2. Lightweight rules drop obvious noise (keyword filters, date-window, language).
-3. Novelty dedup (see below) drops duplicates of the same underlying event.
-4. Surviving items insert into `signals` with `status='ingested'`, `kind=NULL`.
-5. `signal.ingested` event published per insert.
+3. **Embedding step**: compute a DeepSeek embedding on `title + first 200 chars` of each surviving item (~$0.0001 each). Store on `signals.embedding`.
+4. **Dedup, two-tier**:
+   - **Exact**: `novelty_key = sha256(canonical_company_domain ':' rough_kind_hint ':' iso_week)`. Collision → drop + bump `novelty_count` on the original.
+   - **Fuzzy**: pgvector cosine similarity > 0.85 against same workspace + 7-day window. Match → drop + bump `novelty_count` (a high count is itself a "this is being widely covered" signal).
+5. Surviving items insert into `signals` with `status='ingested'`, `kind=NULL`.
+6. `signal.ingested` event published per insert.
 
-Cadence per source (rough):
-- News-style RSS: 15 min
+Cadence per source (rough — tunable per workspace via `workspace_source_configs.poll_cadence_sec`):
+
+- Greenhouse / Lever / Ashby / Workable per company: 6 h
+- HN "Who is hiring" thread: poll the active month's thread every 1 h
 - SEC EDGAR: 15 min
-- HackerNews Algolia: 30 min
-- ProductHunt: 1 h
-- Greenhouse/Lever/Ashby per company: 6 h
-- GDELT: 30 min
-- Google News RSS keywords: 1 h
+- HN front + ProductHunt: 30 min
+- News RSS / Google News keywords: 15-30 min
+- Career-page RSS: 6 h
+- Reddit subreddits: 1 h
 
 ### Stage 2 — Classify + match  (LLM, batched)
 
-Subscribed to `signal.ingested`. Pulls in batches (default N = 8) and issues **one LLM call per batch**:
+Subscribed to `signal.ingested`. Pulls in batches (default N = 8) and issues **one DeepSeek V4 Pro call per batch**:
 
 - Classify each candidate into one of 12 `SignalKind`s (or `dismiss`).
-- Extract structured entities: company (name + domain), person (name + title + linkedin), funding round details, role title, etc.
-- Match each against the workspace's ICP → `match_score`, `match_reason`, `audience_hint`.
+- For hiring signals, extract structured info: role title, function (eng / sales / product / etc.), seniority (junior / senior / lead / VP / C-level), location, remote_ok, posted_at.
+- For other kinds, extract relevant entities (company, person, funding amount, etc.).
 - Resolve entities against the knowledge graph (upsert via existing graph adapters; create `mentioned_in` edges).
+- **Match against EVERY ICP segment in the workspace**; pick the best-matching segment with score above its threshold. Emit `signal.matched` with the segment id, or `signal.dismissed`.
 
-Outputs per candidate:
-- `signal.matched`  (if match_score ≥ workspace.match_threshold)
-- `signal.dismissed`  (otherwise — kept in DB for forensics, status flips)
-
-Batching collapses LLM calls ~8× without losing classification quality (DeepSeek handles list-classification well in JSON mode). At ~$0.001 per batch, a workspace ingesting 1k candidates / day classifies for ~$0.15 / day.
+Batching collapses LLM calls ~8× without losing classification quality. At ~$0.001 per batch with V4 Pro, a workspace ingesting 1k candidates / day classifies for ~$0.15 / day.
 
 ---
 
-## Novelty / dedup
-
-A funding round shows up in: TC → HN → Crunchbase RSS → press release. Without dedup, that's 4 signals.
-
-Two-tier:
-
-1. **Exact**: `novelty_key = sha256(canonical_company_domain || ':' || rough_kind_hint || ':' || iso_week(item_date))`.
-   Computed by the adapter from cheap signals (extracted domain, URL keywords, date). Collision → drop, increment `novelty_count` on the original signal.
-
-2. **Fuzzy** (Phase 1.5): pgvector cosine similarity on `title` embeddings > 0.85 within the same workspace and a 7-day window → cluster. The schema already has `embedding vector(1536)` on `signals`; needs an embedding pipeline (defer to Phase 1.5 to keep cost down — exact dedup catches the majority).
-
----
-
-## Per-workspace configuration
-
-Add to schema:
+## Per-workspace configuration (locked schema)
 
 ```sql
 -- 015_signal_ingestion.sql
-alter table workspaces add column icp jsonb not null default '{}'::jsonb;
--- icp shape: { segments: [{ name, description, must_haves, nice_to_haves }], match_threshold }
 
+-- Multiple ICP segments per workspace (Team plan exposes this in the UI).
+create table workspace_icps (
+  id              uuid primary key default gen_random_uuid(),
+  workspace_id    uuid not null references workspaces(id) on delete cascade,
+  name            text not null,                       -- e.g. "Fintech founders, Series A+"
+  description     text not null,                       -- prose used by the matcher LLM
+  must_haves      jsonb not null default '[]'::jsonb,  -- hard filters
+  nice_to_haves   jsonb not null default '[]'::jsonb,
+  match_threshold numeric(5,4) not null default 0.6,
+  enabled         boolean not null default true,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+-- Tracked companies (for ATS polling) + their domains / handles.
+-- Foundation ships a CURATED catalog of ~1000 known tech companies
+-- with greenhouse/lever/ashby/workable board ids; workspaces opt in
+-- per company OR by filter ("all fintech series A+").
+create table tracked_companies (
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  domain          citext,
+  industry        text,
+  size_bucket     text,
+  greenhouse_id   text,    -- if uses Greenhouse, the public board name (slug)
+  lever_id        text,
+  ashby_id        text,
+  workable_id     text,
+  career_rss_url  text,
+  properties      jsonb not null default '{}'::jsonb,
+  added_at        timestamptz not null default now()
+);
+-- This table is workspace-AGNOSTIC: the catalog is shared. Workspaces
+-- opt in via workspace_tracked_companies below.
+
+create unique index tracked_companies_domain_idx on tracked_companies (domain) where domain is not null;
+
+create table workspace_tracked_companies (
+  workspace_id  uuid not null references workspaces(id) on delete cascade,
+  company_id    uuid not null references tracked_companies(id) on delete cascade,
+  added_at      timestamptz not null default now(),
+  primary key (workspace_id, company_id)
+);
+
+-- Per-(workspace, graph_source) cursor + cadence + budget state.
 create table workspace_source_configs (
-  workspace_id uuid not null references workspaces(id) on delete cascade,
-  source_id    uuid not null references graph_sources(id) on delete cascade,
-  enabled      boolean not null default true,
-  poll_cadence_sec integer not null default 900,
-  config_overrides jsonb not null default '{}'::jsonb,
-  cursor       jsonb not null default '{}'::jsonb,   -- adapter-specific cursor state
-  last_polled_at timestamptz,
-  last_error   jsonb,
+  workspace_id      uuid not null references workspaces(id) on delete cascade,
+  source_id         uuid not null references graph_sources(id) on delete cascade,
+  enabled           boolean not null default true,
+  poll_cadence_sec  integer not null default 900,
+  config_overrides  jsonb not null default '{}'::jsonb,
+  cursor            jsonb not null default '{}'::jsonb,
+  last_polled_at    timestamptz,
+  last_error        jsonb,
   primary key (workspace_id, source_id)
 );
 
+-- Daily ingestion budgets (candidates pulled, classify calls used).
 create table workspace_ingestion_budgets (
-  workspace_id uuid primary key references workspaces(id) on delete cascade,
-  daily_candidate_cap integer not null default 5000,
-  daily_classify_cap  integer not null default 1000,
+  workspace_id          uuid primary key references workspaces(id) on delete cascade,
+  daily_candidate_cap   integer not null default 5000,
+  daily_classify_cap    integer not null default 1000,
   daily_candidates_used integer not null default 0,
-  daily_classify_used integer not null default 0,
-  window_start timestamptz not null default now()
+  daily_classify_used   integer not null default 0,
+  window_start          timestamptz not null default now()
+);
+
+-- Audit overflow when the cap is reached.
+create table signal_overflow (
+  id            uuid primary key default gen_random_uuid(),
+  workspace_id  uuid not null references workspaces(id) on delete cascade,
+  source_id     uuid references graph_sources(id) on delete set null,
+  reason        text not null,
+  payload       jsonb not null,
+  occurred_at   timestamptz not null default now()
 );
 ```
 
-A workspace's ICP isn't a literal column today — putting it on `workspaces` keeps it close to the boundary that already owns auth + tenancy.
+Notes:
+
+- **Multi-ICP** locked via `workspace_icps`. The matcher iterates segments and picks the best-scoring one above its threshold; a signal can match one segment but not another.
+- **Tracked companies catalog** is workspace-agnostic — the platform maintains it. Workspaces opt in per company, OR via a filter (industry + size bucket); the filter resolves to a set of tracked_companies on save and stores them in `workspace_tracked_companies`. This makes the catalog reusable and avoids each workspace duplicating the work.
 
 ---
 
@@ -130,29 +190,33 @@ A workspace's ICP isn't a literal column today — putting it on `workspaces` ke
 ```
 core/ingest/
 ├── adapters/
-│   ├── sec-edgar.ts          # Atom feed; parse 8-K item codes
-│   ├── hackernews.ts         # Algolia search
-│   ├── product-hunt.ts       # GraphQL
-│   ├── greenhouse.ts         # public board API
-│   ├── lever.ts              # public board API
-│   ├── ashby.ts              # public board API
+│   ├── greenhouse.ts         # public board API; per-company poll
+│   ├── lever.ts              # public board API; per-company poll
+│   ├── ashby.ts              # public board API; per-company poll
+│   ├── workable.ts           # public board API; per-company poll
+│   ├── hn-whos-hiring.ts     # monthly Ask HN thread via Algolia
+│   ├── career-rss.ts         # generic Atom/RSS for /careers feeds
+│   ├── sec-edgar.ts          # filings atom feed; classify by form/item code
+│   ├── hackernews.ts         # front + Show HN + keyword search
+│   ├── product-hunt.ts       # GraphQL launches
 │   ├── rss.ts                # generic RSS / Atom (TC, blogs, Google News)
-│   ├── gdelt.ts              # GDELT Doc API
 │   └── reddit.ts             # subreddit JSON
-├── novelty.ts                # novelty_key + (Phase 1.5) vector clustering
-├── budget.ts                 # candidate + classify caps with rollover
-├── classify.ts               # LLM batch classifier + entity extractor
+├── novelty.ts                # novelty_key + pgvector fuzzy dedup
+├── embeddings.ts             # DeepSeek embedding wrapper for stage 1
+├── budget.ts                 # candidate + classify caps with daily rollover
+├── classify.ts               # DeepSeek batch classifier + entity extractor
 ├── poll-workflow.ts          # durable workflow per (workspace, source)
 ├── classify-workflow.ts      # durable workflow subscribed to signal.ingested
-└── tools.ts                  # register a few MCP tools (signals.list, signals.dismiss)
+├── catalog.ts                # tracked_companies management
+└── tools.ts                  # MCP tools (signals.list, signals.dismiss, ingest.poll_now)
 ```
 
-Each adapter is ~80–150 lines. Each defines a `SignalSourceAdapter` with `poll(config, cursor) → { items, cursor }`.
+A workspace turns ingestion on by:
 
-A workspace gets ingestion running by:
-1. Inserting `graph_sources` rows for each adapter it wants.
-2. Inserting `workspace_source_configs` rows (with cadence + initial cursor).
-3. Starting `signal_ingest:<source_kind>` workflows. The workflows persist; on restart they pick up cursors from the DB.
+1. Defining one or more ICP segments in `workspace_icps`.
+2. Opting in to companies (`workspace_tracked_companies`) — either explicitly or via filter.
+3. Enabling sources (`workspace_source_configs`) — per default we pre-enable Greenhouse, Lever, Ashby, Workable, HN Who-is-hiring, SEC EDGAR, ProductHunt, HN front, and a default set of RSS feeds.
+4. The platform starts the `signal_ingest:<source_kind>` workflows for that workspace; they persist their cursors in the DB and resume on restart.
 
 ---
 
@@ -160,35 +224,26 @@ A workspace gets ingestion running by:
 
 - **Source down**: adapter throws → workflow logs `signal.ingest.failed` → backs off (15 min → 1 h → 6 h) → resumes.
 - **Rate limit (429)**: respect `Retry-After`; back off; reduce cadence for that source if persistent.
-- **Parser breakage**: items that fail to parse get quarantined in a `signal_quarantine` table (Phase 1.5) — never crash the workflow.
-- **Daily cap reached**: workflow continues to poll but inserts hit-cap signals into a `signal_overflow` audit log; no LLM is invoked.
-- **Bad ICP match (over-eager)**: a `match_threshold` per workspace gates `signal.matched`. Default 0.6; tune per workspace.
+- **Parser breakage**: items that fail to parse get quarantined; never crash the workflow.
+- **Daily cap reached**: workflow continues to poll but inserts hit-cap rows into `signal_overflow`; no LLM is invoked.
+- **Bad ICP match (over-eager)**: per-segment `match_threshold` gates `signal.matched`. Default 0.6; tune per segment.
 
 ---
 
-## What we explicitly defer
+## Decisions (locked)
 
-- **X (Twitter) API** — $200/mo. Phase 2; ROI depends on whether the persona cares about Twitter as a signal source.
-- **Listen Notes** — podcast mentions are marginal value for most ICPs. Phase 2.
-- **Crunchbase / PitchBook** — paid + slow to integrate. SEC EDGAR + RSS + GDELT cover ~80% of what they offer for tech outbound. Phase 3 / skip.
-- **LinkedIn scraping** — risky + costly. Phase 3 / skip.
-- **Embedding pipeline** for fuzzy dedup — Phase 1 ships with exact dedup; embedding-based dedup comes when the cost of dupes becomes visible.
-- **Multi-ICP per workspace** — single `workspaces.icp` jsonb for v1; promote to a table when a workspace needs more than one.
-
----
-
-## Open decisions (need your call before code)
-
-1. **ICP shape — single or many?** Foundation defaults to one ICP per workspace stored on `workspaces.icp`. Confirm — or do we need multiple ICP segments per workspace from day one?
-2. **Classify-stage model**: DeepSeek V4 Pro for everything (per existing architecture), OR a smaller / cheaper DeepSeek model for the classifier batch call to push cost down further? Per-batch cost is already low; defaulting to V4 Pro keeps it simple.
-3. **Per-source company tracking for Greenhouse/Lever/Ashby**: workspace declares a list of target companies, OR we maintain a curated catalog of "known tech companies on Greenhouse" and let workspaces opt in? Catalog is more useful but more work.
-4. **GDELT** as a Phase 1 source — high volume and noisy. Include in Phase 1 with conservative filters, or defer to 1.5 and let RSS + Google News cover the news bucket first?
-5. **Embedding generation in Phase 1**: skip (exact dedup only) and accept some dupes, OR add an embedding step in stage 1 so fuzzy dedup is available from day one? Skipping is cheaper; adding shows up as ~$0.0001 per item (DeepSeek embeddings) which adds maybe $0.10/day at 1k items.
-
-Decisions on the above lock the schema (one migration) and the source-adapter set for the first commit.
+| #  | Decision                                                                                  |
+|----|-------------------------------------------------------------------------------------------|
+| 1  | **Multi-ICP per workspace** via `workspace_icps`. Team plan exposes the UI.               |
+| 2  | **DeepSeek V4 Pro everywhere** — classifier, judge, writer. One vendor, simplest billing. |
+| 3  | **Hiring-first**: ATS adapters (Greenhouse/Lever/Ashby/Workable) + HN "Who is hiring" + career-page RSS are Phase 1 primary. Tracked-companies catalog is platform-owned + workspace-opt-in. |
+| 4  | **GDELT deferred to Phase 1.5**. RSS + Google News + Reddit cover news first.             |
+| 5  | **Embeddings + fuzzy dedup in Phase 1**. ~$0.01/day per workspace; cleaner data is worth it. |
 
 ---
 
-## Why this design (in one paragraph)
+## What lands in commit 1
 
-The architecture's hardest claim about ingestion is "every state change is a typed event, no crons for orchestration." A two-stage pipeline honours that: stage 1 emits `signal.ingested` for every cheap pull, stage 2 batches off that event and emits `signal.matched` / `signal.dismissed`. The cost-shaping work happens between the stages (cheap filters + exact dedup before any LLM call), so a workspace gets autonomous, all-day signal feeding for cents — and the architecture stays honest.
+Schema migration (`db/migrations/015_signal_ingestion.sql`) — the locked schema above.
+
+Following commits land adapters + workflows + tests, source by source.
