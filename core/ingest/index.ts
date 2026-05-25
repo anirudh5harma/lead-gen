@@ -40,3 +40,46 @@ export type {
   DedupCheckInput,
   DedupCheckResult,
 } from "./novelty.ts";
+
+// Cheap-path infrastructure
+export {
+  ensureBudgetRow,
+  reserveCandidate,
+  reserveClassify,
+  refundCandidate,
+  recordOverflow,
+  readBudget,
+} from "./budget.ts";
+export type { BudgetState } from "./budget.ts";
+
+export {
+  listIcps,
+  getIcp,
+  createIcp,
+  updateIcp,
+  deleteIcp,
+  IcpInput,
+  IcpRow,
+  IcpPredicateRule,
+} from "./icps.ts";
+
+export {
+  evaluateRule,
+  evaluateMustHaves,
+  firstMatchingIcp,
+  allMatchingIcps,
+} from "./icp-filter.ts";
+export type { PredicateContext, PredicateResult } from "./icp-filter.ts";
+
+export {
+  upsertTrackedCompany,
+  getTrackedCompany,
+  findTrackedByDomain,
+  listCatalogForAdapter,
+  addCompanyExplicit,
+  addCompaniesByFilter,
+  removeCompany,
+  listWorkspaceCompanies,
+  findWorkspacesTrackingCompany,
+} from "./catalog.ts";
+export type { TrackedCompany, UpsertTrackedCompanyInput, AddCompanyByFilter } from "./catalog.ts";
