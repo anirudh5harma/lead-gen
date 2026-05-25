@@ -37,6 +37,9 @@ test("migration runner: applies all foundation migrations and creates expected t
       "workspace_source_configs",
       "workspace_ingestion_budgets",
       "signal_overflow",
+      // 016 — shared candidates pool for catalog-driven polling
+      "signal_candidates",
+      "signal_candidate_fanouts",
     ];
     const { rows } = await fx.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables
