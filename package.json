@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "migrate": "node --experimental-strip-types scripts/migrate.ts",
+    "demo:seed": "node --experimental-strip-types scripts/demo-seed.ts",
     "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "dependencies": {

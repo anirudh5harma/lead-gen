@@ -28,27 +28,28 @@ legacy/          # Archived previous implementation. Do not import.
 
 ## Foundation status
 
-| Area                                                | State     |
-|-----------------------------------------------------|-----------|
-| Directory structure                                 | ✅ landed |
-| Database schema (14 migrations) + migration runner  | ✅ landed |
-| Five primitives (Zod)                               | ✅ landed |
-| Event bus (in-memory + Postgres via LISTEN/NOTIFY)  | ✅ landed |
-| Durable workflow runtime (in-process + Postgres)    | ✅ landed |
-| Storage layer (pg pool + workspace-scoped sessions) | ✅ landed |
-| Agent fabric (tools, memory, eval, reps)            | ✅ landed |
-| MCP envelope                                        | ✅ landed |
-| Knowledge graph nodes + edges + first 13 Tools      | ✅ landed |
-| Concrete memory adapters + outcome feedback bridge  | ✅ landed |
-| LLM client (DeepSeek V4 Pro) + LLM-backed judge     | ✅ landed |
-| Email channel (SES owned-domain + Outlook OAuth)    | ✅ landed |
-| Transactional email (Resend)                        | ✅ landed |
-| First Rep + Play end-to-end ("Maya", Series A cold) | ✅ landed |
-| Reply intake + classification → procedural feedback | ✅ landed |
-| Production adapters (NATS, Restate)                 | ⏳ stubs  |
-| Webhook routes (Outlook subscription, SES inbound)  | ⏳ next   |
-| Surface layer (UI: morning brief, approvals, ...)   | ⏳ next   |
-| LinkedIn / X / voice channels                       | ⏳ later  |
+| Area                                                  | State     |
+|-------------------------------------------------------|-----------|
+| Directory structure                                   | ✅ landed |
+| Database schema (14 migrations) + migration runner    | ✅ landed |
+| Five primitives (Zod)                                 | ✅ landed |
+| Event bus (in-memory + Postgres + NATS JetStream)     | ✅ landed |
+| Durable workflow runtime (in-process + Postgres + Restate ingress client) | ✅ landed |
+| Storage layer (pg pool + workspace-scoped sessions)   | ✅ landed |
+| Agent fabric (tools, memory, eval, reps)              | ✅ landed |
+| MCP envelope                                          | ✅ landed |
+| Knowledge graph nodes + edges + first 13 Tools        | ✅ landed |
+| Concrete memory adapters + outcome feedback bridge    | ✅ landed |
+| LLM client (DeepSeek V4 Pro) + LLM-backed judge       | ✅ landed |
+| Email channel (SES owned-domain + Outlook OAuth)      | ✅ landed |
+| Transactional email (Resend)                          | ✅ landed |
+| First Rep + Play end-to-end ("Maya", Series A cold)   | ✅ landed |
+| Reply intake + classification → procedural feedback   | ✅ landed |
+| Webhook routes (Outlook subscription + SES SNS + OAuth) | ✅ landed |
+| Dashboard UI (brief, conversations, approvals, ...)   | ✅ landed |
+| Restate workflow-handler host process                 | ⏳ deployment work |
+| LinkedIn / X / voice channels                         | ⏳ later  |
+| Second Play + NL → spec compiler                      | ⏳ later  |
 
 ## Local development
 
@@ -88,3 +89,36 @@ export DEEPSEEK_MODEL=deepseek-v4-pro   # optional override
 ```
 
 The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` interface so swapping providers is a single-file change.
+
+### Try the dashboard end-to-end
+
+```bash
+# Apply migrations, then seed Maya + a Series A signal, run the cold-open
+# Play with mocked LLM + SES, and simulate an inbound positive reply so
+# the dashboard has real data.
+npm run migrate
+npm run demo:seed
+npm run dev
+# Open http://localhost:3000/dashboard
+```
+
+The seed prints the workspace id; the dashboard's `getActiveWorkspace`
+falls back to the most-recently-created workspace when there's no
+`bs_ws` cookie, so a freshly seeded demo workspace renders without
+extra steps.
+
+### Production adapters
+
+NATS JetStream is the production event bus (see ARCHITECTURE.md). Run a
+NATS server and set `NATS_URL`; the bus auto-creates the stream.
+
+Restate is the production workflow runtime. The adapter shipped here is
+the **ingress client**: it satisfies our `WorkflowRuntime` interface
+over HTTP to a running Restate. Deploying Restate end-to-end also
+requires a separate workflow-handler process built on
+`@restatedev/restate-sdk` — see the comment block at the bottom of
+`core/substrate/workflows/adapters/restate.ts` for the topology.
+
+Until Restate is deployed, the Postgres workflow runtime is the
+production choice for single-process deployments (journals durably;
+doesn't resume parked workflows across process restarts).
