@@ -138,3 +138,33 @@ export type {
   CatalogPollInput as CatalogPollWorkflowInput,
   CatalogPollSummary,
 } from "./poll-workflow.ts";
+
+// Workspace adapters + poll
+export {
+  workspaceAdapters,
+  getWorkspaceAdapter,
+  listWorkspaceAdapterIds,
+} from "./adapters/registry.ts";
+export type {
+  WorkspaceAdapter,
+  WorkspacePollInput,
+  WorkspacePollResult,
+} from "./adapters/_workspace-types.ts";
+export { rssAdapter, RssError, parseFeed } from "./adapters/rss.ts";
+export { hnFrontAdapter, HnError } from "./adapters/hn-front.ts";
+export {
+  hnWhosHiringAdapter,
+  HnHiringError,
+} from "./adapters/hn-whos-hiring.ts";
+export { productHuntAdapter, ProductHuntError } from "./adapters/product-hunt.ts";
+export { redditAdapter, RedditError } from "./adapters/reddit.ts";
+export { googleNewsAdapter } from "./adapters/google-news.ts";
+export {
+  workspacePollOnce,
+  createWorkspacePollWorkflow,
+} from "./workspace-poll.ts";
+export type {
+  WorkspacePollDeps,
+  WorkspacePollInput as WorkspacePollWorkflowInput,
+  WorkspacePollSummary,
+} from "./workspace-poll.ts";
