@@ -7,8 +7,6 @@
  * See docs/signal-ingestion.md for the full design.
  */
 
-import type { SignalKind } from "../primitives/signal.ts";
-
 /**
  * A single item returned by an adapter's poll. The pipeline owns persistence,
  * embedding, dedup, and fanout — adapters just normalise upstream payloads.

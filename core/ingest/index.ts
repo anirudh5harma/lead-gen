@@ -83,3 +83,45 @@ export {
   findWorkspacesTrackingCompany,
 } from "./catalog.ts";
 export type { TrackedCompany, UpsertTrackedCompanyInput, AddCompanyByFilter } from "./catalog.ts";
+
+// Platform source registry + catalog poll cursors
+export {
+  ensurePlatformSource,
+  getPlatformSourceByAdapter,
+  listPlatformSources,
+  loadCursor,
+  saveCursor,
+  recordCursorError,
+} from "./sources.ts";
+export type { PlatformSignalSource, CatalogCursor } from "./sources.ts";
+
+// Adapter framework
+export {
+  catalogAdapters,
+  getCatalogAdapter,
+  listCatalogAdapterIds,
+} from "./adapters/registry.ts";
+export type {
+  CatalogAdapter,
+  CatalogPollInput,
+  CatalogPollResult,
+} from "./adapters/types.ts";
+export { greenhouseAdapter, GreenhouseError, stripHtml } from "./adapters/greenhouse.ts";
+
+// Poll + fanout
+export { pollOnce } from "./poll.ts";
+export type { PollDeps, PollInput, PollOutcome } from "./poll.ts";
+export { fanoutCandidate } from "./fanout.ts";
+export type {
+  FanoutCandidate,
+  FanoutDeps,
+  FanoutResult,
+} from "./fanout.ts";
+
+// Workflow
+export { createCatalogPollWorkflow } from "./poll-workflow.ts";
+export type {
+  CatalogPollWorkflowDeps,
+  CatalogPollInput as CatalogPollWorkflowInput,
+  CatalogPollSummary,
+} from "./poll-workflow.ts";

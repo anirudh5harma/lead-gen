@@ -34,7 +34,8 @@ const WorkspaceMemberInvited = z.object({
 const SignalIngested = z.object({
   signal_id: z.string().uuid(),
   source_id: z.string().uuid().nullable(),
-  kind: z.string(),
+  /** Adapter-declared kind, or null when stage 2 still needs to classify. */
+  kind: z.string().nullable(),
   novelty_score: z.number().min(0).max(1).nullable(),
 });
 
@@ -45,6 +46,17 @@ const SignalMatched = z.object({
 });
 
 const SignalDismissed = z.object({
+  signal_id: z.string().uuid(),
+  reason: z.string(),
+});
+
+/**
+ * A catalog candidate flipped from active to expired (the upstream stopped
+ * surfacing its external_id — job filled, press release pulled). Downstream
+ * Plays use this to stop referencing stale opportunities; workspace-scoped
+ * signals that originated from the candidate are marked 'spent'.
+ */
+const SignalExpired = z.object({
   signal_id: z.string().uuid(),
   reason: z.string(),
 });
@@ -234,6 +246,7 @@ export const eventRegistry = {
   "signal.ingested": SignalIngested,
   "signal.matched": SignalMatched,
   "signal.dismissed": SignalDismissed,
+  "signal.expired": SignalExpired,
 
   "play.run.started": PlayRunStarted,
   "play.run.completed": PlayRunCompleted,

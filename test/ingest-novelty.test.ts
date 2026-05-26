@@ -13,16 +13,13 @@ import {
 } from "../core/ingest/novelty.ts";
 
 async function seedSource(pool: Pool): Promise<string> {
-  const ws = randomUUID();
-  await pool.query(
-    `insert into workspaces (id, slug, name) values ($1, $2, $3)`,
-    [ws, `ws-${ws.slice(0, 8)}`, "ws"],
-  );
+  // signal_candidates.source_id now references platform_signal_sources;
+  // candidate-pool tests no longer need a workspace.
   const id = randomUUID();
   await pool.query(
-    `insert into graph_sources (id, workspace_id, kind, name)
-     values ($1, $2, 'job_board', 'test')`,
-    [id, ws],
+    `insert into platform_signal_sources (id, adapter, name)
+     values ($1, $2, $3)`,
+    [id, `test-${id.slice(0, 8)}`, "test source"],
   );
   return id;
 }

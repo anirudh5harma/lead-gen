@@ -23,13 +23,16 @@ async function seedCatalogCompany(
 
 async function seedSource(
   pool: import("pg").Pool,
-  workspaceId: string,
+  _workspaceId: string,
 ): Promise<string> {
+  // signal_candidates.source_id now references platform_signal_sources
+  // (workspace-agnostic). Each test asks for a fresh source so the unique
+  // (adapter) index doesn't collide across cases.
   const id = randomUUID();
   await pool.query(
-    `insert into graph_sources (id, workspace_id, kind, name)
-     values ($1, $2, 'web_monitor', 'greenhouse:stripe')`,
-    [id, workspaceId],
+    `insert into platform_signal_sources (id, adapter, name)
+     values ($1, $2, $3)`,
+    [id, `test-${id.slice(0, 8)}`, "test source"],
   );
   return id;
 }
