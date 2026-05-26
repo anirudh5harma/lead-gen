@@ -39,14 +39,16 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 // ─── Registry sanity ──────────────────────────────────────────────────────
 
-test("registry: all four ATS adapters are registered with kindHint='hiring'", () => {
+test("registry: every catalog adapter is registered; ATS adapters declare kindHint='hiring'", () => {
   assert.deepEqual(
     listCatalogAdapterIds().sort(),
-    ["ashby", "greenhouse", "lever", "workable"],
+    ["ashby", "greenhouse", "lever", "sec_edgar", "workable"],
   );
   for (const id of ["greenhouse", "lever", "ashby", "workable"]) {
     assert.equal(catalogAdapters[id].kindHint, "hiring");
   }
+  // sec_edgar declares per-item kind, not a static hint.
+  assert.equal(catalogAdapters["sec_edgar"].kindHint, null);
 });
 
 // ─── Lever ────────────────────────────────────────────────────────────────

@@ -7,6 +7,8 @@
  * See docs/signal-ingestion.md for the full design.
  */
 
+import type { SignalKind } from "../primitives/signal.ts";
+
 /**
  * A single item returned by an adapter's poll. The pipeline owns persistence,
  * embedding, dedup, and fanout — adapters just normalise upstream payloads.
@@ -18,6 +20,14 @@ export interface RawCandidate {
   title: string;
   content?: string;
   url?: string;
+  /**
+   * Per-item signal kind. Overrides the adapter's static kindHint —
+   * useful for adapters whose items can be different kinds (e.g. SEC
+   * EDGAR: S-1 → funding, 8-K item 2.01 → acquisition, 8-K item 5.02 →
+   * leadership_change). When null/undefined the pipeline falls back to
+   * the adapter's kindHint.
+   */
+  kind?: SignalKind | null;
   /** Adapter-extracted structured fields. Shape varies by adapter. */
   structured?: Record<string, unknown>;
   /** When the upstream event actually happened, ISO timestamp. */

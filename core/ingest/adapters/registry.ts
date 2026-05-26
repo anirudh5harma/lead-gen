@@ -3,6 +3,7 @@ import { greenhouseAdapter } from "./greenhouse.ts";
 import { leverAdapter } from "./lever.ts";
 import { ashbyAdapter } from "./ashby.ts";
 import { workableAdapter } from "./workable.ts";
+import { secEdgarAdapter } from "./sec-edgar.ts";
 
 /**
  * Adapter registry. Lookup by id. Adapters are registered statically here
@@ -18,6 +19,7 @@ export const catalogAdapters: Record<string, CatalogAdapter> = {
   lever: leverAdapter,
   ashby: ashbyAdapter,
   workable: workableAdapter,
+  sec_edgar: secEdgarAdapter,
 };
 
 export function getCatalogAdapter(id: string): CatalogAdapter | undefined {

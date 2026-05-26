@@ -90,6 +90,10 @@ export async function pollOnce(
 
   // Stage 1: dedup → embed → insert → fanout, per item.
   for (const item of pollResult.items) {
+    // Per-item kind overrides the adapter's static kindHint (SEC EDGAR
+    // items take different kinds depending on form/item code).
+    const itemKind = item.kind ?? input.adapter.kindHint;
+
     const leadText = `${item.title} ${(item.content ?? "").slice(0, 200)}`.trim();
     const [embedding] = await embedder.embed([leadText]);
     const novelty_key = effectiveNoveltyKey(input.adapter, item, input.company);
@@ -97,7 +101,7 @@ export async function pollOnce(
     const dedup = await dedupCheck(pool, {
       novelty_key,
       embedding,
-      kind: input.adapter.kindHint,
+      kind: itemKind,
     });
     if (dedup.duplicate && dedup.matched_id) {
       await recordCollision(pool, dedup.matched_id);
@@ -124,7 +128,7 @@ export async function pollOnce(
         input.source_id,
         item.external_id,
         item.external_thread_id ?? null,
-        input.adapter.kindHint ?? null,
+        itemKind ?? null,
         input.company.id,
         item.title,
         item.content ?? null,
@@ -143,7 +147,7 @@ export async function pollOnce(
       {
         id: candidate_id,
         source_id: input.source_id,
-        kind: input.adapter.kindHint,
+        kind: itemKind,
         company_id: input.company.id,
         title: item.title,
         content: item.content ?? null,
@@ -202,16 +206,17 @@ function effectiveNoveltyKey(
   item: RawCandidate,
   company: TrackedCompany,
 ): string {
-  if (adapter.kindHint && item.external_id) {
+  const itemKind = item.kind ?? adapter.kindHint;
+  if (itemKind && item.external_id) {
     return createHash("sha256")
       .update(
-        `${adapter.id}|${company.id}|${adapter.kindHint}|${item.external_id}`,
+        `${adapter.id}|${company.id}|${itemKind}|${item.external_id}`,
       )
       .digest("hex");
   }
   return computeNoveltyKey({
     domain: item.novelty_hint?.domain ?? company.domain ?? "",
-    kind: adapter.kindHint ?? "unknown",
+    kind: itemKind ?? "unknown",
     freshness_at: item.freshness_at,
   });
 }

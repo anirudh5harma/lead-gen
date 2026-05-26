@@ -21,6 +21,7 @@ export interface TrackedCompany {
   ashby_id: string | null;
   workable_id: string | null;
   career_rss_url: string | null;
+  sec_cik: string | null;
   properties: Record<string, unknown>;
   added_at: string;
 }
@@ -35,6 +36,7 @@ export interface UpsertTrackedCompanyInput {
   ashby_id?: string;
   workable_id?: string;
   career_rss_url?: string;
+  sec_cik?: string;
   properties?: Record<string, unknown>;
 }
 
@@ -49,6 +51,7 @@ interface TrackedCompanyRow {
   ashby_id: string | null;
   workable_id: string | null;
   career_rss_url: string | null;
+  sec_cik: string | null;
   properties: Record<string, unknown>;
   added_at: Date;
 }
@@ -70,9 +73,9 @@ export async function upsertTrackedCompany(
     const { rows } = await pool.query<TrackedCompanyRow>(
       `insert into tracked_companies (
          name, domain, industry, size_bucket,
-         greenhouse_id, lever_id, ashby_id, workable_id, career_rss_url,
+         greenhouse_id, lever_id, ashby_id, workable_id, career_rss_url, sec_cik,
          properties, refreshed_at
-       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb, now())
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb, now())
        on conflict (domain) where domain is not null do update set
          name           = excluded.name,
          industry       = coalesce(excluded.industry, tracked_companies.industry),
@@ -82,6 +85,7 @@ export async function upsertTrackedCompany(
          ashby_id       = coalesce(excluded.ashby_id, tracked_companies.ashby_id),
          workable_id    = coalesce(excluded.workable_id, tracked_companies.workable_id),
          career_rss_url = coalesce(excluded.career_rss_url, tracked_companies.career_rss_url),
+         sec_cik        = coalesce(excluded.sec_cik, tracked_companies.sec_cik),
          properties     = tracked_companies.properties || excluded.properties,
          refreshed_at   = now()
        returning *`,
@@ -95,6 +99,7 @@ export async function upsertTrackedCompany(
         input.ashby_id ?? null,
         input.workable_id ?? null,
         input.career_rss_url ?? null,
+        input.sec_cik ?? null,
         JSON.stringify(input.properties ?? {}),
       ],
     );
@@ -109,9 +114,9 @@ export async function upsertTrackedCompany(
   const { rows } = await pool.query<TrackedCompanyRow>(
     `insert into tracked_companies (
        name, industry, size_bucket,
-       greenhouse_id, lever_id, ashby_id, workable_id, career_rss_url,
+       greenhouse_id, lever_id, ashby_id, workable_id, career_rss_url, sec_cik,
        properties, refreshed_at
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, now())
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb, now())
      returning *`,
     [
       input.name,
@@ -122,6 +127,7 @@ export async function upsertTrackedCompany(
       input.ashby_id ?? null,
       input.workable_id ?? null,
       input.career_rss_url ?? null,
+      input.sec_cik ?? null,
       JSON.stringify(input.properties ?? {}),
     ],
   );
@@ -157,10 +163,10 @@ export async function findTrackedByDomain(
  */
 export async function listCatalogForAdapter(
   pool: Pool,
-  adapter: "greenhouse" | "lever" | "ashby" | "workable",
+  adapter: "greenhouse" | "lever" | "ashby" | "workable" | "sec_edgar",
   opts: { limit?: number; offset?: number } = {},
 ): Promise<TrackedCompany[]> {
-  const idColumn = `${adapter}_id`;
+  const idColumn = adapter === "sec_edgar" ? "sec_cik" : `${adapter}_id`;
   const { rows } = await pool.query<TrackedCompanyRow>(
     `select * from tracked_companies
       where ${idColumn} is not null

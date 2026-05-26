@@ -37,7 +37,13 @@ export interface CatalogAdapter {
   /** Signal kind every item from this source has, when knowable. */
   kindHint: SignalKind | null;
   /** Column name on tracked_companies that holds this adapter's board id. */
-  companyKeyColumn: "greenhouse_id" | "lever_id" | "ashby_id" | "workable_id" | "career_rss_url";
+  companyKeyColumn:
+    | "greenhouse_id"
+    | "lever_id"
+    | "ashby_id"
+    | "workable_id"
+    | "career_rss_url"
+    | "sec_cik";
   /** Run one poll cycle for a single company. */
   poll(input: CatalogPollInput): Promise<CatalogPollResult>;
 }
