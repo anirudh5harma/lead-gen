@@ -10,8 +10,8 @@ Durable workflows, typed event bus, storage clients, workspace auth. The non-neg
 
 ## Submodules
 
-- `events/` — typed event registry (Zod), publisher, in-memory dev bus + NATS JetStream adapter (production).
-- `workflows/` — durable workflow runtime contracts (Step, Workflow, Checkpoint, ApprovalGate). Dev adapter runs in-process; Restate adapter for production.
+- `events/` — typed event registry (Zod), publisher, in-memory dev bus, Postgres durable bus, and a NATS JetStream contract for future scale-out.
+- `workflows/` — durable workflow runtime contracts (Step, Workflow, Checkpoint, ApprovalGate). Dev adapter runs in-process; the product runtime uses the Postgres journal today, with a Restate contract for future scale-out.
 - `storage/` — Postgres + pgvector + ClickHouse clients, all workspace-aware.
 - `auth/` — workspace boundary enforcement, per-tenant credential vaulting.
 

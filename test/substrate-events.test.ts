@@ -122,23 +122,43 @@ test("event bus: handler errors do not block other handlers or the publisher", a
   assert.deepEqual(seen, ["press_mention"]);
 });
 
-test("event bus: idempotency key collapses retried publisher calls", async () => {
+test("event bus: idempotency key returns the original event without redispatch", async () => {
   const bus = createInMemoryEventBus();
-  const workspace_id = randomUUID();
+  const ws = randomUUID();
+  const seen: string[] = [];
+  await bus.subscribe("signal.ingested", (e) => {
+    seen.push(e.id);
+  });
+
   const first = await bus.publish({
-    workspace_id,
-    event_type: "signal.dismissed",
+    workspace_id: ws,
+    event_type: "signal.ingested",
     source: "webhook",
-    idempotency_key: "provider:event-1",
-    payload: { signal_id: randomUUID(), reason: "first" },
+    producer_ref: "webhook:test",
+    idempotency_key: "webhook:test:event-1",
+    payload: {
+      signal_id: randomUUID(),
+      source_id: null,
+      kind: "funding",
+      novelty_score: 0.8,
+    },
   });
-  const retry = await bus.publish({
-    workspace_id,
-    event_type: "signal.dismissed",
+  const duplicate = await bus.publish({
+    workspace_id: ws,
+    event_type: "signal.ingested",
     source: "webhook",
-    idempotency_key: "provider:event-1",
-    payload: { signal_id: randomUUID(), reason: "retry" },
+    producer_ref: "webhook:test",
+    idempotency_key: "webhook:test:event-1",
+    payload: {
+      signal_id: randomUUID(),
+      source_id: null,
+      kind: "hiring",
+      novelty_score: 0.2,
+    },
   });
-  assert.equal(retry.id, first.id);
+
+  await new Promise((r) => setImmediate(r));
+  assert.equal(duplicate.id, first.id);
   assert.equal(bus.published.length, 1);
+  assert.deepEqual(seen, [first.id]);
 });

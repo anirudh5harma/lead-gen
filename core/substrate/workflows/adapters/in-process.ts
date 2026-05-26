@@ -204,6 +204,9 @@ export function createInProcessWorkflowRuntime(
       async requestApproval(req: ApprovalRequest): Promise<ApprovalDecision> {
         const approval_id = randomUUID();
         rec.run.status = "awaiting_approval";
+        const decision = new Promise<ApprovalDecision>((resolve) => {
+          rec.pendingApprovals.set(approval_id, { req, resolve });
+        });
         if (opts.bus) {
           await opts.bus.publish({
             workspace_id: rec.run.workspace_id!,
@@ -219,9 +222,7 @@ export function createInProcessWorkflowRuntime(
             },
           });
         }
-        return new Promise<ApprovalDecision>((resolve) => {
-          rec.pendingApprovals.set(approval_id, { req, resolve });
-        });
+        return decision;
       },
 
       async publish(event_type, payload) {
@@ -310,6 +311,12 @@ export function createInProcessWorkflowRuntime(
     },
 
     async get<I = unknown, O = unknown>(
+      run_id: string,
+    ): Promise<WorkflowRun<I, O> | null> {
+      return (runs.get(run_id)?.run ?? null) as WorkflowRun<I, O> | null;
+    },
+
+    async resume<I = unknown, O = unknown>(
       run_id: string,
     ): Promise<WorkflowRun<I, O> | null> {
       return (runs.get(run_id)?.run ?? null) as WorkflowRun<I, O> | null;

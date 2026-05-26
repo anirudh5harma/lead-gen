@@ -172,6 +172,14 @@ export interface WorkflowRuntime {
 
   start<I, O = unknown>(opts: StartOptions<I>): Promise<WorkflowRun<I, O>>;
 
+  /**
+   * Resume a persisted, non-terminal workflow run from its journal.
+   * Adapters without durable storage may return the in-memory run.
+   */
+  resume<I = unknown, O = unknown>(
+    run_id: string,
+  ): Promise<WorkflowRun<I, O> | null>;
+
   get<I = unknown, O = unknown>(
     run_id: string,
   ): Promise<WorkflowRun<I, O> | null>;

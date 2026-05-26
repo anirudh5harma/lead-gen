@@ -42,6 +42,8 @@ test("migration runner: applies all foundation migrations and creates expected t
       // 016 — shared candidates pool for catalog-driven polling
       "signal_candidates",
       "signal_candidate_fanouts",
+      // 028 — LLM usage ledger
+      "workspace_llm_usage",
     ];
     const { rows } = await fx.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables

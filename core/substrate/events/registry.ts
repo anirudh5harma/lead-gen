@@ -179,6 +179,18 @@ const WorkflowStepFailed = z.object({
   error: z.string(),
 });
 
+const WorkflowRunFailed = z.object({
+  run_id: z.string().uuid(),
+  workflow_name: z.string(),
+  error: z.string(),
+});
+
+const WorkflowRunRetried = z.object({
+  run_id: z.string().uuid(),
+  workflow_name: z.string(),
+  retry_run_id: z.string().uuid(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Draft / send pipeline — the hot-path eval lives here.
 // `draft.judged` ALWAYS fires before `message.queued` or `message.sent`.
@@ -202,6 +214,17 @@ const DraftJudged = z.object({
 const DraftRejected = z.object({
   message_id: z.string().uuid(),
   reason: z.string(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversation lifecycle
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ConversationOpened = z.object({
+  conversation_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  counterparty_person_id: z.string().uuid(),
+  origin_signal_id: z.string().uuid().nullable(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,12 +331,17 @@ const MessageDeferred = z.object({
 const MessageDelivered = z.object({
   message_id: z.string().uuid(),
   channel: z.string(),
+  external_id: z.string().nullable().optional(),
+  provider_event_id: z.string().nullable().optional(),
 });
 
 const MessageBounced = z.object({
   message_id: z.string().uuid(),
   channel: z.string(),
   bounce_type: z.enum(["hard", "soft", "complaint"]),
+  external_id: z.string().nullable().optional(),
+  provider_event_id: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
 });
 
 const ReplyReceived = z.object({
@@ -356,6 +384,10 @@ const OutcomeRecorded = z.object({
   score: z.number(),
   conversation_id: z.string().uuid().nullable(),
   attributed_play_id: z.string().uuid().nullable(),
+  attributed_play_run_id: z.string().uuid().nullable().optional(),
+  attributed_message_id: z.string().uuid().nullable().optional(),
+  attributed_rep_id: z.string().uuid().nullable().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -371,6 +403,28 @@ const ChannelAccountErrored = z.object({
   channel_account_id: z.string().uuid(),
   kind: z.string(),
   error: z.string(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LLM cost / rate-limit governance
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LLMUsageRecorded = z.object({
+  purpose: z.string(),
+  model: z.string(),
+  prompt_tokens: z.number().int().nonnegative(),
+  completion_tokens: z.number().int().nonnegative(),
+  total_tokens: z.number().int().nonnegative(),
+  estimated_cost_usd: z.number().nonnegative().nullable(),
+});
+
+const LLMCallDeferred = z.object({
+  purpose: z.string(),
+  reason: z.string(),
+  token_cap: z.number().int().nonnegative(),
+  used_tokens: z.number().int().nonnegative(),
+  requested_tokens: z.number().int().nonnegative(),
+  retry_after: z.string().datetime().nullable(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -407,10 +461,14 @@ export const eventRegistry = {
   "workflow.step.started": WorkflowStepStarted,
   "workflow.step.completed": WorkflowStepCompleted,
   "workflow.step.failed": WorkflowStepFailed,
+  "workflow.run.failed": WorkflowRunFailed,
+  "workflow.run.retried": WorkflowRunRetried,
 
   "draft.proposed": DraftProposed,
   "draft.judged": DraftJudged,
   "draft.rejected": DraftRejected,
+
+  "conversation.opened": ConversationOpened,
 
   "email.bounce.received": EmailBounceReceived,
   "email.inbound.received": EmailInboundReceived,
@@ -437,6 +495,9 @@ export const eventRegistry = {
 
   "channel.account.connected": ChannelAccountConnected,
   "channel.account.errored": ChannelAccountErrored,
+
+  "llm.usage.recorded": LLMUsageRecorded,
+  "llm.call.deferred": LLMCallDeferred,
 
   "rep.memory.procedural.updated": RepMemoryProceduralUpdated,
 } as const;

@@ -25,7 +25,10 @@ export interface EventInput<TPayload = unknown> {
   /** e.g. `rep:<uuid>`, `channel:email`, `webhook:gmail`. */
   producer_ref?: string | null;
 
-  /** Dedupe key for retries, scoped by workspace and event type. */
+  /**
+   * Optional publisher-supplied dedupe key for retried external callbacks or
+   * idempotent system emits. Scoped by workspace_id + event_type.
+   */
   idempotency_key?: string | null;
 
   payload: TPayload;

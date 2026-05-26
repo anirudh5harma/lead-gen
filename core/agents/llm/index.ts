@@ -13,3 +13,11 @@ export {
   DeepSeekError,
 } from "./deepseek.ts";
 export type { DeepSeekOptions } from "./deepseek.ts";
+export {
+  createBudgetedLLMClient,
+  estimateCompletionTokens,
+  estimateDeepSeekCostUsd,
+  isLLMBudgetExceededError,
+  LLMBudgetExceededError,
+} from "./budget.ts";
+export type { BudgetedLLMClientOptions } from "./budget.ts";

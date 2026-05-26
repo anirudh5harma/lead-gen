@@ -200,6 +200,9 @@ test("postgres event bus: idempotency key collapses retried publishes", async (t
   });
   try {
     const ws = await seedWorkspace(fx.pool);
+    const seen: string[] = [];
+    await bus.subscribe("signal.dismissed", (e) => seen.push(e.id));
+
     const first = await bus.publish({
       workspace_id: ws,
       event_type: "signal.dismissed",
@@ -221,6 +224,10 @@ test("postgres event bus: idempotency key collapses retried publishes", async (t
       [ws],
     );
     assert.equal(result.rows[0].n, "1");
+
+    await until(() => seen.length >= 1);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepEqual(seen, [first.id]);
   } finally {
     await bus.close();
     await fx.close();

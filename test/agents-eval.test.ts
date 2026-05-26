@@ -13,7 +13,7 @@ function fakeRep() {
     id: randomUUID(),
     name: "Maya",
     role: "sdr" as const,
-    persona: { voice: "warm, direct, founder-to-founder" },
+    persona: { voice: "warm, direct, founder-to-founder", do_not: [], samples: [] },
   };
 }
 
@@ -84,4 +84,68 @@ test("heuristic judge: catches banned phrases", async () => {
 
   assert.equal(result.decision, "reject");
   assert.ok(result.rejection_reason?.includes("banned"));
+});
+
+test("eval gate: brand voice guardrail rejects do-not violations", async () => {
+  const bus = createInMemoryEventBus();
+  const judge = createNoopJudge(0.95, 0.6);
+
+  const result = await evalGate(
+    { judge, bus },
+    {
+      workspace_id: randomUUID(),
+      rep: {
+        ...fakeRep(),
+        persona: {
+          voice: "warm, precise, low-hype",
+          do_not: ["Do not mention being an AI."],
+          samples: [],
+        },
+      },
+      artifact: {
+        kind: "draft",
+        channel: "email",
+        body: "Hi Anne, I am an AI language model reaching out about your launch.",
+      },
+      message_id: randomUUID(),
+    },
+  );
+
+  assert.equal(result.decision, "reject");
+  assert.ok(result.rejection_reason?.includes("do-not"));
+  assert.equal(result.verdict.notes.axes.brand_voice, 0);
+});
+
+test("eval gate: brand voice guardrail rejects sample drift", async () => {
+  const bus = createInMemoryEventBus();
+  const judge = createNoopJudge(0.95, 0.6);
+
+  const result = await evalGate(
+    { judge, bus },
+    {
+      workspace_id: randomUUID(),
+      rep: {
+        ...fakeRep(),
+        persona: {
+          voice: "plainspoken, precise, low-hype",
+          do_not: [],
+          samples: [
+            "Saw the launch. The timing feels worth a quick compare-notes conversation.",
+            "The hiring signal is interesting because it changes the workflow conversation.",
+          ],
+        },
+      },
+      artifact: {
+        kind: "draft",
+        channel: "email",
+        body:
+          "Hi Anne, unlock unprecedented growth with our revolutionary platform that will transform everything.",
+      },
+      message_id: randomUUID(),
+    },
+  );
+
+  assert.equal(result.decision, "reject");
+  assert.ok(result.rejection_reason?.includes("canonical writing samples"));
+  assert.equal(result.verdict.notes.axes.voice_sample_overlap, 0);
 });

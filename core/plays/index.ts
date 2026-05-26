@@ -16,3 +16,35 @@ export type {
 
 export { seedMayaForDemo } from "./seed.ts";
 export type { SeedMayaResult, SeedMayaOptions } from "./seed.ts";
+
+export {
+  createSignalToEmailPlayWorkflow,
+  SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+} from "./signal-email-play.ts";
+export type {
+  SignalToEmailPlayDeps,
+  SignalToEmailPlayInput,
+  SignalToEmailPlayOutput,
+} from "./signal-email-play.ts";
+export {
+  createInMemoryVerticalSliceStore,
+  createPostgresVerticalSliceStore,
+} from "./vertical-store.ts";
+export type {
+  CreateConversationInput,
+  CreateDraftMessageInput,
+  CountPlayChannelMessagesInput,
+  RecordOutcomeInput,
+  VerticalSliceStore,
+  VerticalSliceStoreSeed,
+} from "./vertical-store.ts";
+export {
+  isDailyCapExceeded,
+  nextDailyWindow,
+  parseApprovalPolicy,
+  resolvePlayChannelPolicy,
+  shouldRequestApproval,
+} from "./autonomy.ts";
+export type { ApprovalPolicy, PlayChannelPolicy } from "./autonomy.ts";
+export { runFirstVerticalSlice } from "./demo.ts";
+export type { FirstVerticalSliceResult, RunFirstVerticalSliceOptions } from "./demo.ts";

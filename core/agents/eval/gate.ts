@@ -1,6 +1,10 @@
 import type { EventBus } from "../../substrate/events/index.ts";
 import { randomUUID } from "node:crypto";
 import type { EvalGateResult, Judge, JudgeInput } from "./types.ts";
+import {
+  applyBrandVoiceGuardrail,
+  type BrandVoiceGuardrailOptions,
+} from "./voice.ts";
 
 /**
  * The hot-path eval gate. Wraps a Judge with the bus contract:
@@ -19,6 +23,7 @@ import type { EvalGateResult, Judge, JudgeInput } from "./types.ts";
 export interface EvalGateOptions {
   judge: Judge;
   bus: EventBus;
+  brandVoice?: BrandVoiceGuardrailOptions;
 }
 
 export async function evalGate(
@@ -26,7 +31,11 @@ export async function evalGate(
   input: JudgeInput & { message_id: string },
 ): Promise<EvalGateResult> {
   const { judge, bus } = opts;
-  const verdict = await judge.evaluate(input);
+  const verdict = applyBrandVoiceGuardrail(
+    input,
+    await judge.evaluate(input),
+    opts.brandVoice,
+  );
 
   await bus.publish({
     workspace_id: input.workspace_id,

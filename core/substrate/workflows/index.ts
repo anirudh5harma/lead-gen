@@ -12,8 +12,10 @@
  *     defineWorkflow,
  *   } from "@/core/substrate/workflows";
  *
- * Production (when landed):
- *   import { createRestateWorkflowRuntime } from "@/core/substrate/workflows";
+ * Product runtime today:
+ *   use `createProductSubstrate()` from core/product/substrate. It selects the
+ *   supported Postgres-backed workflow journal. The Restate export below is a
+ *   future scale-adapter contract, not an active product path yet.
  */
 
 export * from "./types.ts";

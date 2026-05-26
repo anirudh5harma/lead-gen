@@ -50,7 +50,21 @@ export async function setupPg(label = "t"): Promise<PgFixture | null> {
     options: `-c search_path=${schema},public`,
   });
 
-  await runMigrations({ pool, dir: migrationsDir });
+  const migrationLock = await pool.connect();
+  try {
+    await migrationLock.query(
+      `select pg_advisory_lock(hashtext('bombsell_test_migrations'))`,
+    );
+    await runMigrations({ pool, dir: migrationsDir });
+  } finally {
+    try {
+      await migrationLock.query(
+        `select pg_advisory_unlock(hashtext('bombsell_test_migrations'))`,
+      );
+    } finally {
+      migrationLock.release();
+    }
+  }
 
   return {
     pool,

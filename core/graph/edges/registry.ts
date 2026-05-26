@@ -55,6 +55,14 @@ export const edgeRegistry = {
     description: "Subject of a signal we ingested.",
   },
 
+  /** A source produced a signal. */
+  emitted: {
+    from: "source",
+    to: "signal",
+    cardinality: "multi",
+    description: "Source attribution for an ingested signal.",
+  },
+
   /** An inbound message is a reply to one of our outbound messages. */
   replied_to: {
     from: "message",

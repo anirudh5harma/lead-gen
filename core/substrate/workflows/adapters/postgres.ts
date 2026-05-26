@@ -245,6 +245,35 @@ export function createPostgresWorkflowRuntime(
       },
 
       async requestApproval(req: ApprovalRequest): Promise<ApprovalDecision> {
+        const prior = await pool.query<{
+          id: string;
+          decision: ApprovalDecision["decision"] | "pending";
+          decided_by: string | null;
+          decision_note: string | null;
+        }>(
+          `select id, decision, decided_by, decision_note
+             from workflow_approvals
+            where run_id = $1
+              and kind = $2
+              and payload = $3::jsonb
+            order by created_at asc
+            limit 1`,
+          [rec.run.id, req.kind, JSON.stringify(req.payload ?? {})],
+        );
+        if (prior.rows[0]?.decision && prior.rows[0].decision !== "pending") {
+          return {
+            decision: prior.rows[0].decision,
+            decided_by: prior.rows[0].decided_by ?? undefined,
+            note: prior.rows[0].decision_note ?? undefined,
+          };
+        }
+        if (prior.rows[0]?.decision === "pending") {
+          await setRunStatus(pool, rec.run, "awaiting_approval");
+          return new Promise<ApprovalDecision>((resolve) => {
+            rec.parkedApprovals.set(prior.rows[0]!.id, { resolve });
+          });
+        }
+
         const approval_id = randomUUID();
         await pool.query(
           `insert into workflow_approvals (
@@ -261,6 +290,9 @@ export function createPostgresWorkflowRuntime(
           ],
         );
         await setRunStatus(pool, rec.run, "awaiting_approval");
+        const decision = new Promise<ApprovalDecision>((resolve) => {
+          rec.parkedApprovals.set(approval_id, { resolve });
+        });
         await bus.publish({
           workspace_id: rec.run.workspace_id!,
           event_type: "approval.requested",
@@ -269,9 +301,7 @@ export function createPostgresWorkflowRuntime(
           correlation_id: rec.run.correlation_id ?? rec.run.id,
           payload: { approval_id, run_id: rec.run.id, step_id: null, kind: req.kind },
         });
-        return new Promise<ApprovalDecision>((resolve) => {
-          rec.parkedApprovals.set(approval_id, { resolve });
-        });
+        return decision;
       },
 
       async publish(event_type, payload) {
@@ -285,6 +315,61 @@ export function createPostgresWorkflowRuntime(
         });
       },
     };
+  }
+
+  function launchWorkflow<I, O>(
+    rec: RunRecord,
+    def: WorkflowDefinition<I, O>,
+  ): void {
+    const ctx = makeContext(rec);
+    void (async () => {
+      try {
+        const output = (await def.run(rec.run.input as I, ctx)) as O;
+        rec.run.output = output;
+        rec.run.status = "completed";
+        rec.run.ended_at = new Date().toISOString();
+        await pool.query(
+          `update workflow_runs
+              set status = 'completed',
+                  output = $1::jsonb,
+                  ended_at = now(),
+                  lease_owner = null,
+                  lease_expires_at = null
+            where id = $2`,
+          [JSON.stringify(output ?? null), rec.run.id],
+        );
+        await updatePlayRun(pool, rec.run, "completed", output);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : undefined;
+        rec.run.status = "failed";
+        rec.run.error = { message, stack };
+        rec.run.ended_at = new Date().toISOString();
+        await pool.query(
+          `update workflow_runs
+              set status = 'failed',
+                  error = $1::jsonb,
+                  ended_at = now(),
+                  lease_owner = null,
+                  lease_expires_at = null
+            where id = $2`,
+          [JSON.stringify({ message, stack }), rec.run.id],
+        );
+        await updatePlayRun(pool, rec.run, "failed", undefined);
+        await bus.publish({
+          workspace_id: rec.run.workspace_id,
+          event_type: "workflow.run.failed",
+          source: "system",
+          producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
+          correlation_id: rec.run.correlation_id ?? rec.run.id,
+          payload: {
+            run_id: rec.run.id,
+            workflow_name: rec.run.workflow_name,
+            error: message,
+          },
+        });
+      }
+    })();
   }
 
   return {
@@ -326,23 +411,64 @@ export function createPostgresWorkflowRuntime(
       }
 
       const id = randomUUID();
-      await pool.query(
-        `insert into workflow_runs (
-           id, workspace_id, workflow_name, workflow_version,
-           play_id, play_run_id, status, input, idempotency_key,
-           started_at, created_at
-         ) values ($1, $2, $3, $4, $5, $6, 'running', $7::jsonb, $8, now(), now())`,
-        [
-          id,
-          startOpts.workspace_id,
-          startOpts.workflow_name,
-          def.version,
-          startOpts.play_id ?? null,
-          startOpts.play_run_id ?? null,
-          JSON.stringify(startOpts.input ?? null),
-          startOpts.idempotency_key ?? null,
-        ],
-      );
+      const play_run_id = startOpts.play_id
+        ? startOpts.play_run_id ?? randomUUID()
+        : null;
+      try {
+        await pool.query(
+          `insert into workflow_runs (
+             id, workspace_id, workflow_name, workflow_version,
+             play_id, play_run_id, status, input, idempotency_key,
+             started_at, created_at
+           ) values ($1, $2, $3, $4, $5, $6, 'running', $7::jsonb, $8, now(), now())`,
+          [
+            id,
+            startOpts.workspace_id,
+            startOpts.workflow_name,
+            def.version,
+            startOpts.play_id ?? null,
+            null,
+            JSON.stringify(startOpts.input ?? null),
+            startOpts.idempotency_key ?? null,
+          ],
+        );
+      } catch (err) {
+        if (startOpts.idempotency_key && isUniqueViolation(err)) {
+          const existing = await loadRunByIdempotency<I, O>(
+            pool,
+            startOpts.workspace_id,
+            startOpts.workflow_name,
+            startOpts.idempotency_key,
+          );
+          if (existing) return existing;
+        }
+        throw err;
+      }
+      if (startOpts.play_id && play_run_id) {
+        const input = startOpts.input as {
+          rep_id?: unknown;
+          trigger_event_id?: unknown;
+        };
+        await pool.query(
+          `insert into play_runs (
+             id, workspace_id, play_id, workflow_run_id, trigger_event_id,
+             rep_id, status, input, started_at, created_at
+           ) values ($1, $2, $3, $4, $5, $6, 'running', $7::jsonb, now(), now())`,
+          [
+            play_run_id,
+            startOpts.workspace_id,
+            startOpts.play_id,
+            id,
+            typeof input?.trigger_event_id === "string" ? input.trigger_event_id : null,
+            typeof input?.rep_id === "string" ? input.rep_id : null,
+            JSON.stringify(startOpts.input ?? null),
+          ],
+        );
+        await pool.query(
+          `update workflow_runs set play_run_id = $1 where id = $2`,
+          [play_run_id, id],
+        );
+      }
 
       const run: WorkflowRun<I, O> = {
         id,
@@ -353,7 +479,7 @@ export function createPostgresWorkflowRuntime(
         status: "running",
         input: startOpts.input,
         play_id: startOpts.play_id ?? null,
-        play_run_id: startOpts.play_run_id ?? null,
+        play_run_id,
         correlation_id: startOpts.correlation_id ?? null,
         causation_id: startOpts.causation_id ?? null,
         idempotency_key: startOpts.idempotency_key ?? null,
@@ -367,35 +493,31 @@ export function createPostgresWorkflowRuntime(
       };
       runs.set(id, rec);
 
-      const ctx = makeContext(rec);
-      void (async () => {
-        try {
-          const output = (await def.run(startOpts.input, ctx)) as O;
-          rec.run.output = output;
-          rec.run.status = "completed";
-          rec.run.ended_at = new Date().toISOString();
-          await pool.query(
-            `update workflow_runs
-                set status = 'completed', output = $1::jsonb, ended_at = now()
-              where id = $2`,
-            [JSON.stringify(output ?? null), id],
-          );
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          const stack = err instanceof Error ? err.stack : undefined;
-          rec.run.status = "failed";
-          rec.run.error = { message, stack };
-          rec.run.ended_at = new Date().toISOString();
-          await pool.query(
-            `update workflow_runs
-                set status = 'failed', error = $1::jsonb, ended_at = now()
-              where id = $2`,
-            [JSON.stringify({ message, stack }), id],
-          );
-        }
-      })();
+      launchWorkflow(rec, def as WorkflowDefinition<I, O>);
 
       return run;
+    },
+
+    async resume<I = unknown, O = unknown>(
+      run_id: string,
+    ): Promise<WorkflowRun<I, O> | null> {
+      const run = await loadRun<I, O>(pool, run_id);
+      if (!run) return null;
+      if (["completed", "cancelled"].includes(run.status)) return run;
+      const def = workflows.get(run.workflow_name);
+      if (!def) {
+        throw new Error(`Workflow not registered: ${run.workflow_name}`);
+      }
+
+      const rec: RunRecord = {
+        run: run as WorkflowRun,
+        parkedApprovals: new Map(),
+        parkedEventWaits: new Set(),
+      };
+      runs.set(run.id, rec);
+      await setRunStatus(pool, rec.run, "running");
+      launchWorkflow(rec, def as WorkflowDefinition<I, O>);
+      return rec.run as WorkflowRun<I, O>;
     },
 
     async get<I = unknown, O = unknown>(
@@ -446,10 +568,86 @@ async function setRunStatus(
   status: WorkflowRun["status"],
 ): Promise<void> {
   run.status = status;
-  await pool.query(`update workflow_runs set status = $1 where id = $2`, [
-    status,
-    run.id,
-  ]);
+  if (status === "running") {
+    run.error = undefined;
+    run.ended_at = undefined;
+    await pool.query(
+      `update workflow_runs
+          set status = $1, error = null, ended_at = null
+        where id = $2`,
+      [status, run.id],
+    );
+  } else if (["completed", "failed", "cancelled"].includes(status)) {
+    await pool.query(
+      `update workflow_runs
+          set status = $1,
+              lease_owner = null,
+              lease_expires_at = null
+        where id = $2`,
+      [status, run.id],
+    );
+  } else {
+    await pool.query(`update workflow_runs set status = $1 where id = $2`, [
+      status,
+      run.id,
+    ]);
+  }
+  await updatePlayRun(pool, run, status, run.output);
+}
+
+function toPlayRunStatus(status: WorkflowRun["status"]): string {
+  if (status === "awaiting_event") return "running";
+  return status;
+}
+
+async function updatePlayRun(
+  pool: Pool,
+  run: WorkflowRun,
+  status: WorkflowRun["status"],
+  output: unknown,
+): Promise<void> {
+  if (!run.play_run_id) return;
+  const playRunStatus = toPlayRunStatus(status);
+  await pool.query(
+    `update play_runs
+        set status = $1,
+            output = coalesce($2::jsonb, output),
+            ended_at = case when $3::text in ('completed', 'failed', 'cancelled') then now() else ended_at end
+      where id = $4`,
+    [
+      playRunStatus,
+      output === undefined ? null : JSON.stringify(output),
+      playRunStatus,
+      run.play_run_id,
+    ],
+  );
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "23505"
+  );
+}
+
+async function loadRunByIdempotency<I, O>(
+  pool: Pool,
+  workspace_id: string,
+  workflow_name: string,
+  idempotency_key: string,
+): Promise<WorkflowRun<I, O> | null> {
+  const { rows } = await pool.query<{ id: string }>(
+    `select id
+       from workflow_runs
+      where workspace_id = $1
+        and workflow_name = $2
+        and idempotency_key = $3
+      limit 1`,
+    [workspace_id, workflow_name, idempotency_key],
+  );
+  return rows[0] ? loadRun<I, O>(pool, rows[0].id) : null;
 }
 
 async function loadRun<I, O>(
