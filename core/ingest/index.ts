@@ -107,6 +107,13 @@ export type {
   CatalogPollResult,
 } from "./adapters/types.ts";
 export { greenhouseAdapter, GreenhouseError, stripHtml } from "./adapters/greenhouse.ts";
+export { leverAdapter, LeverError } from "./adapters/lever.ts";
+export { ashbyAdapter, AshbyError } from "./adapters/ashby.ts";
+export { workableAdapter, WorkableError } from "./adapters/workable.ts";
+export {
+  inferFunction,
+  inferSeniority,
+} from "./adapters/_hiring-heuristics.ts";
 
 // Poll + fanout
 export { pollOnce } from "./poll.ts";

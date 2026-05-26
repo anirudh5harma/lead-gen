@@ -1,5 +1,8 @@
 import type { CatalogAdapter } from "./types.ts";
 import { greenhouseAdapter } from "./greenhouse.ts";
+import { leverAdapter } from "./lever.ts";
+import { ashbyAdapter } from "./ashby.ts";
+import { workableAdapter } from "./workable.ts";
 
 /**
  * Adapter registry. Lookup by id. Adapters are registered statically here
@@ -12,6 +15,9 @@ import { greenhouseAdapter } from "./greenhouse.ts";
 
 export const catalogAdapters: Record<string, CatalogAdapter> = {
   greenhouse: greenhouseAdapter,
+  lever: leverAdapter,
+  ashby: ashbyAdapter,
+  workable: workableAdapter,
 };
 
 export function getCatalogAdapter(id: string): CatalogAdapter | undefined {

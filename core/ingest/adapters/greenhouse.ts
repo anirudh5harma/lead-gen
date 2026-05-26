@@ -4,6 +4,13 @@ import type {
   CatalogPollResult,
 } from "./types.ts";
 import type { RawCandidate } from "../types.ts";
+import {
+  inferFunction,
+  inferSeniority,
+  stripHtml,
+} from "./_hiring-heuristics.ts";
+
+export { stripHtml };
 
 /**
  * Greenhouse public job board adapter. Free API, no auth.
@@ -113,66 +120,7 @@ function extractStructured(job: GreenhouseJob): Record<string, unknown> {
     departments,
     offices,
     location,
-    function: inferFunction(departments, job.title),
+    function: inferFunction([...departments, job.title]),
     seniority: inferSeniority(job.title),
   };
-}
-
-// Order matters: more specific keywords first. `designer` precedes the
-// marketing regex because "Brand Designer" should classify as design,
-// not as marketing-brand. Conversely "Brand Manager" should land in
-// marketing — so `brand` only appears under marketing.
-const FUNCTION_KEYWORDS: Array<[string, RegExp]> = [
-  ["engineering", /(engineer|developer|software|platform|infra|sre|data)/i],
-  ["product", /(product\s*manager|product\s*designer|product\s*lead)/i],
-  ["design", /(designer|\bux\b|\bui\b)/i],
-  ["sales", /(sales|account|business\s*development|bdr|sdr)/i],
-  ["marketing", /(marketing|growth|\bbrand\b|content)/i],
-  ["operations", /(operations|ops|finance|legal|\bhr\b|people)/i],
-  ["support", /(support|customer\s*success|\bcs\b)/i],
-];
-
-function inferFunction(departments: string[], title: string): string | null {
-  const haystack = [departments.join(" "), title].join(" ").toLowerCase();
-  for (const [name, re] of FUNCTION_KEYWORDS) {
-    if (re.test(haystack)) return name;
-  }
-  return null;
-}
-
-const SENIORITY_RULES: Array<[string, RegExp]> = [
-  ["c_level", /\b(chief|cxo|ceo|cto|cfo|coo|cmo|cro|cpo)\b/i],
-  ["vp", /\b(vp|vice\s*president)\b/i],
-  ["director", /\b(director|head\s*of)\b/i],
-  ["principal", /\b(principal|distinguished)\b/i],
-  ["staff", /\b(staff)\b/i],
-  ["senior", /\b(senior|sr\.)\b/i],
-  ["lead", /\b(lead|team\s*lead)\b/i],
-  ["mid", /\b(mid\s*level|ii\b|iii\b)\b/i],
-  ["junior", /\b(junior|jr\.|entry\s*level|intern)\b/i],
-];
-
-function inferSeniority(title: string): string | null {
-  for (const [level, re] of SENIORITY_RULES) {
-    if (re.test(title)) return level;
-  }
-  return null;
-}
-
-export function stripHtml(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
