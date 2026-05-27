@@ -16,22 +16,26 @@ import { upsertCompany } from "../graph/nodes/companies.ts";
 import type { SignalKind } from "../primitives/signal.ts";
 
 /**
- * Fanout: turn a shared signal_candidate into per-workspace `signals` rows.
+ * Fanout: turn a shared signal_candidate into per-workspace `signals` rows
+ * by way of a typed `signal.discovered` event. The signal projector
+ * (core/ingest/projectors.ts) owns the row INSERT and the downstream
+ * `signal.ingested` emission. Fanout owns the orchestration: budget
+ * reservation, ICP filter, graph company upsert, audit, idempotency.
  *
  * For each workspace that tracks the candidate's company:
- *   1. Reserve a candidate slot against the workspace's daily budget.
+ *   1. Skip if signal_candidate_fanouts already has the (candidate,
+ *      workspace) pair (idempotent).
+ *   2. Reserve a candidate slot against the workspace's daily budget.
  *      If at cap → audit (signal_overflow) + skipped:budget.
- *   2. Load the workspace's enabled ICPs.
  *   3. Run the structured must-haves filter (cheap, no LLM). The
  *      candidate must match ≥ 1 ICP segment to be of interest.
  *      None match → skipped:must_haves.
- *   4. Insert ONE workspace-scoped `signals` row with status='ingested'
- *      pointing back via origin_candidate_id.
- *   5. Emit signal.ingested on the bus so stage 2 can pick it up.
- *   6. Record fanout outcome.
- *
- * Idempotent: a row in signal_candidate_fanouts means we've already
- * processed this (candidate, workspace) pair.
+ *   4. Upsert the catalog company into the workspace's knowledge graph
+ *      so signals.related_company_id can point at a real graph_companies row.
+ *   5. Record the fanout audit row (with the chosen signal_id).
+ *   6. Publish `signal.discovered` with the full payload + an
+ *      idempotency_key derived from (candidate_id, workspace_id) so a
+ *      retried fanout never produces a duplicate event.
  */
 
 export interface FanoutCandidate {
@@ -47,6 +51,8 @@ export interface FanoutCandidate {
   freshness_at: string;
   /** When the candidate has a related person at the company, pass it through. */
   related_person_id?: string | null;
+  /** Embedding produced upstream (poll.ts) — passed through to the projector. */
+  embedding?: number[] | null;
 }
 
 export interface FanoutDeps {
@@ -80,8 +86,11 @@ export async function fanoutCandidate(
   const results: FanoutResult[] = [];
   for (const workspace_id of workspaces) {
     // Idempotency: skip if already fanned out.
-    const existing = await deps.pool.query<{ outcome: string }>(
-      `select outcome from signal_candidate_fanouts
+    const existing = await deps.pool.query<{
+      outcome: string;
+      signal_id: string | null;
+    }>(
+      `select outcome, signal_id from signal_candidate_fanouts
         where candidate_id = $1 and workspace_id = $2`,
       [candidate.id, workspace_id],
     );
@@ -89,6 +98,7 @@ export async function fanoutCandidate(
       results.push({
         workspace_id,
         outcome: "skipped:dedup",
+        signal_id: existing.rows[0].signal_id ?? undefined,
       });
       continue;
     }
@@ -116,9 +126,6 @@ export async function fanoutCandidate(
         url: candidate.url,
         company: {
           id: candidate.company_id,
-          // company.industry + size_bucket land below via SQL join — but
-          // for foundation the matching context comes inline. The poll
-          // workflow looks up the catalog company before fanout.
         },
         structured: candidate.structured,
         freshness_at: candidate.freshness_at,
@@ -134,9 +141,6 @@ export async function fanoutCandidate(
 
     // Upsert the catalog company into the workspace's knowledge graph so
     // signals.related_company_id points at a real graph_companies row.
-    // The catalog is workspace-agnostic; the graph is workspace-scoped —
-    // fanout is the seam where the catalog crosses into the workspace's
-    // view of the world.
     let related_company_id: string | null = null;
     if (candidate.company_id) {
       const tracked = await getTrackedCompany(deps.pool, candidate.company_id);
@@ -155,52 +159,35 @@ export async function fanoutCandidate(
       }
     }
 
-    // Insert workspace-scoped signal row.
+    // Mint the signal id up front. The audit row uses it (FK was dropped in
+    // migration 025) and the projector inserts the row with the same id.
     const signal_id = randomUUID();
-    await deps.pool.query(
-      `insert into signals (
-         id, workspace_id, source_id,
-         kind, title, content, url,
-         freshness_at, related_company_id, related_person_id,
-         status, properties, provenance, origin_candidate_id, ingested_at
-       ) values (
-         $1, $2, null,
-         $3, $4, $5, $6,
-         $7, $8, $9,
-         'ingested', $10::jsonb, $11::jsonb, $12, now()
-       )`,
-      [
-        signal_id,
-        workspace_id,
-        candidate.kind,
-        candidate.title,
-        candidate.content,
-        candidate.url,
-        candidate.freshness_at,
-        related_company_id,
-        candidate.related_person_id ?? null,
-        JSON.stringify({
-          structured: candidate.structured,
-          novelty_count: candidate.novelty_count,
-          tracked_company_id: candidate.company_id,
-        }),
-        JSON.stringify({ source: "catalog_fanout", candidate_id: candidate.id }),
-        candidate.id,
-      ],
-    );
-
     await recordFanout(deps.pool, candidate.id, workspace_id, signal_id, "created");
 
     await deps.bus.publish({
       workspace_id,
-      event_type: "signal.ingested",
+      event_type: "signal.discovered",
       source: "system",
-      producer_ref: `ingest:catalog`,
+      producer_ref: "ingest:catalog",
+      idempotency_key: `fanout:${candidate.id}:${workspace_id}`,
       payload: {
         signal_id,
         source_id: null,
         kind: candidate.kind,
-        novelty_score: null,
+        title: candidate.title,
+        content: candidate.content,
+        url: candidate.url,
+        freshness_at: candidate.freshness_at,
+        related_company_id,
+        related_person_id: candidate.related_person_id ?? null,
+        origin_candidate_id: candidate.id,
+        properties: {
+          structured: candidate.structured,
+          novelty_count: candidate.novelty_count,
+          tracked_company_id: candidate.company_id,
+        },
+        provenance: { source: "catalog_fanout", candidate_id: candidate.id },
+        embedding: candidate.embedding ?? null,
       },
     });
 

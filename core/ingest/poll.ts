@@ -155,6 +155,7 @@ export async function pollOnce(
         structured: item.structured ?? {},
         novelty_count: 1,
         freshness_at: item.freshness_at,
+        embedding,
       },
     );
     outcome.fanned_out += fanResults.filter((r) => r.outcome === "created").length;

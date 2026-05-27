@@ -13,6 +13,13 @@ import {
   upsertTrackedCompany,
 } from "../core/ingest/catalog.ts";
 import { ensurePlatformSource, loadCursor } from "../core/ingest/sources.ts";
+import { registerSignalProjectors } from "../core/ingest/projectors.ts";
+
+async function createProjectingBus(pool: Pool) {
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool, bus });
+  return bus;
+}
 
 interface Seeded {
   workspace_id: string;
@@ -51,7 +58,7 @@ function ghJobsResponse(jobs: Array<{ id: number; title: string; updated_at?: st
 test("pollOnce: inserts new candidates, fans out, returns counts", async (t) => {
   const fx = await setupPg("poll_basic");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const s = await seed(fx.pool);
     const company = (await getTrackedCompany(fx.pool, s.company_id))!;
@@ -113,7 +120,7 @@ test("pollOnce: re-poll with same upstream is a no-op (dedup)", async (t) => {
 test("pollOnce: candidate that disappears from the upstream is expired + downstream signals spent + signal.expired emitted", async (t) => {
   const fx = await setupPg("poll_expire");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const s = await seed(fx.pool);
     const company = (await getTrackedCompany(fx.pool, s.company_id))!;
@@ -129,6 +136,15 @@ test("pollOnce: candidate that disappears from the upstream is expired + downstr
       { pool: fx.pool, bus, embedder: createMockEmbeddingClient(), fetchImpl },
       { source_id: s.source_id, adapter: greenhouseAdapter, company },
     );
+    // Wait until the projector has materialized both workspace signals so
+    // the second poll's expire cascade has rows to flip.
+    await until(async () => {
+      const r = await fx.pool.query<{ n: string }>(
+        `select count(*)::text as n from signals where workspace_id = $1`,
+        [s.workspace_id],
+      );
+      return Number(r.rows[0].n) === 2;
+    });
 
     // Second poll: only job 1 remains. Job 2 should expire.
     response = ghJobsResponse([
@@ -197,7 +213,7 @@ test("pollOnce: adapter failure records the error on the cursor and returns with
 test("pollOnce: emits one signal.ingested per workspace per new candidate", async (t) => {
   const fx = await setupPg("poll_fan");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const s = await seed(fx.pool);
     const company = (await getTrackedCompany(fx.pool, s.company_id))!;

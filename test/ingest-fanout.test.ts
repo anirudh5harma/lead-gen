@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import { setupPg } from "./_pg.ts";
+import { setupPg, until } from "./_pg.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import { fanoutCandidate } from "../core/ingest/fanout.ts";
 import {
@@ -14,6 +14,13 @@ import {
 } from "../core/ingest/catalog.ts";
 import { ensurePlatformSource } from "../core/ingest/sources.ts";
 import { ensureBudgetRow } from "../core/ingest/budget.ts";
+import { registerSignalProjectors } from "../core/ingest/projectors.ts";
+
+async function createProjectingBus(pool: Pool) {
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool, bus });
+  return bus;
+}
 
 interface Seeded {
   pool: Pool;
@@ -74,7 +81,7 @@ async function insertCandidate(
 test("fanout: workspace with no ICPs receives every candidate that survives budget", async (t) => {
   const fx = await setupPg("fan_no_icp");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const s = await seed(fx.pool);
     const cand_id = await insertCandidate(fx.pool, s.source_id, s.company_id);
@@ -97,7 +104,15 @@ test("fanout: workspace with no ICPs receives every candidate that survives budg
     assert.equal(results[0].outcome, "created");
     assert.ok(results[0].signal_id);
 
-    // signals row created with origin_candidate_id back-link.
+    // The projector consumes signal.discovered asynchronously; wait for the
+    // workspace-scoped row to be materialized before asserting on it.
+    await until(async () => {
+      const r = await fx.pool.query<{ id: string }>(
+        `select id from signals where id = $1`,
+        [results[0].signal_id],
+      );
+      return r.rowCount === 1;
+    });
     const { rows } = await fx.pool.query<{
       status: string;
       origin_candidate_id: string;
@@ -111,10 +126,14 @@ test("fanout: workspace with no ICPs receives every candidate that survives budg
     assert.equal(rows[0].origin_candidate_id, cand_id);
     assert.equal(rows[0].kind, "hiring");
 
-    // bus emitted signal.ingested.
-    await new Promise((r) => setImmediate(r));
-    const events = bus.published.filter((e) => e.event_type === "signal.ingested");
-    assert.equal(events.length, 1);
+    // bus emitted signal.discovered → projector → signal.ingested.
+    await until(() =>
+      bus.published.filter((e) => e.event_type === "signal.ingested").length === 1,
+    );
+    const discovered = bus.published.filter((e) => e.event_type === "signal.discovered");
+    assert.equal(discovered.length, 1);
+    const ingested = bus.published.filter((e) => e.event_type === "signal.ingested");
+    assert.equal(ingested.length, 1);
 
     // fanout audit row recorded.
     const { rows: aud } = await fx.pool.query<{ outcome: string }>(
@@ -130,7 +149,7 @@ test("fanout: workspace with no ICPs receives every candidate that survives budg
 test("fanout: ICP must_haves filter skips candidates that don't pass", async (t) => {
   const fx = await setupPg("fan_must");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const s = await seed(fx.pool);
     // ICP that only wants funding signals — hiring candidate should be skipped.
@@ -206,7 +225,7 @@ test("fanout: budget cap → skipped:budget + overflow audit", async (t) => {
 test("fanout: idempotent — second call for the same (candidate, workspace) is skipped:dedup", async (t) => {
   const fx = await setupPg("fan_dedup");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const s = await seed(fx.pool);
     const cand_id = await insertCandidate(fx.pool, s.source_id, s.company_id);
@@ -227,6 +246,14 @@ test("fanout: idempotent — second call for the same (candidate, workspace) is 
     const second = await fanoutCandidate(deps, cand);
     assert.equal(first[0].outcome, "created");
     assert.equal(second[0].outcome, "skipped:dedup");
+    // Wait for the projector to materialize the single signals row.
+    await until(async () => {
+      const r = await fx.pool.query<{ n: string }>(
+        `select count(*)::text as n from signals where workspace_id = $1`,
+        [s.workspace_id],
+      );
+      return Number(r.rows[0].n) === 1;
+    });
     const { rows } = await fx.pool.query<{ n: string }>(
       `select count(*)::text as n from signals where workspace_id = $1`,
       [s.workspace_id],
@@ -240,7 +267,7 @@ test("fanout: idempotent — second call for the same (candidate, workspace) is 
 test("fanout: multiple workspaces tracking the same company each get a signal", async (t) => {
   const fx = await setupPg("fan_multi");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const s = await seed(fx.pool);
     // Second workspace also tracks Stripe.
@@ -268,6 +295,13 @@ test("fanout: multiple workspaces tracking the same company each get a signal", 
     );
     assert.equal(results.length, 2);
     assert.ok(results.every((r) => r.outcome === "created"));
+    await until(async () => {
+      const r = await fx.pool.query<{ n: string }>(
+        `select count(*)::text as n from signals where origin_candidate_id = $1`,
+        [cand_id],
+      );
+      return Number(r.rows[0].n) === 2;
+    });
     const { rows } = await fx.pool.query<{ n: string }>(
       `select count(*)::text as n from signals where origin_candidate_id = $1`,
       [cand_id],
