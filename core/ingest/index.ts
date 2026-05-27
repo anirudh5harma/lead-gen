@@ -181,3 +181,12 @@ export type {
   ClassifyWorkflowOptions,
   ClassifyWorkflow,
 } from "./classify-workflow.ts";
+
+// Periodic expiration sweep
+export {
+  expireOnce,
+  createExpireWorkflow,
+  ttlDaysForKind,
+  DEFAULT_KIND_TTL_DAYS,
+} from "./expire.ts";
+export type { ExpireDeps, ExpireSummary } from "./expire.ts";
