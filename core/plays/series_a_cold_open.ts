@@ -58,6 +58,14 @@ export type ColdOpenOutput =
       conversation_id: string;
       reason: string;
       detail?: string;
+    }
+  | {
+      /** The signal expired (TTL or upstream dropped) before the Play could
+       *  send. Emits no message; the operator dashboard surfaces this via
+       *  the parked workflow output. */
+      status: "skipped";
+      reason: "signal_expired" | "signal_dismissed" | "signal_already_in_play";
+      signal_status: string;
     };
 
 export interface SeriesAColdOpenDeps {
@@ -90,8 +98,14 @@ interface LoadedContext {
     title: string;
     content: string | null;
     url: string | null;
+    status: string;
   };
 }
+
+/** Statuses that mean the signal is no longer actionable by a Play. */
+const TERMINAL_SIGNAL_STATUSES = new Set(["spent", "dismissed"]);
+/** Status the projector sets while another Play is already working it. */
+const IN_PLAY_SIGNAL_STATUS = "in_play";
 
 async function loadContext(
   pool: Pool,
@@ -157,8 +171,9 @@ async function loadContext(
     title: string;
     content: string | null;
     url: string | null;
+    status: string;
   }>(
-    `select id, kind::text as kind, title, content, url
+    `select id, kind::text as kind, title, content, url, status::text as status
        from signals where id = $1 and workspace_id = $2`,
     [input.signal_id, workspace_id],
   );
@@ -205,6 +220,27 @@ export function createSeriesAColdOpenPlay(
       const loaded = await ctx.step("load_context", () =>
         loadContext(deps.pool, input, workspace_id),
       );
+
+      // 1a. Signal gate: bail before any LLM / channel work if the signal
+      //     has already expired (TTL or upstream dropped), been dismissed
+      //     by the classifier, or been claimed by another Play. The
+      //     expiry projector flips status to 'spent'; the dismissal
+      //     projector to 'dismissed'. Both are terminal for this Play.
+      const status = loaded.signal.status;
+      if (TERMINAL_SIGNAL_STATUSES.has(status)) {
+        return {
+          status: "skipped",
+          reason: status === "spent" ? "signal_expired" : "signal_dismissed",
+          signal_status: status,
+        };
+      }
+      if (status === IN_PLAY_SIGNAL_STATUS) {
+        return {
+          status: "skipped",
+          reason: "signal_already_in_play",
+          signal_status: status,
+        };
+      }
 
       // 2. Compose the Rep with its role agents. Pure, no side effects;
       //    keep outside ctx.step.

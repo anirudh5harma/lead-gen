@@ -26,6 +26,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/reps", label: "Reps", icon: "smart_toy" },
   { href: "/dashboard/plays", label: "Plays", icon: "playlist_play" },
   { href: "/dashboard/ingestion", label: "Ingestion", icon: "sensors" },
+  { href: "/dashboard/deliverability", label: "Deliverability", icon: "mark_email_read" },
   { href: "/dashboard/ops", label: "Ops", icon: "monitor_heart" },
 ];
 

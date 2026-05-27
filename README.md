@@ -48,9 +48,16 @@ legacy/          # Archived previous implementation. Do not import.
 | SES SNS signature verification + trusted topic gating | ✅ landed |
 | Dashboard membership auth + Outlook credential encryption | ✅ landed |
 | Email provider webhooks → typed ingress → projector worker | ✅ landed |
-| OAuth and ingestion writes through typed projections | ⏳ required |
-| Dashboard UI (brief, conversations, approvals, ...)   | ✅ landed |
+| OAuth and ingestion writes through typed projections | ✅ landed |
+| Catalog fanout via `signal.discovered` + projector    | ✅ landed |
+| TTL / upstream expiry via `signal.expiry.requested`   | ✅ landed |
+| Vercel-cron deployed control-plane scheduling         | ✅ landed |
+| Microsoft Graph lifecycle-token validation + legacy reconnect | ✅ landed |
+| Dead-letter queue + operator redrive surface          | ✅ landed |
+| Dashboard UI (brief, conversations, approvals, ingestion, deliverability, ops) | ✅ landed |
+| Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
 | Restate workflow-handler host process                 | ⏳ deployment work |
+| Auto-trigger of Plays on `signal.matched`             | ⏳ next    |
 | LinkedIn / X / voice channels                         | ⏳ later  |
 | Second Play + NL → spec compiler                      | ⏳ later  |
 
@@ -161,32 +168,149 @@ workflow handlers and runs the typed-event signal bridge that resolves
 `ctx.awaitEvent` via workflow-bound durable promises. It also hosts the
 workspace-scoped owned-domain warmup and Outlook subscription repair workflows.
 
-A deployment control-plane scheduler can start due tenant maintenance without
-performing any product mutation itself:
+A deployment control-plane scheduler starts due tenant maintenance without
+performing any product mutation itself. Vercel Cron drives this in production
+(`vercel.json` schedules `*/5 * * * *`); any external scheduler can also call
+it directly:
 
 ```bash
 curl -X POST https://app.example.com/api/internal/workflows/maintenance \
   -H "Authorization: Bearer $MAINTENANCE_TRIGGER_SECRET"
 ```
 
+The route accepts either `MAINTENANCE_TRIGGER_SECRET` or Vercel-injected
+`CRON_SECRET` as the Bearer value, and accepts both GET and POST so Vercel
+Cron's default GET works alongside external POST schedulers.
+
 That authenticated ingress submits platform-scoped catalog polling and TTL
 expiry sweeps, and discovers due tenant-scoped source polls, daily
-owned-domain warmup sweeps, and hourly Outlook subscription repairs. Platform
-work is represented explicitly in the Restate request metadata and cannot use
-tenant event publication APIs without a workspace projection. The ingress
-must run from the worker/control plane, not a Vercel cron; consequential work
-remains durable inside Restate.
+owned-domain warmup sweeps, and hourly Outlook subscription repairs.
+Subscriptions missing `lifecycleNotificationUrl` are detected by the same
+discovery and migrated via DELETE+recreate. Platform work is represented
+explicitly in the Restate request metadata and cannot use tenant event
+publication APIs without a workspace projection. Consequential work remains
+durable inside Restate.
 
 The Postgres workflow runtime remains a development bridge: it journals
 state but cannot resume parked workflows after a process restart. It is not
 the production runtime described in `ARCHITECTURE.md`.
 
-### Production blockers
+### Deploy checklist
 
-The platform is not production-ready yet. The next required build sequence is:
+Before promoting a deploy, work through each section. Items marked **REQUIRED**
+fail the platform closed; **RECOMMENDED** items degrade gracefully.
 
-1. Configure the control-plane schedule for `/api/internal/workflows/maintenance` in the deployed worker environment.
-2. Replace remaining direct Signal creation and expiration mutations in ingestion with typed lifecycle events plus idempotent projectors. Classification decisions and Outlook OAuth authorization/refresh/reauthorization now project state from canonical events.
-3. Add Microsoft Graph lifecycle-token validation and migrate or reconnect any pre-encryption Outlook accounts.
-4. Wire deployment readiness for NATS/Restate workers, add operator-visible dead-letter handling for repeatedly failed dispatches, and run database, NATS, browser, deliverability, and recovery tests in a production-like environment.
-5. Resolve the dependency audit findings before release.
+#### 1. Environment variables
+
+**REQUIRED (runtime fails closed if absent):**
+
+- `DATABASE_URL` — Postgres 16+ with `pgvector`, `citext`, `pgcrypto`.
+- `APP_ORIGIN` — public origin used for webhook callbacks (no trailing slash).
+- `SESSION_SECRET` — random 32+ bytes for OAuth state integrity.
+- `CREDENTIALS_ENCRYPTION_KEY` — base64-encoded 32-byte root key; per-account
+  OAuth tokens are envelope-encrypted from this.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — dashboard
+  identity provider.
+- `NATS_URL` — JetStream broker; production refuses to fall back to Postgres.
+- `RESTATE_INGRESS_URL` — Restate cloud / self-hosted ingress.
+- `MAINTENANCE_TRIGGER_SECRET` — bearer secret the maintenance route accepts
+  (set to the same value as `CRON_SECRET` on Vercel deployments).
+
+**REQUIRED FOR DEPLOYED FEATURES (the feature stops, the platform still runs):**
+
+- `DEEPSEEK_API_KEY` (+ optional `DEEPSEEK_MODEL`) — the default LLM for every
+  drafting, judging, and classification call. Without it, drafts cannot be
+  produced.
+- `OPENAI_API_KEY` — embedding model for signal ingestion (DeepSeek does not
+  yet ship embeddings).
+- `AWS_REGION`, `AWS_SNS_TOPIC_ARNS` — owned-domain sending via SES;
+  `AWS_SNS_TOPIC_ARNS` is the comma-separated list of trusted SNS topic ARNs
+  the webhook accepts.
+- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` —
+  Outlook OAuth.
+- `RESEND_API_KEY` — transactional product email (welcome, alerts).
+- `PRODUCT_HUNT_TOKEN`, `REDDIT_USER_AGENT`, `SEC_EDGAR_USER_AGENT` — per-source
+  ingestion adapters.
+
+**RECOMMENDED:**
+
+- `CRON_SECRET` — Vercel auto-injects when a Cron is configured under the
+  project. The maintenance route accepts either `MAINTENANCE_TRIGGER_SECRET`
+  or `CRON_SECRET`, so setting both to the same value lets either scheduler
+  drive the same deployment.
+- `MICROSOFT_TENANT_ID` — single-tenant deployments restrict Graph lifecycle
+  tokens to this exact tenant. Multi-tenant deployments leave it unset and
+  rely on the audience + signature check.
+- `SNS_VERIFY_SIGNATURES=1` — keep on in production; only the local test
+  harness sets this to `0`.
+- `DATABASE_POOL_MAX` — defaults to 10.
+- `RESTATE_WORKFLOW_PORT` — the Restate workflow worker port (default 9080).
+- `OUTLOOK_DEFAULT_DAILY_CAP` — connected-inbox per-day send ceiling
+  (default 25).
+- `BOMBSELL_ALLOW_DEMO_AUTH`, `BOMBSELL_DEMO_USER_ID` — **leave unset in
+  production**; they only enable the local demo cookie shortcut.
+
+The runtime contract is enforced by `core/config/env.ts` and `test/env-contract.test.ts` — every `process.env` read in app, core, lib, or scripts is asserted to be a declared key.
+
+#### 2. Database migrations
+
+```bash
+DATABASE_URL=... npm run migrate
+```
+
+Required migrations (latest two added by this batch):
+
+- `025_signal_candidate_fanouts_loose_fk.sql` — loosens FK so the catalog
+  fanout audit row can be written before the async projector materializes
+  the signal.
+- `026_event_dispatch_dead_letter.sql` — adds `dead_lettered` status and
+  `dead_lettered_at` column to the NATS dispatch table.
+
+#### 3. Long-running workers
+
+Each runs as its own process; all three are required for production:
+
+```bash
+npm run worker:email-projectors       # SES/Outlook ingress → channel projectors
+npm run worker:signal-projectors      # classify + signal projectors
+npm run worker:restate-workflows      # Restate handler host + signal bridge
+```
+
+Register the Restate worker endpoint with the Restate admin API (see
+[Restate docs](https://docs.restate.dev)).
+
+#### 4. Scheduler
+
+`vercel.json` schedules `*/5 * * * *` against
+`/api/internal/workflows/maintenance`. Confirm Vercel Cron is enabled
+under the project and that `CRON_SECRET` matches `MAINTENANCE_TRIGGER_SECRET`.
+
+On non-Vercel hosts, point your scheduler at the same URL with the same
+bearer; the route accepts both GET and POST.
+
+#### 5. Post-deploy smoke tests
+
+Run all three against the deployed environment:
+
+```bash
+DATABASE_URL=... npm run verify:recovery   # dispatch DLQ schema + redrive flip
+DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-trip
+DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
+```
+
+#### 6. Operator surfaces to bookmark
+
+- `/dashboard/ingestion` — per-source poll status, budget burn, recent
+  signals.
+- `/dashboard/deliverability` — sending-domain warmup, bounce + complaint
+  rates, channel-account health.
+- `/dashboard/ops` — pending / delivered / dead-lettered NATS dispatches
+  with one-click redrive on the DLQ rows.
+
+#### Known follow-ups (do not block launch)
+
+- Auto-trigger of Plays on `signal.matched`. Today the Play is started
+  manually (or by the demo seed). The projector chain emits the right
+  events; the trigger subscriber + Rep/person resolver is the next
+  workstream.
+- `npm audit` findings should be resolved before release.
