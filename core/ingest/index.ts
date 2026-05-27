@@ -168,3 +168,16 @@ export type {
   WorkspacePollInput as WorkspacePollWorkflowInput,
   WorkspacePollSummary,
 } from "./workspace-poll.ts";
+
+// Stage 2 classifier
+export { classifySignal } from "./classify.ts";
+export type {
+  ClassifyDeps,
+  ClassifyInput,
+  ClassifyOutcome,
+} from "./classify.ts";
+export { startClassifyWorkflow } from "./classify-workflow.ts";
+export type {
+  ClassifyWorkflowOptions,
+  ClassifyWorkflow,
+} from "./classify-workflow.ts";
