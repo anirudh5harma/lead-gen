@@ -12,6 +12,7 @@ export * from "./adapters/index.ts";
 export {
   wireOutcomeFeedback,
   DEFAULT_SCORE_DELTAS,
+  resolveOutcomeFeedbackDelta,
 } from "./bridges.ts";
 export type {
   OutcomeAttributionFetcher,
@@ -21,3 +22,10 @@ export type {
 } from "./bridges.ts";
 export { createPostgresOutcomeAttribution } from "./attribution.ts";
 export type { PostgresAttributionOptions } from "./attribution.ts";
+export {
+  createOutcomeMemoryUpdateProjection,
+  createProceduralMemoryStateProjection,
+  OUTCOME_MEMORY_UPDATE_PROJECTION,
+  PROCEDURAL_MEMORY_STATE_PROJECTION,
+} from "./projections.ts";
+export type { OutcomeMemoryProjectionOptions } from "./projections.ts";

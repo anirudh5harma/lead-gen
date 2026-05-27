@@ -22,11 +22,24 @@ test("product health: reports ready against a migrated schema", async (t) => {
     assert.equal(readiness.ready, true);
     assert.deepEqual(
       readiness.checks.map((check) => check.status),
-      ["ok", "ok", "ok", "ok"],
+      ["ok", "ok", "ok", "ok", "ok"],
     );
   } finally {
     await fx.close();
   }
+});
+
+test("product health: production env gaps degrade readiness", async () => {
+  const readiness = await checkProductReadiness(null, {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgresql://example",
+  });
+
+  assert.equal(readiness.ready, false);
+  const environment = readiness.checks.find((check) => check.name === "environment");
+  assert.equal(environment?.status, "degraded");
+  assert.match(environment?.detail ?? "", /NEXT_PUBLIC_SUPABASE_URL/);
+  assert.match(environment?.detail ?? "", /RESEND_WEBHOOK_SECRET/);
 });
 
 test("product health: reports unsupported substrate configuration", async (t) => {

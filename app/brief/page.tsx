@@ -9,8 +9,11 @@ import {
   configureRssSourceAction,
   decideApprovalAction,
   pollSourcesAction,
+  provisionSendingDomainAction,
+  refreshSendingDomainAction,
   retryWorkflowAction,
   submitSignalAction,
+  verifySendingDomainAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +35,12 @@ const eventLabels: Record<string, string> = {
   "workflow.step.failed": "Step Failed",
   "workflow.run.failed": "Run Failed",
   "workflow.run.retried": "Retry",
+  "channel.domain.provisioned": "Domain",
+  "channel.domain.verification.requested": "Verify",
+  "channel.domain.status.received": "DNS",
+  "channel.domain.dmarc.observed": "DMARC",
+  "channel.domain.trust.verified": "Trust",
+  "channel.domain.warmup.advanced": "Warmup",
 };
 
 export default async function BriefPage() {
@@ -185,8 +194,55 @@ export default async function BriefPage() {
                     />
                     <Metric label="Domain" value={channel?.domain ?? "-"} />
                     <Metric label="Warmup" value={channel?.warmup_state ?? "-"} />
+                    <Metric label="Domain Cap" value={String(channel?.current_daily_cap ?? 0)} />
                     <Metric label="Defer" value={latestDeferReason} />
+                    <Metric label="Provider" value={channel?.provider_status ?? "-"} />
+                    <Metric label="SPF" value={verificationValue(channel?.spf_verified)} />
+                    <Metric label="DKIM" value={verificationValue(channel?.dkim_verified)} />
+                    <Metric label="DMARC" value={verificationValue(channel?.dmarc_verified)} />
                   </div>
+                  {channel?.domain && channel.warmup_state !== "warmed" ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {!channel.provider_domain_id ? (
+                        <form action={provisionSendingDomainAction}>
+                          <button className="inline-flex items-center gap-2 rounded-md bg-[var(--color-text-1)] px-3 py-2 text-sm font-semibold text-[var(--color-ink-0)]">
+                            <Icon name="dns" size={17} />
+                            Provision Domain
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <form action={verifySendingDomainAction}>
+                            <button className="inline-flex items-center gap-2 rounded-md bg-[var(--color-text-1)] px-3 py-2 text-sm font-semibold text-[var(--color-ink-0)]">
+                              <Icon name="verified" size={17} />
+                              Verify DNS
+                            </button>
+                          </form>
+                          <form action={refreshSendingDomainAction}>
+                            <button className="inline-flex items-center gap-2 rounded-md border border-[var(--color-line-1)] px-3 py-2 text-sm font-semibold text-[var(--color-text-1)]">
+                              <Icon name="sync" size={17} />
+                              Refresh
+                            </button>
+                          </form>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                  {channel?.dns_records.length ? (
+                    <div className="mt-4 grid gap-2">
+                      {channel.dns_records.map((record) => (
+                        <div
+                          key={`${record.record}:${record.name}`}
+                          className="grid gap-1 rounded-md border border-[var(--color-line-1)] px-3 py-2 text-xs md:grid-cols-[72px_1fr_1.6fr_90px] md:items-center"
+                        >
+                          <span className="font-mono text-[var(--color-text-3)]">{record.record}</span>
+                          <span className="truncate">{record.name}</span>
+                          <span className="truncate font-mono text-[var(--color-text-2)]">{record.value}</span>
+                          <span className="text-[var(--color-text-3)]">{record.status ?? "pending"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </Panel>
             </section>
@@ -622,6 +678,10 @@ function axisScore(notes: Record<string, unknown> | null, axis: string): number 
   if (!axes || typeof axes !== "object" || Array.isArray(axes)) return null;
   const value = (axes as Record<string, unknown>)[axis];
   return typeof value === "number" ? value : null;
+}
+
+function verificationValue(value: boolean | null | undefined): string {
+  return value === true ? "verified" : value === false ? "pending" : "-";
 }
 
 function TraceLine({ label, value }: { label: string; value: string }) {

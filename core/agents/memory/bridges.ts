@@ -87,31 +87,41 @@ export interface WiredOutcomeFeedback {
   unsubscribe(): Promise<void>;
 }
 
+export function resolveOutcomeFeedbackDelta(
+  kind: string,
+  deltas: ScoreDeltas = DEFAULT_SCORE_DELTAS,
+): Pick<ProceduralOutcomeUpdate, "delta_score" | "win"> | null {
+  if (kind in deltas.wins) {
+    return {
+      delta_score: deltas.wins[kind]!,
+      win: true,
+    };
+  }
+  if (kind in deltas.losses) {
+    return {
+      delta_score: deltas.losses[kind]!,
+      win: false,
+    };
+  }
+  return null;
+}
+
 export async function wireOutcomeFeedback(
   opts: WireOutcomeFeedbackOptions,
 ): Promise<WiredOutcomeFeedback> {
   const deltas = opts.scoreDeltas ?? DEFAULT_SCORE_DELTAS;
 
   const sub = await opts.bus.subscribe("outcome.recorded", async (event) => {
-    const kind = event.payload.kind;
-    let delta: number | undefined;
-    let win = true;
-    if (kind in deltas.wins) {
-      delta = deltas.wins[kind];
-    } else if (kind in deltas.losses) {
-      delta = deltas.losses[kind];
-      win = false;
-    } else {
-      return; // no procedural signal
-    }
+    const feedback = resolveOutcomeFeedbackDelta(event.payload.kind, deltas);
+    if (!feedback) return;
 
     const attribution = await opts.attribution(event);
     if (!attribution || attribution.exemplar_ids.length === 0) return;
 
     const update: ProceduralOutcomeUpdate = {
       pattern_key: attribution.pattern_key,
-      delta_score: delta,
-      win,
+      delta_score: feedback.delta_score,
+      win: feedback.win,
     };
     await opts.procedural.applyOutcome(
       attribution.scope,
@@ -126,11 +136,14 @@ export async function wireOutcomeFeedback(
       producer_ref: "memory:procedural",
       correlation_id: event.correlation_id ?? event.id,
       causation_id: event.id,
+      idempotency_key: `memory:procedural:outcome:${event.id}`,
       payload: {
+        outcome_event_id: event.id,
         rep_id: attribution.scope.rep_id,
         pattern_key: attribution.pattern_key,
-        delta_score: delta,
-        win,
+        exemplar_ids: attribution.exemplar_ids,
+        delta_score: feedback.delta_score,
+        win: feedback.win,
       },
     });
   });

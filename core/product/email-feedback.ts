@@ -1,6 +1,12 @@
 import { z } from "zod";
 import type { Pool } from "pg";
-import type { EventBus, PublishedEvent } from "../substrate/events/index.ts";
+import type {
+  DurableEventProjection,
+  EventBus,
+  PublishedEvent,
+} from "../substrate/events/index.ts";
+
+export const EMAIL_DELIVERY_FEEDBACK_PROJECTION = "channel.email_feedback.v1";
 
 const ResendEmailWebhook = z.object({
   type: z.string(),
@@ -194,16 +200,32 @@ export async function wireEmailDeliveryFeedback(
     bus: EventBus;
   },
 ): Promise<EmailFeedbackProjection> {
-  const delivered = await opts.bus.subscribe("message.delivered", async (event) => {
-    await applyMessageDelivered(opts.pool, event);
-  });
-  const bounced = await opts.bus.subscribe("message.bounced", async (event) => {
-    await applyMessageBounced(opts.pool, opts.bus, event);
-  });
+  const projection = createEmailDeliveryFeedbackProjection(opts);
+  const delivered = await opts.bus.subscribe("message.delivered", projection.apply);
+  const bounced = await opts.bus.subscribe("message.bounced", projection.apply);
   return {
     async unsubscribe() {
       await delivered.unsubscribe();
       await bounced.unsubscribe();
+    },
+  };
+}
+
+export function createEmailDeliveryFeedbackProjection(
+  opts: {
+    pool: Pool;
+    bus: EventBus;
+  },
+): DurableEventProjection {
+  return {
+    name: EMAIL_DELIVERY_FEEDBACK_PROJECTION,
+    eventTypes: ["message.delivered", "message.bounced"],
+    async apply(event) {
+      if (event.event_type === "message.delivered") {
+        await applyMessageDelivered(opts.pool, event);
+      } else if (event.event_type === "message.bounced") {
+        await applyMessageBounced(opts.pool, opts.bus, event);
+      }
     },
   };
 }

@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runFirstVerticalSlice } from "../core/plays/index.ts";
-import { createResendEmailTransport } from "../core/channels/email/index.ts";
+import {
+  createDryRunEmailTransport,
+  createOwnedDomainEmailChannel,
+  createResendEmailTransport,
+} from "../core/channels/email/index.ts";
+import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
 import { parseRssSignals } from "../core/signals/index.ts";
 import type { LLMClient } from "../core/agents/llm/types.ts";
 
@@ -103,11 +108,13 @@ test("first vertical slice: LLM-backed writer path is usable behind the same jud
 
 test("email transport: Resend adapter posts the provider payload and returns provider id", async () => {
   let body: unknown;
+  let idempotencyHeader: string | null = null;
   const transport = createResendEmailTransport({
     apiKey: "test-key",
     baseUrl: "https://resend.test",
     fetchImpl: (async (_url, init) => {
       body = JSON.parse(String(init?.body));
+      idempotencyHeader = new Headers(init?.headers).get("Idempotency-Key");
       return new Response(JSON.stringify({ id: "email_123" }), { status: 200 });
     }) as typeof fetch,
   });
@@ -118,9 +125,11 @@ test("email transport: Resend adapter posts the provider payload and returns pro
     subject: "Hello",
     body: "Body",
     account_id: "acct_1",
+    idempotency_key: "message/msg_1",
   });
 
   assert.equal(result.external_id, "email_123");
+  assert.equal(idempotencyHeader, "message/msg_1");
   assert.deepEqual(body, {
     from: "maya@example.com",
     to: ["nisha@example.com"],
@@ -130,6 +139,69 @@ test("email transport: Resend adapter posts the provider payload and returns pro
       "X-Bombsell-Channel-Account": "acct_1",
     },
   });
+});
+
+test("email transport: dry-run retries collapse by durable message idempotency key", async () => {
+  const transport = createDryRunEmailTransport();
+  const envelope = {
+    from: "maya@example.com",
+    to: "nisha@example.com",
+    subject: "Hello",
+    body: "Body",
+    account_id: "acct_1",
+    idempotency_key: "message/msg_1",
+  };
+
+  const first = await transport.send(envelope);
+  const retry = await transport.send(envelope);
+
+  assert.equal(retry.external_id, first.external_id);
+  assert.equal(transport.sent.length, 1);
+});
+
+test("email channel: replaying a successful dry-run send does not spend capacity twice", async () => {
+  const account = {
+    id: "account_1",
+    display_name: "maya@example.com",
+    kind: "email_domain" as const,
+    daily_cap: 2,
+    daily_used: 0,
+    status: "connected" as const,
+  };
+  const transport = createDryRunEmailTransport();
+  const channel = createOwnedDomainEmailChannel({ accounts: [account], transport });
+  const bus = createInMemoryEventBus();
+  const conversation = {
+    id: "conversation_1",
+    workspace_id: "00000000-0000-4000-8000-000000000001",
+    rep_id: "rep_1",
+    counterparty_person_id: "person_1",
+    counterparty_email: "nisha@example.com",
+  };
+  const draft = {
+    message_id: "00000000-0000-4000-8000-000000000002",
+    channel: "email",
+    subject: "Hello",
+    body: "Body",
+    eval_passed: true,
+  };
+
+  const first = await channel.send(conversation, draft, {
+    workspace_id: conversation.workspace_id,
+    bus,
+  });
+  const retry = await channel.send(conversation, draft, {
+    workspace_id: conversation.workspace_id,
+    bus,
+  });
+
+  assert.deepEqual(retry, first);
+  assert.equal(account.daily_used, 1);
+  assert.equal(transport.sent.length, 1);
+  assert.deepEqual(
+    bus.published.map((event) => event.event_type),
+    ["message.queued", "message.sent"],
+  );
 });
 
 test("signal source: RSS parser creates typed Signals", async () => {

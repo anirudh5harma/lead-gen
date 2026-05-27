@@ -49,6 +49,16 @@ interface RecipientFrequencyDecision {
   retry_after: string;
 }
 
+interface StoredMessageSendState {
+  status: string;
+  external_id: string | null;
+  account_id: string | null;
+  from_address: string | null;
+  send_reserved_at: Date | null;
+}
+
+const TRANSPORT_IDEMPOTENCY_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
+
 export interface PostgresOwnedDomainEmailChannelOptions {
   pool: Pool;
   transport: EmailTransport;
@@ -129,14 +139,55 @@ async function markMessageQueued(
   client: PoolClient,
   draft: ChannelDraft,
   account_id: string,
+  reserved_at: Date,
 ): Promise<void> {
   await client.query(
     `update messages
         set status = 'queued',
             channel_account_id = $2,
-            scheduled_at = null
+            scheduled_at = null,
+            properties = properties || jsonb_build_object('send_reserved_at', $3::timestamptz)
       where id = $1`,
-    [draft.message_id, account_id],
+    [draft.message_id, account_id, reserved_at.toISOString()],
+  );
+}
+
+async function loadMessageSendState(
+  client: PoolClient,
+  workspace_id: string,
+  message_id: string,
+): Promise<StoredMessageSendState | null> {
+  const { rows } = await client.query<StoredMessageSendState>(
+    `select m.status,
+            m.external_id,
+            ca.id as account_id,
+            ca.display_name as from_address,
+            case
+              when m.properties->>'send_reserved_at' is null then null
+              else (m.properties->>'send_reserved_at')::timestamptz
+            end as send_reserved_at
+       from messages m
+       left join channel_accounts ca on ca.id = m.channel_account_id
+      where m.id = $1
+        and m.workspace_id = $2
+      for update of m`,
+    [message_id, workspace_id],
+  );
+  return rows[0] ?? null;
+}
+
+function isAlreadySent(state: StoredMessageSendState): boolean {
+  return (
+    state.external_id !== null &&
+    ["sent", "delivered", "bounced", "replied"].includes(state.status)
+  );
+}
+
+function isSafeTransportRetry(state: StoredMessageSendState, now: Date): boolean {
+  return Boolean(
+    state.send_reserved_at &&
+      now.getTime() - state.send_reserved_at.getTime() <=
+        TRANSPORT_IDEMPOTENCY_RETRY_WINDOW_MS,
   );
 }
 
@@ -193,6 +244,7 @@ async function publishDeferred(
     source: "system",
     producer_ref: ctx.producer_ref ?? "channel:email",
     correlation_id: ctx.correlation_id ?? null,
+    idempotency_key: `channel:email:deferred:${draft.message_id}:${defer_reason}`,
     payload: {
       message_id: draft.message_id,
       channel: "email",
@@ -295,26 +347,58 @@ export function createPostgresOwnedDomainEmailChannel(
 
       const client = await opts.pool.connect();
       let reservation: ReservationDecision;
+      let alreadySentExternalId: string | null = null;
       try {
         await client.query("begin");
         const nowDate = now();
-        const recipientFrequency = await evaluateRecipientFrequency(
+        const existing = await loadMessageSendState(
           client,
-          conversation,
-          draft,
-          nowDate,
-          recipientCooldownMs,
+          conversation.workspace_id,
+          draft.message_id,
         );
-        if (recipientFrequency) {
-          reservation = recipientFrequency;
+        if (existing && isAlreadySent(existing)) {
+          alreadySentExternalId = existing.external_id;
+          reservation = {};
+        } else if (
+          existing?.status === "queued" &&
+          existing.account_id &&
+          existing.from_address
+        ) {
+          reservation = isSafeTransportRetry(existing, nowDate)
+            ? {
+                account: {
+                  account_id: existing.account_id,
+                  from: existing.from_address,
+                },
+              }
+            : {
+                defer_reason: "transport_idempotency_window_expired",
+                retry_after: null,
+              };
         } else {
-          reservation = await reserveAccount(client, conversation.workspace_id, nowDate, {
-            bounceRateLimit,
-            complaintRateLimit,
-          });
-        }
-        if (reservation.account) {
-          await markMessageQueued(client, draft, reservation.account.account_id);
+          const recipientFrequency = await evaluateRecipientFrequency(
+            client,
+            conversation,
+            draft,
+            nowDate,
+            recipientCooldownMs,
+          );
+          if (recipientFrequency) {
+            reservation = recipientFrequency;
+          } else {
+            reservation = await reserveAccount(client, conversation.workspace_id, nowDate, {
+              bounceRateLimit,
+              complaintRateLimit,
+            });
+          }
+          if (reservation.account) {
+            await markMessageQueued(
+              client,
+              draft,
+              reservation.account.account_id,
+              nowDate,
+            );
+          }
         }
         await client.query("commit");
       } catch (err) {
@@ -326,6 +410,14 @@ export function createPostgresOwnedDomainEmailChannel(
         throw err;
       } finally {
         client.release();
+      }
+
+      if (alreadySentExternalId) {
+        return {
+          status: "sent",
+          message_id: draft.message_id,
+          external_id: alreadySentExternalId,
+        };
       }
 
       if (!reservation.account) {
@@ -343,6 +435,7 @@ export function createPostgresOwnedDomainEmailChannel(
         source: "system",
         producer_ref: ctx.producer_ref ?? "channel:email",
         correlation_id: ctx.correlation_id ?? null,
+        idempotency_key: `channel:email:queued:${draft.message_id}`,
         payload: {
           message_id: draft.message_id,
           channel: "email",
@@ -356,6 +449,7 @@ export function createPostgresOwnedDomainEmailChannel(
         subject: draft.subject ?? "",
         body: draft.body,
         account_id: reservation.account.account_id,
+        idempotency_key: `message/${draft.message_id}`,
       };
 
       try {
@@ -372,6 +466,7 @@ export function createPostgresOwnedDomainEmailChannel(
           source: "system",
           producer_ref: ctx.producer_ref ?? "channel:email",
           correlation_id: ctx.correlation_id ?? null,
+          idempotency_key: `channel:email:sent:${draft.message_id}`,
           payload: {
             message_id: draft.message_id,
             channel: "email",

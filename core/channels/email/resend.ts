@@ -19,6 +19,7 @@ export function createResendEmailTransport(
         headers: {
           Authorization: `Bearer ${opts.apiKey}`,
           "Content-Type": "application/json",
+          "Idempotency-Key": envelope.idempotency_key,
         },
         body: JSON.stringify({
           from: envelope.from,

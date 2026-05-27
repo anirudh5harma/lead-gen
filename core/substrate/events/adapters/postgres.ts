@@ -28,8 +28,9 @@ import type {
  * that workspace's events. Omit it to receive all (system / admin use).
  *
  * Reconnection: the LISTEN client uses `pg.Client` directly (not from the
- * pool) so it can hold the connection indefinitely. On error or disconnect
- * the bus reconnects with bounded exponential backoff.
+ * pool) so it can hold the connection indefinitely. On error or disconnect,
+ * the bus reconnects with bounded exponential backoff. Durable projections
+ * still catch up mutations emitted during an outage.
  */
 
 export interface PostgresEventBusOptions {
@@ -172,6 +173,10 @@ export async function createPostgresEventBus(
 
   function scheduleReconnect(): void {
     if (closed || reconnectTimer) return;
+    if (reconnecting) {
+      void reconnecting.finally(() => scheduleReconnect());
+      return;
+    }
     const delayMs = Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** retryAttempt);
     retryAttempt++;
     reconnectTimer = setTimeout(() => {
@@ -198,7 +203,13 @@ export async function createPostgresEventBus(
         : { connectionString: process.env.DATABASE_URL },
     );
     client.on("notification", handleNotification);
-    client.on("error", (err) => handleDisconnect(client, err));
+    client.on("error", (err) => {
+      if (client === listenClient) {
+        handleDisconnect(client, err);
+      } else if (!closed) {
+        onError(new Error(`LISTEN client error: ${err.message}`));
+      }
+    });
     client.on("end", () => handleDisconnect(client));
     try {
       await client.connect();
@@ -226,6 +237,8 @@ export async function createPostgresEventBus(
     }
   }
 
+  // Dedicated LISTEN client. Long-lived; can't come from the pool because
+  // we never release it.
   listenClient = await openListener();
 
   async function dispatchById(id: string): Promise<void> {

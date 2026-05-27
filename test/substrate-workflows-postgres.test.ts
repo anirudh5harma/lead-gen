@@ -185,6 +185,53 @@ test("postgres workflow runtime: requestApproval persists + resolveApproval wake
   }
 });
 
+test("postgres workflow runtime: persisted approval wakes locally without LISTEN delivery", async (t) => {
+  const fx = await setupPg("pg_wf_appr_local");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const runtime = createPostgresWorkflowRuntime({ pool: fx.pool, bus });
+    runtime.register(
+      defineWorkflow<unknown, string>({
+        name: "demo_appr_local",
+        version: "1",
+        async run(_input, ctx) {
+          const decision = await ctx.requestApproval({
+            kind: "outbound.email.send",
+            payload: { to: "recover@example.com" },
+          });
+          return decision.decision;
+        },
+      }),
+    );
+    const run = await runtime.start({
+      workspace_id: ws,
+      workflow_name: "demo_appr_local",
+      input: null,
+    });
+    const approval = await until(async () => {
+      const { rows } = await fx.pool.query<{ id: string }>(
+        `select id from workflow_approvals where run_id = $1`,
+        [run.id],
+      );
+      return rows[0];
+    });
+
+    await bus.close();
+    await runtime.resolveApproval(approval.id, { decision: "approved" });
+    await until(async () => (await runtime.get(run.id))?.status === "completed");
+    assert.equal((await runtime.get(run.id))?.output, "approved");
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
 test("postgres workflow runtime: resume replays checkpoints and continues after approved gate", async (t) => {
   const fx = await setupPg("pg_wf_resume");
   if (!fx) return t.skip("DATABASE_URL not set");

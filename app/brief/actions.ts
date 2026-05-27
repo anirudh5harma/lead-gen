@@ -7,6 +7,7 @@ import {
   configureRssSource,
   dispatchRssSourceIngestionOnce,
   retryFailedWorkflowRun,
+  startSendingDomainOperation,
   submitManualSignal,
 } from "@/core/product/app";
 import { getBriefWorkspaceSession } from "./session";
@@ -27,6 +28,27 @@ export async function configureEmailAction(formData: FormData) {
     display_name: value(formData, "display_name") || "maya@go.bombsell.example",
     daily_cap: Number(value(formData, "daily_cap") || 25),
   }, session);
+  revalidatePath("/brief");
+}
+
+export async function provisionSendingDomainAction() {
+  const session = await getBriefWorkspaceSession();
+  if (!session) return;
+  await startSendingDomainOperation("provision", session);
+  revalidatePath("/brief");
+}
+
+export async function verifySendingDomainAction() {
+  const session = await getBriefWorkspaceSession();
+  if (!session) return;
+  await startSendingDomainOperation("verify", session);
+  revalidatePath("/brief");
+}
+
+export async function refreshSendingDomainAction() {
+  const session = await getBriefWorkspaceSession();
+  if (!session) return;
+  await startSendingDomainOperation("refresh", session);
   revalidatePath("/brief");
 }
 

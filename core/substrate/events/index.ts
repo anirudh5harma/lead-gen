@@ -15,6 +15,7 @@
 export * from "./types.ts";
 export * from "./registry.ts";
 export * from "./bus.ts";
+export * from "./projections.ts";
 export { createInMemoryEventBus } from "./adapters/in-memory.ts";
 export type {
   InMemoryEventBus,

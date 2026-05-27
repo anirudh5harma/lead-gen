@@ -16,6 +16,10 @@ export function createDryRunEmailTransport(): DryRunEmailTransport {
       return sent;
     },
     async send(envelope) {
+      const existing = sent.find(
+        (candidate) => candidate.idempotency_key === envelope.idempotency_key,
+      );
+      if (existing) return { external_id: existing.external_id };
       const external_id = `dry-email-${sent.length + 1}`;
       sent.push({ ...envelope, external_id });
       return { external_id };
@@ -25,6 +29,7 @@ export function createDryRunEmailTransport(): DryRunEmailTransport {
 
 export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailChannel {
   const now = opts.now ?? (() => new Date());
+  const sentByMessage = new Map<string, { external_id: string }>();
 
   return {
     name: "email",
@@ -37,6 +42,7 @@ export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailC
           source: "system",
           producer_ref: ctx.producer_ref ?? "channel:email",
           correlation_id: ctx.correlation_id ?? null,
+          idempotency_key: `channel:email:deferred:${draft.message_id}:eval_not_passed`,
           payload: {
             message_id: draft.message_id,
             channel: "email",
@@ -59,6 +65,7 @@ export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailC
           source: "system",
           producer_ref: ctx.producer_ref ?? "channel:email",
           correlation_id: ctx.correlation_id ?? null,
+          idempotency_key: `channel:email:deferred:${draft.message_id}:missing_recipient_email`,
           payload: {
             message_id: draft.message_id,
             channel: "email",
@@ -71,6 +78,15 @@ export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailC
           message_id: draft.message_id,
           defer_reason: "missing_recipient_email",
           retry_after: null,
+        };
+      }
+
+      const priorSend = sentByMessage.get(draft.message_id);
+      if (priorSend) {
+        return {
+          status: "sent",
+          message_id: draft.message_id,
+          external_id: priorSend.external_id,
         };
       }
 
@@ -89,6 +105,7 @@ export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailC
           source: "system",
           producer_ref: ctx.producer_ref ?? "channel:email",
           correlation_id: ctx.correlation_id ?? null,
+          idempotency_key: `channel:email:deferred:${draft.message_id}:deliverability_cap_exhausted`,
           payload: {
             message_id: draft.message_id,
             channel: "email",
@@ -110,6 +127,7 @@ export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailC
         source: "system",
         producer_ref: ctx.producer_ref ?? "channel:email",
         correlation_id: ctx.correlation_id ?? null,
+        idempotency_key: `channel:email:queued:${draft.message_id}`,
         payload: {
           message_id: draft.message_id,
           channel: "email",
@@ -123,8 +141,10 @@ export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailC
         subject: draft.subject ?? "",
         body: draft.body,
         account_id: account.id,
+        idempotency_key: `message/${draft.message_id}`,
       });
       account.daily_used += 1;
+      sentByMessage.set(draft.message_id, result);
 
       await ctx.bus.publish({
         workspace_id: ctx.workspace_id,
@@ -132,6 +152,7 @@ export function createOwnedDomainEmailChannel(opts: EmailChannelOptions): EmailC
         source: "system",
         producer_ref: ctx.producer_ref ?? "channel:email",
         correlation_id: ctx.correlation_id ?? null,
+        idempotency_key: `channel:email:sent:${draft.message_id}`,
         payload: {
           message_id: draft.message_id,
           channel: "email",

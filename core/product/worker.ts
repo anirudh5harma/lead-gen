@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import {
   dispatchRssSourceIngestionOnce,
+  dispatchSendingDomainWarmupsOnce,
   dispatchSignalPlaysOnce,
+  projectPendingProductEventsOnce,
   resumeRunnableWorkflowsOnce,
 } from "./app.ts";
 
@@ -20,6 +22,9 @@ export interface ProductWorkerTick {
   ingested: number;
   dispatched: number;
   resumed: number;
+  warmed: number;
+  projected: number;
+  projectionFailed: number;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -51,14 +56,27 @@ export async function runProductWorker(
 
   while (!opts.signal?.aborted) {
     try {
+      const projections = await projectPendingProductEventsOnce({
+        limit: batchSize,
+        leaseOwner,
+        leaseMs: opts.leaseMs,
+      });
       const resumed = await resumeRunnableWorkflowsOnce({
         limit: batchSize,
         leaseOwner,
         leaseMs: opts.leaseMs,
       });
       const ingested = await dispatchRssSourceIngestionOnce({ limit: batchSize });
+      const warmed = await dispatchSendingDomainWarmupsOnce({ limit: batchSize });
       const dispatched = await dispatchSignalPlaysOnce({ limit: batchSize });
-      opts.onTick?.({ ingested, dispatched, resumed });
+      opts.onTick?.({
+        ingested,
+        dispatched,
+        resumed,
+        warmed,
+        projected: projections.completed,
+        projectionFailed: projections.failed,
+      });
       if (opts.once) return;
     } catch (err) {
       onError(err);

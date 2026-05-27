@@ -4,6 +4,7 @@ import {
   hasDatabase,
 } from "../../../../core/product/app.ts";
 import { publishResendEmailWebhook } from "../../../../core/product/email-feedback.ts";
+import { publishResendDomainWebhook } from "../../../../core/product/domain-provisioning.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,13 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const engine = await getProductEngine();
-  const result = await publishResendEmailWebhook(engine.pool, engine.bus, payload, {
+  const domainResult = await publishResendDomainWebhook(engine.pool, engine.bus, payload, {
     providerEventId,
   });
+  const result = domainResult.reason === "unsupported_event_type"
+    ? await publishResendEmailWebhook(engine.pool, engine.bus, payload, {
+        providerEventId,
+      })
+    : domainResult;
   return Response.json(result, { status: 200 });
 }

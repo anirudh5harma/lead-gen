@@ -66,28 +66,35 @@ export function createPostgresWorkflowRuntime(
   const workflows = new Map<string, WorkflowDefinition>();
   const runs = new Map<string, RunRecord>();
 
+  async function wakeParkedApproval(
+    approval_id: string,
+    decision: ApprovalDecision,
+  ): Promise<boolean> {
+    for (const rec of runs.values()) {
+      const parked = rec.parkedApprovals.get(approval_id);
+      if (!parked) continue;
+      rec.parkedApprovals.delete(approval_id);
+      await setRunStatus(pool, rec.run, "running");
+      parked.resolve(decision);
+      return true;
+    }
+    return false;
+  }
+
   // Bus subscription that wakes parked event-wait Promises and parked
   // approval-decision Promises across all runs in this process.
   void bus.subscribe("*", async (event: PublishedEvent) => {
-    for (const rec of runs.values()) {
-      // approval.decided routes by approval_id
-      if (event.event_type === "approval.decided") {
-        const ap = (event.payload as { approval_id?: string }).approval_id;
-        if (ap) {
-          const parked = rec.parkedApprovals.get(ap);
-          if (parked) {
-            rec.parkedApprovals.delete(ap);
-            await setRunStatus(pool, rec.run, "running");
-            parked.resolve({
-              decision: (event.payload as { decision: ApprovalDecision["decision"] })
-                .decision,
-              decided_by: (event.payload as { decided_by: string | null })
-                .decided_by ?? undefined,
-            });
-            continue;
-          }
-        }
+    if (event.event_type === "approval.decided") {
+      const approval_id = (event.payload as { approval_id?: string }).approval_id;
+      if (approval_id) {
+        await wakeParkedApproval(approval_id, {
+          decision: (event.payload as { decision: ApprovalDecision["decision"] }).decision,
+          decided_by:
+            (event.payload as { decided_by: string | null }).decided_by ?? undefined,
+        });
       }
+    }
+    for (const rec of runs.values()) {
       // Generic event waits
       for (const wait of [...rec.parkedEventWaits]) {
         if (wait.event_type !== event.event_type) continue;
@@ -532,14 +539,14 @@ export function createPostgresWorkflowRuntime(
     async resolveApproval(approval_id, decision) {
       // Persist the decision; the bus then wakes the parked workflow via
       // approval.decided.
-      const result = await pool.query<{ workspace_id: string }>(
+      const result = await pool.query<{ workspace_id: string; run_id: string }>(
         `update workflow_approvals
             set decision = $1,
                 decided_by = $2,
                 decided_at = now(),
                 decision_note = $3
           where id = $4 and decision = 'pending'
-        returning workspace_id`,
+        returning workspace_id, run_id`,
         [decision.decision, decision.decided_by ?? null, decision.note ?? null, approval_id],
       );
       const row = result.rows[0];
@@ -558,6 +565,7 @@ export function createPostgresWorkflowRuntime(
           decided_by: decision.decided_by ?? null,
         },
       });
+      await wakeParkedApproval(approval_id, decision);
     },
   };
 }

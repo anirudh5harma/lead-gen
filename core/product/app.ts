@@ -8,9 +8,10 @@ import {
 } from "../agents/eval/index.ts";
 import {
   createPostgresEpisodicRepository,
+  createOutcomeMemoryUpdateProjection,
   createPostgresProceduralRepository,
+  createProceduralMemoryStateProjection,
   createPostgresSemanticRepository,
-  wireOutcomeFeedback,
   type RepMemory,
 } from "../agents/memory/index.ts";
 import {
@@ -45,7 +46,17 @@ import {
 } from "../agents/llm/index.ts";
 import { createDeepSeekJudge } from "../agents/eval/adapters/deepseek-judge.ts";
 import type { WorkflowRuntime } from "../substrate/workflows/index.ts";
-import { wireEmailDeliveryFeedback } from "./email-feedback.ts";
+import {
+  createEmailDeliveryFeedbackProjection,
+} from "./email-feedback.ts";
+import {
+  createSendingDomainProvisioningWorkflow,
+  createSendingDomainProjection,
+  createSendingDomainWarmupWorkflow,
+  SENDING_DOMAIN_PROVISIONING_WORKFLOW,
+  SENDING_DOMAIN_WARMUP_WORKFLOW,
+  type SendingDomainOperation,
+} from "./domain-provisioning.ts";
 import {
   getEventTraceForCorrelation,
   getLatestEventTraceForWorkspace,
@@ -55,7 +66,18 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
+import {
+  isProductionProductRuntime,
+  requireOutboundEmailExecutionEnvironment,
+  resolveProductEmailTransportMode,
+} from "./env.ts";
 import type { PostgresEventBus } from "../substrate/events/adapters/postgres.ts";
+import {
+  runDurableEventProjectionsOnce,
+  type DurableEventProjection,
+  type DurableProjectionTick,
+  type PublishedEvent,
+} from "../substrate/events/index.ts";
 import {
   getPool,
   tryGetPool,
@@ -66,9 +88,12 @@ const DEFAULT_WORKSPACE_SLUG = "demo";
 export const DEFAULT_PRODUCT_USER_ID = "00000000-0000-4000-8000-000000000001";
 export const DEFAULT_PRODUCT_WORKSPACE_SLUG = DEFAULT_WORKSPACE_SLUG;
 const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
+const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configuration.v1";
 const RUNNABLE_WORKFLOW_NAMES = [
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   RSS_SIGNAL_INGESTION_WORKFLOW,
+  SENDING_DOMAIN_PROVISIONING_WORKFLOW,
+  SENDING_DOMAIN_WARMUP_WORKFLOW,
 ] as const;
 
 export interface ProductWorkspaceSession {
@@ -195,8 +220,21 @@ export interface AppState {
     daily_window_start: string | null;
     status: string;
     domain: string | null;
+    sending_domain_id: string | null;
     warmup_state: string | null;
     current_daily_cap: number | null;
+    spf_verified: boolean | null;
+    dkim_verified: boolean | null;
+    dmarc_verified: boolean | null;
+    provider_status: string | null;
+    provider_domain_id: string | null;
+    dns_records: Array<{
+      record: string;
+      name: string;
+      type: string;
+      value: string;
+      status?: string | null;
+    }>;
     bounce_rate_24h: number | null;
     complaint_rate_24h: number | null;
   }>;
@@ -245,33 +283,6 @@ export async function getProductEngine(): Promise<ProductEngine> {
       semantic: createPostgresSemanticRepository({ pool }),
       procedural: createPostgresProceduralRepository({ pool }),
     };
-    await wireEmailDeliveryFeedback({ pool, bus });
-    await wireOutcomeFeedback({
-      bus,
-      procedural: memory.procedural,
-      async attribution(event) {
-        const payload = event.payload as {
-          attributed_rep_id?: string | null;
-          properties?: Record<string, unknown>;
-        };
-        const props = payload.properties ?? {};
-        const exemplar_ids = Array.isArray(props.exemplar_ids)
-          ? props.exemplar_ids.filter((id): id is string => typeof id === "string")
-          : [];
-        const pattern_key = typeof props.pattern_key === "string" ? props.pattern_key : null;
-        if (!payload.attributed_rep_id || !pattern_key || exemplar_ids.length === 0) {
-          return null;
-        }
-        return {
-          scope: {
-            workspace_id: event.workspace_id,
-            rep_id: payload.attributed_rep_id,
-          },
-          pattern_key,
-          exemplar_ids,
-        };
-      },
-    });
     return { pool, substrateMode: substrate.mode, bus, runtime, memory };
   })();
   return enginePromise;
@@ -339,8 +350,9 @@ export async function bootstrapWorkspace(
 
   const rep = await ensureRep(pool, ws);
   const play = await ensurePlay(pool, ws, rep.id);
-  const account = await ensureChannelAccount(pool, ws);
-  await ensureSendingDomain(pool, ws, account.id, account.display_name);
+  const trustedDemoState = !isProductionProductRuntime();
+  const account = await ensureChannelAccount(pool, ws, trustedDemoState);
+  await ensureSendingDomain(pool, ws, account.id, account.display_name, trustedDemoState);
   await ensureProceduralSeed(pool, ws, rep.id);
   return {
     workspace_id: ws,
@@ -444,22 +456,36 @@ async function ensurePlay(
 async function ensureChannelAccount(
   pool: Pool,
   workspace_id: string,
+  trustedDemoState: boolean,
 ): Promise<{ id: string; display_name: string }> {
   const existing = await pool.query<{ id: string; display_name: string }>(
-    `select id from channel_accounts
+    `select id, display_name from channel_accounts
       where workspace_id = $1 and kind = 'email_domain'
       order by created_at asc limit 1`,
     [workspace_id],
   );
   if (existing.rows[0]) return existing.rows[0];
   const id = randomUUID();
+  const displayName = trustedDemoState
+    ? "maya@go.bombsell.example"
+    : "Email channel not configured";
   await pool.query(
     `insert into channel_accounts (
        id, workspace_id, kind, display_name, status, daily_cap, daily_used, properties
-     ) values ($1, $2, 'email_domain', $3, 'connected', 25, 0, $4::jsonb)`,
-    [id, workspace_id, "maya@go.bombsell.example", JSON.stringify({ transport: "dry-run" })],
+     ) values ($1, $2, 'email_domain', $3, $4::channel_account_status, $5, 0, $6::jsonb)`,
+    [
+      id,
+      workspace_id,
+      displayName,
+      trustedDemoState ? "connected" : "disconnected",
+      trustedDemoState ? 25 : 0,
+      JSON.stringify({
+        transport: trustedDemoState ? "dry-run" : "unconfigured",
+        bootstrap_state: trustedDemoState ? "local-demo" : "awaiting-configuration",
+      }),
+    ],
   );
-  return { id, display_name: "maya@go.bombsell.example" };
+  return { id, display_name: displayName };
 }
 
 async function ensureSendingDomain(
@@ -467,6 +493,8 @@ async function ensureSendingDomain(
   workspace_id: string,
   channel_account_id: string,
   display_name: string,
+  trustedDemoState = !isProductionProductRuntime(),
+  targetDailyCap = trustedDemoState ? 25 : 0,
 ): Promise<void> {
   const domain = domainFromSender(display_name);
   if (!domain) return;
@@ -483,7 +511,7 @@ async function ensureSendingDomain(
        spf_verified, dkim_verified, dmarc_verified,
        warmup_state, warmup_day, current_daily_cap, target_daily_cap,
        properties
-     ) values ($1, $2, $3, true, true, true, 'warmed', 14, 25, 25, $4::jsonb)
+     ) values ($1, $2, $3, $4, $4, $4, $5::domain_warmup_state, $6, $7, $8, $9::jsonb)
      on conflict (workspace_id, domain) do update set
        channel_account_id = excluded.channel_account_id,
        target_daily_cap = greatest(sending_domains.target_daily_cap, excluded.target_daily_cap),
@@ -493,7 +521,14 @@ async function ensureSendingDomain(
       workspace_id,
       channel_account_id,
       domain,
-      JSON.stringify({ managed_by: "local-product-bootstrap" }),
+      trustedDemoState,
+      trustedDemoState ? "warmed" : "unverified",
+      trustedDemoState ? 14 : 0,
+      Math.max(0, Math.trunc(targetDailyCap)),
+      trustedDemoState ? 25 : 0,
+      JSON.stringify({
+        managed_by: trustedDemoState ? "local-product-bootstrap" : "product-surface",
+      }),
     ],
   );
 }
@@ -551,27 +586,153 @@ export async function configureEmailAccount(
     throw new Error("Configured workspace does not match the product session.");
   }
   await assertProductWorkspaceAccess(scoped, engine.pool);
-  await engine.pool.query(
+  const transport = resolveProductEmailTransportMode();
+  const event = await engine.bus.publish({
+    workspace_id: boot.workspace_id,
+    event_type: "channel.account.configured",
+    source: "user",
+    producer_ref: scoped.user_id,
+    payload: {
+      channel_account_id: boot.channel_account_id,
+      kind: "email_domain",
+      display_name: input.display_name,
+      daily_cap: Math.max(0, Math.trunc(input.daily_cap)),
+      transport,
+    },
+  });
+  await projectEmailAccountConfigured(engine.pool, event);
+  return boot;
+}
+
+async function projectEmailAccountConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    channel_account_id: string;
+    display_name: string;
+    daily_cap: number;
+    transport: "resend" | "dry-run" | "unconfigured";
+  };
+  await pool.query(
     `update channel_accounts
         set display_name = $2,
             daily_cap = $3,
-            status = 'connected',
-            properties = properties || $4::jsonb
+            status = $4::channel_account_status,
+            properties = properties || $5::jsonb
       where id = $1`,
     [
-      boot.channel_account_id,
-      input.display_name,
-      Math.max(0, Math.trunc(input.daily_cap)),
-      JSON.stringify({ transport: process.env.RESEND_API_KEY ? "resend" : "dry-run" }),
+      payload.channel_account_id,
+      payload.display_name,
+      payload.daily_cap,
+      payload.transport === "unconfigured" ? "disconnected" : "connected",
+      JSON.stringify({ transport: payload.transport, configured_event_id: event.id }),
     ],
   );
   await ensureSendingDomain(
-    engine.pool,
-    boot.workspace_id,
-    boot.channel_account_id,
-    input.display_name,
+    pool,
+    event.workspace_id,
+    payload.channel_account_id,
+    payload.display_name,
+    !isProductionProductRuntime(),
+    payload.daily_cap,
   );
-  return boot;
+}
+
+async function resolveProductOutcomeAttribution(event: PublishedEvent) {
+  const payload = event.payload as {
+    attributed_rep_id?: string | null;
+    properties?: Record<string, unknown>;
+  };
+  const props = payload.properties ?? {};
+  const exemplar_ids = Array.isArray(props.exemplar_ids)
+    ? props.exemplar_ids.filter((id): id is string => typeof id === "string")
+    : [];
+  const pattern_key = typeof props.pattern_key === "string" ? props.pattern_key : null;
+  if (!payload.attributed_rep_id || !pattern_key || exemplar_ids.length === 0) {
+    return null;
+  }
+  return {
+    scope: {
+      workspace_id: event.workspace_id,
+      rep_id: payload.attributed_rep_id,
+    },
+    pattern_key,
+    exemplar_ids,
+  };
+}
+
+function createProductEventProjections(engine: ProductEngine): DurableEventProjection[] {
+  return [
+    {
+      name: EMAIL_ACCOUNT_CONFIGURATION_PROJECTION,
+      eventTypes: ["channel.account.configured"],
+      apply: (event) => projectEmailAccountConfigured(engine.pool, event),
+    },
+    createEmailDeliveryFeedbackProjection({
+      pool: engine.pool,
+      bus: engine.bus,
+    }),
+    createOutcomeMemoryUpdateProjection({
+      bus: engine.bus,
+      attribution: resolveProductOutcomeAttribution,
+    }),
+    createProceduralMemoryStateProjection(engine.pool),
+    createSendingDomainProjection({
+      pool: engine.pool,
+      bus: engine.bus,
+    }),
+  ];
+}
+
+export async function startSendingDomainOperation(
+  operation: SendingDomainOperation,
+  session: ProductWorkspaceSession,
+): Promise<void> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{
+    id: string;
+    channel_account_id: string;
+    domain: string;
+    provider_domain_id: string | null;
+  }>(
+    `select id,
+            channel_account_id,
+            domain::text as domain,
+            properties->>'provider_domain_id' as provider_domain_id
+       from sending_domains
+      where workspace_id = $1
+      order by created_at asc
+      limit 1`,
+    [session.workspace_id],
+  );
+  const domain = rows[0];
+  if (!domain) throw new Error("Configure an email sender before provisioning its domain.");
+  if (operation !== "provision" && !domain.provider_domain_id) {
+    throw new Error("Provision the sending domain before requesting verification.");
+  }
+  engine.runtime.register(
+    createSendingDomainProvisioningWorkflow({
+      bus: engine.bus,
+    }),
+  );
+  await engine.runtime.start({
+    workspace_id: session.workspace_id,
+    workflow_name: SENDING_DOMAIN_PROVISIONING_WORKFLOW,
+    idempotency_key:
+      operation === "provision"
+        ? `sending-domain:${domain.id}:provision`
+        : `sending-domain:${domain.id}:${operation}:${Date.now()}`,
+    input: {
+      workspace_id: session.workspace_id,
+      sending_domain_id: domain.id,
+      channel_account_id: domain.channel_account_id,
+      domain: domain.domain,
+      operation,
+      provider_domain_id: domain.provider_domain_id,
+    },
+  });
 }
 
 export async function configureRssSource(
@@ -731,6 +892,13 @@ function createGovernedLLM(
   });
 }
 
+function createProductEmailTransport(): EmailTransport {
+  requireOutboundEmailExecutionEnvironment();
+  return resolveProductEmailTransportMode() === "resend"
+    ? createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY! })
+    : createDryRunEmailTransport();
+}
+
 function createGovernedJudge(engine: ProductEngine, workspace_id: string) {
   const fallback = createHeuristicJudge({ threshold: 0.55 });
   const llm = createGovernedLLM(engine, workspace_id, "judge.hot_path");
@@ -744,9 +912,7 @@ function createGovernedJudge(engine: ProductEngine, workspace_id: string) {
 
 function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: string): void {
   const store = createPostgresVerticalSliceStore(engine.pool);
-  const transport = process.env.RESEND_API_KEY
-    ? createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY })
-    : createDryRunEmailTransport();
+  const transport = createProductEmailTransport();
   const writerLlm = workspace_id
     ? createGovernedLLM(engine, workspace_id, "writer.email")
     : undefined;
@@ -774,9 +940,20 @@ function registerSignalIngestionWorkflows(engine: ProductEngine): void {
   );
 }
 
-function registerKnownWorkflows(engine: ProductEngine): void {
-  registerSignalEmailWorkflow(engine);
-  registerSignalIngestionWorkflows(engine);
+function registerSendingDomainProvisioningWorkflow(engine: ProductEngine): void {
+  engine.runtime.register(
+    createSendingDomainProvisioningWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+function registerSendingDomainWarmupWorkflow(engine: ProductEngine): void {
+  engine.runtime.register(
+    createSendingDomainWarmupWorkflow({
+      bus: engine.bus,
+    }),
+  );
 }
 
 function createDatabaseBackedEmailChannel(
@@ -807,9 +984,7 @@ async function startSignalEmailPlay(
   }
   const person = await store.getPerson(signal.related_person_id);
   if (!person) throw new Error(`Person not found: ${signal.related_person_id}`);
-  const transport = process.env.RESEND_API_KEY
-    ? createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY })
-    : createDryRunEmailTransport();
+  const transport = createProductEmailTransport();
   const email = createDatabaseBackedEmailChannel(engine.pool, transport);
   const writerLlm = createGovernedLLM(engine, input.workspace_id, "writer.email");
   const judge = createGovernedJudge(engine, input.workspace_id);
@@ -995,6 +1170,73 @@ export async function dispatchRssSourceIngestionOnce(
   return dispatched;
 }
 
+export async function dispatchSendingDomainWarmupsOnce(
+  opts: DispatchOptions = {},
+): Promise<number> {
+  const engine = await getProductEngine();
+  registerSendingDomainWarmupWorkflow(engine);
+  const { rows } = await engine.pool.query<{
+    id: string;
+    workspace_id: string;
+    channel_account_id: string;
+    domain: string;
+    warmup_day: number;
+    target_daily_cap: number;
+  }>(
+    `select id,
+            workspace_id,
+            channel_account_id,
+            domain::text as domain,
+            warmup_day,
+            target_daily_cap
+       from sending_domains
+      where warmup_state = 'warming'
+        and spf_verified and dkim_verified and dmarc_verified
+        and target_daily_cap > current_daily_cap
+        and (
+          warmup_day = 0
+          or updated_at <= now() - interval '24 hours'
+        )
+      order by updated_at asc
+      limit $1`,
+    [opts.limit ?? 25],
+  );
+  for (const row of rows) {
+    const nextDay = row.warmup_day + 1;
+    await engine.runtime.start({
+      workspace_id: row.workspace_id,
+      workflow_name: SENDING_DOMAIN_WARMUP_WORKFLOW,
+      idempotency_key: `sending-domain:${row.id}:warmup:day:${nextDay}`,
+      input: {
+        workspace_id: row.workspace_id,
+        sending_domain_id: row.id,
+        channel_account_id: row.channel_account_id,
+        domain: row.domain,
+        next_day: nextDay,
+        target_daily_cap: row.target_daily_cap,
+      },
+    });
+  }
+  return rows.length;
+}
+
+export async function projectPendingProductEventsOnce(
+  opts: DispatchOptions = {},
+): Promise<DurableProjectionTick> {
+  const engine = await getProductEngine();
+  const leaseOwner =
+    opts.leaseOwner ?? `product-projector:${process.pid}:${randomBytes(4).toString("hex")}`;
+  return runDurableEventProjectionsOnce(
+    engine.pool,
+    createProductEventProjections(engine),
+    {
+      leaseOwner,
+      limit: opts.limit,
+      leaseMs: opts.leaseMs,
+    },
+  );
+}
+
 export async function resumeRunnableWorkflowsOnce(
   opts: DispatchOptions = {},
 ): Promise<number> {
@@ -1016,7 +1258,13 @@ export async function resumeRunnableWorkflowsOnce(
   });
   let resumed = 0;
   for (const row of rows) {
-    registerSignalEmailWorkflow(engine, row.workspace_id);
+    if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
+      registerSignalEmailWorkflow(engine, row.workspace_id);
+    } else if (row.workflow_name === SENDING_DOMAIN_PROVISIONING_WORKFLOW) {
+      registerSendingDomainProvisioningWorkflow(engine);
+    } else if (row.workflow_name === SENDING_DOMAIN_WARMUP_WORKFLOW) {
+      registerSendingDomainWarmupWorkflow(engine);
+    }
     try {
       const run = await engine.runtime.resume(row.id);
       if (run) resumed++;
@@ -1054,11 +1302,15 @@ export async function renewWorkflowRunLeases(
 export async function claimRunnableWorkflowRuns(
   pool: Pool,
   opts: WorkflowLeaseOptions,
-): Promise<Array<{ id: string; workspace_id: string }>> {
+): Promise<Array<{ id: string; workspace_id: string; workflow_name: string }>> {
   const workflowNames = [...(opts.workflowNames ?? RUNNABLE_WORKFLOW_NAMES)];
   const limit = opts.limit ?? 25;
   const leaseMs = Math.max(1000, Math.floor(opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS));
-  const { rows } = await pool.query<{ id: string; workspace_id: string }>(
+  const { rows } = await pool.query<{
+    id: string;
+    workspace_id: string;
+    workflow_name: string;
+  }>(
     `with candidates as (
        select id
          from workflow_runs
@@ -1074,7 +1326,7 @@ export async function claimRunnableWorkflowRuns(
             lease_expires_at = now() + ($4::int * interval '1 millisecond')
        from candidates
       where wr.id = candidates.id
-      returning wr.id, wr.workspace_id`,
+      returning wr.id, wr.workspace_id, wr.workflow_name`,
     [workflowNames, limit, opts.leaseOwner, leaseMs],
   );
   return rows;
@@ -1085,7 +1337,6 @@ export async function retryFailedWorkflowRun(
   session?: ProductWorkspaceSession,
 ): Promise<void> {
   const engine = await getProductEngine();
-  registerKnownWorkflows(engine);
   const { rows } = await engine.pool.query<{
     id: string;
     workspace_id: string;
@@ -1107,6 +1358,12 @@ export async function retryFailedWorkflowRun(
   }
   if (run.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
     registerSignalEmailWorkflow(engine, run.workspace_id);
+  } else if (run.workflow_name === RSS_SIGNAL_INGESTION_WORKFLOW) {
+    registerSignalIngestionWorkflows(engine);
+  } else if (run.workflow_name === SENDING_DOMAIN_PROVISIONING_WORKFLOW) {
+    registerSendingDomainProvisioningWorkflow(engine);
+  } else if (run.workflow_name === SENDING_DOMAIN_WARMUP_WORKFLOW) {
+    registerSendingDomainWarmupWorkflow(engine);
   }
 
   let retryRunId = run.id;
@@ -1424,6 +1681,19 @@ export async function getAppState(
       domain: string | null;
       warmup_state: string | null;
       current_daily_cap: number | null;
+      sending_domain_id: string | null;
+      spf_verified: boolean | null;
+      dkim_verified: boolean | null;
+      dmarc_verified: boolean | null;
+      provider_status: string | null;
+      provider_domain_id: string | null;
+      dns_records: Array<{
+        record: string;
+        name: string;
+        type: string;
+        value: string;
+        status?: string | null;
+      }>;
       bounce_rate_24h: string | null;
       complaint_rate_24h: string | null;
     }>(
@@ -1434,9 +1704,16 @@ export async function getAppState(
               ca.daily_used,
               ca.daily_window_start,
               ca.status,
+              sd.id as sending_domain_id,
               sd.domain::text as domain,
               sd.warmup_state,
               sd.current_daily_cap,
+              sd.spf_verified,
+              sd.dkim_verified,
+              sd.dmarc_verified,
+              sd.properties->>'provider_status' as provider_status,
+              sd.properties->>'provider_domain_id' as provider_domain_id,
+              coalesce(sd.properties->'dns_records', '[]'::jsonb) as dns_records,
               sd.bounce_rate_24h::text as bounce_rate_24h,
               sd.complaint_rate_24h::text as complaint_rate_24h
          from channel_accounts ca

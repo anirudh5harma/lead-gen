@@ -399,10 +399,73 @@ const ChannelAccountConnected = z.object({
   kind: z.string(),
 });
 
+const ChannelAccountConfigured = z.object({
+  channel_account_id: z.string().uuid(),
+  kind: z.literal("email_domain"),
+  display_name: z.string().min(1),
+  daily_cap: z.number().int().nonnegative(),
+  transport: z.enum(["resend", "dry-run", "unconfigured"]),
+});
+
 const ChannelAccountErrored = z.object({
   channel_account_id: z.string().uuid(),
   kind: z.string(),
   error: z.string(),
+});
+
+const ChannelDomainRecord = z.object({
+  record: z.string(),
+  name: z.string(),
+  type: z.string(),
+  value: z.string(),
+  status: z.string().nullable().optional(),
+  priority: z.number().int().nullable().optional(),
+  ttl: z.string().nullable().optional(),
+});
+
+const ChannelDomainSnapshot = z.object({
+  sending_domain_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  domain: z.string(),
+  provider: z.string(),
+  provider_domain_id: z.string(),
+  provider_status: z.string(),
+  records: z.array(ChannelDomainRecord),
+  region: z.string().nullable().optional(),
+});
+
+const ChannelDomainVerificationRequested = z.object({
+  sending_domain_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  domain: z.string(),
+  provider: z.string(),
+  provider_domain_id: z.string(),
+});
+
+const ChannelDomainDmarcObserved = z.object({
+  sending_domain_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  domain: z.string(),
+  dns_name: z.string(),
+  verified: z.boolean(),
+  policy: z.enum(["none", "quarantine", "reject"]).nullable(),
+  record: z.string().nullable(),
+});
+
+const ChannelDomainTrustVerified = z.object({
+  sending_domain_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  domain: z.string(),
+});
+
+const ChannelDomainWarmupAdvanced = z.object({
+  sending_domain_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  domain: z.string(),
+  warmup_day: z.number().int().positive(),
+  current_daily_cap: z.number().int().nonnegative(),
+  target_daily_cap: z.number().int().nonnegative(),
+  completed: z.boolean(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -432,8 +495,10 @@ const LLMCallDeferred = z.object({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RepMemoryProceduralUpdated = z.object({
+  outcome_event_id: z.string().uuid(),
   rep_id: z.string().uuid(),
   pattern_key: z.string(),
+  exemplar_ids: z.array(z.string().uuid()).min(1),
   delta_score: z.number(),
   win: z.boolean(),
 });
@@ -494,7 +559,14 @@ export const eventRegistry = {
   "outcome.recorded": OutcomeRecorded,
 
   "channel.account.connected": ChannelAccountConnected,
+  "channel.account.configured": ChannelAccountConfigured,
   "channel.account.errored": ChannelAccountErrored,
+  "channel.domain.provisioned": ChannelDomainSnapshot,
+  "channel.domain.verification.requested": ChannelDomainVerificationRequested,
+  "channel.domain.status.received": ChannelDomainSnapshot,
+  "channel.domain.dmarc.observed": ChannelDomainDmarcObserved,
+  "channel.domain.trust.verified": ChannelDomainTrustVerified,
+  "channel.domain.warmup.advanced": ChannelDomainWarmupAdvanced,
 
   "llm.usage.recorded": LLMUsageRecorded,
   "llm.call.deferred": LLMCallDeferred,

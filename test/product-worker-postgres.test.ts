@@ -13,6 +13,11 @@ import {
 } from "../core/product/app.ts";
 import { recordInboundEmailReply } from "../core/product/inbound.ts";
 import { resetPool, setPool } from "../core/substrate/storage/index.ts";
+import {
+  createDryRunEmailTransport,
+  createPostgresOwnedDomainEmailChannel,
+} from "../core/channels/email/index.ts";
+import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
 
 test("product worker: dispatches signal.ingested events into durable play runs", async (t) => {
   const fx = await setupPg("product_worker");
@@ -235,6 +240,132 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
       [boot.channel_account_id],
     );
     assert.equal(account.rows[0].daily_used, 1);
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product email: queued send replay reuses reservation and transport idempotency", async (t) => {
+  const fx = await setupPg("product_email_replay");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const submitted = await submitManualSignal({
+      company_name: "Delta Treasury",
+      company_domain: "deltatreasury.example",
+      person_name: "Riya Kapoor",
+      person_email: "riya@deltatreasury.example",
+      signal_title: "Delta Treasury announced funding",
+      signal_content: "Delta Treasury raised funding to expand treasury operations.",
+      signal_url: "https://example.com/delta-funding",
+      approval: "none",
+    });
+    assert.equal(await dispatchSignalPlaysOnce(), 1);
+    await until(async () => {
+      const { rows } = await fx.pool.query<{ status: string }>(
+        `select status from workflow_runs where idempotency_key like $1`,
+        [`signal:${submitted.signal_id}:%`],
+      );
+      return rows[0]?.status === "completed" ? rows[0] : null;
+    });
+
+    const { rows } = await fx.pool.query<{
+      id: string;
+      conversation_id: string;
+      rep_id: string;
+      counterparty_person_id: string;
+      subject: string | null;
+      body: string;
+    }>(
+      `select m.id, m.conversation_id, c.rep_id, c.counterparty_person_id,
+              m.subject, m.body
+         from messages m
+         join conversations c on c.id = m.conversation_id
+        where m.workspace_id = $1 and m.direction = 'outbound'
+        order by m.created_at desc
+        limit 1`,
+      [submitted.workspace_id],
+    );
+    const message = rows[0];
+    await fx.pool.query(
+      `update messages set status = 'queued', external_id = null where id = $1`,
+      [message.id],
+    );
+    const before = await fx.pool.query<{ daily_used: number }>(
+      `select daily_used from channel_accounts where id = $1`,
+      [boot.channel_account_id],
+    );
+
+    const transport = createDryRunEmailTransport();
+    const email = createPostgresOwnedDomainEmailChannel({
+      pool: fx.pool,
+      transport,
+    });
+    const bus = createInMemoryEventBus();
+    const conversation = {
+      id: message.conversation_id,
+      workspace_id: submitted.workspace_id,
+      rep_id: message.rep_id,
+      counterparty_person_id: message.counterparty_person_id,
+      counterparty_email: "riya@deltatreasury.example",
+    };
+    const draft = {
+      message_id: message.id,
+      channel: "email",
+      subject: message.subject,
+      body: message.body,
+      eval_passed: true,
+    };
+
+    const firstRetry = await email.send(conversation, draft, {
+      workspace_id: submitted.workspace_id,
+      bus,
+    });
+    const secondRetry = await email.send(conversation, draft, {
+      workspace_id: submitted.workspace_id,
+      bus,
+    });
+
+    assert.equal(firstRetry.status, "sent");
+    assert.equal(secondRetry.status, "sent");
+    assert.equal(
+      firstRetry.status === "sent" ? firstRetry.external_id : null,
+      secondRetry.status === "sent" ? secondRetry.external_id : null,
+    );
+    assert.equal(transport.sent.length, 1);
+    assert.deepEqual(
+      bus.published.map((event) => event.event_type),
+      ["message.queued", "message.sent"],
+    );
+    const after = await fx.pool.query<{ daily_used: number }>(
+      `select daily_used from channel_accounts where id = $1`,
+      [boot.channel_account_id],
+    );
+    assert.equal(after.rows[0].daily_used, before.rows[0].daily_used);
+
+    await fx.pool.query(
+      `update messages
+          set properties = properties || jsonb_build_object(
+            'send_reserved_at',
+            (now() - interval '24 hours')::text
+          )
+        where id = $1`,
+      [message.id],
+    );
+    const expiredRetry = await email.send(conversation, draft, {
+      workspace_id: submitted.workspace_id,
+      bus,
+    });
+    assert.equal(expiredRetry.status, "deferred");
+    assert.equal(
+      expiredRetry.status === "deferred" ? expiredRetry.defer_reason : null,
+      "transport_idempotency_window_expired",
+    );
+    assert.equal(transport.sent.length, 1);
   } finally {
     await resetProductEngineForTests();
     await fx.close();

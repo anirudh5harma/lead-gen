@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { tryGetPool } from "../substrate/storage/index.ts";
+import { checkProductEnvironment } from "./env.ts";
 import { resolveProductSubstrateMode } from "./substrate.ts";
 
 export type ProductReadinessStatus = "ok" | "degraded" | "unconfigured";
@@ -38,6 +39,8 @@ const REQUIRED_TABLES = [
   "channel_accounts",
   "sending_domains",
   "workspace_llm_usage",
+  "event_projection_jobs",
+  "rep_memory_procedural_applications",
 ];
 
 const REQUIRED_MIGRATIONS = [
@@ -45,10 +48,13 @@ const REQUIRED_MIGRATIONS = [
   "015_workspace_llm_usage.sql",
   "016_workflow_run_leases.sql",
   "017_event_idempotency_keys.sql",
+  "018_event_projection_jobs.sql",
+  "019_procedural_memory_applications.sql",
 ];
 
 export async function checkProductReadiness(
   pool: Pool | null = tryGetPool(),
+  env: Record<string, string | undefined> = process.env,
 ): Promise<ProductReadiness> {
   const checks: ProductReadinessCheck[] = [];
   if (!pool) {
@@ -57,10 +63,13 @@ export async function checkProductReadiness(
       status: "unconfigured",
       detail: "DATABASE_URL is not configured",
     });
+    checks.push(formatEnvironmentCheck(env));
     return formatReadiness(checks);
   }
 
   try {
+    checks.push(formatEnvironmentCheck(env));
+
     const substrate = resolveProductSubstrateMode();
     checks.push(
       substrate.status === "ok"
@@ -109,6 +118,27 @@ export async function checkProductReadiness(
   }
 
   return formatReadiness(checks);
+}
+
+function formatEnvironmentCheck(
+  env: Record<string, string | undefined>,
+): ProductReadinessCheck {
+  const report = checkProductEnvironment(env);
+  if (report.status === "ok") {
+    return {
+      name: "environment",
+      status: "ok",
+      detail:
+        env.NODE_ENV === "production"
+          ? `Configured production keys: ${report.configuredProductionKeys.join(", ")}`
+          : "Production key enforcement is active when NODE_ENV=production",
+    };
+  }
+  return {
+    name: "environment",
+    status: "degraded",
+    detail: `Missing production env keys: ${report.missingProductionKeys.join(", ")}`,
+  };
 }
 
 async function missingRequiredTables(pool: Pool): Promise<string[]> {
