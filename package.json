@@ -12,6 +12,7 @@
     "worker:email-projectors": "node --experimental-strip-types scripts/email-projectors-worker.ts",
     "worker:signal-projectors": "node --experimental-strip-types scripts/signal-projectors-worker.ts",
     "worker:restate-workflows": "node --experimental-strip-types scripts/restate-workflows-worker.ts",
+    "verify:recovery": "node --experimental-strip-types scripts/verify-recovery.ts",
     "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "dependencies": {

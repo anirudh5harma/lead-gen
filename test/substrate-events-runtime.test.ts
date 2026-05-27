@@ -106,7 +106,7 @@ test("journaled NATS bus: redrive delivers a pending canonical event", async (t)
     });
 
     const result = await bus.redrivePending();
-    assert.deepEqual(result, { attempted: 1, delivered: 1, failed: 0 });
+    assert.deepEqual(result, { attempted: 1, delivered: 1, failed: 0, dead_lettered: 0 });
     await until(() => seen.includes(canonical.id));
 
     const dispatch = await fx.pool.query<{ status: string; attempts: number }>(

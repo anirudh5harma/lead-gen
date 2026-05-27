@@ -22,8 +22,12 @@ export type {
 } from "./adapters/in-memory.ts";
 export { createNatsEventBus } from "./adapters/nats.ts";
 export type { NatsEventBus, NatsEventBusOptions } from "./adapters/nats.ts";
-export { createJournaledNatsEventBus } from "./adapters/journaled-nats.ts";
+export {
+  createJournaledNatsEventBus,
+  listDeadLetteredDispatches,
+} from "./adapters/journaled-nats.ts";
 export type {
+  DeadLetteredDispatch,
   DispatchRedriveResult,
   JournaledNatsEventBus,
   JournaledNatsEventBusOptions,
