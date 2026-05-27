@@ -31,6 +31,36 @@ const WorkspaceMemberInvited = z.object({
 // Signal lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
+const SignalDiscovered = z.object({
+  signal_id: z.string().uuid(),
+  source_id: z.string().uuid().nullable(),
+  kind: z.enum([
+    "funding",
+    "hiring",
+    "leadership_change",
+    "product_launch",
+    "acquisition",
+    "churn_risk",
+    "competitor_move",
+    "podcast_mention",
+    "press_mention",
+    "regulation",
+    "expansion",
+    "layoff",
+    "other",
+  ]).nullable(),
+  title: z.string().min(1),
+  content: z.string().nullable(),
+  url: z.string().nullable(),
+  freshness_at: z.string().datetime(),
+  related_company_id: z.string().uuid().nullable(),
+  related_person_id: z.string().uuid().nullable(),
+  origin_candidate_id: z.string().uuid().nullable(),
+  properties: z.record(z.string(), z.unknown()),
+  provenance: z.record(z.string(), z.unknown()),
+  embedding: z.array(z.number()).nullable(),
+});
+
 const SignalIngested = z.object({
   signal_id: z.string().uuid(),
   source_id: z.string().uuid().nullable(),
@@ -48,6 +78,34 @@ const SignalMatched = z.object({
 const SignalDismissed = z.object({
   signal_id: z.string().uuid(),
   reason: z.string(),
+});
+
+const SignalClassificationCompleted = z.object({
+  signal_id: z.string().uuid(),
+  kind: z.enum([
+    "funding",
+    "hiring",
+    "leadership_change",
+    "product_launch",
+    "acquisition",
+    "churn_risk",
+    "competitor_move",
+    "podcast_mention",
+    "press_mention",
+    "regulation",
+    "expansion",
+    "layoff",
+    "other",
+  ]).nullable(),
+  disposition: z.enum(["matched", "dismissed"]),
+  match_score: z.number().min(0).max(1).nullable(),
+  match_reason: z.string(),
+  audience_hint: z.record(z.string(), z.unknown()),
+  matches: z.array(z.object({
+    icp_segment: z.string().uuid(),
+    match_score: z.number().min(0).max(1),
+    reason: z.string(),
+  })),
 });
 
 /**
@@ -136,6 +194,84 @@ const DraftRejected = z.object({
 // ─────────────────────────────────────────────────────────────────────────────
 // Channel I/O
 // ─────────────────────────────────────────────────────────────────────────────
+
+const EmailBounceReceived = z.object({
+  external_id: z.string().min(1),
+  recipient: z.string().email(),
+  bounce_type: z.enum(["hard", "soft", "complaint"]),
+  detail: z.string().optional(),
+});
+
+const EmailInboundReceived = z.object({
+  external_id: z.string().min(1),
+  external_thread_id: z.string().optional(),
+  in_reply_to: z.string().optional(),
+  references: z.array(z.string()).optional(),
+  from: z.object({
+    email: z.string().email(),
+    name: z.string().optional(),
+  }),
+  subject: z.string(),
+  body_text: z.string(),
+  body_html: z.string().optional(),
+  received_at: z.string().datetime(),
+  channel_account_id: z.string().uuid().optional(),
+});
+
+const OutlookNotificationReceived = z.object({
+  channel_account_id: z.string().uuid(),
+  subscription_id: z.string().min(1),
+  resource_id: z.string().min(1),
+});
+
+const OutlookAuthorizationReceived = z.object({
+  channel_account_id: z.string().uuid(),
+  display_name: z.string().min(1),
+  daily_cap: z.number().int().min(0),
+  encrypted_credentials: z.object({
+    encrypted: z.literal(true),
+    version: z.literal(1),
+    algorithm: z.literal("aes-256-gcm"),
+    iv: z.string().min(1),
+    tag: z.string().min(1),
+    ciphertext: z.string().min(1),
+  }),
+  ms_user_id: z.string().min(1),
+});
+
+const OutlookCredentialsRefreshed = z.object({
+  channel_account_id: z.string().uuid(),
+  encrypted_credentials: z.object({
+    encrypted: z.literal(true),
+    version: z.literal(1),
+    algorithm: z.literal("aes-256-gcm"),
+    iv: z.string().min(1),
+    tag: z.string().min(1),
+    ciphertext: z.string().min(1),
+  }),
+  expires_at: z.string().datetime(),
+});
+
+const OutlookReauthorizationRequired = z.object({
+  channel_account_id: z.string().uuid(),
+  error: z.string().min(1),
+});
+
+const EmailDomainWarmupUpdated = z.object({
+  sending_domain_id: z.string().uuid(),
+  domain: z.string().min(1),
+  previous_state: z.string(),
+  current_state: z.string(),
+  previous_daily_cap: z.number().int().min(0),
+  current_daily_cap: z.number().int().min(0),
+});
+
+const OutlookSubscriptionUpdated = z.object({
+  channel_account_id: z.string().uuid(),
+  subscription_id: z.string().min(1),
+  operation: z.enum(["created", "renewed"]),
+  expires_at: z.string().datetime(),
+});
 
 const MessageQueued = z.object({
   message_id: z.string().uuid(),
@@ -243,9 +379,11 @@ export const eventRegistry = {
   "workspace.created": WorkspaceCreated,
   "workspace.member.invited": WorkspaceMemberInvited,
 
+  "signal.discovered": SignalDiscovered,
   "signal.ingested": SignalIngested,
   "signal.matched": SignalMatched,
   "signal.dismissed": SignalDismissed,
+  "signal.classification.completed": SignalClassificationCompleted,
   "signal.expired": SignalExpired,
 
   "play.run.started": PlayRunStarted,
@@ -259,6 +397,15 @@ export const eventRegistry = {
   "draft.proposed": DraftProposed,
   "draft.judged": DraftJudged,
   "draft.rejected": DraftRejected,
+
+  "email.bounce.received": EmailBounceReceived,
+  "email.inbound.received": EmailInboundReceived,
+  "email.outlook.notification.received": OutlookNotificationReceived,
+  "email.outlook.authorization.received": OutlookAuthorizationReceived,
+  "email.outlook.credentials.refreshed": OutlookCredentialsRefreshed,
+  "email.outlook.reauthorization.required": OutlookReauthorizationRequired,
+  "email.domain.warmup.updated": EmailDomainWarmupUpdated,
+  "email.outlook.subscription.updated": OutlookSubscriptionUpdated,
 
   "message.queued": MessageQueued,
   "message.sent": MessageSent,

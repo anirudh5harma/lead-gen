@@ -18,9 +18,10 @@ import type {
 } from "../types.ts";
 
 /**
- * NATS JetStream event bus — the production target named in
- * ARCHITECTURE.md "Opinionated Tech Stack". Persistent, replayable,
- * lightweight; upgrade path to Confluent Cloud at scale.
+ * NATS JetStream delivery adapter — the production transport named in
+ * ARCHITECTURE.md "Opinionated Tech Stack". Application and worker
+ * composition uses `createJournaledNatsEventBus()` so the canonical event
+ * journal is appended before this adapter performs cross-process delivery.
  *
  * Subject scheme (configurable via streamPrefix, default 'events'):
  *
@@ -103,13 +104,14 @@ export async function createNatsEventBus(
       causation_id: input.causation_id ?? null,
       source: input.source,
       producer_ref: input.producer_ref ?? null,
+      idempotency_key: input.idempotency_key ?? null,
       payload: parsed,
       occurred_at: input.occurred_at ?? new Date().toISOString(),
     };
 
     const subject = subjectFor(prefix, event.workspace_id, event.event_type);
     await js.publish(subject, codec.encode(event), {
-      msgID: event.id, // dedupe inside the stream's duplicate window
+      msgID: input.idempotency_key ?? event.id,
     });
     return event;
   }

@@ -2,14 +2,16 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
 import type {
+  IntentClassification,
   IntentClassifier,
   ReplyIntent,
 } from "./intent.ts";
 
 /**
- * Inbound email pipeline. Channel adapters (Outlook subscription handler,
- * SES inbound webhook) convert their provider-specific payloads into a
- * canonical `InboundEmail` and call `handleInboundEmail`. The pipeline:
+ * Inbound email projector. Provider ingress is authenticated at the surface
+ * and emitted as `email.inbound.received` or
+ * `email.outlook.notification.received`; the projector consumer calls this
+ * pipeline after receiving those durable events:
  *
  *   1. Match the inbound to an existing conversation (by external_thread_id,
  *      In-Reply-To, References, or a recent-recipient fallback).
@@ -53,6 +55,8 @@ export interface HandleInboundDeps {
   pool: Pool;
   bus: EventBus;
   classifier: IntentClassifier;
+  /** Present when invoked from a durable provider-ingress projector. */
+  ingress_event_id?: string;
 }
 
 export interface HandleInboundResult {
@@ -69,6 +73,14 @@ interface MatchedOutbound {
   outbound_message_id: string;
 }
 
+interface ExistingInbound {
+  id: string;
+  conversation_id: string;
+  intent_class: ReplyIntent | null;
+  intent_confidence: string | null;
+  provenance: { matched_outbound_message_id?: string } | null;
+}
+
 const POSITIVE_OUTCOMES: Partial<Record<ReplyIntent, { kind: string; score: number }>> = {
   positive: { kind: "positive_reply", score: 1 },
   unsubscribe: { kind: "unsubscribe", score: -1 },
@@ -81,28 +93,45 @@ export async function handleInboundEmail(
 ): Promise<HandleInboundResult> {
   const { pool, bus, classifier } = deps;
 
-  // Dedup: if we've already processed this provider id, skip.
-  const existing = await pool.query<{ id: string; conversation_id: string }>(
-    `select id, conversation_id from messages
+  // Non-projector callers preserve historical provider-id dedup semantics.
+  // Durable projector redelivery, however, must resume any interrupted stage.
+  const existing = await pool.query<ExistingInbound>(
+    `select id, conversation_id, intent_class,
+            intent_confidence::text as intent_confidence, provenance
+       from messages
       where workspace_id = $1 and channel = 'email'
         and direction = 'inbound' and external_id = $2
       limit 1`,
     [inbound.workspace_id, inbound.external_id],
   );
-  if (existing.rows[0]) {
+  const existingMessage = existing.rows[0];
+  if (existingMessage && !deps.ingress_event_id) {
     return {
-      matched_conversation_id: existing.rows[0].conversation_id,
-      inbound_message_id: existing.rows[0].id,
+      matched_conversation_id: existingMessage.conversation_id,
+      inbound_message_id: existingMessage.id,
     };
   }
 
-  const matched = await matchConversation(pool, inbound);
+  const matched: MatchedOutbound | null = existingMessage
+    ? {
+        conversation_id: existingMessage.conversation_id,
+        outbound_message_id:
+          existingMessage.provenance?.matched_outbound_message_id ??
+          (await matchConversation(pool, inbound))?.outbound_message_id ??
+          "",
+      }
+    : await matchConversation(pool, inbound);
+  if (matched && !matched.outbound_message_id) return {
+    matched_conversation_id: matched.conversation_id,
+    inbound_message_id: existingMessage?.id ?? null,
+  };
   if (!matched) {
     await bus.publish({
       workspace_id: inbound.workspace_id,
       event_type: "reply.received",
       source: "webhook",
       producer_ref: "channel:email:inbound",
+      idempotency_key: projectionEventKey(deps.ingress_event_id, "reply.received"),
       payload: {
         conversation_id: "00000000-0000-0000-0000-000000000000",
         message_id: "00000000-0000-0000-0000-000000000000",
@@ -112,10 +141,10 @@ export async function handleInboundEmail(
     return { matched_conversation_id: null, inbound_message_id: null };
   }
 
-  // Insert inbound row + bump conversation last_activity_at and awaiting flip.
-  const inbound_message_id = randomUUID();
-  await pool.query(
-    `insert into messages (
+  const inbound_message_id = existingMessage?.id ?? randomUUID();
+  if (!existingMessage) {
+    await pool.query(
+      `insert into messages (
        id, workspace_id, conversation_id,
        channel, direction, status,
        subject, body, body_html,
@@ -131,40 +160,43 @@ export async function handleInboundEmail(
        $9,
        $10::timestamptz, $10::timestamptz, $10::timestamptz,
        $11::jsonb, now()
-     )`,
-    [
-      inbound_message_id,
-      inbound.workspace_id,
-      matched.conversation_id,
-      inbound.subject,
-      inbound.body_text,
-      inbound.body_html ?? null,
-      inbound.external_id,
-      inbound.external_thread_id ?? null,
-      inbound.channel_account_id ?? null,
-      inbound.received_at,
-      JSON.stringify({
-        from_email: inbound.from.email,
-        from_name: inbound.from.name ?? null,
-        in_reply_to: inbound.in_reply_to ?? null,
-        references: inbound.references ?? [],
-        matched_outbound_message_id: matched.outbound_message_id,
-      }),
-    ],
-  );
-  await pool.query(
-    `update conversations
+       )`,
+      [
+        inbound_message_id,
+        inbound.workspace_id,
+        matched.conversation_id,
+        inbound.subject,
+        inbound.body_text,
+        inbound.body_html ?? null,
+        inbound.external_id,
+        inbound.external_thread_id ?? null,
+        inbound.channel_account_id ?? null,
+        inbound.received_at,
+        JSON.stringify({
+          from_email: inbound.from.email,
+          from_name: inbound.from.name ?? null,
+          in_reply_to: inbound.in_reply_to ?? null,
+          references: inbound.references ?? [],
+          matched_outbound_message_id: matched.outbound_message_id,
+        }),
+      ],
+    );
+  }
+  if (!existingMessage?.intent_class) {
+    await pool.query(
+      `update conversations
         set last_activity_at = $2::timestamptz,
             status = 'awaiting_us'
       where id = $1`,
-    [matched.conversation_id, inbound.received_at],
-  );
-  // Mark the outbound it replies to.
-  await pool.query(
-    `update messages set status = 'replied', replied_at = $2::timestamptz
+      [matched.conversation_id, inbound.received_at],
+    );
+    // Mark the outbound it replies to.
+    await pool.query(
+      `update messages set status = 'replied', replied_at = $2::timestamptz
       where id = $1`,
-    [matched.outbound_message_id, inbound.received_at],
-  );
+      [matched.outbound_message_id, inbound.received_at],
+    );
+  }
 
   await bus.publish({
     workspace_id: inbound.workspace_id,
@@ -172,6 +204,7 @@ export async function handleInboundEmail(
     source: "webhook",
     producer_ref: "channel:email:inbound",
     correlation_id: matched.conversation_id,
+    idempotency_key: projectionEventKey(deps.ingress_event_id, "reply.received"),
     payload: {
       conversation_id: matched.conversation_id,
       message_id: inbound_message_id,
@@ -179,35 +212,45 @@ export async function handleInboundEmail(
     },
   });
 
-  // Classification + intent persistence.
-  const priorOutbound = await pool.query<{ subject: string; body: string }>(
-    `select subject, body from messages where id = $1`,
-    [matched.outbound_message_id],
-  );
-  const repName = await loadRepName(pool, matched.conversation_id);
-  const classification = await classifier.classify({
-    subject: inbound.subject,
-    body_text: inbound.body_text,
-    context: {
-      rep_name: repName ?? "the Rep",
-      prior_outbound_subject: priorOutbound.rows[0]?.subject,
-      prior_outbound_excerpt: priorOutbound.rows[0]?.body?.slice(0, 800),
-    },
-  });
+  // Classification + intent persistence. On a redelivery after this update,
+  // reuse the persisted verdict rather than issuing another LLM call.
+  let classification: IntentClassification;
+  if (existingMessage?.intent_class && existingMessage.intent_confidence !== null) {
+    classification = {
+      intent: existingMessage.intent_class,
+      confidence: Number(existingMessage.intent_confidence),
+      reason: "persisted projector result",
+    };
+  } else {
+    const priorOutbound = await pool.query<{ subject: string; body: string }>(
+      `select subject, body from messages where id = $1`,
+      [matched.outbound_message_id],
+    );
+    const repName = await loadRepName(pool, matched.conversation_id);
+    classification = await classifier.classify({
+      subject: inbound.subject,
+      body_text: inbound.body_text,
+      context: {
+        rep_name: repName ?? "the Rep",
+        prior_outbound_subject: priorOutbound.rows[0]?.subject,
+        prior_outbound_excerpt: priorOutbound.rows[0]?.body?.slice(0, 800),
+      },
+    });
 
-  await pool.query(
-    `update messages
+    await pool.query(
+      `update messages
         set intent_class = $2,
             intent_confidence = $3,
             eval_notes = coalesce(eval_notes, '{}'::jsonb) || $4::jsonb
       where id = $1`,
-    [
-      inbound_message_id,
-      classification.intent,
-      classification.confidence,
-      JSON.stringify({ intent_reason: classification.reason }),
-    ],
-  );
+      [
+        inbound_message_id,
+        classification.intent,
+        classification.confidence,
+        JSON.stringify({ intent_reason: classification.reason }),
+      ],
+    );
+  }
 
   await bus.publish({
     workspace_id: inbound.workspace_id,
@@ -215,6 +258,7 @@ export async function handleInboundEmail(
     source: "system",
     producer_ref: "channel:email:intent",
     correlation_id: matched.conversation_id,
+    idempotency_key: projectionEventKey(deps.ingress_event_id, "reply.classified"),
     payload: {
       conversation_id: matched.conversation_id,
       message_id: inbound_message_id,
@@ -254,12 +298,16 @@ export async function handleInboundEmail(
       [matched.conversation_id],
     );
     const attrib = attribRes.rows[0];
-    await pool.query(
+    const insertedOutcome = await pool.query<{ id: string }>(
       `insert into outcomes (
          id, workspace_id, kind, score,
          conversation_id, attributed_message_id, attributed_signal_id,
-         attributed_rep_id, occurred_at, recorded_at
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, now())`,
+         attributed_rep_id, provenance, occurred_at, recorded_at
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::timestamptz, now())
+       on conflict (workspace_id, (provenance ->> 'ingress_event_id'), kind)
+         where provenance ? 'ingress_event_id'
+       do nothing
+       returning id`,
       [
         outcome_id,
         inbound.workspace_id,
@@ -269,23 +317,42 @@ export async function handleInboundEmail(
         matched.outbound_message_id,
         attrib?.origin_signal_id ?? null,
         attrib?.rep_id ?? null,
+        JSON.stringify(
+          deps.ingress_event_id ? { ingress_event_id: deps.ingress_event_id } : {},
+        ),
         inbound.received_at,
       ],
     );
-    await bus.publish({
-      workspace_id: inbound.workspace_id,
-      event_type: "outcome.recorded",
-      source: "system",
-      producer_ref: "channel:email:reply",
-      correlation_id: matched.conversation_id,
-      payload: {
-        outcome_id,
-        kind: outcome.kind,
-        score: outcome.score,
-        conversation_id: matched.conversation_id,
-        attributed_play_id: null,
-      },
-    });
+    if (insertedOutcome.rows[0]) {
+      outcome_id = insertedOutcome.rows[0].id;
+    } else if (deps.ingress_event_id) {
+      const existingOutcome = await pool.query<{ id: string }>(
+        `select id from outcomes
+          where workspace_id = $1
+            and provenance ->> 'ingress_event_id' = $2
+            and kind = $3
+          limit 1`,
+        [inbound.workspace_id, deps.ingress_event_id, outcome.kind],
+      );
+      outcome_id = existingOutcome.rows[0]?.id;
+    }
+    if (outcome_id) {
+      await bus.publish({
+        workspace_id: inbound.workspace_id,
+        event_type: "outcome.recorded",
+        source: "system",
+        producer_ref: "channel:email:reply",
+        correlation_id: matched.conversation_id,
+        idempotency_key: projectionEventKey(deps.ingress_event_id, "outcome.recorded"),
+        payload: {
+          outcome_id,
+          kind: outcome.kind,
+          score: outcome.score,
+          conversation_id: matched.conversation_id,
+          attributed_play_id: null,
+        },
+      });
+    }
   }
 
   return {
@@ -295,6 +362,10 @@ export async function handleInboundEmail(
     intent_confidence: classification.confidence,
     outcome_id,
   };
+}
+
+function projectionEventKey(ingressEventId: string | undefined, projected: string) {
+  return ingressEventId ? `projection:${ingressEventId}:${projected}` : null;
 }
 
 async function matchConversation(

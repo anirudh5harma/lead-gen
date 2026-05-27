@@ -6,6 +6,7 @@ import { setupPg, until } from "./_pg.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import { createMockEmbeddingClient } from "../core/ingest/embeddings.ts";
 import { workspacePollOnce } from "../core/ingest/workspace-poll.ts";
+import { registerSignalProjectors } from "../core/ingest/projectors.ts";
 
 interface Seeded {
   workspace_id: string;
@@ -59,12 +60,18 @@ const RSS_XML = `<?xml version="1.0"?>
   </channel>
 </rss>`;
 
+async function createProjectingBus(pool: Pool) {
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool, bus });
+  return bus;
+}
+
 // ─── workspacePollOnce: RSS happy path ────────────────────────────────────
 
 test("workspace poll: RSS adapter inserts signals + emits signal.ingested", async (t) => {
   const fx = await setupPg("wsp_rss");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, source_id } = await seed(fx.pool, "rss", {
       url: "https://example.com/feed.xml",
@@ -81,6 +88,9 @@ test("workspace poll: RSS adapter inserts signals + emits signal.ingested", asyn
     assert.equal(summary.inserted, 2);
     assert.equal(summary.duplicates, 0);
 
+    await until(() =>
+      bus.published.filter((e) => e.event_type === "signal.ingested").length === 2,
+    );
     const { rows: sigs } = await fx.pool.query<{ kind: string | null; title: string; provenance: { external_id: string } }>(
       `select kind::text as kind, title, provenance from signals
         where workspace_id = $1 order by freshness_at asc`,
@@ -89,7 +99,6 @@ test("workspace poll: RSS adapter inserts signals + emits signal.ingested", asyn
     assert.equal(sigs.length, 2);
     assert.equal(sigs[0].provenance.external_id, "https://example.com/funding-1");
 
-    await new Promise((r) => setImmediate(r));
     const events = bus.published.filter((e) => e.event_type === "signal.ingested");
     assert.equal(events.length, 2);
   } finally {
@@ -100,7 +109,7 @@ test("workspace poll: RSS adapter inserts signals + emits signal.ingested", asyn
 test("workspace poll: re-polling dedups by (workspace, source, external_id)", async (t) => {
   const fx = await setupPg("wsp_dedup");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, source_id } = await seed(fx.pool, "rss", {
       url: "https://example.com/feed.xml",
@@ -113,6 +122,9 @@ test("workspace poll: re-polling dedups by (workspace, source, external_id)", as
     };
     const first = await workspacePollOnce(deps, { workspace_id, source_id });
     assert.equal(first.inserted, 2);
+    await until(() =>
+      bus.published.filter((e) => e.event_type === "signal.ingested").length === 2,
+    );
     const second = await workspacePollOnce(deps, { workspace_id, source_id });
     assert.equal(second.inserted, 0);
     assert.equal(second.duplicates, 2);
@@ -130,7 +142,7 @@ test("workspace poll: re-polling dedups by (workspace, source, external_id)", as
 test("workspace poll: ICP must_haves filter skips off-target items", async (t) => {
   const fx = await setupPg("wsp_icp");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, source_id } = await seed(fx.pool, "rss", {
       url: "https://example.com/feed.xml",
@@ -160,7 +172,7 @@ test("workspace poll: ICP must_haves filter skips off-target items", async (t) =
 test("workspace poll: daily cap → skipped:budget + overflow audit", async (t) => {
   const fx = await setupPg("wsp_budget");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, source_id } = await seed(fx.pool, "rss", {
       url: "https://example.com/feed.xml",
@@ -194,7 +206,7 @@ test("workspace poll: daily cap → skipped:budget + overflow audit", async (t) 
 test("workspace poll: adapter failure stores last_error on the config", async (t) => {
   const fx = await setupPg("wsp_err");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, source_id } = await seed(fx.pool, "rss", {
       url: "https://example.com/feed.xml",
@@ -225,7 +237,7 @@ test("workspace poll: adapter failure stores last_error on the config", async (t
 test("workspace poll: kindHint='product_launch' is preserved on the signal", async (t) => {
   const fx = await setupPg("wsp_kind");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, source_id } = await seed(fx.pool, "product_hunt", {
       token: "t-1",
@@ -261,6 +273,9 @@ test("workspace poll: kindHint='product_launch' is preserved on the signal", asy
       { workspace_id, source_id },
     );
     assert.equal(summary.inserted, 1);
+    await until(() =>
+      bus.published.some((e) => e.event_type === "signal.ingested"),
+    );
     const { rows } = await fx.pool.query<{ kind: string }>(
       `select kind::text as kind from signals where workspace_id = $1`,
       [workspace_id],
@@ -274,7 +289,7 @@ test("workspace poll: kindHint='product_launch' is preserved on the signal", asy
 test("workspace poll: emits signal.ingested with source_id set on the payload", async (t) => {
   const fx = await setupPg("wsp_emit");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, source_id } = await seed(fx.pool, "rss", {
       url: "https://example.com/feed.xml",

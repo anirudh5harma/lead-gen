@@ -13,7 +13,8 @@ import type { InboundEmail } from "./reply.ts";
  *   - deleteOutlookSubscription : DELETE /subscriptions/{id}
  *
  * Graph caps subscription lifetime by resource. For /me/messages the
- * documented max is ~4230 minutes (≈ 3 days), so a daily cron renews.
+ * documented max is about three days, so a scheduled durable workflow
+ * renews it before expiry.
  * The `clientState` we set on creation is echoed back in every change
  * notification — the webhook handler MUST verify it to reject forged
  * payloads.
@@ -49,6 +50,8 @@ export interface CreateOutlookSubscriptionOptions {
   /** Defaults to "/me/messages". */
   resource?: string;
   fetchImpl?: typeof fetch;
+  /** Durable workflow callers project persisted state after emitting an event. */
+  persist?: boolean;
 }
 
 export interface RenewOutlookSubscriptionOptions {
@@ -58,6 +61,8 @@ export interface RenewOutlookSubscriptionOptions {
   accessToken: string;
   expirationMinutes?: number;
   fetchImpl?: typeof fetch;
+  /** Durable workflow callers project persisted state after emitting an event. */
+  persist?: boolean;
 }
 
 export interface DeleteOutlookSubscriptionOptions {
@@ -129,7 +134,9 @@ export async function createOutlookSubscription(
     clientState,
     notificationUrl: opts.notificationUrl,
   };
-  await persistSubscription(opts.pool, opts.workspaceId, opts.channelAccountId, sub);
+  if (opts.persist !== false) {
+    await persistOutlookSubscription(opts.pool, opts.workspaceId, opts.channelAccountId, sub);
+  }
   return sub;
 }
 
@@ -167,7 +174,9 @@ export async function renewOutlookSubscription(
     ...existing,
     expirationDateTime: json.expirationDateTime,
   };
-  await persistSubscription(opts.pool, opts.workspaceId, opts.channelAccountId, updated);
+  if (opts.persist !== false) {
+    await persistOutlookSubscription(opts.pool, opts.workspaceId, opts.channelAccountId, updated);
+  }
   return updated;
 }
 
@@ -212,7 +221,7 @@ export async function loadSubscription(
   return rows[0]?.properties?.outlook_subscription ?? null;
 }
 
-async function persistSubscription(
+export async function persistOutlookSubscription(
   pool: Pool,
   workspaceId: string,
   channelAccountId: string,

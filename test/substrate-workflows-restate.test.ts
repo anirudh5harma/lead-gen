@@ -15,7 +15,11 @@ interface RecordedRequest {
 }
 
 function spyFetch(
-  responder: (req: RecordedRequest) => { status?: number; body?: unknown },
+  responder: (req: RecordedRequest) => {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+  },
 ): { fetchImpl: typeof fetch; calls: RecordedRequest[] } {
   const calls: RecordedRequest[] = [];
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -49,10 +53,10 @@ function spyFetch(
       headers: headersRaw,
       body: parsedBody,
     });
-    const { status = 200, body } = responder(calls[calls.length - 1]);
+    const { status = 200, body, headers } = responder(calls[calls.length - 1]);
     return new Response(body === undefined ? null : JSON.stringify(body), {
       status,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
     });
   }) as unknown as typeof fetch;
   return { fetchImpl, calls };
@@ -60,9 +64,9 @@ function spyFetch(
 
 const ingress = "http://restate.local:8080";
 
-test("restate client: start() POSTs to /<service>/<workflow>/send with input + metadata", async () => {
+test("restate client: start() submits a keyed native workflow with input + metadata", async () => {
   const { fetchImpl, calls } = spyFetch(() => ({
-    body: { invocationId: "inv-1" },
+    headers: { "x-restate-id": "inv-1" },
   }));
   const runtime = createRestateWorkflowRuntime({
     ingressUrl: ingress,
@@ -84,6 +88,7 @@ test("restate client: start() POSTs to /<service>/<workflow>/send with input + m
     workspace_id,
     workflow_name: "demo",
     input: { a: 41 },
+    idempotency_key: "run-key-1",
     correlation_id: "cor-1",
   });
 
@@ -95,11 +100,13 @@ test("restate client: start() POSTs to /<service>/<workflow>/send with input + m
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, "POST");
-  assert.equal(calls[0].url, `${ingress}/bombsell_workflows/demo/send`);
+  assert.equal(calls[0].url, `${ingress}/demo/run-key-1/run/send`);
   assert.equal(calls[0].headers.authorization, "Bearer secret");
+  assert.equal(calls[0].headers["idempotency-key"], "run-key-1");
   assert.deepEqual(calls[0].body, {
     request: { a: 41 },
     metadata: {
+      execution_scope: "workspace",
       workspace_id,
       play_id: null,
       play_run_id: null,
@@ -109,7 +116,36 @@ test("restate client: start() POSTs to /<service>/<workflow>/send with input + m
   });
 });
 
-test("restate client: idempotency_key is forwarded as the Idempotency-Key header", async () => {
+test("restate client: platform starts carry explicit platform scope without a tenant id", async () => {
+  const { fetchImpl, calls } = spyFetch(() => ({
+    headers: { "x-restate-id": "inv-platform" },
+  }));
+  const runtime = createRestateWorkflowRuntime({ ingressUrl: ingress, fetchImpl });
+
+  const run = await runtime.start({
+    execution_scope: "platform",
+    workspace_id: null,
+    workflow_name: "ingest_expire_sweep",
+    input: {},
+    idempotency_key: "maintenance:expire:2026-05-27",
+  });
+
+  assert.equal(run.execution_scope, "platform");
+  assert.equal(run.workspace_id, null);
+  assert.deepEqual(calls[0].body, {
+    request: {},
+    metadata: {
+      execution_scope: "platform",
+      workspace_id: null,
+      play_id: null,
+      play_run_id: null,
+      correlation_id: null,
+      causation_id: null,
+    },
+  });
+});
+
+test("restate client: idempotency_key is both workflow key and request idempotency header", async () => {
   const { fetchImpl, calls } = spyFetch(() => ({ body: { invocationId: "x" } }));
   const runtime = createRestateWorkflowRuntime({
     ingressUrl: ingress,
@@ -125,15 +161,12 @@ test("restate client: idempotency_key is forwarded as the Idempotency-Key header
     idempotency_key: "key-1",
   });
   assert.equal(calls[0].headers["idempotency-key"], "key-1");
+  assert.equal(calls[0].url, `${ingress}/demo/key-1/run/send`);
 });
 
-test("restate client: serviceName override changes the routing path", async () => {
-  const { fetchImpl, calls } = spyFetch(() => ({ body: { invocationId: "x" } }));
-  const runtime = createRestateWorkflowRuntime({
-    ingressUrl: ingress,
-    serviceName: "custom_workflows",
-    fetchImpl,
-  });
+test("restate client: starts without an idempotency key receive distinct workflow keys", async () => {
+  const { fetchImpl, calls } = spyFetch(() => ({ headers: { "x-restate-id": "x" } }));
+  const runtime = createRestateWorkflowRuntime({ ingressUrl: ingress, fetchImpl });
   runtime.register(
     defineWorkflow({ name: "demo", version: "1", async run() {} }),
   );
@@ -142,7 +175,14 @@ test("restate client: serviceName override changes the routing path", async () =
     workflow_name: "demo",
     input: null,
   });
-  assert.equal(calls[0].url, `${ingress}/custom_workflows/demo/send`);
+  await runtime.start({
+    workspace_id: randomUUID(),
+    workflow_name: "demo",
+    input: null,
+  });
+  assert.match(calls[0].url, new RegExp(`^${ingress}/demo/[^/]+/run/send$`));
+  assert.match(calls[1].url, new RegExp(`^${ingress}/demo/[^/]+/run/send$`));
+  assert.notEqual(calls[0].url, calls[1].url);
 });
 
 test("restate client: get() maps Restate statuses to our WorkflowRunStatus", async () => {

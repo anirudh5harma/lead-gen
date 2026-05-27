@@ -25,6 +25,9 @@ export interface EventInput<TPayload = unknown> {
   /** e.g. `rep:<uuid>`, `channel:email`, `webhook:gmail`. */
   producer_ref?: string | null;
 
+  /** Dedupe key for retries, scoped by workspace and event type. */
+  idempotency_key?: string | null;
+
   payload: TPayload;
   occurred_at?: string;
 }
@@ -41,6 +44,7 @@ export interface PublishedEvent<TPayload = unknown> {
   causation_id: string | null;
   source: EventSource;
   producer_ref: string | null;
+  idempotency_key: string | null;
   payload: TPayload;
   occurred_at: string;
 }

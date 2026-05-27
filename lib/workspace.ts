@@ -1,20 +1,6 @@
 import { cookies } from "next/headers";
 import { getPool } from "@/core/substrate/storage/index.ts";
-
-/**
- * Workspace selection for the dashboard. Foundation lacks a real auth
- * layer — `pivot-v2`'s identity story is still TODO. As a pragmatic
- * substitute, the dashboard reads the active workspace from a cookie
- * (`bs_ws`). If unset, we fall back to the most recently created
- * workspace in the database so a fresh demo "just works" after running
- * the seed.
- *
- * The active workspace id is intentionally NOT a security boundary in
- * the dashboard yet — every request to /dashboard renders that workspace's
- * data with no user-membership check. When auth lands, this helper becomes
- * the integration point: read the session, resolve the user's workspaces,
- * pick the active one, enforce membership.
- */
+import { getRequestUserId, validUuid } from "@/lib/auth";
 
 export interface ActiveWorkspace {
   id: string;
@@ -22,49 +8,83 @@ export interface ActiveWorkspace {
   name: string;
 }
 
+export interface ActiveWorkspaceSession {
+  workspace: ActiveWorkspace;
+  user_id: string;
+}
+
 const COOKIE_NAME = "bs_ws";
 
-export async function getActiveWorkspace(): Promise<ActiveWorkspace | null> {
-  const jar = await cookies();
-  const fromCookie = jar.get(COOKIE_NAME)?.value;
-  const pool = getPool();
-  if (fromCookie) {
-    const { rows } = await pool.query<ActiveWorkspace>(
-      `select id, slug, name from workspaces where id = $1 and archived_at is null`,
-      [fromCookie],
-    );
-    if (rows[0]) return rows[0];
-  }
-  // Fallback: newest non-archived workspace.
-  const { rows } = await pool.query<ActiveWorkspace>(
-    `select id, slug, name from workspaces
-      where archived_at is null
-      order by created_at desc
-      limit 1`,
+export async function hasWorkspaceAccess(
+  workspaceId: string,
+  userId: string,
+): Promise<boolean> {
+  const { rows } = await getPool().query<{ ok: boolean }>(
+    `select exists (
+       select 1 from workspace_members
+        where workspace_id = $1 and user_id = $2 and accepted_at is not null
+     ) as ok`,
+    [workspaceId, userId],
   );
-  return rows[0] ?? null;
+  return Boolean(rows[0]?.ok);
+}
+
+export async function getActiveWorkspaceSession(): Promise<ActiveWorkspaceSession | null> {
+  const userId = await getRequestUserId();
+  if (!userId) return null;
+
+  const jar = await cookies();
+  const selected = validUuid(jar.get(COOKIE_NAME)?.value);
+  const params: string[] = selected ? [userId, selected] : [userId];
+  const selectedClause = selected ? "and w.id = $2" : "";
+  const { rows } = await getPool().query<ActiveWorkspace>(
+    `select w.id, w.slug::text as slug, w.name
+       from workspaces w
+       join workspace_members wm on wm.workspace_id = w.id
+      where wm.user_id = $1
+        and wm.accepted_at is not null
+        and w.archived_at is null
+        ${selectedClause}
+      order by w.created_at desc
+      limit 1`,
+    params,
+  );
+  if (!rows[0]) return null;
+  return { workspace: rows[0], user_id: userId };
+}
+
+export async function getActiveWorkspace(): Promise<ActiveWorkspace | null> {
+  return (await getActiveWorkspaceSession())?.workspace ?? null;
 }
 
 export async function listWorkspaces(): Promise<ActiveWorkspace[]> {
-  const pool = getPool();
-  const { rows } = await pool.query<ActiveWorkspace>(
-    `select id, slug, name from workspaces
-      where archived_at is null
-      order by created_at desc`,
+  const userId = await getRequestUserId();
+  if (!userId) return [];
+  const { rows } = await getPool().query<ActiveWorkspace>(
+    `select w.id, w.slug::text as slug, w.name
+       from workspaces w
+       join workspace_members wm on wm.workspace_id = w.id
+      where wm.user_id = $1
+        and wm.accepted_at is not null
+        and w.archived_at is null
+      order by w.created_at desc`,
+    [userId],
   );
   return rows;
 }
 
-/**
- * Server action — used by the workspace selector dropdown to swap the
- * active workspace. Sets the cookie; the caller redirects.
- */
 export async function setActiveWorkspaceCookie(workspaceId: string): Promise<void> {
+  const userId = await getRequestUserId();
+  const id = validUuid(workspaceId);
+  if (!userId || !id || !(await hasWorkspaceAccess(id, userId))) {
+    throw new Error("workspace access denied");
+  }
   const jar = await cookies();
-  jar.set(COOKIE_NAME, workspaceId, {
+  jar.set(COOKIE_NAME, id, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: 60 * 60 * 24 * 30,
   });
 }

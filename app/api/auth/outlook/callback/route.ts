@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { encryptCredentials } from "@/core/substrate/auth/index.ts";
+import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { createOutlookSubscription } from "@/core/channels/email/outlook-subscription.ts";
 import { verifyState } from "../route.ts";
+import { getRequestUserId } from "@/lib/auth";
+import { hasWorkspaceAccess } from "@/lib/workspace";
 
 /**
- * Microsoft OAuth callback. Exchanges the auth code for tokens, stores
- * them on a new `channel_accounts` row of kind 'oauth_outlook', and
- * creates the Graph subscription so inbound replies start flowing.
+ * Microsoft OAuth callback. Exchanges the auth code for tokens, encrypts the
+ * credentials, and emits typed authorization ingress. A projector creates
+ * the account row and starts durable Graph-subscription repair after state
+ * exists.
  *
  *   GET /api/auth/outlook/callback?code=<x>&state=<signed>
  *
@@ -60,6 +64,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!state) {
     return new Response("invalid or expired state", { status: 400 });
   }
+  const userId = await getRequestUserId();
+  if (
+    !userId ||
+    userId !== state.user_id ||
+    !(await hasWorkspaceAccess(state.workspace_id, userId))
+  ) {
+    return new Response("workspace access denied", { status: 403 });
+  }
 
   const clientId = process.env.MICROSOFT_CLIENT_ID;
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
@@ -102,47 +114,40 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const pool = getPool();
   const channelAccountId = randomUUID();
-  await pool.query(
-    `insert into channel_accounts (
-        id, workspace_id, kind, display_name, status,
-        daily_cap, credentials, properties
-      ) values (
-        $1, $2, 'oauth_outlook', $3, 'connected',
-        $4, $5::jsonb, $6::jsonb
-      )`,
-    [
-      channelAccountId,
-      state.workspace_id,
-      email,
-      Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
-      JSON.stringify({
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-      }),
-      JSON.stringify({ ms_user_id: me.id }),
-    ],
+  const credentials = encryptCredentials(
+    {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+    },
+    {
+      workspace_id: state.workspace_id,
+      channel_account_id: channelAccountId,
+    },
   );
 
-  // Stand up the Graph subscription so inbound replies flow to the webhook.
-  const notificationUrl = `${appOrigin(req)}/api/webhooks/outlook`;
+  const bus = await createRuntimeEventBus({ pool });
   try {
-    await createOutlookSubscription({
-      pool,
-      workspaceId: state.workspace_id,
-      channelAccountId,
-      accessToken: tokens.access_token,
-      notificationUrl,
+    await bus.publish({
+      workspace_id: state.workspace_id,
+      event_type: "email.outlook.authorization.received",
+      source: "user",
+      producer_ref: `user:${userId}`,
+      idempotency_key: `outlook-authorization:${channelAccountId}`,
+      payload: {
+        channel_account_id: channelAccountId,
+        display_name: email,
+        daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
+        encrypted_credentials: credentials,
+        ms_user_id: me.id,
+      },
     });
-  } catch (err) {
-    // Best-effort: the account is connected even if the subscription
-    // failed (transient Graph issues happen). The renewal cron will pick
-    // it up next time.
-    console.error("[outlook callback] subscription create failed:", err);
+  } finally {
+    await bus.close();
   }
 
   const dest = new URL(
-    `/onboarding/outlook?status=connected&channel_account_id=${channelAccountId}`,
+    `/onboarding/outlook?status=connecting&channel_account_id=${channelAccountId}`,
     appOrigin(req),
   );
   return Response.redirect(dest.toString(), 302);

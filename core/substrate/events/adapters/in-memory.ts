@@ -43,6 +43,7 @@ export function createInMemoryEventBus(
   const subscribers = new Map<string, Set<EventHandler>>();
   const wildcard = new Set<EventHandler>();
   const published: PublishedEvent[] = [];
+  const publishedByIdempotency = new Map<string, PublishedEvent>();
 
   function dispatch(event: PublishedEvent): void {
     const typed = subscribers.get(event.event_type);
@@ -72,6 +73,13 @@ export function createInMemoryEventBus(
     }
     const schema = eventRegistry[input.event_type];
     const parsed = schema.parse(input.payload);
+    const dedupeKey = input.idempotency_key
+      ? `${input.workspace_id}\u0000${input.event_type}\u0000${input.idempotency_key}`
+      : null;
+    if (dedupeKey) {
+      const existing = publishedByIdempotency.get(dedupeKey);
+      if (existing) return existing;
+    }
 
     const event: PublishedEvent = {
       id: input.id ?? randomUUID(),
@@ -82,11 +90,13 @@ export function createInMemoryEventBus(
       causation_id: input.causation_id ?? null,
       source: input.source,
       producer_ref: input.producer_ref ?? null,
+      idempotency_key: input.idempotency_key ?? null,
       payload: parsed,
       occurred_at: input.occurred_at ?? new Date().toISOString(),
     };
 
     published.push(event);
+    if (dedupeKey) publishedByIdempotency.set(dedupeKey, event);
     dispatch(event);
     return event;
   }
@@ -129,6 +139,7 @@ export function createInMemoryEventBus(
       subscribers.clear();
       wildcard.clear();
       published.length = 0;
+      publishedByIdempotency.clear();
     },
   };
 }

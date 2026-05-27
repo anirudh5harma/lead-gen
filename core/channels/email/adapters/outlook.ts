@@ -1,4 +1,6 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
+import { decryptCredentials, encryptCredentials } from "../../../substrate/auth/index.ts";
+import type { EventBus } from "../../../substrate/events/index.ts";
 import type { EmailDraft } from "../types.ts";
 
 /**
@@ -13,8 +15,8 @@ import type { EmailDraft } from "../types.ts";
  * Gmail is intentionally not supported (ARCHITECTURE.md).
  *
  * Token refresh: when access_token is expired (or close to it), POST the
- * refresh_token grant to Microsoft's token endpoint, persist the new
- * tokens back into channel_accounts.credentials, then send.
+ * refresh_token grant to Microsoft's token endpoint and publish the encrypted
+ * result. The email projector owns channel_accounts state mutation.
  *
  * Tests inject `fetchImpl`; production uses globalThis.fetch.
  */
@@ -32,6 +34,7 @@ export interface OutlookCredentials {
 
 export interface OutlookSenderOptions {
   pool: Pool;
+  bus: EventBus;
   /** Microsoft app registration. */
   clientId: string;
   clientSecret: string;
@@ -48,13 +51,36 @@ export interface OutlookSendInput {
   draft: EmailDraft;
 }
 
-export interface OutlookSender {
+export interface OutlookAccessTokenProvider {
+  getAccessToken(channel_account_id: string): Promise<string>;
+}
+
+export interface OutlookSender extends OutlookAccessTokenProvider {
   send(input: OutlookSendInput): Promise<{ external_id: string }>;
 }
 
 interface ChannelAccountRow {
-  credentials: OutlookCredentials | null;
+  workspace_id: string;
+  credentials: unknown;
   display_name: string;
+  status: string;
+}
+
+interface CredentialLifecycleRow {
+  id: string;
+  event_type:
+    | "email.outlook.authorization.received"
+    | "email.outlook.credentials.refreshed"
+    | "email.outlook.reauthorization.required";
+  correlation_id: string | null;
+  payload: unknown;
+}
+
+interface CredentialSnapshot {
+  workspace_id: string;
+  credentials: OutlookCredentials;
+  origin_event_id: string | null;
+  correlation_id: string | null;
 }
 
 interface TokenResponse {
@@ -99,9 +125,13 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
   const skew = opts.refreshSkewMs ?? 60_000;
   const scope = opts.scope ?? "https://graph.microsoft.com/.default offline_access";
 
-  async function loadCredentials(channel_account_id: string): Promise<OutlookCredentials> {
-    const { rows } = await opts.pool.query<ChannelAccountRow>(
-      `select credentials, display_name from channel_accounts
+  async function loadCredentials(
+    db: Pool | PoolClient,
+    channel_account_id: string,
+  ): Promise<CredentialSnapshot> {
+    const { rows } = await db.query<ChannelAccountRow>(
+      `select workspace_id, credentials, display_name, status::text as status
+         from channel_accounts
         where id = $1 and kind = 'oauth_outlook'`,
       [channel_account_id],
     );
@@ -111,37 +141,90 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
         `channel_account ${channel_account_id} has no Outlook credentials`,
       );
     }
-    return row.credentials;
+    const { rows: eventRows } = await db.query<CredentialLifecycleRow>(
+      `select id, event_type, correlation_id, payload
+         from events
+        where workspace_id = $1
+          and event_type in (
+            'email.outlook.authorization.received',
+            'email.outlook.credentials.refreshed',
+            'email.outlook.reauthorization.required'
+          )
+          and payload ->> 'channel_account_id' = $2
+        order by occurred_at desc
+        limit 1`,
+      [row.workspace_id, channel_account_id],
+    );
+    const latest = eventRows[0];
+    if (latest?.event_type === "email.outlook.reauthorization.required") {
+      throw new OutlookAuthError(
+        `channel_account ${channel_account_id} requires Outlook reauthorization`,
+      );
+    }
+    if (!latest && row.status === "needs_reauth") {
+      throw new OutlookAuthError(
+        `channel_account ${channel_account_id} requires Outlook reauthorization`,
+      );
+    }
+    const encryptedCredentials =
+      latest?.event_type === "email.outlook.authorization.received" ||
+      latest?.event_type === "email.outlook.credentials.refreshed"
+        ? (latest.payload as { encrypted_credentials: unknown }).encrypted_credentials
+        : row.credentials;
+    return {
+      workspace_id: row.workspace_id,
+      credentials: decryptCredentials<OutlookCredentials>(encryptedCredentials, {
+        workspace_id: row.workspace_id,
+        channel_account_id,
+      }),
+      origin_event_id: latest?.id ?? null,
+      correlation_id: latest?.correlation_id ?? latest?.id ?? null,
+    };
   }
 
-  async function persistCredentials(
+  function requiresRefresh(creds: OutlookCredentials): boolean {
+    const expiresAt = Date.parse(creds.expires_at);
+    return Number.isFinite(expiresAt) && expiresAt - Date.now() <= skew;
+  }
+
+  async function publishCredentialsRefreshed(
     channel_account_id: string,
+    snapshot: CredentialSnapshot,
     next: OutlookCredentials,
   ): Promise<void> {
-    await opts.pool.query(
-      `update channel_accounts
-          set credentials = $2::jsonb,
-              status = 'connected',
-              last_error = null
-        where id = $1`,
-      [channel_account_id, JSON.stringify(next)],
-    );
+    const protectedCredentials = encryptCredentials(next, {
+      workspace_id: snapshot.workspace_id,
+      channel_account_id,
+    });
+    await opts.bus.publish({
+      workspace_id: snapshot.workspace_id,
+      event_type: "email.outlook.credentials.refreshed",
+      source: "system",
+      producer_ref: "channel:outlook",
+      correlation_id: snapshot.correlation_id,
+      causation_id: snapshot.origin_event_id,
+      idempotency_key: `outlook-refresh:${channel_account_id}:${next.expires_at}`,
+      payload: {
+        channel_account_id,
+        encrypted_credentials: protectedCredentials,
+        expires_at: next.expires_at,
+      },
+    });
   }
 
   async function refreshIfNeeded(
     channel_account_id: string,
-    creds: OutlookCredentials,
+    snapshot: CredentialSnapshot,
   ): Promise<OutlookCredentials> {
-    const expiresAt = Date.parse(creds.expires_at);
-    if (!Number.isFinite(expiresAt) || expiresAt - Date.now() > skew) {
-      return creds;
+    if (!requiresRefresh(snapshot.credentials)) {
+      return snapshot.credentials;
     }
 
     const body = new URLSearchParams({
       client_id: opts.clientId,
       client_secret: opts.clientSecret,
       grant_type: "refresh_token",
-      refresh_token: creds.refresh_token,
+      refresh_token: snapshot.credentials.refresh_token,
       scope,
     });
 
@@ -154,15 +237,23 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
       const text = await response.text();
       // 400 from the token endpoint with `invalid_grant` means the user
       // revoked access or the refresh token expired. Mark the account
-      // disconnected so the channel surfaces a clear DeferReason.
+      // disconnected via its projector so the channel surfaces a clear reason.
       if (response.status === 400) {
-        await opts.pool.query(
-          `update channel_accounts
-              set status = 'needs_reauth',
-                  last_error = $2::jsonb
-            where id = $1`,
-          [channel_account_id, JSON.stringify({ message: text })],
-        );
+        await opts.bus.publish({
+          workspace_id: snapshot.workspace_id,
+          event_type: "email.outlook.reauthorization.required",
+          source: "system",
+          producer_ref: "channel:outlook",
+          correlation_id: snapshot.correlation_id,
+          causation_id: snapshot.origin_event_id,
+          idempotency_key:
+            `outlook-reauth-required:${channel_account_id}:` +
+            `${snapshot.origin_event_id ?? "legacy"}`,
+          payload: {
+            channel_account_id,
+            error: text.slice(0, 300),
+          },
+        });
       }
       throw new OutlookAuthError(
         `Outlook token refresh failed (${response.status}): ${text.slice(0, 300)}`,
@@ -171,17 +262,40 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
     const json = (await response.json()) as TokenResponse;
     const refreshed: OutlookCredentials = {
       access_token: json.access_token,
-      refresh_token: json.refresh_token ?? creds.refresh_token,
+      refresh_token: json.refresh_token ?? snapshot.credentials.refresh_token,
       expires_at: new Date(Date.now() + json.expires_in * 1000).toISOString(),
     };
-    await persistCredentials(channel_account_id, refreshed);
+    await publishCredentialsRefreshed(channel_account_id, snapshot, refreshed);
     return refreshed;
   }
 
+  async function getAccessToken(channel_account_id: string): Promise<string> {
+    const initial = await loadCredentials(opts.pool, channel_account_id);
+    if (!requiresRefresh(initial.credentials)) return initial.credentials.access_token;
+
+    const client = await opts.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("select pg_advisory_xact_lock(hashtext($1))", [
+        `outlook-token-refresh:${channel_account_id}`,
+      ]);
+      const current = await loadCredentials(client, channel_account_id);
+      const creds = await refreshIfNeeded(channel_account_id, current);
+      await client.query("commit");
+      return creds.access_token;
+    } catch (err) {
+      await client.query("rollback").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   return {
+    getAccessToken,
+
     async send({ channel_account_id, draft }): Promise<{ external_id: string }> {
-      const initial = await loadCredentials(channel_account_id);
-      const creds = await refreshIfNeeded(channel_account_id, initial);
+      const accessToken = await getAccessToken(channel_account_id);
 
       const message = {
         message: {
@@ -207,7 +321,7 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
       const response = await fetchImpl(SEND_MAIL_ENDPOINT, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${creds.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(message),

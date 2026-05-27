@@ -31,7 +31,7 @@ legacy/          # Archived previous implementation. Do not import.
 | Area                                                  | State     |
 |-------------------------------------------------------|-----------|
 | Directory structure                                   | ✅ landed |
-| Database schema (14 migrations) + migration runner    | ✅ landed |
+| Database schema (23 migrations) + migration runner    | ✅ landed |
 | Five primitives (Zod)                                 | ✅ landed |
 | Event bus (in-memory + Postgres + NATS JetStream)     | ✅ landed |
 | Durable workflow runtime (in-process + Postgres + Restate ingress client) | ✅ landed |
@@ -45,7 +45,10 @@ legacy/          # Archived previous implementation. Do not import.
 | Transactional email (Resend)                          | ✅ landed |
 | First Rep + Play end-to-end ("Maya", Series A cold)   | ✅ landed |
 | Reply intake + classification → procedural feedback   | ✅ landed |
-| Webhook routes (Outlook subscription + SES SNS + OAuth) | ✅ landed |
+| SES SNS signature verification + trusted topic gating | ✅ landed |
+| Dashboard membership auth + Outlook credential encryption | ✅ landed |
+| Email provider webhooks → typed ingress → projector worker | ✅ landed |
+| OAuth and ingestion writes through typed projections | ⏳ required |
 | Dashboard UI (brief, conversations, approvals, ...)   | ✅ landed |
 | Restate workflow-handler host process                 | ⏳ deployment work |
 | LinkedIn / X / voice channels                         | ⏳ later  |
@@ -55,9 +58,15 @@ legacy/          # Archived previous implementation. Do not import.
 
 ```bash
 npm install
+cp .env.example .env.local # or provide the equivalent deployment variables
 npm run dev      # http://localhost:3000
 npm run build    # production build sanity check
 ```
+
+`.env.example` is the tracked configuration contract. Production health at
+`/api/health` fails closed when core authentication, database, origin, or
+credential-encryption configuration is absent, and reports integrations whose
+keys are not active.
 
 ### Database
 
@@ -97,28 +106,87 @@ The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` inte
 # Play with mocked LLM + SES, and simulate an inbound positive reply so
 # the dashboard has real data.
 npm run migrate
+BOMBSELL_ALLOW_DEMO_AUTH=1 \
+BOMBSELL_DEMO_USER_ID=00000000-0000-4000-8000-000000000001 \
 npm run demo:seed
 npm run dev
 # Open http://localhost:3000/dashboard
 ```
 
-The seed prints the workspace id; the dashboard's `getActiveWorkspace`
-falls back to the most-recently-created workspace when there's no
-`bs_ws` cookie, so a freshly seeded demo workspace renders without
-extra steps.
+The demo opt-in inserts an accepted membership for the local demo identity.
+Production never permits demo authentication or arbitrary workspace-cookie
+selection.
 
 ### Production adapters
 
-NATS JetStream is the production event bus (see ARCHITECTURE.md). Run a
-NATS server and set `NATS_URL`; the bus auto-creates the stream.
+NATS JetStream is the production delivery bus (see ARCHITECTURE.md). Run a
+NATS server and set `NATS_URL`; the bus auto-creates the stream. Publication
+first appends the canonical event to Postgres, then delivers that same event
+through NATS. The append-only journal is currently required by hot-path eval
+gating, audit, and replay until the event-log sink is deployed. A durable
+dispatch row allows the worker to redrive a journaled event if delivery was
+interrupted before JetStream acknowledged it.
+Authenticated SES and Outlook webhook routes now publish provider-ingress
+events only. Run their durable consumer alongside the app:
+
+```bash
+DATABASE_URL=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... npm run worker:email-projectors
+```
+
+Run Signal classification and its state projector as a durable NATS consumer:
+
+```bash
+DATABASE_URL=... NATS_URL=... DEEPSEEK_API_KEY=... npm run worker:signal-projectors
+```
+
+Run the Restate workflow handler host as a separate worker and register its
+endpoint with the Restate admin API:
+
+```bash
+DATABASE_URL=... APP_ORIGIN=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... OPENAI_API_KEY=... MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=... npm run worker:restate-workflows
+```
+
+Production readiness requires `NATS_URL`, `RESTATE_INGRESS_URL`, and
+`MAINTENANCE_TRIGGER_SECRET`.
+When `NATS_URL` is absent, non-production app ingress uses the Postgres
+bridge for development only; production fails closed rather than processing
+off-bus.
 
 Restate is the production workflow runtime. The adapter shipped here is
 the **ingress client**: it satisfies our `WorkflowRuntime` interface
-over HTTP to a running Restate. Deploying Restate end-to-end also
-requires a separate workflow-handler process built on
-`@restatedev/restate-sdk` — see the comment block at the bottom of
-`core/substrate/workflows/adapters/restate.ts` for the topology.
+over HTTP to native keyed Restate workflows (`/<workflow>/<key>/run/send`).
+Deploying Restate end-to-end also requires the `worker:restate-workflows`
+handler process built on `@restatedev/restate-sdk`. The worker hosts the native
+workflow handlers and runs the typed-event signal bridge that resolves
+`ctx.awaitEvent` via workflow-bound durable promises. It also hosts the
+workspace-scoped owned-domain warmup and Outlook subscription repair workflows.
 
-Until Restate is deployed, the Postgres workflow runtime is the
-production choice for single-process deployments (journals durably;
-doesn't resume parked workflows across process restarts).
+A deployment control-plane scheduler can start due tenant maintenance without
+performing any product mutation itself:
+
+```bash
+curl -X POST https://app.example.com/api/internal/workflows/maintenance \
+  -H "Authorization: Bearer $MAINTENANCE_TRIGGER_SECRET"
+```
+
+That authenticated ingress submits platform-scoped catalog polling and TTL
+expiry sweeps, and discovers due tenant-scoped source polls, daily
+owned-domain warmup sweeps, and hourly Outlook subscription repairs. Platform
+work is represented explicitly in the Restate request metadata and cannot use
+tenant event publication APIs without a workspace projection. The ingress
+must run from the worker/control plane, not a Vercel cron; consequential work
+remains durable inside Restate.
+
+The Postgres workflow runtime remains a development bridge: it journals
+state but cannot resume parked workflows after a process restart. It is not
+the production runtime described in `ARCHITECTURE.md`.
+
+### Production blockers
+
+The platform is not production-ready yet. The next required build sequence is:
+
+1. Configure the control-plane schedule for `/api/internal/workflows/maintenance` in the deployed worker environment.
+2. Replace remaining direct Signal creation and expiration mutations in ingestion with typed lifecycle events plus idempotent projectors. Classification decisions and Outlook OAuth authorization/refresh/reauthorization now project state from canonical events.
+3. Add Microsoft Graph lifecycle-token validation and migrate or reconnect any pre-encryption Outlook accounts.
+4. Wire deployment readiness for NATS/Restate workers, add operator-visible dead-letter handling for repeatedly failed dispatches, and run database, NATS, browser, deliverability, and recovery tests in a production-like environment.
+5. Resolve the dependency audit findings before release.

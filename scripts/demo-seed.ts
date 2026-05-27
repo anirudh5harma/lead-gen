@@ -51,6 +51,18 @@ async function main(): Promise<void> {
     `insert into workspaces (id, slug, name) values ($1, $2, $3)`,
     [workspace_id, slug, "Demo Workspace"],
   );
+  const demoUserId = process.env.BOMBSELL_DEMO_USER_ID;
+  if (demoUserId) {
+    await pool.query(
+      `insert into workspace_members (workspace_id, user_id, role, accepted_at)
+       values ($1, $2, 'owner', now())`,
+      [workspace_id, demoUserId],
+    );
+  } else {
+    console.warn(
+      "BOMBSELL_DEMO_USER_ID is unset; the authenticated dashboard will not expose this workspace.",
+    );
+  }
   console.log(`workspace ${slug} (${workspace_id})`);
 
   const { rep_id, channel_account_id, sending_domain_id } =
@@ -197,8 +209,7 @@ async function main(): Promise<void> {
 
   void exemplar;
   console.log("");
-  console.log(`Open http://localhost:3000/dashboard?ws=${workspace_id}`);
-  console.log(`(set the cookie: bs_ws=${workspace_id})`);
+  console.log("Open http://localhost:3000/dashboard");
 }
 
 main().catch((err) => {

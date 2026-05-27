@@ -50,6 +50,23 @@ test("workflow runtime: step result is journaled and replayed", async () => {
   assert.equal(invocations, 1);
 });
 
+test("in-process runtime rejects platform-scoped workflow starts", async () => {
+  const runtime = createInProcessWorkflowRuntime();
+  runtime.register(
+    defineWorkflow({ name: "platform_only", version: "1", async run() {} }),
+  );
+
+  await assert.rejects(
+    runtime.start({
+      execution_scope: "platform",
+      workspace_id: null,
+      workflow_name: "platform_only",
+      input: null,
+    }),
+    /does not support platform-scoped invocations/,
+  );
+});
+
 test("workflow runtime: step retries on failure with backoff", async () => {
   const bus = createInMemoryEventBus();
   const runtime = createInProcessWorkflowRuntime({ bus });

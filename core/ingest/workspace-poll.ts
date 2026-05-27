@@ -6,7 +6,6 @@ import {
   type WorkflowDefinition,
 } from "../substrate/workflows/index.ts";
 import type { EmbeddingClient } from "./embeddings.ts";
-import { vectorToPgLiteral } from "./embeddings.ts";
 import {
   ensureBudgetRow,
   recordOverflow,
@@ -25,8 +24,8 @@ import { getWorkspaceAdapter } from "./adapters/registry.ts";
  * Workspace-poll workflow. Per-(workspace, source) durable pollers that
  * bypass the shared signal_candidates pool: their items are workspace-
  * specific by definition (custom RSS, Google News keyword, Reddit sub,
- * HN front, HN Who-is-hiring, ProductHunt) so they write directly into
- * the workspace's `signals` table.
+ * HN front, HN Who-is-hiring, ProductHunt). They emit typed discovered
+ * Signal events; the signal projector owns `signals` materialization.
  *
  * Dedup is per-workspace: check (workspace_id, source_id,
  * properties->>'external_id') before insert. Budget cap still applies.
@@ -76,7 +75,7 @@ async function loadSource(
   const { rows } = await pool.query<SourceRow>(
     `select id, workspace_id, kind::text as kind, name, config
        from graph_sources
-      where workspace_id = $1 and id = $2`,
+      where workspace_id = $1 and id = $2 and enabled`,
     [workspace_id, source_id],
   );
   return rows[0] ?? null;
@@ -216,47 +215,31 @@ export async function workspacePollOnce(
     const [embedding] = await deps.embedder.embed([leadText]);
 
     const signal_id = randomUUID();
-    await deps.pool.query(
-      `insert into signals (
-         id, workspace_id, source_id,
-         kind, title, content, url,
-         freshness_at, status,
-         properties, provenance, embedding, ingested_at
-       ) values (
-         $1, $2, $3,
-         $4, $5, $6, $7,
-         $8, 'ingested',
-         $9::jsonb, $10::jsonb, $11::vector, now()
-       )`,
-      [
-        signal_id,
-        input.workspace_id,
-        input.source_id,
-        itemKind ?? null,
-        item.title,
-        item.content ?? null,
-        item.url ?? null,
-        item.freshness_at,
-        JSON.stringify({ structured: item.structured ?? {} }),
-        JSON.stringify({
-          adapter: adapter.id,
-          external_id: item.external_id,
-          ...(item.provenance ?? {}),
-        }),
-        vectorToPgLiteral(embedding),
-      ],
-    );
-
     await deps.bus.publish({
       workspace_id: input.workspace_id,
-      event_type: "signal.ingested",
+      event_type: "signal.discovered",
       source: "system",
       producer_ref: `ingest:workspace:${adapter.id}`,
+      idempotency_key:
+        `workspace-source:${input.source_id}:external:${item.external_id}`,
       payload: {
         signal_id,
         source_id: input.source_id,
         kind: itemKind ?? null,
-        novelty_score: null,
+        title: item.title,
+        content: item.content ?? null,
+        url: item.url ?? null,
+        freshness_at: item.freshness_at,
+        related_company_id: null,
+        related_person_id: null,
+        origin_candidate_id: null,
+        properties: { structured: item.structured ?? {} },
+        provenance: {
+          adapter: adapter.id,
+          external_id: item.external_id,
+          ...(item.provenance ?? {}),
+        },
+        embedding,
       },
     });
     summary.inserted += 1;
@@ -277,12 +260,16 @@ export function createWorkspacePollWorkflow(
     name: "ingest_workspace_poll",
     version: "1",
     async run(input, ctx): Promise<WorkspacePollSummary> {
+      if (input.workspace_id !== ctx.workspace_id) {
+        throw new Error(
+          "workspace poll input workspace does not match workflow workspace",
+        );
+      }
       return ctx.step(
         "poll_once",
         () => workspacePollOnce(deps, input),
         {
           retry: { max_attempts: 2, backoff: "exponential", base_ms: 200 },
-          on_failure: "skip",
         },
       );
     },

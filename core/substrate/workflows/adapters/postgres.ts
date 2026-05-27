@@ -110,7 +110,8 @@ export function createPostgresWorkflowRuntime(
 
     return {
       run_id: rec.run.id,
-      workspace_id: rec.run.workspace_id,
+      execution_scope: rec.run.execution_scope,
+      workspace_id: rec.run.workspace_id!,
       correlation_id: rec.run.correlation_id ?? rec.run.id,
 
       async step<O>(
@@ -154,7 +155,7 @@ export function createPostgresWorkflowRuntime(
             [attemptStepId, rec.run.id, rec.run.workspace_id, name, pos, attempt],
           );
           await bus.publish({
-            workspace_id: rec.run.workspace_id,
+            workspace_id: rec.run.workspace_id!,
             event_type: "workflow.step.started",
             source: "system",
             producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -181,7 +182,7 @@ export function createPostgresWorkflowRuntime(
             );
             rec.run.last_checkpoint_at = new Date().toISOString();
             await bus.publish({
-              workspace_id: rec.run.workspace_id,
+              workspace_id: rec.run.workspace_id!,
               event_type: "workflow.step.completed",
               source: "system",
               producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -199,7 +200,7 @@ export function createPostgresWorkflowRuntime(
               [JSON.stringify({ message }), attemptStepId],
             );
             await bus.publish({
-              workspace_id: rec.run.workspace_id,
+              workspace_id: rec.run.workspace_id!,
               event_type: "workflow.step.failed",
               source: "system",
               producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -261,7 +262,7 @@ export function createPostgresWorkflowRuntime(
         );
         await setRunStatus(pool, rec.run, "awaiting_approval");
         await bus.publish({
-          workspace_id: rec.run.workspace_id,
+          workspace_id: rec.run.workspace_id!,
           event_type: "approval.requested",
           source: "system",
           producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -275,7 +276,7 @@ export function createPostgresWorkflowRuntime(
 
       async publish(event_type, payload) {
         await bus.publish({
-          workspace_id: rec.run.workspace_id,
+          workspace_id: rec.run.workspace_id!,
           event_type: event_type as never,
           source: "system",
           producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -294,6 +295,11 @@ export function createPostgresWorkflowRuntime(
     async start<I, O = unknown>(
       startOpts: StartOptions<I>,
     ): Promise<WorkflowRun<I, O>> {
+      if (startOpts.execution_scope === "platform") {
+        throw new Error(
+          "Postgres development workflow runtime does not support platform-scoped invocations",
+        );
+      }
       const def = workflows.get(startOpts.workflow_name);
       if (!def) {
         throw new Error(
@@ -340,6 +346,7 @@ export function createPostgresWorkflowRuntime(
 
       const run: WorkflowRun<I, O> = {
         id,
+        execution_scope: "workspace",
         workspace_id: startOpts.workspace_id,
         workflow_name: startOpts.workflow_name,
         workflow_version: def.version,
@@ -476,6 +483,7 @@ async function loadRun<I, O>(
   if (!row) return null;
   return {
     id: row.id,
+    execution_scope: "workspace",
     workspace_id: row.workspace_id,
     workflow_name: row.workflow_name,
     workflow_version: row.workflow_version,

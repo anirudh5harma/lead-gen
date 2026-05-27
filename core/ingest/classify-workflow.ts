@@ -1,4 +1,8 @@
-import type { EventBus, Subscription } from "../substrate/events/index.ts";
+import type {
+  EventHandler,
+  EventPayload,
+  Subscription,
+} from "../substrate/events/index.ts";
 import { classifySignal, type ClassifyDeps } from "./classify.ts";
 
 /**
@@ -17,6 +21,8 @@ import { classifySignal, type ClassifyDeps } from "./classify.ts";
 
 export interface ClassifyWorkflowOptions extends ClassifyDeps {
   onError?: (err: unknown, signal_id: string) => void;
+  /** Throw after logging so a durable transport can redeliver the event. */
+  rethrowErrors?: boolean;
   /**
    * Optional gate: return false to skip a particular event. Useful for
    * scoping which event sources flow through this classifier instance.
@@ -28,16 +34,23 @@ export interface ClassifyWorkflow {
   subscription: Subscription;
 }
 
+export interface ClassifySubscriber {
+  subscribe(
+    handler: EventHandler<EventPayload<"signal.ingested">>,
+    durableName: string,
+  ): Promise<Subscription>;
+}
+
 export async function startClassifyWorkflow(
   opts: ClassifyWorkflowOptions,
+  subscriber: ClassifySubscriber = defaultSubscriber(opts),
 ): Promise<ClassifyWorkflow> {
   const onError =
     opts.onError ??
     ((err, signal_id) => {
       console.error(`[classify] signal ${signal_id} threw:`, err);
     });
-  const subscription = await opts.bus.subscribe(
-    "signal.ingested",
+  const subscription = await subscriber.subscribe(
     async (event) => {
       if (opts.shouldHandle && !opts.shouldHandle({
         source: event.source,
@@ -50,8 +63,18 @@ export async function startClassifyWorkflow(
         await classifySignal(opts, { signal_id: signalId });
       } catch (err) {
         onError(err, signalId);
+        if (opts.rethrowErrors) throw err;
       }
     },
+    "signal_classifier",
   );
   return { subscription };
+}
+
+function defaultSubscriber(opts: ClassifyWorkflowOptions): ClassifySubscriber {
+  return {
+    subscribe(handler) {
+      return opts.bus.subscribe("signal.ingested", handler);
+    },
+  };
 }

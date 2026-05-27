@@ -13,7 +13,7 @@
  *
  * Adapters:
  *   - in-process : journals to memory. Dev / tests.
- *   - restate    : production target (stub).
+ *   - restate    : production ingress client; handler host still required.
  */
 
 export type WorkflowRunStatus =
@@ -32,6 +32,8 @@ export type StepStatus =
   | "failed"
   | "skipped"
   | "compensated";
+
+export type WorkflowExecutionScope = "workspace" | "platform";
 
 export interface RetryPolicy {
   max_attempts: number;
@@ -60,7 +62,8 @@ export interface ApprovalDecision {
 
 export interface WorkflowRun<I = unknown, O = unknown> {
   id: string;
-  workspace_id: string;
+  execution_scope: WorkflowExecutionScope;
+  workspace_id: string | null;
   workflow_name: string;
   workflow_version: string;
   status: WorkflowRunStatus;
@@ -100,7 +103,8 @@ export interface StepRecord {
  */
 export interface RunContext {
   readonly run_id: string;
-  readonly workspace_id: string;
+  readonly execution_scope: WorkflowExecutionScope;
+  readonly workspace_id: string | null;
   readonly correlation_id: string;
 
   /**
@@ -145,8 +149,7 @@ export interface WorkflowDefinition<I = unknown, O = unknown> {
   run: (input: I, ctx: RunContext) => Promise<O>;
 }
 
-export interface StartOptions<I = unknown> {
-  workspace_id: string;
+interface CommonStartOptions<I> {
   workflow_name: string;
   input: I;
   idempotency_key?: string;
@@ -155,6 +158,11 @@ export interface StartOptions<I = unknown> {
   play_id?: string;
   play_run_id?: string;
 }
+
+export type StartOptions<I = unknown> = CommonStartOptions<I> & (
+  | { execution_scope?: "workspace"; workspace_id: string }
+  | { execution_scope: "platform"; workspace_id: null }
+);
 
 /**
  * Public runtime interface. Adapters implement this contract.

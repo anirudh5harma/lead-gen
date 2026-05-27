@@ -9,11 +9,15 @@
     "lint": "eslint",
     "migrate": "node --experimental-strip-types scripts/migrate.ts",
     "demo:seed": "node --experimental-strip-types scripts/demo-seed.ts",
+    "worker:email-projectors": "node --experimental-strip-types scripts/email-projectors-worker.ts",
+    "worker:signal-projectors": "node --experimental-strip-types scripts/signal-projectors-worker.ts",
+    "worker:restate-workflows": "node --experimental-strip-types scripts/restate-workflows-worker.ts",
     "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1053.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@restatedev/restate-sdk": "^1.14.4",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.0",
     "@vercel/analytics": "^2.0.1",

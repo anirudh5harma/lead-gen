@@ -223,12 +223,14 @@ export function createExpireWorkflow(
     name: "ingest_expire_sweep",
     version: "1",
     async run(input, ctx): Promise<ExpireSummary> {
+      if (ctx.execution_scope !== "platform") {
+        throw new Error("expiration sweep requires a platform-scoped invocation");
+      }
       return ctx.step(
         "expire_once",
         () => expireOnce(deps, input ?? {}),
         {
           retry: { max_attempts: 3, backoff: "exponential", base_ms: 250 },
-          on_failure: "skip",
         },
       );
     },

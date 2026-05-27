@@ -27,6 +27,17 @@ export {
 export type { EmailChannelDeps } from "./send.ts";
 export { handleBounce } from "./bounces.ts";
 export { handleInboundEmail } from "./reply.ts";
+export {
+  projectOutlookAuthorization,
+  projectOutlookCredentialsRefreshed,
+  projectOutlookReauthorizationRequired,
+  registerEmailIngressProjectors,
+} from "./projectors.ts";
+export type {
+  EmailIngressProjectorDeps,
+  EmailIngressSubscriber,
+  OutlookSubscriptionRepairStarter,
+} from "./projectors.ts";
 export type {
   InboundEmail,
   HandleInboundDeps,
@@ -67,12 +78,14 @@ export type {
   OutlookSenderOptions,
   OutlookSendInput,
   OutlookCredentials,
+  OutlookAccessTokenProvider,
 } from "./adapters/outlook.ts";
 export {
   createOutlookSubscription,
   renewOutlookSubscription,
   deleteOutlookSubscription,
   loadSubscription as loadOutlookSubscription,
+  persistOutlookSubscription,
   fetchOutlookMessage,
   graphMessageToInbound,
   isValidClientState,
@@ -85,6 +98,12 @@ export type {
   OutlookNotificationBatch,
   GraphMessage,
 } from "./outlook-subscription.ts";
+export { createOutlookSubscriptionRepairWorkflow } from "./outlook-subscription-workflow.ts";
+export type {
+  OutlookSubscriptionRepairDeps,
+  OutlookSubscriptionRepairInput,
+  OutlookSubscriptionRepairSummary,
+} from "./outlook-subscription-workflow.ts";
 export {
   parseSnsEnvelope,
   parseSnsNotification,
@@ -95,3 +114,12 @@ export type {
   SnsParsedNotification,
   SesNotification,
 } from "./ses-inbound.ts";
+export {
+  allowedSnsTopicArns,
+  snsStringToSign,
+  validSnsUrl,
+  verifySnsMessage,
+  SnsConfigurationError,
+  SnsVerificationError,
+} from "./sns-verify.ts";
+export type { VerifySnsMessageOptions } from "./sns-verify.ts";

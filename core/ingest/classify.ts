@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { z } from "zod";
-import type { EventBus } from "../substrate/events/index.ts";
+import type { EventBus, EventPayload } from "../substrate/events/index.ts";
 import type { LLMClient } from "../agents/llm/types.ts";
 import type { SignalKind } from "../primitives/signal.ts";
 import { listIcps, type IcpRow } from "./icps.ts";
@@ -19,10 +19,8 @@ import { reserveClassify } from "./budget.ts";
  *   4. Build a prompt with the signal + ICP descriptions, ask DeepSeek
  *      for a JSON object:
  *        { kind, per_icp: [{ icp_id, score, reason }], dismissal_reason? }
- *   5. Update the signal: set kind (if was null), update match_score +
- *      match_reason + audience_hint + status, then emit
- *      `signal.matched` for each ICP above its threshold or
- *      `signal.dismissed` once.
+ *   5. Emit `signal.classification.completed`; the Signal projector owns
+ *      row mutation and emits `signal.matched`/`signal.dismissed`.
  *
  * Per-segment matching: a single signal can match MULTIPLE ICP segments
  * in a workspace (Team plan workspaces have several segments). Each gets
@@ -86,7 +84,7 @@ Respond with a single JSON object and nothing else:
 interface SignalRow {
   id: string;
   workspace_id: string;
-  kind: string | null;
+  kind: SignalKind | null;
   title: string;
   content: string | null;
   url: string | null;
@@ -156,16 +154,14 @@ export async function classifySignal(
 
   const icps = await listIcps(deps.pool, signal.workspace_id, { only_enabled: true });
   if (icps.length === 0) {
-    // No ICPs declared — mark dismissed so downstream Plays don't act,
-    // and emit dismissed so the UI shows the trail. (A workspace without
-    // ICPs is intentionally not scored against anything.)
-    await markDismissed(deps.pool, signal.id, "no_icps");
-    await deps.bus.publish({
-      workspace_id: signal.workspace_id,
-      event_type: "signal.dismissed",
-      source: "system",
-      producer_ref: "ingest:classify",
-      payload: { signal_id: signal.id, reason: "no_icps" },
+    // A workspace without ICPs is intentionally not scored against anything.
+    await emitClassification(deps, signal, {
+      kind: signal.kind,
+      disposition: "dismissed",
+      match_score: null,
+      match_reason: "no_icps",
+      audience_hint: { dismissal_reason: "no_icps" },
+      matches: [],
     });
     return { status: "skipped", reason: "no_icps" };
   }
@@ -182,13 +178,13 @@ export async function classifySignal(
   };
   const candidateIcps = allMatchingIcps(icps, filterCtx);
   if (candidateIcps.length === 0) {
-    await markDismissed(deps.pool, signal.id, "must_haves_failed");
-    await deps.bus.publish({
-      workspace_id: signal.workspace_id,
-      event_type: "signal.dismissed",
-      source: "system",
-      producer_ref: "ingest:classify",
-      payload: { signal_id: signal.id, reason: "must_haves_failed" },
+    await emitClassification(deps, signal, {
+      kind: signal.kind,
+      disposition: "dismissed",
+      match_score: null,
+      match_reason: "must_haves_failed",
+      audience_hint: { dismissal_reason: "must_haves_failed" },
+      matches: [],
     });
     return { status: "skipped", reason: "filtered" };
   }
@@ -216,13 +212,13 @@ export async function classifySignal(
   } catch {
     // Fail closed: mark dismissed and move on. Stage 2 is supposed to
     // produce JSON; a stray paragraph is a model glitch.
-    await markDismissed(deps.pool, signal.id, "classifier_non_json");
-    await deps.bus.publish({
-      workspace_id: signal.workspace_id,
-      event_type: "signal.dismissed",
-      source: "system",
-      producer_ref: "ingest:classify",
-      payload: { signal_id: signal.id, reason: "classifier_non_json" },
+    await emitClassification(deps, signal, {
+      kind: signal.kind,
+      disposition: "dismissed",
+      match_score: null,
+      match_reason: "classifier_non_json",
+      audience_hint: { dismissal_reason: "classifier_non_json" },
+      matches: [],
     });
     return { status: "skipped", reason: "non_json" };
   }
@@ -245,13 +241,13 @@ export async function classifySignal(
         0,
         ...parsed.per_icp.map((p) => p.score),
       ).toFixed(2)})`;
-    await markDismissed(deps.pool, signal.id, reason, parsed.kind);
-    await deps.bus.publish({
-      workspace_id: signal.workspace_id,
-      event_type: "signal.dismissed",
-      source: "system",
-      producer_ref: "ingest:classify",
-      payload: { signal_id: signal.id, reason },
+    await emitClassification(deps, signal, {
+      kind: parsed.kind,
+      disposition: "dismissed",
+      match_score: null,
+      match_reason: reason,
+      audience_hint: { dismissal_reason: reason },
+      matches: [],
     });
     return { status: "dismissed", reason };
   }
@@ -268,36 +264,18 @@ export async function classifySignal(
     })),
     classified_kind: parsed.kind,
   };
-  await deps.pool.query(
-    `update signals
-        set kind          = coalesce($2, kind),
-            match_score   = $3,
-            match_reason  = $4,
-            audience_hint = $5::jsonb,
-            status        = 'matched'
-      where id = $1`,
-    [
-      signal.id,
-      parsed.kind,
-      best.score,
-      best.reason,
-      JSON.stringify(audience_hint),
-    ],
-  );
-
-  for (const m of matched) {
-    await deps.bus.publish({
-      workspace_id: signal.workspace_id,
-      event_type: "signal.matched",
-      source: "system",
-      producer_ref: "ingest:classify",
-      payload: {
-        signal_id: signal.id,
-        match_score: m.score,
-        icp_segment: m.icp.id,
-      },
-    });
-  }
+  await emitClassification(deps, signal, {
+    kind: parsed.kind,
+    disposition: "matched",
+    match_score: best.score,
+    match_reason: best.reason,
+    audience_hint,
+    matches: matched.map((m) => ({
+      icp_segment: m.icp.id,
+      match_score: m.score,
+      reason: m.reason,
+    })),
+  });
 
   return {
     status: "matched",
@@ -306,20 +284,20 @@ export async function classifySignal(
   };
 }
 
-async function markDismissed(
-  pool: Pool,
-  signal_id: string,
-  reason: string,
-  classified_kind?: SignalKind,
+async function emitClassification(
+  deps: ClassifyDeps,
+  signal: SignalRow,
+  payload: Omit<EventPayload<"signal.classification.completed">, "signal_id">,
 ): Promise<void> {
-  await pool.query(
-    `update signals
-        set status        = 'dismissed',
-            match_reason  = $2::text,
-            kind          = coalesce($3::signal_kind, kind),
-            audience_hint = coalesce(audience_hint, '{}'::jsonb) ||
-                            jsonb_build_object('dismissal_reason', $2::text)
-      where id = $1`,
-    [signal_id, reason, classified_kind ?? null],
-  );
+  await deps.bus.publish({
+    workspace_id: signal.workspace_id,
+    event_type: "signal.classification.completed",
+    source: "system",
+    producer_ref: "ingest:classify",
+    idempotency_key: `classification:${signal.id}`,
+    payload: {
+      signal_id: signal.id,
+      ...payload,
+    },
+  });
 }

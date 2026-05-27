@@ -8,8 +8,8 @@
  * Dev / test:
  *   import { createInMemoryEventBus } from "@/core/substrate/events";
  *
- * Production (when landed):
- *   import { createNatsEventBus } from "@/core/substrate/events";
+ * Production:
+ *   import { createJournaledNatsEventBus } from "@/core/substrate/events";
  */
 
 export * from "./types.ts";
@@ -21,9 +21,20 @@ export type {
   InMemoryEventBusOptions,
 } from "./adapters/in-memory.ts";
 export { createNatsEventBus } from "./adapters/nats.ts";
-export type { NatsEventBusOptions } from "./adapters/nats.ts";
-export { createPostgresEventBus } from "./adapters/postgres.ts";
+export type { NatsEventBus, NatsEventBusOptions } from "./adapters/nats.ts";
+export { createJournaledNatsEventBus } from "./adapters/journaled-nats.ts";
+export type {
+  DispatchRedriveResult,
+  JournaledNatsEventBus,
+  JournaledNatsEventBusOptions,
+} from "./adapters/journaled-nats.ts";
+export { appendPostgresEvent, createPostgresEventBus } from "./adapters/postgres.ts";
 export type {
   PostgresEventBus,
   PostgresEventBusOptions,
 } from "./adapters/postgres.ts";
+export { createRuntimeEventBus } from "./runtime.ts";
+export type {
+  RuntimeEventBus,
+  RuntimeEventBusOptions,
+} from "./runtime.ts";

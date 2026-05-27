@@ -11,6 +11,7 @@ import type {
 } from "../core/agents/llm/types.ts";
 import { classifySignal } from "../core/ingest/classify.ts";
 import { startClassifyWorkflow } from "../core/ingest/classify-workflow.ts";
+import { registerSignalProjectors } from "../core/ingest/projectors.ts";
 
 interface SeedResult {
   workspace_id: string;
@@ -103,12 +104,18 @@ function mockLlmContent(content: string): LLMClient {
   };
 }
 
+async function createProjectingBus(pool: Pool) {
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool, bus });
+  return bus;
+}
+
 // ─── classifySignal: happy paths ──────────────────────────────────────────
 
 test("classify: matched per-ICP — emits one signal.matched per scoring ICP", async (t) => {
   const fx = await setupPg("cls_match");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, icp_funding_id, icp_hiring_id } = await seedWorkspace(fx.pool);
     const signal_id = await insertSignal(fx.pool, workspace_id, {
@@ -133,6 +140,13 @@ test("classify: matched per-ICP — emits one signal.matched per scoring ICP", a
       assert.deepEqual(result.matched_icp_ids, [icp_funding_id]);
     }
 
+    await until(async () => {
+      const { rows } = await fx.pool.query<{ status: string }>(
+        `select status::text as status from signals where id = $1`,
+        [signal_id],
+      );
+      return rows[0].status === "matched";
+    });
     const { rows } = await fx.pool.query<{
       kind: string;
       match_score: string;
@@ -162,7 +176,7 @@ test("classify: matched per-ICP — emits one signal.matched per scoring ICP", a
 test("classify: best-score wins for match_score; multiple ICPs above threshold emit multiple events", async (t) => {
   const fx = await setupPg("cls_multi");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, icp_funding_id, icp_hiring_id } = await seedWorkspace(fx.pool);
     const signal_id = await insertSignal(fx.pool, workspace_id, { kind: null });
@@ -175,7 +189,9 @@ test("classify: best-score wins for match_score; multiple ICPs above threshold e
     });
     await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
 
-    await new Promise((r) => setImmediate(r));
+    await until(() =>
+      bus.published.filter((e) => e.event_type === "signal.matched").length === 2,
+    );
     const matched = bus.published.filter((e) => e.event_type === "signal.matched");
     assert.equal(matched.length, 2);
     const ids = matched
@@ -198,7 +214,7 @@ test("classify: best-score wins for match_score; multiple ICPs above threshold e
 test("classify: every score below threshold → dismissed", async (t) => {
   const fx = await setupPg("cls_dismiss");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, icp_funding_id, icp_hiring_id } = await seedWorkspace(fx.pool);
     const signal_id = await insertSignal(fx.pool, workspace_id, { kind: null });
@@ -214,6 +230,9 @@ test("classify: every score below threshold → dismissed", async (t) => {
     const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
     assert.equal(result.status, "dismissed");
 
+    await until(() =>
+      bus.published.some((e) => e.event_type === "signal.dismissed"),
+    );
     const { rows } = await fx.pool.query<{ status: string }>(
       `select status::text as status from signals where id = $1`,
       [signal_id],
@@ -229,7 +248,7 @@ test("classify: every score below threshold → dismissed", async (t) => {
 test("classify: no ICPs → emits dismissed and skips LLM entirely", async (t) => {
   const fx = await setupPg("cls_no_icp");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const workspace_id = randomUUID();
     await fx.pool.query(
@@ -251,6 +270,9 @@ test("classify: no ICPs → emits dismissed and skips LLM entirely", async (t) =
     if (result.status === "skipped") assert.equal(result.reason, "no_icps");
     assert.equal((llm as unknown as { calls: unknown[] }).calls.length, 0);
 
+    await until(() =>
+      bus.published.some((e) => e.event_type === "signal.dismissed"),
+    );
     const { rows } = await fx.pool.query<{ status: string }>(
       `select status::text as status from signals where id = $1`,
       [signal_id],
@@ -264,7 +286,7 @@ test("classify: no ICPs → emits dismissed and skips LLM entirely", async (t) =
 test("classify: budget exhausted → no LLM call, status untouched", async (t) => {
   const fx = await setupPg("cls_budget");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id } = await seedWorkspace(fx.pool);
     await fx.pool.query(
@@ -292,7 +314,7 @@ test("classify: budget exhausted → no LLM call, status untouched", async (t) =
 test("classify: structured pre-filter (must_haves) blocks LLM when no ICPs match", async (t) => {
   const fx = await setupPg("cls_pre");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const workspace_id = randomUUID();
     await fx.pool.query(
@@ -324,7 +346,7 @@ test("classify: structured pre-filter (must_haves) blocks LLM when no ICPs match
 test("classify: non-JSON model output fails closed (dismissed, not crashed)", async (t) => {
   const fx = await setupPg("cls_garbage");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id } = await seedWorkspace(fx.pool);
     const signal_id = await insertSignal(fx.pool, workspace_id);
@@ -333,6 +355,9 @@ test("classify: non-JSON model output fails closed (dismissed, not crashed)", as
     const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
     assert.equal(result.status, "skipped");
     if (result.status === "skipped") assert.equal(result.reason, "non_json");
+    await until(() =>
+      bus.published.some((e) => e.event_type === "signal.dismissed"),
+    );
     const dismissed = bus.published.filter((e) => e.event_type === "signal.dismissed");
     assert.equal(dismissed.length, 1);
     assert.equal(
@@ -349,7 +374,7 @@ test("classify: non-JSON model output fails closed (dismissed, not crashed)", as
 test("workflow: subscribes to signal.ingested and processes asynchronously", async (t) => {
   const fx = await setupPg("cls_wf");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   try {
     const { workspace_id, icp_funding_id } = await seedWorkspace(fx.pool);
     const signal_id = await insertSignal(fx.pool, workspace_id, { kind: null });
@@ -384,7 +409,7 @@ test("workflow: subscribes to signal.ingested and processes asynchronously", asy
 test("workflow: handler errors are caught (subscription survives)", async (t) => {
   const fx = await setupPg("cls_wf_err");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   const errors: unknown[] = [];
   try {
     // LLM client that always throws.

@@ -189,3 +189,90 @@ test("postgres event bus: rejects unknown event types and bad payloads", async (
     await fx.close();
   }
 });
+
+test("postgres event bus: idempotency key collapses retried publishes", async (t) => {
+  const fx = await setupPg("pg_events_idempotency");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const first = await bus.publish({
+      workspace_id: ws,
+      event_type: "signal.dismissed",
+      source: "webhook",
+      idempotency_key: "provider:event-1",
+      payload: { signal_id: randomUUID(), reason: "first" },
+    });
+    const duplicate = await bus.publish({
+      workspace_id: ws,
+      event_type: "signal.dismissed",
+      source: "webhook",
+      idempotency_key: "provider:event-1",
+      payload: { signal_id: randomUUID(), reason: "retry" },
+    });
+    assert.equal(duplicate.id, first.id);
+
+    const result = await fx.pool.query<{ n: string }>(
+      `select count(*)::text as n from events where workspace_id = $1`,
+      [ws],
+    );
+    assert.equal(result.rows[0].n, "1");
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
+test("postgres event bus: reconnects LISTEN after backend disconnect", async (t) => {
+  const fx = await setupPg("pg_events_reconnect");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const applicationName = `event-listener-${randomUUID()}`;
+  const listenUrl = new URL(process.env.DATABASE_URL!);
+  listenUrl.searchParams.set("application_name", applicationName);
+  const errors: unknown[] = [];
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: listenUrl.toString(),
+    reconnectBaseMs: 10,
+    reconnectMaxMs: 25,
+    onError: (error) => errors.push(error),
+  });
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const seen: string[] = [];
+    await bus.subscribe("signal.dismissed", (event) => seen.push(event.id));
+    const initial = await until(async () => {
+      const result = await fx.pool.query<{ pid: number }>(
+        `select pid from pg_stat_activity where application_name = $1 limit 1`,
+        [applicationName],
+      );
+      return result.rows[0]?.pid;
+    });
+    await fx.pool.query(`select pg_terminate_backend($1)`, [initial]);
+    await until(async () => {
+      const result = await fx.pool.query<{ pid: number }>(
+        `select pid from pg_stat_activity where application_name = $1 limit 1`,
+        [applicationName],
+      );
+      const pid = result.rows[0]?.pid;
+      return pid && pid !== initial ? pid : false;
+    });
+
+    const event = await bus.publish({
+      workspace_id: ws,
+      event_type: "signal.dismissed",
+      source: "system",
+      payload: { signal_id: randomUUID(), reason: "listener-reconnected" },
+    });
+    await until(() => seen.includes(event.id));
+    assert.ok(errors.length >= 1);
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});

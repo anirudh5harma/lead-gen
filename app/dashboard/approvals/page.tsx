@@ -2,7 +2,8 @@ import { revalidatePath } from "next/cache";
 import { EmptyState, SectionHeader } from "@/components/dashboard/Shell";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { createPostgresEventBus } from "@/core/substrate/events/adapters/postgres.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { createPostgresWorkflowRuntime } from "@/core/substrate/workflows/adapters/postgres.ts";
+import { getActiveWorkspace, getActiveWorkspaceSession } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -32,32 +33,22 @@ async function loadPending(workspaceId: string): Promise<PendingApprovalRow[]> {
 
 async function decide(approvalId: string, decision: "approved" | "rejected"): Promise<void> {
   "use server";
+  const session = await getActiveWorkspaceSession();
+  if (!session) throw new Error("authentication required");
   const pool = getPool();
-  // We don't have a long-lived workflow runtime instance to resolve via
-  // the typed API here (the workflow that requested approval lives in
-  // another process). The safe path is: write the decision, emit
-  // approval.decided on the bus, let any parked workflow listening for
-  // it (in-process or via Restate awakeable) wake up.
+  const { rows } = await pool.query<{ id: string }>(
+    `select id from workflow_approvals
+      where id = $1 and workspace_id = $2 and decision = 'pending'`,
+    [approvalId, session.workspace.id],
+  );
+  if (!rows[0]) return;
+
   const bus = await createPostgresEventBus({ pool });
   try {
-    const result = await pool.query<{ workspace_id: string }>(
-      `update workflow_approvals
-          set decision = $1, decided_at = now()
-        where id = $2 and decision = 'pending'
-        returning workspace_id`,
-      [decision, approvalId],
-    );
-    const row = result.rows[0];
-    if (!row) return;
-    await bus.publish({
-      workspace_id: row.workspace_id,
-      event_type: "approval.decided",
-      source: "user",
-      payload: {
-        approval_id: approvalId,
-        decision,
-        decided_by: null,
-      },
+    const runtime = createPostgresWorkflowRuntime({ pool, bus });
+    await runtime.resolveApproval(approvalId, {
+      decision,
+      decided_by: session.user_id,
     });
   } finally {
     await bus.close();

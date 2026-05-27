@@ -96,7 +96,8 @@ export function createInProcessWorkflowRuntime(
 
     return {
       run_id: rec.run.id,
-      workspace_id: rec.run.workspace_id,
+      execution_scope: rec.run.execution_scope,
+      workspace_id: rec.run.workspace_id!,
       correlation_id: rec.run.correlation_id ?? rec.run.id,
 
       async step<O>(
@@ -122,7 +123,7 @@ export function createInProcessWorkflowRuntime(
           try {
             if (opts.bus) {
               await opts.bus.publish({
-                workspace_id: rec.run.workspace_id,
+                workspace_id: rec.run.workspace_id!,
                 event_type: "workflow.step.started",
                 source: "system",
                 producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -135,7 +136,7 @@ export function createInProcessWorkflowRuntime(
             rec.run.last_checkpoint_at = new Date().toISOString();
             if (opts.bus) {
               await opts.bus.publish({
-                workspace_id: rec.run.workspace_id,
+                workspace_id: rec.run.workspace_id!,
                 event_type: "workflow.step.completed",
                 source: "system",
                 producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -148,7 +149,7 @@ export function createInProcessWorkflowRuntime(
             lastError = err;
             if (opts.bus) {
               await opts.bus.publish({
-                workspace_id: rec.run.workspace_id,
+                workspace_id: rec.run.workspace_id!,
                 event_type: "workflow.step.failed",
                 source: "system",
                 producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -205,7 +206,7 @@ export function createInProcessWorkflowRuntime(
         rec.run.status = "awaiting_approval";
         if (opts.bus) {
           await opts.bus.publish({
-            workspace_id: rec.run.workspace_id,
+            workspace_id: rec.run.workspace_id!,
             event_type: "approval.requested",
             source: "system",
             producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -230,7 +231,7 @@ export function createInProcessWorkflowRuntime(
           );
         }
         await opts.bus.publish({
-          workspace_id: rec.run.workspace_id,
+          workspace_id: rec.run.workspace_id!,
           event_type: event_type as never,
           source: "system",
           producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
@@ -249,6 +250,11 @@ export function createInProcessWorkflowRuntime(
     async start<I, O = unknown>(
       startOpts: StartOptions<I>,
     ): Promise<WorkflowRun<I, O>> {
+      if (startOpts.execution_scope === "platform") {
+        throw new Error(
+          "in-process workflow runtime does not support platform-scoped invocations",
+        );
+      }
       const def = workflows.get(startOpts.workflow_name);
       if (!def) {
         throw new Error(
@@ -258,6 +264,7 @@ export function createInProcessWorkflowRuntime(
 
       const run: WorkflowRun<I, O> = {
         id: randomUUID(),
+        execution_scope: "workspace",
         workspace_id: startOpts.workspace_id,
         workflow_name: startOpts.workflow_name,
         workflow_version: def.version,
@@ -321,7 +328,7 @@ export function createInProcessWorkflowRuntime(
         }
         if (opts.bus) {
           await opts.bus.publish({
-            workspace_id: rec.run.workspace_id,
+            workspace_id: rec.run.workspace_id!,
             event_type: "approval.decided",
             source: "user",
             producer_ref: decision.decided_by ?? null,

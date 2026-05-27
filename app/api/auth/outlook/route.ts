@@ -1,18 +1,14 @@
-import { randomBytes, createHmac } from "node:crypto";
+import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { getActiveWorkspaceSession } from "@/lib/workspace";
 
 /**
  * Start the Microsoft OAuth flow. Redirects the user to Microsoft's
  * authorize endpoint with our client_id, the workspace context, and a
  * signed state token so the callback can verify the request came from us.
  *
- *   GET /api/auth/outlook?workspace_id=<uuid>
- *
- * Authentication note: this route ASSUMES the caller is already a
- * workspace member. A proper session layer hasn't landed in pivot-v2 yet
- * (legacy Supabase auth is archived). For dev and the demo, the workspace
- * id comes from the query string; production must replace this with a
- * server-side workspace lookup from the session.
+ * Workspace context comes from the verified user's active membership,
+ * never from caller-supplied query parameters.
  */
 
 export const dynamic = "force-dynamic";
@@ -34,12 +30,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   const sessionSecret = process.env.SESSION_SECRET;
   if (!sessionSecret) return new Response("SESSION_SECRET is not set", { status: 500 });
 
-  const workspaceId = req.nextUrl.searchParams.get("workspace_id");
-  if (!workspaceId) return new Response("workspace_id is required", { status: 400 });
+  const session = await getActiveWorkspaceSession();
+  if (!session) return new Response("authentication required", { status: 401 });
 
   const state = signState(
     {
-      workspace_id: workspaceId,
+      workspace_id: session.workspace.id,
+      user_id: session.user_id,
       nonce: randomBytes(12).toString("base64url"),
       iat: Date.now(),
     },
@@ -60,6 +57,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
 interface OAuthState {
   workspace_id: string;
+  user_id: string;
   nonce: string;
   iat: number;
 }
@@ -74,7 +72,14 @@ export function verifyState(token: string, secret: string): OAuthState | null {
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
   const expected = createHmac("sha256", secret).update(payload).digest("base64url");
-  if (expected !== sig) return null;
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(sig);
+  if (
+    expectedBuffer.length !== receivedBuffer.length ||
+    !timingSafeEqual(expectedBuffer, receivedBuffer)
+  ) {
+    return null;
+  }
   try {
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as OAuthState;
     if (Date.now() - parsed.iat > 10 * 60_000) return null;

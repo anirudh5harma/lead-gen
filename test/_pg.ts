@@ -28,6 +28,8 @@ export async function setupPg(label = "t"): Promise<PgFixture | null> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) return null;
 
+  await ensureTestExtensions(connectionString);
+
   const schema = `bs_${label}_${Date.now().toString(36)}_${Math.random()
     .toString(36)
     .slice(2, 8)}`;
@@ -42,19 +44,11 @@ export async function setupPg(label = "t"): Promise<PgFixture | null> {
     await bootstrap.end();
   }
 
-  const pool = new pg.Pool({ connectionString, max: 4 });
-  // Every client checked out from this pool starts with the right search_path.
-  pool.on("connect", (client) => {
-    // pg fires this before the client is handed to the caller; safe to issue
-    // a SET that persists for the session.
-    client
-      .query(`set search_path to "${schema}", public`)
-      .catch((err) => console.error("[pg fixture set search_path]", err));
+  const pool = new pg.Pool({
+    connectionString,
+    max: 4,
+    options: `-c search_path=${schema},public`,
   });
-  // The pool.on('connect') above is async-fire-and-forget, so use a small
-  // priming query to wait until the search_path is in effect for at least
-  // one pooled connection.
-  await pool.query("select 1");
 
   await runMigrations({ pool, dir: migrationsDir });
 
@@ -72,6 +66,20 @@ export async function setupPg(label = "t"): Promise<PgFixture | null> {
       }
     },
   };
+}
+
+async function ensureTestExtensions(connectionString: string): Promise<void> {
+  const bootstrap = new pg.Client({ connectionString });
+  await bootstrap.connect();
+  try {
+    await bootstrap.query("select pg_advisory_lock(hashtext('bombsell_test_extensions'))");
+    await bootstrap.query("create extension if not exists pgcrypto with schema public");
+    await bootstrap.query("create extension if not exists citext with schema public");
+    await bootstrap.query("create extension if not exists vector with schema public");
+  } finally {
+    await bootstrap.query("select pg_advisory_unlock(hashtext('bombsell_test_extensions'))");
+    await bootstrap.end();
+  }
 }
 
 /** Helper for tests that need to wait for an async condition. */

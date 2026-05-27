@@ -5,11 +5,14 @@ import type { Pool } from "pg";
 import { setupPg } from "./_pg.ts";
 import {
   canSendVia,
+  createWarmupSweepWorkflow,
   curveDailyCap,
   DEFAULT_WARMUP_THRESHOLDS,
   getSendingDomain,
   tickWarmup,
 } from "../core/channels/email/warmup.ts";
+import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
+import type { RunContext } from "../core/substrate/workflows/index.ts";
 
 async function seedWorkspaceWithDomain(
   pool: Pool,
@@ -198,3 +201,72 @@ test("warmup tick: degraded recovers to warmed when rates fall", async (t) => {
     await fx.close();
   }
 });
+
+test("warmup workflow: ticks domains inside durable steps and emits a typed update", async (t) => {
+  const fx = await setupPg("wu_workflow");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const { workspace_id, domain_id } = await seedWorkspaceWithDomain(fx.pool, {
+      state: "warming",
+      day: 2,
+      current: 100,
+    });
+    const bus = createInMemoryEventBus();
+    const workflow = createWarmupSweepWorkflow({ pool: fx.pool });
+
+  const summary = await workflow.run(
+    { workspace_id, domain_id },
+    fakeRunContext(workspace_id, bus),
+  );
+
+    assert.deepEqual(summary, {
+      domains_checked: 1,
+      domains_changed: 1,
+      warmed: 0,
+      degraded: 0,
+      frozen: 0,
+    });
+    const after = await getSendingDomain(fx.pool, workspace_id, domain_id);
+    assert.equal(after?.warmup_day, 3);
+    assert.equal(after?.current_daily_cap, 200);
+    assert.equal(bus.published.length, 1);
+    assert.equal(bus.published[0].event_type, "email.domain.warmup.updated");
+    assert.deepEqual(bus.published[0].payload, {
+      sending_domain_id: domain_id,
+      domain: after?.domain,
+      previous_state: "warming",
+      current_state: "warming",
+      previous_daily_cap: 100,
+      current_daily_cap: 200,
+    });
+  } finally {
+    await fx.close();
+  }
+});
+
+function fakeRunContext(
+  workspace_id: string,
+  bus: ReturnType<typeof createInMemoryEventBus>,
+): RunContext {
+  return {
+    run_id: randomUUID(),
+    workspace_id,
+    correlation_id: randomUUID(),
+    step: async (_name, fn) => fn(),
+    sleep: async () => undefined,
+    awaitEvent: async () => {
+      throw new Error("not used");
+    },
+    requestApproval: async () => {
+      throw new Error("not used");
+    },
+    publish: async (event_type, payload) => {
+      await bus.publish({
+        workspace_id,
+        event_type,
+        source: "system",
+        payload,
+      });
+    },
+  };
+}

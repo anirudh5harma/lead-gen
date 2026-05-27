@@ -1,17 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { createPostgresEventBus } from "@/core/substrate/events/index.ts";
+import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
 import {
-  handleInboundEmail,
-  createDeepSeekIntentClassifier,
-} from "@/core/channels/email/index.ts";
-import {
-  fetchOutlookMessage,
-  graphMessageToInbound,
-  loadSubscription,
   type OutlookNotificationBatch,
 } from "@/core/channels/email/outlook-subscription.ts";
-import { createDeepSeekClientFromEnv } from "@/core/agents/llm/index.ts";
 
 /**
  * Microsoft Graph change-notification webhook.
@@ -21,12 +14,11 @@ import { createDeepSeekClientFromEnv } from "@/core/agents/llm/index.ts";
  *
  *   POST
  *     → body: { value: [ { subscriptionId, clientState, resource, resourceData: { id } } ] }
- *     → for each: load the subscription record by clientState ↔ channel_account,
- *       fetch the message body via Graph, convert to InboundEmail, dispatch.
+ *     → for each: verify clientState against the channel account and emit
+ *       email.outlook.notification.received for a projector consumer.
  *
  * We must return 2xx within 30s or Graph drops the subscription on repeated
- * failure. So this route does the minimum inline: fetch + dispatch. For a
- * production deployment this work should move into a workflow step.
+ * failure. The route performs authentication and durable enqueue only.
  *
  * Auth note: the route relies on Graph's `clientState` echo to authenticate
  * the notification (we stored a random secret on subscription creation).
@@ -70,10 +62,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const pool = getPool();
-  const bus = await createPostgresEventBus({ pool });
-  const classifier = createDeepSeekIntentClassifier({
-    llm: createDeepSeekClientFromEnv(),
-  });
+  let bus: Awaited<ReturnType<typeof createRuntimeEventBus>>;
+  try {
+    bus = await createRuntimeEventBus({ pool });
+  } catch (err) {
+    return new Response(err instanceof Error ? err.message : "event bus unavailable", {
+      status: 503,
+    });
+  }
 
   try {
     for (const n of body.value) {
@@ -83,21 +79,26 @@ export async function POST(req: NextRequest): Promise<Response> {
         // 2xx keeps Graph happy; the alternative is subscription churn.
         continue;
       }
-      const accessToken = located.access_token;
-      if (!accessToken) continue;
-
       const resourceId = n.resourceData?.id;
       if (!resourceId) continue;
 
-      const message = await fetchOutlookMessage({ accessToken, messageId: resourceId });
-      const inbound = graphMessageToInbound(
-        message,
-        located.workspace_id,
-        located.channel_account_id,
-      );
-      if (!inbound) continue;
-      await handleInboundEmail({ pool, bus, classifier }, inbound);
+      await bus.publish({
+        workspace_id: located.workspace_id,
+        event_type: "email.outlook.notification.received",
+        source: "webhook",
+        producer_ref: "webhook:outlook:graph",
+        idempotency_key: `graph:${n.subscriptionId}:${resourceId}`,
+        payload: {
+          channel_account_id: located.channel_account_id,
+          subscription_id: n.subscriptionId,
+          resource_id: resourceId,
+        },
+      });
     }
+  } catch (err) {
+    return new Response(err instanceof Error ? err.message : "enqueue failed", {
+      status: 503,
+    });
   } finally {
     await bus.close();
   }
@@ -108,7 +109,6 @@ export async function POST(req: NextRequest): Promise<Response> {
 interface LocatedAccount {
   workspace_id: string;
   channel_account_id: string;
-  access_token: string | null;
 }
 
 async function locateAccount(
@@ -121,10 +121,9 @@ async function locateAccount(
   const { rows } = await pool.query<{
     workspace_id: string;
     id: string;
-    credentials: { access_token?: string } | null;
     properties: { outlook_subscription?: { id: string; clientState: string } } | null;
   }>(
-    `select workspace_id, id, credentials, properties
+    `select workspace_id, id, properties
        from channel_accounts
       where kind = 'oauth_outlook'
         and properties -> 'outlook_subscription' ->> 'id' = $1
@@ -134,15 +133,15 @@ async function locateAccount(
   const row = rows[0];
   if (!row) return null;
   const expected = row.properties?.outlook_subscription?.clientState;
-  if (!expected || expected !== clientState) return null;
-  // Refresh-token dance happens in the adapter; here we just hand the
-  // current access_token to the message-fetch call. Outlook will return
-  // 401 if it's stale; the route fails for that notification but the
-  // user's send pipeline triggers a refresh on next outbound send.
-  void loadSubscription;
+  if (!expected || !clientState || !secretEquals(expected, clientState)) return null;
   return {
     workspace_id: row.workspace_id,
     channel_account_id: row.id,
-    access_token: row.credentials?.access_token ?? null,
   };
+}
+
+function secretEquals(expected: string, actual: string): boolean {
+  const left = Buffer.from(expected, "utf8");
+  const right = Buffer.from(actual, "utf8");
+  return left.length === right.length && timingSafeEqual(left, right);
 }

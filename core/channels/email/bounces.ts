@@ -2,10 +2,13 @@ import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
 import type { BounceEvent } from "./types.ts";
 
+export interface BounceProjectionContext {
+  ingress_event_id?: string;
+}
+
 /**
- * Bounce / complaint event handlers. Called by the Surface-layer webhook
- * route (`app/api/webhooks/ses/route.ts` when it lands) for SES, and by
- * the equivalent Microsoft Graph subscription handler for Outlook.
+ * Bounce / complaint projector. Authenticated surface routes emit
+ * `email.bounce.received`; the projector consumer invokes this function.
  *
  * What happens:
  *   1. Look up the message by external_id.
@@ -23,6 +26,7 @@ export async function handleBounce(
   pool: Pool,
   bus: EventBus,
   event: BounceEvent,
+  context: BounceProjectionContext = {},
 ): Promise<void> {
   const { rows } = await pool.query<{
     id: string;
@@ -54,6 +58,7 @@ export async function handleBounce(
     source: "webhook",
     producer_ref: "channel:email",
     correlation_id: row.conversation_id,
+    idempotency_key: projectionEventKey(context.ingress_event_id, "message.bounced"),
     payload: {
       message_id: row.id,
       channel: "email",
@@ -65,29 +70,51 @@ export async function handleBounce(
     // Record a do_not_contact outcome on the conversation. The outcomes
     // bridge (`core/agents/memory/bridges.ts`) sees this and updates
     // procedural memory accordingly (-0.5 for the contributing exemplars).
-    await pool.query(
+    const outcomeId = await pool.query<{ id: string }>(
       `insert into outcomes (
          workspace_id, kind, score,
          conversation_id, attributed_message_id,
-         occurred_at, recorded_at
-       ) values ($1, 'do_not_contact', -1, $2, $3, now(), now())`,
-      [event.workspace_id, row.conversation_id, row.id],
+         provenance, occurred_at, recorded_at
+       ) values ($1, 'do_not_contact', -1, $2, $3, $4::jsonb, now(), now())
+       on conflict (workspace_id, (provenance ->> 'ingress_event_id'), kind)
+         where provenance ? 'ingress_event_id'
+       do nothing
+       returning id`,
+      [
+        event.workspace_id,
+        row.conversation_id,
+        row.id,
+        JSON.stringify(
+          context.ingress_event_id
+            ? { ingress_event_id: context.ingress_event_id }
+            : {},
+        ),
+      ],
     );
-    const outcomeId = await pool.query<{ id: string }>(
-      `select id from outcomes
-        where attributed_message_id = $1 and kind = 'do_not_contact'
-        order by recorded_at desc limit 1`,
-      [row.id],
-    );
-    if (outcomeId.rows[0]) {
+    const projectedOutcomeId =
+      outcomeId.rows[0]?.id ??
+      (context.ingress_event_id
+        ? (
+            await pool.query<{ id: string }>(
+              `select id from outcomes
+                where workspace_id = $1
+                  and provenance ->> 'ingress_event_id' = $2
+                  and kind = 'do_not_contact'
+                limit 1`,
+              [event.workspace_id, context.ingress_event_id],
+            )
+          ).rows[0]?.id
+        : undefined);
+    if (projectedOutcomeId) {
       await bus.publish({
         workspace_id: event.workspace_id,
         event_type: "outcome.recorded",
         source: "webhook",
         producer_ref: "channel:email:bounce",
         correlation_id: row.conversation_id,
+        idempotency_key: projectionEventKey(context.ingress_event_id, "outcome.recorded"),
         payload: {
-          outcome_id: outcomeId.rows[0].id,
+          outcome_id: projectedOutcomeId,
           kind: "do_not_contact",
           score: -1,
           conversation_id: row.conversation_id,
@@ -96,4 +123,8 @@ export async function handleBounce(
       });
     }
   }
+}
+
+function projectionEventKey(ingressEventId: string | undefined, projected: string) {
+  return ingressEventId ? `projection:${ingressEventId}:${projected}` : null;
 }

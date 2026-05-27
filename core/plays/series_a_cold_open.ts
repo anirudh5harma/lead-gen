@@ -197,6 +197,9 @@ export function createSeriesAColdOpenPlay(
     version: "1",
     async run(input, ctx): Promise<ColdOpenOutput> {
       const workspace_id = ctx.workspace_id;
+      if (!workspace_id) {
+        throw new Error("series_a_cold_open requires a workspace-scoped invocation");
+      }
 
       // 1. Load signal + person + company + rep into a typed context object.
       const loaded = await ctx.step("load_context", () =>

@@ -1,47 +1,38 @@
 import type { NextRequest } from "next/server";
-import { getPool } from "@/core/substrate/storage/index.ts";
-import { createPostgresEventBus } from "@/core/substrate/events/index.ts";
+import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
 import {
-  createDeepSeekIntentClassifier,
-  handleBounce,
-  handleInboundEmail,
+  allowedSnsTopicArns,
+  SnsConfigurationError,
+  validSnsUrl,
+  verifySnsMessage,
 } from "@/core/channels/email/index.ts";
 import {
   parseSnsEnvelope,
   parseSnsNotification,
 } from "@/core/channels/email/ses-inbound.ts";
-import { createDeepSeekClientFromEnv } from "@/core/agents/llm/index.ts";
+import { isProduction } from "@/core/config/env.ts";
 
 /**
  * SES SNS webhook. Handles three SNS payload shapes:
  *
  *   - SubscriptionConfirmation : we GET the SubscribeURL once to confirm.
- *   - Notification (Bounce)    : handleBounce()
- *   - Notification (Complaint) : handleBounce() with bounce_type='complaint'
- *   - Notification (Received)  : handleInboundEmail()
+ *   - Notification (Bounce)    : emits email.bounce.received
+ *   - Notification (Complaint) : emits email.bounce.received
+ *   - Notification (Received)  : emits email.inbound.received
  *
  * workspace_id resolution: outbound emails are sent with EmailTags carrying
  * the workspace_id (see core/channels/email/adapters/ses.ts). The parser
  * picks that out automatically; SubscriptionConfirmations don't need it.
  *
- * Production: SNS signatures MUST be verified. This route reads
- * SNS_VERIFY_SIGNATURES; the default is on. Set SNS_VERIFY_SIGNATURES=0
- * for local dev where you're hand-crafting payloads. A signature verifier
- * is a non-trivial 50-line crypto helper; left as a TODO so we don't
- * fake-ship a broken one.
+ * Production: SNS signatures and an allowed topic ARN are mandatory.
+ * SNS_VERIFY_SIGNATURES=0 permits hand-crafted local payloads only outside
+ * production.
  */
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest): Promise<Response> {
   const rawBody = await req.text();
-
-  // Signature verification stub. Production must wire this up before
-  // exposing the route to the open internet.
-  if (process.env.SNS_VERIFY_SIGNATURES !== "0") {
-    // TODO(signature): fetch SigningCertURL, verify against the canonical
-    // string-to-sign. See AWS SDK util-sns-message-validator.
-  }
 
   let envelope;
   try {
@@ -52,10 +43,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  const maySkipVerification =
+    process.env.SNS_VERIFY_SIGNATURES === "0" && !isProduction();
+  if (!maySkipVerification) {
+    try {
+      await verifySnsMessage(envelope, {
+        allowedTopicArns: allowedSnsTopicArns(),
+      });
+    } catch (err) {
+      const status = err instanceof SnsConfigurationError ? 503 : 401;
+      return new Response(
+        err instanceof Error ? err.message : "SNS verification failed",
+        { status },
+      );
+    }
+  }
+
   if (envelope.Type === "SubscriptionConfirmation") {
     try {
       const parsed = parseSnsNotification(envelope);
       if (parsed.kind === "subscription_confirmation") {
+        if (!validSnsUrl(parsed.subscribeUrl)) {
+          return new Response("untrusted SNS confirmation URL", { status: 401 });
+        }
         await fetch(parsed.subscribeUrl, { method: "GET" });
       }
       return new Response(null, { status: 200 });
@@ -66,20 +76,40 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  const pool = getPool();
-  const bus = await createPostgresEventBus({ pool });
+  let bus: Awaited<ReturnType<typeof createRuntimeEventBus>>;
+  try {
+    bus = await createRuntimeEventBus();
+  } catch (err) {
+    return new Response(err instanceof Error ? err.message : "event bus unavailable", {
+      status: 503,
+    });
+  }
   try {
     const parsed = parseSnsNotification(envelope);
     switch (parsed.kind) {
       case "bounce":
-      case "complaint":
-        await handleBounce(pool, bus, parsed.event);
-        break;
-      case "received": {
-        const classifier = createDeepSeekIntentClassifier({
-          llm: createDeepSeekClientFromEnv(),
+      case "complaint": {
+        const { workspace_id, ...payload } = parsed.event;
+        await bus.publish({
+          workspace_id,
+          event_type: "email.bounce.received",
+          source: "webhook",
+          producer_ref: "webhook:ses:sns",
+          idempotency_key: `sns:${envelope.MessageId}`,
+          payload,
         });
-        await handleInboundEmail({ pool, bus, classifier }, parsed.inbound);
+        break;
+      }
+      case "received": {
+        const { workspace_id, ...payload } = parsed.inbound;
+        await bus.publish({
+          workspace_id,
+          event_type: "email.inbound.received",
+          source: "webhook",
+          producer_ref: "webhook:ses:sns",
+          idempotency_key: `sns:${envelope.MessageId}`,
+          payload,
+        });
         break;
       }
       case "unsupported":
@@ -89,8 +119,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         break;
     }
   } catch (err) {
-    return new Response(err instanceof Error ? err.message : "handler failed", {
-      status: 500,
+    return new Response(err instanceof Error ? err.message : "enqueue failed", {
+      status: 503,
     });
   } finally {
     await bus.close();

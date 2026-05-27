@@ -121,3 +121,24 @@ test("event bus: handler errors do not block other handlers or the publisher", a
   assert.equal(errors.length, 1);
   assert.deepEqual(seen, ["press_mention"]);
 });
+
+test("event bus: idempotency key collapses retried publisher calls", async () => {
+  const bus = createInMemoryEventBus();
+  const workspace_id = randomUUID();
+  const first = await bus.publish({
+    workspace_id,
+    event_type: "signal.dismissed",
+    source: "webhook",
+    idempotency_key: "provider:event-1",
+    payload: { signal_id: randomUUID(), reason: "first" },
+  });
+  const retry = await bus.publish({
+    workspace_id,
+    event_type: "signal.dismissed",
+    source: "webhook",
+    idempotency_key: "provider:event-1",
+    payload: { signal_id: randomUUID(), reason: "retry" },
+  });
+  assert.equal(retry.id, first.id);
+  assert.equal(bus.published.length, 1);
+});

@@ -26,6 +26,18 @@ db/
 | 010 | `010_primitive_outcome.sql`             | Outcome (scored, attributable result)                             |
 | 011 | `011_channel_accounts.sql`              | Channel accounts (Gmail/LinkedIn/X/...) + owned sending domains   |
 | 012 | `012_rls_policies.sql`                  | Row-level security: workspace is the boundary                     |
+| 013 | `013_event_notify_trigger.sql`          | Postgres event notification bridge                                |
+| 014 | `014_channel_kinds_outlook.sql`         | Explicit Outlook channel-account kind                             |
+| 015 | `015_signal_ingestion.sql`              | Workspace ICPs, tracked companies, source config and budgets       |
+| 016 | `016_signal_candidates.sql`             | Shared candidate pool, fanout and embedding support                |
+| 017 | `017_platform_signal_sources.sql`       | Platform catalog source polling and expiration event support       |
+| 018 | `018_signal_overflow_polymorphic.sql`   | Signal overflow source generalization                              |
+| 019 | `019_sec_cik_column.sql`                | SEC EDGAR company identity                                         |
+| 020 | `020_signals_kind_nullable.sql`         | Classifier-owned optional signal kind                              |
+| 021 | `021_event_idempotency_keys.sql`        | Retry-safe typed event publication                                 |
+| 022 | `022_outcome_projection_idempotency.sql` | Retry-safe Outcome projection from ingress events                  |
+| 023 | `023_event_nats_dispatches.sql`         | Durable journal-to-NATS dispatch and redrive tracking              |
+| 024 | `024_workflow_event_waits.sql`          | Restate workflow typed-event wait registry                         |
 
 ## Conventions
 

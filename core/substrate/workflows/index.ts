@@ -22,5 +22,32 @@ export { createInProcessWorkflowRuntime } from "./adapters/in-process.ts";
 export type { InProcessWorkflowRuntimeOptions } from "./adapters/in-process.ts";
 export { createRestateWorkflowRuntime } from "./adapters/restate.ts";
 export type { RestateRuntimeOptions } from "./adapters/restate.ts";
+export {
+  createRestateWorkflowComponent,
+  createRunContext as createRestateRunContext,
+  serveRestateWorkflows,
+} from "./adapters/restate-host.ts";
+export type {
+  RestateWorkflowHostOptions,
+  RestateWorkflowRequest,
+} from "./adapters/restate-host.ts";
+export {
+  createPostgresRestateEventSignalStore,
+  deliverEventToRestateWaits,
+  startRestateEventSignalBridge,
+} from "./adapters/restate-signal-bridge.ts";
+export type {
+  PostgresRestateEventSignalStore,
+  RestateEventSignal,
+  RestateEventSignalBridgeOptions,
+  RestateEventSignalStore,
+  RestateEventWaitRegistration,
+} from "./adapters/restate-signal-bridge.ts";
+export { triggerDueWorkspaceMaintenance } from "./maintenance-trigger.ts";
+export type {
+  WorkspaceMaintenanceStartFailure,
+  WorkspaceMaintenanceTriggerDeps,
+  WorkspaceMaintenanceTriggerSummary,
+} from "./maintenance-trigger.ts";
 export { createPostgresWorkflowRuntime } from "./adapters/postgres.ts";
 export type { PostgresWorkflowRuntimeOptions } from "./adapters/postgres.ts";

@@ -27,12 +27,12 @@ import type {
  *   our app  ──HTTP──▶  Restate server  ──HTTP──▶  workflow-handler process
  *      (this adapter)                              (@restatedev/restate-sdk)
  *
- * The mapping from our `defineWorkflow` shape to Restate handlers is
- * mechanical: `ctx.step` ↔ `ctx.run`, `ctx.sleep` ↔ `ctx.sleep`,
- * `ctx.awaitEvent` and `ctx.requestApproval` ↔ Restate awakeables. The
- * handler module that performs that translation lives outside this file
- * (deployment-side); foundation ships only the client/adapter so
- * production deployments can wire it without code changes here.
+ * Each WorkflowDefinition must be deployed as a native Restate workflow
+ * named after `workflow.name`. Restate invokes its `run` handler with a
+ * stable workflow key; our idempotency key becomes that key when provided.
+ * `ctx.awaitEvent` and `ctx.requestApproval` are hosted by the SDK worker:
+ * approvals resolve Restate awakeables, while typed event waits resolve
+ * workflow-bound durable promises through the signal bridge.
  */
 
 export interface RestateRuntimeOptions {
@@ -43,12 +43,6 @@ export interface RestateRuntimeOptions {
   ingressUrl: string;
   /** Optional bearer token for the Restate API. */
   bearer?: string;
-  /**
-   * Service name registered with Restate that hosts our workflow handlers.
-   * Each `workflow_name` maps to a handler on this service. Defaults to
-   * "bombsell_workflows".
-   */
-  serviceName?: string;
   /** Inject a fetch impl (tests). Defaults to globalThis.fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -82,7 +76,6 @@ export function createRestateWorkflowRuntime(
   opts: RestateRuntimeOptions,
 ): WorkflowRuntime {
   const ingressUrl = opts.ingressUrl.replace(/\/$/, "");
-  const serviceName = opts.serviceName ?? "bombsell_workflows";
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
 
   // `register()` is a logical no-op for the client — workflow handlers are
@@ -91,12 +84,12 @@ export function createRestateWorkflowRuntime(
   // version string at start time) without an extra round-trip.
   const knownVersions = new Map<string, string>();
 
-  async function request<T = unknown>(
+  async function requestResponse(
     method: "POST" | "GET",
     path: string,
     body?: unknown,
     extraHeaders?: Record<string, string>,
-  ): Promise<T> {
+  ): Promise<Response> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(opts.bearer ? { Authorization: `Bearer ${opts.bearer}` } : {}),
@@ -114,6 +107,16 @@ export function createRestateWorkflowRuntime(
         await response.text(),
       );
     }
+    return response;
+  }
+
+  async function request<T = unknown>(
+    method: "POST" | "GET",
+    path: string,
+    body?: unknown,
+    extraHeaders?: Record<string, string>,
+  ): Promise<T> {
+    const response = await requestResponse(method, path, body, extraHeaders);
     if (response.status === 204) return undefined as T;
     const text = await response.text();
     if (!text) return undefined as T;
@@ -133,14 +136,17 @@ export function createRestateWorkflowRuntime(
         headers["idempotency-key"] = startOpts.idempotency_key;
       }
 
-      // POST to the keyed-service invocation endpoint. Restate uses the URL
-      // path to route to the right service + handler.
-      const path = `/${encodeURIComponent(serviceName)}/${encodeURIComponent(
+      // Native Restate workflows are keyed. Reusing an idempotency key
+      // invokes the same workflow instance; otherwise each start is a fresh
+      // workflow invocation.
+      const workflowKey = startOpts.idempotency_key ?? randomUUID();
+      const path = `/${encodeURIComponent(
         startOpts.workflow_name,
-      )}/send`;
+      )}/${encodeURIComponent(workflowKey)}/run/send`;
       const body = {
         request: startOpts.input,
         metadata: {
+          execution_scope: startOpts.execution_scope ?? "workspace",
           workspace_id: startOpts.workspace_id,
           play_id: startOpts.play_id ?? null,
           play_run_id: startOpts.play_run_id ?? null,
@@ -148,16 +154,24 @@ export function createRestateWorkflowRuntime(
           causation_id: startOpts.causation_id ?? null,
         },
       };
-      const result = await request<RestateInvocationResponse>(
+      const response = await requestResponse(
         "POST",
         path,
         body,
         headers,
       );
-      const invocationId = result.invocationId ?? randomUUID();
+      const text = await response.text();
+      const result = text
+        ? (JSON.parse(text) as RestateInvocationResponse)
+        : undefined;
+      const invocationId =
+        response.headers.get("x-restate-id") ??
+        result?.invocationId ??
+        workflowKey;
       const nowIso = new Date().toISOString();
       return {
         id: invocationId,
+        execution_scope: startOpts.execution_scope ?? "workspace",
         workspace_id: startOpts.workspace_id,
         workflow_name: startOpts.workflow_name,
         workflow_version: knownVersions.get(startOpts.workflow_name) ?? "unknown",
@@ -181,6 +195,7 @@ export function createRestateWorkflowRuntime(
         const status = await request<RestateStatusResponse>("GET", path);
         return {
           id: run_id,
+          execution_scope: "workspace",
           workspace_id: "",
           workflow_name: "",
           workflow_version: "",
@@ -249,28 +264,11 @@ function mapRestateStatus(status: string | undefined): WorkflowRunStatus {
  *        docker run -p 9070:9070 -p 8080:8080 docker.restate.dev/restatedev/restate:latest
  *      9070 is the admin API; 8080 is the ingress.
  *
- *   2. Run a workflow-handler process. This is a separate Node process
- *      built around `@restatedev/restate-sdk` that translates our
- *      WorkflowDefinitions into Restate handlers. The skeleton:
- *
- *        import * as restate from "@restatedev/restate-sdk";
- *        import { handlerForWorkflow } from "./bridge.ts";
- *        import { createSeriesAColdOpenPlay } from "@/core/plays";
- *
- *        const svc = restate.service({
- *          name: "bombsell_workflows",
- *          handlers: {
- *            series_a_cold_open: handlerForWorkflow(createSeriesAColdOpenPlay(deps)),
- *          },
- *        });
- *        restate.endpoint().bind(svc).listen(9080);
- *
- *      The bridge module (`handlerForWorkflow`) maps our RunContext shape
- *      to Restate's. See `core/substrate/workflows/types.ts` — the mapping
- *      is mechanical (step ↔ run, sleep ↔ sleep, awakeable for parks).
- *      That bridge is intentionally NOT in foundation: it requires the
- *      Restate runtime + handler process to validate, which is heavier
- *      than what fits in pre-production foundation.
+ *   2. Run a workflow-handler process built on `@restatedev/restate-sdk`.
+ *      Each WorkflowDefinition must be exposed as `restate.workflow({
+ *      name: definition.name, handlers: { run: ... } })`. The handler bridge
+ *      must map steps and sleeps to Restate journaled operations and map
+ *      event waits/approval decisions to a tested durable signal mechanism.
  *
  *   3. Register the workflow service with Restate:
  *        curl -X POST http://localhost:9070/deployments \
@@ -279,14 +277,13 @@ function mapRestateStatus(status: string | undefined): WorkflowRunStatus {
  *   4. In your app, construct this adapter:
  *        const runtime = createRestateWorkflowRuntime({
  *          ingressUrl: process.env.RESTATE_INGRESS_URL,
- *          serviceName: "bombsell_workflows",
  *        });
  *
  *      Now `runtime.start({...})` invokes the workflow over HTTP, Restate
  *      journals everything, and crashes don't lose in-flight work.
  *
- * Until that's deployed, `createPostgresWorkflowRuntime` is the production
- * choice: it journals to Postgres + survives crashes for completed steps,
- * but doesn't resume parked workflows across process restarts. Single-
- * process deployments don't need Restate yet.
+ * Until that's deployed, `createPostgresWorkflowRuntime` is a development
+ * bridge: it journals to Postgres for observability, but it cannot resume
+ * parked workflows across process restarts and is not the production
+ * runtime specified by ARCHITECTURE.md.
  * ────────────────────────────────────────────────────────────────────── */

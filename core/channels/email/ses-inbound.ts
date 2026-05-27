@@ -20,12 +20,8 @@ import type { InboundEmail } from "./reply.ts";
  * include those tags, so we can route the event to the right workspace
  * without scanning every message in the DB.
  *
- * SNS signature verification: SNS messages are signed; production routes
- * SHOULD verify against the published certificate. The parser declares
- * a `Signature`/`SigningCertURL` field on the envelope but verification
- * is the route's responsibility (kept out of pure parsing for testability).
- * For foundation, the route can optionally skip verification when
- * `process.env.SNS_VERIFY_SIGNATURES === '0'` (dev) — production must NOT.
+ * SNS signature verification is performed by `sns-verify.ts` before this
+ * parser's output reaches any channel handler.
  */
 
 export interface SnsMessageEnvelope {
@@ -40,7 +36,9 @@ export interface SnsMessageEnvelope {
   SigningCertURL?: string;
   /** Present on SubscriptionConfirmation; GET it once to confirm. */
   SubscribeURL?: string;
-  /** Present on UnsubscribeConfirmation. */
+  /** Present on confirmation messages and included in the signed content. */
+  Token?: string;
+  /** Legacy alias retained for fixture compatibility. */
   UnsubscribeURL?: string;
   /** Present on Notification when SES is configured to add tag values. */
   MessageAttributes?: Record<string, { Type: string; Value: string }>;
@@ -97,7 +95,7 @@ export function parseSnsNotification(
   if (envelope.Type === "UnsubscribeConfirmation") {
     return {
       kind: "unsubscribe_confirmation",
-      unsubscribeUrl: envelope.UnsubscribeURL ?? "",
+      unsubscribeUrl: envelope.SubscribeURL ?? envelope.UnsubscribeURL ?? "",
     };
   }
 

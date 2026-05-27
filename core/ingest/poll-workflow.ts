@@ -57,6 +57,9 @@ export function createCatalogPollWorkflow(
     name: "ingest_catalog_poll",
     version: "1",
     async run(input, ctx): Promise<CatalogPollSummary> {
+      if (ctx.execution_scope !== "platform") {
+        throw new Error("catalog poll requires a platform-scoped invocation");
+      }
       const adapter = getCatalogAdapter(input.adapter_id);
       if (!adapter) throw new Error(`unknown adapter: ${input.adapter_id}`);
 
@@ -98,10 +101,9 @@ export function createCatalogPollWorkflow(
             );
           },
           {
-            // Network errors are transient; the adapter records its own
-            // last_error on the cursor.
+            // Adapter failures are represented in PollOutcome; failures that
+            // escape here need Restate retry/operator visibility.
             retry: { max_attempts: 2, backoff: "exponential", base_ms: 200 },
-            on_failure: "skip",
           },
         );
         if (!outcome) continue;

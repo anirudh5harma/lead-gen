@@ -2,11 +2,12 @@
  * Signal ingestion. See docs/signal-ingestion.md for the architecture.
  *
  * Two stages, decoupled by the typed event bus:
- *   Stage 1 — adapters poll + embed + dedup + insert into signal_candidates;
- *             emit signal.ingested.
- *   Stage 2 — classifier batches off signal.ingested, scores candidates
- *             against every ICP segment in their workspace, emits
- *             signal.matched / signal.dismissed.
+ *   Stage 1 — adapters poll + embed + dedup. Catalog polling inserts shared
+ *             candidates; workspace polling emits signal.discovered and its
+ *             projector emits signal.ingested after materialization.
+ *   Stage 2 — classifier consumes signal.ingested and emits a typed
+ *             classification decision; its projector materializes status
+ *             and emits signal.matched / signal.dismissed.
  *
  * Catalog-driven adapters (Greenhouse, Lever, Ashby, Workable, SEC EDGAR)
  * poll ONCE platform-wide and fan results out to interested workspaces.
@@ -181,6 +182,15 @@ export type {
   ClassifyWorkflowOptions,
   ClassifyWorkflow,
 } from "./classify-workflow.ts";
+export {
+  projectSignalDiscovered,
+  projectSignalClassification,
+  registerSignalProjectors,
+} from "./projectors.ts";
+export type {
+  SignalProjectorDeps,
+  SignalProjectorSubscriber,
+} from "./projectors.ts";
 
 // Periodic expiration sweep
 export {

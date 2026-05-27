@@ -1,4 +1,8 @@
 import type { Pool } from "pg";
+import {
+  defineWorkflow,
+  type WorkflowDefinition,
+} from "../../substrate/workflows/index.ts";
 
 /**
  * Owned-domain warmup state machine. See db/migrations/011_channel_accounts.sql
@@ -57,6 +61,25 @@ export interface WarmupThresholds {
   freezeComplaintRate: number;
   /** Day at which a healthy domain promotes warming → warmed. Default 14. */
   warmedDay: number;
+}
+
+export interface WarmupSweepDeps {
+  pool: Pool;
+  thresholds?: WarmupThresholds;
+}
+
+export interface WarmupSweepInput {
+  workspace_id: string;
+  domain_id?: string;
+  limit?: number;
+}
+
+export interface WarmupSweepSummary {
+  domains_checked: number;
+  domains_changed: number;
+  warmed: number;
+  degraded: number;
+  frozen: number;
 }
 
 export const DEFAULT_WARMUP_THRESHOLDS: WarmupThresholds = {
@@ -132,7 +155,7 @@ export function canSendVia(
 
 /**
  * Daily tick. Walks the warmup state machine for ONE domain.
- * Called from a daily cron (or a Play step) — never called per-send.
+ * This transition belongs in a scheduled durable workflow step, never per-send.
  *
  * Transitions implemented:
  *   * unverified|verifying → warming   (all three DNS records verified)
@@ -151,7 +174,15 @@ export async function tickWarmup(
 ): Promise<SendingDomainRow | null> {
   const domain = await getSendingDomain(pool, workspace_id, id);
   if (!domain) return null;
+  const next = nextWarmupDomain(domain, thresholds);
+  if (!warmupChanged(domain, next)) return domain;
+  return persistWarmupDomain(pool, next);
+}
 
+function nextWarmupDomain(
+  domain: SendingDomainRow,
+  thresholds: WarmupThresholds,
+): SendingDomainRow {
   let next: WarmupState = domain.warmup_state;
   let nextDay = domain.warmup_day;
   let nextCap = domain.current_daily_cap;
@@ -191,14 +222,26 @@ export async function tickWarmup(
     }
   }
 
-  if (
-    next === domain.warmup_state &&
-    nextDay === domain.warmup_day &&
-    nextCap === domain.current_daily_cap
-  ) {
-    return domain;
-  }
+  return {
+    ...domain,
+    warmup_state: next,
+    warmup_day: nextDay,
+    current_daily_cap: nextCap,
+  };
+}
 
+function warmupChanged(before: SendingDomainRow, after: SendingDomainRow): boolean {
+  return (
+    before.warmup_state !== after.warmup_state ||
+    before.warmup_day !== after.warmup_day ||
+    before.current_daily_cap !== after.current_daily_cap
+  );
+}
+
+async function persistWarmupDomain(
+  pool: Pool,
+  domain: SendingDomainRow,
+): Promise<SendingDomainRow | null> {
   const { rows } = await pool.query<SendingDomainRow>(
     `update sending_domains
         set warmup_state      = $3,
@@ -212,7 +255,91 @@ export async function tickWarmup(
                 current_daily_cap, target_daily_cap,
                 bounce_rate_24h::float8 as bounce_rate_24h,
                 complaint_rate_24h::float8 as complaint_rate_24h`,
-    [workspace_id, id, next, nextDay, nextCap],
+    [
+      domain.workspace_id,
+      domain.id,
+      domain.warmup_state,
+      domain.warmup_day,
+      domain.current_daily_cap,
+    ],
   );
   return rows[0] ?? null;
+}
+
+export function createWarmupSweepWorkflow(
+  deps: WarmupSweepDeps,
+): WorkflowDefinition<WarmupSweepInput, WarmupSweepSummary> {
+  return defineWorkflow<WarmupSweepInput, WarmupSweepSummary>({
+    name: "email_domain_warmup_sweep",
+    version: "1",
+    async run(input, ctx): Promise<WarmupSweepSummary> {
+      if (input.workspace_id !== ctx.workspace_id) {
+        throw new Error("warmup sweep input workspace does not match workflow workspace");
+      }
+      const targets = await ctx.step("list_warmup_targets", () =>
+        listWarmupTargets(deps.pool, input),
+      );
+      const summary: WarmupSweepSummary = {
+        domains_checked: 0,
+        domains_changed: 0,
+        warmed: 0,
+        degraded: 0,
+        frozen: 0,
+      };
+
+      for (const target of targets) {
+        const before = await ctx.step(`load_warmup:${target.id}`, () =>
+          getSendingDomain(deps.pool, target.workspace_id, target.id),
+        );
+        if (!before) continue;
+        const planned = nextWarmupDomain(
+          before,
+          deps.thresholds ?? DEFAULT_WARMUP_THRESHOLDS,
+        );
+        const changed = warmupChanged(before, planned);
+        if (changed) {
+          await ctx.publish("email.domain.warmup.updated", {
+            sending_domain_id: planned.id,
+            domain: planned.domain,
+            previous_state: before.warmup_state,
+            current_state: planned.warmup_state,
+            previous_daily_cap: before.current_daily_cap,
+            current_daily_cap: planned.current_daily_cap,
+          });
+          await ctx.step(
+            `project_warmup:${target.id}`,
+            () => persistWarmupDomain(deps.pool, planned),
+            {
+              retry: { max_attempts: 3, backoff: "exponential", base_ms: 250 },
+            },
+          );
+        }
+        summary.domains_checked += 1;
+        if (changed) summary.domains_changed += 1;
+        if (planned.warmup_state === "warmed") summary.warmed += 1;
+        if (planned.warmup_state === "degraded") summary.degraded += 1;
+        if (planned.warmup_state === "frozen") summary.frozen += 1;
+      }
+
+      return summary;
+    },
+  });
+}
+
+async function listWarmupTargets(
+  pool: Pool,
+  input: WarmupSweepInput,
+): Promise<Array<{ id: string; workspace_id: string }>> {
+  const limit = Math.max(1, Math.min(1_000, Math.trunc(input.limit ?? 500)));
+  const { rows } = await pool.query<{ id: string; workspace_id: string }>(
+    `select id, workspace_id
+       from sending_domains
+      where workspace_id = $1
+        and ($2::uuid is null or id = $2)
+        and warmup_state in ('unverified', 'verifying', 'warming', 'warmed', 'degraded')
+      order by updated_at asc nulls first, created_at asc
+      limit $3`,
+    [input.workspace_id, input.domain_id ?? null, limit],
+  );
+  return rows;
 }
