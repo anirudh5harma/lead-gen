@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import { setupPg } from "./_pg.ts";
+import { setupPg, until } from "./_pg.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import {
   expireOnce,
@@ -11,6 +11,13 @@ import {
 } from "../core/ingest/expire.ts";
 import { ensurePlatformSource } from "../core/ingest/sources.ts";
 import { upsertTrackedCompany } from "../core/ingest/catalog.ts";
+import { registerSignalProjectors } from "../core/ingest/projectors.ts";
+
+async function createProjectingBus(pool: Pool) {
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool, bus });
+  return bus;
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -150,7 +157,7 @@ test("expireOnce: flips stale candidates to 'expired' and leaves fresh ones alon
 test("expireOnce: cascades to workspace-scoped signals via origin_candidate_id and emits signal.expired", async (t) => {
   const fx = await setupPg("expire_cascade");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   const expiredEvents: Array<{ workspace_id: string; payload: unknown }> = [];
   await bus.subscribe("signal.expired", async (ev) => {
     expiredEvents.push({
@@ -196,6 +203,10 @@ test("expireOnce: cascades to workspace-scoped signals via origin_candidate_id a
     assert.equal(summary.candidates_expired, 1);
     assert.equal(summary.signals_cascaded, 1);
 
+    // The projector consumes signal.expiry.requested and flips the signal +
+    // emits the public signal.expired event. Wait for it.
+    await until(() => expiredEvents.length === 1);
+
     const { rows } = await fx.pool.query<{ id: string; status: string }>(
       `select id, status from signals where workspace_id = $1`,
       [ws],
@@ -218,7 +229,7 @@ test("expireOnce: cascades to workspace-scoped signals via origin_candidate_id a
 test("expireOnce: sweeps workspace-poll signals (origin_candidate_id null) past TTL", async (t) => {
   const fx = await setupPg("expire_workspace_signals");
   if (!fx) return t.skip("DATABASE_URL not set");
-  const bus = createInMemoryEventBus();
+  const bus = await createProjectingBus(fx.pool);
   const events: Array<{ workspace_id: string; payload: unknown }> = [];
   await bus.subscribe("signal.expired", async (ev) => {
     events.push({ workspace_id: ev.workspace_id, payload: ev.payload });
@@ -254,6 +265,10 @@ test("expireOnce: sweeps workspace-poll signals (origin_candidate_id null) past 
       {},
     );
     assert.equal(summary.workspace_signals_expired, 2);
+
+    // Wait for the expiry projector to flip the two signals + emit the
+    // public signal.expired events.
+    await until(() => events.length === 2);
 
     const { rows } = await fx.pool.query<{ id: string; status: string }>(
       `select id, status from signals where workspace_id = $1`,

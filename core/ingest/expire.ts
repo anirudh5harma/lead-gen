@@ -14,13 +14,20 @@ import {
  * funding signal — by applying kind-specific TTLs to `freshness_at`.
  *
  *   1. Sweep signal_candidates whose freshness_at is past the kind TTL and
- *      are still 'active'; flip to 'expired'.
- *   2. For each newly-expired candidate, cascade to workspace-scoped signals
- *      via origin_candidate_id; flip 'ingested'|'matched'|'in_play' to
- *      'spent' and emit signal.expired.
+ *      are still 'active'; flip to 'expired' (workspace-agnostic platform
+ *      state; the flip stays in-line because it's the discovery step that
+ *      determines what's expired).
+ *   2. For each newly-expired candidate, find the workspace-scoped
+ *      `signals` rows that originated from it and emit
+ *      `signal.expiry.requested` per row. The signal expiry projector
+ *      owns the row UPDATE + emits the public signal.expired.
  *   3. Sweep workspace-scoped signals with NULL origin_candidate_id (came
- *      from workspace adapters, not the shared pool) past the kind TTL;
- *      flip to 'spent' and emit signal.expired.
+ *      from workspace adapters, not the shared pool) past the kind TTL by
+ *      emitting `signal.expiry.requested` per row.
+ *
+ * Idempotency: each signal.expiry.requested carries an idempotency_key of
+ * `expire:<signal_id>:<reason>` so retries collapse to a single emission
+ * and the projector's UPDATE is itself idempotent.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,7 +91,8 @@ function ttlFor(
 /**
  * One run of the periodic expiration sweep. Idempotent — repeated runs
  * within the same window are no-ops because they only target rows still
- * in the pre-expired state.
+ * in the pre-expired state, and signal.expiry.requested carries an
+ * idempotency_key the bus dedupes against.
  */
 export async function expireOnce(
   deps: ExpireDeps,
@@ -138,7 +146,7 @@ export async function expireOnce(
   }
 
   if (opts.dryRun) {
-    // Dry run also estimates the cascade + workspace signal counts.
+    // Dry run estimates the cascade + workspace signal counts.
     let cascaded = 0;
     for (const { kind, cutoff } of kindCutoffs) {
       const where = kind === null
@@ -155,33 +163,35 @@ export async function expireOnce(
     return summary;
   }
 
-  // 2. Cascade: flip workspace signals whose origin_candidate is now expired.
+  // 2. Cascade: emit signal.expiry.requested for each workspace signal whose
+  // origin_candidate is now expired. The projector owns the row UPDATE +
+  // public signal.expired emission.
   if (expiredCandidateIds.length > 0) {
     const { rows } = await deps.pool.query<{
       id: string;
       workspace_id: string;
     }>(
-      `update signals
-          set status = 'spent'
+      `select id, workspace_id
+         from signals
         where origin_candidate_id = any($1::uuid[])
-          and status in ('ingested', 'matched', 'in_play')
-        returning id, workspace_id`,
+          and status in ('ingested', 'matched', 'in_play')`,
       [expiredCandidateIds],
     );
     summary.signals_cascaded = rows.length;
     for (const s of rows) {
       await deps.bus.publish({
         workspace_id: s.workspace_id,
-        event_type: "signal.expired",
+        event_type: "signal.expiry.requested",
         source: "system",
         producer_ref: "ingest:expire",
+        idempotency_key: `expire:${s.id}:ttl_exceeded`,
         payload: { signal_id: s.id, reason: "ttl_exceeded" },
       });
     }
   }
 
-  // 3. Sweep workspace signals with no origin_candidate (came from a
-  //    workspace adapter) past their kind TTL.
+  // 3. Sweep workspace signals with no origin_candidate (workspace-poll
+  // signals) past their kind TTL.
   for (const { kind, cutoff } of kindCutoffs) {
     const where = kind === null
       ? "kind is null and origin_candidate_id is null and status in ('ingested', 'matched', 'in_play') and freshness_at < $1"
@@ -191,19 +201,17 @@ export async function expireOnce(
       id: string;
       workspace_id: string;
     }>(
-      `update signals
-          set status = 'spent'
-        where ${where}
-        returning id, workspace_id`,
+      `select id, workspace_id from signals where ${where}`,
       params,
     );
     summary.workspace_signals_expired += rows.length;
     for (const s of rows) {
       await deps.bus.publish({
         workspace_id: s.workspace_id,
-        event_type: "signal.expired",
+        event_type: "signal.expiry.requested",
         source: "system",
         producer_ref: "ingest:expire",
+        idempotency_key: `expire:${s.id}:ttl_exceeded`,
         payload: { signal_id: s.id, reason: "ttl_exceeded" },
       });
     }
@@ -224,13 +232,14 @@ export function createExpireWorkflow(
     version: "1",
     async run(input, ctx): Promise<ExpireSummary> {
       if (ctx.execution_scope !== "platform") {
-        throw new Error("expiration sweep requires a platform-scoped invocation");
+        throw new Error("expire sweep requires a platform-scoped invocation");
       }
       return ctx.step(
         "expire_once",
         () => expireOnce(deps, input ?? {}),
         {
           retry: { max_attempts: 3, backoff: "exponential", base_ms: 250 },
+          on_failure: "skip",
         },
       );
     },

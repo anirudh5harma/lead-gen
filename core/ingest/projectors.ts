@@ -9,7 +9,8 @@ import { vectorToPgLiteral } from "./embeddings.ts";
 
 type SignalProjectionType =
   | "signal.discovered"
-  | "signal.classification.completed";
+  | "signal.classification.completed"
+  | "signal.expiry.requested";
 
 export interface SignalProjectorDeps {
   pool: Pool;
@@ -55,6 +56,33 @@ export async function registerSignalProjectors(
         });
       },
       "signal_discovered_projector",
+    ),
+    subscriber.subscribe(
+      "signal.expiry.requested",
+      async (event) => {
+        const flipped = await projectSignalExpiry(
+          deps.pool,
+          event.workspace_id,
+          event.payload,
+        );
+        // The signal was either already 'spent'/'dismissed' or not present
+        // in this workspace — either way, no public signal.expired follows.
+        if (!flipped) return;
+        await deps.bus.publish({
+          workspace_id: event.workspace_id,
+          event_type: "signal.expired",
+          source: "system",
+          producer_ref: "projection:signal.expiry.requested",
+          correlation_id: event.correlation_id ?? event.id,
+          causation_id: event.id,
+          idempotency_key: `projection:${event.id}:signal.expired`,
+          payload: {
+            signal_id: event.payload.signal_id,
+            reason: event.payload.reason,
+          },
+        });
+      },
+      "signal_expiry_projector",
     ),
     subscriber.subscribe(
       "signal.classification.completed",
@@ -145,6 +173,31 @@ export async function projectSignalDiscovered(
   if (existing.rows[0]?.workspace_id !== workspaceId) {
     throw new Error(`Signal discovery projection rejected signal ${payload.signal_id}`);
   }
+}
+
+/**
+ * Flip a workspace signal to status='spent' as the materialization of a
+ * `signal.expiry.requested` event. Returns true if the row actually
+ * transitioned (so the caller knows whether to emit the public
+ * signal.expired). Idempotent: a signal already 'spent', 'dismissed', or
+ * absent in this workspace returns false.
+ */
+export async function projectSignalExpiry(
+  pool: Pool,
+  workspaceId: string,
+  payload: EventPayload<"signal.expiry.requested">,
+): Promise<boolean> {
+  const result = await pool.query(
+    `update signals
+        set status        = 'spent',
+            audience_hint = coalesce(audience_hint, '{}'::jsonb) ||
+                            jsonb_build_object('expiry_reason', $3::text)
+      where workspace_id = $1
+        and id           = $2
+        and status in ('ingested', 'matched', 'in_play')`,
+    [workspaceId, payload.signal_id, payload.reason],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function projectSignalClassification(

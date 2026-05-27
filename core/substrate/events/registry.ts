@@ -119,6 +119,19 @@ const SignalExpired = z.object({
   reason: z.string(),
 });
 
+/**
+ * Internal "this signal needs to expire" event. Producers (TTL sweep,
+ * upstream-dropped sweep) emit this with an idempotency_key per signal;
+ * the signal expiry projector consumes it, flips the signals row to
+ * 'spent', and emits the public `signal.expired`. Keeping the state
+ * transition behind the projector preserves event-owned-state and makes
+ * the expiry decision replayable from the event log.
+ */
+const SignalExpiryRequested = z.object({
+  signal_id: z.string().uuid(),
+  reason: z.string(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Play / workflow lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,6 +398,7 @@ export const eventRegistry = {
   "signal.dismissed": SignalDismissed,
   "signal.classification.completed": SignalClassificationCompleted,
   "signal.expired": SignalExpired,
+  "signal.expiry.requested": SignalExpiryRequested,
 
   "play.run.started": PlayRunStarted,
   "play.run.completed": PlayRunCompleted,

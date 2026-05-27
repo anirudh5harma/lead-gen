@@ -163,7 +163,12 @@ test("pollOnce: candidate that disappears from the upstream is expired + downstr
     );
     assert.equal(cand[0].status, "expired");
 
-    // Downstream workspace signal flipped to 'spent'.
+    // The projector consumes signal.expiry.requested, flips the signal,
+    // and emits signal.expired. Wait for the public event.
+    await until(() =>
+      bus.published.filter((e) => e.event_type === "signal.expired").length === 1,
+    );
+
     const { rows: sigs } = await fx.pool.query<{ status: string }>(
       `select status::text as status from signals
         where workspace_id = $1
@@ -174,8 +179,6 @@ test("pollOnce: candidate that disappears from the upstream is expired + downstr
     );
     assert.equal(sigs[0].status, "spent");
 
-    // signal.expired event emitted.
-    await new Promise((r) => setImmediate(r));
     const expiredEvents = bus.published.filter((e) => e.event_type === "signal.expired");
     assert.equal(expiredEvents.length, 1);
     assert.equal(

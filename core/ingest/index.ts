@@ -185,6 +185,7 @@ export type {
 export {
   projectSignalDiscovered,
   projectSignalClassification,
+  projectSignalExpiry,
   registerSignalProjectors,
 } from "./projectors.ts";
 export type {

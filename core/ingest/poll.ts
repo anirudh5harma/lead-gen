@@ -223,9 +223,11 @@ function effectiveNoveltyKey(
 }
 
 /**
- * Mark candidates that fell out of the upstream as expired, flip any
- * workspace-scoped signals that originated from them to 'spent', and
- * emit signal.expired on each workspace's bus.
+ * Mark candidates that fell out of the upstream as expired, then emit
+ * `signal.expiry.requested` for every downstream workspace signal so the
+ * signal expiry projector flips status='spent' and emits the public
+ * signal.expired event. Returns the number of candidates flipped (not
+ * the number of signals cascaded — that's the projector's domain).
  */
 async function expireDroppedCandidates(
   deps: PollDeps,
@@ -245,25 +247,22 @@ async function expireDroppedCandidates(
   if (rows.length === 0) return 0;
   const candidate_ids = rows.map((r) => r.id);
 
-  // Flip downstream workspace signals to 'spent' and emit signal.expired
-  // on their respective workspace buses.
   const { rows: sigs } = await deps.pool.query<{
     id: string;
     workspace_id: string;
   }>(
-    `update signals
-        set status = 'spent'
+    `select id, workspace_id from signals
       where origin_candidate_id = any($1::uuid[])
-        and status in ('ingested', 'matched', 'in_play')
-      returning id, workspace_id`,
+        and status in ('ingested', 'matched', 'in_play')`,
     [candidate_ids],
   );
   for (const s of sigs) {
     await deps.bus.publish({
       workspace_id: s.workspace_id,
-      event_type: "signal.expired",
+      event_type: "signal.expiry.requested",
       source: "system",
       producer_ref: "ingest:catalog",
+      idempotency_key: `expire:${s.id}:upstream_dropped`,
       payload: { signal_id: s.id, reason: "upstream_dropped" },
     });
   }
