@@ -97,9 +97,17 @@ test("Outlook repair workflow creates and projects a missing Graph subscription"
       accounts_checked: 1,
       subscriptions_created: 1,
       subscriptions_renewed: 0,
+      subscriptions_migrated: 0,
       failed: 0,
     });
     assert.equal(calls[0].method, "POST");
+    // Subscription POST body includes lifecycleNotificationUrl so new
+    // subscriptions enroll in lifecycle events automatically.
+    const body = JSON.parse(calls[0].body as string);
+    assert.equal(
+      body.lifecycleNotificationUrl,
+      "https://app.example/api/webhooks/outlook",
+    );
     const subscription = await loadOutlookSubscription(
       fx.pool,
       account.workspace_id,
@@ -136,6 +144,7 @@ test("Outlook repair workflow renews an existing subscription for a requested ac
           expirationDateTime: "2026-05-28T00:00:00.000Z",
           clientState: "secret",
           notificationUrl: "https://app.example/api/webhooks/outlook",
+          lifecycleNotificationUrl: "https://app.example/api/webhooks/outlook",
           recorded_at: "2026-05-27T00:00:00.000Z",
         }),
       ],
@@ -174,6 +183,81 @@ test("Outlook repair workflow renews an existing subscription for a requested ac
     assert.equal(
       (bus.published[0].payload as { operation: string }).operation,
       "renewed",
+    );
+  } finally {
+    await fx.close();
+  }
+});
+
+test("Outlook repair workflow migrates a legacy subscription (no lifecycleNotificationUrl) via delete + recreate", async (t) => {
+  const fx = await setupPg("outlook_subscription_migrate");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const account = await seedOutlookAccount(fx.pool);
+    // Legacy subscription persisted before lifecycleNotificationUrl was wired.
+    await fx.pool.query(
+      `update channel_accounts
+          set properties = jsonb_build_object('outlook_subscription', $3::jsonb)
+        where workspace_id = $1 and id = $2`,
+      [
+        account.workspace_id,
+        account.channel_account_id,
+        JSON.stringify({
+          id: "subscription-legacy",
+          resource: "/me/messages",
+          expirationDateTime: "2026-05-28T00:00:00.000Z",
+          clientState: "secret",
+          notificationUrl: "https://app.example/api/webhooks/outlook",
+          recorded_at: "2026-05-27T00:00:00.000Z",
+        }),
+      ],
+    );
+    const bus = createInMemoryEventBus();
+    const calls: Array<{ method: string | undefined; url: string }> = [];
+    const workflow = createOutlookSubscriptionRepairWorkflow({
+      pool: fx.pool,
+      accessTokens: accessTokens(),
+      notificationUrl: "https://app.example/api/webhooks/outlook",
+      fetchImpl: async (url, init) => {
+        const u = url instanceof URL ? url.toString() : String(url);
+        calls.push({ method: init?.method, url: u });
+        if (init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        return new Response(
+          JSON.stringify({
+            id: "subscription-fresh",
+            resource: "/me/messages",
+            expirationDateTime: "2026-06-01T00:00:00.000Z",
+          }),
+          { status: 201 },
+        );
+      },
+    });
+
+    const result = await workflow.run(
+      {
+        workspace_id: account.workspace_id,
+        channel_account_id: account.channel_account_id,
+      },
+      context(account.workspace_id, bus),
+    );
+
+    assert.equal(result.subscriptions_migrated, 1);
+    assert.equal(result.subscriptions_created, 0);
+    assert.equal(result.subscriptions_renewed, 0);
+    // The migration path always issues DELETE first, then POST.
+    const methods = calls.map((c) => c.method);
+    assert.deepEqual(methods, ["DELETE", "POST"]);
+    const fresh = await loadOutlookSubscription(
+      fx.pool,
+      account.workspace_id,
+      account.channel_account_id,
+    );
+    assert.equal(fresh?.id, "subscription-fresh");
+    assert.equal(
+      fresh?.lifecycleNotificationUrl,
+      "https://app.example/api/webhooks/outlook",
     );
   } finally {
     await fx.close();

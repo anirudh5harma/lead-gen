@@ -32,6 +32,13 @@ export interface OutlookSubscription {
   expirationDateTime: string;
   clientState: string;
   notificationUrl: string;
+  /**
+   * Endpoint Microsoft Graph hits with reauthorizationRequired /
+   * subscriptionRemoved / missed lifecycle events. Subscriptions
+   * persisted before this field was introduced have it absent — the
+   * repair workflow treats absence as "needs migration" and recreates.
+   */
+  lifecycleNotificationUrl?: string;
 }
 
 export interface OutlookSubscriptionRecord extends OutlookSubscription {
@@ -45,6 +52,13 @@ export interface CreateOutlookSubscriptionOptions {
   channelAccountId: string;
   accessToken: string;
   notificationUrl: string;
+  /**
+   * Lifecycle URL. Set to the same Outlook webhook route — Graph
+   * differentiates by the presence of `lifecycleEvent` in the payload.
+   * Defaults to `notificationUrl` so existing callers opt in
+   * automatically when not provided otherwise.
+   */
+  lifecycleNotificationUrl?: string;
   /** Defaults to 4230 (Graph max for /me/messages). */
   expirationMinutes?: number;
   /** Defaults to "/me/messages". */
@@ -98,6 +112,8 @@ export async function createOutlookSubscription(
   const resource = opts.resource ?? "/me/messages";
   const clientState = randomBytes(24).toString("base64url");
   const expirationDateTime = new Date(Date.now() + expirationMinutes * 60_000).toISOString();
+  const lifecycleNotificationUrl =
+    opts.lifecycleNotificationUrl ?? opts.notificationUrl;
 
   const response = await fetchImpl(`${GRAPH_BASE}/subscriptions`, {
     method: "POST",
@@ -108,6 +124,7 @@ export async function createOutlookSubscription(
     body: JSON.stringify({
       changeType: "created",
       notificationUrl: opts.notificationUrl,
+      lifecycleNotificationUrl,
       resource,
       expirationDateTime,
       clientState,
@@ -133,6 +150,7 @@ export async function createOutlookSubscription(
     expirationDateTime: json.expirationDateTime,
     clientState,
     notificationUrl: opts.notificationUrl,
+    lifecycleNotificationUrl,
   };
   if (opts.persist !== false) {
     await persistOutlookSubscription(opts.pool, opts.workspaceId, opts.channelAccountId, sub);

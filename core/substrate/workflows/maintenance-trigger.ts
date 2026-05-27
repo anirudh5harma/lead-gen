@@ -197,6 +197,10 @@ async function listOutlookRepairWorkspaces(
   pool: Pool,
   now: Date,
 ): Promise<WorkspaceTarget[]> {
+  // Three repair triggers: (1) no subscription yet, (2) within 12h of
+  // expiry, (3) legacy subscription without a lifecycleNotificationUrl —
+  // the repair workflow recreates these so they enroll in lifecycle
+  // events going forward.
   const { rows } = await pool.query<WorkspaceTarget>(
     `select distinct ca.workspace_id
        from channel_accounts ca
@@ -208,6 +212,7 @@ async function listOutlookRepairWorkspaces(
           ca.properties -> 'outlook_subscription' is null
           or (ca.properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
                <= $1::timestamptz + interval '12 hours'
+          or ca.properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is null
         )
       order by ca.workspace_id`,
     [now],

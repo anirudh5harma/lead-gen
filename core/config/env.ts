@@ -33,6 +33,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "MICROSOFT_CLIENT_ID", tier: "feature", purpose: "Outlook OAuth" },
   { key: "MICROSOFT_CLIENT_SECRET", tier: "feature", purpose: "Outlook OAuth" },
   { key: "MICROSOFT_REDIRECT_URI", tier: "feature", purpose: "Outlook OAuth callback" },
+  { key: "MICROSOFT_TENANT_ID", tier: "optional", purpose: "Single-tenant Graph lifecycle-token issuer restriction" },
   { key: "OUTLOOK_DEFAULT_DAILY_CAP", tier: "optional", purpose: "Outlook send ceiling" },
   { key: "RESEND_API_KEY", tier: "feature", purpose: "Transactional email" },
   { key: "PRODUCT_HUNT_TOKEN", tier: "feature", purpose: "Product Hunt ingestion" },

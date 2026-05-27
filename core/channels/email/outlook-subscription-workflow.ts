@@ -6,6 +6,7 @@ import {
 import type { OutlookAccessTokenProvider } from "./adapters/outlook.ts";
 import {
   createOutlookSubscription,
+  deleteOutlookSubscription,
   loadSubscription,
   persistOutlookSubscription,
   renewOutlookSubscription,
@@ -16,6 +17,12 @@ export interface OutlookSubscriptionRepairDeps {
   pool: Pool;
   accessTokens: OutlookAccessTokenProvider;
   notificationUrl: string;
+  /**
+   * Defaults to `notificationUrl`. Set explicitly when the lifecycle
+   * webhook lives at a different route (e.g. dedicated path with
+   * different authentication).
+   */
+  lifecycleNotificationUrl?: string;
   renewBeforeMs?: number;
   fetchImpl?: typeof fetch;
 }
@@ -30,6 +37,7 @@ export interface OutlookSubscriptionRepairSummary {
   accounts_checked: number;
   subscriptions_created: number;
   subscriptions_renewed: number;
+  subscriptions_migrated: number;
   failed: number;
 }
 
@@ -68,24 +76,47 @@ export function createOutlookSubscriptionRepairWorkflow(
         accounts_checked: 0,
         subscriptions_created: 0,
         subscriptions_renewed: 0,
+        subscriptions_migrated: 0,
         failed: 0,
       };
+      const lifecycleNotificationUrl =
+        deps.lifecycleNotificationUrl ?? deps.notificationUrl;
 
       for (const target of targets) {
         summary.accounts_checked += 1;
         const existing = await ctx.step(`load_subscription:${target.id}`, () =>
           loadSubscription(deps.pool, target.workspace_id, target.id),
         );
-        const operation = existing ? "renewed" as const : "created" as const;
+        // Legacy migration: a subscription persisted before lifecycle URL
+        // was wired in lives without it. PATCH-renew can't add it (Graph
+        // ignores the field on PATCH for /me/messages), so we delete +
+        // recreate — the new subscription has lifecycleNotificationUrl set.
+        const needsMigration = Boolean(existing) && !existing!.lifecycleNotificationUrl;
+        const operation = needsMigration
+          ? "created" as const
+          : existing
+            ? "renewed" as const
+            : "created" as const;
         let subscription: OutlookSubscription;
         try {
           const accessToken = await ctx.step(`load_access_token:${target.id}`, () =>
             deps.accessTokens.getAccessToken(target.id),
           );
+          if (needsMigration) {
+            await ctx.step(`delete_legacy_subscription:${target.id}`, () =>
+              deleteOutlookSubscription({
+                pool: deps.pool,
+                workspaceId: target.workspace_id,
+                channelAccountId: target.id,
+                accessToken,
+                fetchImpl: deps.fetchImpl,
+              }),
+            );
+          }
           subscription = await ctx.step(
             `graph_subscription:${target.id}`,
             () =>
-              existing
+              existing && !needsMigration
                 ? renewOutlookSubscription({
                     pool: deps.pool,
                     workspaceId: target.workspace_id,
@@ -100,6 +131,7 @@ export function createOutlookSubscriptionRepairWorkflow(
                     channelAccountId: target.id,
                     accessToken,
                     notificationUrl: deps.notificationUrl,
+                    lifecycleNotificationUrl,
                     fetchImpl: deps.fetchImpl,
                     persist: false,
                   }),
@@ -135,7 +167,8 @@ export function createOutlookSubscriptionRepairWorkflow(
             subscription,
           ),
         );
-        if (operation === "created") summary.subscriptions_created += 1;
+        if (needsMigration) summary.subscriptions_migrated += 1;
+        else if (operation === "created") summary.subscriptions_created += 1;
         else summary.subscriptions_renewed += 1;
       }
 
