@@ -52,6 +52,7 @@ test("product health: production NATS Restate mode verifies live NATS auth", asy
       probeNatsConnection: async () => {
         throw new Error("BAD_CREDS");
       },
+      probeRestateIngress: async () => undefined,
     },
   );
 
@@ -70,7 +71,10 @@ test("product health: production NATS Restate mode is ready when NATS probe pass
       RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
       RESTATE_BEARER_TOKEN: "restate-token",
     },
-    { probeNatsConnection: async () => undefined },
+    {
+      probeNatsConnection: async () => undefined,
+      probeRestateIngress: async () => undefined,
+    },
   );
 
   assert.equal(readiness.ready, true);
@@ -87,13 +91,39 @@ test("product health: production Restate Cloud ingress requires bearer token", a
       BOMBSELL_SUBSTRATE: "nats_restate",
       RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
     },
-    { probeNatsConnection: async () => undefined },
+    {
+      probeNatsConnection: async () => undefined,
+      probeRestateIngress: async () => undefined,
+    },
   );
 
   assert.equal(readiness.ready, false);
   const restate = readiness.checks.find((check) => check.name === "restate.ingress");
   assert.equal(restate?.status, "degraded");
   assert.match(restate?.detail ?? "", /RESTATE_BEARER_TOKEN/);
+});
+
+test("product health: production NATS Restate mode verifies live Restate auth", async () => {
+  const readiness = await checkProductReadiness(
+    readyPool(),
+    {
+      ...productionEnv(),
+      BOMBSELL_SUBSTRATE: "nats_restate",
+      RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+      RESTATE_AUTH_TOKEN: "admin-only-token",
+    },
+    {
+      probeNatsConnection: async () => undefined,
+      probeRestateIngress: async () => {
+        throw new Error("HTTP 403");
+      },
+    },
+  );
+
+  assert.equal(readiness.ready, false);
+  const restate = readiness.checks.find((check) => check.name === "restate.ingress");
+  assert.equal(restate?.status, "degraded");
+  assert.match(restate?.detail ?? "", /HTTP 403/);
 });
 
 test("product health: production degrades while product substrate uses Postgres bridge", async () => {

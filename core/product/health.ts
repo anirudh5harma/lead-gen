@@ -22,6 +22,7 @@ export interface ProductReadiness {
 
 interface ProductReadinessDeps {
   probeNatsConnection?: (env: Record<string, string | undefined>) => Promise<void>;
+  probeRestateIngress?: (env: Record<string, string | undefined>) => Promise<void>;
 }
 
 const REQUIRED_TABLES = [
@@ -76,7 +77,7 @@ export async function checkProductReadiness(
   try {
     checks.push(formatEnvironmentCheck(env));
     checks.push(await formatNatsCredentialCheck(env, deps));
-    checks.push(formatRestateIngressCheck(env));
+    checks.push(await formatRestateIngressCheck(env, deps));
 
     const substrate = resolveProductSubstrateMode(env.BOMBSELL_SUBSTRATE);
     checks.push(formatSubstrateCheck(substrate, env));
@@ -236,9 +237,10 @@ async function probeNatsConnection(
   await nc.drain();
 }
 
-function formatRestateIngressCheck(
+async function formatRestateIngressCheck(
   env: Record<string, string | undefined>,
-): ProductReadinessCheck {
+  deps: ProductReadinessDeps,
+): Promise<ProductReadinessCheck> {
   if (env.NODE_ENV !== "production") {
     return {
       name: "restate.ingress",
@@ -282,6 +284,20 @@ function formatRestateIngressCheck(
     };
   }
 
+  if (env.BOMBSELL_SUBSTRATE === "nats_restate") {
+    try {
+      await (deps.probeRestateIngress ?? probeRestateIngress)(env);
+    } catch (err) {
+      return {
+        name: "restate.ingress",
+        status: "degraded",
+        detail: `Restate ingress auth/connectivity check failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
+    }
+  }
+
   return {
     name: "restate.ingress",
     status: "ok",
@@ -291,6 +307,20 @@ function formatRestateIngressCheck(
 
 function restateBearerFromEnv(env: Record<string, string | undefined>): string {
   return env.RESTATE_BEARER_TOKEN?.trim() || env.RESTATE_AUTH_TOKEN?.trim() || "";
+}
+
+async function probeRestateIngress(env: Record<string, string | undefined>): Promise<void> {
+  const rawUrl = env.RESTATE_INGRESS_URL?.trim();
+  if (!rawUrl) throw new Error("RESTATE_INGRESS_URL is missing");
+
+  const bearer = restateBearerFromEnv(env);
+  const headers: Record<string, string> = {};
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
+
+  const res = await fetch(rawUrl, { headers });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`HTTP ${res.status}`);
+  }
 }
 
 function formatSubstrateCheck(
