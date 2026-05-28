@@ -12,8 +12,25 @@ import type { Pool, PoolConfig } from "pg";
 
 let _pool: Pool | null = null;
 
+function shouldTrustSupabasePooler(connectionString?: string): boolean {
+  if (!connectionString) return false;
+  try {
+    const url = new URL(connectionString);
+    return url.hostname.endsWith(".pooler.supabase.com");
+  } catch {
+    return false;
+  }
+}
+
 export function createPool(config: PoolConfig): Pool {
-  const pool = new pg.Pool(config);
+  const pool = new pg.Pool({
+    ...config,
+    ssl: config.ssl ?? (
+      shouldTrustSupabasePooler(config.connectionString)
+        ? { rejectUnauthorized: false }
+        : undefined
+    ),
+  });
   // Surface unhandled idle-client errors so they don't crash the process
   // silently. Real handling (re-create pool, alert) lives in production
   // adapters layered above.
