@@ -66,6 +66,11 @@ test("buildAuthenticator: inline .creds contents → authenticator (no filesyste
   assert.equal(typeof auth, "function");
 });
 
+test("buildAuthenticator: escaped inline .creds contents → authenticator", () => {
+  const auth = buildAuthenticator(FAKE_CREDS.replace(/\n/g, "\\n"));
+  assert.equal(typeof auth, "function");
+});
+
 test("buildAuthenticator: filesystem path → reads the .creds file", () => {
   const dir = mkdtempSync(join(tmpdir(), "nats-creds-"));
   const path = join(dir, "app.creds");

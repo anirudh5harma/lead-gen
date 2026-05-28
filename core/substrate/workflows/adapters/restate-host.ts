@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import * as restate from "@restatedev/restate-sdk";
 import type { EventBus } from "../../events/index.ts";
 import type { EventInput, PublishedEvent } from "../../events/types.ts";
@@ -68,11 +69,26 @@ export async function serveRestateWorkflows(
   opts: RestateWorkflowHostOptions & {
     workflows: WorkflowDefinition[];
     port?: number;
+    http1?: boolean;
   },
 ): Promise<number> {
   const services = opts.workflows.map((workflow) =>
     createRestateWorkflowComponent(workflow, opts),
   );
+  if (opts.http1) {
+    const server = createServer(
+      restate.createEndpointHandler({ services, bidirectional: false }),
+    );
+    const port = opts.port ?? 9080;
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(port, () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    return port;
+  }
   return restate.serve({ services, port: opts.port });
 }
 

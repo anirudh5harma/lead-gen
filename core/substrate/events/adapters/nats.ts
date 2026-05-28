@@ -323,7 +323,7 @@ const CREDS_MARKER = "-----BEGIN NATS USER JWT-----";
 export function buildAuthenticator(
   credentials: string | undefined,
 ): Authenticator | undefined {
-  const raw = credentials?.trim();
+  const raw = credentials?.replace(/\\n/g, "\n").trim();
   if (!raw) return undefined;
   const contents = raw.includes(CREDS_MARKER) ? raw : readFileSync(raw, "utf8");
   return credsAuthenticator(new TextEncoder().encode(contents));

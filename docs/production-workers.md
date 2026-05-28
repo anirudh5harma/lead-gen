@@ -37,6 +37,7 @@ All workers need:
 - `DATABASE_URL`
 - `NATS_URL`
 - `NATS_CREDS` when using Synadia/NGS
+- `NATS_STREAM_MAX_BYTES` when the hosted NATS account has a bounded stream quota
 - `DEEPSEEK_API_KEY`
 
 Workers that start or bridge Restate invocations also need:
@@ -53,6 +54,7 @@ Workers that start or bridge Restate invocations also need:
 - `AWS_REGION`
 - `SES_CONFIGURATION_SET`
 - `RESTATE_WORKFLOW_PORT`, default `9080`
+- `RESTATE_WORKFLOW_HTTP1=1` when the host is behind an HTTP/1.1 proxy such as AWS App Runner
 
 ## Restate Registration
 

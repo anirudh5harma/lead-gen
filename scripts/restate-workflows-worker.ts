@@ -86,7 +86,13 @@ const workflows = [
 ];
 
 const port = Number(process.env.RESTATE_WORKFLOW_PORT ?? 9080);
-const bound = await serveRestateWorkflows({ workflows, bus, eventSignals, port });
+const bound = await serveRestateWorkflows({
+  workflows,
+  bus,
+  eventSignals,
+  port,
+  http1: process.env.RESTATE_WORKFLOW_HTTP1 === "1",
+});
 await startRestateEventSignalBridge({
   pool,
   bus,

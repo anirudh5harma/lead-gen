@@ -14,6 +14,19 @@ test("runtime event bus: production rejects missing NATS rather than falling bac
   );
 });
 
+test("runtime event bus: validates optional NATS stream caps", async () => {
+  await assert.rejects(
+    createRuntimeEventBus({
+      env: {
+        NODE_ENV: "production",
+        NATS_URL: "nats://127.0.0.1:4222",
+        NATS_STREAM_MAX_BYTES: "0",
+      },
+    }),
+    /streamMaxBytes must be a positive number/,
+  );
+});
+
 test("runtime event bus: production NATS publication journals events used by the eval gate", async (t) => {
   const natsUrl = process.env.NATS_URL;
   if (!natsUrl) return t.skip("NATS_URL not set");

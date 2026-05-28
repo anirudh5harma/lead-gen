@@ -287,6 +287,20 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "/etc/nats/app.creds",
   },
   {
+    name: "NATS_STREAM_MAX_BYTES",
+    requirement: "optional",
+    category: "substrate",
+    description: "Maximum bytes retained by the NATS JetStream events stream.",
+    example: "67108864",
+  },
+  {
+    name: "NATS_STREAM_MAX_AGE_MS",
+    requirement: "optional",
+    category: "substrate",
+    description: "Maximum event age retained by the NATS JetStream events stream.",
+    example: "2592000000",
+  },
+  {
     name: "RESTATE_INGRESS_URL",
     requirement: "production",
     category: "substrate",
@@ -331,6 +345,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "substrate",
     description: "Port for the Restate workflow handler process.",
     example: "9080",
+  },
+  {
+    name: "RESTATE_WORKFLOW_HTTP1",
+    requirement: "optional",
+    category: "substrate",
+    description: "Set to 1 when a managed proxy requires the Restate workflow handler to serve HTTP/1.1.",
+    example: "1",
   },
   {
     name: "NODE_ENV",

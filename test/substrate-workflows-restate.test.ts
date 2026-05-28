@@ -102,7 +102,7 @@ test("restate client: start() submits a keyed native workflow with input + metad
   assert.equal(calls[0].method, "POST");
   assert.equal(calls[0].url, `${ingress}/demo/run-key-1/run/send`);
   assert.equal(calls[0].headers.authorization, "Bearer secret");
-  assert.equal(calls[0].headers["idempotency-key"], "run-key-1");
+  assert.equal(calls[0].headers["idempotency-key"], undefined);
   assert.deepEqual(calls[0].body, {
     request: { a: 41 },
     metadata: {
@@ -145,7 +145,7 @@ test("restate client: platform starts carry explicit platform scope without a te
   });
 });
 
-test("restate client: idempotency_key is both workflow key and request idempotency header", async () => {
+test("restate client: idempotency_key becomes the workflow key only", async () => {
   const { fetchImpl, calls } = spyFetch(() => ({ body: { invocationId: "x" } }));
   const runtime = createRestateWorkflowRuntime({
     ingressUrl: ingress,
@@ -160,7 +160,7 @@ test("restate client: idempotency_key is both workflow key and request idempoten
     input: null,
     idempotency_key: "key-1",
   });
-  assert.equal(calls[0].headers["idempotency-key"], "key-1");
+  assert.equal(calls[0].headers["idempotency-key"], undefined);
   assert.equal(calls[0].url, `${ingress}/demo/key-1/run/send`);
 });
 

@@ -253,7 +253,12 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
 - `SNS_VERIFY_SIGNATURES=1` — keep on in production; only the local test
   harness sets this to `0`.
 - `DATABASE_POOL_MAX` — defaults to 10.
+- `NATS_STREAM_MAX_BYTES` — JetStream events stream byte cap. Hosted NATS
+  accounts may require a bounded value such as `67108864`.
+- `NATS_STREAM_MAX_AGE_MS` — JetStream events stream max age, default 30 days.
 - `RESTATE_WORKFLOW_PORT` — the Restate workflow worker port (default 9080).
+- `RESTATE_WORKFLOW_HTTP1` — set to `1` when the worker is behind a managed
+  HTTP/1.1 proxy such as AWS App Runner.
 - `OUTLOOK_DEFAULT_DAILY_CAP` — connected-inbox per-day send ceiling
   (default 25).
 - `BOMBSELL_ALLOW_DEMO_AUTH`, `BOMBSELL_DEMO_USER_ID` — **leave unset in

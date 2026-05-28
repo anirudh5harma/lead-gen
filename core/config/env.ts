@@ -48,6 +48,8 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "SEC_EDGAR_USER_AGENT", tier: "feature", purpose: "SEC EDGAR ingestion identity" },
   { key: "NATS_URL", tier: "required", purpose: "Production typed event bus" },
   { key: "NATS_CREDS", tier: "optional", purpose: "NATS NKEY+JWT creds (inline contents or file path) for Synadia/NGS auth" },
+  { key: "NATS_STREAM_MAX_BYTES", tier: "optional", purpose: "NATS JetStream events stream byte cap" },
+  { key: "NATS_STREAM_MAX_AGE_MS", tier: "optional", purpose: "NATS JetStream events stream retention age" },
   { key: "RESTATE_INGRESS_URL", tier: "required", purpose: "Production durable workflow runtime" },
   { key: "RESTATE_ADMIN_URL", tier: "optional", purpose: "Restate admin API for deployment verification" },
   { key: "RESTATE_BEARER_TOKEN", tier: "optional", purpose: "Bearer token for protected Restate ingress" },
@@ -55,6 +57,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "MAINTENANCE_TRIGGER_SECRET", tier: "required", purpose: "Authenticated durable maintenance ingress" },
   { key: "CRON_SECRET", tier: "optional", purpose: "Vercel-injected bearer; accepted by the maintenance route" },
   { key: "RESTATE_WORKFLOW_PORT", tier: "optional", purpose: "Restate workflow handler port" },
+  { key: "RESTATE_WORKFLOW_HTTP1", tier: "optional", purpose: "Serve Restate workflow handlers over HTTP/1.1 for managed proxies" },
 ] as const;
 
 export const ENVIRONMENT_KEY_NAMES = new Set(ENVIRONMENT_KEYS.map(({ key }) => key));

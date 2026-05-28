@@ -169,11 +169,6 @@ export function createRestateWorkflowRuntime(
     async start<I, O = unknown>(
       startOpts: StartOptions<I>,
     ): Promise<WorkflowRun<I, O>> {
-      const headers: Record<string, string> = {};
-      if (startOpts.idempotency_key) {
-        headers["idempotency-key"] = startOpts.idempotency_key;
-      }
-
       // Native Restate workflows are keyed. Reusing an idempotency key
       // invokes the same workflow instance; otherwise each start is a fresh
       // workflow invocation.
@@ -196,7 +191,6 @@ export function createRestateWorkflowRuntime(
         "POST",
         path,
         body,
-        headers,
       );
       const text = await response.text();
       const result = text
