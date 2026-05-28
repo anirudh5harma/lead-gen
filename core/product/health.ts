@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { connect, credsAuthenticator } from "nats";
 import { tryGetPool } from "../substrate/storage/index.ts";
 import { checkProductEnvironment } from "./env.ts";
 import { resolveProductSubstrateMode } from "./substrate.ts";
@@ -17,6 +18,10 @@ export interface ProductReadiness {
   ready: boolean;
   checked_at: string;
   checks: ProductReadinessCheck[];
+}
+
+interface ProductReadinessDeps {
+  probeNatsConnection?: (env: Record<string, string | undefined>) => Promise<void>;
 }
 
 const REQUIRED_TABLES = [
@@ -55,6 +60,7 @@ const REQUIRED_MIGRATIONS = [
 export async function checkProductReadiness(
   pool: Pool | null = tryGetPool(),
   env: Record<string, string | undefined> = process.env,
+  deps: ProductReadinessDeps = {},
 ): Promise<ProductReadiness> {
   const checks: ProductReadinessCheck[] = [];
   if (!pool) {
@@ -69,10 +75,10 @@ export async function checkProductReadiness(
 
   try {
     checks.push(formatEnvironmentCheck(env));
-    checks.push(formatNatsCredentialCheck(env));
+    checks.push(await formatNatsCredentialCheck(env, deps));
     checks.push(formatRestateIngressCheck(env));
 
-    const substrate = resolveProductSubstrateMode();
+    const substrate = resolveProductSubstrateMode(env.BOMBSELL_SUBSTRATE);
     checks.push(formatSubstrateCheck(substrate, env));
 
     await pool.query("select 1");
@@ -131,9 +137,10 @@ function formatEnvironmentCheck(
   };
 }
 
-function formatNatsCredentialCheck(
+async function formatNatsCredentialCheck(
   env: Record<string, string | undefined>,
-): ProductReadinessCheck {
+  deps: ProductReadinessDeps,
+): Promise<ProductReadinessCheck> {
   if (env.NODE_ENV !== "production") {
     return {
       name: "nats.credentials",
@@ -176,21 +183,57 @@ function formatNatsCredentialCheck(
 
   const creds = env.NATS_CREDS?.replace(/\\n/g, "\n").trim() ?? "";
   if (
-    creds.includes("-----BEGIN NATS USER JWT-----") &&
-    creds.includes("-----BEGIN USER NKEY SEED-----")
+    !creds.includes("-----BEGIN NATS USER JWT-----") ||
+    !creds.includes("-----BEGIN USER NKEY SEED-----")
   ) {
     return {
       name: "nats.credentials",
-      status: "ok",
-      detail: "NATS NKEY credentials look complete",
+      status: "degraded",
+      detail: "NATS_CREDS must contain both the user JWT and user NKEY seed for NGS/TLS NATS",
     };
+  }
+
+  if (env.BOMBSELL_SUBSTRATE === "nats_restate") {
+    try {
+      await (deps.probeNatsConnection ?? probeNatsConnection)(env);
+    } catch (err) {
+      return {
+        name: "nats.credentials",
+        status: "degraded",
+        detail: `NATS auth/connectivity check failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
+    }
   }
 
   return {
     name: "nats.credentials",
-    status: "degraded",
-    detail: "NATS_CREDS must contain both the user JWT and user NKEY seed for NGS/TLS NATS",
+    status: "ok",
+    detail:
+      env.BOMBSELL_SUBSTRATE === "nats_restate"
+        ? "NATS credentials authenticated successfully"
+        : "NATS NKEY credentials look complete",
   };
+}
+
+async function probeNatsConnection(
+  env: Record<string, string | undefined>,
+): Promise<void> {
+  const rawUrl = env.NATS_URL?.trim();
+  if (!rawUrl) throw new Error("NATS_URL is missing");
+
+  const creds = env.NATS_CREDS?.replace(/\\n/g, "\n").trim();
+  const nc = await connect({
+    servers: rawUrl,
+    name: "bombsell-health",
+    timeout: 2_500,
+    reconnect: false,
+    noRandomize: true,
+    resolve: !new URL(rawUrl).hostname.endsWith("ngs.global"),
+    ...(creds ? { authenticator: credsAuthenticator(new TextEncoder().encode(creds)) } : {}),
+  });
+  await nc.drain();
 }
 
 function formatRestateIngressCheck(

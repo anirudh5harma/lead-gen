@@ -44,6 +44,36 @@ test("product health: NGS NATS requires complete creds in production", async () 
   assert.match(nats?.detail ?? "", /user NKEY seed/);
 });
 
+test("product health: production NATS Restate mode verifies live NATS auth", async () => {
+  const readiness = await checkProductReadiness(
+    readyPool(),
+    { ...productionEnv(), BOMBSELL_SUBSTRATE: "nats_restate" },
+    {
+      probeNatsConnection: async () => {
+        throw new Error("BAD_CREDS");
+      },
+    },
+  );
+
+  assert.equal(readiness.ready, false);
+  const nats = readiness.checks.find((check) => check.name === "nats.credentials");
+  assert.equal(nats?.status, "degraded");
+  assert.match(nats?.detail ?? "", /BAD_CREDS/);
+});
+
+test("product health: production NATS Restate mode is ready when NATS probe passes", async () => {
+  const readiness = await checkProductReadiness(
+    readyPool(),
+    { ...productionEnv(), BOMBSELL_SUBSTRATE: "nats_restate" },
+    { probeNatsConnection: async () => undefined },
+  );
+
+  assert.equal(readiness.ready, true);
+  const nats = readiness.checks.find((check) => check.name === "nats.credentials");
+  assert.equal(nats?.status, "ok");
+  assert.match(nats?.detail ?? "", /authenticated/);
+});
+
 test("product health: production degrades while product substrate uses Postgres bridge", async () => {
   const readiness = await checkProductReadiness(readyPool(), productionEnv());
 

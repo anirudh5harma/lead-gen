@@ -63,6 +63,12 @@ export interface NatsEventBusOptions {
   streamMaxBytes?: number;
   /** If true, ensure the stream exists at construct time. Defaults to true. */
   ensureStream?: boolean;
+  /**
+   * Override nats.js hostname pre-resolution. Synadia NGS expects the client
+   * to dial the advertised hostname first so TLS/auth negotiation happens
+   * against the server greeting instead of a pre-resolved IP.
+   */
+  resolve?: boolean;
 }
 
 export interface NatsEventBus extends EventBus {
@@ -86,6 +92,7 @@ export async function createNatsEventBus(
   const nc = await connect({
     servers: opts.servers,
     name: "bombsell-event-bus",
+    resolve: opts.resolve ?? shouldResolveServers(opts.servers),
     ...(authenticator ? { authenticator } : {}),
   });
   const jsm = await nc.jetstreamManager();
@@ -318,6 +325,20 @@ export function buildAuthenticator(
   if (!raw) return undefined;
   const contents = raw.includes(CREDS_MARKER) ? raw : readFileSync(raw, "utf8");
   return credsAuthenticator(new TextEncoder().encode(contents));
+}
+
+function shouldResolveServers(servers: string | string[]): boolean {
+  const list = Array.isArray(servers) ? servers : [servers];
+  return !list.some((server) => {
+    try {
+      const url = server.includes("://")
+        ? new URL(server)
+        : new URL(`nats://${server}`);
+      return url.hostname.endsWith("ngs.global");
+    } catch {
+      return false;
+    }
+  });
 }
 
 function safeSegment(s: string): string {
