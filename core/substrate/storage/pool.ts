@@ -22,9 +22,18 @@ function shouldTrustSupabasePooler(connectionString?: string): boolean {
   }
 }
 
+function normalizeConnectionString(connectionString?: string): string | undefined {
+  if (!shouldTrustSupabasePooler(connectionString)) return connectionString;
+  const url = new URL(connectionString!);
+  url.searchParams.delete("sslmode");
+  return url.toString();
+}
+
 export function createPool(config: PoolConfig): Pool {
+  const connectionString = normalizeConnectionString(config.connectionString);
   const pool = new pg.Pool({
     ...config,
+    connectionString,
     ssl: config.ssl ?? (
       shouldTrustSupabasePooler(config.connectionString)
         ? { rejectUnauthorized: false }
