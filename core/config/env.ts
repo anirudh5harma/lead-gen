@@ -34,6 +34,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "AWS_SECRET_ACCESS_KEY", tier: "optional", purpose: "Local AWS credentials" },
   { key: "AWS_SESSION_TOKEN", tier: "optional", purpose: "Temporary AWS credentials" },
   { key: "AWS_SNS_TOPIC_ARNS", tier: "feature", purpose: "Trusted SES SNS ingress topics" },
+  { key: "SES_CONFIGURATION_SET", tier: "optional", purpose: "SES event publishing configuration set" },
   { key: "SNS_VERIFY_SIGNATURES", tier: "optional", purpose: "Local SNS test override" },
   { key: "MICROSOFT_CLIENT_ID", tier: "feature", purpose: "Outlook OAuth" },
   { key: "MICROSOFT_CLIENT_SECRET", tier: "feature", purpose: "Outlook OAuth" },
