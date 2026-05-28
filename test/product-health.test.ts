@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { Pool } from "pg";
 import { checkProductReadiness } from "../core/product/health.ts";
 import { setupPg } from "./_pg.ts";
 
@@ -22,11 +23,25 @@ test("product health: reports ready against a migrated schema", async (t) => {
     assert.equal(readiness.ready, true);
     assert.deepEqual(
       readiness.checks.map((check) => check.status),
-      ["ok", "ok", "ok", "ok", "ok"],
+      ["ok", "ok", "ok", "ok", "ok", "ok", "ok"],
     );
   } finally {
     await fx.close();
   }
+});
+
+test("product health: NGS NATS requires complete creds in production", async () => {
+  const readiness = await checkProductReadiness(readyPool(), {
+    NODE_ENV: "production",
+    NATS_URL: "tls://connect.ngs.global",
+    NATS_CREDS: "-----BEGIN NATS USER JWT-----",
+    RESTATE_INGRESS_URL: "https://restate.example",
+  });
+
+  assert.equal(readiness.ready, false);
+  const nats = readiness.checks.find((check) => check.name === "nats.credentials");
+  assert.equal(nats?.status, "degraded");
+  assert.match(nats?.detail ?? "", /user NKEY seed/);
 });
 
 test("product health: production env gaps degrade readiness", async () => {
@@ -65,3 +80,9 @@ test("product health: reports unsupported substrate configuration", async (t) =>
     await fx.close();
   }
 });
+
+function readyPool(): Pool {
+  return {
+    query: async () => ({ rows: [] }),
+  } as unknown as Pool;
+}

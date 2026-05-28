@@ -69,6 +69,8 @@ export async function checkProductReadiness(
 
   try {
     checks.push(formatEnvironmentCheck(env));
+    checks.push(formatNatsCredentialCheck(env));
+    checks.push(formatRestateIngressCheck(env));
 
     const substrate = resolveProductSubstrateMode();
     checks.push(
@@ -138,6 +140,108 @@ function formatEnvironmentCheck(
     name: "environment",
     status: "degraded",
     detail: `Missing production env keys: ${report.missingProductionKeys.join(", ")}`,
+  };
+}
+
+function formatNatsCredentialCheck(
+  env: Record<string, string | undefined>,
+): ProductReadinessCheck {
+  if (env.NODE_ENV !== "production") {
+    return {
+      name: "nats.credentials",
+      status: "ok",
+      detail: "Production NATS credential validation is active when NODE_ENV=production",
+    };
+  }
+
+  const rawUrl = env.NATS_URL?.trim();
+  if (!rawUrl) {
+    return {
+      name: "nats.credentials",
+      status: "degraded",
+      detail: "NATS_URL is missing",
+    };
+  }
+
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return {
+      name: "nats.credentials",
+      status: "degraded",
+      detail: "NATS_URL is not a valid URL",
+    };
+  }
+
+  const usesInlineAuth = Boolean(url.username || url.password);
+  const needsCreds =
+    !usesInlineAuth &&
+    (url.protocol === "tls:" || url.hostname.endsWith("ngs.global"));
+  if (!needsCreds) {
+    return {
+      name: "nats.credentials",
+      status: "ok",
+      detail: "NATS_URL does not require inline NKEY credentials",
+    };
+  }
+
+  const creds = env.NATS_CREDS?.replace(/\\n/g, "\n").trim() ?? "";
+  if (
+    creds.includes("-----BEGIN NATS USER JWT-----") &&
+    creds.includes("-----BEGIN USER NKEY SEED-----")
+  ) {
+    return {
+      name: "nats.credentials",
+      status: "ok",
+      detail: "NATS NKEY credentials look complete",
+    };
+  }
+
+  return {
+    name: "nats.credentials",
+    status: "degraded",
+    detail: "NATS_CREDS must contain both the user JWT and user NKEY seed for NGS/TLS NATS",
+  };
+}
+
+function formatRestateIngressCheck(
+  env: Record<string, string | undefined>,
+): ProductReadinessCheck {
+  if (env.NODE_ENV !== "production") {
+    return {
+      name: "restate.ingress",
+      status: "ok",
+      detail: "Production Restate ingress validation is active when NODE_ENV=production",
+    };
+  }
+
+  const rawUrl = env.RESTATE_INGRESS_URL?.trim();
+  if (!rawUrl) {
+    return {
+      name: "restate.ingress",
+      status: "degraded",
+      detail: "RESTATE_INGRESS_URL is missing",
+    };
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("unsupported protocol");
+    }
+  } catch {
+    return {
+      name: "restate.ingress",
+      status: "degraded",
+      detail: "RESTATE_INGRESS_URL must be an HTTP(S) URL",
+    };
+  }
+
+  return {
+    name: "restate.ingress",
+    status: "ok",
+    detail: "Restate ingress URL is configured",
   };
 }
 
