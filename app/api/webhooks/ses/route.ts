@@ -64,7 +64,10 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const maySkipVerification =
     process.env.SNS_VERIFY_SIGNATURES === "0" && !isProduction();
-  if (!maySkipVerification) {
+  // Confirmation is a one-time handshake: constrain it to our configured
+  // TopicArn and AWS-owned SubscribeURL, then keep full signature checks for
+  // every real notification that can enqueue product state.
+  if (!maySkipVerification && envelope.Type !== "SubscriptionConfirmation") {
     try {
       await verifySnsMessage(envelope, {
         allowedTopicArns: allowedSnsTopicArns(),
@@ -87,6 +90,20 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   if (envelope.Type === "SubscriptionConfirmation") {
     try {
+      const allowedTopicArns = allowedSnsTopicArns();
+      if (allowedTopicArns.length === 0) {
+        logSnsWebhook("error", "SNS confirmation rejected: no trusted topics configured", {
+          topicArn: envelope.TopicArn ?? null,
+        });
+        return new Response("AWS_SNS_TOPIC_ARNS is not configured", { status: 503 });
+      }
+      if (!envelope.TopicArn || !allowedTopicArns.includes(envelope.TopicArn)) {
+        logSnsWebhook("error", "SNS confirmation rejected: untrusted topic", {
+          topicArn: envelope.TopicArn ?? null,
+          configuredTopicCount: allowedTopicArns.length,
+        });
+        return new Response("SNS message came from an untrusted topic", { status: 401 });
+      }
       const parsed = parseSnsNotification(envelope);
       if (parsed.kind === "subscription_confirmation") {
         if (!validSnsUrl(parsed.subscribeUrl)) {
