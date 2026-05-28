@@ -12,10 +12,10 @@
  *     defineWorkflow,
  *   } from "@/core/substrate/workflows";
  *
- * Product runtime today:
- *   use `createProductSubstrate()` from core/product/substrate. It selects the
- *   supported Postgres-backed workflow journal. The Restate export below is a
- *   future scale-adapter contract, not an active product path yet.
+ * Product runtime:
+ *   use `createProductSubstrate()` from core/product/substrate. Production
+ *   selects `BOMBSELL_SUBSTRATE=nats_restate` for NATS + Restate; local/dev can
+ *   keep the Postgres-backed bridge.
  */
 
 export * from "./types.ts";

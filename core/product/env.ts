@@ -70,8 +70,8 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "BOMBSELL_SUBSTRATE",
     requirement: "optional",
     category: "substrate",
-    description: "Product substrate adapter. Currently supported production value is postgres.",
-    example: "postgres",
+    description: "Product substrate adapter. Use nats_restate for production NATS + Restate, postgres for local/dev bridge.",
+    example: "nats_restate",
   },
   {
     name: "NEXT_PUBLIC_SUPABASE_URL",

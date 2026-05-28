@@ -71,9 +71,9 @@ import {
   requireOutboundEmailExecutionEnvironment,
   resolveProductEmailTransportMode,
 } from "./env.ts";
-import type { PostgresEventBus } from "../substrate/events/adapters/postgres.ts";
 import {
   runDurableEventProjectionsOnce,
+  type EventBus,
   type DurableEventProjection,
   type DurableProjectionTick,
   type PublishedEvent,
@@ -261,7 +261,7 @@ export interface AppState {
 interface ProductEngine {
   pool: Pool;
   substrateMode: ProductSubstrateMode;
-  bus: PostgresEventBus;
+  bus: EventBus & { close(): Promise<void> };
   runtime: WorkflowRuntime;
   memory: RepMemory;
 }

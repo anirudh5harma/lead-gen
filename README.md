@@ -154,7 +154,9 @@ DATABASE_URL=... APP_ORIGIN=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_AP
 ```
 
 Production readiness requires `NATS_URL`, `RESTATE_INGRESS_URL`, and
-`MAINTENANCE_TRIGGER_SECRET`.
+`MAINTENANCE_TRIGGER_SECRET`. Set `BOMBSELL_SUBSTRATE=nats_restate` when the
+NATS broker and Restate handler deployment are live; `postgres` is the
+development bridge.
 When `NATS_URL` is absent, non-production app ingress uses the Postgres
 bridge for development only; production fails closed rather than processing
 off-bus.
