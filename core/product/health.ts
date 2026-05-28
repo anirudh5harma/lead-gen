@@ -23,6 +23,7 @@ export interface ProductReadiness {
 interface ProductReadinessDeps {
   probeNatsConnection?: (env: Record<string, string | undefined>) => Promise<void>;
   probeRestateIngress?: (env: Record<string, string | undefined>) => Promise<void>;
+  probeRestateServices?: (env: Record<string, string | undefined>) => Promise<void>;
 }
 
 const REQUIRED_TABLES = [
@@ -56,6 +57,15 @@ const REQUIRED_MIGRATIONS = [
   "029_workflow_run_leases.sql",
   "030_event_projection_jobs.sql",
   "031_procedural_memory_applications.sql",
+];
+
+const REQUIRED_RESTATE_SERVICES = [
+  "series_a_cold_open",
+  "ingest_catalog_poll",
+  "ingest_workspace_poll",
+  "ingest_expire_sweep",
+  "email_domain_warmup_sweep",
+  "email_outlook_subscription_repair",
 ];
 
 export async function checkProductReadiness(
@@ -287,6 +297,7 @@ async function formatRestateIngressCheck(
   if (env.BOMBSELL_SUBSTRATE === "nats_restate") {
     try {
       await (deps.probeRestateIngress ?? probeRestateIngress)(env);
+      await (deps.probeRestateServices ?? probeRestateServices)(env);
     } catch (err) {
       return {
         name: "restate.ingress",
@@ -320,6 +331,49 @@ async function probeRestateIngress(env: Record<string, string | undefined>): Pro
   const res = await fetch(rawUrl, { headers });
   if (res.status === 401 || res.status === 403) {
     throw new Error(`HTTP ${res.status}`);
+  }
+}
+
+async function probeRestateServices(env: Record<string, string | undefined>): Promise<void> {
+  const adminUrl = restateAdminUrl(env);
+  if (!adminUrl) throw new Error("RESTATE_ADMIN_URL or RESTATE_INGRESS_URL is missing");
+
+  const bearer = restateBearerFromEnv(env);
+  const headers: Record<string, string> = {};
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
+
+  const res = await fetch(`${adminUrl}/deployments`, { headers });
+  if (!res.ok) {
+    throw new Error(`admin HTTP ${res.status}`);
+  }
+
+  const payload = await res.json() as {
+    deployments?: Array<{ services?: Array<{ name?: string }> }>;
+  };
+  const services = new Set(
+    (payload.deployments ?? []).flatMap((deployment) =>
+      (deployment.services ?? []).map((service) => service.name).filter(Boolean),
+    ),
+  );
+  const missing = REQUIRED_RESTATE_SERVICES.filter((service) => !services.has(service));
+  if (missing.length > 0) {
+    throw new Error(`missing workflow services: ${missing.join(", ")}`);
+  }
+}
+
+function restateAdminUrl(env: Record<string, string | undefined>): string | null {
+  const explicit = env.RESTATE_ADMIN_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  const ingress = env.RESTATE_INGRESS_URL?.trim();
+  if (!ingress) return null;
+
+  try {
+    const url = new URL(ingress);
+    url.port = "9070";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
   }
 }
 

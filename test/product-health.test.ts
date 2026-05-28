@@ -53,6 +53,7 @@ test("product health: production NATS Restate mode verifies live NATS auth", asy
         throw new Error("BAD_CREDS");
       },
       probeRestateIngress: async () => undefined,
+      probeRestateServices: async () => undefined,
     },
   );
 
@@ -74,6 +75,7 @@ test("product health: production NATS Restate mode is ready when NATS probe pass
     {
       probeNatsConnection: async () => undefined,
       probeRestateIngress: async () => undefined,
+      probeRestateServices: async () => undefined,
     },
   );
 
@@ -94,6 +96,7 @@ test("product health: production Restate Cloud ingress requires bearer token", a
     {
       probeNatsConnection: async () => undefined,
       probeRestateIngress: async () => undefined,
+      probeRestateServices: async () => undefined,
     },
   );
 
@@ -117,6 +120,7 @@ test("product health: production NATS Restate mode verifies live Restate auth", 
       probeRestateIngress: async () => {
         throw new Error("HTTP 403");
       },
+      probeRestateServices: async () => undefined,
     },
   );
 
@@ -124,6 +128,30 @@ test("product health: production NATS Restate mode verifies live Restate auth", 
   const restate = readiness.checks.find((check) => check.name === "restate.ingress");
   assert.equal(restate?.status, "degraded");
   assert.match(restate?.detail ?? "", /HTTP 403/);
+});
+
+test("product health: production NATS Restate mode verifies registered services", async () => {
+  const readiness = await checkProductReadiness(
+    readyPool(),
+    {
+      ...productionEnv(),
+      BOMBSELL_SUBSTRATE: "nats_restate",
+      RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+      RESTATE_AUTH_TOKEN: "valid-token",
+    },
+    {
+      probeNatsConnection: async () => undefined,
+      probeRestateIngress: async () => undefined,
+      probeRestateServices: async () => {
+        throw new Error("missing workflow services: ingest_expire_sweep");
+      },
+    },
+  );
+
+  assert.equal(readiness.ready, false);
+  const restate = readiness.checks.find((check) => check.name === "restate.ingress");
+  assert.equal(restate?.status, "degraded");
+  assert.match(restate?.detail ?? "", /missing workflow services/);
 });
 
 test("product health: production degrades while product substrate uses Postgres bridge", async () => {
