@@ -1,179 +1,316 @@
-# Bombsell
+# Bombsell — pivot-v2
 
-Agentic GTM for solo operators, agencies, and small teams.
+AI-native GTM infrastructure for agents, founders, and small teams. Outbound, online content, and campaigns on autopilot — reliably.
 
-Bombsell runs two engines off a shared fleet of agents:
+This branch is a clean-slate rebuild against a state-of-the-art architecture. The old codebase is preserved under [`legacy/`](./legacy) for reference.
 
-- **Outbound** — ingests public buying signals, matches them against an ICP, enriches contacts, drafts and sends outreach through connected inboxes, classifies replies, sends booking links, and schedules follow-ups.
-- **Content** — turns those same signals plus the workspace's positioning into LinkedIn / X post ideas, drafts and edits them, schedules / publishes via a posting partner, pulls engagement, and repurposes what performs.
+## Read first
 
-Every agent runs independently. An "engine" is just a default pipeline over a set of agents. A workspace decides which agents are on and how much agency each one gets.
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — the design. Five primitives (Rep, Signal, Play, Conversation, Outcome). Five layers (Substrate → Knowledge Graph → Agent Fabric → Channels → Surfaces). The non-negotiables.
+- [`AGENTS.md`](./AGENTS.md) — the no-shortcuts rules. Build to the architecture; document any forced divergence in your PR.
 
-## Agent fleet
+## Layout
 
-The fleet is the capability catalog (`lib/agents/core/registry.ts`); per-workspace state — enabled / autonomy / config — lives in `workspace_agents` (`lib/agents/core/workspace-agents.ts`).
-
-| Engine | Agents |
-|---|---|
-| Outbound | `signal` · `match` · `enrich` · `safety` · `outreach` · `reply` · `booking` · `followup` |
-| Content | `idea` · `writer` · `editor` · `publisher` · `engagement` · `repurpose` |
-| Shared / add-on / control | `insight` · `crm` (Team plan) · `operator` |
-
-**Autonomy** applies to *acting* agents — the ones that touch the outside world (`outreach` send, `booking`, `followup`, `publisher`, `crm`):
-
-- `research_only` — the acting step is skipped.
-- `approve_first` (default) — the pipeline pauses for human approval before the acting step.
-- `autopilot` — the acting step runs unattended.
-
-Research-only agents (signal, match, enrich, safety, reply, idea, writer, editor, engagement, repurpose, insight) always run when enabled. Add-on agents (`insight`, `crm`, `repurpose`, `engagement`) are off until explicitly turned on; `crm` additionally requires the Team plan.
-
-## Pipelines
-
-Pipelines are ordered `(role, tool)` step lists run by the `operator` agent. Only enabled agents' steps run; acting steps respect the agent's autonomy mode. Definitions live in `lib/agents/core/workflow-types.ts`:
-
-- **Outbound Engine** — signal → match → enrich → safety → draft → send → reply → booking → followup
-- **Content Engine** — idea → write → edit → schedule/publish → metrics → repurpose
-- **Full Funnel** — outbound, then a content pass on the same signals
-- **Signal to Insight** — signal → match → insight
-- **Enrich & Outreach** — enrich → draft → send
-- **Reply Handling** — reply → booking → followup
-
-Dispatch one from the dashboard (Agents → Pipelines), `POST /api/a2a/workflows`, or MCP.
-
-## Dashboard
-
-| View | What |
-|---|---|
-| Home | Today's queue and command bar |
-| Pipeline | Outbound — priority leads, drafts, sent, replies |
-| Signals | Outbound — accounts, signals, fit scores, watchlist |
-| Content | Content — ideas, composer, calendar, performance |
-| Agents | Agent stacks, fleet health, pipelines, live activity |
-| Integrations | Sending inboxes, social posting, CRM, signal sources |
-| Settings | Profile, billing, team, preferences, pipeline diagnostics |
-
-## Plans & credits
-
-Two plans — the price buys features; usage (leads worked, posts published) is metered in **outcome credits**.
-
-- **Launch** — both engines, all agents, per-agent autonomy / autopilot, 3 connected inboxes, default or bring-your-own LLM, monthly included outcome credits.
-- **Team** — everything in Launch plus team workspaces & member roles, the CRM agent, more connected inboxes, a larger monthly credit grant.
-
-Outcome credits are spent on *outcomes*, never on attempts: a positive reply, a booked meeting, a published post (plus a bonus when it crosses an engagement bar), and hard third-party costs (verified contacts). Drafting, idea generation, and research-only runs are free. Running out never blocks an outcome — the balance goes negative until the monthly grant renews or a credit pack is bought. Agent-to-agent (A2A) calls draw from the same balance on the same outcome basis.
-
-**Lead unlocks** are a separate prepaid pool used to reveal contacts on signal-feed leads beyond the included monthly quota; CRM-imported records don't consume signal-feed quota. Configure `LEAD_CREDITS_PER_DOLLAR` to change the top-up conversion rate.
-
-**Bring your own LLM** — connect a Claude or ChatGPT key (`workspace_llm_keys`) and drafting / content writing run on that key with no LLM credit charge; otherwise the Bombsell Default LLM (DeepSeek) is used. See `lib/llm/index.ts`.
-
-## Core data flow
-
-### Outbound
-1. `poll-signals` fetches Google News / GDELT / Product Hunt / press-wire candidates, expands account-centric monitoring from `monitored_accounts` (owned feeds, job boards, monitored-company news), shortlists, extracts structured signals, clusters near-duplicate events by novelty key, embeds, and inserts into `signals`.
-2. `monitored_accounts` is refreshed from watchlists, recently delivered leads, and queued matches so account monitoring survives across cron runs.
-3. `leads/match` retrieves recent-signal candidates via pgvector plus watchlist/keyword prefilters, LLM-reranks a bounded top slice (boosted toward historically good outcomes for the workspace), and queues matches in `lead_delivery_queue`.
-4. `deliver-leads` drains that backlog into `leads`, using included monthly quota first and prepaid lead unlocks after, and reorders the pending backlog with the same outcome-feedback maps.
-5. `enrich-contacts` backfills contact emails via cache plus a provider waterfall, with staged ZeroBounce validation and validation-result caching, targeting 2–3 usable contacts per company.
-6. The user (or an autopilot pipeline) drafts and sends outreach from the feed; the `safety` agent / outbound policy gate validates against unsubscribe, blocked companies, recipient validation, and rate limits before send.
-7. `send-followups` sends pre-generated follow-ups when no reply is detected.
-8. Gmail / Outlook webhooks mark replies, classify intent, and stop scheduled follow-ups; positive intent can trigger a booking link.
-
-### Content
-1. `generate-content-ideas` (or the dashboard) runs the `idea` agent over recent signals + workspace positioning → scored rows in `content_ideas`.
-2. The `writer` agent drafts a `posts` row per platform (hook / body / optional thread).
-3. The `editor` agent does a brand-voice + format pass and an eval (`eval_score`, `eval_failed`).
-4. Scheduling a post (status `scheduled` with `scheduled_at`) is the user's approval; `publish-posts` publishes scheduled posts whose time has passed. "Publish now" and autopilot Content pipelines publish immediately (the latter through `operator`, which enforces `publisher` autonomy).
-5. `poll-post-metrics` pulls impressions / likes / comments / reposts via the posting partner, records engagement eval traces, and debits a winner outcome when a post crosses the engagement bar.
-6. The `repurpose` agent turns top posts into fresh angles back in `content_ideas`.
-
-Posting partners: `postforme`, `typefully`, `buffer`, `ayrshare`, or `manual` (no external call — the user posts by hand). See `lib/social/publisher.ts`.
-
-## MCP server
-
-Bombsell exposes product state to agent frameworks over an official MCP Streamable HTTP endpoint:
-
-- Endpoint: `POST /api/mcp`
-- Auth: OAuth browser flow with dynamic client registration and PKCE
-- Discovery: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`
-
-```bash
-codex mcp add bombsell --url https://your-domain.com/api/mcp
-codex mcp login bombsell --scopes bombsell:read,bombsell:write:safe
-
-claude mcp add --transport http bombsell https://your-domain.com/api/mcp
+```
+app/             # Next.js 16 routes (Surface layer). Design system preserved.
+components/      # UI primitives (Toast, Icon, ui/).
+core/            # The new foundation — see core/README.md
+  substrate/     #   Layer 1: events, workflows, storage, auth
+  graph/         #   Layer 2: knowledge graph nodes + edges
+  agents/        #   Layer 3: Reps, tools, memory, eval
+  channels/      #   Layer 4: email, linkedin, x, voice, video, web
+  plays/         #   Layer 3: compiled Plays
+  primitives/    #   Zod schemas for the five primitives
+  mcp/           #   Layer 5: MCP server (external agents)
+db/              # Postgres schema and migrations — see db/README.md
+legacy/          # Archived previous implementation. Do not import.
 ```
 
-Tools include `get_gtm_context`, `list_leads`, `get_lead`, `update_lead_status`, `list_watchlist`, `add_watchlist_company`, `list_feed_sessions`, `search_signal_timeline`. Resources: `bombsell://workspace/profile`, `bombsell://leads/recent`, `bombsell://watchlist`, `bombsell://feed-sessions`.
+## Foundation status
 
-## Agent-to-agent (A2A)
-
-`/api/a2a/*` lets external agents list the fleet, inspect capabilities, dispatch tasks, and run pipelines. Auth is a user session, an `AGENT_API_SECRET` header, or a per-agent key (`bsk_agt_…`). Calls are rate-limited and metered on the same outcome credit basis; per-tool costs are advertised at `/docs`. Infrastructure: migration `060_a2a_agent_infrastructure.sql`, `lib/a2a/*`.
-
-## Cron jobs
-
-Schedules live in [vercel.json](/Users/anirudhsharma/Documents/lead-gen/vercel.json:1). Each writes a row into `cron_runs`, which powers the in-app diagnostics view.
-
-| Path | Schedule (UTC) | Purpose |
-|---|---|---|
-| `/api/cron/poll-signals` | `0 */6 * * *` | Ingest a bounded batch of fresh signals |
-| `/api/leads/match` | `10 */6 * * *` | Fallback/backfill: populate the delivery backlog |
-| `/api/cron/deliver-leads` | `20 */6 * * *` | Fallback/backfill: batch queued leads into feeds |
-| `/api/cron/send-followups` | `30 0,12 * * *` | Send due follow-ups |
-| `/api/cron/send-automation` | `*/15 * * * *` | Process the outbound automation queue |
-| `/api/cron/enrich-contacts` | `40 */6 * * *` | Backfill / validate contacts |
-| `/api/cron/renew-inbox-watches` | `0 3 * * *` | Renew Gmail / Outlook push subscriptions |
-| `/api/cron/publish-content` | `*/10 * * * *` | Publish due distribution jobs |
-| `/api/cron/poll-avatar-videos` | `*/10 * * * *` | Poll avatar-video render jobs |
-| `/api/cron/ingest-content-inspiration` | `15 2 * * *` | Refresh content-inspiration sources |
-| `/api/cron/deliver-webhooks` | `*/5 * * * *` | Retry pending outbound webhook deliveries |
-| `/api/cron/publish-posts` | `*/10 * * * *` | Publish scheduled Content-engine posts whose time has passed |
-| `/api/cron/poll-post-metrics` | `25 */6 * * *` | Pull engagement metrics for published posts |
-| `/api/cron/agent-self-improvement` | `*/15 * * * *` | Roll up agent feedback into tuning hints |
-| `/api/cron/generate-content-ideas` | `5 6 * * *` | Daily idea generation per active workspace |
-| `/api/cron/grant-monthly-credits` | `30 4 * * *` | Grant the monthly outcome-credit allowance |
-
-All cron handlers require `Authorization: Bearer ${CRON_SECRET}`.
+| Area                                                  | State     |
+|-------------------------------------------------------|-----------|
+| Directory structure                                   | ✅ landed |
+| Database schema (23 migrations) + migration runner    | ✅ landed |
+| Five primitives (Zod)                                 | ✅ landed |
+| Event bus (in-memory + Postgres + NATS JetStream)     | ✅ landed |
+| Durable workflow runtime (in-process + Postgres + Restate ingress client) | ✅ landed |
+| Storage layer (pg pool + workspace-scoped sessions)   | ✅ landed |
+| Agent fabric (tools, memory, eval, reps)              | ✅ landed |
+| MCP envelope                                          | ✅ landed |
+| Knowledge graph nodes + edges + first 13 Tools        | ✅ landed |
+| Concrete memory adapters + outcome feedback bridge    | ✅ landed |
+| LLM client (DeepSeek V4 Pro) + LLM-backed judge       | ✅ landed |
+| Email channel (SES owned-domain + Outlook OAuth)      | ✅ landed |
+| Transactional email (Resend)                          | ✅ landed |
+| First Rep + Play end-to-end ("Maya", Series A cold)   | ✅ landed |
+| Reply intake + classification → procedural feedback   | ✅ landed |
+| SES SNS signature verification + trusted topic gating | ✅ landed |
+| Dashboard membership auth + Outlook credential encryption | ✅ landed |
+| Email provider webhooks → typed ingress → projector worker | ✅ landed |
+| OAuth and ingestion writes through typed projections | ✅ landed |
+| Catalog fanout via `signal.discovered` + projector    | ✅ landed |
+| TTL / upstream expiry via `signal.expiry.requested`   | ✅ landed |
+| Vercel-cron deployed control-plane scheduling         | ✅ landed |
+| Microsoft Graph lifecycle-token validation + legacy reconnect | ✅ landed |
+| Dead-letter queue + operator redrive surface          | ✅ landed |
+| Dashboard UI (brief, conversations, approvals, ingestion, deliverability, ops) | ✅ landed |
+| Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
+| Restate workflow-handler host process                 | ⏳ deployment work |
+| Auto-trigger of Plays on `signal.matched`             | ⏳ next    |
+| LinkedIn / X / voice channels                         | ⏳ later  |
+| Second Play + NL → spec compiler                      | ⏳ later  |
 
 ## Local development
 
-### Prerequisites
-- Node.js 22+
-- Supabase project with migrations applied
-- Env vars for Supabase, DeepSeek, Dodo (incl. `DODO_PRODUCT_LEAD_CREDITS` — a one-time / pay-what-you-want product for lead-unlock top-ups), Resend, Gmail, Outlook, FullEnrich, Hunter/Apollo, ZeroBounce, posting partner (optional), `CRON_SECRET`, `AGENT_API_SECRET`
-
-### Install and run
 ```bash
 npm install
-npm run dev
+cp .env.example .env.local # or provide the equivalent deployment variables
+npm run dev      # http://localhost:3000
+npm run build    # production build sanity check
 ```
 
-### Checks
+`.env.example` is the tracked configuration contract. Production health at
+`/api/health` fails closed when core authentication, database, origin, or
+credential-encryption configuration is absent, and reports integrations whose
+keys are not active.
+
+### Database
+
+Postgres 16+ with `pgvector`, `citext`, and `pgcrypto`. Set `DATABASE_URL` and apply migrations:
+
 ```bash
-npm run lint
-npm test          # node --test over test/ and __tests__/
+export DATABASE_URL='postgresql://user:pass@127.0.0.1:5432/bombsell_dev'
+npm run migrate           # apply pending migrations
+npm run migrate -- --dry  # list what would apply
 ```
 
-## Migrations
+The runner records each applied file (with a checksum) in `schema_migrations` and refuses to re-apply an edited file — create a new migration instead.
 
-SQL migrations live in `supabase/migrations/`. Apply them before deploying code that depends on them. Recent ones:
+### Tests
 
-- `060_a2a_agent_infrastructure.sql` — agent identities, A2A keys, rate-limit tiers, events
-- `063_agent_rate_limit_and_draft_eval.sql` — agent rate-limit tiers, draft eval
-- `064_gtm_eval_traces.sql` — eval traces
-- `065_two_engines_phase1.sql` — `workspace_agents`, ICP signals, agent tuning hints, workspace tuning log
-- `066_content_engine.sql` — `content_ideas`, `posts`, `social_accounts`, `workspace_llm_keys`, content eval traces
-- `067_outcome_credits_and_plans.sql` — `credit_ledger`, monthly credit grants
-- `068_team_rls_and_plan_relabel.sql` — team RLS, plan relabel
-- `072_signals_runtime_contract_repair.sql` — reasserts the runtime `signals` schema contract and reloads PostgREST
-- `073_source_ledger_runtime_repair.sql` — reasserts source-ledger runtime tables and reloads PostgREST
+```bash
+npm test                  # runs in-memory tests; DB-backed tests skip
+DATABASE_URL=... npm test # runs every test, including Postgres event bus
+                          # and workflow runtime integration tests
+```
 
-> `055_*` and `056_*` exist twice (an explore/autopilot migration and a marketing/content one share each prefix). They are applied in this deployment; treat the prefix as historical and keep new migrations strictly increasing.
+### LLM
 
-## Internal ops
+DeepSeek V4 Pro is the single default for every LLM call — drafting, hot-path judges, classification. Workspaces can BYO Anthropic / OpenAI keys, but the platform default is DeepSeek (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) "Opinionated Tech Stack").
 
-- Diagnostics at `/internal/ops`, separate from the user dashboard; allow access via `INTERNAL_OPS_ALLOWED_EMAILS`.
-- JSON: `/api/internal/ops/ranking`, also accepting `Bearer` auth with `INTERNAL_OPS_SECRET` or `CRON_SECRET`.
-- Includes a weekly review block comparing the last 7 days to the prior 7 and surfacing tuning recommendations for source supply, queue health, and delivery quality.
+```bash
+export DEEPSEEK_API_KEY=sk-...
+export DEEPSEEK_MODEL=deepseek-v4-pro   # optional override
+```
 
-## Diagnostics
+The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` interface so swapping providers is a single-file change.
 
-The Settings view has a pipeline diagnostics panel: recent cron health, recent signal-candidate extraction counts, user-level enrichment / follow-up / account counts, and recent lead match explanations from `match_debug`. Check it before reaching for Vercel logs. The Agents → Activity tab is the live event stream (`agent_events`).
+### Try the dashboard end-to-end
+
+```bash
+# Apply migrations, then seed Maya + a Series A signal, run the cold-open
+# Play with mocked LLM + SES, and simulate an inbound positive reply so
+# the dashboard has real data.
+npm run migrate
+BOMBSELL_ALLOW_DEMO_AUTH=1 \
+BOMBSELL_DEMO_USER_ID=00000000-0000-4000-8000-000000000001 \
+npm run demo:seed
+npm run dev
+# Open http://localhost:3000/dashboard
+```
+
+The demo opt-in inserts an accepted membership for the local demo identity.
+Production never permits demo authentication or arbitrary workspace-cookie
+selection.
+
+### Production adapters
+
+NATS JetStream is the production delivery bus (see ARCHITECTURE.md). Run a
+NATS server and set `NATS_URL`; the bus auto-creates the stream. Publication
+first appends the canonical event to Postgres, then delivers that same event
+through NATS. The append-only journal is currently required by hot-path eval
+gating, audit, and replay until the event-log sink is deployed. A durable
+dispatch row allows the worker to redrive a journaled event if delivery was
+interrupted before JetStream acknowledged it.
+Authenticated SES and Outlook webhook routes now publish provider-ingress
+events only. Run their durable consumer alongside the app:
+
+```bash
+DATABASE_URL=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... npm run worker:email-projectors
+```
+
+Run Signal classification and its state projector as a durable NATS consumer:
+
+```bash
+DATABASE_URL=... NATS_URL=... DEEPSEEK_API_KEY=... npm run worker:signal-projectors
+```
+
+Run the Restate workflow handler host as a separate worker and register its
+endpoint with the Restate admin API:
+
+```bash
+DATABASE_URL=... APP_ORIGIN=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... OPENAI_API_KEY=... MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=... npm run worker:restate-workflows
+```
+
+Production readiness requires `NATS_URL`, `RESTATE_INGRESS_URL`, and
+`MAINTENANCE_TRIGGER_SECRET`.
+When `NATS_URL` is absent, non-production app ingress uses the Postgres
+bridge for development only; production fails closed rather than processing
+off-bus.
+
+Restate is the production workflow runtime. The adapter shipped here is
+the **ingress client**: it satisfies our `WorkflowRuntime` interface
+over HTTP to native keyed Restate workflows (`/<workflow>/<key>/run/send`).
+Deploying Restate end-to-end also requires the `worker:restate-workflows`
+handler process built on `@restatedev/restate-sdk`. The worker hosts the native
+workflow handlers and runs the typed-event signal bridge that resolves
+`ctx.awaitEvent` via workflow-bound durable promises. It also hosts the
+workspace-scoped owned-domain warmup and Outlook subscription repair workflows.
+
+A deployment control-plane scheduler starts due tenant maintenance without
+performing any product mutation itself. Vercel Cron drives this in production
+(`vercel.json` schedules `*/5 * * * *`); any external scheduler can also call
+it directly:
+
+```bash
+curl -X POST https://app.example.com/api/internal/workflows/maintenance \
+  -H "Authorization: Bearer $MAINTENANCE_TRIGGER_SECRET"
+```
+
+The route accepts either `MAINTENANCE_TRIGGER_SECRET` or Vercel-injected
+`CRON_SECRET` as the Bearer value, and accepts both GET and POST so Vercel
+Cron's default GET works alongside external POST schedulers.
+
+That authenticated ingress submits platform-scoped catalog polling and TTL
+expiry sweeps, and discovers due tenant-scoped source polls, daily
+owned-domain warmup sweeps, and hourly Outlook subscription repairs.
+Subscriptions missing `lifecycleNotificationUrl` are detected by the same
+discovery and migrated via DELETE+recreate. Platform work is represented
+explicitly in the Restate request metadata and cannot use tenant event
+publication APIs without a workspace projection. Consequential work remains
+durable inside Restate.
+
+The Postgres workflow runtime remains a development bridge: it journals
+state but cannot resume parked workflows after a process restart. It is not
+the production runtime described in `ARCHITECTURE.md`.
+
+### Deploy checklist
+
+Before promoting a deploy, work through each section. Items marked **REQUIRED**
+fail the platform closed; **RECOMMENDED** items degrade gracefully.
+
+#### 1. Environment variables
+
+**REQUIRED (runtime fails closed if absent):**
+
+- `DATABASE_URL` — Postgres 16+ with `pgvector`, `citext`, `pgcrypto`.
+- `APP_ORIGIN` — public origin used for webhook callbacks (no trailing slash).
+- `SESSION_SECRET` — random 32+ bytes for OAuth state integrity.
+- `CREDENTIALS_ENCRYPTION_KEY` — base64-encoded 32-byte root key; per-account
+  OAuth tokens are envelope-encrypted from this.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — dashboard
+  identity provider.
+- `NATS_URL` — JetStream broker; production refuses to fall back to Postgres.
+- `RESTATE_INGRESS_URL` — Restate cloud / self-hosted ingress.
+- `MAINTENANCE_TRIGGER_SECRET` — bearer secret the maintenance route accepts
+  (set to the same value as `CRON_SECRET` on Vercel deployments).
+
+**REQUIRED FOR DEPLOYED FEATURES (the feature stops, the platform still runs):**
+
+- `DEEPSEEK_API_KEY` (+ optional `DEEPSEEK_MODEL`) — the default LLM for every
+  drafting, judging, and classification call. Without it, drafts cannot be
+  produced.
+- `OPENAI_API_KEY` — embedding model for signal ingestion (DeepSeek does not
+  yet ship embeddings).
+- `AWS_REGION`, `AWS_SNS_TOPIC_ARNS` — owned-domain sending via SES;
+  `AWS_SNS_TOPIC_ARNS` is the comma-separated list of trusted SNS topic ARNs
+  the webhook accepts.
+- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` —
+  Outlook OAuth.
+- `RESEND_API_KEY` — transactional product email (welcome, alerts).
+- `PRODUCT_HUNT_TOKEN`, `REDDIT_USER_AGENT`, `SEC_EDGAR_USER_AGENT` — per-source
+  ingestion adapters.
+
+**RECOMMENDED:**
+
+- `CRON_SECRET` — Vercel auto-injects when a Cron is configured under the
+  project. The maintenance route accepts either `MAINTENANCE_TRIGGER_SECRET`
+  or `CRON_SECRET`, so setting both to the same value lets either scheduler
+  drive the same deployment.
+- `MICROSOFT_TENANT_ID` — single-tenant deployments restrict Graph lifecycle
+  tokens to this exact tenant. Multi-tenant deployments leave it unset and
+  rely on the audience + signature check.
+- `SNS_VERIFY_SIGNATURES=1` — keep on in production; only the local test
+  harness sets this to `0`.
+- `DATABASE_POOL_MAX` — defaults to 10.
+- `RESTATE_WORKFLOW_PORT` — the Restate workflow worker port (default 9080).
+- `OUTLOOK_DEFAULT_DAILY_CAP` — connected-inbox per-day send ceiling
+  (default 25).
+- `BOMBSELL_ALLOW_DEMO_AUTH`, `BOMBSELL_DEMO_USER_ID` — **leave unset in
+  production**; they only enable the local demo cookie shortcut.
+
+The runtime contract is enforced by `core/config/env.ts` and `test/env-contract.test.ts` — every `process.env` read in app, core, lib, or scripts is asserted to be a declared key.
+
+#### 2. Database migrations
+
+```bash
+DATABASE_URL=... npm run migrate
+```
+
+Required migrations (latest two added by this batch):
+
+- `025_signal_candidate_fanouts_loose_fk.sql` — loosens FK so the catalog
+  fanout audit row can be written before the async projector materializes
+  the signal.
+- `026_event_dispatch_dead_letter.sql` — adds `dead_lettered` status and
+  `dead_lettered_at` column to the NATS dispatch table.
+
+#### 3. Long-running workers
+
+Each runs as its own process; all three are required for production:
+
+```bash
+npm run worker:email-projectors       # SES/Outlook ingress → channel projectors
+npm run worker:signal-projectors      # classify + signal projectors
+npm run worker:restate-workflows      # Restate handler host + signal bridge
+```
+
+Register the Restate worker endpoint with the Restate admin API (see
+[Restate docs](https://docs.restate.dev)).
+
+#### 4. Scheduler
+
+`vercel.json` schedules `*/5 * * * *` against
+`/api/internal/workflows/maintenance`. Confirm Vercel Cron is enabled
+under the project and that `CRON_SECRET` matches `MAINTENANCE_TRIGGER_SECRET`.
+
+On non-Vercel hosts, point your scheduler at the same URL with the same
+bearer; the route accepts both GET and POST.
+
+#### 5. Post-deploy smoke tests
+
+Run all three against the deployed environment:
+
+```bash
+DATABASE_URL=... npm run verify:recovery   # dispatch DLQ schema + redrive flip
+DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-trip
+DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
+```
+
+#### 6. Operator surfaces to bookmark
+
+- `/dashboard/ingestion` — per-source poll status, budget burn, recent
+  signals.
+- `/dashboard/deliverability` — sending-domain warmup, bounce + complaint
+  rates, channel-account health.
+- `/dashboard/ops` — pending / delivered / dead-lettered NATS dispatches
+  with one-click redrive on the DLQ rows.
+
+#### Known follow-ups (do not block launch)
+
+- Auto-trigger of Plays on `signal.matched`. Today the Play is started
+  manually (or by the demo seed). The projector chain emits the right
+  events; the trigger subscriber + Rep/person resolver is the next
+  workstream.
+- `npm audit` findings should be resolved before release.

@@ -1,146 +1,261 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import DashboardShell from '@/components/DashboardShell'
-import { getUserWorkspaceMemberships } from '@/lib/team'
-import type { Lead } from '@/lib/leads'
+import Link from "next/link";
+import {
+  EmptyState,
+  MetricCard,
+  SectionHeader,
+} from "@/components/dashboard/Shell";
+import { getPool } from "@/core/substrate/storage/index.ts";
+import { getActiveWorkspace } from "@/lib/workspace";
 
-export const revalidate = 0
+export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+interface RecentSignalRow {
+  id: string;
+  kind: string;
+  title: string;
+  freshness_at: Date;
+  match_score: string | null;
+}
 
-  if (!user) redirect('/')
-  const userId = user.id
+interface ConversationRow {
+  id: string;
+  status: string;
+  topic: string | null;
+  last_activity_at: Date;
+  counterparty_name: string | null;
+  rep_name: string | null;
+  inbound_count: string;
+  outbound_count: string;
+}
 
-  // Core fields — these exist from migration 001. Used to gate the onboarding redirect.
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('company_name, website_url, services_description, icp_keywords, target_industries, active_client_id, automation_mode, calendly_url')
-    .eq('user_id', userId)
-    .single()
+interface TodayCounts {
+  signals_24h: number;
+  drafts_24h: number;
+  sent_24h: number;
+  replies_24h: number;
+  outcomes_24h: number;
+}
 
-  if (!profile) redirect('/onboarding')
+async function loadTodayCounts(workspaceId: string): Promise<TodayCounts> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    signals_24h: string;
+    drafts_24h: string;
+    sent_24h: string;
+    replies_24h: string;
+    outcomes_24h: string;
+  }>(
+    `select
+       (select count(*)::text from signals where workspace_id = $1 and ingested_at >= now() - interval '24 hours') as signals_24h,
+       (select count(*)::text from messages where workspace_id = $1 and direction = 'outbound' and status = 'draft' and created_at >= now() - interval '24 hours') as drafts_24h,
+       (select count(*)::text from messages where workspace_id = $1 and direction = 'outbound' and status in ('sent','delivered','replied') and sent_at >= now() - interval '24 hours') as sent_24h,
+       (select count(*)::text from messages where workspace_id = $1 and direction = 'inbound' and created_at >= now() - interval '24 hours') as replies_24h,
+       (select count(*)::text from outcomes where workspace_id = $1 and recorded_at >= now() - interval '24 hours') as outcomes_24h`,
+    [workspaceId],
+  );
+  return {
+    signals_24h: Number(rows[0].signals_24h),
+    drafts_24h: Number(rows[0].drafts_24h),
+    sent_24h: Number(rows[0].sent_24h),
+    replies_24h: Number(rows[0].replies_24h),
+    outcomes_24h: Number(rows[0].outcomes_24h),
+  };
+}
 
-  const activeClientId = (profile as { active_client_id?: string | null }).active_client_id ?? null
+async function loadRecentSignals(workspaceId: string): Promise<RecentSignalRow[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<RecentSignalRow>(
+    `select id, kind::text as kind, title, freshness_at, match_score::text as match_score
+       from signals
+      where workspace_id = $1
+      order by freshness_at desc
+      limit 8`,
+    [workspaceId],
+  );
+  return rows;
+}
 
-  const { data: clientProfile } = activeClientId
-    ? await supabase
-        .from('client_accounts')
-        .select('id, name, website_url, services_description, icp_keywords')
-        .eq('id', activeClientId)
-        .maybeSingle()
-    : { data: null }
+async function loadActiveConversations(workspaceId: string): Promise<ConversationRow[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<ConversationRow>(
+    `select c.id, c.status::text as status, c.topic, c.last_activity_at,
+            p.full_name as counterparty_name,
+            r.name as rep_name,
+            (select count(*)::text from messages m
+              where m.conversation_id = c.id and m.direction = 'inbound') as inbound_count,
+            (select count(*)::text from messages m
+              where m.conversation_id = c.id and m.direction = 'outbound') as outbound_count
+       from conversations c
+       left join graph_persons p on p.id = c.counterparty_person_id
+       left join reps r on r.id = c.rep_id
+      where c.workspace_id = $1
+        and c.status in ('open','awaiting_them','awaiting_us')
+      order by c.last_activity_at desc
+      limit 8`,
+    [workspaceId],
+  );
+  return rows;
+}
 
-  // Migration-004+056 fields — may not exist yet; use defaults if the query errors.
-  const { data: extProfile } = await supabase
-    .from('user_profiles')
-    .select('plan, leads_used_this_month, leads_reset_at, lead_credit_balance, subscription_status, subscription_period, subscription_renews_at, slack_webhook_url, slack_min_score')
-    .eq('user_id', userId)
-    .maybeSingle()
+function timeAgo(d: Date): string {
+  const diff = Date.now() - d.getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
-  const workspaces = await getUserWorkspaceMemberships(supabase, userId)
+function statusBadge(status: string): { label: string; cls: string } {
+  switch (status) {
+    case "awaiting_us":
+      return {
+        label: "needs you",
+        cls: "bg-[var(--color-accent-bg)] text-[var(--color-accent)]",
+      };
+    case "awaiting_them":
+      return {
+        label: "awaiting them",
+        cls: "bg-[var(--color-ink-3)] text-[var(--color-text-2)]",
+      };
+    default:
+      return {
+        label: status,
+        cls: "bg-[var(--color-ink-3)] text-[var(--color-text-2)]",
+      };
+  }
+}
 
-  const leadsUsed        = (extProfile as { leads_used_this_month?: number } | null)?.leads_used_this_month ?? 0
-  const leadCredits      = (extProfile as { lead_credit_balance?: number } | null)?.lead_credit_balance ?? 0
-  const slackWebhookUrl  = (extProfile as { slack_webhook_url?: string | null } | null)?.slack_webhook_url ?? null
-  const slackMinScore    = (extProfile as { slack_min_score?: number | null } | null)?.slack_min_score ?? 7
-
-  const leadSelect = `
-      id,
-      client_id,
-      origin,
-      source_kind,
-      source_record_id,
-      feed_session_id,
-      feed_session_label,
-      feed_session_started_at,
-      target_company,
-      company_domain,
-      relevance_score,
-      relevance_reason,
-      status,
-      signal:signals ( signal_type ),
-      is_unlocked,
-      unlocked_at,
-      created_at,
-      sent_at,
-      replied_at,
-      booked_at,
-      reply_intent,
-      reply_summary,
-      reply_body_snippet,
-      reply_received_at,
-      meeting_detected_at,
-      booking_reply_sent_at,
-      contact_email,
-      contact_name,
-      contact_title,
-      feed_snapshot
-    `
-
-  function leadQueryForOrigin(origin: 'live' | 'explore' | 'crm_import') {
-    let query = supabase
-      .from('leads')
-      .select(leadSelect)
-      .eq('origin', origin)
-      .order('created_at', { ascending: false })
-      .limit(200)
-
-    query = activeClientId
-      ? query.eq('client_id', activeClientId)
-      : query.eq('user_id', userId)
-
-    return query
+export default async function MorningBriefPage() {
+  const workspace = await getActiveWorkspace();
+  if (!workspace) {
+    return (
+      <>
+        <SectionHeader
+          eyebrow="morning brief"
+          title="No workspace yet"
+          subtitle="Create one and seed Maya to see this dashboard come alive."
+        />
+        <EmptyState
+          title="No workspace found"
+          hint="Run the demo seed (core/plays/seed.ts → seedMayaForDemo) inside a fresh workspace, then refresh."
+        />
+      </>
+    );
   }
 
-  // Initial account work is loaded per origin so large imported sources do not
-  // evict live-signal rows from the server-rendered work view.
-  const [liveLeadsResult, exploreLeadsResult, crmLeadsResult] = await Promise.all([
-    leadQueryForOrigin('live'),
-    leadQueryForOrigin('explore'),
-    leadQueryForOrigin('crm_import'),
-  ])
-
-  const leads = [
-    ...(liveLeadsResult.data ?? []),
-    ...(exploreLeadsResult.data ?? []),
-    ...(crmLeadsResult.data ?? []),
-  ].sort((a, b) => (
-    new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
-  )).map((l) => {
-    // flatten the embedded signals(signal_type) join onto the row
-    const s = (l as { signal?: { signal_type?: string | null } | null }).signal
-    return { ...l, signal_type: s?.signal_type ?? null }
-  })
-
-  const typedLeads = leads as unknown as Lead[]
+  const [counts, signals, convs] = await Promise.all([
+    loadTodayCounts(workspace.id),
+    loadRecentSignals(workspace.id),
+    loadActiveConversations(workspace.id),
+  ]);
 
   return (
-    <DashboardShell
-      initialLeads={typedLeads}
-      userProfile={{
-        company_name: profile.company_name,
-        services_description: (clientProfile as { services_description?: string } | null)?.services_description ?? profile.services_description,
-        website_url: (clientProfile as { website_url?: string | null } | null)?.website_url ?? (profile as { website_url?: string | null }).website_url ?? null,
-        icp_keywords: (clientProfile as { icp_keywords?: string[] | null } | null)?.icp_keywords ?? profile.icp_keywords,
-        target_industries: (clientProfile as { target_industries?: string[] | null } | null)?.target_industries ?? (profile as { target_industries?: string[] | null }).target_industries ?? [],
-        email: user.email,
-        plan: (extProfile as { plan?: string } | null)?.plan ?? 'free',
-        leads_used_this_month: leadsUsed,
-        leads_reset_at: (extProfile as { leads_reset_at?: string | null } | null)?.leads_reset_at ?? null,
-        lead_credit_balance: leadCredits,
-        subscription_status: (extProfile as { subscription_status?: 'none' | 'active' | 'canceled' | 'past_due' } | null)?.subscription_status ?? 'none',
-        subscription_period: (extProfile as { subscription_period?: 'monthly' | 'annual' | null } | null)?.subscription_period ?? null,
-        subscription_renews_at: (extProfile as { subscription_renews_at?: string | null } | null)?.subscription_renews_at ?? null,
-        slack_webhook_url: slackWebhookUrl,
-        slack_min_score: slackMinScore,
-        active_client_id: activeClientId,
-        automation_mode: (profile as { automation_mode?: 'research_only' | 'approve_first' | 'autopilot' | null }).automation_mode ?? 'approve_first',
-        client_name: (clientProfile as { name?: string } | null)?.name ?? profile.company_name,
-        calendly_url: (profile as { calendly_url?: string | null }).calendly_url ?? null,
-        workspaces,
-      }}
-    />
-  )
+    <>
+      <SectionHeader
+        eyebrow="morning brief"
+        title="What your Reps did overnight"
+        subtitle="The last 24 hours, summarised. Click in for the trace."
+      />
+
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-10">
+        <MetricCard label="Signals" value={counts.signals_24h} hint="last 24h" />
+        <MetricCard label="Drafts" value={counts.drafts_24h} />
+        <MetricCard label="Sent" value={counts.sent_24h} />
+        <MetricCard label="Replies" value={counts.replies_24h} />
+        <MetricCard label="Outcomes" value={counts.outcomes_24h} />
+      </section>
+
+      <section className="mb-10">
+        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
+          Active conversations
+        </h2>
+        {convs.length === 0 ? (
+          <EmptyState
+            title="No conversations yet"
+            hint="When a Play sends an email, the conversation it opened will appear here."
+          />
+        ) : (
+          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
+            {convs.map((c) => {
+              const badge = statusBadge(c.status);
+              return (
+                <li key={c.id}>
+                  <Link
+                    href={`/dashboard/conversations/${c.id}`}
+                    className="flex items-center px-4 py-3 gap-4 hover:bg-[var(--color-ink-2)] transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-sans text-sm text-[var(--color-text-1)] truncate">
+                        {c.counterparty_name ?? "(unknown)"}
+                        {c.rep_name ? (
+                          <span className="text-[var(--color-text-3)] font-mono text-xs ml-2">
+                            · {c.rep_name}
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="font-serif text-[var(--color-text-2)] text-sm truncate mt-0.5 italic">
+                        {c.topic ?? "(no topic)"}
+                      </p>
+                    </div>
+                    <span
+                      className={
+                        "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded " +
+                        badge.cls
+                      }
+                    >
+                      {badge.label}
+                    </span>
+                    <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums">
+                      {c.outbound_count}↑ {c.inbound_count}↓
+                    </span>
+                    <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
+                      {timeAgo(new Date(c.last_activity_at))}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
+          Recent signals
+        </h2>
+        {signals.length === 0 ? (
+          <EmptyState
+            title="No signals yet"
+            hint="Ingestion will populate this view as your sources start landing in core/graph."
+          />
+        ) : (
+          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
+            {signals.map((s) => (
+              <li key={s.id} className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] w-24">
+                    {s.kind}
+                  </span>
+                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
+                    {s.title}
+                  </p>
+                  {s.match_score ? (
+                    <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums">
+                      match {Number(s.match_score).toFixed(2)}
+                    </span>
+                  ) : null}
+                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
+                    {timeAgo(new Date(s.freshness_at))}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  );
 }

@@ -1,0 +1,67 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { checkProductReadiness } from "../core/product/health.ts";
+import { setupPg } from "./_pg.ts";
+
+test("product health: reports unconfigured when no pool is provided", async () => {
+  const readiness = await checkProductReadiness(null);
+
+  assert.equal(readiness.status, "unconfigured");
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.checks[0].name, "database");
+});
+
+test("product health: reports ready against a migrated schema", async (t) => {
+  const fx = await setupPg("product_health");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  try {
+    const readiness = await checkProductReadiness(fx.pool);
+
+    assert.equal(readiness.status, "ok");
+    assert.equal(readiness.ready, true);
+    assert.deepEqual(
+      readiness.checks.map((check) => check.status),
+      ["ok", "ok", "ok", "ok", "ok"],
+    );
+  } finally {
+    await fx.close();
+  }
+});
+
+test("product health: production env gaps degrade readiness", async () => {
+  const readiness = await checkProductReadiness(null, {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgresql://example",
+  });
+
+  assert.equal(readiness.ready, false);
+  const environment = readiness.checks.find((check) => check.name === "environment");
+  assert.equal(environment?.status, "degraded");
+  assert.match(environment?.detail ?? "", /NEXT_PUBLIC_SUPABASE_URL/);
+  assert.match(environment?.detail ?? "", /RESEND_WEBHOOK_SECRET/);
+});
+
+test("product health: reports unsupported substrate configuration", async (t) => {
+  const fx = await setupPg("product_health_substrate");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const original = process.env.BOMBSELL_SUBSTRATE;
+  process.env.BOMBSELL_SUBSTRATE = "restate";
+  try {
+    const readiness = await checkProductReadiness(fx.pool);
+
+    assert.equal(readiness.status, "degraded");
+    assert.equal(readiness.ready, false);
+    const substrate = readiness.checks.find((check) => check.name === "substrate");
+    assert.equal(substrate?.status, "degraded");
+    assert.match(substrate?.detail ?? "", /Unsupported BOMBSELL_SUBSTRATE=restate/);
+  } finally {
+    if (original === undefined) {
+      delete process.env.BOMBSELL_SUBSTRATE;
+    } else {
+      process.env.BOMBSELL_SUBSTRATE = original;
+    }
+    await fx.close();
+  }
+});

@@ -1,0 +1,1867 @@
+import { randomUUID, randomBytes } from "node:crypto";
+import type { Pool } from "pg";
+import { upsertSource } from "../graph/nodes/sources.ts";
+import type { GraphCompany, GraphPerson } from "../graph/types.ts";
+import {
+  createFallbackJudge,
+  createHeuristicJudge,
+} from "../agents/eval/index.ts";
+import {
+  createPostgresEpisodicRepository,
+  createOutcomeMemoryUpdateProjection,
+  createPostgresProceduralRepository,
+  createProceduralMemoryStateProjection,
+  createPostgresSemanticRepository,
+  type RepMemory,
+} from "../agents/memory/index.ts";
+import {
+  createDryRunEmailTransport,
+  createPostgresOwnedDomainEmailChannel,
+  createResendEmailTransport,
+  type EmailTransport,
+  type EmailChannel,
+} from "../channels/email/index.ts";
+import {
+  createRssSignalIngestionWorkflow,
+  ingestManualSignal,
+  RSS_SIGNAL_INGESTION_WORKFLOW,
+} from "../signals/index.ts";
+import {
+  createSignalToEmailPlayWorkflow,
+  createPostgresVerticalSliceStore,
+  SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+  type SignalToEmailPlayInput,
+  type SignalToEmailPlayOutput,
+} from "../plays/index.ts";
+import {
+  parseApprovalPolicy,
+  resolvePlayChannelPolicy,
+  type PlayChannelPolicy,
+} from "../plays/autonomy.ts";
+import {
+  createBudgetedLLMClient,
+  createDeepSeekClientFromEnv,
+  isLLMBudgetExceededError,
+  type LLMClient,
+} from "../agents/llm/index.ts";
+import { createDeepSeekJudge } from "../agents/eval/adapters/deepseek-judge.ts";
+import type { WorkflowRuntime } from "../substrate/workflows/index.ts";
+import {
+  createEmailDeliveryFeedbackProjection,
+} from "./email-feedback.ts";
+import {
+  createSendingDomainProvisioningWorkflow,
+  createSendingDomainProjection,
+  createSendingDomainWarmupWorkflow,
+  SENDING_DOMAIN_PROVISIONING_WORKFLOW,
+  SENDING_DOMAIN_WARMUP_WORKFLOW,
+  type SendingDomainOperation,
+} from "./domain-provisioning.ts";
+import {
+  getEventTraceForCorrelation,
+  getLatestEventTraceForWorkspace,
+  type EventTrace,
+} from "./forensics.ts";
+import {
+  createProductSubstrate,
+  type ProductSubstrateMode,
+} from "./substrate.ts";
+import {
+  isProductionProductRuntime,
+  requireOutboundEmailExecutionEnvironment,
+  resolveProductEmailTransportMode,
+} from "./env.ts";
+import type { PostgresEventBus } from "../substrate/events/adapters/postgres.ts";
+import {
+  runDurableEventProjectionsOnce,
+  type DurableEventProjection,
+  type DurableProjectionTick,
+  type PublishedEvent,
+} from "../substrate/events/index.ts";
+import {
+  getPool,
+  tryGetPool,
+  withWorkspace,
+} from "../substrate/storage/index.ts";
+
+const DEFAULT_WORKSPACE_SLUG = "demo";
+export const DEFAULT_PRODUCT_USER_ID = "00000000-0000-4000-8000-000000000001";
+export const DEFAULT_PRODUCT_WORKSPACE_SLUG = DEFAULT_WORKSPACE_SLUG;
+const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
+const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configuration.v1";
+const RUNNABLE_WORKFLOW_NAMES = [
+  SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+  RSS_SIGNAL_INGESTION_WORKFLOW,
+  SENDING_DOMAIN_PROVISIONING_WORKFLOW,
+  SENDING_DOMAIN_WARMUP_WORKFLOW,
+] as const;
+
+export interface ProductWorkspaceSession {
+  workspace_id: string;
+  user_id: string;
+}
+
+export interface BootstrapResult {
+  workspace_id: string;
+  rep_id: string;
+  play_id: string;
+  channel_account_id: string;
+}
+
+export interface SubmitSignalInput {
+  company_name: string;
+  company_domain?: string;
+  person_name: string;
+  person_email: string;
+  signal_title: string;
+  signal_content: string;
+  signal_url?: string;
+  approval: SignalToEmailPlayInput["email_approval"];
+}
+
+export interface ConfigureEmailInput {
+  display_name: string;
+  daily_cap: number;
+}
+
+export interface ConfigureRssSourceInput {
+  name: string;
+  url: string;
+  signal_kind?: string;
+  poll_interval_minutes?: number;
+}
+
+export interface SubmittedSignalResult {
+  signal_id: string;
+  workspace_id: string;
+}
+
+export interface DispatchOptions {
+  limit?: number;
+  leaseMs?: number;
+  leaseOwner?: string;
+}
+
+export interface WorkflowLeaseOptions {
+  workflowNames?: readonly string[];
+  limit?: number;
+  leaseMs?: number;
+  leaseOwner: string;
+}
+
+export interface AppState {
+  configured: boolean;
+  bootstrap?: BootstrapResult;
+  approvals: Array<{
+    id: string;
+    run_id: string;
+    kind: string;
+    reason: string | null;
+    payload: Record<string, unknown>;
+    decision: string;
+    created_at: string;
+  }>;
+  runs: Array<{
+    id: string;
+    status: string;
+    workflow_name: string;
+    input: Record<string, unknown>;
+    output: Record<string, unknown> | null;
+    created_at: string;
+    ended_at: string | null;
+  }>;
+  recoveryQueue: Array<{
+    id: string;
+    workflow_name: string;
+    status: string;
+    input: Record<string, unknown>;
+    error: string | null;
+    failed_step_name: string | null;
+    failed_step_attempt: number | null;
+    created_at: string;
+    ended_at: string | null;
+  }>;
+  events: Array<{
+    id: string;
+    event_type: string;
+    occurred_at: string;
+  }>;
+  eventTrace: EventTrace;
+  sendTraces: Array<{
+    message_id: string;
+    status: string;
+    subject: string | null;
+    rep_name: string | null;
+    person_name: string | null;
+    company_name: string | null;
+    signal_title: string | null;
+    signal_kind: string | null;
+    signal_url: string | null;
+    eval_score: number | null;
+    eval_passed: boolean | null;
+    eval_notes: Record<string, unknown> | null;
+    defer_reason: string | null;
+    pattern_key: string | null;
+    workflow_run_id: string | null;
+    workflow_status: string | null;
+    play_run_id: string | null;
+    approval_policy: string | null;
+    created_at: string;
+  }>;
+  messages: Awaited<ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>>["messages"];
+  outcomes: Awaited<ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>>["outcomes"];
+  conversations: Awaited<ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>>["conversations"];
+  channelAccounts: Array<{
+    id: string;
+    display_name: string;
+    kind: string;
+    daily_cap: number | null;
+    daily_used: number;
+    daily_window_start: string | null;
+    status: string;
+    domain: string | null;
+    sending_domain_id: string | null;
+    warmup_state: string | null;
+    current_daily_cap: number | null;
+    spf_verified: boolean | null;
+    dkim_verified: boolean | null;
+    dmarc_verified: boolean | null;
+    provider_status: string | null;
+    provider_domain_id: string | null;
+    dns_records: Array<{
+      record: string;
+      name: string;
+      type: string;
+      value: string;
+      status?: string | null;
+    }>;
+    bounce_rate_24h: number | null;
+    complaint_rate_24h: number | null;
+  }>;
+  llmUsage: {
+    used_tokens_24h: number;
+    daily_token_cap: number;
+  };
+  sources: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    enabled: boolean;
+    url: string | null;
+    signal_kind: string | null;
+    poll_interval_minutes: number | null;
+    last_polled_at: string | null;
+    signal_count: number;
+    latest_run_status: string | null;
+    latest_run_created_at: string | null;
+    latest_run_error: string | null;
+  }>;
+}
+
+interface ProductEngine {
+  pool: Pool;
+  substrateMode: ProductSubstrateMode;
+  bus: PostgresEventBus;
+  runtime: WorkflowRuntime;
+  memory: RepMemory;
+}
+
+let enginePromise: Promise<ProductEngine> | null = null;
+
+export function hasDatabase(): boolean {
+  return Boolean(tryGetPool());
+}
+
+export async function getProductEngine(): Promise<ProductEngine> {
+  if (enginePromise) return enginePromise;
+  enginePromise = (async () => {
+    const pool = getPool();
+    const substrate = await createProductSubstrate(pool);
+    const { bus, runtime } = substrate;
+    const memory: RepMemory = {
+      episodic: createPostgresEpisodicRepository({ pool }),
+      semantic: createPostgresSemanticRepository({ pool }),
+      procedural: createPostgresProceduralRepository({ pool }),
+    };
+    return { pool, substrateMode: substrate.mode, bus, runtime, memory };
+  })();
+  return enginePromise;
+}
+
+export async function resetProductEngineForTests(): Promise<void> {
+  const current = enginePromise;
+  enginePromise = null;
+  if (!current) return;
+  try {
+    const engine = await current;
+    await engine.bus.close();
+  } catch {
+    /* best-effort test cleanup */
+  }
+}
+
+export async function bootstrapWorkspace(
+  pool = getPool(),
+  user_id = DEFAULT_PRODUCT_USER_ID,
+  opts: {
+    ensureMembership?: boolean;
+    workspace_id?: string;
+    workspace_slug?: string;
+    workspace_name?: string;
+  } = {},
+): Promise<BootstrapResult> {
+  const ensureMembership = opts.ensureMembership ?? true;
+  const workspace_id = opts.workspace_id ?? randomUUID();
+  const slug = opts.workspace_slug ?? DEFAULT_WORKSPACE_SLUG;
+  const existing = opts.workspace_id
+    ? await pool.query<{ id: string }>(
+        `select id from workspaces where id = $1`,
+        [opts.workspace_id],
+      )
+    : await pool.query<{ id: string }>(
+        `select id from workspaces where slug = $1`,
+        [slug],
+      );
+  const ws = existing.rows[0]?.id ?? workspace_id;
+  if (!existing.rows[0]) {
+    await pool.query(
+      `insert into workspaces (id, slug, name, settings)
+       values ($1, $2, $3, $4::jsonb)`,
+      [
+        ws,
+        slug,
+        opts.workspace_name ?? "Bombsell Demo Workspace",
+        JSON.stringify({ mode: "local-product" }),
+      ],
+    );
+    await pool.query(
+      `insert into workspace_members (workspace_id, user_id, role, accepted_at)
+       values ($1, $2, 'owner', now())`,
+      [ws, user_id],
+    );
+  } else if (ensureMembership) {
+    await pool.query(
+      `insert into workspace_members (workspace_id, user_id, role, accepted_at)
+       values ($1, $2, 'owner', now())
+       on conflict (workspace_id, user_id) do nothing`,
+      [ws, user_id],
+    );
+  }
+
+  const rep = await ensureRep(pool, ws);
+  const play = await ensurePlay(pool, ws, rep.id);
+  const trustedDemoState = !isProductionProductRuntime();
+  const account = await ensureChannelAccount(pool, ws, trustedDemoState);
+  await ensureSendingDomain(pool, ws, account.id, account.display_name, trustedDemoState);
+  await ensureProceduralSeed(pool, ws, rep.id);
+  return {
+    workspace_id: ws,
+    rep_id: rep.id,
+    play_id: play.id,
+    channel_account_id: account.id,
+  };
+}
+
+export async function assertProductWorkspaceAccess(
+  session: ProductWorkspaceSession,
+  pool = getPool(),
+): Promise<void> {
+  await withWorkspace(pool, session, async () => undefined);
+}
+
+export async function findFirstProductWorkspaceForUser(
+  user_id: string,
+  pool = getPool(),
+): Promise<string | null> {
+  const result = await pool.query<{ id: string }>(
+    `select w.id
+     from workspace_members wm
+     join workspaces w on w.id = wm.workspace_id
+     where wm.user_id = $1
+       and wm.accepted_at is not null
+       and w.archived_at is null
+     order by w.created_at asc, w.id asc
+     limit 1`,
+    [user_id],
+  );
+  return result.rows[0]?.id ?? null;
+}
+
+async function ensureRep(pool: Pool, workspace_id: string): Promise<{ id: string }> {
+  const existing = await pool.query<{ id: string }>(
+    `select id from reps where workspace_id = $1 and lower(name) = lower($2)`,
+    [workspace_id, "Maya"],
+  );
+  if (existing.rows[0]) return existing.rows[0];
+  const id = randomUUID();
+  await pool.query(
+    `insert into reps (id, workspace_id, name, role, status, persona, channels, autonomy)
+     values ($1, $2, 'Maya', 'sdr', 'active', $3::jsonb, $4::text[], $5::jsonb)`,
+    [
+      id,
+      workspace_id,
+      JSON.stringify({
+        voice: "Warm, precise, low-hype, founder-to-founder.",
+        story: "Maya helps teams act on fresh buying signals without spraying generic outreach.",
+        kpis: ["positive replies", "meetings booked"],
+        do_not: ["Do not mention being an AI.", "Do not overpromise."],
+        samples: ["Saw the launch. The timing feels worth a quick compare-notes conversation."],
+      }),
+      ["email"],
+      JSON.stringify({ channels: { email: { daily_cap: 25, approval: "approve_first" } }, global: {} }),
+    ],
+  );
+  return { id };
+}
+
+async function ensurePlay(
+  pool: Pool,
+  workspace_id: string,
+  rep_id: string,
+): Promise<{ id: string }> {
+  const existing = await pool.query<{ id: string }>(
+    `select id from plays where workspace_id = $1 and lower(name) = lower($2) order by version desc limit 1`,
+    [workspace_id, "Funding Signal Founder Email"],
+  );
+  if (existing.rows[0]) return existing.rows[0];
+  const id = randomUUID();
+  await pool.query(
+    `insert into plays (
+       id, workspace_id, name, description, declaration, compiled,
+       compiler_version, autonomy, default_rep_id, status
+     ) values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, 'active')`,
+    [
+      id,
+      workspace_id,
+      "Funding Signal Founder Email",
+      "When a matched funding signal arrives, Maya researches, drafts, judges, gates, and sends an owned-domain email.",
+      "When a funding signal matches a fintech founder, draft and gate a concise founder-to-founder email.",
+      JSON.stringify({
+        trigger: { kind: "signal", filter: { kind: "funding" } },
+        steps: [
+          { id: "research", op: "research.signal_context" },
+          { id: "draft", op: "writer.compose_email" },
+          { id: "judge", op: "eval.hot_path" },
+          { id: "send", op: "sender.email" },
+        ],
+      }),
+      "local-v1",
+      JSON.stringify({ channels: { email: { daily_cap: 25, approval: "approve_first" } }, global: {} }),
+      rep_id,
+    ],
+  );
+  return { id };
+}
+
+async function ensureChannelAccount(
+  pool: Pool,
+  workspace_id: string,
+  trustedDemoState: boolean,
+): Promise<{ id: string; display_name: string }> {
+  const existing = await pool.query<{ id: string; display_name: string }>(
+    `select id, display_name from channel_accounts
+      where workspace_id = $1 and kind = 'email_domain'
+      order by created_at asc limit 1`,
+    [workspace_id],
+  );
+  if (existing.rows[0]) return existing.rows[0];
+  const id = randomUUID();
+  const displayName = trustedDemoState
+    ? "maya@go.bombsell.example"
+    : "Email channel not configured";
+  await pool.query(
+    `insert into channel_accounts (
+       id, workspace_id, kind, display_name, status, daily_cap, daily_used, properties
+     ) values ($1, $2, 'email_domain', $3, $4::channel_account_status, $5, 0, $6::jsonb)`,
+    [
+      id,
+      workspace_id,
+      displayName,
+      trustedDemoState ? "connected" : "disconnected",
+      trustedDemoState ? 25 : 0,
+      JSON.stringify({
+        transport: trustedDemoState ? "dry-run" : "unconfigured",
+        bootstrap_state: trustedDemoState ? "local-demo" : "awaiting-configuration",
+      }),
+    ],
+  );
+  return { id, display_name: displayName };
+}
+
+async function ensureSendingDomain(
+  pool: Pool,
+  workspace_id: string,
+  channel_account_id: string,
+  display_name: string,
+  trustedDemoState = !isProductionProductRuntime(),
+  targetDailyCap = trustedDemoState ? 25 : 0,
+): Promise<void> {
+  const domain = domainFromSender(display_name);
+  if (!domain) return;
+  await pool.query(
+    `delete from sending_domains
+      where workspace_id = $1
+        and channel_account_id = $2
+        and domain <> $3`,
+    [workspace_id, channel_account_id, domain],
+  );
+  await pool.query(
+    `insert into sending_domains (
+       workspace_id, channel_account_id, domain,
+       spf_verified, dkim_verified, dmarc_verified,
+       warmup_state, warmup_day, current_daily_cap, target_daily_cap,
+       properties
+     ) values ($1, $2, $3, $4, $4, $4, $5::domain_warmup_state, $6, $7, $8, $9::jsonb)
+     on conflict (workspace_id, domain) do update set
+       channel_account_id = excluded.channel_account_id,
+       target_daily_cap = greatest(sending_domains.target_daily_cap, excluded.target_daily_cap),
+       current_daily_cap = greatest(sending_domains.current_daily_cap, excluded.current_daily_cap),
+       updated_at = now()`,
+    [
+      workspace_id,
+      channel_account_id,
+      domain,
+      trustedDemoState,
+      trustedDemoState ? "warmed" : "unverified",
+      trustedDemoState ? 14 : 0,
+      Math.max(0, Math.trunc(targetDailyCap)),
+      trustedDemoState ? 25 : 0,
+      JSON.stringify({
+        managed_by: trustedDemoState ? "local-product-bootstrap" : "product-surface",
+      }),
+    ],
+  );
+}
+
+function domainFromSender(display_name: string): string | null {
+  const [, domain] = display_name.toLowerCase().split("@");
+  return domain || null;
+}
+
+async function ensureProceduralSeed(
+  pool: Pool,
+  workspace_id: string,
+  rep_id: string,
+): Promise<void> {
+  const pattern_key = "icp:fintech-founder|signal:funding|stage:cold_open";
+  const existing = await pool.query<{ id: string }>(
+    `select id from rep_memory_procedural
+      where workspace_id = $1 and rep_id = $2 and pattern_key = $3
+      limit 1`,
+    [workspace_id, rep_id, pattern_key],
+  );
+  if (existing.rows[0]) return;
+  await pool.query(
+    `insert into rep_memory_procedural (
+       workspace_id, rep_id, pattern_key, exemplar, score
+     ) values ($1, $2, $3, $4::jsonb, 0.55)`,
+    [
+      workspace_id,
+      rep_id,
+      pattern_key,
+      JSON.stringify({
+        subject: "Congrats on the round",
+        body: "Congrats on the raise. Usually this is when pipeline quality starts mattering more than raw volume.",
+      }),
+    ],
+  );
+}
+
+export async function configureEmailAccount(
+  input: ConfigureEmailInput,
+  session?: ProductWorkspaceSession,
+): Promise<BootstrapResult> {
+  const engine = await getProductEngine();
+  const boot = session
+    ? await bootstrapWorkspace(engine.pool, session.user_id, {
+        ensureMembership: false,
+        workspace_id: session.workspace_id,
+      })
+    : await bootstrapWorkspace(engine.pool);
+  const scoped = session ?? {
+    workspace_id: boot.workspace_id,
+    user_id: DEFAULT_PRODUCT_USER_ID,
+  };
+  if (scoped.workspace_id !== boot.workspace_id) {
+    throw new Error("Configured workspace does not match the product session.");
+  }
+  await assertProductWorkspaceAccess(scoped, engine.pool);
+  const transport = resolveProductEmailTransportMode();
+  const event = await engine.bus.publish({
+    workspace_id: boot.workspace_id,
+    event_type: "channel.account.configured",
+    source: "user",
+    producer_ref: scoped.user_id,
+    payload: {
+      channel_account_id: boot.channel_account_id,
+      kind: "email_domain",
+      display_name: input.display_name,
+      daily_cap: Math.max(0, Math.trunc(input.daily_cap)),
+      transport,
+    },
+  });
+  await projectEmailAccountConfigured(engine.pool, event);
+  return boot;
+}
+
+async function projectEmailAccountConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    channel_account_id: string;
+    display_name: string;
+    daily_cap: number;
+    transport: "resend" | "dry-run" | "unconfigured";
+  };
+  await pool.query(
+    `update channel_accounts
+        set display_name = $2,
+            daily_cap = $3,
+            status = $4::channel_account_status,
+            properties = properties || $5::jsonb
+      where id = $1`,
+    [
+      payload.channel_account_id,
+      payload.display_name,
+      payload.daily_cap,
+      payload.transport === "unconfigured" ? "disconnected" : "connected",
+      JSON.stringify({ transport: payload.transport, configured_event_id: event.id }),
+    ],
+  );
+  await ensureSendingDomain(
+    pool,
+    event.workspace_id,
+    payload.channel_account_id,
+    payload.display_name,
+    !isProductionProductRuntime(),
+    payload.daily_cap,
+  );
+}
+
+async function resolveProductOutcomeAttribution(event: PublishedEvent) {
+  const payload = event.payload as {
+    attributed_rep_id?: string | null;
+    properties?: Record<string, unknown>;
+  };
+  const props = payload.properties ?? {};
+  const exemplar_ids = Array.isArray(props.exemplar_ids)
+    ? props.exemplar_ids.filter((id): id is string => typeof id === "string")
+    : [];
+  const pattern_key = typeof props.pattern_key === "string" ? props.pattern_key : null;
+  if (!payload.attributed_rep_id || !pattern_key || exemplar_ids.length === 0) {
+    return null;
+  }
+  return {
+    scope: {
+      workspace_id: event.workspace_id,
+      rep_id: payload.attributed_rep_id,
+    },
+    pattern_key,
+    exemplar_ids,
+  };
+}
+
+function createProductEventProjections(engine: ProductEngine): DurableEventProjection[] {
+  return [
+    {
+      name: EMAIL_ACCOUNT_CONFIGURATION_PROJECTION,
+      eventTypes: ["channel.account.configured"],
+      apply: (event) => projectEmailAccountConfigured(engine.pool, event),
+    },
+    createEmailDeliveryFeedbackProjection({
+      pool: engine.pool,
+      bus: engine.bus,
+    }),
+    createOutcomeMemoryUpdateProjection({
+      bus: engine.bus,
+      attribution: resolveProductOutcomeAttribution,
+    }),
+    createProceduralMemoryStateProjection(engine.pool),
+    createSendingDomainProjection({
+      pool: engine.pool,
+      bus: engine.bus,
+    }),
+  ];
+}
+
+export async function startSendingDomainOperation(
+  operation: SendingDomainOperation,
+  session: ProductWorkspaceSession,
+): Promise<void> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{
+    id: string;
+    channel_account_id: string;
+    domain: string;
+    provider_domain_id: string | null;
+  }>(
+    `select id,
+            channel_account_id,
+            domain::text as domain,
+            properties->>'provider_domain_id' as provider_domain_id
+       from sending_domains
+      where workspace_id = $1
+      order by created_at asc
+      limit 1`,
+    [session.workspace_id],
+  );
+  const domain = rows[0];
+  if (!domain) throw new Error("Configure an email sender before provisioning its domain.");
+  if (operation !== "provision" && !domain.provider_domain_id) {
+    throw new Error("Provision the sending domain before requesting verification.");
+  }
+  engine.runtime.register(
+    createSendingDomainProvisioningWorkflow({
+      bus: engine.bus,
+    }),
+  );
+  await engine.runtime.start({
+    workspace_id: session.workspace_id,
+    workflow_name: SENDING_DOMAIN_PROVISIONING_WORKFLOW,
+    idempotency_key:
+      operation === "provision"
+        ? `sending-domain:${domain.id}:provision`
+        : `sending-domain:${domain.id}:${operation}:${Date.now()}`,
+    input: {
+      workspace_id: session.workspace_id,
+      sending_domain_id: domain.id,
+      channel_account_id: domain.channel_account_id,
+      domain: domain.domain,
+      operation,
+      provider_domain_id: domain.provider_domain_id,
+    },
+  });
+}
+
+export async function configureRssSource(
+  input: ConfigureRssSourceInput,
+  session?: ProductWorkspaceSession,
+): Promise<BootstrapResult> {
+  const engine = await getProductEngine();
+  const boot = session
+    ? await bootstrapWorkspace(engine.pool, session.user_id, {
+        ensureMembership: false,
+        workspace_id: session.workspace_id,
+      })
+    : await bootstrapWorkspace(engine.pool);
+  const scoped = session ?? {
+    workspace_id: boot.workspace_id,
+    user_id: DEFAULT_PRODUCT_USER_ID,
+  };
+  if (scoped.workspace_id !== boot.workspace_id) {
+    throw new Error("Configured workspace does not match the product session.");
+  }
+  await assertProductWorkspaceAccess(scoped, engine.pool);
+  const minutes = Number.isFinite(input.poll_interval_minutes)
+    ? Math.max(1, Math.trunc(input.poll_interval_minutes ?? 15))
+    : 15;
+  await upsertSource(engine.pool, boot.workspace_id, {
+    kind: "rss",
+    name: input.name || "GTM Signals",
+    enabled: true,
+    config: {
+      url: input.url,
+      kind: validSignalKind(input.signal_kind) ? input.signal_kind : "press_mention",
+      poll_interval_ms: minutes * 60_000,
+    },
+    properties: {
+      managed_by: "brief-surface",
+    },
+  });
+  return boot;
+}
+
+function validSignalKind(kind: unknown): boolean {
+  return (
+    kind === "funding" ||
+    kind === "hiring" ||
+    kind === "leadership_change" ||
+    kind === "product_launch" ||
+    kind === "acquisition" ||
+    kind === "churn_risk" ||
+    kind === "competitor_move" ||
+    kind === "podcast_mention" ||
+    kind === "press_mention" ||
+    kind === "regulation" ||
+    kind === "expansion" ||
+    kind === "layoff" ||
+    kind === "other"
+  );
+}
+
+export async function submitManualSignal(
+  input: SubmitSignalInput,
+  session?: ProductWorkspaceSession,
+): Promise<SubmittedSignalResult> {
+  const engine = await getProductEngine();
+  const boot = session
+    ? await bootstrapWorkspace(engine.pool, session.user_id, {
+        ensureMembership: false,
+        workspace_id: session.workspace_id,
+      })
+    : await bootstrapWorkspace(engine.pool);
+  const scoped = session ?? {
+    workspace_id: boot.workspace_id,
+    user_id: DEFAULT_PRODUCT_USER_ID,
+  };
+  if (scoped.workspace_id !== boot.workspace_id) {
+    throw new Error("Configured workspace does not match the product session.");
+  }
+  await assertProductWorkspaceAccess(scoped, engine.pool);
+  const store = createPostgresVerticalSliceStore(engine.pool);
+  const now = new Date().toISOString();
+  const company: GraphCompany = {
+    id: randomUUID(),
+    workspace_id: boot.workspace_id,
+    name: input.company_name,
+    domain: input.company_domain || null,
+    industry: "Unknown",
+    size_bucket: null,
+    description: null,
+    properties: {},
+    provenance: { source: "manual-signal-form" },
+    embedded_at: null,
+    created_at: now,
+    updated_at: now,
+  };
+  const [given, ...rest] = input.person_name.trim().split(/\s+/);
+  const person: GraphPerson = {
+    id: randomUUID(),
+    workspace_id: boot.workspace_id,
+    full_name: input.person_name,
+    given_name: given || input.person_name,
+    family_name: rest.length ? rest.join(" ") : null,
+    title: "Founder",
+    company_id: company.id,
+    emails: [input.person_email],
+    phones: [],
+    linkedin_url: null,
+    x_handle: null,
+    properties: {},
+    provenance: { source: "manual-signal-form" },
+    embedded_at: null,
+    created_at: now,
+    updated_at: now,
+  };
+  const signal = await ingestManualSignal(
+    {
+      workspace_id: boot.workspace_id,
+      kind: "funding",
+      title: input.signal_title,
+      content: input.signal_content,
+      url: input.signal_url || null,
+      icp_segment: "fintech-founder",
+      match_score: 0.86,
+      company,
+      person,
+      properties: {
+        email_approval: input.approval,
+        simulate_outcome_kind: input.approval === "none" ? "positive_reply" : null,
+      },
+    },
+    {
+      store,
+      bus: engine.bus,
+      producer_ref: "surface:manual-signal",
+    },
+  );
+  return { signal_id: signal.id, workspace_id: boot.workspace_id };
+}
+
+export async function submitSignalAndDispatch(
+  input: SubmitSignalInput,
+  session?: ProductWorkspaceSession,
+): Promise<SubmittedSignalResult> {
+  return submitManualSignal(input, session);
+}
+
+function createGovernedLLM(
+  engine: ProductEngine,
+  workspace_id: string,
+  purpose: string,
+): LLMClient | undefined {
+  if (!process.env.DEEPSEEK_API_KEY) return undefined;
+  return createBudgetedLLMClient({
+    llm: createDeepSeekClientFromEnv(),
+    pool: engine.pool,
+    bus: engine.bus,
+    workspace_id,
+    purpose,
+  });
+}
+
+function createProductEmailTransport(): EmailTransport {
+  requireOutboundEmailExecutionEnvironment();
+  return resolveProductEmailTransportMode() === "resend"
+    ? createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY! })
+    : createDryRunEmailTransport();
+}
+
+function createGovernedJudge(engine: ProductEngine, workspace_id: string) {
+  const fallback = createHeuristicJudge({ threshold: 0.55 });
+  const llm = createGovernedLLM(engine, workspace_id, "judge.hot_path");
+  if (!llm) return fallback;
+  return createFallbackJudge({
+    primary: createDeepSeekJudge({ llm, threshold: 0.6 }),
+    fallback,
+    shouldFallback: isLLMBudgetExceededError,
+  });
+}
+
+function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: string): void {
+  const store = createPostgresVerticalSliceStore(engine.pool);
+  const transport = createProductEmailTransport();
+  const writerLlm = workspace_id
+    ? createGovernedLLM(engine, workspace_id, "writer.email")
+    : undefined;
+  const judge = workspace_id
+    ? createGovernedJudge(engine, workspace_id)
+    : createHeuristicJudge({ threshold: 0.55 });
+
+  engine.runtime.register(
+    createSignalToEmailPlayWorkflow({
+      store,
+      memory: engine.memory,
+      judge,
+      writerLlm,
+      email: createDatabaseBackedEmailChannel(engine.pool, transport),
+      bus: engine.bus,
+    }),
+  );
+}
+
+function registerSignalIngestionWorkflows(engine: ProductEngine): void {
+  engine.runtime.register(
+    createRssSignalIngestionWorkflow({
+      pool: engine.pool,
+    }),
+  );
+}
+
+function registerSendingDomainProvisioningWorkflow(engine: ProductEngine): void {
+  engine.runtime.register(
+    createSendingDomainProvisioningWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+function registerSendingDomainWarmupWorkflow(engine: ProductEngine): void {
+  engine.runtime.register(
+    createSendingDomainWarmupWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+function createDatabaseBackedEmailChannel(
+  pool: Pool,
+  transport: EmailTransport,
+): EmailChannel {
+  return createPostgresOwnedDomainEmailChannel({ pool, transport });
+}
+
+async function startSignalEmailPlay(
+  engine: ProductEngine,
+  input: {
+    workspace_id: string;
+    play_id: string;
+    rep_id: string;
+    signal_id: string;
+    trigger_event_id: string | null;
+    approval: SignalToEmailPlayInput["email_approval"];
+    policy: PlayChannelPolicy;
+    simulate_outcome_kind?: SignalToEmailPlayInput["simulate_outcome_kind"];
+  },
+) {
+  const store = createPostgresVerticalSliceStore(engine.pool);
+  const signal = await store.getSignal(input.signal_id);
+  if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
+  if (!signal.related_person_id) {
+    throw new Error(`Signal missing related person: ${signal.id}`);
+  }
+  const person = await store.getPerson(signal.related_person_id);
+  if (!person) throw new Error(`Person not found: ${signal.related_person_id}`);
+  const transport = createProductEmailTransport();
+  const email = createDatabaseBackedEmailChannel(engine.pool, transport);
+  const writerLlm = createGovernedLLM(engine, input.workspace_id, "writer.email");
+  const judge = createGovernedJudge(engine, input.workspace_id);
+  engine.runtime.register(
+    createSignalToEmailPlayWorkflow({
+      store,
+      memory: engine.memory,
+      judge,
+      writerLlm,
+      email,
+      bus: engine.bus,
+    }),
+  );
+  const play_run_id = randomUUID();
+  return engine.runtime.start<SignalToEmailPlayInput, SignalToEmailPlayOutput>({
+    workspace_id: input.workspace_id,
+    workflow_name: SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+    play_id: input.play_id,
+    play_run_id,
+    idempotency_key: `signal:${signal.id}:play:${input.play_id}`,
+    correlation_id: input.trigger_event_id ?? undefined,
+    causation_id: input.trigger_event_id ?? undefined,
+    input: {
+      workspace_id: input.workspace_id,
+      play_id: input.play_id,
+      play_run_id,
+      rep_id: input.rep_id,
+      signal_id: signal.id,
+      person_id: person.id,
+      company_id: signal.related_company_id,
+      trigger_event_id: input.trigger_event_id,
+      email_approval: input.approval,
+      play_channel_policy: input.policy,
+      simulate_outcome_kind: input.simulate_outcome_kind ?? null,
+    },
+  });
+}
+
+export async function dispatchSignalPlaysOnce(
+  opts: DispatchOptions = {},
+): Promise<number> {
+  const engine = await getProductEngine();
+  registerSignalEmailWorkflow(engine);
+  const { rows } = await engine.pool.query<{
+    event_id: string;
+    workspace_id: string;
+    signal_id: string;
+    play_id: string;
+    rep_id: string;
+    signal_properties: Record<string, unknown>;
+    play_autonomy: Record<string, unknown>;
+  }>(
+    `select e.id as event_id,
+            e.workspace_id,
+            e.payload->>'signal_id' as signal_id,
+            p.id as play_id,
+            p.default_rep_id as rep_id,
+            s.properties as signal_properties,
+            p.autonomy as play_autonomy
+       from events e
+       join signals s
+         on s.id = (e.payload->>'signal_id')::uuid
+        and s.workspace_id = e.workspace_id
+       join plays p
+         on p.workspace_id = e.workspace_id
+        and p.status = 'active'
+        and p.default_rep_id is not null
+        and p.compiled->'trigger'->>'kind' = 'signal'
+        and (
+          p.compiled #>> '{trigger,filter,kind}' is null
+          or p.compiled #>> '{trigger,filter,kind}' = s.kind
+        )
+       left join workflow_runs wr
+         on wr.workspace_id = e.workspace_id
+        and wr.workflow_name = $1
+        and wr.idempotency_key = concat('signal:', e.payload->>'signal_id', ':play:', p.id::text)
+      where e.event_type = 'signal.ingested'
+        and wr.id is null
+      order by e.occurred_at asc
+      limit $2`,
+    [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, opts.limit ?? 25],
+  );
+
+  let dispatched = 0;
+  for (const row of rows) {
+    const policy = resolvePlayChannelPolicy(row.play_autonomy, "email", {
+      approval: parseApprovalPolicy(row.signal_properties.email_approval),
+    });
+    const simulate = simulateOutcomeFromSignal(row.signal_properties);
+    await startSignalEmailPlay(engine, {
+      workspace_id: row.workspace_id,
+      play_id: row.play_id,
+      rep_id: row.rep_id,
+      signal_id: row.signal_id,
+      trigger_event_id: row.event_id,
+      approval: policy.approval,
+      policy,
+      simulate_outcome_kind: simulate,
+    });
+    dispatched++;
+  }
+  return dispatched;
+}
+
+interface RssSourceRow {
+  id: string;
+  workspace_id: string;
+  config: Record<string, unknown>;
+  properties: Record<string, unknown>;
+  last_polled_at: Date | null;
+}
+
+function pollIntervalMs(row: RssSourceRow): number {
+  const msCandidates = [row.config.poll_interval_ms, row.properties.poll_interval_ms];
+  const secondsCandidates = [
+    row.config.poll_interval_seconds,
+    row.properties.poll_interval_seconds,
+  ];
+  for (const value of msCandidates) {
+    const numeric = numericConfigValue(value);
+    if (numeric) return Math.max(60_000, Math.trunc(numeric));
+  }
+  for (const value of secondsCandidates) {
+    const numeric = numericConfigValue(value);
+    if (numeric) return Math.max(60_000, Math.trunc(numeric * 1000));
+  }
+  return 15 * 60_000;
+}
+
+function numericConfigValue(value: unknown): number | null {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function isSourceDue(row: RssSourceRow, now: Date): boolean {
+  if (!row.last_polled_at) return true;
+  return now.getTime() - row.last_polled_at.getTime() >= pollIntervalMs(row);
+}
+
+function pollBucket(row: RssSourceRow, now: Date): number {
+  return Math.floor(now.getTime() / pollIntervalMs(row));
+}
+
+export async function dispatchRssSourceIngestionOnce(
+  opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
+): Promise<number> {
+  const engine = await getProductEngine();
+  registerSignalIngestionWorkflows(engine);
+  if (session) await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<RssSourceRow>(
+    `select id, workspace_id, config, properties, last_polled_at
+       from graph_sources
+      where kind = 'rss'
+        and enabled = true
+        and ($2::uuid is null or workspace_id = $2)
+      order by coalesce(last_polled_at, '-infinity'::timestamptz) asc,
+               created_at asc
+      limit $1`,
+    [opts.limit ?? 25, session?.workspace_id ?? null],
+  );
+
+  const now = new Date();
+  let dispatched = 0;
+  for (const row of rows) {
+    if (!isSourceDue(row, now)) continue;
+    await engine.runtime.start({
+      workspace_id: row.workspace_id,
+      workflow_name: RSS_SIGNAL_INGESTION_WORKFLOW,
+      idempotency_key: `rss:${row.id}:bucket:${pollBucket(row, now)}`,
+      input: {
+        workspace_id: row.workspace_id,
+        source_id: row.id,
+      },
+    });
+    dispatched++;
+  }
+  return dispatched;
+}
+
+export async function dispatchSendingDomainWarmupsOnce(
+  opts: DispatchOptions = {},
+): Promise<number> {
+  const engine = await getProductEngine();
+  registerSendingDomainWarmupWorkflow(engine);
+  const { rows } = await engine.pool.query<{
+    id: string;
+    workspace_id: string;
+    channel_account_id: string;
+    domain: string;
+    warmup_day: number;
+    target_daily_cap: number;
+  }>(
+    `select id,
+            workspace_id,
+            channel_account_id,
+            domain::text as domain,
+            warmup_day,
+            target_daily_cap
+       from sending_domains
+      where warmup_state = 'warming'
+        and spf_verified and dkim_verified and dmarc_verified
+        and target_daily_cap > current_daily_cap
+        and (
+          warmup_day = 0
+          or updated_at <= now() - interval '24 hours'
+        )
+      order by updated_at asc
+      limit $1`,
+    [opts.limit ?? 25],
+  );
+  for (const row of rows) {
+    const nextDay = row.warmup_day + 1;
+    await engine.runtime.start({
+      workspace_id: row.workspace_id,
+      workflow_name: SENDING_DOMAIN_WARMUP_WORKFLOW,
+      idempotency_key: `sending-domain:${row.id}:warmup:day:${nextDay}`,
+      input: {
+        workspace_id: row.workspace_id,
+        sending_domain_id: row.id,
+        channel_account_id: row.channel_account_id,
+        domain: row.domain,
+        next_day: nextDay,
+        target_daily_cap: row.target_daily_cap,
+      },
+    });
+  }
+  return rows.length;
+}
+
+export async function projectPendingProductEventsOnce(
+  opts: DispatchOptions = {},
+): Promise<DurableProjectionTick> {
+  const engine = await getProductEngine();
+  const leaseOwner =
+    opts.leaseOwner ?? `product-projector:${process.pid}:${randomBytes(4).toString("hex")}`;
+  return runDurableEventProjectionsOnce(
+    engine.pool,
+    createProductEventProjections(engine),
+    {
+      leaseOwner,
+      limit: opts.limit,
+      leaseMs: opts.leaseMs,
+    },
+  );
+}
+
+export async function resumeRunnableWorkflowsOnce(
+  opts: DispatchOptions = {},
+): Promise<number> {
+  const engine = await getProductEngine();
+  registerSignalIngestionWorkflows(engine);
+  const leaseOwner =
+    opts.leaseOwner ?? `product-worker:${process.pid}:${randomBytes(4).toString("hex")}`;
+  const leaseMs = opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS;
+  await renewWorkflowRunLeases(engine.pool, {
+    leaseOwner,
+    leaseMs,
+    workflowNames: RUNNABLE_WORKFLOW_NAMES,
+  });
+  const rows = await claimRunnableWorkflowRuns(engine.pool, {
+    leaseOwner,
+    leaseMs,
+    limit: opts.limit ?? 25,
+    workflowNames: RUNNABLE_WORKFLOW_NAMES,
+  });
+  let resumed = 0;
+  for (const row of rows) {
+    if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
+      registerSignalEmailWorkflow(engine, row.workspace_id);
+    } else if (row.workflow_name === SENDING_DOMAIN_PROVISIONING_WORKFLOW) {
+      registerSendingDomainProvisioningWorkflow(engine);
+    } else if (row.workflow_name === SENDING_DOMAIN_WARMUP_WORKFLOW) {
+      registerSendingDomainWarmupWorkflow(engine);
+    }
+    try {
+      const run = await engine.runtime.resume(row.id);
+      if (run) resumed++;
+    } catch (err) {
+      await engine.pool.query(
+        `update workflow_runs
+            set lease_owner = null,
+                lease_expires_at = null
+          where id = $1 and lease_owner = $2`,
+        [row.id, leaseOwner],
+      );
+      throw err;
+    }
+  }
+  return resumed;
+}
+
+export async function renewWorkflowRunLeases(
+  pool: Pool,
+  opts: Omit<WorkflowLeaseOptions, "limit">,
+): Promise<number> {
+  const workflowNames = [...(opts.workflowNames ?? RUNNABLE_WORKFLOW_NAMES)];
+  const leaseMs = Math.max(1000, Math.floor(opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS));
+  const { rowCount } = await pool.query(
+    `update workflow_runs
+        set lease_expires_at = now() + ($3::int * interval '1 millisecond')
+      where workflow_name = any($1::text[])
+        and lease_owner = $2
+        and status in ('running', 'awaiting_approval', 'awaiting_event')`,
+    [workflowNames, opts.leaseOwner, leaseMs],
+  );
+  return rowCount ?? 0;
+}
+
+export async function claimRunnableWorkflowRuns(
+  pool: Pool,
+  opts: WorkflowLeaseOptions,
+): Promise<Array<{ id: string; workspace_id: string; workflow_name: string }>> {
+  const workflowNames = [...(opts.workflowNames ?? RUNNABLE_WORKFLOW_NAMES)];
+  const limit = opts.limit ?? 25;
+  const leaseMs = Math.max(1000, Math.floor(opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS));
+  const { rows } = await pool.query<{
+    id: string;
+    workspace_id: string;
+    workflow_name: string;
+  }>(
+    `with candidates as (
+       select id
+         from workflow_runs
+        where workflow_name = any($1::text[])
+          and status in ('running', 'awaiting_approval', 'awaiting_event')
+          and (lease_expires_at is null or lease_expires_at < now())
+        order by created_at asc
+        limit $2
+        for update skip locked
+     )
+     update workflow_runs wr
+        set lease_owner = $3,
+            lease_expires_at = now() + ($4::int * interval '1 millisecond')
+       from candidates
+      where wr.id = candidates.id
+      returning wr.id, wr.workspace_id, wr.workflow_name`,
+    [workflowNames, limit, opts.leaseOwner, leaseMs],
+  );
+  return rows;
+}
+
+export async function retryFailedWorkflowRun(
+  run_id: string,
+  session?: ProductWorkspaceSession,
+): Promise<void> {
+  const engine = await getProductEngine();
+  const { rows } = await engine.pool.query<{
+    id: string;
+    workspace_id: string;
+    workflow_name: string;
+    status: string;
+    input: Record<string, unknown>;
+  }>(
+    `select id, workspace_id, workflow_name, status, input
+       from workflow_runs
+      where id = $1
+      limit 1`,
+    [run_id],
+  );
+  const run = rows[0];
+  if (!run || run.status !== "failed") return;
+  if (session) {
+    if (run.workspace_id !== session.workspace_id) return;
+    await assertProductWorkspaceAccess(session, engine.pool);
+  }
+  if (run.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
+    registerSignalEmailWorkflow(engine, run.workspace_id);
+  } else if (run.workflow_name === RSS_SIGNAL_INGESTION_WORKFLOW) {
+    registerSignalIngestionWorkflows(engine);
+  } else if (run.workflow_name === SENDING_DOMAIN_PROVISIONING_WORKFLOW) {
+    registerSendingDomainProvisioningWorkflow(engine);
+  } else if (run.workflow_name === SENDING_DOMAIN_WARMUP_WORKFLOW) {
+    registerSendingDomainWarmupWorkflow(engine);
+  }
+
+  let retryRunId = run.id;
+  if (run.workflow_name === RSS_SIGNAL_INGESTION_WORKFLOW) {
+    const retry = await engine.runtime.start({
+      workspace_id: run.workspace_id,
+      workflow_name: run.workflow_name,
+      idempotency_key: `recovery:${run.id}:${Date.now()}`,
+      correlation_id: run.id,
+      causation_id: run.id,
+      input: run.input,
+    });
+    retryRunId = retry.id;
+  } else {
+    const retry = await engine.runtime.resume(run.id);
+    retryRunId = retry?.id ?? run.id;
+  }
+
+  await engine.bus.publish({
+    workspace_id: run.workspace_id,
+    event_type: "workflow.run.retried",
+    source: "user",
+    producer_ref: session?.user_id ?? DEFAULT_PRODUCT_USER_ID,
+    correlation_id: run.id,
+    causation_id: run.id,
+    payload: {
+      run_id: run.id,
+      workflow_name: run.workflow_name,
+      retry_run_id: retryRunId,
+    },
+  });
+}
+
+function simulateOutcomeFromSignal(
+  signalProperties: Record<string, unknown>,
+): SignalToEmailPlayInput["simulate_outcome_kind"] {
+  const value = signalProperties.simulate_outcome_kind;
+  return value === "positive_reply" || value === "meeting_booked" ? value : null;
+}
+
+export async function approveWorkflowApproval(
+  approval_id: string,
+  decision: "approved" | "rejected",
+  session?: ProductWorkspaceSession,
+): Promise<void> {
+  const engine = await getProductEngine();
+  if (session) {
+    const { rows } = await engine.pool.query<{ workspace_id: string }>(
+      `select workspace_id from workflow_approvals where id = $1`,
+      [approval_id],
+    );
+    if (!rows[0] || rows[0].workspace_id !== session.workspace_id) return;
+    await assertProductWorkspaceAccess(session, engine.pool);
+  }
+  await engine.runtime.resolveApproval(approval_id, {
+    decision,
+    decided_by: session?.user_id ?? DEFAULT_PRODUCT_USER_ID,
+  });
+  await waitForApprovalDecision(engine.pool, approval_id);
+}
+
+async function waitForApprovalDecision(pool: Pool, approval_id: string): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const { rows } = await pool.query<{ decision: string }>(
+      `select decision from workflow_approvals where id = $1`,
+      [approval_id],
+    );
+    if (rows[0]?.decision !== "pending") return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+export async function getAppState(
+  pool = getPool(),
+  session?: ProductWorkspaceSession,
+): Promise<AppState> {
+  const existing = session
+    ? await pool.query<{ id: string }>(
+        `select id from workspaces where id = $1`,
+        [session.workspace_id],
+      )
+    : await pool.query<{ id: string }>(
+        `select id from workspaces where slug = $1`,
+        [DEFAULT_WORKSPACE_SLUG],
+      );
+  if (!existing.rows[0]) {
+    return {
+      configured: false,
+      approvals: [],
+      runs: [],
+      events: [],
+      recoveryQueue: [],
+      messages: [],
+      outcomes: [],
+      conversations: [],
+      channelAccounts: [],
+      llmUsage: { used_tokens_24h: 0, daily_token_cap: 0 },
+      sources: [],
+      eventTrace: {
+        summary: {
+          correlation_id: null,
+          event_count: 0,
+          started_at: null,
+          ended_at: null,
+          root_event_type: null,
+          terminal_event_type: null,
+          contains_failure: false,
+        },
+        events: [],
+      },
+      sendTraces: [],
+    };
+  }
+  const boot = session
+    ? await bootstrapWorkspace(pool, session.user_id, {
+        ensureMembership: false,
+        workspace_id: session.workspace_id,
+      })
+    : await bootstrapWorkspace(pool);
+  const scoped = session ?? {
+    workspace_id: boot.workspace_id,
+    user_id: DEFAULT_PRODUCT_USER_ID,
+  };
+  if (scoped.workspace_id !== boot.workspace_id) {
+    throw new Error("Configured workspace does not match the product session.");
+  }
+  await assertProductWorkspaceAccess(scoped, pool);
+  const store = createPostgresVerticalSliceStore(pool);
+  const snapshot = await store.snapshot();
+  const [approvals, llmUsage, runs, recovery, events, sendTraces, accounts, sources] = await Promise.all([
+    pool.query<{
+      id: string;
+      run_id: string;
+      kind: string;
+      reason: string | null;
+      payload: Record<string, unknown>;
+      decision: string;
+      created_at: Date;
+    }>(
+      `select id, run_id, kind, reason, payload, decision, created_at
+         from workflow_approvals
+        where workspace_id = $1
+        order by created_at desc
+        limit 20`,
+      [boot.workspace_id],
+    ),
+    pool.query<{
+      used_tokens_24h: string;
+      daily_token_cap: string | null;
+    }>(
+      `select coalesce((
+                select sum(total_tokens)::text
+                  from workspace_llm_usage
+                 where workspace_id = w.id
+                   and created_at >= now() - interval '24 hours'
+              ), '0') as used_tokens_24h,
+              coalesce(
+                w.settings #>> '{llm,daily_token_cap}',
+                w.settings->>'llm_daily_token_cap'
+              ) as daily_token_cap
+         from workspaces w
+        where w.id = $1`,
+      [boot.workspace_id],
+    ),
+    pool.query<{
+      id: string;
+      status: string;
+      workflow_name: string;
+      input: Record<string, unknown>;
+      output: Record<string, unknown> | null;
+      created_at: Date;
+      ended_at: Date | null;
+    }>(
+      `select id, status, workflow_name, input, output, created_at, ended_at
+         from workflow_runs
+        where workspace_id = $1
+        order by created_at desc
+        limit 20`,
+      [boot.workspace_id],
+    ),
+    pool.query<{
+      id: string;
+      workflow_name: string;
+      status: string;
+      input: Record<string, unknown>;
+      error: { message?: string } | null;
+      failed_step_name: string | null;
+      failed_step_attempt: number | null;
+      created_at: Date;
+      ended_at: Date | null;
+    }>(
+      `select wr.id,
+              wr.workflow_name,
+              wr.status,
+              wr.input,
+              wr.error,
+              failed_step.step_name as failed_step_name,
+              failed_step.attempt as failed_step_attempt,
+              wr.created_at,
+              wr.ended_at
+         from workflow_runs wr
+         left join lateral (
+           select ws.step_name, ws.attempt
+             from workflow_steps ws
+            where ws.run_id = wr.id
+              and ws.status = 'failed'
+            order by ws.ended_at desc nulls last, ws.created_at desc
+            limit 1
+         ) failed_step on true
+        where wr.workspace_id = $1
+          and wr.status = 'failed'
+          and wr.workflow_name = any($2::text[])
+          and not exists (
+            select 1
+              from workflow_runs newer
+             where newer.workspace_id = wr.workspace_id
+               and newer.workflow_name = wr.workflow_name
+               and newer.status = 'completed'
+               and newer.created_at > wr.created_at
+               and coalesce(newer.input->>'source_id', '') = coalesce(wr.input->>'source_id', '')
+               and coalesce(newer.input->>'signal_id', '') = coalesce(wr.input->>'signal_id', '')
+          )
+        order by wr.ended_at desc nulls last, wr.created_at desc
+        limit 20`,
+      [boot.workspace_id, [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, RSS_SIGNAL_INGESTION_WORKFLOW]],
+    ),
+    pool.query<{ id: string; event_type: string; occurred_at: Date }>(
+      `select id, event_type, occurred_at
+         from events
+        where workspace_id = $1
+        order by occurred_at desc
+        limit 50`,
+      [boot.workspace_id],
+    ),
+    pool.query<{
+      message_id: string;
+      status: string;
+      subject: string | null;
+      rep_name: string | null;
+      person_name: string | null;
+      company_name: string | null;
+      signal_title: string | null;
+      signal_kind: string | null;
+      signal_url: string | null;
+      eval_score: string | null;
+      eval_passed: boolean | null;
+      eval_notes: Record<string, unknown> | null;
+      defer_reason: string | null;
+      pattern_key: string | null;
+      workflow_run_id: string | null;
+      workflow_status: string | null;
+      play_run_id: string | null;
+      approval_policy: string | null;
+      created_at: Date;
+    }>(
+      `select m.id as message_id,
+              m.status::text as status,
+              m.subject,
+              r.name as rep_name,
+              gp.full_name as person_name,
+              gc.name as company_name,
+              s.title as signal_title,
+              s.kind::text as signal_kind,
+              s.url as signal_url,
+              m.eval_score::text as eval_score,
+              m.eval_passed,
+              m.eval_notes,
+              m.properties->>'defer_reason' as defer_reason,
+              m.provenance->>'pattern_key' as pattern_key,
+              wr.id as workflow_run_id,
+              wr.status::text as workflow_status,
+              wr.play_run_id,
+              wr.input->>'email_approval' as approval_policy,
+              m.created_at
+         from messages m
+         join conversations c
+           on c.id = m.conversation_id
+          and c.workspace_id = m.workspace_id
+         left join reps r
+           on r.id = c.rep_id
+          and r.workspace_id = c.workspace_id
+         left join graph_persons gp
+           on gp.id = c.counterparty_person_id
+          and gp.workspace_id = c.workspace_id
+         left join graph_companies gc
+           on gc.id = c.counterparty_company_id
+          and gc.workspace_id = c.workspace_id
+         left join signals s
+           on s.id = c.origin_signal_id
+          and s.workspace_id = c.workspace_id
+         left join lateral (
+           select id, status, input, play_run_id
+             from workflow_runs
+            where workspace_id = m.workspace_id
+              and workflow_name = $2
+              and output->>'message_id' = m.id::text
+            order by created_at desc
+            limit 1
+         ) wr on true
+        where m.workspace_id = $1
+          and m.direction = 'outbound'
+        order by m.created_at desc
+        limit 10`,
+      [boot.workspace_id, SIGNAL_TO_EMAIL_PLAY_WORKFLOW],
+    ),
+    pool.query<{
+      id: string;
+      display_name: string;
+      kind: string;
+      daily_cap: number | null;
+      daily_used: number;
+      daily_window_start: Date | null;
+      status: string;
+      domain: string | null;
+      warmup_state: string | null;
+      current_daily_cap: number | null;
+      sending_domain_id: string | null;
+      spf_verified: boolean | null;
+      dkim_verified: boolean | null;
+      dmarc_verified: boolean | null;
+      provider_status: string | null;
+      provider_domain_id: string | null;
+      dns_records: Array<{
+        record: string;
+        name: string;
+        type: string;
+        value: string;
+        status?: string | null;
+      }>;
+      bounce_rate_24h: string | null;
+      complaint_rate_24h: string | null;
+    }>(
+      `select ca.id,
+              ca.display_name,
+              ca.kind,
+              ca.daily_cap,
+              ca.daily_used,
+              ca.daily_window_start,
+              ca.status,
+              sd.id as sending_domain_id,
+              sd.domain::text as domain,
+              sd.warmup_state,
+              sd.current_daily_cap,
+              sd.spf_verified,
+              sd.dkim_verified,
+              sd.dmarc_verified,
+              sd.properties->>'provider_status' as provider_status,
+              sd.properties->>'provider_domain_id' as provider_domain_id,
+              coalesce(sd.properties->'dns_records', '[]'::jsonb) as dns_records,
+              sd.bounce_rate_24h::text as bounce_rate_24h,
+              sd.complaint_rate_24h::text as complaint_rate_24h
+         from channel_accounts ca
+         left join sending_domains sd
+           on sd.channel_account_id = ca.id
+        where ca.workspace_id = $1
+        order by ca.created_at asc`,
+      [boot.workspace_id],
+    ),
+    pool.query<{
+      id: string;
+      name: string;
+      kind: string;
+      enabled: boolean;
+      config: Record<string, unknown>;
+      properties: Record<string, unknown>;
+      last_polled_at: Date | null;
+      signal_count: string;
+      latest_run_status: string | null;
+      latest_run_created_at: Date | null;
+      latest_run_error: { message?: string } | null;
+    }>(
+      `select gs.id,
+              gs.name,
+              gs.kind,
+              gs.enabled,
+              gs.config,
+              gs.properties,
+              gs.last_polled_at,
+              count(s.id)::text as signal_count,
+              latest.status as latest_run_status,
+              latest.created_at as latest_run_created_at,
+              latest.error as latest_run_error
+         from graph_sources gs
+         left join signals s
+           on s.workspace_id = gs.workspace_id
+          and s.source_id = gs.id
+         left join lateral (
+           select wr.status, wr.created_at, wr.error
+             from workflow_runs wr
+            where wr.workspace_id = gs.workspace_id
+              and wr.workflow_name = $2
+              and wr.input->>'source_id' = gs.id::text
+            order by wr.created_at desc
+            limit 1
+         ) latest on true
+        where gs.workspace_id = $1
+        group by gs.id, latest.status, latest.created_at, latest.error
+        order by gs.created_at desc`,
+      [boot.workspace_id, RSS_SIGNAL_INGESTION_WORKFLOW],
+    ),
+  ]);
+  const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
+  const eventTrace = latestWorkflowRunId
+    ? await getEventTraceForCorrelation(pool, {
+        workspace_id: boot.workspace_id,
+        correlation_id: latestWorkflowRunId,
+      })
+    : await getLatestEventTraceForWorkspace(pool, {
+        workspace_id: boot.workspace_id,
+      });
+
+  return {
+    configured: true,
+    bootstrap: boot,
+    approvals: approvals.rows.map((row) => ({
+      ...row,
+      created_at: row.created_at.toISOString(),
+    })),
+    runs: runs.rows.map((row) => ({
+      ...row,
+      created_at: row.created_at.toISOString(),
+      ended_at: row.ended_at?.toISOString() ?? null,
+    })),
+    recoveryQueue: recovery.rows.map((row) => ({
+      id: row.id,
+      workflow_name: row.workflow_name,
+      status: row.status,
+      input: row.input,
+      error: row.error?.message ?? null,
+      failed_step_name: row.failed_step_name,
+      failed_step_attempt: row.failed_step_attempt,
+      created_at: row.created_at.toISOString(),
+      ended_at: row.ended_at?.toISOString() ?? null,
+    })),
+    events: events.rows.map((row) => ({
+      ...row,
+      occurred_at: row.occurred_at.toISOString(),
+    })),
+    eventTrace,
+    sendTraces: sendTraces.rows.map((row) => ({
+      message_id: row.message_id,
+      status: row.status,
+      subject: row.subject,
+      rep_name: row.rep_name,
+      person_name: row.person_name,
+      company_name: row.company_name,
+      signal_title: row.signal_title,
+      signal_kind: row.signal_kind,
+      signal_url: row.signal_url,
+      eval_score: row.eval_score == null ? null : Number(row.eval_score),
+      eval_passed: row.eval_passed,
+      eval_notes: row.eval_notes,
+      defer_reason: row.defer_reason,
+      pattern_key: row.pattern_key,
+      workflow_run_id: row.workflow_run_id,
+      workflow_status: row.workflow_status,
+      play_run_id: row.play_run_id,
+      approval_policy: row.approval_policy,
+      created_at: row.created_at.toISOString(),
+    })),
+    conversations: snapshot.conversations,
+    messages: snapshot.messages,
+    outcomes: snapshot.outcomes,
+    channelAccounts: accounts.rows.map((row) => ({
+      ...row,
+      daily_window_start: row.daily_window_start?.toISOString() ?? null,
+      bounce_rate_24h: row.bounce_rate_24h == null ? null : Number(row.bounce_rate_24h),
+      complaint_rate_24h: row.complaint_rate_24h == null ? null : Number(row.complaint_rate_24h),
+    })),
+    llmUsage: {
+      used_tokens_24h: Number(llmUsage.rows[0]?.used_tokens_24h ?? 0),
+      daily_token_cap: Number(
+        llmUsage.rows[0]?.daily_token_cap ??
+          process.env.BOMBSELL_LLM_DAILY_TOKEN_CAP ??
+          100_000,
+      ),
+    },
+    sources: sources.rows.map((row) => {
+      const pollMs = numericConfigValue(row.config.poll_interval_ms);
+      return {
+        id: row.id,
+        name: row.name,
+        kind: row.kind,
+        enabled: row.enabled,
+        url: stringStateValue(row.config.url ?? row.config.feed_url ?? row.config.rss_url),
+        signal_kind: stringStateValue(row.config.kind ?? row.config.signal_kind),
+        poll_interval_minutes: pollMs == null ? null : Math.round(pollMs / 60_000),
+        last_polled_at: row.last_polled_at?.toISOString() ?? null,
+        signal_count: Number(row.signal_count),
+        latest_run_status: row.latest_run_status,
+        latest_run_created_at: row.latest_run_created_at?.toISOString() ?? null,
+        latest_run_error: row.latest_run_error?.message ?? null,
+      };
+    }),
+  };
+}
+
+function stringStateValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}

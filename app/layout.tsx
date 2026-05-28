@@ -1,13 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { validateEnv } from "@/lib/env";
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/next";
 import { ToastProvider } from "@/components/Toast";
 import { Geist, Geist_Mono, Instrument_Serif, Manrope } from "next/font/google";
-
-if (typeof window === 'undefined') {
-  validateEnv();
-}
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -33,9 +28,9 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Bombsell - AI GTM Infrastructure",
+  title: "Bombsell — AI-Native GTM Infrastructure",
   description:
-    "AI-native GTM Infrastructure for Agents, Teams and SMBs. Building the future GTM Stack. Pay for outcomes."
+    "AI-native GTM infrastructure for agents, founders, and small teams. Outbound, content, and campaigns on autopilot — reliably.",
 };
 
 export default function RootLayout({
@@ -50,6 +45,8 @@ export default function RootLayout({
       style={{ colorScheme: "light" }}
     >
       <head>
+        {/* Material Symbols is an icon font and has no next/font/google export. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"

@@ -1,0 +1,68 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/poll-signals",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/leads/match",
+      "schedule": "10 */6 * * *"
+    },
+    {
+      "path": "/api/cron/deliver-leads",
+      "schedule": "20 */6 * * *"
+    },
+    {
+      "path": "/api/cron/send-followups",
+      "schedule": "30 */6 * * *"
+    },
+    {
+      "path": "/api/cron/enrich-contacts",
+      "schedule": "40 */6 * * *"
+    },
+    {
+      "path": "/api/cron/send-automation",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/renew-inbox-watches",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/publish-content",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/ingest-content-inspiration",
+      "schedule": "15 2 * * *"
+    },
+    {
+      "path": "/api/cron/deliver-webhooks",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/publish-posts",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/poll-post-metrics",
+      "schedule": "25 */6 * * *"
+    },
+    {
+      "path": "/api/cron/agent-self-improvement",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/generate-content-ideas",
+      "schedule": "5 6 * * *"
+    },
+    {
+      "path": "/api/cron/run-content-pipeline",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/grant-monthly-credits",
+      "schedule": "30 4 * * *"
+    }
+  ]
+}

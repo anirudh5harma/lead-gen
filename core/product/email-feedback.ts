@@ -1,0 +1,413 @@
+import { z } from "zod";
+import type { Pool } from "pg";
+import type {
+  DurableEventProjection,
+  EventBus,
+  PublishedEvent,
+} from "../substrate/events/index.ts";
+
+export const EMAIL_DELIVERY_FEEDBACK_PROJECTION = "channel.email_feedback.v1";
+
+const ResendEmailWebhook = z.object({
+  type: z.string(),
+  created_at: z.string().datetime().optional(),
+  data: z.object({
+    email_id: z.string().min(1),
+    bounce: z
+      .object({
+        type: z.string().optional(),
+        subType: z.string().optional(),
+        message: z.string().optional(),
+      })
+      .optional(),
+  }),
+});
+
+const MessageDeliveredPayload = z.object({
+  message_id: z.string().uuid(),
+  channel: z.literal("email"),
+  external_id: z.string().nullable().optional(),
+  provider_event_id: z.string().nullable().optional(),
+});
+
+const MessageBouncedPayload = z.object({
+  message_id: z.string().uuid(),
+  channel: z.literal("email"),
+  bounce_type: z.enum(["hard", "soft", "complaint"]),
+  external_id: z.string().nullable().optional(),
+  provider_event_id: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+});
+
+export type ResendWebhookAction =
+  | {
+      action: "delivered";
+      external_id: string;
+      occurred_at: string | null;
+    }
+  | {
+      action: "bounced";
+      external_id: string;
+      bounce_type: "hard" | "soft" | "complaint";
+      reason: string | null;
+      occurred_at: string | null;
+    };
+
+export interface PublishResendWebhookResult {
+  status: "published" | "ignored";
+  message_id?: string;
+  event_type?: "message.delivered" | "message.bounced";
+  event_id?: string;
+  reason?: string;
+}
+
+export interface EmailFeedbackProjection {
+  unsubscribe(): Promise<void>;
+}
+
+export function normalizeResendEmailWebhook(payload: unknown): ResendWebhookAction | null {
+  const event = ResendEmailWebhook.parse(payload);
+  const occurred_at = event.created_at ?? null;
+  if (event.type === "email.delivered") {
+    return {
+      action: "delivered",
+      external_id: event.data.email_id,
+      occurred_at,
+    };
+  }
+  if (event.type === "email.complained") {
+    return {
+      action: "bounced",
+      external_id: event.data.email_id,
+      bounce_type: "complaint",
+      reason: "recipient_marked_spam",
+      occurred_at,
+    };
+  }
+  if (event.type === "email.bounced") {
+    return {
+      action: "bounced",
+      external_id: event.data.email_id,
+      bounce_type: event.data.bounce?.type === "Permanent" ? "hard" : "soft",
+      reason: event.data.bounce?.message ?? event.data.bounce?.subType ?? null,
+      occurred_at,
+    };
+  }
+  if (event.type === "email.delivery_delayed") {
+    return {
+      action: "bounced",
+      external_id: event.data.email_id,
+      bounce_type: "soft",
+      reason: "delivery_delayed",
+      occurred_at,
+    };
+  }
+  if (event.type === "email.failed" || event.type === "email.suppressed") {
+    return {
+      action: "bounced",
+      external_id: event.data.email_id,
+      bounce_type: "hard",
+      reason: event.type,
+      occurred_at,
+    };
+  }
+  return null;
+}
+
+export async function publishResendEmailWebhook(
+  pool: Pool,
+  bus: EventBus,
+  payload: unknown,
+  opts: {
+    providerEventId?: string | null;
+  } = {},
+): Promise<PublishResendWebhookResult> {
+  const action = normalizeResendEmailWebhook(payload);
+  if (!action) return { status: "ignored", reason: "unsupported_event_type" };
+
+  const { rows } = await pool.query<{
+    id: string;
+    workspace_id: string;
+  }>(
+    `select id, workspace_id
+       from messages
+      where channel = 'email'
+        and direction = 'outbound'
+        and external_id = $1
+      order by created_at desc
+      limit 1`,
+    [action.external_id],
+  );
+  const message = rows[0];
+  if (!message) {
+    return { status: "ignored", reason: "message_not_found" };
+  }
+
+  const idempotency_key = opts.providerEventId
+    ? `webhook:resend:${opts.providerEventId}`
+    : undefined;
+
+  if (action.action === "delivered") {
+    const event = await bus.publish({
+      workspace_id: message.workspace_id,
+      event_type: "message.delivered",
+      source: "webhook",
+      producer_ref: "webhook:resend",
+      idempotency_key,
+      occurred_at: action.occurred_at ?? undefined,
+      payload: {
+        message_id: message.id,
+        channel: "email",
+        external_id: action.external_id,
+        provider_event_id: opts.providerEventId ?? null,
+      },
+    });
+    return {
+      status: "published",
+      message_id: message.id,
+      event_type: "message.delivered",
+      event_id: event.id,
+    };
+  }
+
+  const event = await bus.publish({
+    workspace_id: message.workspace_id,
+    event_type: "message.bounced",
+    source: "webhook",
+    producer_ref: "webhook:resend",
+    idempotency_key,
+    occurred_at: action.occurred_at ?? undefined,
+    payload: {
+      message_id: message.id,
+      channel: "email",
+      bounce_type: action.bounce_type,
+      external_id: action.external_id,
+      provider_event_id: opts.providerEventId ?? null,
+      reason: action.reason,
+    },
+  });
+  return {
+    status: "published",
+    message_id: message.id,
+    event_type: "message.bounced",
+    event_id: event.id,
+  };
+}
+
+export async function wireEmailDeliveryFeedback(
+  opts: {
+    pool: Pool;
+    bus: EventBus;
+  },
+): Promise<EmailFeedbackProjection> {
+  const projection = createEmailDeliveryFeedbackProjection(opts);
+  const delivered = await opts.bus.subscribe("message.delivered", projection.apply);
+  const bounced = await opts.bus.subscribe("message.bounced", projection.apply);
+  return {
+    async unsubscribe() {
+      await delivered.unsubscribe();
+      await bounced.unsubscribe();
+    },
+  };
+}
+
+export function createEmailDeliveryFeedbackProjection(
+  opts: {
+    pool: Pool;
+    bus: EventBus;
+  },
+): DurableEventProjection {
+  return {
+    name: EMAIL_DELIVERY_FEEDBACK_PROJECTION,
+    eventTypes: ["message.delivered", "message.bounced"],
+    async apply(event) {
+      if (event.event_type === "message.delivered") {
+        await applyMessageDelivered(opts.pool, event);
+      } else if (event.event_type === "message.bounced") {
+        await applyMessageBounced(opts.pool, opts.bus, event);
+      }
+    },
+  };
+}
+
+async function applyMessageDelivered(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = MessageDeliveredPayload.parse(event.payload);
+  const { rows } = await pool.query<{ channel_account_id: string | null }>(
+    `update messages
+        set status = case when status = 'bounced' then status else 'delivered' end,
+            delivered_at = coalesce(delivered_at, $3::timestamptz),
+            properties = properties || $4::jsonb
+      where id = $1
+        and workspace_id = $2
+        and channel = 'email'
+        and direction = 'outbound'
+        and status <> 'replied'
+      returning channel_account_id`,
+    [
+      payload.message_id,
+      event.workspace_id,
+      event.occurred_at,
+      JSON.stringify({
+        delivered_event_id: event.id,
+        delivery_external_id: payload.external_id ?? null,
+      }),
+    ],
+  );
+  const accountId = rows[0]?.channel_account_id;
+  if (accountId) {
+    await refreshSendingDomainRates(pool, accountId);
+  }
+}
+
+async function applyMessageBounced(
+  pool: Pool,
+  bus: EventBus,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = MessageBouncedPayload.parse(event.payload);
+  const { rows } = await pool.query<{
+    channel_account_id: string | null;
+    outcome_id: string | null;
+    conversation_id: string | null;
+    rep_id: string | null;
+    score: string | null;
+    properties: Record<string, unknown> | null;
+  }>(
+    `with updated_message as (
+       update messages
+          set status = 'bounced',
+              properties = properties || $4::jsonb
+        where id = $1
+          and workspace_id = $2
+          and channel = 'email'
+          and direction = 'outbound'
+        returning id, workspace_id, conversation_id, channel_account_id
+     ),
+     inserted_outcome as (
+       insert into outcomes (
+         workspace_id, kind, score, conversation_id, attributed_message_id,
+         attributed_rep_id, properties, provenance
+       )
+       select m.workspace_id,
+              'bounce',
+              case when $3::text = 'complaint' then -1 else -0.2 end,
+              m.conversation_id,
+              m.id,
+              c.rep_id,
+              $4::jsonb,
+              '{"source":"email-feedback"}'::jsonb
+         from updated_message m
+         join conversations c
+           on c.id = m.conversation_id
+          and c.workspace_id = m.workspace_id
+        where not exists (
+          select 1
+            from outcomes o
+           where o.workspace_id = m.workspace_id
+             and o.kind = 'bounce'
+             and o.attributed_message_id = m.id
+        )
+       returning id, conversation_id, attributed_rep_id, score::text, properties
+     )
+     select m.channel_account_id,
+            o.id as outcome_id,
+            o.conversation_id,
+            o.attributed_rep_id as rep_id,
+            o.score,
+            o.properties
+       from updated_message m
+       left join inserted_outcome o on true`,
+    [
+      payload.message_id,
+      event.workspace_id,
+      payload.bounce_type,
+      JSON.stringify({
+        bounce_type: payload.bounce_type,
+        reason: payload.reason ?? null,
+        bounce_event_id: event.id,
+        delivery_external_id: payload.external_id ?? null,
+      }),
+    ],
+  );
+  const row = rows[0];
+  if (!row) return;
+  if (row.channel_account_id) {
+    await refreshSendingDomainRates(pool, row.channel_account_id);
+  }
+  if (row.outcome_id && row.score) {
+    await bus.publish({
+      workspace_id: event.workspace_id,
+      event_type: "outcome.recorded",
+      source: "system",
+      producer_ref: "projector:email-feedback",
+      correlation_id: event.correlation_id,
+      causation_id: event.id,
+      payload: {
+        outcome_id: row.outcome_id,
+        kind: "bounce",
+        score: Number(row.score),
+        conversation_id: row.conversation_id,
+        attributed_play_id: null,
+        attributed_message_id: payload.message_id,
+        attributed_rep_id: row.rep_id,
+        properties: row.properties ?? {},
+      },
+    });
+  }
+}
+
+async function refreshSendingDomainRates(
+  pool: Pool,
+  channel_account_id: string,
+): Promise<void> {
+  await pool.query(
+    `with totals as (
+       select count(*)::numeric as total
+         from messages
+        where channel_account_id = $1
+          and channel = 'email'
+          and direction = 'outbound'
+          and sent_at >= now() - interval '24 hours'
+          and status in ('sent', 'delivered', 'bounced', 'replied')
+     ),
+     bounces as (
+       select count(*)::numeric as total
+         from messages
+        where channel_account_id = $1
+          and channel = 'email'
+          and direction = 'outbound'
+          and sent_at >= now() - interval '24 hours'
+          and status = 'bounced'
+     ),
+     complaints as (
+       select count(*)::numeric as total
+         from events e
+         join messages m
+           on m.id = (e.payload->>'message_id')::uuid
+        where m.channel_account_id = $1
+          and e.event_type = 'message.bounced'
+          and e.payload->>'bounce_type' = 'complaint'
+          and e.occurred_at >= now() - interval '24 hours'
+     ),
+     rates as (
+       select case when totals.total = 0 then 0 else bounces.total / totals.total end as bounce_rate,
+              case when totals.total = 0 then 0 else complaints.total / totals.total end as complaint_rate
+         from totals, bounces, complaints
+     )
+     update sending_domains sd
+        set bounce_rate_24h = rates.bounce_rate,
+            complaint_rate_24h = rates.complaint_rate,
+            warmup_state = case
+              when rates.complaint_rate >= 0.01 or rates.bounce_rate >= 0.05 then 'frozen'::domain_warmup_state
+              when rates.complaint_rate > 0 or rates.bounce_rate > 0 then 'degraded'::domain_warmup_state
+              else sd.warmup_state
+            end,
+            updated_at = now()
+       from rates
+      where sd.channel_account_id = $1`,
+    [channel_account_id],
+  );
+}

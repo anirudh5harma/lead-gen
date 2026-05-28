@@ -1,25 +1,25 @@
-import Link from 'next/link'
+import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 bg-[var(--color-ink-1)]">
-      <div className="text-center max-w-sm">
-        <p className="mono mb-6 text-[var(--color-accent)]">404 · not found</p>
-        <h1 className="editorial-h2">
-          Page <span className="serif-italic text-[var(--color-accent)]">missing.</span>
-        </h1>
-        <p className="text-[14px] text-[var(--color-text-3)] mt-4 leading-relaxed">
-          This page doesn&rsquo;t exist or was moved.
+    <main className="flex-1 flex flex-col items-center justify-center px-6 py-24">
+      <div className="max-w-md text-center">
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-3)] mb-4">
+          404
         </p>
-        <div className="mt-8 flex items-center justify-center gap-2">
-          <Link href="/dashboard" className="btn-accent h-10 px-5 text-[13px] inline-flex items-center">
-            Go to dashboard →
-          </Link>
-          <Link href="/" className="btn-ghost h-10 px-5 text-[13px] inline-flex items-center">
-            Home
-          </Link>
-        </div>
+        <h1 className="font-serif text-4xl text-[var(--color-text-1)] mb-4">
+          Not found
+        </h1>
+        <p className="font-sans text-[var(--color-text-2)] mb-8">
+          The page you are looking for does not exist.
+        </p>
+        <Link
+          href="/"
+          className="font-mono text-[12px] uppercase tracking-[0.16em] text-[var(--color-accent)] underline underline-offset-4"
+        >
+          Return home
+        </Link>
       </div>
-    </div>
-  )
+    </main>
+  );
 }
