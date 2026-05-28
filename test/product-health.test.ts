@@ -44,6 +44,15 @@ test("product health: NGS NATS requires complete creds in production", async () 
   assert.match(nats?.detail ?? "", /user NKEY seed/);
 });
 
+test("product health: production degrades while product substrate uses Postgres bridge", async () => {
+  const readiness = await checkProductReadiness(readyPool(), productionEnv());
+
+  assert.equal(readiness.ready, false);
+  const substrate = readiness.checks.find((check) => check.name === "substrate");
+  assert.equal(substrate?.status, "degraded");
+  assert.match(substrate?.detail ?? "", /Postgres event bus \+ workflow journal bridge/);
+});
+
 test("product health: production env gaps degrade readiness", async () => {
   const readiness = await checkProductReadiness(null, {
     NODE_ENV: "production",
@@ -85,4 +94,31 @@ function readyPool(): Pool {
   return {
     query: async () => ({ rows: [] }),
   } as unknown as Pool;
+}
+
+function productionEnv(): Record<string, string> {
+  return {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgresql://example",
+    APP_ORIGIN: "https://example.com",
+    NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
+    SESSION_SECRET: "secret",
+    CREDENTIALS_ENCRYPTION_KEY: "key",
+    DEEPSEEK_API_KEY: "sk",
+    OPENAI_API_KEY: "sk",
+    RESEND_API_KEY: "re",
+    RESEND_WEBHOOK_SECRET: "whsec",
+    AWS_REGION: "us-east-1",
+    AWS_SNS_TOPIC_ARNS: "arn:aws:sns:us-east-1:123456789012:bombsell-ses-events",
+    MICROSOFT_CLIENT_ID: "client",
+    MICROSOFT_CLIENT_SECRET: "secret",
+    MICROSOFT_REDIRECT_URI: "https://example.com/api/auth/outlook/callback",
+    NATS_URL: "tls://connect.ngs.global",
+    NATS_CREDS:
+      "-----BEGIN NATS USER JWT-----\nxxx\n------END NATS USER JWT------\n" +
+      "-----BEGIN USER NKEY SEED-----\nSUxxx\n------END USER NKEY SEED------",
+    RESTATE_INGRESS_URL: "https://restate.example",
+    MAINTENANCE_TRIGGER_SECRET: "secret",
+  };
 }

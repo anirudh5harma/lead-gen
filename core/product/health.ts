@@ -73,19 +73,7 @@ export async function checkProductReadiness(
     checks.push(formatRestateIngressCheck(env));
 
     const substrate = resolveProductSubstrateMode();
-    checks.push(
-      substrate.status === "ok"
-        ? {
-            name: "substrate",
-            status: "ok",
-            detail: substrate.detail,
-          }
-        : {
-            name: "substrate",
-            status: "degraded",
-            detail: substrate.detail,
-          },
-    );
+    checks.push(formatSubstrateCheck(substrate, env));
 
     await pool.query("select 1");
     checks.push({ name: "database", status: "ok" });
@@ -242,6 +230,34 @@ function formatRestateIngressCheck(
     name: "restate.ingress",
     status: "ok",
     detail: "Restate ingress URL is configured",
+  };
+}
+
+function formatSubstrateCheck(
+  substrate: ReturnType<typeof resolveProductSubstrateMode>,
+  env: Record<string, string | undefined>,
+): ProductReadinessCheck {
+  if (substrate.status !== "ok") {
+    return {
+      name: "substrate",
+      status: "degraded",
+      detail: substrate.detail,
+    };
+  }
+
+  if (env.NODE_ENV === "production" && substrate.mode === "postgres") {
+    return {
+      name: "substrate",
+      status: "degraded",
+      detail:
+        "Production product runtime is still using the Postgres event bus + workflow journal bridge; NATS/Restate are configured but not the active product substrate.",
+    };
+  }
+
+  return {
+    name: "substrate",
+    status: "ok",
+    detail: substrate.detail,
   };
 }
 
