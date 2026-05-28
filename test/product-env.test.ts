@@ -21,10 +21,22 @@ test("product env: production readiness reports missing required keys", () => {
 
   assert.equal(report.status, "degraded");
   assert.deepEqual(report.missingProductionKeys, [
+    "APP_ORIGIN",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SESSION_SECRET",
+    "CREDENTIALS_ENCRYPTION_KEY",
     "DEEPSEEK_API_KEY",
+    "OPENAI_API_KEY",
     "RESEND_API_KEY",
     "RESEND_WEBHOOK_SECRET",
+    "AWS_REGION",
+    "AWS_SNS_TOPIC_ARNS",
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_REDIRECT_URI",
+    "NATS_URL",
+    "RESTATE_INGRESS_URL",
+    "MAINTENANCE_TRIGGER_SECRET",
   ]);
 });
 
