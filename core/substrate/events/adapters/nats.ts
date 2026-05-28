@@ -224,16 +224,7 @@ async function startSubscription(
   const consumerName =
     opts.durableName ??
     `bombsell_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const sub = await opts.js.subscribe(opts.filterSubject, {
-    config: {
-      durable_name: opts.durableName,
-      name: consumerName,
-      ack_policy: AckPolicy.Explicit,
-      filter_subject: opts.filterSubject,
-      deliver_subject: `_INBOX.${randomUUID()}`,
-    },
-    mack: true, // manual ack — our handler decides
-  });
+  const sub = await subscribeJetStream(opts, consumerName);
   void opts.jsm; // reserved for future stream/consumer admin
 
   // Pump messages.
@@ -263,6 +254,42 @@ async function startSubscription(
   })().catch((err) => console.error("[nats event bus] pump exited:", err));
 
   return sub;
+}
+
+async function subscribeJetStream(
+  opts: SubscriptionStartOptions,
+  consumerName: string,
+): Promise<JetStreamSubscription> {
+  try {
+    return await opts.js.subscribe(opts.filterSubject, subscriptionOptions(opts, consumerName));
+  } catch (err) {
+    if (!opts.durableName || !isDurableQueueMigrationError(err)) throw err;
+    await opts.jsm.consumers.delete(opts.prefix, consumerName);
+    return opts.js.subscribe(opts.filterSubject, subscriptionOptions(opts, consumerName));
+  }
+}
+
+function subscriptionOptions(
+  opts: SubscriptionStartOptions,
+  consumerName: string,
+) {
+  const queueGroup = opts.durableName ? `${consumerName}_workers` : undefined;
+  return {
+    config: {
+      durable_name: opts.durableName,
+      name: consumerName,
+      ack_policy: AckPolicy.Explicit,
+      filter_subject: opts.filterSubject,
+      deliver_subject: `_INBOX.${randomUUID()}`,
+      ...(queueGroup ? { deliver_group: queueGroup } : {}),
+    },
+    ...(queueGroup ? { queue: queueGroup } : {}),
+    mack: true, // manual ack — our handler decides
+  };
+}
+
+function isDurableQueueMigrationError(err: unknown): boolean {
+  return err instanceof Error && err.message === "durable requires no queue group";
 }
 
 async function ensureStream(
