@@ -354,6 +354,20 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "1",
   },
   {
+    name: "WORKER_TARGET_COMMAND",
+    requirement: "optional",
+    category: "runtime",
+    description: "Target worker selected by the managed-worker health wrapper.",
+    example: "worker:email-projectors",
+  },
+  {
+    name: "WORKER_HEALTH_PORT",
+    requirement: "optional",
+    category: "runtime",
+    description: "HTTP health port exposed by managed background workers.",
+    example: "9080",
+  },
+  {
     name: "NODE_ENV",
     requirement: "optional",
     category: "runtime",

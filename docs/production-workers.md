@@ -30,6 +30,10 @@ docker run --rm \
   bombsell-worker
 ```
 
+For managed runtimes that require a web health check for background workers,
+run `worker:app-runner` with `WORKER_TARGET_COMMAND` set to either
+`worker:email-projectors` or `worker:signal-projectors`.
+
 ## Required Shared Environment
 
 All workers need:
@@ -39,6 +43,8 @@ All workers need:
 - `NATS_CREDS` when using Synadia/NGS
 - `NATS_STREAM_MAX_BYTES` when the hosted NATS account has a bounded stream quota
 - `DEEPSEEK_API_KEY`
+- `WORKER_HEALTH_PORT`, when running background workers through `worker:app-runner`
+- `WORKER_TARGET_COMMAND`, when running background workers through `worker:app-runner`
 
 Workers that start or bridge Restate invocations also need:
 

@@ -259,6 +259,9 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
 - `RESTATE_WORKFLOW_PORT` — the Restate workflow worker port (default 9080).
 - `RESTATE_WORKFLOW_HTTP1` — set to `1` when the worker is behind a managed
   HTTP/1.1 proxy such as AWS App Runner.
+- `WORKER_TARGET_COMMAND` — background worker selected by the managed-worker
+  health wrapper (`worker:email-projectors` or `worker:signal-projectors`).
+- `WORKER_HEALTH_PORT` — health port exposed by managed background workers.
 - `OUTLOOK_DEFAULT_DAILY_CAP` — connected-inbox per-day send ceiling
   (default 25).
 - `BOMBSELL_ALLOW_DEMO_AUTH`, `BOMBSELL_DEMO_USER_ID` — **leave unset in
