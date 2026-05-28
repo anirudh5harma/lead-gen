@@ -59,7 +59,7 @@ export interface NatsEventBusOptions {
   streamPrefix?: string;
   /** Stream max age. Defaults to 30 days. */
   streamMaxAgeMs?: number;
-  /** Stream max bytes (0 = unlimited). Defaults to 0. */
+  /** Stream max bytes. Defaults to 1 GiB because hosted NATS accounts may reject unlimited streams. */
   streamMaxBytes?: number;
   /** If true, ensure the stream exists at construct time. Defaults to true. */
   ensureStream?: boolean;
@@ -101,7 +101,7 @@ export async function createNatsEventBus(
   if (opts.ensureStream !== false) {
     await ensureStream(jsm, prefix, {
       max_age: (opts.streamMaxAgeMs ?? 30 * 24 * 60 * 60 * 1000) * 1_000_000, // nanoseconds
-      max_bytes: opts.streamMaxBytes ?? -1,
+      max_bytes: opts.streamMaxBytes ?? DEFAULT_STREAM_MAX_BYTES,
     });
   }
 
@@ -202,6 +202,8 @@ export async function createNatsEventBus(
 }
 
 // ─── Internals ─────────────────────────────────────────────────────────────
+
+const DEFAULT_STREAM_MAX_BYTES = 1024 * 1024 * 1024;
 
 interface SubscriptionStartOptions {
   js: JetStreamClient;
