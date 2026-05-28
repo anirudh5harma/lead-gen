@@ -46,9 +46,11 @@ function moduleForTarget(command: string | undefined): string {
       return "./email-projectors-worker.ts";
     case "worker:signal-projectors":
       return "./signal-projectors-worker.ts";
+    case "worker:projectors":
+      return "./projectors-worker.ts";
     default:
       throw new Error(
-        "WORKER_TARGET_COMMAND must be worker:email-projectors or worker:signal-projectors",
+        "WORKER_TARGET_COMMAND must be worker:email-projectors, worker:signal-projectors, or worker:projectors",
       );
   }
 }
