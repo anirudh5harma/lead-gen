@@ -17,6 +17,7 @@
     "worker:restate-workflows": "node --experimental-strip-types scripts/restate-workflows-worker.ts",
     "verify:recovery": "node --experimental-strip-types scripts/verify-recovery.ts",
     "verify:nats": "node --experimental-strip-types scripts/verify-nats.ts",
+    "verify:restate": "node --experimental-strip-types scripts/verify-restate.ts",
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
     "verify:ses": "node --experimental-strip-types scripts/verify-ses.ts",
     "test": "node --test --experimental-strip-types test/**/*.test.ts"

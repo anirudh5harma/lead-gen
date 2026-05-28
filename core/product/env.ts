@@ -294,6 +294,14 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "http://localhost:8080",
   },
   {
+    name: "RESTATE_ADMIN_URL",
+    requirement: "optional",
+    category: "substrate",
+    description:
+      "Restate admin API URL for deployment verification. Defaults to RESTATE_INGRESS_URL with port 9070.",
+    example: "http://localhost:9070",
+  },
+  {
     name: "RESTATE_BEARER_TOKEN",
     requirement: "optional",
     category: "substrate",

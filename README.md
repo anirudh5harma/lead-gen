@@ -215,6 +215,8 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
   identity provider.
 - `NATS_URL` — JetStream broker; production refuses to fall back to Postgres.
 - `RESTATE_INGRESS_URL` — Restate cloud / self-hosted ingress.
+- `RESTATE_ADMIN_URL` — Restate admin API used by `npm run verify:restate`;
+  defaults to `RESTATE_INGRESS_URL` with port `9070` when unset.
 - `RESTATE_BEARER_TOKEN` — bearer token for protected Restate Cloud /
   self-hosted ingress. Optional only for unauthenticated local Restate.
 - `MAINTENANCE_TRIGGER_SECRET` — bearer secret the maintenance route accepts
@@ -284,7 +286,8 @@ npm run worker:restate-workflows      # Restate handler host + signal bridge
 ```
 
 Register the Restate worker endpoint with the Restate admin API (see
-[Restate docs](https://docs.restate.dev)).
+[Restate docs](https://docs.restate.dev)) and
+[`docs/production-workers.md`](./docs/production-workers.md).
 
 #### 4. Scheduler
 
@@ -302,6 +305,7 @@ Run all three against the deployed environment:
 ```bash
 DATABASE_URL=... npm run verify:recovery   # dispatch DLQ schema + redrive flip
 DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-trip
+RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate # registered workflows
 DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
 AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS config
 ```
