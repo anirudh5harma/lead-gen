@@ -14,6 +14,7 @@
     "worker": "node --experimental-strip-types scripts/run-product-worker.ts",
     "worker:app-runner": "node --experimental-strip-types scripts/app-runner-worker.ts",
     "worker:email-projectors": "node --experimental-strip-types scripts/email-projectors-worker.ts",
+    "worker:projectors": "node --experimental-strip-types scripts/projectors-worker.ts",
     "worker:signal-projectors": "node --experimental-strip-types scripts/signal-projectors-worker.ts",
     "worker:restate-workflows": "node --experimental-strip-types scripts/restate-workflows-worker.ts",
     "verify:recovery": "node --experimental-strip-types scripts/verify-recovery.ts",
