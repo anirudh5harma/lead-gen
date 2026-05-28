@@ -64,7 +64,12 @@ test("product health: production NATS Restate mode verifies live NATS auth", asy
 test("product health: production NATS Restate mode is ready when NATS probe passes", async () => {
   const readiness = await checkProductReadiness(
     readyPool(),
-    { ...productionEnv(), BOMBSELL_SUBSTRATE: "nats_restate" },
+    {
+      ...productionEnv(),
+      BOMBSELL_SUBSTRATE: "nats_restate",
+      RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+      RESTATE_BEARER_TOKEN: "restate-token",
+    },
     { probeNatsConnection: async () => undefined },
   );
 
@@ -72,6 +77,23 @@ test("product health: production NATS Restate mode is ready when NATS probe pass
   const nats = readiness.checks.find((check) => check.name === "nats.credentials");
   assert.equal(nats?.status, "ok");
   assert.match(nats?.detail ?? "", /authenticated/);
+});
+
+test("product health: production Restate Cloud ingress requires bearer token", async () => {
+  const readiness = await checkProductReadiness(
+    readyPool(),
+    {
+      ...productionEnv(),
+      BOMBSELL_SUBSTRATE: "nats_restate",
+      RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+    },
+    { probeNatsConnection: async () => undefined },
+  );
+
+  assert.equal(readiness.ready, false);
+  const restate = readiness.checks.find((check) => check.name === "restate.ingress");
+  assert.equal(restate?.status, "degraded");
+  assert.match(restate?.detail ?? "", /RESTATE_BEARER_TOKEN/);
 });
 
 test("product health: production degrades while product substrate uses Postgres bridge", async () => {

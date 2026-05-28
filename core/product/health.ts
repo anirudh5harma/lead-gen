@@ -256,8 +256,9 @@ function formatRestateIngressCheck(
     };
   }
 
+  let url: URL;
   try {
-    const url = new URL(rawUrl);
+    url = new URL(rawUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw new Error("unsupported protocol");
     }
@@ -269,11 +270,27 @@ function formatRestateIngressCheck(
     };
   }
 
+  if (
+    env.BOMBSELL_SUBSTRATE === "nats_restate" &&
+    url.hostname.endsWith(".restate.cloud") &&
+    !restateBearerFromEnv(env)
+  ) {
+    return {
+      name: "restate.ingress",
+      status: "degraded",
+      detail: "RESTATE_BEARER_TOKEN is required for protected Restate Cloud ingress",
+    };
+  }
+
   return {
     name: "restate.ingress",
     status: "ok",
     detail: "Restate ingress URL is configured",
   };
+}
+
+function restateBearerFromEnv(env: Record<string, string | undefined>): string {
+  return env.RESTATE_BEARER_TOKEN?.trim() || env.RESTATE_AUTH_TOKEN?.trim() || "";
 }
 
 function formatSubstrateCheck(
