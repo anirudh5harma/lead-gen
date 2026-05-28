@@ -47,6 +47,14 @@ export interface RestateRuntimeOptions {
   fetchImpl?: typeof fetch;
 }
 
+export function restateBearerFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  return env.RESTATE_BEARER_TOKEN?.trim()
+    || env.RESTATE_AUTH_TOKEN?.trim()
+    || undefined;
+}
+
 export class RestateClientError extends Error {
   readonly status: number;
   readonly body: string;
@@ -292,6 +300,7 @@ function mapRestateStatus(status: string | undefined): WorkflowRunStatus {
  *   4. In your app, construct this adapter:
  *        const runtime = createRestateWorkflowRuntime({
  *          ingressUrl: process.env.RESTATE_INGRESS_URL,
+ *          bearer: process.env.RESTATE_BEARER_TOKEN,
  *        });
  *
  *      Now `runtime.start({...})` invokes the workflow over HTTP, Restate

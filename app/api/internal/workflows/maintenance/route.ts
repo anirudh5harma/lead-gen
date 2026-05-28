@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import {
   createRestateWorkflowRuntime,
+  restateBearerFromEnv,
   triggerDueWorkspaceMaintenance,
 } from "@/core/substrate/workflows/index.ts";
 
@@ -52,7 +53,10 @@ async function handle(req: NextRequest): Promise<Response> {
   try {
     const summary = await triggerDueWorkspaceMaintenance({
       pool: getPool(),
-      runtime: createRestateWorkflowRuntime({ ingressUrl }),
+      runtime: createRestateWorkflowRuntime({
+        ingressUrl,
+        bearer: restateBearerFromEnv(),
+      }),
     });
     return Response.json(summary, {
       status: summary.failures.length === 0 ? 202 : 207,

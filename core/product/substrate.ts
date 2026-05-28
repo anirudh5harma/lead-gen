@@ -10,6 +10,7 @@ import {
 import {
   createPostgresWorkflowRuntime,
   createRestateWorkflowRuntime,
+  restateBearerFromEnv,
 } from "../substrate/workflows/index.ts";
 import type { WorkflowRuntime } from "../substrate/workflows/index.ts";
 
@@ -68,7 +69,10 @@ export async function createProductSubstrate(
       throw new Error("RESTATE_INGRESS_URL is required for BOMBSELL_SUBSTRATE=nats_restate");
     }
     const bus = await createRuntimeEventBus({ pool });
-    const runtime = createRestateWorkflowRuntime({ ingressUrl });
+    const runtime = createRestateWorkflowRuntime({
+      ingressUrl,
+      bearer: restateBearerFromEnv(),
+    });
     return {
       mode: "nats_restate",
       bus,

@@ -215,6 +215,8 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
   identity provider.
 - `NATS_URL` — JetStream broker; production refuses to fall back to Postgres.
 - `RESTATE_INGRESS_URL` — Restate cloud / self-hosted ingress.
+- `RESTATE_BEARER_TOKEN` — bearer token for protected Restate Cloud /
+  self-hosted ingress. Optional only for unauthenticated local Restate.
 - `MAINTENANCE_TRIGGER_SECRET` — bearer secret the maintenance route accepts
   (set to the same value as `CRON_SECRET` on Vercel deployments).
 

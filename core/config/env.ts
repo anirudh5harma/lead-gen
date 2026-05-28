@@ -49,6 +49,8 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "NATS_URL", tier: "required", purpose: "Production typed event bus" },
   { key: "NATS_CREDS", tier: "optional", purpose: "NATS NKEY+JWT creds (inline contents or file path) for Synadia/NGS auth" },
   { key: "RESTATE_INGRESS_URL", tier: "required", purpose: "Production durable workflow runtime" },
+  { key: "RESTATE_BEARER_TOKEN", tier: "optional", purpose: "Bearer token for protected Restate ingress" },
+  { key: "RESTATE_AUTH_TOKEN", tier: "optional", purpose: "Legacy alias for RESTATE_BEARER_TOKEN" },
   { key: "MAINTENANCE_TRIGGER_SECRET", tier: "required", purpose: "Authenticated durable maintenance ingress" },
   { key: "CRON_SECRET", tier: "optional", purpose: "Vercel-injected bearer; accepted by the maintenance route" },
   { key: "RESTATE_WORKFLOW_PORT", tier: "optional", purpose: "Restate workflow handler port" },

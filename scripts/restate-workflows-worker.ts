@@ -27,6 +27,7 @@ import {
   startRestateEventSignalBridge,
 } from "../core/substrate/workflows/adapters/restate-signal-bridge.ts";
 import { serveRestateWorkflows } from "../core/substrate/workflows/adapters/restate-host.ts";
+import { restateBearerFromEnv } from "../core/substrate/workflows/adapters/restate.ts";
 
 const pool = getPool();
 const bus = await createRuntimeEventBus({ pool });
@@ -90,6 +91,7 @@ await startRestateEventSignalBridge({
   pool,
   bus,
   ingressUrl: restateIngressUrl,
+  bearer: restateBearerFromEnv(),
 });
 setInterval(() => {
   void eventSignals.recoverStaleDeliveries().catch((err) => {

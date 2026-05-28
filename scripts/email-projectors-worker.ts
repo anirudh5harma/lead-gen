@@ -5,7 +5,10 @@ import {
 } from "../core/channels/email/index.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
-import { createRestateWorkflowRuntime } from "../core/substrate/workflows/index.ts";
+import {
+  createRestateWorkflowRuntime,
+  restateBearerFromEnv,
+} from "../core/substrate/workflows/index.ts";
 
 const natsUrl = process.env.NATS_URL?.trim();
 if (!natsUrl) {
@@ -23,7 +26,10 @@ const restateIngressUrl = process.env.RESTATE_INGRESS_URL?.trim();
 if (!restateIngressUrl) {
   throw new Error("RESTATE_INGRESS_URL is required to run email ingress projectors");
 }
-const workflows = createRestateWorkflowRuntime({ ingressUrl: restateIngressUrl });
+const workflows = createRestateWorkflowRuntime({
+  ingressUrl: restateIngressUrl,
+  bearer: restateBearerFromEnv(),
+});
 const classifier = createDeepSeekIntentClassifier({
   llm: createDeepSeekClientFromEnv(),
 });

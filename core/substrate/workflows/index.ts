@@ -22,7 +22,10 @@ export * from "./types.ts";
 export { defineWorkflow } from "./define.ts";
 export { createInProcessWorkflowRuntime } from "./adapters/in-process.ts";
 export type { InProcessWorkflowRuntimeOptions } from "./adapters/in-process.ts";
-export { createRestateWorkflowRuntime } from "./adapters/restate.ts";
+export {
+  createRestateWorkflowRuntime,
+  restateBearerFromEnv,
+} from "./adapters/restate.ts";
 export type { RestateRuntimeOptions } from "./adapters/restate.ts";
 export {
   createRestateWorkflowComponent,

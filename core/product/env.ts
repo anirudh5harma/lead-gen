@@ -294,6 +294,18 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "http://localhost:8080",
   },
   {
+    name: "RESTATE_BEARER_TOKEN",
+    requirement: "optional",
+    category: "substrate",
+    description: "Bearer token for protected Restate Cloud or self-hosted ingress.",
+  },
+  {
+    name: "RESTATE_AUTH_TOKEN",
+    requirement: "optional",
+    category: "substrate",
+    description: "Legacy alias for RESTATE_BEARER_TOKEN.",
+  },
+  {
     name: "MAINTENANCE_TRIGGER_SECRET",
     requirement: "production",
     category: "substrate",
