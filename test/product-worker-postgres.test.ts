@@ -19,7 +19,7 @@ import {
 } from "../core/channels/email/index.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
 
-test("product worker: dispatches signal.ingested events into durable play runs", async (t) => {
+test("product worker: dispatches signal.matched events into durable play runs", async (t) => {
   const fx = await setupPg("product_worker");
   if (!fx) return t.skip("DATABASE_URL not set");
 

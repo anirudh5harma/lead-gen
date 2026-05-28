@@ -57,7 +57,7 @@ legacy/          # Archived previous implementation. Do not import.
 | Dashboard UI (brief, conversations, approvals, ingestion, deliverability, ops) | ✅ landed |
 | Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
 | Restate workflow-handler host process                 | ⏳ deployment work |
-| Auto-trigger of Plays on `signal.matched`             | ⏳ next    |
+| Auto-trigger of Plays on `signal.matched`             | ✅ landed |
 | LinkedIn / X / voice channels                         | ⏳ later  |
 | Second Play + NL → spec compiler                      | ⏳ later  |
 
@@ -315,8 +315,6 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
 
 #### Known follow-ups (do not block launch)
 
-- Auto-trigger of Plays on `signal.matched`. Today the Play is started
-  manually (or by the demo seed). The projector chain emits the right
-  events; the trigger subscriber + Rep/person resolver is the next
-  workstream.
+- Deploy and register the `worker:restate-workflows` handler host outside
+  Vercel, then verify Restate lists the workflow services.
 - `npm audit` findings should be resolved before release.

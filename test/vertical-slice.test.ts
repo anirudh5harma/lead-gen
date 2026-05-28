@@ -1,13 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runFirstVerticalSlice } from "../core/plays/index.ts";
+import {
+  createInMemoryVerticalSliceStore,
+  runFirstVerticalSlice,
+} from "../core/plays/index.ts";
 import {
   createDryRunEmailTransport,
   createOwnedDomainEmailChannel,
   createResendEmailTransport,
 } from "../core/channels/email/index.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
-import { parseRssSignals } from "../core/signals/index.ts";
+import { ingestManualSignal, parseRssSignals } from "../core/signals/index.ts";
 import type { LLMClient } from "../core/agents/llm/types.ts";
 
 test("first vertical slice: signal -> play -> judged draft -> email -> outcome -> procedural memory", async () => {
@@ -214,4 +217,37 @@ test("signal source: RSS parser creates typed Signals", async () => {
   assert.equal(signals[0].kind, "press_mention");
   assert.equal(signals[0].title, "Acme launched");
   assert.equal(signals[0].url, "https://example.com/acme");
+});
+
+test("manual pre-matched signal emits signal.matched for Play triggers", async () => {
+  const bus = createInMemoryEventBus();
+  await ingestManualSignal(
+    {
+      workspace_id: "00000000-0000-4000-8000-000000000001",
+      kind: "funding",
+      title: "Acme raised a Series A",
+      match_score: 0.86,
+      icp_segment: "fintech-founder",
+    },
+    {
+      store: createInMemoryVerticalSliceStore({
+        reps: [],
+        signals: [],
+        persons: [],
+      }),
+      bus,
+      producer_ref: "test:manual-signal",
+    },
+  );
+
+  assert.deepEqual(
+    bus.published.map((event) => event.event_type),
+    ["signal.ingested", "signal.matched"],
+  );
+  const matched = bus.published[1]?.payload as {
+    match_score?: number;
+    icp_segment?: string;
+  };
+  assert.equal(matched.match_score, 0.86);
+  assert.equal(matched.icp_segment, "fintech-founder");
 });

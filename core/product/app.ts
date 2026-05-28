@@ -970,6 +970,7 @@ async function startSignalEmailPlay(
     play_id: string;
     rep_id: string;
     signal_id: string;
+    person_id: string;
     trigger_event_id: string | null;
     approval: SignalToEmailPlayInput["email_approval"];
     policy: PlayChannelPolicy;
@@ -979,11 +980,8 @@ async function startSignalEmailPlay(
   const store = createPostgresVerticalSliceStore(engine.pool);
   const signal = await store.getSignal(input.signal_id);
   if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
-  if (!signal.related_person_id) {
-    throw new Error(`Signal missing related person: ${signal.id}`);
-  }
-  const person = await store.getPerson(signal.related_person_id);
-  if (!person) throw new Error(`Person not found: ${signal.related_person_id}`);
+  const person = await store.getPerson(input.person_id);
+  if (!person) throw new Error(`Person not found: ${input.person_id}`);
   const transport = createProductEmailTransport();
   const email = createDatabaseBackedEmailChannel(engine.pool, transport);
   const writerLlm = createGovernedLLM(engine, input.workspace_id, "writer.email");
@@ -1032,6 +1030,7 @@ export async function dispatchSignalPlaysOnce(
     event_id: string;
     workspace_id: string;
     signal_id: string;
+    person_id: string;
     play_id: string;
     rep_id: string;
     signal_properties: Record<string, unknown>;
@@ -1040,6 +1039,7 @@ export async function dispatchSignalPlaysOnce(
     `select e.id as event_id,
             e.workspace_id,
             e.payload->>'signal_id' as signal_id,
+            target_person.id as person_id,
             p.id as play_id,
             p.default_rep_id as rep_id,
             s.properties as signal_properties,
@@ -1057,11 +1057,27 @@ export async function dispatchSignalPlaysOnce(
           p.compiled #>> '{trigger,filter,kind}' is null
           or p.compiled #>> '{trigger,filter,kind}' = s.kind
         )
+       join lateral (
+         select gp.id
+           from graph_persons gp
+          where gp.workspace_id = e.workspace_id
+            and cardinality(gp.emails) > 0
+            and (
+              gp.id = s.related_person_id
+              or (
+                s.related_person_id is null
+                and s.related_company_id is not null
+                and gp.company_id = s.related_company_id
+              )
+            )
+          order by (gp.id = s.related_person_id) desc, gp.created_at asc
+          limit 1
+       ) target_person on true
        left join workflow_runs wr
          on wr.workspace_id = e.workspace_id
         and wr.workflow_name = $1
         and wr.idempotency_key = concat('signal:', e.payload->>'signal_id', ':play:', p.id::text)
-      where e.event_type = 'signal.ingested'
+      where e.event_type = 'signal.matched'
         and wr.id is null
       order by e.occurred_at asc
       limit $2`,
@@ -1079,6 +1095,7 @@ export async function dispatchSignalPlaysOnce(
       play_id: row.play_id,
       rep_id: row.rep_id,
       signal_id: row.signal_id,
+      person_id: row.person_id,
       trigger_event_id: row.event_id,
       approval: policy.approval,
       policy,

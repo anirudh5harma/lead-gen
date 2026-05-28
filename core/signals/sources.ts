@@ -83,6 +83,19 @@ export async function ingestManualSignal(
       novelty_score: signal.novelty_score,
     },
   });
+  if (input.match_score != null) {
+    await ctx.bus.publish({
+      workspace_id: input.workspace_id,
+      event_type: "signal.matched",
+      source: "user",
+      producer_ref: ctx.producer_ref ?? "signal-source:manual",
+      payload: {
+        signal_id: signal.id,
+        match_score: input.match_score,
+        icp_segment: input.icp_segment,
+      },
+    });
+  }
   return signal;
 }
 
