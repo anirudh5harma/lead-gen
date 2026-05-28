@@ -271,14 +271,9 @@ async function ensureStream(
   cfg: { max_age: number; max_bytes: number },
 ): Promise<void> {
   const subject = `${prefix}.>`;
+  let existing: Awaited<ReturnType<JetStreamManager["streams"]["info"]>> | null = null;
   try {
-    await jsm.streams.info(prefix);
-    // Stream exists. Update the subject filter + retention to keep it in sync.
-    await jsm.streams.update(prefix, {
-      subjects: [subject],
-      max_age: cfg.max_age,
-      max_bytes: cfg.max_bytes,
-    });
+    existing = await jsm.streams.info(prefix);
   } catch {
     await jsm.streams.add({
       name: prefix,
@@ -289,6 +284,30 @@ async function ensureStream(
       // don't double-publish.
       duplicate_window: 5 * 60 * 1_000_000_000,
     });
+    return;
+  }
+
+  const subjects = existing.config.subjects ?? [];
+  const capturesSubject = subjects.includes(subject);
+  const needsUpdate =
+    !capturesSubject ||
+    existing.config.max_age !== cfg.max_age ||
+    existing.config.max_bytes !== cfg.max_bytes;
+  if (!needsUpdate) return;
+
+  try {
+    // Stream exists. Update the subject filter + retention to keep it in sync.
+    await jsm.streams.update(prefix, {
+      subjects: capturesSubject ? subjects : [...subjects, subject],
+      max_age: cfg.max_age,
+      max_bytes: cfg.max_bytes,
+    });
+  } catch (err) {
+    if (!capturesSubject) throw err;
+    console.warn(
+      `[nats event bus] stream '${prefix}' exists but retention update failed; using existing stream config`,
+      err,
+    );
   }
 }
 
