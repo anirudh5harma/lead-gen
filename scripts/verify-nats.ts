@@ -60,10 +60,12 @@ async function main(): Promise<void> {
   let bus: Awaited<ReturnType<typeof createJournaledNatsEventBus>> | null = null;
 
   try {
+    const natsCreds = process.env.NATS_CREDS?.trim();
     bus = await createJournaledNatsEventBus({
       pool,
       servers: NATS_URL!,
       streamPrefix: `verify_${Date.now().toString(36)}`,
+      ...(natsCreds ? { credentials: natsCreds } : {}),
     });
     note("nats: bus connected", true);
 

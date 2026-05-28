@@ -1,11 +1,27 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createNatsEventBus } from "../core/substrate/events/adapters/nats.ts";
 import {
+  buildAuthenticator,
   subjectFor,
   subscribeSubject,
 } from "../core/substrate/events/adapters/nats.ts";
+
+const FAKE_CREDS = `-----BEGIN NATS USER JWT-----
+eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ.fake.fake
+------END NATS USER JWT------
+
+************************* IMPORTANT *************************
+NKEY Seed printed below can be used to sign and prove identity.
+
+-----BEGIN USER NKEY SEED-----
+SUAFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE
+------END USER NKEY SEED------
+`;
 
 const NATS_URL = process.env.NATS_URL ?? "nats://127.0.0.1:4222";
 
@@ -36,6 +52,34 @@ function until<T>(
     }
   })();
 }
+
+test("buildAuthenticator: empty / whitespace credentials → undefined", () => {
+  assert.equal(buildAuthenticator(undefined), undefined);
+  assert.equal(buildAuthenticator(""), undefined);
+  assert.equal(buildAuthenticator("   "), undefined);
+});
+
+test("buildAuthenticator: inline .creds contents → authenticator (no filesystem touch)", () => {
+  // A path that does not exist; if buildAuthenticator tried to read it as a
+  // file this would throw. The JWT marker forces the inline branch instead.
+  const auth = buildAuthenticator(FAKE_CREDS);
+  assert.equal(typeof auth, "function");
+});
+
+test("buildAuthenticator: filesystem path → reads the .creds file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "nats-creds-"));
+  const path = join(dir, "app.creds");
+  writeFileSync(path, FAKE_CREDS, "utf8");
+  const auth = buildAuthenticator(path);
+  assert.equal(typeof auth, "function");
+});
+
+test("buildAuthenticator: nonexistent path (no JWT marker) throws ENOENT", () => {
+  assert.throws(
+    () => buildAuthenticator("/no/such/file.creds"),
+    /ENOENT|no such file/i,
+  );
+});
 
 test("nats subjects: per-workspace + per-event-type encoding round-trip", () => {
   const ws = "550e8400-e29b-41d4-a716-446655440000";

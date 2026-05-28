@@ -25,9 +25,11 @@ export async function createRuntimeEventBus(
   const env = opts.env ?? process.env;
   const servers = env.NATS_URL?.trim();
   if (servers) {
+    const credentials = env.NATS_CREDS?.trim();
     return createJournaledNatsEventBus({
       pool: opts.pool ?? getPool(),
       servers,
+      ...(credentials ? { credentials } : {}),
     });
   }
   if (isProduction(env)) {

@@ -254,6 +254,14 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "nats://localhost:4222",
   },
   {
+    name: "NATS_CREDS",
+    requirement: "optional",
+    category: "substrate",
+    description:
+      "NATS NKEY+JWT credentials (inline .creds contents or a file path) for Synadia/NGS auth. Optional: unauthenticated or URL-credentialed servers don't need it.",
+    example: "/etc/nats/app.creds",
+  },
+  {
     name: "RESTATE_INGRESS_URL",
     requirement: "production",
     category: "substrate",

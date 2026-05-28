@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   AckPolicy,
+  type Authenticator,
   connect,
   type Codec,
+  credsAuthenticator,
   type JetStreamClient,
   type JetStreamManager,
   type JetStreamSubscription,
@@ -43,7 +46,14 @@ import type {
 
 export interface NatsEventBusOptions {
   servers: string | string[];
-  /** Optional credentials path or inline JWT. */
+  /**
+   * Optional NATS credentials. Accepts EITHER:
+   *   - the inline contents of a `.creds` file (detected by the
+   *     `-----BEGIN NATS USER JWT-----` marker), or
+   *   - a filesystem path to a `.creds` file.
+   * Required for Synadia Cloud / NGS and any server using NKEY+JWT auth.
+   * Username/password servers can instead embed creds in the `servers` URL.
+   */
   credentials?: string;
   /** Stream + subject prefix. Defaults to "events". */
   streamPrefix?: string;
@@ -72,9 +82,11 @@ export async function createNatsEventBus(
 ): Promise<NatsEventBus> {
   const prefix = opts.streamPrefix ?? "events";
   const codec = JSONCodec();
+  const authenticator = buildAuthenticator(opts.credentials);
   const nc = await connect({
     servers: opts.servers,
     name: "bombsell-event-bus",
+    ...(authenticator ? { authenticator } : {}),
   });
   const jsm = await nc.jetstreamManager();
   const js = nc.jetstream();
@@ -287,6 +299,25 @@ export function subscribeSubject(
   const ws = workspace_id === "*" ? "*" : safeSegment(workspace_id);
   const et = event_type === "*" ? ">" : safeSegment(event_type);
   return `${prefix}.${ws}.${et}`;
+}
+
+const CREDS_MARKER = "-----BEGIN NATS USER JWT-----";
+
+/**
+ * Turn the `credentials` option into a NATS authenticator, or undefined
+ * when no creds are configured (unauthenticated / URL-embedded auth).
+ *
+ * The value is treated as inline `.creds` content when it carries the
+ * NATS USER JWT marker; otherwise it is read as a filesystem path. Exported
+ * for unit testing the path/inline detection without a live connection.
+ */
+export function buildAuthenticator(
+  credentials: string | undefined,
+): Authenticator | undefined {
+  const raw = credentials?.trim();
+  if (!raw) return undefined;
+  const contents = raw.includes(CREDS_MARKER) ? raw : readFileSync(raw, "utf8");
+  return credsAuthenticator(new TextEncoder().encode(contents));
 }
 
 function safeSegment(s: string): string {

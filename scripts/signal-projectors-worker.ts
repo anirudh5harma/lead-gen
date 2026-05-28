@@ -11,8 +11,13 @@ if (!natsUrl) {
   throw new Error("NATS_URL is required to run signal projectors");
 }
 
+const natsCreds = process.env.NATS_CREDS?.trim();
 const pool = getPool();
-const bus = await createJournaledNatsEventBus({ pool, servers: natsUrl });
+const bus = await createJournaledNatsEventBus({
+  pool,
+  servers: natsUrl,
+  ...(natsCreds ? { credentials: natsCreds } : {}),
+});
 const llm = createDeepSeekClientFromEnv();
 
 const projectorSubscriptions = await registerSignalProjectors(
