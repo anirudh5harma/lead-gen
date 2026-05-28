@@ -46,8 +46,8 @@ export async function setupPg(label = "t"): Promise<PgFixture | null> {
 
   const pool = new pg.Pool({
     connectionString,
-    max: 4,
-    options: `-c search_path=${schema},public`,
+    max: 2,
+    options: `-c search_path=${schema},public,extensions`,
   });
 
   const migrationLock = await pool.connect();
