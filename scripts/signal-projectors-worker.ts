@@ -17,6 +17,8 @@ const bus = await createJournaledNatsEventBus({
   pool,
   servers: natsUrl,
   ...(natsCreds ? { credentials: natsCreds } : {}),
+  ...optionalPositiveNumber(process.env.NATS_STREAM_MAX_BYTES, "streamMaxBytes"),
+  ...optionalPositiveNumber(process.env.NATS_STREAM_MAX_AGE_MS, "streamMaxAgeMs"),
 });
 const llm = createDeepSeekClientFromEnv();
 
@@ -77,3 +79,15 @@ process.once("SIGINT", () => {
 process.once("SIGTERM", () => {
   void shutdown().finally(() => process.exit(0));
 });
+
+function optionalPositiveNumber<K extends string>(
+  raw: string | undefined,
+  key: K,
+): Partial<Record<K, number>> {
+  if (!raw?.trim()) return {};
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${key} must be a positive number`);
+  }
+  return { [key]: value } as Partial<Record<K, number>>;
+}
