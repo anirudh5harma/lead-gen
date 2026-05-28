@@ -25,6 +25,22 @@ export {
   EMAIL_SUB_CHANNELS,
 } from "./send.ts";
 export type { EmailChannelDeps } from "./send.ts";
+export {
+  createDryRunEmailTransport,
+  createOwnedDomainEmailChannel,
+} from "./dry-run.ts";
+export type { DryRunEmailTransport } from "./dry-run.ts";
+export { createPostgresOwnedDomainEmailChannel } from "./postgres.ts";
+export type { PostgresOwnedDomainEmailChannelOptions } from "./postgres.ts";
+export { createResendEmailTransport } from "./resend.ts";
+export type { ResendEmailTransportOptions } from "./resend.ts";
+export { createResendDomainTransport } from "./domains.ts";
+export type {
+  EmailDomainDnsRecord,
+  EmailDomainSnapshot,
+  EmailDomainTransport,
+  ResendDomainTransportOptions,
+} from "./domains.ts";
 export { handleBounce } from "./bounces.ts";
 export { handleInboundEmail } from "./reply.ts";
 export {

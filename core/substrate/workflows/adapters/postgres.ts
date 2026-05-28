@@ -364,7 +364,7 @@ export function createPostgresWorkflowRuntime(
         );
         await updatePlayRun(pool, rec.run, "failed", undefined);
         await bus.publish({
-          workspace_id: rec.run.workspace_id,
+          workspace_id: rec.run.workspace_id!,
           event_type: "workflow.run.failed",
           source: "system",
           producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,

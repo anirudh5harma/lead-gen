@@ -21,6 +21,8 @@
  * reputation, different code path.
  */
 
+import type { Channel } from "../types.ts";
+
 export type EmailSubChannel = "owned_domain" | "oauth_outlook";
 
 export interface EmailAddress {
@@ -98,4 +100,38 @@ export interface BounceEvent {
   bounce_type: "hard" | "soft" | "complaint";
   recipient: string;
   detail?: string;
+}
+
+export type EmailChannel = Channel;
+
+export interface EmailTransportResult {
+  external_id: string;
+}
+
+export interface EmailSendEnvelope {
+  from: string;
+  to: string;
+  subject: string;
+  body: string;
+  account_id: string;
+  idempotency_key: string;
+}
+
+export interface EmailTransport {
+  send(envelope: EmailSendEnvelope): Promise<EmailTransportResult>;
+}
+
+export interface EmailChannelAccount {
+  id: string;
+  display_name: string;
+  kind: string;
+  status: string;
+  daily_cap: number;
+  daily_used: number;
+}
+
+export interface EmailChannelOptions {
+  accounts: EmailChannelAccount[];
+  transport: EmailTransport;
+  now?: () => Date;
 }

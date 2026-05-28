@@ -123,6 +123,36 @@ export function createRestateWorkflowRuntime(
     return JSON.parse(text) as T;
   }
 
+  async function getRun<I = unknown, O = unknown>(
+    run_id: string,
+  ): Promise<WorkflowRun<I, O> | null> {
+    const path = `/restate/invocation/${encodeURIComponent(run_id)}`;
+    try {
+      const status = await request<RestateStatusResponse>("GET", path);
+      return {
+        id: run_id,
+        execution_scope: "workspace",
+        workspace_id: "",
+        workflow_name: "",
+        workflow_version: "",
+        status: mapRestateStatus(status.status),
+        input: undefined as I,
+        output: status.output as O | undefined,
+        error: status.error?.message
+          ? { message: status.error.message }
+          : undefined,
+        started_at: status.startedAt,
+        ended_at: status.completedAt,
+        created_at: status.startedAt ?? new Date().toISOString(),
+      };
+    } catch (err) {
+      if (err instanceof RestateClientError && err.status === 404) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
   return {
     register<I, O>(workflow: WorkflowDefinition<I, O>): void {
       knownVersions.set(workflow.name, workflow.version);
@@ -190,31 +220,16 @@ export function createRestateWorkflowRuntime(
     async get<I = unknown, O = unknown>(
       run_id: string,
     ): Promise<WorkflowRun<I, O> | null> {
-      const path = `/restate/invocation/${encodeURIComponent(run_id)}`;
-      try {
-        const status = await request<RestateStatusResponse>("GET", path);
-        return {
-          id: run_id,
-          execution_scope: "workspace",
-          workspace_id: "",
-          workflow_name: "",
-          workflow_version: "",
-          status: mapRestateStatus(status.status),
-          input: undefined as I,
-          output: status.output as O | undefined,
-          error: status.error?.message
-            ? { message: status.error.message }
-            : undefined,
-          started_at: status.startedAt,
-          ended_at: status.completedAt,
-          created_at: status.startedAt ?? new Date().toISOString(),
-        };
-      } catch (err) {
-        if (err instanceof RestateClientError && err.status === 404) {
-          return null;
-        }
-        throw err;
-      }
+      return getRun<I, O>(run_id);
+    },
+
+    async resume<I = unknown, O = unknown>(
+      run_id: string,
+    ): Promise<WorkflowRun<I, O> | null> {
+      // Restate owns durable execution; there is no local worker journal to
+      // replay from the client side. Returning the invocation state preserves
+      // the WorkflowRuntime contract for callers that need to probe/resume.
+      return getRun<I, O>(run_id);
     },
 
     async resolveApproval(
