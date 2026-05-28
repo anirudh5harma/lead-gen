@@ -226,6 +226,9 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
 - `AWS_REGION`, `AWS_SNS_TOPIC_ARNS` — owned-domain sending via SES;
   `AWS_SNS_TOPIC_ARNS` is the comma-separated list of trusted SNS topic ARNs
   the webhook accepts.
+- `SES_CONFIGURATION_SET` — SES configuration set attached to owned-domain
+  outbound sends so delivery, bounce, and complaint events reach SNS. Defaults
+  to `bombsell-outbound` in the worker.
 - `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` —
   Outlook OAuth.
 - `RESEND_API_KEY` — transactional product email (welcome, alerts).
@@ -296,6 +299,7 @@ Run all three against the deployed environment:
 DATABASE_URL=... npm run verify:recovery   # dispatch DLQ schema + redrive flip
 DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-trip
 DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
+AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS config
 ```
 
 #### 6. Operator surfaces to bookmark

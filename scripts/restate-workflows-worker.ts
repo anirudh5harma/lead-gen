@@ -43,6 +43,7 @@ const restateIngressUrl = requiredEnv("RESTATE_INGRESS_URL");
 const appOrigin = requiredEnv("APP_ORIGIN").replace(/\/$/, "");
 const microsoftClientId = requiredEnv("MICROSOFT_CLIENT_ID");
 const microsoftClientSecret = requiredEnv("MICROSOFT_CLIENT_SECRET");
+const sesConfigurationSet = process.env.SES_CONFIGURATION_SET?.trim() || "bombsell-outbound";
 const eventSignals = createPostgresRestateEventSignalStore(pool);
 const outlook = createOutlookSender({
   pool,
@@ -61,6 +62,7 @@ const workflows = [
     emailChannelDeps: {
       ses: createSesSender(),
       outlook,
+      sesConfigurationSet,
     },
   }),
   createCatalogPollWorkflow({

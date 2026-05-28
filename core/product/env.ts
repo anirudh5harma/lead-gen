@@ -184,10 +184,35 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "us-east-1",
   },
   {
+    name: "AWS_ACCESS_KEY_ID",
+    requirement: "optional",
+    category: "channels",
+    description: "Local/static AWS access key for SES. Production should prefer a managed credential provider where available.",
+  },
+  {
+    name: "AWS_SECRET_ACCESS_KEY",
+    requirement: "optional",
+    category: "channels",
+    description: "Local/static AWS secret key for SES. Production should prefer a managed credential provider where available.",
+  },
+  {
+    name: "AWS_SESSION_TOKEN",
+    requirement: "optional",
+    category: "channels",
+    description: "Temporary AWS session token when using short-lived credentials.",
+  },
+  {
     name: "AWS_SNS_TOPIC_ARNS",
     requirement: "production",
     category: "channels",
     description: "Comma-separated trusted SES SNS topic ARNs accepted by the inbound webhook.",
+  },
+  {
+    name: "SES_CONFIGURATION_SET",
+    requirement: "optional",
+    category: "channels",
+    description: "SES configuration set attached to outbound owned-domain sends for delivery, bounce, and complaint SNS events.",
+    example: "bombsell-outbound",
   },
   {
     name: "SNS_VERIFY_SIGNATURES",
