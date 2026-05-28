@@ -31,6 +31,22 @@ import { isProduction } from "@/core/config/env.ts";
 
 export const dynamic = "force-dynamic";
 
+function logSnsWebhook(
+  level: "info" | "warn" | "error",
+  message: string,
+  details: Record<string, unknown> = {},
+): void {
+  console[level]("[ses-sns-webhook]", message, details);
+}
+
+async function responseText(response: Response): Promise<string> {
+  try {
+    return (await response.text()).slice(0, 500);
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
   const rawBody = await req.text();
 
@@ -38,6 +54,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     envelope = parseSnsEnvelope(rawBody);
   } catch (err) {
+    logSnsWebhook("warn", "rejected malformed SNS envelope", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return new Response(err instanceof Error ? err.message : "bad envelope", {
       status: 400,
     });
@@ -52,6 +71,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     } catch (err) {
       const status = err instanceof SnsConfigurationError ? 503 : 401;
+      logSnsWebhook("error", "SNS verification failed", {
+        type: envelope.Type,
+        topicArn: envelope.TopicArn ?? null,
+        configuredTopicCount: allowedSnsTopicArns().length,
+        status,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return new Response(
         err instanceof Error ? err.message : "SNS verification failed",
         { status },
@@ -64,12 +90,40 @@ export async function POST(req: NextRequest): Promise<Response> {
       const parsed = parseSnsNotification(envelope);
       if (parsed.kind === "subscription_confirmation") {
         if (!validSnsUrl(parsed.subscribeUrl)) {
+          logSnsWebhook("error", "rejected untrusted SNS SubscribeURL", {
+            type: envelope.Type,
+            topicArn: envelope.TopicArn ?? null,
+          });
           return new Response("untrusted SNS confirmation URL", { status: 401 });
         }
-        await fetch(parsed.subscribeUrl, { method: "GET" });
+        const confirmation = await fetch(parsed.subscribeUrl, {
+          method: "GET",
+          cache: "no-store",
+        });
+        if (!confirmation.ok) {
+          const body = await responseText(confirmation);
+          logSnsWebhook("error", "SNS subscription confirmation request failed", {
+            topicArn: envelope.TopicArn ?? null,
+            status: confirmation.status,
+            body,
+          });
+          return new Response(
+            `SNS confirmation failed (${confirmation.status}): ${body}`,
+            { status: 502 },
+          );
+        }
+        logSnsWebhook("info", "SNS subscription confirmed", {
+          topicArn: envelope.TopicArn ?? null,
+          status: confirmation.status,
+        });
       }
       return new Response(null, { status: 200 });
     } catch (err) {
+      logSnsWebhook("error", "SNS subscription confirmation handler failed", {
+        type: envelope.Type,
+        topicArn: envelope.TopicArn ?? null,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return new Response(err instanceof Error ? err.message : "bad confirm", {
         status: 400,
       });
@@ -80,6 +134,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     bus = await createRuntimeEventBus();
   } catch (err) {
+    logSnsWebhook("error", "event bus unavailable for SNS notification", {
+      type: envelope.Type,
+      topicArn: envelope.TopicArn ?? null,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return new Response(err instanceof Error ? err.message : "event bus unavailable", {
       status: 503,
     });
@@ -119,6 +178,11 @@ export async function POST(req: NextRequest): Promise<Response> {
         break;
     }
   } catch (err) {
+    logSnsWebhook("error", "SNS notification enqueue failed", {
+      type: envelope.Type,
+      topicArn: envelope.TopicArn ?? null,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return new Response(err instanceof Error ? err.message : "enqueue failed", {
       status: 503,
     });
