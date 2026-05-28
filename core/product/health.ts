@@ -44,12 +44,12 @@ const REQUIRED_TABLES = [
 ];
 
 const REQUIRED_MIGRATIONS = [
-  "014_signal_novelty_uniqueness.sql",
-  "015_workspace_llm_usage.sql",
-  "016_workflow_run_leases.sql",
-  "017_event_idempotency_keys.sql",
-  "018_event_projection_jobs.sql",
-  "019_procedural_memory_applications.sql",
+  "021_event_idempotency_keys.sql",
+  "027_signal_novelty_uniqueness.sql",
+  "028_workspace_llm_usage.sql",
+  "029_workflow_run_leases.sql",
+  "030_event_projection_jobs.sql",
+  "031_procedural_memory_applications.sql",
 ];
 
 export async function checkProductReadiness(
