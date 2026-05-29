@@ -1,4 +1,4 @@
-import { randomUUID, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { GraphCompany, GraphPerson, SourceKind } from "../graph/types.ts";
 import {
@@ -123,6 +123,30 @@ const RUNNABLE_WORKFLOW_NAMES = [
   SENDING_DOMAIN_PROVISIONING_WORKFLOW,
   SENDING_DOMAIN_WARMUP_WORKFLOW,
 ] as const;
+
+function configurationEventKey(
+  eventType: string,
+  workspace_id: string,
+  entity_id: string,
+  payload: unknown,
+): string {
+  const digest = createHash("sha256")
+    .update(stableJson(payload))
+    .digest("hex")
+    .slice(0, 20);
+  return `${eventType}:${workspace_id}:${entity_id}:${digest}`;
+}
+
+function stableJson(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+    .join(",")}}`;
+}
 
 export type WorkspaceSignalSourceAdapter =
   | "rss"
@@ -439,6 +463,7 @@ export async function bootstrapWorkspace(
   const ensureMembership = opts.ensureMembership ?? true;
   const workspace_id = opts.workspace_id ?? randomUUID();
   const slug = opts.workspace_slug ?? DEFAULT_WORKSPACE_SLUG;
+  const engine = await getProductEngine();
   const existing = opts.workspace_id
     ? await pool.query<{ id: string }>(
         `select id from workspaces where id = $1`,
@@ -460,11 +485,22 @@ export async function bootstrapWorkspace(
         JSON.stringify({ mode: "local-product" }),
       ],
     );
-    await pool.query(
-      `insert into workspace_members (workspace_id, user_id, role, accepted_at)
-       values ($1, $2, 'owner', now())`,
-      [ws, user_id],
-    );
+    const event = await engine.bus.publish({
+      workspace_id: ws,
+      event_type: "workspace.created",
+      source: "system",
+      producer_ref: user_id,
+      idempotency_key: `bootstrap:workspace.created:${ws}`,
+      payload: {
+        workspace_id: ws,
+        created_by: user_id,
+        slug,
+        name: opts.workspace_name ?? "Bombsell Demo Workspace",
+        settings: { mode: "local-product" },
+        owner_role: "owner",
+      },
+    });
+    await projectWorkspaceCreated(engine.pool, event);
   } else if (ensureMembership) {
     await pool.query(
       `insert into workspace_members (workspace_id, user_id, role, accepted_at)
@@ -474,10 +510,10 @@ export async function bootstrapWorkspace(
     );
   }
 
-  const rep = await ensureRep(pool, ws);
-  const play = await ensurePlay(pool, ws, rep.id);
+  const rep = await ensureRep(engine, ws, user_id);
+  const play = await ensurePlay(engine, ws, rep.id, user_id);
   const trustedDemoState = !isProductionProductRuntime();
-  const account = await ensureChannelAccount(pool, ws, trustedDemoState);
+  const account = await ensureChannelAccount(engine, ws, trustedDemoState, user_id);
   await ensureSendingDomain(pool, ws, account.id, account.display_name, trustedDemoState);
   await ensureProceduralSeed(pool, ws, rep.id);
   return {
@@ -618,56 +654,71 @@ function slugifyWorkspace(value: string): string {
   return slug || `workspace-${randomBytes(2).toString("hex")}`;
 }
 
-async function ensureRep(pool: Pool, workspace_id: string): Promise<{ id: string }> {
-  const existing = await pool.query<{ id: string }>(
+async function ensureRep(
+  engine: ProductEngine,
+  workspace_id: string,
+  user_id: string,
+): Promise<{ id: string }> {
+  const existing = await engine.pool.query<{ id: string }>(
     `select id from reps where workspace_id = $1 and lower(name) = lower($2)`,
     [workspace_id, "Maya"],
   );
   if (existing.rows[0]) return existing.rows[0];
-  const id = randomUUID();
-  await pool.query(
-    `insert into reps (id, workspace_id, name, role, status, persona, channels, autonomy)
-     values ($1, $2, 'Maya', 'sdr', 'active', $3::jsonb, $4::text[], $5::jsonb)`,
-    [
-      id,
-      workspace_id,
-      JSON.stringify({
+  const rep_id = randomUUID();
+  const event = await engine.bus.publish({
+    workspace_id,
+    event_type: "rep.configured",
+    source: "system",
+    producer_ref: user_id,
+    idempotency_key: `bootstrap:rep.configured:${workspace_id}:maya`,
+    payload: {
+      rep_id,
+      name: "Maya",
+      role: "sdr",
+      status: "active",
+      persona: {
         voice: "Warm, precise, low-hype, founder-to-founder.",
         story: "Maya helps teams act on fresh buying signals without spraying generic outreach.",
         kpis: ["positive replies", "meetings booked"],
         do_not: ["Do not mention being an AI.", "Do not overpromise."],
         samples: ["Saw the launch. The timing feels worth a quick compare-notes conversation."],
-      }),
-      ["email"],
-      JSON.stringify({ channels: { email: { daily_cap: 25, approval: "approve_first" } }, global: {} }),
-    ],
-  );
-  return { id };
+      },
+      channels: ["email"],
+      autonomy: {
+        channels: { email: { daily_cap: 25, approval: "approve_first" } },
+        global: {},
+      },
+    },
+  });
+  await projectRepConfigured(engine.pool, event);
+  return { id: rep_id };
 }
 
 async function ensurePlay(
-  pool: Pool,
+  engine: ProductEngine,
   workspace_id: string,
   rep_id: string,
+  user_id: string,
 ): Promise<{ id: string }> {
-  const existing = await pool.query<{ id: string }>(
+  const existing = await engine.pool.query<{ id: string }>(
     `select id from plays where workspace_id = $1 and lower(name) = lower($2) order by version desc limit 1`,
     [workspace_id, "Funding Signal Founder Email"],
   );
   if (existing.rows[0]) return existing.rows[0];
-  const id = randomUUID();
-  await pool.query(
-    `insert into plays (
-       id, workspace_id, name, description, declaration, compiled,
-       compiler_version, autonomy, default_rep_id, status
-     ) values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, 'active')`,
-    [
-      id,
-      workspace_id,
-      "Funding Signal Founder Email",
-      "When a matched funding signal arrives, Maya researches, drafts, judges, gates, and sends an owned-domain email.",
-      "When a funding signal matches a fintech founder, draft and gate a concise founder-to-founder email.",
-      JSON.stringify({
+  const play_id = randomUUID();
+  const declaration =
+    "When a funding signal matches a fintech founder, draft and gate a concise founder-to-founder email.";
+  const event = await engine.bus.publish({
+    workspace_id,
+    event_type: "play.configured",
+    source: "system",
+    producer_ref: user_id,
+    idempotency_key: `bootstrap:play.configured:${workspace_id}:funding-signal-founder-email`,
+    payload: {
+      play_id,
+      name: "Funding Signal Founder Email",
+      declaration,
+      compiled: {
         trigger: { kind: "signal", filter: { kind: "funding" } },
         steps: [
           { id: "research", op: "research.signal_context" },
@@ -675,48 +726,61 @@ async function ensurePlay(
           { id: "judge", op: "eval.hot_path" },
           { id: "send", op: "sender.email" },
         ],
-      }),
-      "local-v1",
-      JSON.stringify({ channels: { email: { daily_cap: 25, approval: "approve_first" } }, global: {} }),
-      rep_id,
-    ],
-  );
-  return { id };
+      },
+      autonomy: {
+        channels: { email: { daily_cap: 25, approval: "approve_first" } },
+        global: {},
+      },
+      default_rep_id: rep_id,
+      status: "active",
+      version: 1,
+    },
+  });
+  await projectPlayConfigured(engine.pool, event);
+  return { id: play_id };
 }
 
-async function ensureChannelAccount(
+async function findEmailDomainAccount(
   pool: Pool,
   workspace_id: string,
-  trustedDemoState: boolean,
-): Promise<{ id: string; display_name: string }> {
+): Promise<{ id: string; display_name: string } | null> {
   const existing = await pool.query<{ id: string; display_name: string }>(
     `select id, display_name from channel_accounts
       where workspace_id = $1 and kind = 'email_domain'
       order by created_at asc limit 1`,
     [workspace_id],
   );
-  if (existing.rows[0]) return existing.rows[0];
+  return existing.rows[0] ?? null;
+}
+
+async function ensureChannelAccount(
+  engine: ProductEngine,
+  workspace_id: string,
+  trustedDemoState: boolean,
+  user_id: string,
+): Promise<{ id: string; display_name: string }> {
+  const existing = await findEmailDomainAccount(engine.pool, workspace_id);
+  if (existing) return existing;
   const id = randomUUID();
-  const displayName = trustedDemoState
+  const display_name = trustedDemoState
     ? "maya@go.bombsell.example"
     : "Email channel not configured";
-  await pool.query(
-    `insert into channel_accounts (
-       id, workspace_id, kind, display_name, status, daily_cap, daily_used, properties
-     ) values ($1, $2, 'email_domain', $3, $4::channel_account_status, $5, 0, $6::jsonb)`,
-    [
-      id,
-      workspace_id,
-      displayName,
-      trustedDemoState ? "connected" : "disconnected",
-      trustedDemoState ? 25 : 0,
-      JSON.stringify({
-        transport: trustedDemoState ? "dry-run" : "unconfigured",
-        bootstrap_state: trustedDemoState ? "local-demo" : "awaiting-configuration",
-      }),
-    ],
-  );
-  return { id, display_name: displayName };
+  const event = await engine.bus.publish({
+    workspace_id,
+    event_type: "channel.account.configured",
+    source: "system",
+    producer_ref: user_id,
+    idempotency_key: `bootstrap:channel.account.configured:${workspace_id}:email-domain`,
+    payload: {
+      channel_account_id: id,
+      kind: "email_domain",
+      display_name,
+      daily_cap: trustedDemoState ? 25 : 0,
+      transport: trustedDemoState ? "dry-run" : "unconfigured",
+    },
+  });
+  await projectEmailAccountConfigured(engine.pool, event);
+  return { id, display_name };
 }
 
 async function ensureSendingDomain(
@@ -855,21 +919,27 @@ export async function configureRep(
     },
     global: {},
   };
+  const payload = {
+    rep_id,
+    name,
+    role,
+    status: "active" as const,
+    persona,
+    channels: ["email"],
+    autonomy,
+  };
   const event = await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: "rep.configured",
     source: "user",
     producer_ref: session.user_id,
-    idempotency_key: `rep.configured:${session.workspace_id}:${rep_id}`,
-    payload: {
+    idempotency_key: configurationEventKey(
+      "rep.configured",
+      session.workspace_id,
       rep_id,
-      name,
-      role,
-      status: "active",
-      persona,
-      channels: ["email"],
-      autonomy,
-    },
+      payload,
+    ),
+    payload,
   });
   await projectRepConfigured(engine.pool, event);
   return { workspace_id: session.workspace_id, rep_id };
@@ -955,7 +1025,12 @@ export async function configureIcpSegment(
     event_type: "workspace.icp.configured",
     source: "user",
     producer_ref: session.user_id,
-    idempotency_key: `workspace.icp.configured:${session.workspace_id}:${icp_id}`,
+    idempotency_key: configurationEventKey(
+      "workspace.icp.configured",
+      session.workspace_id,
+      icp_id,
+      payload,
+    ),
     payload,
   });
   await projectIcpConfigured(engine.pool, event);
@@ -1072,18 +1147,24 @@ export async function trackCompanyForWorkspace(
     input.reason ?? "activation",
     session.user_id,
   );
+  const payload = {
+    company_id: company.id,
+    name: company.name,
+    domain: company.domain,
+    reason: input.reason ?? "activation",
+  };
   const event = await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: "workspace.company.tracked",
     source: "user",
     producer_ref: session.user_id,
-    idempotency_key: `workspace.company.tracked:${session.workspace_id}:${company.id}`,
-    payload: {
-      company_id: company.id,
-      name: company.name,
-      domain: company.domain,
-      reason: input.reason ?? "activation",
-    },
+    idempotency_key: configurationEventKey(
+      "workspace.company.tracked",
+      session.workspace_id,
+      company.id,
+      payload,
+    ),
+    payload,
   });
   await projectCompanyTracked(engine.pool, event, company);
   return { workspace_id: session.workspace_id, company_id: company.id };
@@ -1141,20 +1222,26 @@ export async function configureWorkspaceCompanyProfile(
         [session.workspace_id, companyName],
       );
   const company_id = existing.rows[0]?.id ?? randomUUID();
+  const payload = {
+    company_id,
+    name: companyName,
+    domain,
+    website_url: websiteUrl,
+    industry: blankToNull(input.industry ?? undefined),
+    description: blankToNull(input.description ?? undefined),
+  };
   const event = await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: "workspace.company.profiled",
     source: "user",
     producer_ref: session.user_id,
-    idempotency_key: `workspace.company.profiled:${session.workspace_id}:${company_id}`,
-    payload: {
+    idempotency_key: configurationEventKey(
+      "workspace.company.profiled",
+      session.workspace_id,
       company_id,
-      name: companyName,
-      domain,
-      website_url: websiteUrl,
-      industry: blankToNull(input.industry ?? undefined),
-      description: blankToNull(input.description ?? undefined),
-    },
+      payload,
+    ),
+    payload,
   });
   await projectWorkspaceCompanyProfiled(engine.pool, event);
   return { workspace_id: session.workspace_id, company_id };
@@ -1289,22 +1376,28 @@ export async function configureSignalEmailPlay(
     channels: { email: { daily_cap: dailyCap, approval } },
     global: {},
   };
+  const payload = {
+    play_id,
+    name,
+    declaration,
+    compiled,
+    autonomy,
+    default_rep_id: input.rep_id,
+    status: "active" as const,
+    version: existing.rows[0]?.version ?? 1,
+  };
   const event = await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: "play.configured",
     source: "user",
     producer_ref: session.user_id,
-    idempotency_key: `play.configured:${session.workspace_id}:${play_id}`,
-    payload: {
+    idempotency_key: configurationEventKey(
+      "play.configured",
+      session.workspace_id,
       play_id,
-      name,
-      declaration,
-      compiled,
-      autonomy,
-      default_rep_id: input.rep_id,
-      status: "active",
-      version: existing.rows[0]?.version ?? 1,
-    },
+      payload,
+    ),
+    payload,
   });
   await projectPlayConfigured(engine.pool, event);
   return { workspace_id: session.workspace_id, play_id };
@@ -1505,28 +1598,31 @@ export async function configureWorkspaceEmailAccount(
 ): Promise<{ workspace_id: string; channel_account_id: string }> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const account = await ensureChannelAccount(
-    engine.pool,
-    session.workspace_id,
-    !isProductionProductRuntime(),
-  );
+  const existing = await findEmailDomainAccount(engine.pool, session.workspace_id);
+  const channel_account_id = existing?.id ?? randomUUID();
   const transport = resolveProductEmailTransportMode();
+  const payload = {
+    channel_account_id,
+    kind: "email_domain" as const,
+    display_name: input.display_name,
+    daily_cap: Math.max(0, Math.trunc(input.daily_cap)),
+    transport,
+  };
   const event = await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: "channel.account.configured",
     source: "user",
     producer_ref: session.user_id,
-    idempotency_key: `channel.account.configured:${session.workspace_id}:${account.id}`,
-    payload: {
-      channel_account_id: account.id,
-      kind: "email_domain",
-      display_name: input.display_name,
-      daily_cap: Math.max(0, Math.trunc(input.daily_cap)),
-      transport,
-    },
+    idempotency_key: configurationEventKey(
+      "channel.account.configured",
+      session.workspace_id,
+      channel_account_id,
+      payload,
+    ),
+    payload,
   });
   await projectEmailAccountConfigured(engine.pool, event);
-  return { workspace_id: session.workspace_id, channel_account_id: account.id };
+  return { workspace_id: session.workspace_id, channel_account_id };
 }
 
 export async function configureEmailAccount(
@@ -1549,18 +1645,25 @@ export async function configureEmailAccount(
   }
   await assertProductWorkspaceAccess(scoped, engine.pool);
   const transport = resolveProductEmailTransportMode();
+  const payload = {
+    channel_account_id: boot.channel_account_id,
+    kind: "email_domain" as const,
+    display_name: input.display_name,
+    daily_cap: Math.max(0, Math.trunc(input.daily_cap)),
+    transport,
+  };
   const event = await engine.bus.publish({
     workspace_id: boot.workspace_id,
     event_type: "channel.account.configured",
     source: "user",
     producer_ref: scoped.user_id,
-    payload: {
-      channel_account_id: boot.channel_account_id,
-      kind: "email_domain",
-      display_name: input.display_name,
-      daily_cap: Math.max(0, Math.trunc(input.daily_cap)),
-      transport,
-    },
+    idempotency_key: configurationEventKey(
+      "channel.account.configured",
+      boot.workspace_id,
+      boot.channel_account_id,
+      payload,
+    ),
+    payload,
   });
   await projectEmailAccountConfigured(engine.pool, event);
   return boot;
@@ -1572,22 +1675,29 @@ async function projectEmailAccountConfigured(
 ): Promise<void> {
   const payload = event.payload as {
     channel_account_id: string;
+    kind: "email_domain";
     display_name: string;
     daily_cap: number;
     transport: "resend" | "dry-run" | "unconfigured";
   };
+  const status = payload.transport === "unconfigured" ? "disconnected" : "connected";
   await pool.query(
-    `update channel_accounts
-        set display_name = $2,
-            daily_cap = $3,
-            status = $4::channel_account_status,
-            properties = properties || $5::jsonb
-      where id = $1`,
+    `insert into channel_accounts (
+       id, workspace_id, kind, display_name, status, daily_cap, daily_used, properties
+     ) values ($1, $2, $3::channel_account_kind, $4, $5::channel_account_status, $6, 0, $7::jsonb)
+     on conflict (id) do update set
+       display_name = excluded.display_name,
+       daily_cap = excluded.daily_cap,
+       status = excluded.status,
+       properties = channel_accounts.properties || excluded.properties,
+       updated_at = now()`,
     [
       payload.channel_account_id,
+      event.workspace_id,
+      payload.kind,
       payload.display_name,
+      status,
       payload.daily_cap,
-      payload.transport === "unconfigured" ? "disconnected" : "connected",
       JSON.stringify({ transport: payload.transport, configured_event_id: event.id }),
     ],
   );
@@ -1873,25 +1983,31 @@ export async function configureWorkspaceSignalSource(
     [boot.workspace_id, sourceKind, name],
   );
   const source_id = existing.rows[0]?.id ?? randomUUID();
+  const payload = {
+    source_id,
+    source_kind: sourceKind,
+    adapter,
+    name,
+    config,
+    enabled: input.enabled ?? true,
+    poll_cadence_sec: minutes * 60,
+    properties: {
+      managed_by: "signal-aggregator",
+      acquisition_mode: adapter === "rss" ? "workspace_pull" : "workspace_adapter",
+    },
+  };
   const event = await engine.bus.publish({
     workspace_id: boot.workspace_id,
     event_type: "workspace.source.configured",
     source: "user",
     producer_ref: scoped.user_id,
-    idempotency_key: `workspace.source.configured:${boot.workspace_id}:${source_id}`,
-    payload: {
+    idempotency_key: configurationEventKey(
+      "workspace.source.configured",
+      boot.workspace_id,
       source_id,
-      source_kind: sourceKind,
-      adapter,
-      name,
-      config,
-      enabled: input.enabled ?? true,
-      poll_cadence_sec: minutes * 60,
-      properties: {
-        managed_by: "signal-aggregator",
-        acquisition_mode: adapter === "rss" ? "workspace_pull" : "workspace_adapter",
-      },
-    },
+      payload,
+    ),
+    payload,
   });
   await projectWorkspaceSourceConfigured(engine.pool, event);
   return boot;

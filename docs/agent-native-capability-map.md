@@ -45,6 +45,11 @@ projection, and visible UI feedback where applicable.
   foreign key to `workspaces(id)`. The event now carries replayable workspace
   metadata and projects the owner membership, but a fully event-first workspace
   lifecycle needs a substrate migration for platform/genesis events.
-- Local/demo bootstrap helpers still seed Rep, Play, email account, sending
-  domain, and procedural memory directly for test/demo setup. Product surfaces
-  should use the evented tool/API paths above.
+- Local/demo bootstrap now emits typed `rep.configured`, `play.configured`, and
+  `channel.account.configured` events for seeded primitives. Remaining direct
+  setup is limited to existing-workspace membership repair, sending-domain
+  catch-up for previously seeded accounts, and procedural memory examples until
+  those have first-class member/domain/memory events.
+- User configuration events use content-addressed idempotency keys: retrying the
+  exact same configuration dedupes, while actual Rep/Play/ICP/source/channel
+  changes append new replayable events.
