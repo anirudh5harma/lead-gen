@@ -50,6 +50,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "PRODUCT_HUNT_TOKEN", tier: "feature", purpose: "Product Hunt ingestion" },
   { key: "REDDIT_USER_AGENT", tier: "feature", purpose: "Reddit ingestion identity" },
   { key: "SEC_EDGAR_USER_AGENT", tier: "feature", purpose: "SEC EDGAR ingestion identity" },
+  { key: "SIGNAL_WEBHOOK_SECRET", tier: "feature", purpose: "Authenticated source-backed Signal webhook ingress" },
   { key: "NATS_URL", tier: "required", purpose: "Production typed event bus" },
   { key: "NATS_CREDS", tier: "optional", purpose: "NATS NKEY+JWT creds (inline contents or file path) for Synadia/NGS auth" },
   { key: "NATS_STREAM_MAX_BYTES", tier: "optional", purpose: "NATS JetStream events stream byte cap" },

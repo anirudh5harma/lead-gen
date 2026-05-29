@@ -307,6 +307,10 @@ export interface DiscoveredSignalResult {
   event_id?: string;
 }
 
+export interface DiscoverSignalWebhookOptions {
+  producerRef?: string;
+}
+
 export interface ConfigureWorkspaceProfileInput {
   company_name: string;
   website_url: string;
@@ -2253,6 +2257,53 @@ export async function discoverSignalFromSource(
   }
   return {
     workspace_id: session.workspace_id,
+    outcome: result.outcome,
+    signal_id: "signal_id" in result ? result.signal_id : undefined,
+    event_id: "event_id" in result ? result.event_id : undefined,
+  };
+}
+
+export async function discoverSignalFromWebhook(
+  input: DiscoverWorkspaceSignalInput,
+  opts: DiscoverSignalWebhookOptions = {},
+): Promise<DiscoveredSignalResult> {
+  const engine = await getProductEngine();
+  const source = await engine.pool.query<{ workspace_id: string }>(
+    `select workspace_id
+       from graph_sources
+      where id = $1 and enabled
+      limit 1`,
+    [input.source_id],
+  );
+  const workspace_id = source.rows[0]?.workspace_id;
+  if (!workspace_id) {
+    throw new Error("Signal source not found.");
+  }
+  const result = await discoverWorkspaceSignalOnce(
+    {
+      pool: engine.pool,
+      bus: engine.bus,
+      embedder: createProductEmbeddingClient(),
+    },
+    {
+      workspace_id,
+      source_id: input.source_id,
+      external_id: input.external_id,
+      title: input.title,
+      content: input.content ?? undefined,
+      url: input.url ?? undefined,
+      kind: input.signal_kind == null ? null : parseSignalKind(input.signal_kind),
+      freshness_at: input.freshness_at ?? new Date().toISOString(),
+      structured: input.structured ?? {},
+      provenance: input.provenance ?? {},
+      producer_ref: opts.producerRef ?? "webhook:signals",
+    },
+  );
+  if (result.outcome === "skipped:source_not_found") {
+    throw new Error("Signal source not found.");
+  }
+  return {
+    workspace_id,
     outcome: result.outcome,
     signal_id: "signal_id" in result ? result.signal_id : undefined,
     event_id: "event_id" in result ? result.event_id : undefined,

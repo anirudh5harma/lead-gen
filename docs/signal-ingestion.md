@@ -69,7 +69,8 @@ stream, or native event feed.
 For push-capable sources:
 
 1. External source, MCP agent, or connector calls the source-backed discovery
-   primitive (`product.signal.discover` or the equivalent webhook handler).
+   primitive (`product.signal.discover`) or authenticated webhook
+   (`POST /api/webhooks/signals` with `SIGNAL_WEBHOOK_SECRET`).
 2. The primitive applies dedup, budget, cheap ICP filters, and embeddings.
 3. It publishes `signal.discovered` with an idempotency key derived from
    `(workspace, source, external_id)`.

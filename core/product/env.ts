@@ -299,6 +299,12 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     description: "User agent sent to SEC EDGAR ingestion endpoints.",
   },
   {
+    name: "SIGNAL_WEBHOOK_SECRET",
+    requirement: "optional",
+    category: "channels",
+    description: "Shared secret accepted by /api/webhooks/signals for push signal ingress.",
+  },
+  {
     name: "NATS_URL",
     requirement: "production",
     category: "substrate",
