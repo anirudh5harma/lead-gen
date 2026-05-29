@@ -36,6 +36,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.signals.dispatch_plays",
     "product.approval.decide",
     "product.workflow.retry",
+    "product.event_dispatch.redrive",
     "product.sending_domain.operate",
   ]) {
     assert.ok(names.has(expected), `expected product tool ${expected}`);

@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import { redriveDeadLetteredDispatch } from "@/core/substrate/events/index.ts";
+import { getActiveWorkspaceSession } from "@/lib/workspace";
 
 /**
  * Operator-triggered redrive of one dead-lettered NATS dispatch. Resets
@@ -18,18 +20,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!eventId) {
     return new Response("missing event_id", { status: 400 });
   }
-  const pool = getPool();
-  const result = await pool.query(
-    `update event_nats_dispatches
-        set status           = 'pending',
-            next_attempt_at  = now(),
-            dead_lettered_at = null,
-            updated_at       = now()
-      where event_id = $1
-        and status   = 'dead_lettered'`,
-    [eventId],
-  );
-  if ((result.rowCount ?? 0) === 0) {
+  const session = await getActiveWorkspaceSession();
+  if (!session) {
+    return new Response("unauthorized", { status: 401 });
+  }
+  const redriven = await redriveDeadLetteredDispatch(getPool(), eventId, {
+    workspace_id: session.workspace.id,
+  });
+  if (!redriven) {
     return new Response("not found in dead-letter queue", { status: 404 });
   }
   // After redrive, send the operator back to the ops dashboard.

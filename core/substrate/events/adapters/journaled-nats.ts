@@ -198,24 +198,8 @@ export async function createJournaledNatsEventBus(
     return result;
   }
 
-  /**
-   * Operator-initiated replay of a dead-lettered dispatch. Resets the
-   * dispatch back to 'pending' with a fresh next_attempt_at so the next
-   * redrivePending call picks it up. Returns true if the row was
-   * reset (false if no dead-lettered row by that id).
-   */
   async function redriveDeadLettered(event_id: string): Promise<boolean> {
-    const result = await pool.query(
-      `update event_nats_dispatches
-          set status           = 'pending',
-              next_attempt_at  = now(),
-              dead_lettered_at = null,
-              updated_at       = now()
-        where event_id = $1
-          and status   = 'dead_lettered'`,
-      [event_id],
-    );
-    return (result.rowCount ?? 0) > 0;
+    return redriveDeadLetteredDispatch(pool, event_id);
   }
 
   return {
@@ -224,6 +208,30 @@ export async function createJournaledNatsEventBus(
     redrivePending,
     redriveDeadLettered,
   };
+}
+
+/**
+ * Operator-initiated replay of a dead-lettered dispatch. Resets the
+ * dispatch back to 'pending' with a fresh next_attempt_at so the next
+ * redrivePending call picks it up. Returns true if the row was reset.
+ */
+export async function redriveDeadLetteredDispatch(
+  pool: Pool,
+  event_id: string,
+  opts: { workspace_id?: string } = {},
+): Promise<boolean> {
+  const result = await pool.query(
+    `update event_nats_dispatches
+        set status           = 'pending',
+            next_attempt_at  = now(),
+            dead_lettered_at = null,
+            updated_at       = now()
+      where event_id = $1
+        and status   = 'dead_lettered'
+        and ($2::uuid is null or workspace_id = $2)`,
+    [event_id, opts.workspace_id ?? null],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**

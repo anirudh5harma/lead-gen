@@ -6,6 +6,7 @@ import { setupPg } from "./_pg.ts";
 import {
   appendPostgresEvent,
   listDeadLetteredDispatches,
+  redriveDeadLetteredDispatch,
 } from "../core/substrate/events/index.ts";
 
 /**
@@ -179,18 +180,8 @@ test("dispatch DLQ: operator redrive (route-style flip) resets to pending and cl
     );
     assert.equal(before.rows[0].status, "dead_lettered");
 
-    // Replay the redrive route's SQL flip.
-    const flipped = await fx.pool.query(
-      `update event_nats_dispatches
-          set status           = 'pending',
-              next_attempt_at  = now(),
-              dead_lettered_at = null,
-              updated_at       = now()
-        where event_id = $1
-          and status   = 'dead_lettered'`,
-      [event_id],
-    );
-    assert.equal(flipped.rowCount, 1);
+    const flipped = await redriveDeadLetteredDispatch(fx.pool, event_id);
+    assert.equal(flipped, true);
 
     const after = await fx.pool.query<{
       status: string;
@@ -201,6 +192,39 @@ test("dispatch DLQ: operator redrive (route-style flip) resets to pending and cl
     );
     assert.equal(after.rows[0].status, "pending");
     assert.equal(after.rows[0].dead_lettered_at, null);
+  } finally {
+    await fx.close();
+  }
+});
+
+test("dispatch DLQ: operator redrive is scoped to the requested workspace", async (t) => {
+  const fx = await setupPg("dlq_redrive_scope");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const own = await seedWorkspaceAndEvent(fx.pool);
+    const other = await seedWorkspaceAndEvent(fx.pool);
+    await simulateFailedAttempt(fx.pool, own.event_id, 1);
+    await simulateFailedAttempt(fx.pool, other.event_id, 1);
+
+    const blocked = await redriveDeadLetteredDispatch(fx.pool, other.event_id, {
+      workspace_id: own.workspace_id,
+    });
+    assert.equal(blocked, false);
+
+    const ownRedriven = await redriveDeadLetteredDispatch(fx.pool, own.event_id, {
+      workspace_id: own.workspace_id,
+    });
+    assert.equal(ownRedriven, true);
+
+    const rows = await fx.pool.query<{ event_id: string; status: string }>(
+      `select event_id, status from event_nats_dispatches
+        where event_id = any($1::uuid[])
+        order by event_id`,
+      [[own.event_id, other.event_id]],
+    );
+    const statuses = new Map(rows.rows.map((row) => [row.event_id, row.status]));
+    assert.equal(statuses.get(own.event_id), "pending");
+    assert.equal(statuses.get(other.event_id), "dead_lettered");
   } finally {
     await fx.close();
   }

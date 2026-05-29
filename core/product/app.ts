@@ -103,6 +103,7 @@ import {
 } from "./env.ts";
 import {
   runDurableEventProjectionsOnce,
+  redriveDeadLetteredDispatch,
   type EventBus,
   type DurableEventProjection,
   type DurableProjectionTick,
@@ -3235,6 +3236,17 @@ export async function retryFailedWorkflowRun(
       workflow_name: run.workflow_name,
       retry_run_id: retryRunId,
     },
+  });
+}
+
+export async function redriveDeadLetteredEventDispatch(
+  event_id: string,
+  session: ProductWorkspaceSession,
+): Promise<boolean> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return redriveDeadLetteredDispatch(engine.pool, event_id, {
+    workspace_id: session.workspace_id,
   });
 }
 

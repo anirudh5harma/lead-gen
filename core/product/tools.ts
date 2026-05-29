@@ -14,6 +14,7 @@ import {
   discoverSignalFromSource,
   dispatchSignalPlaysOnce,
   getAppState,
+  redriveDeadLetteredEventDispatch,
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
   startSendingDomainOperation,
@@ -482,6 +483,23 @@ export function registerProductTools(): void {
     async handler(input, ctx) {
       await retryFailedWorkflowRun(input.run_id, sessionFromContext(ctx));
       return { ok: true as const };
+    },
+  });
+
+  registerTool({
+    name: "product.event_dispatch.redrive",
+    description:
+      "Redrive one dead-lettered event-bus delivery for the active workspace by resetting its NATS dispatch row to pending.",
+    kind: "write",
+    input: z.object({ event_id: z.string().uuid() }),
+    output: z.object({ redriven: z.boolean() }),
+    async handler(input, ctx) {
+      return {
+        redriven: await redriveDeadLetteredEventDispatch(
+          input.event_id,
+          sessionFromContext(ctx),
+        ),
+      };
     },
   });
 

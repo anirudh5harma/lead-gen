@@ -23,6 +23,7 @@ projection, and visible UI feedback where applicable.
 | Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email Play workflows | Ready |
 | Approve/reject draft | `/dashboard/approvals`, `/brief` | `product.approval.decide` | Resolves workflow approval gate | Ready |
 | Retry failed workflow | `/brief`, ops surfaces | `product.workflow.retry` | Durable workflow retry/resume | Ready |
+| Redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.redrive` | Shared substrate redrive primitive resets workspace-scoped NATS dispatch for replay | Ready |
 | Provision/verify/refresh sending domain | `/brief`, deliverability surfaces | `product.sending_domain.operate` | Starts sending-domain workflow | Ready |
 | CRUD graph companies/persons/sources/edges | Derived graph surfaces | `graph.*` tools | Shared workspace graph tables | Ready |
 
