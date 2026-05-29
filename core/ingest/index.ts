@@ -163,6 +163,7 @@ export { googleNewsAdapter } from "./adapters/google-news.ts";
 export {
   workspacePollOnce,
   createWorkspacePollWorkflow,
+  WORKSPACE_POLL_WORKFLOW,
 } from "./workspace-poll.ts";
 export type {
   WorkspacePollDeps,

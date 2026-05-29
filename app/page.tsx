@@ -15,12 +15,20 @@ export default function Home() {
           typed event bus, an explicit knowledge graph. Outbound, content, and
           campaigns on autopilot — reliably.
         </p>
-        <Link
-          href="/dashboard"
-          className="inline-block font-mono text-[12px] uppercase tracking-[0.18em] px-5 py-3 rounded bg-[var(--color-accent)] text-[var(--color-accent-on)] hover:bg-[var(--color-accent-hi)]"
-        >
-          Open the dashboard
-        </Link>
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link
+            href="/login?next=/onboarding"
+            className="inline-block rounded bg-[var(--color-accent)] px-5 py-3 font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--color-accent-on)] hover:bg-[var(--color-accent-hi)]"
+          >
+            Start with Google
+          </Link>
+          <Link
+            href="/dashboard"
+            className="inline-block rounded border border-[var(--color-line-1)] px-5 py-3 font-mono text-[12px] uppercase tracking-[0.18em] text-[var(--color-text-2)] hover:text-[var(--color-text-1)]"
+          >
+            Open dashboard
+          </Link>
+        </div>
       </div>
     </main>
   );

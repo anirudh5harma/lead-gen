@@ -88,6 +88,12 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "eyJhbGciOi...",
   },
   {
+    name: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+    requirement: "optional",
+    category: "auth",
+    description: "Supabase publishable key alias for projects using the newer key naming.",
+  },
+  {
     name: "SESSION_SECRET",
     requirement: "production",
     category: "auth",
@@ -140,6 +146,20 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "llm",
     description: "Embedding model key for signal ingestion and candidate dedup.",
     example: "sk-...",
+  },
+  {
+    name: "FIRECRAWL_API_KEY",
+    requirement: "production",
+    category: "llm",
+    description: "Firecrawl API key used to extract company website profiles during onboarding.",
+    example: "fc-...",
+  },
+  {
+    name: "FIRECRAWL_API_URL",
+    requirement: "optional",
+    category: "llm",
+    description: "Optional override for the Firecrawl scrape endpoint.",
+    example: "https://api.firecrawl.dev/v2/scrape",
   },
   {
     name: "DEEPSEEK_PROMPT_USD_PER_MILLION",
@@ -206,6 +226,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     requirement: "production",
     category: "channels",
     description: "Comma-separated trusted SES SNS topic ARNs accepted by the inbound webhook.",
+  },
+  {
+    name: "SES_SENDING_DOMAIN",
+    requirement: "optional",
+    category: "channels",
+    description: "Expected SES identity checked by the AWS SES verification script.",
+    example: "go.bombsell.com",
   },
   {
     name: "SES_CONFIGURATION_SET",

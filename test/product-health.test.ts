@@ -217,6 +217,7 @@ function productionEnv(): Record<string, string> {
     CREDENTIALS_ENCRYPTION_KEY: "key",
     DEEPSEEK_API_KEY: "sk",
     OPENAI_API_KEY: "sk",
+    FIRECRAWL_API_KEY: "fc",
     RESEND_API_KEY: "re",
     RESEND_WEBHOOK_SECRET: "whsec",
     AWS_REGION: "us-east-1",

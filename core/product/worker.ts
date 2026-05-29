@@ -3,6 +3,7 @@ import {
   dispatchRssSourceIngestionOnce,
   dispatchSendingDomainWarmupsOnce,
   dispatchSignalPlaysOnce,
+  dispatchWorkspaceSourcePollsOnce,
   projectPendingProductEventsOnce,
   resumeRunnableWorkflowsOnce,
 } from "./app.ts";
@@ -66,11 +67,12 @@ export async function runProductWorker(
         leaseOwner,
         leaseMs: opts.leaseMs,
       });
-      const ingested = await dispatchRssSourceIngestionOnce({ limit: batchSize });
+      const legacyRss = await dispatchRssSourceIngestionOnce({ limit: batchSize });
+      const workspacePolls = await dispatchWorkspaceSourcePollsOnce({ limit: batchSize });
       const warmed = await dispatchSendingDomainWarmupsOnce({ limit: batchSize });
       const dispatched = await dispatchSignalPlaysOnce({ limit: batchSize });
       opts.onTick?.({
-        ingested,
+        ingested: legacyRss + workspacePolls,
         dispatched,
         resumed,
         warmed,

@@ -1,7 +1,6 @@
 import { randomUUID, randomBytes } from "node:crypto";
 import type { Pool } from "pg";
-import { upsertSource } from "../graph/nodes/sources.ts";
-import type { GraphCompany, GraphPerson } from "../graph/types.ts";
+import type { GraphCompany, GraphPerson, SourceKind } from "../graph/types.ts";
 import {
   addCompanyExplicit,
   upsertTrackedCompany,
@@ -42,6 +41,17 @@ import {
   ingestManualSignal,
   RSS_SIGNAL_INGESTION_WORKFLOW,
 } from "../signals/index.ts";
+import {
+  classifySignal,
+  createMockEmbeddingClient,
+  createOpenAIEmbeddingClient,
+  createWorkspacePollWorkflow,
+  projectSignalClassification,
+  projectSignalDiscovered,
+  projectSignalExpiry,
+  WORKSPACE_POLL_WORKFLOW,
+  type EmbeddingClient,
+} from "../ingest/index.ts";
 import {
   createSignalToEmailPlayWorkflow,
   createPostgresVerticalSliceStore,
@@ -84,6 +94,7 @@ import {
 } from "./substrate.ts";
 import {
   isProductionProductRuntime,
+  ProductEnvironmentError,
   requireOutboundEmailExecutionEnvironment,
   resolveProductEmailTransportMode,
 } from "./env.ts";
@@ -108,9 +119,18 @@ const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configurat
 const RUNNABLE_WORKFLOW_NAMES = [
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   RSS_SIGNAL_INGESTION_WORKFLOW,
+  WORKSPACE_POLL_WORKFLOW,
   SENDING_DOMAIN_PROVISIONING_WORKFLOW,
   SENDING_DOMAIN_WARMUP_WORKFLOW,
 ] as const;
+
+export type WorkspaceSignalSourceAdapter =
+  | "rss"
+  | "google_news"
+  | "hn_front"
+  | "hn_whos_hiring"
+  | "product_hunt"
+  | "reddit";
 
 export interface ProductWorkspaceSession {
   workspace_id: string;
@@ -217,6 +237,24 @@ export interface ConfigureRssSourceInput {
   url: string;
   signal_kind?: string;
   poll_interval_minutes?: number;
+}
+
+export interface ConfigureWorkspaceSignalSourceInput {
+  adapter: WorkspaceSignalSourceAdapter;
+  name: string;
+  signal_kind?: string;
+  url?: string;
+  query?: string;
+  subreddit?: string;
+  poll_interval_minutes?: number;
+  enabled?: boolean;
+}
+
+export interface ConfigureWorkspaceProfileInput {
+  company_name: string;
+  website_url: string;
+  industry?: string | null;
+  description?: string | null;
 }
 
 export interface SubmittedSignalResult {
@@ -1036,6 +1074,144 @@ async function projectCompanyTracked(
   );
 }
 
+export async function configureWorkspaceCompanyProfile(
+  input: ConfigureWorkspaceProfileInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; company_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const websiteUrl = normalizeWebsiteUrl(input.website_url);
+  if (!websiteUrl) throw new Error("valid website_url required");
+  const domain = domainFromWebsiteUrl(websiteUrl);
+  const companyName = input.company_name.trim() || titleizeDomain(domain);
+  const existing = domain
+    ? await engine.pool.query<{ id: string }>(
+        `select id from graph_companies
+          where workspace_id = $1 and domain = $2
+          limit 1`,
+        [session.workspace_id, domain],
+      )
+    : await engine.pool.query<{ id: string }>(
+        `select id from graph_companies
+          where workspace_id = $1 and lower(name) = lower($2)
+          order by created_at asc
+          limit 1`,
+        [session.workspace_id, companyName],
+      );
+  const company_id = existing.rows[0]?.id ?? randomUUID();
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "workspace.company.profiled",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `workspace.company.profiled:${session.workspace_id}:${company_id}`,
+    payload: {
+      company_id,
+      name: companyName,
+      domain,
+      website_url: websiteUrl,
+      industry: blankToNull(input.industry ?? undefined),
+      description: blankToNull(input.description ?? undefined),
+    },
+  });
+  await projectWorkspaceCompanyProfiled(engine.pool, event);
+  return { workspace_id: session.workspace_id, company_id };
+}
+
+async function projectWorkspaceCompanyProfiled(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    company_id: string;
+    name: string;
+    domain: string | null;
+    website_url: string;
+    industry: string | null;
+    description: string | null;
+  };
+  await pool.query(
+    `insert into graph_companies (
+       id, workspace_id, name, domain, industry, description, properties, provenance
+     ) values (
+       $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb
+     )
+     on conflict (id) do update set
+       name = excluded.name,
+       domain = coalesce(excluded.domain, graph_companies.domain),
+       industry = coalesce(excluded.industry, graph_companies.industry),
+       description = coalesce(excluded.description, graph_companies.description),
+       properties = graph_companies.properties || excluded.properties,
+       provenance = graph_companies.provenance || excluded.provenance,
+       updated_at = now()`,
+    [
+      payload.company_id,
+      event.workspace_id,
+      payload.name,
+      payload.domain,
+      payload.industry,
+      payload.description,
+      JSON.stringify({
+        profile_role: "workspace_company",
+        website_url: payload.website_url,
+      }),
+      JSON.stringify({
+        source: "firecrawl",
+        event_id: event.id,
+      }),
+    ],
+  );
+}
+
+export async function configureDefaultSignalAggregator(
+  input: {
+    company_name: string;
+    website_url?: string | null;
+    industry?: string | null;
+    description?: string | null;
+    signal_kind?: string;
+  },
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; source_count: number }> {
+  const companyName = input.company_name.trim() || "the company";
+  const industry = input.industry?.trim();
+  const marketPhrase =
+    industry || signalKeywordsFromDescription(input.description) || "B2B SaaS";
+  const sourceInputs: ConfigureWorkspaceSignalSourceInput[] = [
+    {
+      adapter: "google_news",
+      name: `${companyName} market news`,
+      query: `${marketPhrase} hiring funding launch`,
+      signal_kind: input.signal_kind ?? "press_mention",
+      poll_interval_minutes: 30,
+    },
+    {
+      adapter: "hn_front",
+      name: "Hacker News launch signals",
+      signal_kind: "product_launch",
+      poll_interval_minutes: 60,
+    },
+    {
+      adapter: "hn_whos_hiring",
+      name: "HN hiring signals",
+      signal_kind: "hiring",
+      poll_interval_minutes: 60,
+    },
+    {
+      adapter: "product_hunt",
+      name: "Product Hunt launches",
+      signal_kind: "product_launch",
+      poll_interval_minutes: 60,
+    },
+  ];
+  let source_count = 0;
+  for (const source of sourceInputs) {
+    await configureWorkspaceSignalSource(source, session);
+    source_count++;
+  }
+  return { workspace_id: session.workspace_id, source_count };
+}
+
 export async function configureSignalEmailPlay(
   input: ConfigureSignalEmailPlayInput,
   session: ProductWorkspaceSession,
@@ -1217,6 +1393,70 @@ function blankToUndefined(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function blankToNull(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeWebsiteUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const url = new URL(withProtocol);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!url.hostname.includes(".") || url.hostname === "localhost") return null;
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function domainFromWebsiteUrl(websiteUrl: string): string | null {
+  try {
+    return new URL(websiteUrl).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function titleizeDomain(domain: string | null): string {
+  const stem = domain?.split(".")[0]?.replace(/[-_]+/g, " ") ?? "Workspace";
+  return stem.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function signalKeywordsFromDescription(description: string | null | undefined): string | null {
+  const words =
+    description
+      ?.toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, " ")
+      .split(/\s+/)
+      .filter((word) => word.length >= 4)
+      .filter((word) => !COMMON_PROFILE_WORDS.has(word)) ?? [];
+  const picked = [...new Set(words)].slice(0, 4);
+  return picked.length ? picked.join(" ") : null;
+}
+
+const COMMON_PROFILE_WORDS = new Set([
+  "that",
+  "with",
+  "from",
+  "this",
+  "they",
+  "their",
+  "company",
+  "companies",
+  "helps",
+  "teams",
+  "customers",
+  "business",
+  "platform",
+  "software",
+  "service",
+  "services",
+]);
+
 export async function configureWorkspaceEmailAccount(
   input: ConfigureEmailInput,
   session: ProductWorkspaceSession,
@@ -1345,6 +1585,125 @@ async function resolveProductOutcomeAttribution(event: PublishedEvent) {
 function createProductEventProjections(engine: ProductEngine): DurableEventProjection[] {
   return [
     {
+      name: "workspace.company_profile.v1",
+      eventTypes: ["workspace.company.profiled"],
+      apply: (event) => projectWorkspaceCompanyProfiled(engine.pool, event),
+    },
+    {
+      name: "workspace.source_configuration.v1",
+      eventTypes: ["workspace.source.configured"],
+      apply: (event) => projectWorkspaceSourceConfigured(engine.pool, event),
+    },
+    {
+      name: "signal.discovered.projector.v1",
+      eventTypes: ["signal.discovered"],
+      apply: async (event) => {
+        await projectSignalDiscovered(engine.pool, event.workspace_id, event.payload as never);
+        await engine.bus.publish({
+          workspace_id: event.workspace_id,
+          event_type: "signal.ingested",
+          source: "system",
+          producer_ref: "projection:signal.discovered",
+          correlation_id: event.correlation_id ?? event.id,
+          causation_id: event.id,
+          idempotency_key: `projection:${event.id}:signal.ingested`,
+          payload: {
+            signal_id: (event.payload as { signal_id: string }).signal_id,
+            source_id: (event.payload as { source_id: string | null }).source_id,
+            kind: (event.payload as { kind: string | null }).kind,
+            novelty_score: null,
+          },
+        });
+      },
+    },
+    {
+      name: "signal.classifier.v1",
+      eventTypes: ["signal.ingested"],
+      apply: async (event) => {
+        const signalId = (event.payload as { signal_id?: string }).signal_id;
+        if (!signalId) return;
+        await classifySignal(
+          {
+            pool: engine.pool,
+            bus: engine.bus,
+            llm: createSignalClassifierLLM(engine, event.workspace_id),
+          },
+          { signal_id: signalId },
+        );
+      },
+    },
+    {
+      name: "signal.classification.projector.v1",
+      eventTypes: ["signal.classification.completed"],
+      apply: async (event) => {
+        await projectSignalClassification(engine.pool, event.workspace_id, event.payload as never);
+        const payload = event.payload as {
+          signal_id: string;
+          disposition: "matched" | "dismissed";
+          match_reason: string;
+          matches: Array<{ icp_segment: string; match_score: number }>;
+        };
+        if (payload.disposition === "dismissed") {
+          await engine.bus.publish({
+            workspace_id: event.workspace_id,
+            event_type: "signal.dismissed",
+            source: "system",
+            producer_ref: "projection:signal.classification.completed",
+            correlation_id: event.correlation_id ?? event.id,
+            causation_id: event.id,
+            idempotency_key: `projection:${event.id}:signal.dismissed`,
+            payload: {
+              signal_id: payload.signal_id,
+              reason: payload.match_reason,
+            },
+          });
+          return;
+        }
+        for (const match of payload.matches) {
+          await engine.bus.publish({
+            workspace_id: event.workspace_id,
+            event_type: "signal.matched",
+            source: "system",
+            producer_ref: "projection:signal.classification.completed",
+            correlation_id: event.correlation_id ?? event.id,
+            causation_id: event.id,
+            idempotency_key:
+              `projection:${event.id}:signal.matched:${match.icp_segment}`,
+            payload: {
+              signal_id: payload.signal_id,
+              match_score: match.match_score,
+              icp_segment: match.icp_segment,
+            },
+          });
+        }
+      },
+    },
+    {
+      name: "signal.expiry.projector.v1",
+      eventTypes: ["signal.expiry.requested"],
+      apply: async (event) => {
+        const flipped = await projectSignalExpiry(
+          engine.pool,
+          event.workspace_id,
+          event.payload as never,
+        );
+        if (!flipped) return;
+        await engine.bus.publish({
+          workspace_id: event.workspace_id,
+          event_type: "signal.expired",
+          source: "system",
+          producer_ref: "projection:signal.expiry.requested",
+          correlation_id: event.correlation_id ?? event.id,
+          causation_id: event.id,
+          idempotency_key: `projection:${event.id}:signal.expired`,
+          payload: {
+            signal_id: (event.payload as { signal_id: string }).signal_id,
+            reason: (event.payload as { reason: string }).reason,
+          },
+        });
+      },
+    },
+    {
       name: EMAIL_ACCOUNT_CONFIGURATION_PROJECTION,
       eventTypes: ["channel.account.configured"],
       apply: (event) => projectEmailAccountConfigured(engine.pool, event),
@@ -1419,6 +1778,22 @@ export async function configureRssSource(
   input: ConfigureRssSourceInput,
   session?: ProductWorkspaceSession,
 ): Promise<BootstrapResult> {
+  return configureWorkspaceSignalSource(
+    {
+      adapter: "rss",
+      name: input.name,
+      url: input.url,
+      signal_kind: input.signal_kind,
+      poll_interval_minutes: input.poll_interval_minutes,
+    },
+    session,
+  );
+}
+
+export async function configureWorkspaceSignalSource(
+  input: ConfigureWorkspaceSignalSourceInput,
+  session?: ProductWorkspaceSession,
+): Promise<BootstrapResult> {
   const engine = await getProductEngine();
   const boot = session
     ? {
@@ -1439,20 +1814,188 @@ export async function configureRssSource(
   const minutes = Number.isFinite(input.poll_interval_minutes)
     ? Math.max(1, Math.trunc(input.poll_interval_minutes ?? 15))
     : 15;
-  await upsertSource(engine.pool, boot.workspace_id, {
-    kind: "rss",
-    name: input.name || "GTM Signals",
-    enabled: true,
-    config: {
-      url: input.url,
-      kind: validSignalKind(input.signal_kind) ? input.signal_kind : "press_mention",
-      poll_interval_ms: minutes * 60_000,
-    },
-    properties: {
-      managed_by: "brief-surface",
+  const adapter = parseWorkspaceSignalSourceAdapter(input.adapter);
+  const sourceKind = sourceKindForAdapter(adapter);
+  const name = input.name.trim() || defaultWorkspaceSourceName(adapter);
+  const config = sourceConfigForAdapter(adapter, input, minutes);
+  const existing = await engine.pool.query<{ id: string }>(
+    `select id from graph_sources
+      where workspace_id = $1 and kind = $2::source_kind and lower(name) = lower($3)
+      order by created_at asc
+      limit 1`,
+    [boot.workspace_id, sourceKind, name],
+  );
+  const source_id = existing.rows[0]?.id ?? randomUUID();
+  const event = await engine.bus.publish({
+    workspace_id: boot.workspace_id,
+    event_type: "workspace.source.configured",
+    source: "user",
+    producer_ref: scoped.user_id,
+    idempotency_key: `workspace.source.configured:${boot.workspace_id}:${source_id}`,
+    payload: {
+      source_id,
+      source_kind: sourceKind,
+      adapter,
+      name,
+      config,
+      enabled: input.enabled ?? true,
+      poll_cadence_sec: minutes * 60,
+      properties: {
+        managed_by: "signal-aggregator",
+        acquisition_mode: adapter === "rss" ? "workspace_pull" : "workspace_adapter",
+      },
     },
   });
+  await projectWorkspaceSourceConfigured(engine.pool, event);
   return boot;
+}
+
+async function projectWorkspaceSourceConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    source_id: string;
+    source_kind: SourceKind;
+    adapter: WorkspaceSignalSourceAdapter;
+    name: string;
+    config: Record<string, unknown>;
+    enabled: boolean;
+    poll_cadence_sec: number;
+    properties: Record<string, unknown>;
+  };
+  await pool.query(
+    `insert into graph_sources (
+       id, workspace_id, kind, name, config, enabled, properties
+     ) values ($1, $2, $3::source_kind, $4, $5::jsonb, $6, $7::jsonb)
+     on conflict (id) do update set
+       kind = excluded.kind,
+       name = excluded.name,
+       config = excluded.config,
+       enabled = excluded.enabled,
+       properties = graph_sources.properties || excluded.properties`,
+    [
+      payload.source_id,
+      event.workspace_id,
+      payload.source_kind,
+      payload.name,
+      JSON.stringify(payload.config),
+      payload.enabled,
+      JSON.stringify(payload.properties),
+    ],
+  );
+  await pool.query(
+    `insert into workspace_source_configs (
+       workspace_id, source_id, enabled, poll_cadence_sec, config_overrides
+     ) values ($1, $2, $3, $4, '{}'::jsonb)
+     on conflict (workspace_id, source_id) do update set
+       enabled = excluded.enabled,
+       poll_cadence_sec = excluded.poll_cadence_sec`,
+    [event.workspace_id, payload.source_id, payload.enabled, payload.poll_cadence_sec],
+  );
+}
+
+function parseWorkspaceSignalSourceAdapter(
+  adapter: WorkspaceSignalSourceAdapter,
+): WorkspaceSignalSourceAdapter {
+  switch (adapter) {
+    case "rss":
+    case "google_news":
+    case "hn_front":
+    case "hn_whos_hiring":
+    case "product_hunt":
+    case "reddit":
+      return adapter;
+    default:
+      return "rss";
+  }
+}
+
+function sourceKindForAdapter(adapter: WorkspaceSignalSourceAdapter): SourceKind {
+  switch (adapter) {
+    case "product_hunt":
+      return "product_hunt";
+    case "hn_front":
+    case "hn_whos_hiring":
+      return "hn";
+    case "rss":
+    case "google_news":
+      return "rss";
+    case "reddit":
+      return "other";
+  }
+}
+
+function defaultWorkspaceSourceName(adapter: WorkspaceSignalSourceAdapter): string {
+  switch (adapter) {
+    case "google_news":
+      return "Google News signals";
+    case "hn_front":
+      return "Hacker News front page";
+    case "hn_whos_hiring":
+      return "HN Who is hiring";
+    case "product_hunt":
+      return "Product Hunt launches";
+    case "reddit":
+      return "Reddit signals";
+    case "rss":
+      return "Signal feed";
+  }
+}
+
+function sourceConfigForAdapter(
+  adapter: WorkspaceSignalSourceAdapter,
+  input: ConfigureWorkspaceSignalSourceInput,
+  minutes: number,
+): Record<string, unknown> {
+  const signalKind = validSignalKind(input.signal_kind)
+    ? input.signal_kind
+    : defaultSignalKindForAdapter(adapter);
+  const base = {
+    adapter,
+    kind: signalKind,
+    signal_kind: signalKind,
+    poll_interval_ms: minutes * 60_000,
+  };
+  switch (adapter) {
+    case "google_news":
+      return {
+        ...base,
+        query: input.query?.trim() || input.name.trim() || "B2B SaaS hiring",
+      };
+    case "reddit":
+      return {
+        ...base,
+        subreddit: input.subreddit?.trim() || "SaaS",
+      };
+    case "product_hunt":
+      return {
+        ...base,
+        limit: 25,
+      };
+    case "hn_front":
+    case "hn_whos_hiring":
+      return base;
+    case "rss":
+      return {
+        ...base,
+        url: input.url?.trim(),
+      };
+  }
+}
+
+function defaultSignalKindForAdapter(adapter: WorkspaceSignalSourceAdapter): string {
+  switch (adapter) {
+    case "hn_whos_hiring":
+      return "hiring";
+    case "hn_front":
+    case "product_hunt":
+      return "product_launch";
+    case "google_news":
+    case "rss":
+    case "reddit":
+      return "press_mention";
+  }
 }
 
 function validSignalKind(kind: unknown): boolean {
@@ -1597,6 +2140,51 @@ function createGovernedLLM(
   });
 }
 
+function createSignalClassifierLLM(
+  engine: ProductEngine,
+  workspace_id: string,
+): LLMClient {
+  const llm = createGovernedLLM(engine, workspace_id, "classifier.signal");
+  if (llm) return llm;
+  if (isProductionProductRuntime()) {
+    throw new ProductEnvironmentError("signal classification", ["DEEPSEEK_API_KEY"]);
+  }
+  return createLocalSignalClassifierLLM();
+}
+
+function createLocalSignalClassifierLLM(): LLMClient {
+  return {
+    async complete(req) {
+      const prompt = req.messages.map((message) => message.content).join("\n");
+      const kind =
+        prompt.match(/kind:\s+([a-z_]+)/)?.[1] ??
+        prompt.match(/classified_kind:\s+([a-z_]+)/)?.[1] ??
+        "press_mention";
+      const icpIds = [...prompt.matchAll(/icp_id:\s+([0-9a-f-]{36})/gi)].map(
+        (match) => match[1],
+      );
+      const payload = {
+        kind,
+        per_icp: icpIds.map((icp_id) => ({
+          icp_id,
+          score: 0.72,
+          reason: "Local deterministic classifier matched the configured signal kind.",
+        })),
+      };
+      return {
+        content: JSON.stringify(payload),
+        model: "local-signal-classifier",
+        finish_reason: "stop",
+        usage: {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+        },
+      };
+    },
+  };
+}
+
 function createProductEmailTransport(): EmailTransport {
   requireOutboundEmailExecutionEnvironment();
   return resolveProductEmailTransportMode() === "resend"
@@ -1643,6 +2231,22 @@ function registerSignalIngestionWorkflows(engine: ProductEngine): void {
       pool: engine.pool,
     }),
   );
+  engine.runtime.register(
+    createWorkspacePollWorkflow({
+      pool: engine.pool,
+      bus: engine.bus,
+      embedder: createProductEmbeddingClient(),
+    }),
+  );
+}
+
+function createProductEmbeddingClient(): EmbeddingClient {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (apiKey) return createOpenAIEmbeddingClient({ apiKey });
+  if (isProductionProductRuntime()) {
+    throw new ProductEnvironmentError("signal ingestion embeddings", ["OPENAI_API_KEY"]);
+  }
+  return createMockEmbeddingClient();
 }
 
 function registerSendingDomainProvisioningWorkflow(engine: ProductEngine): void {
@@ -1864,9 +2468,15 @@ export async function dispatchRssSourceIngestionOnce(
   if (session) await assertProductWorkspaceAccess(session, engine.pool);
   const { rows } = await engine.pool.query<RssSourceRow>(
     `select id, workspace_id, config, properties, last_polled_at
-       from graph_sources
+      from graph_sources
       where kind = 'rss'
+        and coalesce(config->>'adapter', 'rss') = 'rss'
         and enabled = true
+        and not exists (
+          select 1 from workspace_source_configs wsc
+           where wsc.workspace_id = graph_sources.workspace_id
+             and wsc.source_id = graph_sources.id
+        )
         and ($2::uuid is null or workspace_id = $2)
       order by coalesce(last_polled_at, '-infinity'::timestamptz) asc,
                created_at asc
@@ -1890,6 +2500,81 @@ export async function dispatchRssSourceIngestionOnce(
     dispatched++;
   }
   return dispatched;
+}
+
+export async function dispatchWorkspaceSourcePollsOnce(
+  opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
+): Promise<number> {
+  const engine = await getProductEngine();
+  registerSignalIngestionWorkflows(engine);
+  if (session) await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{
+    source_id: string;
+    workspace_id: string;
+    poll_cadence_sec: number;
+    last_polled_at: Date | null;
+  }>(
+    `select wsc.source_id,
+            wsc.workspace_id,
+            wsc.poll_cadence_sec,
+            wsc.last_polled_at
+       from workspace_source_configs wsc
+       join graph_sources gs
+         on gs.workspace_id = wsc.workspace_id and gs.id = wsc.source_id
+       join workspaces w on w.id = wsc.workspace_id
+      where wsc.enabled
+        and gs.enabled
+        and w.archived_at is null
+        and ($2::uuid is null or wsc.workspace_id = $2)
+      order by coalesce(wsc.last_polled_at, '-infinity'::timestamptz) asc,
+               gs.created_at asc
+      limit $1`,
+    [opts.limit ?? 25, session?.workspace_id ?? null],
+  );
+
+  const now = new Date();
+  let dispatched = 0;
+  for (const row of rows) {
+    const due =
+      !row.last_polled_at ||
+      now.getTime() - row.last_polled_at.getTime() >= row.poll_cadence_sec * 1000;
+    if (!due) continue;
+    const cadenceBucket = Math.floor(now.getTime() / (row.poll_cadence_sec * 1000));
+    await engine.runtime.start({
+      workspace_id: row.workspace_id,
+      workflow_name: WORKSPACE_POLL_WORKFLOW,
+      idempotency_key:
+        `workspace-source:${row.workspace_id}:${row.source_id}:bucket:${cadenceBucket}`,
+      input: {
+        workspace_id: row.workspace_id,
+        source_id: row.source_id,
+      },
+    });
+    dispatched++;
+  }
+  return dispatched;
+}
+
+export async function runWorkspaceSignalAggregatorOnce(
+  opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
+): Promise<{ dispatched: number; resumed: number; projected: DurableProjectionTick | null }> {
+  const engine = await getProductEngine();
+  const dispatched = await dispatchWorkspaceSourcePollsOnce(opts, session);
+  if (engine.substrateMode !== "postgres") {
+    return { dispatched, resumed: 0, projected: null };
+  }
+  const resumed = await resumeRunnableWorkflowsOnce({
+    limit: opts.limit,
+    leaseMs: opts.leaseMs,
+    leaseOwner: opts.leaseOwner,
+  });
+  const projected = await projectPendingProductEventsOnce({
+    limit: opts.limit ?? 25,
+    leaseOwner: opts.leaseOwner,
+  });
+  return { dispatched, resumed, projected };
 }
 
 export async function dispatchSendingDomainWarmupsOnce(
@@ -1982,6 +2667,8 @@ export async function resumeRunnableWorkflowsOnce(
   for (const row of rows) {
     if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
       registerSignalEmailWorkflow(engine, row.workspace_id);
+    } else if (row.workflow_name === WORKSPACE_POLL_WORKFLOW) {
+      registerSignalIngestionWorkflows(engine);
     } else if (row.workflow_name === SENDING_DOMAIN_PROVISIONING_WORKFLOW) {
       registerSendingDomainProvisioningWorkflow(engine);
     } else if (row.workflow_name === SENDING_DOMAIN_WARMUP_WORKFLOW) {
@@ -2080,7 +2767,10 @@ export async function retryFailedWorkflowRun(
   }
   if (run.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
     registerSignalEmailWorkflow(engine, run.workspace_id);
-  } else if (run.workflow_name === RSS_SIGNAL_INGESTION_WORKFLOW) {
+  } else if (
+    run.workflow_name === RSS_SIGNAL_INGESTION_WORKFLOW ||
+    run.workflow_name === WORKSPACE_POLL_WORKFLOW
+  ) {
     registerSignalIngestionWorkflows(engine);
   } else if (run.workflow_name === SENDING_DOMAIN_PROVISIONING_WORKFLOW) {
     registerSendingDomainProvisioningWorkflow(engine);
@@ -2479,7 +3169,7 @@ export async function getAppState(
            select wr.status, wr.created_at, wr.error
              from workflow_runs wr
             where wr.workspace_id = gs.workspace_id
-              and wr.workflow_name = $2
+              and wr.workflow_name = any($2::text[])
               and wr.input->>'source_id' = gs.id::text
             order by wr.created_at desc
             limit 1
@@ -2487,7 +3177,7 @@ export async function getAppState(
         where gs.workspace_id = $1
         group by gs.id, latest.status, latest.created_at, latest.error
         order by gs.created_at desc`,
-      [boot.workspace_id, RSS_SIGNAL_INGESTION_WORKFLOW],
+      [boot.workspace_id, [RSS_SIGNAL_INGESTION_WORKFLOW, WORKSPACE_POLL_WORKFLOW]],
     ),
   ]);
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;

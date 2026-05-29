@@ -5,6 +5,7 @@ import {
   defineWorkflow,
   type WorkflowDefinition,
 } from "../substrate/workflows/index.ts";
+import { SignalKind } from "../primitives/signal.ts";
 import type { EmbeddingClient } from "./embeddings.ts";
 import {
   ensureBudgetRow,
@@ -32,6 +33,8 @@ import { getWorkspaceAdapter } from "./adapters/registry.ts";
  * ICP must_haves still pre-filter — same shape as catalog fanout —
  * before insertion.
  */
+
+export const WORKSPACE_POLL_WORKFLOW = "ingest_workspace_poll";
 
 export interface WorkspacePollDeps {
   pool: Pool;
@@ -113,6 +116,12 @@ async function saveWsCursor(
        last_error     = excluded.last_error`,
     [workspace_id, source_id, JSON.stringify(cursor), JSON.stringify(errPayload)],
   );
+  await pool.query(
+    `update graph_sources
+        set last_polled_at = now()
+      where workspace_id = $1 and id = $2`,
+    [workspace_id, source_id],
+  );
 }
 
 async function alreadyExists(
@@ -153,11 +162,16 @@ export async function workspacePollOnce(
     summary.error = "source not found";
     return summary;
   }
-  const adapter = getWorkspaceAdapter(source.kind);
+  const adapterId =
+    typeof source.config.adapter === "string" && source.config.adapter.trim()
+      ? source.config.adapter.trim()
+      : source.kind;
+  const adapter = getWorkspaceAdapter(adapterId);
   if (!adapter) {
-    summary.error = `no workspace adapter for kind '${source.kind}'`;
+    summary.error = `no workspace adapter for '${adapterId}'`;
     return summary;
   }
+  const configuredKind = parseConfiguredSignalKind(source.config);
   const cursor = await loadWsCursor(deps.pool, input.workspace_id, input.source_id);
 
   let pollResult: Awaited<ReturnType<WorkspaceAdapter["poll"]>>;
@@ -183,7 +197,7 @@ export async function workspacePollOnce(
       continue;
     }
 
-    const itemKind = item.kind ?? adapter.kindHint;
+    const itemKind = item.kind ?? adapter.kindHint ?? configuredKind;
     const filterCtx = {
       candidate: {
         kind: itemKind,
@@ -249,6 +263,11 @@ export async function workspacePollOnce(
   return summary;
 }
 
+function parseConfiguredSignalKind(config: Record<string, unknown>) {
+  const parsed = SignalKind.safeParse(config.kind ?? config.signal_kind);
+  return parsed.success ? parsed.data : null;
+}
+
 /**
  * Durable workflow wrapping workspacePollOnce so per-(workspace, source)
  * polls are journaled + retryable. Mirrors createCatalogPollWorkflow.
@@ -257,7 +276,7 @@ export function createWorkspacePollWorkflow(
   deps: WorkspacePollDeps,
 ): WorkflowDefinition<WorkspacePollInput, WorkspacePollSummary> {
   return defineWorkflow<WorkspacePollInput, WorkspacePollSummary>({
-    name: "ingest_workspace_poll",
+    name: WORKSPACE_POLL_WORKFLOW,
     version: "1",
     async run(input, ctx): Promise<WorkspacePollSummary> {
       if (input.workspace_id !== ctx.workspace_id) {

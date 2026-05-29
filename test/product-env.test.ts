@@ -27,6 +27,7 @@ test("product env: production readiness reports missing required keys", () => {
     "CREDENTIALS_ENCRYPTION_KEY",
     "DEEPSEEK_API_KEY",
     "OPENAI_API_KEY",
+    "FIRECRAWL_API_KEY",
     "RESEND_API_KEY",
     "RESEND_WEBHOOK_SECRET",
     "AWS_REGION",

@@ -54,6 +54,44 @@ const WorkspaceCompanyTracked = z.object({
   reason: z.string().nullable(),
 });
 
+const WorkspaceCompanyProfiled = z.object({
+  company_id: z.string().uuid(),
+  name: z.string().min(1),
+  domain: z.string().nullable(),
+  website_url: z.string().url(),
+  industry: z.string().nullable(),
+  description: z.string().nullable(),
+});
+
+const WorkspaceSourceConfigured = z.object({
+  source_id: z.string().uuid(),
+  source_kind: z.enum([
+    "gdelt",
+    "hn",
+    "product_hunt",
+    "rss",
+    "job_board",
+    "web_monitor",
+    "podcast",
+    "newsletter",
+    "manual",
+    "other",
+  ]),
+  adapter: z.enum([
+    "rss",
+    "google_news",
+    "hn_front",
+    "hn_whos_hiring",
+    "product_hunt",
+    "reddit",
+  ]),
+  name: z.string().min(1),
+  config: z.record(z.string(), z.unknown()),
+  enabled: z.boolean(),
+  poll_cadence_sec: z.number().int().positive(),
+  properties: z.record(z.string(), z.unknown()),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Signal lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -551,6 +589,8 @@ export const eventRegistry = {
   "rep.configured": RepConfigured,
   "workspace.icp.configured": WorkspaceIcpConfigured,
   "workspace.company.tracked": WorkspaceCompanyTracked,
+  "workspace.company.profiled": WorkspaceCompanyProfiled,
+  "workspace.source.configured": WorkspaceSourceConfigured,
 
   "signal.discovered": SignalDiscovered,
   "signal.ingested": SignalIngested,

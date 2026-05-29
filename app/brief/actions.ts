@@ -5,7 +5,7 @@ import {
   approveWorkflowApproval,
   configureEmailAccount,
   configureRssSource,
-  dispatchRssSourceIngestionOnce,
+  runWorkspaceSignalAggregatorOnce,
   retryFailedWorkflowRun,
   startSendingDomainOperation,
   submitManualSignal,
@@ -72,7 +72,7 @@ export async function configureRssSourceAction(formData: FormData) {
 export async function pollSourcesAction() {
   const session = await getBriefWorkspaceSession();
   if (!session) return;
-  await dispatchRssSourceIngestionOnce({}, session);
+  await runWorkspaceSignalAggregatorOnce({}, session);
   revalidatePath("/brief");
 }
 

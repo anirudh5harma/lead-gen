@@ -9,6 +9,7 @@ import { getActiveWorkspace } from "@/lib/workspace";
 import {
   configureIcpAction,
   configureSourceAction,
+  runSignalAggregatorAction,
   trackCompanyAction,
 } from "../actions";
 
@@ -308,9 +309,17 @@ export default async function IngestionPage() {
       </section>
 
       <section className="mb-10 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5">
-        <h2 className="mb-4 text-sm font-semibold text-[var(--color-text-1)]">
-          Control room
-        </h2>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">
+            Control room
+          </h2>
+          <form action={runSignalAggregatorAction}>
+            <button className="inline-flex min-h-9 items-center gap-2 rounded-md bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
+              <Icon name="sync" size={16} />
+              Run aggregator
+            </button>
+          </form>
+        </div>
         <div className="grid gap-6 xl:grid-cols-3">
           <form action={configureIcpAction} className="grid gap-3">
             <Field name="icp_name" label="ICP" defaultValue="Hiring signal ICP" />
@@ -345,7 +354,22 @@ export default async function IngestionPage() {
 
           <form action={configureSourceAction} className="grid gap-3">
             <Field name="source_name" label="Source" defaultValue="Hiring signal feed" />
+            <Select
+              name="source_adapter"
+              label="Adapter"
+              defaultValue="google_news"
+              options={[
+                ["google_news", "Google News"],
+                ["rss", "RSS"],
+                ["hn_front", "HN front"],
+                ["hn_whos_hiring", "HN hiring"],
+                ["product_hunt", "Product Hunt"],
+                ["reddit", "Reddit"],
+              ]}
+            />
+            <Field name="source_query" label="Query" defaultValue="B2B SaaS hiring funding launch" />
             <Field name="source_url" label="RSS URL" defaultValue="" type="url" />
+            <Field name="subreddit" label="Subreddit" defaultValue="SaaS" />
             <Select
               name="signal_kind"
               label="Kind"

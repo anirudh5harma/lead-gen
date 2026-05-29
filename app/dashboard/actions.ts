@@ -7,9 +7,11 @@ import {
   configureActivationSetup,
   configureIcpSegment,
   configureRssSource,
+  configureWorkspaceSignalSource,
   configureWorkspaceEmailAccount,
   createProductWorkspaceForUser,
   dispatchSignalPlaysOnce,
+  runWorkspaceSignalAggregatorOnce,
   submitManualSignal,
   trackCompanyForWorkspace,
   type ProductWorkspaceSession,
@@ -163,17 +165,40 @@ export async function trackCompanyAction(formData: FormData) {
 
 export async function configureSourceAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
+  const adapter = value(formData, "source_adapter") || "rss";
   const url = value(formData, "source_url");
-  if (!url) return;
-  await configureRssSource(
-    {
-      name: value(formData, "source_name") || "Signal feed",
-      url,
-      signal_kind: value(formData, "signal_kind") || "hiring",
-      poll_interval_minutes: numberValue(formData, "poll_interval_minutes", 60),
-    },
-    session,
-  );
+  const query = value(formData, "source_query");
+  const subreddit = value(formData, "subreddit");
+  if (adapter === "rss" && !url) return;
+  if (adapter === "rss") {
+    await configureRssSource(
+      {
+        name: value(formData, "source_name") || "Signal feed",
+        url,
+        signal_kind: value(formData, "signal_kind") || "hiring",
+        poll_interval_minutes: numberValue(formData, "poll_interval_minutes", 60),
+      },
+      session,
+    );
+  } else {
+    await configureWorkspaceSignalSource(
+      {
+        adapter: adapter as never,
+        name: value(formData, "source_name") || "Signal source",
+        query,
+        subreddit,
+        signal_kind: value(formData, "signal_kind") || "press_mention",
+        poll_interval_minutes: numberValue(formData, "poll_interval_minutes", 60),
+      },
+      session,
+    );
+  }
+  revalidateProductPaths();
+}
+
+export async function runSignalAggregatorAction() {
+  const session = await requireDashboardSession();
+  await runWorkspaceSignalAggregatorOnce({ limit: 8 }, session);
   revalidateProductPaths();
 }
 
