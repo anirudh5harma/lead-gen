@@ -2047,6 +2047,18 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
   ];
 }
 
+async function projectVisibleProductState(engine: ProductEngine): Promise<void> {
+  if (engine.substrateMode !== "postgres") return;
+  await runDurableEventProjectionsOnce(
+    engine.pool,
+    createProductEventProjections(engine),
+    {
+      leaseOwner: `product-state:${process.pid}:${randomBytes(4).toString("hex")}`,
+      limit: 250,
+    },
+  );
+}
+
 export async function startSendingDomainOperation(
   operation: SendingDomainOperation,
   session: ProductWorkspaceSession,
@@ -3353,6 +3365,7 @@ export async function getAppState(
     throw new Error("Configured workspace does not match the product session.");
   }
   await assertProductWorkspaceAccess(scoped, pool);
+  await projectVisibleProductState(await getProductEngine());
   const store = createPostgresVerticalSliceStore(pool);
   const snapshot = await store.snapshot();
   const [approvals, llmUsage, runs, recovery, events, sendTraces, accounts, sources] = await Promise.all([

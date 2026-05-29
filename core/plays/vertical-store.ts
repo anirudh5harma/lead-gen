@@ -41,19 +41,6 @@ export interface CreateDraftMessageInput {
   provenance?: Record<string, unknown>;
 }
 
-export interface RecordOutcomeInput {
-  workspace_id: string;
-  kind: Outcome["kind"];
-  score: number;
-  conversation_id: string | null;
-  attributed_message_id: string | null;
-  attributed_signal_id: string | null;
-  attributed_play_id: string | null;
-  attributed_play_run_id: string | null;
-  attributed_rep_id: string | null;
-  properties?: Record<string, unknown>;
-}
-
 export interface CountPlayChannelMessagesInput {
   workspace_id: string;
   play_id: string;
@@ -78,7 +65,6 @@ export interface VerticalSliceStore {
     input: { subject: string | null; body: string; properties?: Record<string, unknown> },
   ): Awaitable<Message>;
   countPlayChannelMessages(input: CountPlayChannelMessagesInput): Awaitable<number>;
-  recordOutcome(input: RecordOutcomeInput): Awaitable<Outcome>;
   snapshot(): Awaitable<{
     conversations: Conversation[];
     messages: Message[];
@@ -92,9 +78,11 @@ type MessageLifecycleEvent =
   | PublishedEvent<EventPayload<"message.queued">>
   | PublishedEvent<EventPayload<"message.sent">>
   | PublishedEvent<EventPayload<"message.deferred">>;
+type OutcomeLifecycleEvent = PublishedEvent<EventPayload<"outcome.recorded">>;
 
 export interface InMemoryVerticalSliceStore extends VerticalSliceStore {
   projectMessageLifecycleEvent(event: MessageLifecycleEvent): Message | null;
+  projectOutcomeLifecycleEvent(event: OutcomeLifecycleEvent): Outcome | null;
 }
 
 const TERMINAL_SEND_STATUSES = new Set<Message["status"]>([
@@ -216,30 +204,6 @@ export function createInMemoryVerticalSliceStore(
       }).length;
     },
 
-    recordOutcome(input) {
-      const now = new Date().toISOString();
-      const row: Outcome = {
-        id: randomUUID(),
-        workspace_id: input.workspace_id,
-        kind: input.kind,
-        score: input.score,
-        conversation_id: input.conversation_id,
-        attributed_message_id: input.attributed_message_id,
-        attributed_signal_id: input.attributed_signal_id,
-        attributed_play_id: input.attributed_play_id,
-        attributed_play_run_id: input.attributed_play_run_id,
-        attributed_rep_id: input.attributed_rep_id,
-        subject_person_id: null,
-        subject_company_id: null,
-        properties: input.properties ?? {},
-        provenance: { source: "vertical-slice" },
-        occurred_at: now,
-        recorded_at: now,
-      };
-      outcomes.set(row.id, row);
-      return row;
-    },
-
     snapshot() {
       return {
         conversations: Array.from(conversations.values()),
@@ -323,6 +287,35 @@ export function createInMemoryVerticalSliceStore(
       row.properties = { ...row.properties, ...notes };
       return row;
     },
+
+    projectOutcomeLifecycleEvent(event) {
+      const payload = event.payload;
+      const existing = outcomes.get(payload.outcome_id);
+      const row: Outcome = {
+        id: payload.outcome_id,
+        workspace_id: event.workspace_id,
+        kind: payload.kind as Outcome["kind"],
+        score: payload.score,
+        conversation_id: payload.conversation_id,
+        attributed_message_id: payload.attributed_message_id ?? null,
+        attributed_signal_id: payload.attributed_signal_id ?? null,
+        attributed_play_id: payload.attributed_play_id,
+        attributed_play_run_id: payload.attributed_play_run_id ?? null,
+        attributed_rep_id: payload.attributed_rep_id ?? null,
+        subject_person_id: payload.subject_person_id ?? null,
+        subject_company_id: payload.subject_company_id ?? null,
+        properties: { ...(existing?.properties ?? {}), ...(payload.properties ?? {}) },
+        provenance: {
+          ...(existing?.provenance ?? {}),
+          ...(payload.provenance ?? {}),
+          outcome_event_id: event.id,
+        },
+        occurred_at: payload.occurred_at ?? event.occurred_at,
+        recorded_at: existing?.recorded_at ?? event.occurred_at,
+      };
+      outcomes.set(row.id, row);
+      return row;
+    },
   };
 }
 
@@ -345,6 +338,9 @@ export async function wireInMemoryVerticalSliceMessageLifecycleProjection(
     }),
     bus.subscribe("message.deferred", (event) => {
       store.projectMessageLifecycleEvent(event);
+    }),
+    bus.subscribe("outcome.recorded", (event) => {
+      store.projectOutcomeLifecycleEvent(event);
     }),
   ]);
 }
@@ -897,34 +893,6 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
         ],
       );
       return Number(rows[0]?.count ?? 0);
-    },
-
-    async recordOutcome(input) {
-      const { rows } = await pool.query<OutcomeRow>(
-        `insert into outcomes (
-           workspace_id, kind, score, conversation_id, attributed_message_id,
-           attributed_signal_id, attributed_play_id, attributed_play_run_id,
-           attributed_rep_id, properties, provenance
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb)
-         returning id, workspace_id, kind, score::text as score, conversation_id,
-                   attributed_message_id, attributed_signal_id, attributed_play_id,
-                   attributed_play_run_id, attributed_rep_id, subject_person_id,
-                   subject_company_id, properties, provenance, occurred_at, recorded_at`,
-        [
-          input.workspace_id,
-          input.kind,
-          input.score,
-          input.conversation_id,
-          input.attributed_message_id,
-          input.attributed_signal_id,
-          input.attributed_play_id,
-          input.attributed_play_run_id,
-          input.attributed_rep_id,
-          JSON.stringify(input.properties ?? {}),
-          JSON.stringify({ source: "vertical-slice" }),
-        ],
-      );
-      return outcomeFromRow(rows[0]!);
     },
 
     async snapshot() {

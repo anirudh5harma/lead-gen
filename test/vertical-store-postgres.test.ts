@@ -5,6 +5,7 @@ import { setupPg } from "./_pg.ts";
 import { createPostgresVerticalSliceStore } from "../core/plays/index.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
 import { projectMessageLifecycleEvent } from "../core/channels/message-lifecycle.ts";
+import { projectOutcomeLifecycleEvent } from "../core/primitives/outcome-lifecycle.ts";
 import type {
   EventPayload,
   EventType,
@@ -202,23 +203,28 @@ test("postgres vertical store persists graph, signal, conversation, message, and
         external_id: "email_1",
       }),
     );
-    const outcome = await store.recordOutcome({
-      workspace_id,
-      kind: "positive_reply",
-      score: 0.8,
-      conversation_id: conversation.id,
-      attributed_message_id: message.id,
-      attributed_signal_id: signal.id,
-      attributed_play_id: null,
-      attributed_play_run_id: null,
-      attributed_rep_id: rep_id,
-      properties: { pattern_key: "x" },
-    });
+    const outcome_id = randomUUID();
+    await projectOutcomeLifecycleEvent(
+      fx.pool,
+      event(workspace_id, "outcome.recorded", {
+        outcome_id,
+        kind: "positive_reply",
+        score: 0.8,
+        conversation_id: conversation.id,
+        attributed_message_id: message.id,
+        attributed_signal_id: signal.id,
+        attributed_play_id: null,
+        attributed_play_run_id: null,
+        attributed_rep_id: rep_id,
+        properties: { pattern_key: "x" },
+        provenance: { source: "vertical-store-test" },
+      }),
+    );
 
     const snapshot = await store.snapshot();
     assert.equal(snapshot.conversations[0].id, conversation.id);
     assert.equal(snapshot.messages[0].external_id, "email_1");
-    assert.equal(snapshot.outcomes[0].id, outcome.id);
+    assert.equal(snapshot.outcomes[0].id, outcome_id);
   } finally {
     await fx.close();
   }

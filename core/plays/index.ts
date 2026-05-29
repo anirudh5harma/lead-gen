@@ -33,7 +33,6 @@ export type {
   CreateDraftMessageInput,
   CountPlayChannelMessagesInput,
   InMemoryVerticalSliceStore,
-  RecordOutcomeInput,
   VerticalSliceStore,
   VerticalSliceStoreSeed,
 } from "./vertical-store.ts";

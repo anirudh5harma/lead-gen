@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { defineWorkflow, type RunContext } from "../substrate/workflows/index.ts";
 import type { EventBus } from "../substrate/events/index.ts";
 import type { Judge } from "../agents/eval/types.ts";
@@ -409,36 +410,27 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
 
       let outcome_id: string | undefined;
       if (send.status === "sent" && input.simulate_outcome_kind) {
-        const outcome = await ctx.step("outcome.record", async () => {
-          const row = await deps.store.recordOutcome({
-            workspace_id: input.workspace_id,
+        outcome_id = await ctx.step("outcome.record", async () => {
+          const outcomeId = randomUUID();
+          await ctx.publish("outcome.recorded", {
+            outcome_id: outcomeId,
             kind: input.simulate_outcome_kind!,
             score: input.simulate_outcome_kind === "meeting_booked" ? 1 : 0.8,
             conversation_id: conversation.id,
-            attributed_message_id: message.id,
-            attributed_signal_id: signal.id,
             attributed_play_id: input.play_id,
             attributed_play_run_id: input.play_run_id,
+            attributed_message_id: message.id,
+            attributed_signal_id: signal.id,
             attributed_rep_id: rep.id,
             properties: {
               pattern_key: research.pattern_key,
               exemplar_ids: draft.exemplar_ids,
             },
+            provenance: { source: "signal-email-play" },
+            occurred_at: new Date().toISOString(),
           });
-          await ctx.publish("outcome.recorded", {
-            outcome_id: row.id,
-            kind: row.kind,
-            score: row.score,
-            conversation_id: row.conversation_id,
-            attributed_play_id: row.attributed_play_id,
-            attributed_play_run_id: row.attributed_play_run_id,
-            attributed_message_id: row.attributed_message_id,
-            attributed_rep_id: row.attributed_rep_id,
-            properties: row.properties,
-          });
-          return row;
+          return outcomeId;
         });
-        outcome_id = outcome.id;
       }
 
       const output: SignalToEmailPlayOutput = {
