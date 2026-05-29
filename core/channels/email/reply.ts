@@ -7,6 +7,7 @@ import type {
   ReplyIntent,
 } from "./intent.ts";
 import { projectReplyLifecycleEvent } from "../reply-lifecycle.ts";
+import { projectOutcomeLifecycleEvent } from "../../primitives/outcome-lifecycle.ts";
 
 /**
  * Inbound email projector. Provider ingress is authenticated at the surface
@@ -21,9 +22,9 @@ import { projectReplyLifecycleEvent } from "../reply-lifecycle.ts";
  *   3. Classify intent (LLM via IntentClassifier).
  *   4. Publish `reply.classified`; shared lifecycle projection materializes
  *      intent class, confidence, and terminal conversation status.
- *   5. For win/loss intents: insert an `outcomes` row + emit
- *      `outcome.recorded`. The procedural-memory bridge (already wired)
- *      sees that event and updates the contributing exemplars.
+ *   5. For win/loss intents: publish `outcome.recorded`; shared outcome
+ *      projection materializes the row and the procedural-memory bridge
+ *      updates contributing exemplars.
  *
  * If no conversation matches, we emit `reply.unmatched` and skip lifecycle
  * materialization; the surface layer can surface the unmatched provider event for
@@ -223,7 +224,6 @@ export async function handleInboundEmail(
   const outcome = POSITIVE_OUTCOMES[classification.intent];
   let outcome_id: string | undefined;
   if (outcome) {
-    outcome_id = randomUUID();
     // Find attributed_rep_id + play_id from the conversation for richer attribution.
     const attribRes = await pool.query<{
       rep_id: string;
@@ -233,61 +233,36 @@ export async function handleInboundEmail(
       [matched.conversation_id],
     );
     const attrib = attribRes.rows[0];
-    const insertedOutcome = await pool.query<{ id: string }>(
-      `insert into outcomes (
-         id, workspace_id, kind, score,
-         conversation_id, attributed_message_id, attributed_signal_id,
-         attributed_rep_id, provenance, occurred_at, recorded_at
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::timestamptz, now())
-       on conflict (workspace_id, (provenance ->> 'ingress_event_id'), kind)
-         where provenance ? 'ingress_event_id'
-       do nothing
-       returning id`,
-      [
-        outcome_id,
-        inbound.workspace_id,
-        outcome.kind,
-        outcome.score,
-        matched.conversation_id,
-        matched.outbound_message_id,
-        attrib?.origin_signal_id ?? null,
-        attrib?.rep_id ?? null,
-        JSON.stringify(
-          deps.ingress_event_id ? { ingress_event_id: deps.ingress_event_id } : {},
-        ),
-        inbound.received_at,
-      ],
-    );
-    if (insertedOutcome.rows[0]) {
-      outcome_id = insertedOutcome.rows[0].id;
-    } else if (deps.ingress_event_id) {
-      const existingOutcome = await pool.query<{ id: string }>(
-        `select id from outcomes
-          where workspace_id = $1
-            and provenance ->> 'ingress_event_id' = $2
-            and kind = $3
-          limit 1`,
-        [inbound.workspace_id, deps.ingress_event_id, outcome.kind],
-      );
-      outcome_id = existingOutcome.rows[0]?.id;
-    }
-    if (outcome_id) {
-      await bus.publish({
-        workspace_id: inbound.workspace_id,
-        event_type: "outcome.recorded",
-        source: "system",
-        producer_ref: "channel:email:reply",
-        correlation_id: matched.conversation_id,
-        idempotency_key: projectionEventKey(deps.ingress_event_id, "outcome.recorded"),
-        payload: {
-          outcome_id,
-          kind: outcome.kind,
-          score: outcome.score,
-          conversation_id: matched.conversation_id,
-          attributed_play_id: null,
+    const outcomeRecorded = await bus.publish({
+      workspace_id: inbound.workspace_id,
+      event_type: "outcome.recorded",
+      source: "system",
+      producer_ref: "channel:email:reply",
+      correlation_id: matched.conversation_id,
+      causation_id: replyClassified.id,
+      idempotency_key: projectionEventKey(deps.ingress_event_id, "outcome.recorded"),
+      payload: {
+        outcome_id: randomUUID(),
+        kind: outcome.kind,
+        score: outcome.score,
+        conversation_id: matched.conversation_id,
+        attributed_message_id: matched.outbound_message_id,
+        attributed_signal_id: attrib?.origin_signal_id ?? null,
+        attributed_rep_id: attrib?.rep_id ?? null,
+        attributed_play_id: null,
+        properties: {
+          reply_message_id: inbound_message_id,
+          reply_intent: classification.intent,
+          reply_confidence: classification.confidence,
         },
-      });
-    }
+        provenance: deps.ingress_event_id
+          ? { ingress_event_id: deps.ingress_event_id }
+          : {},
+        occurred_at: inbound.received_at,
+      },
+    });
+    await projectOutcomeLifecycleEvent(pool, outcomeRecorded);
+    outcome_id = (outcomeRecorded.payload as { outcome_id: string }).outcome_id;
   }
 
   return {

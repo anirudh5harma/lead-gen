@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
 import {
+  createEmailDeliveryFeedbackProjection,
   normalizeResendEmailWebhook,
   publishResendEmailWebhook,
 } from "../core/product/email-feedback.ts";
-import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
+import {
+  createInMemoryEventBus,
+  type PublishedEvent,
+} from "../core/substrate/events/index.ts";
 
 test("email feedback: normalizes Resend delivery webhooks", () => {
   assert.deepEqual(
@@ -122,4 +126,76 @@ test("email feedback: publishes provider webhook idempotency keys", async () => 
     external_id: "resend-email-5",
     provider_event_id: "evt_123",
   });
+});
+
+test("email feedback: bounce projection emits and materializes outcome event", async () => {
+  const workspace_id = randomUUID();
+  const message_id = randomUUID();
+  const conversation_id = randomUUID();
+  const channel_account_id = randomUUID();
+  const rep_id = randomUUID();
+  const calls: string[] = [];
+  const bouncedOccurredAt = new Date().toISOString();
+  const pool = {
+    query: async (sql: string) => {
+      calls.push(sql);
+      if (sql.includes("select m.channel_account_id")) {
+        return {
+          rows: [{ channel_account_id, conversation_id, rep_id }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const bus = createInMemoryEventBus();
+  const projection = createEmailDeliveryFeedbackProjection({
+    pool: pool as never,
+    bus,
+  });
+
+  await projection.apply({
+    id: randomUUID(),
+    workspace_id,
+    event_type: "message.bounced",
+    schema_version: 1,
+    correlation_id: conversation_id,
+    causation_id: null,
+    source: "webhook",
+    producer_ref: "test",
+    idempotency_key: null,
+    occurred_at: bouncedOccurredAt,
+    payload: {
+      message_id,
+      channel: "email",
+      bounce_type: "hard",
+      external_id: "resend-email-6",
+      reason: "Recipient is suppressed",
+    },
+  } satisfies PublishedEvent);
+
+  const outcome = bus.published.find((e) => e.event_type === "outcome.recorded");
+  assert.ok(outcome);
+  assert.equal(
+    outcome.idempotency_key,
+    `projection:message:${message_id}:outcome.recorded:bounce`,
+  );
+  assert.deepEqual(outcome.payload, {
+    outcome_id: (outcome.payload as { outcome_id: string }).outcome_id,
+    kind: "bounce",
+    score: -0.2,
+    conversation_id,
+    attributed_play_id: null,
+    attributed_message_id: message_id,
+    attributed_rep_id: rep_id,
+    properties: {
+      bounce_type: "hard",
+      reason: "Recipient is suppressed",
+      bounce_event_id: outcome.causation_id,
+      delivery_external_id: "resend-email-6",
+    },
+    provenance: { source: "email-feedback" },
+    occurred_at: bouncedOccurredAt,
+  });
+  assert.ok(calls.some((sql) => sql.includes("insert into outcomes")));
 });

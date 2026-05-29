@@ -97,6 +97,7 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
+import { createOutcomeLifecycleProjection } from "../primitives/outcome-lifecycle.ts";
 import {
   isProductionProductRuntime,
   ProductEnvironmentError,
@@ -2032,6 +2033,7 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
     }),
     createMessageLifecycleProjection(engine.pool),
     createReplyLifecycleProjection(engine.pool),
+    createOutcomeLifecycleProjection(engine.pool),
     createOutcomeMemoryUpdateProjection({
       bus: engine.bus,
       attribution: resolveProductOutcomeAttribution,

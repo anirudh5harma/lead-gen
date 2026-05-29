@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Pool } from "pg";
 import type {
@@ -6,6 +7,7 @@ import type {
   PublishedEvent,
 } from "../substrate/events/index.ts";
 import { projectMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
+import { projectOutcomeLifecycleEvent } from "../primitives/outcome-lifecycle.ts";
 
 export const EMAIL_DELIVERY_FEEDBACK_PROJECTION = "channel.email_feedback.v1";
 
@@ -264,91 +266,57 @@ async function applyMessageBounced(
   await projectMessageLifecycleEvent(pool, event);
   const { rows } = await pool.query<{
     channel_account_id: string | null;
-    outcome_id: string | null;
     conversation_id: string | null;
     rep_id: string | null;
-    score: string | null;
-    properties: Record<string, unknown> | null;
   }>(
-    `with matched_message as (
-       select id, workspace_id, conversation_id, channel_account_id
-         from messages
-        where id = $1
-          and workspace_id = $2
-          and channel = 'email'
-          and direction = 'outbound'
-     ),
-     inserted_outcome as (
-       insert into outcomes (
-         workspace_id, kind, score, conversation_id, attributed_message_id,
-         attributed_rep_id, properties, provenance
-       )
-       select m.workspace_id,
-              'bounce',
-              case when $3::text = 'complaint' then -1 else -0.2 end,
-              m.conversation_id,
-              m.id,
-              c.rep_id,
-              $4::jsonb,
-              '{"source":"email-feedback"}'::jsonb
-         from matched_message m
-         join conversations c
-           on c.id = m.conversation_id
-          and c.workspace_id = m.workspace_id
-        where not exists (
-          select 1
-            from outcomes o
-           where o.workspace_id = m.workspace_id
-             and o.kind = 'bounce'
-             and o.attributed_message_id = m.id
-        )
-       returning id, conversation_id, attributed_rep_id, score::text, properties
-     )
-     select m.channel_account_id,
-            o.id as outcome_id,
-            o.conversation_id,
-            o.attributed_rep_id as rep_id,
-            o.score,
-            o.properties
-       from matched_message m
-       left join inserted_outcome o on true`,
-    [
-      payload.message_id,
-      event.workspace_id,
-      payload.bounce_type,
-      JSON.stringify({
-        bounce_type: payload.bounce_type,
-        reason: payload.reason ?? null,
-        bounce_event_id: event.id,
-        delivery_external_id: payload.external_id ?? null,
-      }),
-    ],
+    `select m.channel_account_id,
+            m.conversation_id,
+            c.rep_id
+       from messages m
+       left join conversations c
+         on c.id = m.conversation_id
+        and c.workspace_id = m.workspace_id
+      where m.id = $1
+        and m.workspace_id = $2
+        and m.channel = 'email'
+        and m.direction = 'outbound'
+      limit 1`,
+    [payload.message_id, event.workspace_id],
   );
   const row = rows[0];
   if (!row) return;
   if (row.channel_account_id) {
     await refreshSendingDomainRates(pool, row.channel_account_id);
   }
-  if (row.outcome_id && row.score) {
-    await bus.publish({
-      workspace_id: event.workspace_id,
-      event_type: "outcome.recorded",
-      source: "system",
-      producer_ref: "projector:email-feedback",
-      correlation_id: event.correlation_id,
-      causation_id: event.id,
-      payload: {
-        outcome_id: row.outcome_id,
-        kind: "bounce",
-        score: Number(row.score),
-        conversation_id: row.conversation_id,
-        attributed_play_id: null,
-        attributed_message_id: payload.message_id,
-        attributed_rep_id: row.rep_id,
-        properties: row.properties ?? {},
-      },
-    });
-  }
+
+  const outcomeProperties = {
+    bounce_type: payload.bounce_type,
+    reason: payload.reason ?? null,
+    bounce_event_id: event.id,
+    delivery_external_id: payload.external_id ?? null,
+  };
+  const outcomeRecorded = await bus.publish({
+    workspace_id: event.workspace_id,
+    event_type: "outcome.recorded",
+    source: "system",
+    producer_ref: "projector:email-feedback",
+    correlation_id: event.correlation_id,
+    causation_id: event.id,
+    idempotency_key: `projection:message:${payload.message_id}:outcome.recorded:bounce`,
+    payload: {
+      outcome_id: randomUUID(),
+      kind: "bounce",
+      score: payload.bounce_type === "complaint" ? -1 : -0.2,
+      conversation_id: row.conversation_id,
+      attributed_play_id: null,
+      attributed_message_id: payload.message_id,
+      attributed_rep_id: row.rep_id,
+      properties: outcomeProperties,
+      provenance: { source: "email-feedback" },
+      occurred_at: event.occurred_at,
+    },
+  });
+  await projectOutcomeLifecycleEvent(pool, outcomeRecorded);
 }
 
 async function refreshSendingDomainRates(

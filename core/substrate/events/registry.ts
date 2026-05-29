@@ -503,8 +503,13 @@ const OutcomeRecorded = z.object({
   attributed_play_id: z.string().uuid().nullable(),
   attributed_play_run_id: z.string().uuid().nullable().optional(),
   attributed_message_id: z.string().uuid().nullable().optional(),
+  attributed_signal_id: z.string().uuid().nullable().optional(),
   attributed_rep_id: z.string().uuid().nullable().optional(),
+  subject_person_id: z.string().uuid().nullable().optional(),
+  subject_company_id: z.string().uuid().nullable().optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
+  provenance: z.record(z.string(), z.unknown()).optional(),
+  occurred_at: z.string().datetime().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

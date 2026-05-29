@@ -150,7 +150,8 @@ test("product projections: replayed Outcome learning applies to procedural memor
     });
 
     const initial = await projectPendingProductEventsOnce({ leaseOwner: "learning-a" });
-    assert.equal(initial.completed, 2);
+    assert.equal(initial.failed, 0);
+    assert.ok(initial.completed >= 3);
     const applied = await fx.pool.query<{
       score: string;
       win_count: number;
@@ -239,7 +240,7 @@ test("product projections: missing procedural exemplars fail without consuming t
     });
 
     const projected = await projectPendingProductEventsOnce({ leaseOwner: "learning-missing" });
-    assert.equal(projected.completed, 1);
+    assert.ok(projected.completed >= 2);
     assert.equal(projected.failed, 1);
     const ledger = await fx.pool.query<{ count: string }>(
       `select count(*)::text as count

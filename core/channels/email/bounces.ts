@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
 import { projectMessageLifecycleEvent } from "../message-lifecycle.ts";
+import { projectOutcomeLifecycleEvent } from "../../primitives/outcome-lifecycle.ts";
 import type { BounceEvent } from "./types.ts";
 
 export interface BounceProjectionContext {
@@ -14,8 +16,9 @@ export interface BounceProjectionContext {
  * What happens:
  *   1. Look up the message by external_id.
  *   2. Emit `message.bounced`; shared lifecycle projection materializes it.
- *   3. For hard bounces / complaints: mark the recipient with a
- *      `do_not_contact` outcome so no Rep tries them again.
+ *   3. For hard bounces / complaints: emit `outcome.recorded`; shared outcome
+ *      projection marks the recipient with a `do_not_contact` outcome so no Rep
+ *      tries them again.
  *   4. Workflows observing `message.bounced` can park or escalate.
  *
  * The deliverability subsystem also subscribes to message.bounced and
@@ -65,61 +68,33 @@ export async function handleBounce(
   await projectMessageLifecycleEvent(pool, bounced);
 
   if (event.bounce_type === "hard" || event.bounce_type === "complaint") {
-    // Record a do_not_contact outcome on the conversation. The outcomes
-    // bridge (`core/agents/memory/bridges.ts`) sees this and updates
-    // procedural memory accordingly (-0.5 for the contributing exemplars).
-    const outcomeId = await pool.query<{ id: string }>(
-      `insert into outcomes (
-         workspace_id, kind, score,
-         conversation_id, attributed_message_id,
-         provenance, occurred_at, recorded_at
-       ) values ($1, 'do_not_contact', -1, $2, $3, $4::jsonb, now(), now())
-       on conflict (workspace_id, (provenance ->> 'ingress_event_id'), kind)
-         where provenance ? 'ingress_event_id'
-       do nothing
-       returning id`,
-      [
-        event.workspace_id,
-        row.conversation_id,
-        row.id,
-        JSON.stringify(
-          context.ingress_event_id
-            ? { ingress_event_id: context.ingress_event_id }
-            : {},
-        ),
-      ],
-    );
-    const projectedOutcomeId =
-      outcomeId.rows[0]?.id ??
-      (context.ingress_event_id
-        ? (
-            await pool.query<{ id: string }>(
-              `select id from outcomes
-                where workspace_id = $1
-                  and provenance ->> 'ingress_event_id' = $2
-                  and kind = 'do_not_contact'
-                limit 1`,
-              [event.workspace_id, context.ingress_event_id],
-            )
-          ).rows[0]?.id
-        : undefined);
-    if (projectedOutcomeId) {
-      await bus.publish({
-        workspace_id: event.workspace_id,
-        event_type: "outcome.recorded",
-        source: "webhook",
-        producer_ref: "channel:email:bounce",
-        correlation_id: row.conversation_id,
-        idempotency_key: projectionEventKey(context.ingress_event_id, "outcome.recorded"),
-        payload: {
-          outcome_id: projectedOutcomeId,
-          kind: "do_not_contact",
-          score: -1,
-          conversation_id: row.conversation_id,
-          attributed_play_id: null,
+    const outcomeRecorded = await bus.publish({
+      workspace_id: event.workspace_id,
+      event_type: "outcome.recorded",
+      source: "webhook",
+      producer_ref: "channel:email:bounce",
+      correlation_id: row.conversation_id,
+      causation_id: bounced.id,
+      idempotency_key: projectionEventKey(context.ingress_event_id, "outcome.recorded"),
+      payload: {
+        outcome_id: randomUUID(),
+        kind: "do_not_contact",
+        score: -1,
+        conversation_id: row.conversation_id,
+        attributed_message_id: row.id,
+        attributed_play_id: null,
+        properties: {
+          bounce_type: event.bounce_type,
+          bounce_recipient: event.recipient,
+          bounce_detail: event.detail ?? null,
+          delivery_external_id: event.external_id,
         },
-      });
-    }
+        provenance: context.ingress_event_id
+          ? { ingress_event_id: context.ingress_event_id }
+          : {},
+      },
+    });
+    await projectOutcomeLifecycleEvent(pool, outcomeRecorded);
   }
 }
 
