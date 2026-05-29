@@ -242,6 +242,7 @@ async function sendEmail(
         message_id: opts.message_id,
         channel: "email",
         external_id: externalId,
+        channel_account_id: account.id,
       },
     });
     await projectMessageLifecycleEvent(pool, sentEvent);

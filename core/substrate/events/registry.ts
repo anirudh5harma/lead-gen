@@ -401,12 +401,14 @@ const MessageQueued = z.object({
   channel: z.string(),
   scheduled_at: z.string().datetime().nullable(),
   channel_account_id: z.string().uuid().nullable().optional(),
+  reserved_at: z.string().datetime().nullable().optional(),
 });
 
 const MessageSent = z.object({
   message_id: z.string().uuid(),
   channel: z.string(),
   external_id: z.string().nullable(),
+  channel_account_id: z.string().uuid().nullable().optional(),
 });
 
 const MessageDeferred = z.object({

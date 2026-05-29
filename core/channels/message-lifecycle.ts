@@ -66,7 +66,10 @@ async function projectMessageQueued(
       event.workspace_id,
       payload.channel_account_id ?? null,
       payload.scheduled_at,
-      JSON.stringify({ queued_event_id: event.id }),
+      JSON.stringify({
+        queued_event_id: event.id,
+        ...(payload.reserved_at ? { send_reserved_at: payload.reserved_at } : {}),
+      }),
       payload.channel,
     ],
   );
@@ -85,6 +88,7 @@ async function projectMessageSent(
               else 'sent'::message_status
             end,
             external_id = coalesce($3, external_id),
+            channel_account_id = coalesce($7::uuid, channel_account_id),
             sent_at = coalesce(sent_at, $4::timestamptz),
             properties = properties || $5::jsonb
       where id = $1
@@ -101,6 +105,7 @@ async function projectMessageSent(
         send_external_id: payload.external_id,
       }),
       payload.channel,
+      payload.channel_account_id ?? null,
     ],
   );
 }

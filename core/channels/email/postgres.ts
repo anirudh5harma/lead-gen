@@ -4,6 +4,7 @@ import type {
   ChannelSendContext,
   ChannelSendDeferred,
 } from "../types.ts";
+import { projectMessageLifecycleEvent } from "../message-lifecycle.ts";
 import type {
   EmailChannel,
   EmailSendEnvelope,
@@ -135,23 +136,6 @@ async function evaluateRecipientFrequency(
   };
 }
 
-async function markMessageQueued(
-  client: PoolClient,
-  draft: ChannelDraft,
-  account_id: string,
-  reserved_at: Date,
-): Promise<void> {
-  await client.query(
-    `update messages
-        set status = 'queued',
-            channel_account_id = $2,
-            scheduled_at = null,
-            properties = properties || jsonb_build_object('send_reserved_at', $3::timestamptz)
-      where id = $1`,
-    [draft.message_id, account_id, reserved_at.toISOString()],
-  );
-}
-
 async function loadMessageSendState(
   client: PoolClient,
   workspace_id: string,
@@ -233,12 +217,13 @@ function evaluateAccount(
 }
 
 async function publishDeferred(
+  pool: Pool,
   draft: ChannelDraft,
   ctx: ChannelSendContext,
   defer_reason: string,
   retry_after: string | null,
 ): Promise<ChannelSendDeferred> {
-  await ctx.bus.publish({
+  const event = await ctx.bus.publish({
     workspace_id: ctx.workspace_id,
     event_type: "message.deferred",
     source: "system",
@@ -250,8 +235,10 @@ async function publishDeferred(
       channel: "email",
       defer_reason,
       retry_after,
+      detail: null,
     },
   });
+  await projectMessageLifecycleEvent(pool, event);
   return {
     status: "deferred",
     message_id: draft.message_id,
@@ -339,15 +326,16 @@ export function createPostgresOwnedDomainEmailChannel(
 
     async send(conversation, draft, ctx) {
       if (!draft.eval_passed) {
-        return publishDeferred(draft, ctx, "eval_not_passed", null);
+        return publishDeferred(opts.pool, draft, ctx, "eval_not_passed", null);
       }
       if (!conversation.counterparty_email) {
-        return publishDeferred(draft, ctx, "missing_recipient_email", null);
+        return publishDeferred(opts.pool, draft, ctx, "missing_recipient_email", null);
       }
 
       const client = await opts.pool.connect();
       let reservation: ReservationDecision;
       let alreadySentExternalId: string | null = null;
+      let reservedAtForQueuedEvent: string | null = null;
       try {
         await client.query("begin");
         const nowDate = now();
@@ -390,14 +378,9 @@ export function createPostgresOwnedDomainEmailChannel(
               bounceRateLimit,
               complaintRateLimit,
             });
-          }
-          if (reservation.account) {
-            await markMessageQueued(
-              client,
-              draft,
-              reservation.account.account_id,
-              nowDate,
-            );
+            if (reservation.account) {
+              reservedAtForQueuedEvent = nowDate.toISOString();
+            }
           }
         }
         await client.query("commit");
@@ -422,6 +405,7 @@ export function createPostgresOwnedDomainEmailChannel(
 
       if (!reservation.account) {
         return publishDeferred(
+          opts.pool,
           draft,
           ctx,
           reservation.defer_reason ?? "no_connected_email_account",
@@ -429,7 +413,7 @@ export function createPostgresOwnedDomainEmailChannel(
         );
       }
 
-      await ctx.bus.publish({
+      const queuedEvent = await ctx.bus.publish({
         workspace_id: ctx.workspace_id,
         event_type: "message.queued",
         source: "system",
@@ -440,8 +424,11 @@ export function createPostgresOwnedDomainEmailChannel(
           message_id: draft.message_id,
           channel: "email",
           scheduled_at: null,
+          channel_account_id: reservation.account.account_id,
+          reserved_at: reservedAtForQueuedEvent,
         },
       });
+      await projectMessageLifecycleEvent(opts.pool, queuedEvent);
 
       const envelope: EmailSendEnvelope = {
         from: reservation.account.from,
@@ -454,13 +441,7 @@ export function createPostgresOwnedDomainEmailChannel(
 
       try {
         const result = await opts.transport.send(envelope);
-        await opts.pool.query(
-          `update messages
-              set channel_account_id = $2
-            where id = $1`,
-          [draft.message_id, reservation.account.account_id],
-        );
-        await ctx.bus.publish({
+        const sentEvent = await ctx.bus.publish({
           workspace_id: ctx.workspace_id,
           event_type: "message.sent",
           source: "system",
@@ -471,8 +452,10 @@ export function createPostgresOwnedDomainEmailChannel(
             message_id: draft.message_id,
             channel: "email",
             external_id: result.external_id,
+            channel_account_id: reservation.account.account_id,
           },
         });
+        await projectMessageLifecycleEvent(opts.pool, sentEvent);
         return {
           status: "sent",
           message_id: draft.message_id,

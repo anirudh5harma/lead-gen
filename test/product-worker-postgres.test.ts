@@ -304,8 +304,10 @@ test("product email: queued send replay reuses reservation and transport idempot
       counterparty_person_id: string;
       subject: string | null;
       body: string;
+      channel_account_id: string | null;
     }>(
       `select m.id, m.conversation_id, c.rep_id, c.counterparty_person_id,
+              m.channel_account_id,
               m.subject, m.body
          from messages m
          join conversations c on c.id = m.conversation_id
@@ -315,13 +317,22 @@ test("product email: queued send replay reuses reservation and transport idempot
       [submitted.workspace_id],
     );
     const message = rows[0];
+    const replayAccountId = message.channel_account_id ?? boot.channel_account_id;
     await fx.pool.query(
-      `update messages set status = 'queued', external_id = null where id = $1`,
-      [message.id],
+      `update messages
+          set status = 'queued',
+              external_id = null,
+              channel_account_id = $2,
+              properties = properties || jsonb_build_object(
+                'send_reserved_at',
+                now()::text
+              )
+        where id = $1`,
+      [message.id, replayAccountId],
     );
     const before = await fx.pool.query<{ daily_used: number }>(
       `select daily_used from channel_accounts where id = $1`,
-      [boot.channel_account_id],
+      [replayAccountId],
     );
 
     const transport = createDryRunEmailTransport();
@@ -367,18 +378,21 @@ test("product email: queued send replay reuses reservation and transport idempot
     );
     const after = await fx.pool.query<{ daily_used: number }>(
       `select daily_used from channel_accounts where id = $1`,
-      [boot.channel_account_id],
+      [replayAccountId],
     );
     assert.equal(after.rows[0].daily_used, before.rows[0].daily_used);
 
     await fx.pool.query(
       `update messages
-          set properties = properties || jsonb_build_object(
+          set status = 'queued',
+              external_id = null,
+              channel_account_id = $2,
+              properties = properties || jsonb_build_object(
             'send_reserved_at',
             (now() - interval '24 hours')::text
           )
         where id = $1`,
-      [message.id],
+      [message.id, replayAccountId],
     );
     const expiredRetry = await email.send(conversation, draft, {
       workspace_id: submitted.workspace_id,

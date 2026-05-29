@@ -51,6 +51,7 @@ test("message lifecycle projection materializes queued/sent/deferred events", as
   const { pool, calls } = fakePool();
   const message_id = randomUUID();
   const channel_account_id = randomUUID();
+  const reserved_at = new Date().toISOString();
 
   await projectMessageLifecycleEvent(
     pool,
@@ -59,12 +60,19 @@ test("message lifecycle projection materializes queued/sent/deferred events", as
       channel: "email",
       scheduled_at: null,
       channel_account_id,
+      reserved_at,
     }),
   );
   assert.match(calls[0]!.sql, /update messages/);
   assert.equal(calls[0]!.values?.[0], message_id);
   assert.equal(calls[0]!.values?.[2], channel_account_id);
   assert.equal(calls[0]!.values?.[5], "email");
+  const queuedProperties = JSON.parse(String(calls[0]!.values?.[4])) as {
+    queued_event_id: string;
+    send_reserved_at: string;
+  };
+  assert.match(queuedProperties.queued_event_id, /^[0-9a-f-]{36}$/);
+  assert.equal(queuedProperties.send_reserved_at, reserved_at);
 
   await projectMessageLifecycleEvent(
     pool,
@@ -72,12 +80,14 @@ test("message lifecycle projection materializes queued/sent/deferred events", as
       message_id,
       channel: "email",
       external_id: "provider-1",
+      channel_account_id,
     }),
   );
   assert.match(calls[1]!.sql, /external_id = coalesce/);
   assert.equal(calls[1]!.values?.[0], message_id);
   assert.equal(calls[1]!.values?.[2], "provider-1");
   assert.equal(calls[1]!.values?.[5], "email");
+  assert.equal(calls[1]!.values?.[6], channel_account_id);
 
   await projectMessageLifecycleEvent(
     pool,
