@@ -56,6 +56,27 @@ test("event bus: validates payload against the registry schema", async () => {
   );
 });
 
+test("event bus: workspace.created carries replayable workspace metadata", async () => {
+  const bus = createInMemoryEventBus();
+  const event = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "workspace.created",
+    source: "user",
+    producer_ref: randomUUID(),
+    payload: {
+      workspace_id: randomUUID(),
+      created_by: randomUUID(),
+      slug: "acme-gtm",
+      name: "Acme GTM",
+      settings: { mode: "product-activation" },
+      owner_role: "owner",
+    },
+  });
+
+  assert.equal(event.payload.slug, "acme-gtm");
+  assert.equal(event.payload.owner_role, "owner");
+});
+
 test("event bus: wildcard subscriber receives every event", async () => {
   const bus = createInMemoryEventBus();
   const seen: string[] = [];

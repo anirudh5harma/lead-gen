@@ -19,6 +19,10 @@ import { z } from "zod";
 const WorkspaceCreated = z.object({
   workspace_id: z.string().uuid(),
   created_by: z.string().uuid(),
+  slug: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
+  owner_role: z.enum(["owner", "admin", "member"]).optional(),
 });
 
 const WorkspaceMemberInvited = z.object({

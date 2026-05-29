@@ -535,20 +535,24 @@ export async function createProductWorkspaceForUser(
           JSON.stringify({ mode: "product-activation", activated_from: "dashboard" }),
         ],
       );
-      await pool.query(
-        `insert into workspace_members (workspace_id, user_id, role, accepted_at)
-         values ($1, $2, 'owner', now())`,
-        [id, user_id],
-      );
 
       const engine = await getProductEngine();
-      await engine.bus.publish({
+      const event = await engine.bus.publish({
         workspace_id: id,
         event_type: "workspace.created",
         source: "user",
         producer_ref: user_id,
-        payload: { workspace_id: id, created_by: user_id },
+        idempotency_key: `workspace.created:${id}`,
+        payload: {
+          workspace_id: id,
+          created_by: user_id,
+          slug,
+          name,
+          settings: { mode: "product-activation", activated_from: "dashboard" },
+          owner_role: "owner",
+        },
       });
+      await projectWorkspaceCreated(engine.pool, event);
       return rows[0]!;
     } catch (error) {
       if (
@@ -564,6 +568,44 @@ export async function createProductWorkspaceForUser(
     }
   }
   throw new Error("Could not create a unique workspace slug");
+}
+
+async function projectWorkspaceCreated(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    workspace_id: string;
+    created_by: string;
+    slug?: string;
+    name?: string;
+    settings?: Record<string, unknown>;
+    owner_role?: "owner" | "admin" | "member";
+  };
+  if (payload.slug && payload.name) {
+    await pool.query(
+      `insert into workspaces (id, slug, name, settings)
+       values ($1, $2, $3, $4::jsonb)
+       on conflict (id) do update set
+         slug = excluded.slug,
+         name = excluded.name,
+         settings = workspaces.settings || excluded.settings`,
+      [
+        payload.workspace_id,
+        payload.slug,
+        payload.name,
+        JSON.stringify(payload.settings ?? {}),
+      ],
+    );
+  }
+  await pool.query(
+    `insert into workspace_members (workspace_id, user_id, role, accepted_at)
+     values ($1, $2, $3::workspace_role, now())
+     on conflict (workspace_id, user_id) do update set
+       role = excluded.role,
+       accepted_at = coalesce(workspace_members.accepted_at, excluded.accepted_at)`,
+    [payload.workspace_id, payload.created_by, payload.owner_role ?? "owner"],
+  );
 }
 
 function slugifyWorkspace(value: string): string {
@@ -1585,6 +1627,11 @@ async function resolveProductOutcomeAttribution(event: PublishedEvent) {
 function createProductEventProjections(engine: ProductEngine): DurableEventProjection[] {
   return [
     {
+      name: "workspace.created.v1",
+      eventTypes: ["workspace.created"],
+      apply: (event) => projectWorkspaceCreated(engine.pool, event),
+    },
+    {
       name: "workspace.company_profile.v1",
       eventTypes: ["workspace.company.profiled"],
       apply: (event) => projectWorkspaceCompanyProfiled(engine.pool, event),
@@ -2332,9 +2379,11 @@ async function startSignalEmailPlay(
 
 export async function dispatchSignalPlaysOnce(
   opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
 ): Promise<number> {
   const engine = await getProductEngine();
   registerSignalEmailWorkflow(engine);
+  if (session) await assertProductWorkspaceAccess(session, engine.pool);
   const { rows } = await engine.pool.query<{
     event_id: string;
     workspace_id: string;
@@ -2388,9 +2437,10 @@ export async function dispatchSignalPlaysOnce(
         and wr.idempotency_key = concat('signal:', e.payload->>'signal_id', ':play:', p.id::text)
       where e.event_type = 'signal.matched'
         and wr.id is null
+        and ($3::uuid is null or e.workspace_id = $3)
       order by e.occurred_at asc
       limit $2`,
-    [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, opts.limit ?? 25],
+    [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, opts.limit ?? 25, session?.workspace_id ?? null],
   );
 
   let dispatched = 0;

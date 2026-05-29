@@ -24,6 +24,8 @@ import {
 
 export interface CreateBombsellMcpServerOptions {
   workspaceId: string;
+  /** Authenticated product user behind this MCP session, if known. */
+  userId?: string;
   /** Optional rep on whose behalf calls are made (some Tools need this). */
   repId?: string;
   /** Optional filter — exclude tools by name or kind. */
@@ -56,6 +58,7 @@ export function createBombsellMcpServer(
 
   const baseCtx: ToolContext = {
     workspace_id: opts.workspaceId,
+    user_id: opts.userId,
     rep_id: opts.repId,
   };
 

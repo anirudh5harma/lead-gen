@@ -24,6 +24,8 @@ export type ToolKind = "read" | "write" | "external";
 
 export interface ToolContext {
   workspace_id: string;
+  /** Authenticated product user behind this invocation, for surface parity. */
+  user_id?: string;
   /** The Rep on whose behalf this tool is being invoked, when applicable. */
   rep_id?: string;
   /** The enclosing workflow run, when called from a workflow step. */

@@ -238,7 +238,7 @@ export async function submitLaunchSignalAction(formData: FormData) {
     },
     session,
   );
-  await dispatchSignalPlaysOnce({ limit: 5 });
+  await dispatchSignalPlaysOnce({ limit: 5 }, session);
   revalidateProductPaths();
   redirect("/dashboard/approvals");
 }
