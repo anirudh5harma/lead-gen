@@ -2653,6 +2653,8 @@ function registerSignalIngestionWorkflows(engine: ProductEngine): void {
   engine.runtime.register(
     createRssSignalIngestionWorkflow({
       pool: engine.pool,
+      bus: engine.bus,
+      embedder: createProductEmbeddingClient(),
     }),
   );
   engine.runtime.register(

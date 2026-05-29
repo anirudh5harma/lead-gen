@@ -5,6 +5,7 @@ import type {
   EventPayload,
   Subscription,
 } from "../substrate/events/index.ts";
+import { connect } from "../graph/edges/index.ts";
 import { vectorToPgLiteral } from "./embeddings.ts";
 
 type SignalProjectionType =
@@ -165,13 +166,29 @@ export async function projectSignalDiscovered(
       vectorToPgLiteral(payload.embedding),
     ],
   );
-  if (result.rowCount === 1) return;
-  const existing = await pool.query<{ workspace_id: string }>(
-    `select workspace_id from signals where id = $1`,
-    [payload.signal_id],
-  );
-  if (existing.rows[0]?.workspace_id !== workspaceId) {
-    throw new Error(`Signal discovery projection rejected signal ${payload.signal_id}`);
+  if (result.rowCount !== 1) {
+    const existing = await pool.query<{ workspace_id: string }>(
+      `select workspace_id from signals where id = $1`,
+      [payload.signal_id],
+    );
+    if (existing.rows[0]?.workspace_id !== workspaceId) {
+      throw new Error(`Signal discovery projection rejected signal ${payload.signal_id}`);
+    }
+  }
+  if (payload.source_id) {
+    await connect(pool, {
+      workspace_id: workspaceId,
+      from: { node_type: "source", node_id: payload.source_id },
+      to: { node_type: "signal", node_id: payload.signal_id },
+      kind: "emitted",
+      properties: {
+        external_id: payload.provenance.external_id,
+        origin_candidate_id: payload.origin_candidate_id,
+      },
+      provenance: {
+        source: "projection:signal.discovered",
+      },
+    });
   }
 }
 

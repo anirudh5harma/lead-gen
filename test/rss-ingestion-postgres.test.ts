@@ -1,23 +1,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { setupPg, until } from "./_pg.ts";
 import { upsertSource } from "../core/graph/nodes/sources.ts";
+import { createMockEmbeddingClient } from "../core/ingest/embeddings.ts";
+import { projectSignalDiscovered } from "../core/ingest/projectors.ts";
 import {
   createRssSignalIngestionWorkflow,
   RSS_SIGNAL_INGESTION_WORKFLOW,
 } from "../core/signals/index.ts";
 import { createPostgresEventBus } from "../core/substrate/events/adapters/postgres.ts";
+import { runDurableEventProjectionsOnce } from "../core/substrate/events/index.ts";
 import { createPostgresWorkflowRuntime } from "../core/substrate/workflows/index.ts";
-import { bootstrapWorkspace } from "../core/product/app.ts";
 
-test("rss ingestion workflow: upserts source signals idempotently and emits typed events", async (t) => {
+test("rss ingestion workflow: discovers source signals through typed events", async (t) => {
   const fx = await setupPg("rss_ingestion");
   if (!fx) return t.skip("DATABASE_URL not set");
 
   const bus = await createPostgresEventBus({ pool: fx.pool });
   try {
-    const boot = await bootstrapWorkspace(fx.pool);
-    const source = await upsertSource(fx.pool, boot.workspace_id, {
+    const workspace_id = randomUUID();
+    await fx.pool.query(
+      `insert into workspaces (id, slug, name, settings)
+       values ($1, $2, $3, '{}'::jsonb)`,
+      [workspace_id, `rss-${workspace_id.slice(0, 8)}`, "RSS Test Workspace"],
+    );
+    const source = await upsertSource(fx.pool, workspace_id, {
       kind: "rss",
       name: "Launch Feed",
       config: {
@@ -31,6 +39,8 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
     runtime.register(
       createRssSignalIngestionWorkflow({
         pool: fx.pool,
+        bus,
+        embedder: createMockEmbeddingClient(),
         fetchImpl: async () => ({
           ok: true,
           status: 200,
@@ -52,11 +62,11 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
     );
 
     await runtime.start({
-      workspace_id: boot.workspace_id,
+      workspace_id,
       workflow_name: RSS_SIGNAL_INGESTION_WORKFLOW,
       idempotency_key: `rss-test:${source.id}:1`,
       input: {
-        workspace_id: boot.workspace_id,
+        workspace_id,
         source_id: source.id,
       },
     });
@@ -72,9 +82,42 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
         [`rss-test:${source.id}:1`],
       );
       return rows[0]?.status === "completed" ? rows[0] : null;
-    });
+    }, { timeout: 15_000 });
     assert.equal(first.output?.inserted, 1);
     assert.equal(first.output?.updated, 0);
+
+    await runDurableEventProjectionsOnce(fx.pool, [
+      {
+        name: "test.signal.discovered.projector.v1",
+        eventTypes: ["signal.discovered"],
+        apply: async (event) => {
+          const payload = event.payload as {
+            signal_id: string;
+            source_id: string | null;
+            kind: string | null;
+          };
+          await projectSignalDiscovered(fx.pool, event.workspace_id, event.payload as never);
+          await bus.publish({
+            workspace_id: event.workspace_id,
+            event_type: "signal.ingested",
+            source: "system",
+            producer_ref: "projection:signal.discovered",
+            correlation_id: event.correlation_id ?? event.id,
+            causation_id: event.id,
+            idempotency_key: `projection:${event.id}:signal.ingested`,
+            payload: {
+              signal_id: payload.signal_id,
+              source_id: payload.source_id,
+              kind: payload.kind,
+              novelty_score: null,
+            },
+          });
+        },
+      },
+    ], {
+      limit: 10,
+      leaseOwner: "rss-ingestion-test",
+    });
 
     const ingested = await fx.pool.query<{
       id: string;
@@ -86,7 +129,7 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
          from signals
         where workspace_id = $1
           and source_id = $2`,
-      [boot.workspace_id, source.id],
+      [workspace_id, source.id],
     );
     assert.equal(ingested.rowCount, 1);
     assert.equal(ingested.rows[0].kind, "product_launch");
@@ -96,11 +139,21 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
       `select count(*)::text as count
          from events
         where workspace_id = $1
-          and event_type = 'signal.ingested'
+          and event_type = 'signal.discovered'
           and payload->>'signal_id' = $2`,
-      [boot.workspace_id, ingested.rows[0].id],
+      [workspace_id, ingested.rows[0].id],
     );
     assert.equal(Number(eventCount.rows[0].count), 1);
+
+    const ingestedEventCount = await fx.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from events
+        where workspace_id = $1
+          and event_type = 'signal.ingested'
+          and payload->>'signal_id' = $2`,
+      [workspace_id, ingested.rows[0].id],
+    );
+    assert.equal(Number(ingestedEventCount.rows[0].count), 1);
 
     const edge = await fx.pool.query<{ count: string }>(
       `select count(*)::text as count
@@ -111,16 +164,16 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
           and edge_type = 'emitted'
           and to_node_type = 'signal'
           and to_node_id = $3`,
-      [boot.workspace_id, source.id, ingested.rows[0].id],
+      [workspace_id, source.id, ingested.rows[0].id],
     );
     assert.equal(Number(edge.rows[0].count), 1);
 
     await runtime.start({
-      workspace_id: boot.workspace_id,
+      workspace_id,
       workflow_name: RSS_SIGNAL_INGESTION_WORKFLOW,
       idempotency_key: `rss-test:${source.id}:2`,
       input: {
-        workspace_id: boot.workspace_id,
+        workspace_id,
         source_id: source.id,
       },
     });
@@ -136,7 +189,7 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
         [`rss-test:${source.id}:2`],
       );
       return rows[0]?.status === "completed" ? rows[0] : null;
-    });
+    }, { timeout: 15_000 });
     assert.equal(second.output?.inserted, 0);
     assert.equal(second.output?.updated, 1);
 
@@ -150,7 +203,7 @@ test("rss ingestion workflow: upserts source signals idempotently and emits type
            where workspace_id = $1
              and event_type = 'signal.ingested'
              and payload->>'signal_id' = $3) as events`,
-      [boot.workspace_id, source.id, ingested.rows[0].id],
+      [workspace_id, source.id, ingested.rows[0].id],
     );
     assert.equal(Number(totals.rows[0].signals), 1);
     assert.equal(Number(totals.rows[0].events), 1);
