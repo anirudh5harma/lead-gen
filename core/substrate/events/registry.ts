@@ -400,6 +400,7 @@ const MessageQueued = z.object({
   message_id: z.string().uuid(),
   channel: z.string(),
   scheduled_at: z.string().datetime().nullable(),
+  channel_account_id: z.string().uuid().nullable().optional(),
 });
 
 const MessageSent = z.object({
@@ -413,6 +414,7 @@ const MessageDeferred = z.object({
   channel: z.string(),
   defer_reason: z.string(),
   retry_after: z.string().datetime().nullable(),
+  detail: z.string().nullable().optional(),
 });
 
 const MessageDelivered = z.object({

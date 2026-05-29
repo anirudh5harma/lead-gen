@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
+import { projectMessageLifecycleEvent } from "../message-lifecycle.ts";
 import {
   checkFrequencyCap,
   refundSend,
@@ -27,8 +28,9 @@ import type { SesSender } from "./adapters/ses.ts";
  * Public email send. Picks the right sub-channel adapter, enforces the
  * hot-path eval gate, daily cap, frequency cap, and (for owned domains)
  * warmup state. Every defer emits `message.deferred` onto the bus; every
- * successful send emits `message.queued` + `message.sent` and updates the
- * `messages` row.
+ * successful send emits `message.queued` + `message.sent`. Message state is
+ * materialized by the shared lifecycle projector so replay observes the same
+ * contract as the hot path.
  *
  * Hard rule (ARCHITECTURE.md): no path through this function sends without
  * a prior passing draft.judged event for the same message_id. The check
@@ -191,16 +193,8 @@ async function sendEmail(
     };
   }
 
-  // 6. Emit message.queued + flip the messages row.
-  await pool.query(
-    `update messages
-        set status = 'queued',
-            channel_account_id = $2,
-            scheduled_at = coalesce(scheduled_at, now())
-      where id = $1`,
-    [opts.message_id, account.id],
-  );
-  await bus.publish({
+  // 6. Emit message.queued; the projector owns message row materialization.
+  const queuedEvent = await bus.publish({
     workspace_id: opts.workspace_id,
     event_type: "message.queued",
     source: "system",
@@ -210,8 +204,10 @@ async function sendEmail(
       message_id: opts.message_id,
       channel: "email",
       scheduled_at: null,
+      channel_account_id: account.id,
     },
   });
+  await projectMessageLifecycleEvent(pool, queuedEvent);
 
   // 7. Actual provider send.
   try {
@@ -236,15 +232,7 @@ async function sendEmail(
       externalId = result.external_id;
     }
 
-    await pool.query(
-      `update messages
-          set status = 'sent',
-              external_id = $2,
-              sent_at = now()
-        where id = $1`,
-      [opts.message_id, externalId],
-    );
-    await bus.publish({
+    const sentEvent = await bus.publish({
       workspace_id: opts.workspace_id,
       event_type: "message.sent",
       source: "system",
@@ -256,6 +244,7 @@ async function sendEmail(
         external_id: externalId,
       },
     });
+    await projectMessageLifecycleEvent(pool, sentEvent);
     return {
       status: "sent",
       message_id: opts.message_id,
@@ -268,10 +257,6 @@ async function sendEmail(
     const reason: DeferReason = isTransient
       ? "provider_error_transient"
       : "provider_error_permanent";
-    await pool.query(
-      `update messages set status = 'failed' where id = $1`,
-      [opts.message_id],
-    );
     await emitDeferred(
       deps,
       opts,
@@ -293,14 +278,7 @@ async function emitDeferred(
   reason: DeferReason,
   detail?: string,
 ): Promise<void> {
-  await deps.pool.query(
-    `update messages
-        set status = 'deferred',
-            eval_notes = coalesce(eval_notes, '{}'::jsonb) || $2::jsonb
-      where id = $1`,
-    [opts.message_id, JSON.stringify({ defer_reason: reason, defer_detail: detail ?? null })],
-  );
-  await deps.bus.publish({
+  const event = await deps.bus.publish({
     workspace_id: opts.workspace_id,
     event_type: "message.deferred",
     source: "system",
@@ -311,8 +289,10 @@ async function emitDeferred(
       channel: "email",
       defer_reason: reason,
       retry_after: null,
+      detail: detail ?? null,
     },
   });
+  await projectMessageLifecycleEvent(deps.pool, event);
 }
 
 async function loadConversation(
