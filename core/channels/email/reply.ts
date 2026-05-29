@@ -6,6 +6,7 @@ import type {
   IntentClassifier,
   ReplyIntent,
 } from "./intent.ts";
+import { projectReplyLifecycleEvent } from "../reply-lifecycle.ts";
 
 /**
  * Inbound email projector. Provider ingress is authenticated at the surface
@@ -15,17 +16,17 @@ import type {
  *
  *   1. Match the inbound to an existing conversation (by external_thread_id,
  *      In-Reply-To, References, or a recent-recipient fallback).
- *   2. Insert an inbound `messages` row in 'delivered' state.
- *   3. Emit `reply.received` on the bus.
- *   4. Classify intent (LLM via IntentClassifier).
- *   5. Update the inbound row with intent class + confidence.
- *   6. Emit `reply.classified`.
- *   7. For win/loss intents: insert an `outcomes` row + emit
+ *   2. Publish `reply.received`; shared lifecycle projection materializes the
+ *      inbound `messages` row, outbound replied state, and conversation status.
+ *   3. Classify intent (LLM via IntentClassifier).
+ *   4. Publish `reply.classified`; shared lifecycle projection materializes
+ *      intent class, confidence, and terminal conversation status.
+ *   5. For win/loss intents: insert an `outcomes` row + emit
  *      `outcome.recorded`. The procedural-memory bridge (already wired)
  *      sees that event and updates the contributing exemplars.
  *
- * If no conversation matches, we emit `reply.unmatched` and skip the inbound
- * row insert; the surface layer can surface the unmatched provider event for
+ * If no conversation matches, we emit `reply.unmatched` and skip lifecycle
+ * materialization; the surface layer can surface the unmatched provider event for
  * operator recovery without minting fake Conversation/Message ids.
  */
 
@@ -120,10 +121,12 @@ export async function handleInboundEmail(
           "",
       }
     : await matchConversation(pool, inbound);
-  if (matched && !matched.outbound_message_id) return {
-    matched_conversation_id: matched.conversation_id,
-    inbound_message_id: existingMessage?.id ?? null,
-  };
+  if (matched && !matched.outbound_message_id) {
+    return {
+      matched_conversation_id: matched.conversation_id,
+      inbound_message_id: existingMessage?.id ?? null,
+    };
+  }
   if (!matched) {
     await bus.publish({
       workspace_id: inbound.workspace_id,
@@ -143,63 +146,7 @@ export async function handleInboundEmail(
   }
 
   const inbound_message_id = existingMessage?.id ?? randomUUID();
-  if (!existingMessage) {
-    await pool.query(
-      `insert into messages (
-       id, workspace_id, conversation_id,
-       channel, direction, status,
-       subject, body, body_html,
-       external_id, external_thread_id,
-       channel_account_id,
-       sent_at, delivered_at, replied_at,
-       provenance, created_at
-     ) values (
-       $1, $2, $3,
-       'email', 'inbound', 'delivered',
-       $4, $5, $6,
-       $7, $8,
-       $9,
-       $10::timestamptz, $10::timestamptz, $10::timestamptz,
-       $11::jsonb, now()
-       )`,
-      [
-        inbound_message_id,
-        inbound.workspace_id,
-        matched.conversation_id,
-        inbound.subject,
-        inbound.body_text,
-        inbound.body_html ?? null,
-        inbound.external_id,
-        inbound.external_thread_id ?? null,
-        inbound.channel_account_id ?? null,
-        inbound.received_at,
-        JSON.stringify({
-          from_email: inbound.from.email,
-          from_name: inbound.from.name ?? null,
-          in_reply_to: inbound.in_reply_to ?? null,
-          references: inbound.references ?? [],
-          matched_outbound_message_id: matched.outbound_message_id,
-        }),
-      ],
-    );
-  }
-  if (!existingMessage?.intent_class) {
-    await pool.query(
-      `update conversations
-        set last_activity_at = $2::timestamptz,
-            status = 'awaiting_us'
-      where id = $1`,
-      [matched.conversation_id, inbound.received_at],
-    );
-    // Mark the outbound it replies to.
-    await pool.query(
-      `update messages set status = 'replied', replied_at = $2::timestamptz
-      where id = $1`,
-      [matched.outbound_message_id, inbound.received_at],
-    );
-  }
-
-  await bus.publish({
+  const replyReceived = await bus.publish({
     workspace_id: inbound.workspace_id,
     event_type: "reply.received",
     source: "webhook",
@@ -210,8 +157,23 @@ export async function handleInboundEmail(
       conversation_id: matched.conversation_id,
       message_id: inbound_message_id,
       channel: "email",
+      matched_outbound_message_id: matched.outbound_message_id,
+      external_id: inbound.external_id,
+      external_thread_id: inbound.external_thread_id ?? null,
+      in_reply_to: inbound.in_reply_to ?? null,
+      references: inbound.references ?? [],
+      from: {
+        email: inbound.from.email,
+        name: inbound.from.name ?? null,
+      },
+      subject: inbound.subject,
+      body_text: inbound.body_text,
+      body_html: inbound.body_html ?? null,
+      received_at: inbound.received_at,
+      channel_account_id: inbound.channel_account_id ?? null,
     },
   });
+  await projectReplyLifecycleEvent(pool, replyReceived);
 
   // Classification + intent persistence. On a redelivery after this update,
   // reuse the persisted verdict rather than issuing another LLM call.
@@ -238,22 +200,9 @@ export async function handleInboundEmail(
       },
     });
 
-    await pool.query(
-      `update messages
-        set intent_class = $2,
-            intent_confidence = $3,
-            eval_notes = coalesce(eval_notes, '{}'::jsonb) || $4::jsonb
-      where id = $1`,
-      [
-        inbound_message_id,
-        classification.intent,
-        classification.confidence,
-        JSON.stringify({ intent_reason: classification.reason }),
-      ],
-    );
   }
 
-  await bus.publish({
+  const replyClassified = await bus.publish({
     workspace_id: inbound.workspace_id,
     event_type: "reply.classified",
     source: "system",
@@ -265,26 +214,11 @@ export async function handleInboundEmail(
       message_id: inbound_message_id,
       intent: classification.intent,
       confidence: classification.confidence,
+      reason: classification.reason,
+      received_at: inbound.received_at,
     },
   });
-
-  // Conversation status reflects the intent (positive → awaiting_us;
-  // negative / unsubscribe → closed_negative; ooo / spam → no change beyond
-  // awaiting_us).
-  if (
-    classification.intent === "negative" ||
-    classification.intent === "unsubscribe" ||
-    classification.intent === "do_not_contact"
-  ) {
-    await pool.query(
-      `update conversations
-          set status = 'closed_negative', closed_at = $2::timestamptz
-        where id = $1`,
-      [matched.conversation_id, inbound.received_at],
-    );
-  } else if (classification.intent === "positive") {
-    // Already awaiting_us; leave as is.
-  }
+  await projectReplyLifecycleEvent(pool, replyClassified);
 
   const outcome = POSITIVE_OUTCOMES[classification.intent];
   let outcome_id: string | undefined;

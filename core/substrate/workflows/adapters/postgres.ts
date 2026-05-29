@@ -344,9 +344,7 @@ export function createPostgresWorkflowRuntime(
     void (async () => {
       try {
         const output = (await def.run(rec.run.input as I, ctx)) as O;
-        rec.run.output = output;
-        rec.run.status = "completed";
-        rec.run.ended_at = new Date().toISOString();
+        const endedAt = new Date().toISOString();
         await pool.query(
           `update workflow_runs
               set status = 'completed',
@@ -358,12 +356,13 @@ export function createPostgresWorkflowRuntime(
           [JSON.stringify(output ?? null), rec.run.id],
         );
         await updatePlayRun(pool, rec.run, "completed", output);
+        rec.run.output = output;
+        rec.run.status = "completed";
+        rec.run.ended_at = endedAt;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         const stack = err instanceof Error ? err.stack : undefined;
-        rec.run.status = "failed";
-        rec.run.error = { message, stack };
-        rec.run.ended_at = new Date().toISOString();
+        const endedAt = new Date().toISOString();
         await pool.query(
           `update workflow_runs
               set status = 'failed',
@@ -387,6 +386,9 @@ export function createPostgresWorkflowRuntime(
             error: message,
           },
         });
+        rec.run.status = "failed";
+        rec.run.error = { message, stack };
+        rec.run.ended_at = endedAt;
       }
     })();
   }

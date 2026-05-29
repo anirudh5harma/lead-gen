@@ -38,6 +38,7 @@ import {
   type EmailChannel,
 } from "../channels/email/index.ts";
 import { createMessageLifecycleProjection } from "../channels/message-lifecycle.ts";
+import { createReplyLifecycleProjection } from "../channels/reply-lifecycle.ts";
 import {
   createRssSignalIngestionWorkflow,
   ingestManualSignal,
@@ -2030,6 +2031,7 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       bus: engine.bus,
     }),
     createMessageLifecycleProjection(engine.pool),
+    createReplyLifecycleProjection(engine.pool),
     createOutcomeMemoryUpdateProjection({
       bus: engine.bus,
       attribution: resolveProductOutcomeAttribution,

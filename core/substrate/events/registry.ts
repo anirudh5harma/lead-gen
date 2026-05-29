@@ -441,6 +441,20 @@ const ReplyReceived = z.object({
   conversation_id: z.string().uuid(),
   message_id: z.string().uuid(),
   channel: z.string(),
+  matched_outbound_message_id: z.string().uuid().nullable().optional(),
+  external_id: z.string().min(1).optional(),
+  external_thread_id: z.string().nullable().optional(),
+  in_reply_to: z.string().nullable().optional(),
+  references: z.array(z.string()).optional(),
+  from: z.object({
+    email: z.string().email(),
+    name: z.string().nullable().optional(),
+  }).optional(),
+  subject: z.string().optional(),
+  body_text: z.string().optional(),
+  body_html: z.string().nullable().optional(),
+  received_at: z.string().datetime().optional(),
+  channel_account_id: z.string().uuid().nullable().optional(),
 });
 
 const ReplyUnmatched = z.object({
@@ -456,6 +470,8 @@ const ReplyClassified = z.object({
   message_id: z.string().uuid(),
   intent: z.string(),
   confidence: z.number().min(0).max(1),
+  reason: z.string().nullable().optional(),
+  received_at: z.string().datetime().nullable().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

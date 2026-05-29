@@ -71,6 +71,7 @@ const stubOutlook: OutlookSender = {
     throw new Error("Outlook should not be called in this Play");
   },
 };
+const REMOTE_DB_WAIT_MS = 30_000;
 
 async function seedSignalGraph(
   pool: Pool,
@@ -180,7 +181,7 @@ test("outcome loop: cold open → positive reply → procedural exemplar score b
     });
     await until(
       async () => (await runtime.get(run.id))?.status === "completed",
-      { timeout: 5_000 },
+      { timeout: REMOTE_DB_WAIT_MS },
     );
     const final = await runtime.get<unknown, {
       status: string;
@@ -225,7 +226,7 @@ test("outcome loop: cold open → positive reply → procedural exemplar score b
         3,
       );
       return top[0]?.win_count === 1;
-    }, { timeout: 5_000 });
+    }, { timeout: REMOTE_DB_WAIT_MS });
 
     const top = await memory.procedural.topForPattern(
       { workspace_id, rep_id },
@@ -260,7 +261,7 @@ test("outcome loop: cold open → positive reply → procedural exemplar score b
       );
       const present = new Set(rows.map((r) => r.event_type));
       return expectedTypes.every((t) => present.has(t));
-    }, { timeout: 5_000 });
+    }, { timeout: REMOTE_DB_WAIT_MS });
 
     await wired.unsubscribe();
   } finally {
@@ -334,7 +335,7 @@ test("outcome loop: unsubscribe reply punishes the exemplar (loss_count up, scor
     });
     await until(
       async () => (await runtime.get(run.id))?.status === "completed",
-      { timeout: 5_000 },
+      { timeout: REMOTE_DB_WAIT_MS },
     );
 
     await handleInboundEmail(
@@ -361,7 +362,7 @@ test("outcome loop: unsubscribe reply punishes the exemplar (loss_count up, scor
         3,
       );
       return top[0]?.loss_count === 1;
-    }, { timeout: 5_000 });
+    }, { timeout: REMOTE_DB_WAIT_MS });
 
     const top = await memory.procedural.topForPattern(
       { workspace_id, rep_id },
