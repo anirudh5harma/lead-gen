@@ -24,10 +24,9 @@ import type {
  *      `outcome.recorded`. The procedural-memory bridge (already wired)
  *      sees that event and updates the contributing exemplars.
  *
- * If no conversation matches, the inbound row is still inserted but with
- * conversation_id NULL is not supported by the schema — instead, we emit
- * `reply.received` with conversation_id = null and SKIP the inbound row
- * insert; the surface layer can surface "unmatched replies" to the user.
+ * If no conversation matches, we emit `reply.unmatched` and skip the inbound
+ * row insert; the surface layer can surface the unmatched provider event for
+ * operator recovery without minting fake Conversation/Message ids.
  */
 
 export interface InboundEmail {
@@ -128,14 +127,16 @@ export async function handleInboundEmail(
   if (!matched) {
     await bus.publish({
       workspace_id: inbound.workspace_id,
-      event_type: "reply.received",
+      event_type: "reply.unmatched",
       source: "webhook",
       producer_ref: "channel:email:inbound",
-      idempotency_key: projectionEventKey(deps.ingress_event_id, "reply.received"),
+      idempotency_key: projectionEventKey(deps.ingress_event_id, "reply.unmatched"),
       payload: {
-        conversation_id: "00000000-0000-0000-0000-000000000000",
-        message_id: "00000000-0000-0000-0000-000000000000",
         channel: "email",
+        external_id: inbound.external_id,
+        from_email: inbound.from.email,
+        subject: inbound.subject,
+        received_at: inbound.received_at,
       },
     });
     return { matched_conversation_id: null, inbound_message_id: null };

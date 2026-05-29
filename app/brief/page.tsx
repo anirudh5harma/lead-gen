@@ -27,6 +27,7 @@ const eventLabels: Record<string, string> = {
   "message.queued": "Queued",
   "message.sent": "Sent",
   "message.deferred": "Deferred",
+  "reply.unmatched": "Unmatched Reply",
   "approval.requested": "Approval",
   "approval.decided": "Decision",
   "outcome.recorded": "Outcome",

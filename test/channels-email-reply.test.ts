@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { setupPg, until } from "./_pg.ts";
 import { createPostgresEventBus } from "../core/substrate/events/adapters/postgres.ts";
+import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import {
   createFixedIntentClassifier,
   handleInboundEmail,
@@ -85,6 +86,54 @@ async function seedConversationWithOutbound(
     counterparty_email,
   };
 }
+
+test("reply: unmatched inbound publishes a typed reply.unmatched event without sentinel ids", async () => {
+  const workspace_id = randomUUID();
+  const bus = createInMemoryEventBus();
+  const pool = {
+    query: async () => ({ rows: [], rowCount: 0 }),
+  } as unknown as Pool;
+  const received_at = new Date().toISOString();
+
+  const result = await handleInboundEmail(
+    {
+      pool,
+      bus,
+      classifier: createFixedIntentClassifier("positive", 1),
+      ingress_event_id: randomUUID(),
+    },
+    {
+      workspace_id,
+      external_id: "inbound-no-match",
+      from: { email: "stranger@example.com" },
+      subject: "hi",
+      body_text: "who is this?",
+      received_at,
+    },
+  );
+
+  assert.equal(result.matched_conversation_id, null);
+  assert.equal(result.inbound_message_id, null);
+  assert.equal(bus.published.length, 1);
+  const event = bus.published[0]!;
+  const payload = event.payload as {
+    channel: string;
+    external_id: string;
+    from_email: string;
+    subject: string;
+    received_at: string;
+  };
+  assert.equal(event.event_type, "reply.unmatched");
+  assert.deepEqual(payload, {
+    channel: "email",
+    external_id: "inbound-no-match",
+    from_email: "stranger@example.com",
+    subject: "hi",
+    received_at,
+  });
+  assert.ok(!("conversation_id" in payload));
+  assert.ok(!("message_id" in payload));
+});
 
 // ─── Matching strategies ────────────────────────────────────────────────────
 
@@ -235,7 +284,7 @@ test("reply: falls back to recent-recipient match when no headers helpful", asyn
   }
 });
 
-test("reply: unmatched inbound emits a reply.received with null ids and skips DB writes", async (t) => {
+test("reply: unmatched inbound emits reply.unmatched and skips DB writes", async (t) => {
   const fx = await setupPg("rep_un");
   if (!fx) return t.skip("DATABASE_URL not set");
   const bus = await createPostgresEventBus({
@@ -257,6 +306,20 @@ test("reply: unmatched inbound emits a reply.received with null ids and skips DB
       body_text: "who is this?",
       received_at: new Date().toISOString(),
     };
+    const unmatchedEvents: Array<{
+      external_id: string;
+      from_email: string;
+      subject: string;
+    }> = [];
+    await bus.subscribe("reply.unmatched", (e) => {
+      unmatchedEvents.push(
+        e.payload as {
+          external_id: string;
+          from_email: string;
+          subject: string;
+        },
+      );
+    });
     const result = await handleInboundEmail(
       {
         pool: fx.pool,
@@ -268,6 +331,10 @@ test("reply: unmatched inbound emits a reply.received with null ids and skips DB
     assert.equal(result.matched_conversation_id, null);
     assert.equal(result.inbound_message_id, null);
     assert.equal(result.intent, undefined);
+    await until(() => unmatchedEvents.length === 1);
+    assert.equal(unmatchedEvents[0].external_id, inbound.external_id);
+    assert.equal(unmatchedEvents[0].from_email, "stranger@example.com");
+    assert.equal(unmatchedEvents[0].subject, "hi");
 
     const { rows } = await fx.pool.query<{ n: string }>(
       `select count(*)::text as n from messages where workspace_id = $1`,

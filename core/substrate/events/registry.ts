@@ -437,6 +437,14 @@ const ReplyReceived = z.object({
   channel: z.string(),
 });
 
+const ReplyUnmatched = z.object({
+  channel: z.string(),
+  external_id: z.string().min(1),
+  from_email: z.string().email(),
+  subject: z.string(),
+  received_at: z.string().datetime(),
+});
+
 const ReplyClassified = z.object({
   conversation_id: z.string().uuid(),
   message_id: z.string().uuid(),
@@ -653,6 +661,7 @@ export const eventRegistry = {
   "message.bounced": MessageBounced,
 
   "reply.received": ReplyReceived,
+  "reply.unmatched": ReplyUnmatched,
   "reply.classified": ReplyClassified,
 
   "approval.requested": ApprovalRequested,

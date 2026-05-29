@@ -49,6 +49,7 @@ export function LiveIndicator({ enabled }: { enabled: boolean }) {
       "message.sent",
       "message.deferred",
       "reply.received",
+      "reply.unmatched",
       "reply.classified",
       "outcome.recorded",
       "rep.memory.procedural.updated",
