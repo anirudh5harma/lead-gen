@@ -8,6 +8,7 @@ import type {
 export const MESSAGE_LIFECYCLE_PROJECTION = "channel.message_lifecycle.v1";
 
 type MessageLifecycleEvent =
+  | PublishedEvent<EventPayload<"draft.proposed">>
   | PublishedEvent<EventPayload<"draft.judged">>
   | PublishedEvent<EventPayload<"draft.rejected">>
   | PublishedEvent<EventPayload<"message.queued">>
@@ -20,6 +21,7 @@ export function createMessageLifecycleProjection(pool: Pool): DurableEventProjec
   return {
     name: MESSAGE_LIFECYCLE_PROJECTION,
     eventTypes: [
+      "draft.proposed",
       "draft.judged",
       "draft.rejected",
       "message.queued",
@@ -36,7 +38,12 @@ export async function projectMessageLifecycleEvent(
   pool: Pool,
   event: PublishedEvent,
 ): Promise<void> {
-  if (event.event_type === "draft.judged") {
+  if (event.event_type === "draft.proposed") {
+    await projectDraftProposed(
+      pool,
+      event as PublishedEvent<EventPayload<"draft.proposed">>,
+    );
+  } else if (event.event_type === "draft.judged") {
     await projectDraftJudged(
       pool,
       event as PublishedEvent<EventPayload<"draft.judged">>,
@@ -72,6 +79,49 @@ export async function projectMessageLifecycleEvent(
       event as PublishedEvent<EventPayload<"message.bounced">>,
     );
   }
+}
+
+async function projectDraftProposed(
+  pool: Pool,
+  event: MessageLifecycleEvent & PublishedEvent<EventPayload<"draft.proposed">>,
+): Promise<void> {
+  const payload = event.payload;
+  const properties = {
+    ...(payload.properties ?? {}),
+    draft_proposed_event_id: event.id,
+    rep_id: payload.rep_id,
+  };
+  await pool.query(
+    `insert into messages (
+       id, workspace_id, conversation_id, channel, direction, status,
+       subject, body, body_html, provenance, properties, created_at
+     ) values (
+       $1, $2, $3, $4::message_channel, 'outbound', 'draft',
+       $5, $6, $7, $8::jsonb, $9::jsonb, $10::timestamptz
+     )
+     on conflict (id) do update set
+       conversation_id = excluded.conversation_id,
+       channel = excluded.channel,
+       subject = coalesce(excluded.subject, messages.subject),
+       body = coalesce(excluded.body, messages.body),
+       body_html = coalesce(excluded.body_html, messages.body_html),
+       provenance = messages.provenance || excluded.provenance,
+       properties = messages.properties || excluded.properties
+     where messages.workspace_id = excluded.workspace_id
+       and messages.direction = 'outbound'`,
+    [
+      payload.message_id,
+      event.workspace_id,
+      payload.conversation_id,
+      payload.channel,
+      payload.subject ?? null,
+      payload.body ?? null,
+      payload.body_html ?? null,
+      JSON.stringify(payload.provenance ?? {}),
+      JSON.stringify(properties),
+      payload.proposed_at ?? event.occurred_at,
+    ],
+  );
 }
 
 async function projectDraftJudged(

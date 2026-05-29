@@ -213,7 +213,7 @@ export function createRunContext<I, O>(
       return awakeable.promise;
     },
 
-    async publish(event_type: string, payload: unknown): Promise<void> {
+    async publish(event_type, payload) {
       const eventWorkspaceId = requireWorkspaceScope(
         execution_scope,
         workspace_id,
@@ -224,18 +224,18 @@ export function createRunContext<I, O>(
       }
       publishedEventPosition += 1;
       const position = publishedEventPosition;
-      await ctx.run(`publish:${position}:${event_type}`, async () => {
-        await publish({
+      return ctx.run(`publish:${position}:${event_type}`, () =>
+        publish({
           workspace_id: eventWorkspaceId,
-          event_type,
+          event_type: event_type as never,
           source: "system",
           producer_ref: `workflow:${definition.name}:${run_id}`,
           correlation_id,
           causation_id: input.metadata?.causation_id ?? null,
           idempotency_key: `workflow:${run_id}:event:${position}`,
-          payload,
-        });
-      });
+          payload: payload as never,
+        }),
+      ) as Promise<PublishedEvent<typeof payload>>;
     },
   };
 }

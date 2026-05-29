@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { GraphCompany, GraphPerson } from "../graph/types.ts";
+import { projectMessageLifecycleEvent as projectPostgresMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
+import { projectConversationLifecycleEvent as projectPostgresConversationLifecycleEvent } from "../primitives/conversation-lifecycle.ts";
 import type {
   Conversation,
   Message,
@@ -24,23 +25,6 @@ export interface VerticalSliceStoreSeed {
 
 type Awaitable<T> = T | Promise<T>;
 
-export interface CreateConversationInput {
-  workspace_id: string;
-  rep_id: string;
-  counterparty_person_id: string;
-  counterparty_company_id?: string | null;
-  origin_signal_id?: string | null;
-  topic?: string | null;
-}
-
-export interface CreateDraftMessageInput {
-  workspace_id: string;
-  conversation_id: string;
-  subject: string | null;
-  body: string;
-  provenance?: Record<string, unknown>;
-}
-
 export interface CountPlayChannelMessagesInput {
   workspace_id: string;
   play_id: string;
@@ -58,8 +42,8 @@ export interface VerticalSliceStore {
   upsertCompany?(input: GraphCompany): Awaitable<GraphCompany>;
   upsertPerson?(input: GraphPerson): Awaitable<GraphPerson>;
   upsertSignal?(input: Signal): Awaitable<Signal>;
-  createConversation(input: CreateConversationInput): Awaitable<Conversation>;
-  createDraftMessage(input: CreateDraftMessageInput): Awaitable<Message>;
+  projectConversationLifecycleEvent(event: ConversationLifecycleEvent): Awaitable<Conversation | null>;
+  projectMessageLifecycleEvent(event: MessageLifecycleEvent): Awaitable<Message | null>;
   updateDraftMessage?(
     message_id: string,
     input: { subject: string | null; body: string; properties?: Record<string, unknown> },
@@ -73,15 +57,16 @@ export interface VerticalSliceStore {
 }
 
 type MessageLifecycleEvent =
+  | PublishedEvent<EventPayload<"draft.proposed">>
   | PublishedEvent<EventPayload<"draft.judged">>
   | PublishedEvent<EventPayload<"draft.rejected">>
   | PublishedEvent<EventPayload<"message.queued">>
   | PublishedEvent<EventPayload<"message.sent">>
   | PublishedEvent<EventPayload<"message.deferred">>;
+type ConversationLifecycleEvent = PublishedEvent<EventPayload<"conversation.opened">>;
 type OutcomeLifecycleEvent = PublishedEvent<EventPayload<"outcome.recorded">>;
 
 export interface InMemoryVerticalSliceStore extends VerticalSliceStore {
-  projectMessageLifecycleEvent(event: MessageLifecycleEvent): Message | null;
   projectOutcomeLifecycleEvent(event: OutcomeLifecycleEvent): Outcome | null;
 }
 
@@ -131,58 +116,6 @@ export function createInMemoryVerticalSliceStore(
       return input;
     },
 
-    createConversation(input) {
-      const now = new Date().toISOString();
-      const row: Conversation = {
-        id: randomUUID(),
-        workspace_id: input.workspace_id,
-        rep_id: input.rep_id,
-        counterparty_person_id: input.counterparty_person_id,
-        counterparty_company_id: input.counterparty_company_id ?? null,
-        status: "open",
-        origin_signal_id: input.origin_signal_id ?? null,
-        topic: input.topic ?? null,
-        started_at: now,
-        last_activity_at: now,
-        closed_at: null,
-        properties: {},
-      };
-      conversations.set(row.id, row);
-      return row;
-    },
-
-    createDraftMessage(input) {
-      const now = new Date().toISOString();
-      const row: Message = {
-        id: randomUUID(),
-        workspace_id: input.workspace_id,
-        conversation_id: input.conversation_id,
-        channel: "email",
-        direction: "outbound",
-        status: "draft",
-        subject: input.subject,
-        body: input.body,
-        body_html: null,
-        external_id: null,
-        external_thread_id: null,
-        channel_account_id: null,
-        eval_score: null,
-        eval_passed: null,
-        eval_notes: null,
-        intent_class: null,
-        intent_confidence: null,
-        scheduled_at: null,
-        sent_at: null,
-        delivered_at: null,
-        replied_at: null,
-        properties: {},
-        provenance: input.provenance ?? {},
-        created_at: now,
-      };
-      messages.set(row.id, row);
-      return row;
-    },
-
     updateDraftMessage(message_id, input) {
       const row = messages.get(message_id);
       if (!row) throw new Error(`Message not found: ${message_id}`);
@@ -212,8 +145,74 @@ export function createInMemoryVerticalSliceStore(
       };
     },
 
+    projectConversationLifecycleEvent(event) {
+      const payload = event.payload;
+      const existing = conversations.get(payload.conversation_id);
+      const openedAt = payload.opened_at ?? event.occurred_at;
+      const row: Conversation = {
+        id: payload.conversation_id,
+        workspace_id: event.workspace_id,
+        rep_id: payload.rep_id,
+        counterparty_person_id: payload.counterparty_person_id,
+        counterparty_company_id: payload.counterparty_company_id ?? null,
+        status: existing?.status ?? "open",
+        origin_signal_id: payload.origin_signal_id,
+        topic: payload.topic ?? null,
+        started_at: existing?.started_at ?? openedAt,
+        last_activity_at: openedAt,
+        closed_at: existing?.closed_at ?? null,
+        properties: {
+          ...(existing?.properties ?? {}),
+          ...(payload.properties ?? {}),
+          conversation_opened_event_id: event.id,
+        },
+      };
+      conversations.set(row.id, row);
+      return row;
+    },
+
     projectMessageLifecycleEvent(event) {
       const basePayload = event.payload as { message_id: string; channel?: string };
+      if (event.event_type === "draft.proposed") {
+        const payload = event.payload as EventPayload<"draft.proposed">;
+        const existing = messages.get(payload.message_id);
+        const row: Message = {
+          id: payload.message_id,
+          workspace_id: event.workspace_id,
+          conversation_id: payload.conversation_id,
+          channel: payload.channel as Message["channel"],
+          direction: "outbound",
+          status: existing?.status ?? "draft",
+          subject: payload.subject ?? existing?.subject ?? null,
+          body: payload.body ?? existing?.body ?? null,
+          body_html: payload.body_html ?? existing?.body_html ?? null,
+          external_id: existing?.external_id ?? null,
+          external_thread_id: existing?.external_thread_id ?? null,
+          channel_account_id: existing?.channel_account_id ?? null,
+          eval_score: existing?.eval_score ?? null,
+          eval_passed: existing?.eval_passed ?? null,
+          eval_notes: existing?.eval_notes ?? null,
+          intent_class: existing?.intent_class ?? null,
+          intent_confidence: existing?.intent_confidence ?? null,
+          scheduled_at: existing?.scheduled_at ?? null,
+          sent_at: existing?.sent_at ?? null,
+          delivered_at: existing?.delivered_at ?? null,
+          replied_at: existing?.replied_at ?? null,
+          properties: {
+            ...(existing?.properties ?? {}),
+            ...(payload.properties ?? {}),
+            draft_proposed_event_id: event.id,
+            rep_id: payload.rep_id,
+          },
+          provenance: {
+            ...(existing?.provenance ?? {}),
+            ...(payload.provenance ?? {}),
+          },
+          created_at: existing?.created_at ?? payload.proposed_at ?? event.occurred_at,
+        };
+        messages.set(row.id, row);
+        return row;
+      }
       const row = messages.get(basePayload.message_id);
       if (!row || row.workspace_id !== event.workspace_id) return null;
       if (row.direction !== "outbound") return null;
@@ -324,6 +323,12 @@ export async function wireInMemoryVerticalSliceMessageLifecycleProjection(
   bus: EventBus,
 ): Promise<Subscription[]> {
   return Promise.all([
+    bus.subscribe("conversation.opened", (event) => {
+      store.projectConversationLifecycleEvent(event);
+    }),
+    bus.subscribe("draft.proposed", (event) => {
+      store.projectMessageLifecycleEvent(event);
+    }),
     bus.subscribe("draft.judged", (event) => {
       store.projectMessageLifecycleEvent(event);
     }),
@@ -806,48 +811,34 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
       return signalFromRow(rows[0]!);
     },
 
-    async createConversation(input) {
+    async projectConversationLifecycleEvent(event) {
+      await projectPostgresConversationLifecycleEvent(pool, event);
       const { rows } = await pool.query<ConversationRow>(
-        `insert into conversations (
-           workspace_id, rep_id, counterparty_person_id, counterparty_company_id,
-           origin_signal_id, topic, status, properties
-         ) values ($1, $2, $3, $4, $5, $6, 'open', '{}'::jsonb)
-         returning id, workspace_id, rep_id, counterparty_person_id,
-                   counterparty_company_id, status, origin_signal_id, topic,
-                   started_at, last_activity_at, closed_at, properties`,
-        [
-          input.workspace_id,
-          input.rep_id,
-          input.counterparty_person_id,
-          input.counterparty_company_id ?? null,
-          input.origin_signal_id ?? null,
-          input.topic ?? null,
-        ],
+        `select id, workspace_id, rep_id, counterparty_person_id,
+                counterparty_company_id, status, origin_signal_id, topic,
+                started_at, last_activity_at, closed_at, properties
+           from conversations
+          where id = $1 and workspace_id = $2`,
+        [event.payload.conversation_id, event.workspace_id],
       );
-      return conversationFromRow(rows[0]!);
+      return rows[0] ? conversationFromRow(rows[0]) : null;
     },
 
-    async createDraftMessage(input) {
+    async projectMessageLifecycleEvent(event) {
+      await projectPostgresMessageLifecycleEvent(pool, event);
+      const payload = event.payload as { message_id: string };
       const { rows } = await pool.query<MessageRow>(
-        `insert into messages (
-           workspace_id, conversation_id, channel, direction, status, subject,
-           body, provenance, properties
-         ) values ($1, $2, 'email', 'outbound', 'draft', $3, $4, $5::jsonb, '{}'::jsonb)
-         returning id, workspace_id, conversation_id, channel, direction, status,
-                   subject, body, body_html, external_id, external_thread_id,
-                   channel_account_id, eval_score::text as eval_score, eval_passed,
-                   eval_notes, intent_class, intent_confidence::text as intent_confidence,
-                   scheduled_at, sent_at, delivered_at, replied_at, properties,
-                   provenance, created_at`,
-        [
-          input.workspace_id,
-          input.conversation_id,
-          input.subject,
-          input.body,
-          JSON.stringify(input.provenance ?? {}),
-        ],
+        `select id, workspace_id, conversation_id, channel, direction, status,
+                subject, body, body_html, external_id, external_thread_id,
+                channel_account_id, eval_score::text as eval_score, eval_passed,
+                eval_notes, intent_class, intent_confidence::text as intent_confidence,
+                scheduled_at, sent_at, delivered_at, replied_at, properties,
+                provenance, created_at
+           from messages
+          where id = $1 and workspace_id = $2`,
+        [payload.message_id, event.workspace_id],
       );
-      return messageFromRow(rows[0]!);
+      return rows[0] ? messageFromRow(rows[0]) : null;
     },
 
     async updateDraftMessage(message_id, input) {

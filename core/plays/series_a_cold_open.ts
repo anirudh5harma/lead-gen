@@ -16,6 +16,7 @@ import {
 import { createEmailSender } from "../agents/reps/roles/sender.ts";
 import { evalGate } from "../agents/eval/gate.ts";
 import { projectMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
+import { projectConversationLifecycleEvent } from "../primitives/conversation-lifecycle.ts";
 import type { EmailChannelDeps } from "../channels/email/index.ts";
 import type { Rep } from "../primitives/index.ts";
 
@@ -23,8 +24,8 @@ import type { Rep } from "../primitives/index.ts";
  * "Series A founder cold open" — the first end-to-end Play.
  *
  * Walks the whole pivot-v2 spine: load signal/person/company context →
- * retrieve procedural exemplars → draft via DeepSeek writer → create
- * conversation + message rows → eval gate (hot path) → project results →
+ * retrieve procedural exemplars → draft via DeepSeek writer → emit/project
+ * conversation + message lifecycle events → eval gate (hot path) → project results →
  * send via the email channel (which enforces eval gate, caps, warmup).
  *
  * Every external effect is wrapped in `ctx.step()` so the Postgres
@@ -297,7 +298,7 @@ export function createSeriesAColdOpenPlay(
         ) as Promise<WriterDraft>,
       );
 
-      // 5. Create (or reuse) the conversation; insert the draft message row.
+      // 5. Open (or reuse) the conversation; propose the draft via typed events.
       const { conversation_id, message_id } = await ctx.step(
         "create_conversation_and_message",
         async () => {
@@ -314,42 +315,31 @@ export function createSeriesAColdOpenPlay(
             convId = existing.rows[0].id;
           } else {
             convId = randomUUID();
-            await deps.pool.query(
-              `insert into conversations (
-                 id, workspace_id, rep_id,
-                 counterparty_person_id, counterparty_company_id,
-                 origin_signal_id, topic, status
-               ) values ($1, $2, $3, $4, $5, $6, $7, 'open')`,
-              [
-                convId,
-                workspace_id,
-                loaded.rep.id,
-                loaded.person.id,
-                loaded.company.id,
-                loaded.signal.id,
-                draft.subject,
-              ],
-            );
+            const conversationEvent = await ctx.publish("conversation.opened", {
+              conversation_id: convId,
+              rep_id: loaded.rep.id,
+              counterparty_person_id: loaded.person.id,
+              counterparty_company_id: loaded.company.id,
+              origin_signal_id: loaded.signal.id,
+              topic: draft.subject,
+              properties: { pattern_key: draft.pattern_key },
+            });
+            await projectConversationLifecycleEvent(deps.pool, conversationEvent);
           }
           const msgId = randomUUID();
-          await deps.pool.query(
-            `insert into messages (
-               id, workspace_id, conversation_id, channel, direction, status,
-               subject, body, provenance, created_at
-             ) values ($1, $2, $3, 'email', 'outbound', 'draft',
-                       $4, $5, $6::jsonb, now())`,
-            [
-              msgId,
-              workspace_id,
-              convId,
-              draft.subject,
-              draft.body_text,
-              JSON.stringify({
-                exemplar_ids: draft.exemplar_ids,
-                pattern_key: draft.pattern_key,
-              }),
-            ],
-          );
+          const draftEvent = await ctx.publish("draft.proposed", {
+            conversation_id: convId,
+            message_id: msgId,
+            channel: "email",
+            rep_id: loaded.rep.id,
+            subject: draft.subject,
+            body: draft.body_text,
+            provenance: {
+              exemplar_ids: draft.exemplar_ids,
+              pattern_key: draft.pattern_key,
+            },
+          });
+          await projectMessageLifecycleEvent(deps.pool, draftEvent);
           return { conversation_id: convId, message_id: msgId };
         },
       );

@@ -16,6 +16,12 @@
  *   - restate    : production ingress client; handler host still required.
  */
 
+import type {
+  EventPayload,
+  EventType,
+  PublishedEvent,
+} from "../events/index.ts";
+
 export type WorkflowRunStatus =
   | "pending"
   | "running"
@@ -140,7 +146,10 @@ export interface RunContext {
    * Publish a typed event onto the bus. correlation_id and causation_id are
    * auto-populated from the running workflow.
    */
-  publish(event_type: string, payload: unknown): Promise<void>;
+  publish<T extends EventType>(
+    event_type: T,
+    payload: EventPayload<T>,
+  ): Promise<PublishedEvent<EventPayload<T>>>;
 }
 
 export interface WorkflowDefinition<I = unknown, O = unknown> {

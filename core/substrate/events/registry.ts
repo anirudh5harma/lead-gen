@@ -289,6 +289,12 @@ const DraftProposed = z.object({
   message_id: z.string().uuid(),
   channel: z.string(),
   rep_id: z.string().uuid(),
+  subject: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
+  body_html: z.string().nullable().optional(),
+  provenance: z.record(z.string(), z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  proposed_at: z.string().datetime().optional(),
 });
 
 const DraftJudged = z.object({
@@ -311,7 +317,11 @@ const ConversationOpened = z.object({
   conversation_id: z.string().uuid(),
   rep_id: z.string().uuid(),
   counterparty_person_id: z.string().uuid(),
+  counterparty_company_id: z.string().uuid().nullable().optional(),
   origin_signal_id: z.string().uuid().nullable(),
+  topic: z.string().nullable().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  opened_at: z.string().datetime().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

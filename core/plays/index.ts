@@ -29,8 +29,6 @@ export {
   wireInMemoryVerticalSliceMessageLifecycleProjection,
 } from "./vertical-store.ts";
 export type {
-  CreateConversationInput,
-  CreateDraftMessageInput,
   CountPlayChannelMessagesInput,
   InMemoryVerticalSliceStore,
   VerticalSliceStore,

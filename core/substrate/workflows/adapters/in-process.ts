@@ -231,7 +231,7 @@ export function createInProcessWorkflowRuntime(
             "ctx.publish() requires an event bus; pass one to createInProcessWorkflowRuntime()",
           );
         }
-        await opts.bus.publish({
+        return opts.bus.publish({
           workspace_id: rec.run.workspace_id!,
           event_type: event_type as never,
           source: "system",

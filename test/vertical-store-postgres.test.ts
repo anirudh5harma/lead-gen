@@ -171,21 +171,31 @@ test("postgres vertical store persists graph, signal, conversation, message, and
     assert.equal(ingested.related_company_id, company_id);
     assert.equal(ingested.related_person_id, person_id);
     await store.upsertSignal?.(signal);
-    const conversation = await store.createConversation({
-      workspace_id,
-      rep_id,
-      counterparty_person_id: person_id,
-      counterparty_company_id: company_id,
-      origin_signal_id: signal.id,
-      topic: signal.title,
-    });
-    const message = await store.createDraftMessage({
-      workspace_id,
-      conversation_id: conversation.id,
-      subject: "hello",
-      body: "body",
-      provenance: { exemplar_ids: [] },
-    });
+    const conversation_id = randomUUID();
+    const conversation = await store.projectConversationLifecycleEvent(
+      event(workspace_id, "conversation.opened", {
+        conversation_id,
+        rep_id,
+        counterparty_person_id: person_id,
+        counterparty_company_id: company_id,
+        origin_signal_id: signal.id,
+        topic: signal.title,
+      }),
+    );
+    assert.ok(conversation);
+    const message_id = randomUUID();
+    const message = await store.projectMessageLifecycleEvent(
+      event(workspace_id, "draft.proposed", {
+        conversation_id: conversation.id,
+        message_id,
+        channel: "email",
+        rep_id,
+        subject: "hello",
+        body: "body",
+        provenance: { exemplar_ids: [] },
+      }),
+    );
+    assert.ok(message);
     await projectMessageLifecycleEvent(
       fx.pool,
       event(workspace_id, "draft.judged", {

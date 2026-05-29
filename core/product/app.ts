@@ -97,6 +97,7 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
+import { createConversationLifecycleProjection } from "../primitives/conversation-lifecycle.ts";
 import { createOutcomeLifecycleProjection } from "../primitives/outcome-lifecycle.ts";
 import {
   isProductionProductRuntime,
@@ -2031,6 +2032,7 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       pool: engine.pool,
       bus: engine.bus,
     }),
+    createConversationLifecycleProjection(engine.pool),
     createMessageLifecycleProjection(engine.pool),
     createReplyLifecycleProjection(engine.pool),
     createOutcomeLifecycleProjection(engine.pool),

@@ -53,6 +53,10 @@ export interface SignalToEmailPlayDeps {
   bus: EventBus;
 }
 
+function playRunOutputPayload(output: SignalToEmailPlayOutput): Record<string, unknown> {
+  return output as unknown as Record<string, unknown>;
+}
+
 async function publishPlayDeferred(
   ctx: RunContext,
   message_id: string,
@@ -105,20 +109,20 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       };
 
       const conversation = await ctx.step("conversation.open", async () => {
-        const row = await deps.store.createConversation({
-          workspace_id: input.workspace_id,
+        const event = await ctx.publish("conversation.opened", {
+          conversation_id: randomUUID(),
           rep_id: rep.id,
           counterparty_person_id: person.id,
           counterparty_company_id: company?.id ?? null,
           origin_signal_id: signal.id,
           topic: signal.title,
+          properties: {
+            play_id: input.play_id,
+            play_run_id: input.play_run_id,
+          },
         });
-        await ctx.publish("conversation.opened", {
-          conversation_id: row.id,
-          rep_id: rep.id,
-          counterparty_person_id: person.id,
-          origin_signal_id: signal.id,
-        });
+        const row = await deps.store.projectConversationLifecycleEvent(event);
+        if (!row) throw new Error(`Conversation projection failed: ${event.payload.conversation_id}`);
         return row;
       });
 
@@ -138,9 +142,11 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       );
 
       const message = await ctx.step("message.draft", async () => {
-        const row = await deps.store.createDraftMessage({
-          workspace_id: input.workspace_id,
+        const event = await ctx.publish("draft.proposed", {
           conversation_id: conversation.id,
+          message_id: randomUUID(),
+          channel: "email",
+          rep_id: rep.id,
           subject: draft.subject,
           body: draft.body,
           provenance: {
@@ -150,12 +156,8 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             play_run_id: input.play_run_id,
           },
         });
-        await ctx.publish("draft.proposed", {
-          conversation_id: conversation.id,
-          message_id: row.id,
-          channel: "email",
-          rep_id: rep.id,
-        });
+        const row = await deps.store.projectMessageLifecycleEvent(event);
+        if (!row) throw new Error(`Draft projection failed: ${event.payload.message_id}`);
         return row;
       });
 
@@ -199,7 +201,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           play_id: input.play_id,
           play_run_id: input.play_run_id,
           workflow_run_id: ctx.run_id,
-          output,
+          output: playRunOutputPayload(output),
         });
         return output;
       }
@@ -222,7 +224,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           play_id: input.play_id,
           play_run_id: input.play_run_id,
           workflow_run_id: ctx.run_id,
-          output,
+          output: playRunOutputPayload(output),
         });
         return output;
       }
@@ -254,7 +256,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           play_id: input.play_id,
           play_run_id: input.play_run_id,
           workflow_run_id: ctx.run_id,
-          output,
+          output: playRunOutputPayload(output),
         });
         return output;
       }
@@ -307,7 +309,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             play_id: input.play_id,
             play_run_id: input.play_run_id,
             workflow_run_id: ctx.run_id,
-            output,
+            output: playRunOutputPayload(output),
           });
           return output;
         }
@@ -327,6 +329,10 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
               message_id: row.id,
               channel: "email",
               rep_id: rep.id,
+              subject: row.subject,
+              body: row.body,
+              provenance: row.provenance,
+              properties: { human_edited: true },
             });
             return row;
           });
@@ -369,7 +375,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
               play_id: input.play_id,
               play_run_id: input.play_run_id,
               workflow_run_id: ctx.run_id,
-              output,
+              output: playRunOutputPayload(output),
             });
             return output;
           }
@@ -445,7 +451,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         play_id: input.play_id,
         play_run_id: input.play_run_id,
         workflow_run_id: ctx.run_id,
-        output,
+        output: playRunOutputPayload(output),
       });
       return output;
     },

@@ -41,6 +41,7 @@ test("message lifecycle projection declares the outbound message event set", () 
   const projection = createMessageLifecycleProjection(pool);
   assert.equal(projection.name, MESSAGE_LIFECYCLE_PROJECTION);
   assert.deepEqual(projection.eventTypes, [
+    "draft.proposed",
     "draft.judged",
     "draft.rejected",
     "message.queued",
@@ -53,9 +54,37 @@ test("message lifecycle projection declares the outbound message event set", () 
 
 test("message lifecycle projection materializes draft and channel lifecycle events", async () => {
   const { pool, calls } = fakePool();
+  const conversation_id = randomUUID();
   const message_id = randomUUID();
+  const rep_id = randomUUID();
   const channel_account_id = randomUUID();
   const reserved_at = new Date().toISOString();
+
+  await projectMessageLifecycleEvent(
+    pool,
+    event("draft.proposed", {
+      conversation_id,
+      message_id,
+      channel: "email",
+      rep_id,
+      subject: "hello",
+      body: "body",
+      provenance: { pattern_key: "x" },
+    }),
+  );
+  assert.match(calls[0]!.sql, /insert into messages/);
+  assert.equal(calls[0]!.values?.[0], message_id);
+  assert.equal(calls[0]!.values?.[2], conversation_id);
+  assert.equal(calls[0]!.values?.[3], "email");
+  assert.deepEqual(JSON.parse(String(calls[0]!.values?.[7])), {
+    pattern_key: "x",
+  });
+  const proposedProperties = JSON.parse(String(calls[0]!.values?.[8])) as {
+    draft_proposed_event_id: string;
+    rep_id: string;
+  };
+  assert.match(proposedProperties.draft_proposed_event_id, /^[0-9a-f-]{36}$/);
+  assert.equal(proposedProperties.rep_id, rep_id);
 
   await projectMessageLifecycleEvent(
     pool,
@@ -66,15 +95,15 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       notes: { critique: "clear" },
     }),
   );
-  assert.match(calls[0]!.sql, /eval_score/);
-  assert.equal(calls[0]!.values?.[0], message_id);
-  assert.equal(calls[0]!.values?.[2], 0.82);
-  assert.equal(calls[0]!.values?.[3], true);
-  assert.deepEqual(JSON.parse(String(calls[0]!.values?.[4])), {
+  assert.match(calls[1]!.sql, /eval_score/);
+  assert.equal(calls[1]!.values?.[0], message_id);
+  assert.equal(calls[1]!.values?.[2], 0.82);
+  assert.equal(calls[1]!.values?.[3], true);
+  assert.deepEqual(JSON.parse(String(calls[1]!.values?.[4])), {
     critique: "clear",
   });
   assert.match(
-    JSON.parse(String(calls[0]!.values?.[5])).draft_judged_event_id,
+    JSON.parse(String(calls[1]!.values?.[5])).draft_judged_event_id,
     /^[0-9a-f-]{36}$/,
   );
 
@@ -85,10 +114,10 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       reason: "sub-threshold",
     }),
   );
-  assert.match(calls[1]!.sql, /eval_notes/);
-  assert.equal(calls[1]!.values?.[0], message_id);
+  assert.match(calls[2]!.sql, /eval_notes/);
+  assert.equal(calls[2]!.values?.[0], message_id);
   assert.equal(
-    JSON.parse(String(calls[1]!.values?.[2])).draft_rejection_reason,
+    JSON.parse(String(calls[2]!.values?.[2])).draft_rejection_reason,
     "sub-threshold",
   );
 
@@ -102,11 +131,11 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       reserved_at,
     }),
   );
-  assert.match(calls[2]!.sql, /update messages/);
-  assert.equal(calls[2]!.values?.[0], message_id);
-  assert.equal(calls[2]!.values?.[2], channel_account_id);
-  assert.equal(calls[2]!.values?.[5], "email");
-  const queuedProperties = JSON.parse(String(calls[2]!.values?.[4])) as {
+  assert.match(calls[3]!.sql, /update messages/);
+  assert.equal(calls[3]!.values?.[0], message_id);
+  assert.equal(calls[3]!.values?.[2], channel_account_id);
+  assert.equal(calls[3]!.values?.[5], "email");
+  const queuedProperties = JSON.parse(String(calls[3]!.values?.[4])) as {
     queued_event_id: string;
     send_reserved_at: string;
   };
@@ -122,11 +151,11 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       channel_account_id,
     }),
   );
-  assert.match(calls[3]!.sql, /external_id = coalesce/);
-  assert.equal(calls[3]!.values?.[0], message_id);
-  assert.equal(calls[3]!.values?.[2], "provider-1");
-  assert.equal(calls[3]!.values?.[5], "email");
-  assert.equal(calls[3]!.values?.[6], channel_account_id);
+  assert.match(calls[4]!.sql, /external_id = coalesce/);
+  assert.equal(calls[4]!.values?.[0], message_id);
+  assert.equal(calls[4]!.values?.[2], "provider-1");
+  assert.equal(calls[4]!.values?.[5], "email");
+  assert.equal(calls[4]!.values?.[6], channel_account_id);
 
   await projectMessageLifecycleEvent(
     pool,
@@ -138,10 +167,10 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       detail: "0/0",
     }),
   );
-  assert.match(calls[4]!.sql, /eval_notes/);
-  assert.equal(calls[4]!.values?.[0], message_id);
-  assert.equal(calls[4]!.values?.[3], "email");
-  const notes = JSON.parse(String(calls[4]!.values?.[2])) as {
+  assert.match(calls[5]!.sql, /eval_notes/);
+  assert.equal(calls[5]!.values?.[0], message_id);
+  assert.equal(calls[5]!.values?.[3], "email");
+  const notes = JSON.parse(String(calls[5]!.values?.[2])) as {
     defer_reason: string;
     defer_detail: string | null;
     defer_event_id: string;
@@ -159,10 +188,10 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       provider_event_id: "evt-1",
     }),
   );
-  assert.match(calls[5]!.sql, /delivered_at/);
-  assert.equal(calls[5]!.values?.[0], message_id);
-  assert.equal(calls[5]!.values?.[4], "email");
-  const deliveredProperties = JSON.parse(String(calls[5]!.values?.[3])) as {
+  assert.match(calls[6]!.sql, /delivered_at/);
+  assert.equal(calls[6]!.values?.[0], message_id);
+  assert.equal(calls[6]!.values?.[4], "email");
+  const deliveredProperties = JSON.parse(String(calls[6]!.values?.[3])) as {
     delivered_event_id: string;
     delivery_external_id: string | null;
     delivery_provider_event_id: string | null;
@@ -184,10 +213,10 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       detail: "mailbox missing",
     }),
   );
-  assert.match(calls[6]!.sql, /bounced/);
-  assert.equal(calls[6]!.values?.[0], message_id);
-  assert.equal(calls[6]!.values?.[3], "email");
-  const bounceNotes = JSON.parse(String(calls[6]!.values?.[2])) as {
+  assert.match(calls[7]!.sql, /bounced/);
+  assert.equal(calls[7]!.values?.[0], message_id);
+  assert.equal(calls[7]!.values?.[3], "email");
+  const bounceNotes = JSON.parse(String(calls[7]!.values?.[2])) as {
     bounce_type: string;
     bounce_reason: string | null;
     bounce_recipient: string | null;

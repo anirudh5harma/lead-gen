@@ -324,7 +324,7 @@ export function createPostgresWorkflowRuntime(
       },
 
       async publish(event_type, payload) {
-        await bus.publish({
+        return bus.publish({
           workspace_id: rec.run.workspace_id!,
           event_type: event_type as never,
           source: "system",
