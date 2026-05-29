@@ -10,36 +10,31 @@ export default async function OnboardingPage() {
   if (!userId) redirect("/login?next=/onboarding");
 
   return (
-    <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">
-      <section className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="pt-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-            Signal aggregator setup
-          </p>
-          <h1 className="mt-2 max-w-xl font-sans text-4xl font-semibold leading-tight text-[var(--color-text-1)]">
-            Create the first agent-native GTM loop from your website.
+    <main className="canvas-bg flex min-h-[100dvh] flex-1 items-center px-4 py-8 sm:px-6 lg:px-8">
+      <section className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[0.86fr_1.14fr]">
+        <div className="flex flex-col justify-center">
+          <p className="brief-kicker">New workspace</p>
+          <h1 className="mt-3 max-w-xl font-sans text-5xl font-semibold leading-[1.02] text-[var(--color-text-1)] sm:text-6xl">
+            Start with a website and one clear intent.
           </h1>
-          <p className="mt-4 max-w-xl text-sm leading-6 text-[var(--color-text-2)]">
-            The website profile becomes graph memory. Sources become configured
-            Signal inputs. The first run goes through the durable ingestion
-            workflow before anything reaches a Play.
+          <p className="mt-5 max-w-md text-base leading-7 text-[var(--color-text-2)]">
+            Bombsell turns your public site into a profile, source list, and starter work map.
           </p>
           <div className="mt-8 grid gap-3">
-            <FlowStep icon="badge" label="User" text="Google OAuth session through Supabase." />
-            <FlowStep icon="hub" label="Graph" text="Company profile stored as a workspace company node." />
-            <FlowStep icon="sensors" label="Signals" text="Google News, HN, and Product Hunt sources configured." />
-            <FlowStep icon="account_tree" label="Runtime" text="Aggregator dispatches the workspace poll workflow." />
+            <FlowStep icon="language" label="Website" text="Positioning, audience, and proof become context." />
+            <FlowStep icon="account_tree" label="Canvas" text="Profile, signals, plays, and outcomes are connected." />
+            <FlowStep icon="fact_check" label="Review" text="Only exceptions come back to you." />
           </div>
         </div>
 
-        <section className="rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5">
-          <h2 className="font-sans text-lg font-semibold text-[var(--color-text-1)]">
-            Profile and ingest
+        <section className="section-note">
+          <h2 className="font-sans text-2xl font-semibold text-[var(--color-text-1)]">
+            Create your workspace
           </h2>
           <form action={createProfileAndAggregatorAction} className="mt-5 grid gap-4">
             <Field
               name="website_url"
-              label="Company website"
+              label="Website"
               type="url"
               placeholder="https://yourcompany.com"
             />
@@ -48,9 +43,9 @@ export default async function OnboardingPage() {
               label="Company name hint"
               placeholder="Optional"
             />
-            <button className="inline-flex min-h-11 w-fit items-center gap-2 rounded-md bg-[var(--color-accent)] px-4 text-sm font-semibold text-[var(--color-accent-on)] transition-colors hover:bg-[var(--color-accent-hi)]">
-              <Icon name="rocket_launch" size={18} />
-              Build signal loop
+            <button className="inline-flex min-h-11 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-5 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
+              <Icon name="arrow_forward" size={18} />
+              Create workspace
             </button>
           </form>
         </section>
@@ -79,7 +74,7 @@ function Field({
         name={name}
         type={type}
         placeholder={placeholder}
-        className="min-h-11 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 text-sm text-[var(--color-text-1)] outline-none transition-colors placeholder:text-[var(--color-text-4)] focus:border-[var(--color-accent)]"
+        className="min-h-11 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-sm text-[var(--color-text-1)] outline-none transition-colors placeholder:text-[var(--color-text-4)] focus:border-[var(--color-accent)]"
       />
     </label>
   );
@@ -96,7 +91,7 @@ function FlowStep({
 }) {
   return (
     <div className="grid grid-cols-[32px_1fr] gap-3">
-      <span className="flex size-8 items-center justify-center rounded-md bg-[var(--color-ink-0)] text-[var(--color-accent)]">
+      <span className="flex size-9 items-center justify-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
         <Icon name={icon} size={18} />
       </span>
       <span>

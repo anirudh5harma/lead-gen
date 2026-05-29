@@ -1,8 +1,6 @@
-import {
-  EmptyState,
-  MetricCard,
-  SectionHeader,
-} from "@/components/dashboard/Shell";
+import { EmptyState } from "@/components/dashboard/Shell";
+import Icon from "@/components/Icon";
+import type { ReactNode } from "react";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 
@@ -135,26 +133,11 @@ function timeAgo(d: Date | null): string {
   if (!d) return "never";
   const diff = Date.now() - new Date(d).getTime();
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function warmupCls(state: string): string {
-  switch (state) {
-    case "warmed":
-      return "bg-[var(--color-accent-bg)] text-[var(--color-accent)]";
-    case "warming":
-    case "verifying":
-      return "bg-[var(--color-ink-3)] text-[var(--color-text-2)]";
-    case "degraded":
-    case "frozen":
-      return "bg-[var(--color-accent-bg)] text-[var(--color-accent)]";
-    default:
-      return "bg-[var(--color-ink-3)] text-[var(--color-text-3)]";
-  }
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 function pct(numerator: number, denominator: number): string {
@@ -164,17 +147,7 @@ function pct(numerator: number, denominator: number): string {
 
 export default async function DeliverabilityPage() {
   const workspace = await getActiveWorkspace();
-  if (!workspace) {
-    return (
-      <>
-        <SectionHeader
-          eyebrow="deliverability"
-          title="No workspace"
-          subtitle="Active workspace required to inspect sender reputation."
-        />
-      </>
-    );
-  }
+  if (!workspace) return <CanvasEmpty label="Deliverability" title="No workspace selected." />;
 
   const [volume, domains, accounts, bounces] = await Promise.all([
     loadVolume(workspace.id),
@@ -185,172 +158,173 @@ export default async function DeliverabilityPage() {
 
   return (
     <>
-      <SectionHeader
-        eyebrow="deliverability"
-        title="Sender reputation"
-        subtitle="Per-domain warmup curves, bounce + complaint rates, connected user inboxes. The thing that protects you from getting your sending blocklisted."
-      />
-
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
-        <MetricCard
-          label="Sent"
-          value={volume.sent_24h}
-          hint="last 24h"
-        />
-        <MetricCard
-          label="Delivered"
-          value={volume.delivered_24h}
-          hint={pct(volume.delivered_24h, volume.sent_24h)}
-        />
-        <MetricCard
-          label="Bounced"
-          value={volume.bounced_24h}
-          hint={pct(volume.bounced_24h, volume.sent_24h)}
-        />
-        <MetricCard
-          label="Complaints"
-          value={volume.complaints_24h}
-          hint={pct(volume.complaints_24h, volume.sent_24h)}
-        />
+      <section className="section-canvas min-h-[380px] p-5 sm:p-8">
+        <div className="section-thread section-thread-a" />
+        <div className="grid gap-8 lg:grid-cols-[1fr_360px] lg:items-end">
+          <div>
+            <p className="brief-kicker">Deliverability</p>
+            <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
+              Sending health that stays calm.
+            </h1>
+            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+              Owned domains and connected inboxes should stay calm. Problems surface only when reputation, volume, or bounces need attention.
+            </p>
+          </div>
+          <div className="section-note">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Last 24 hours</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <HealthStat label="Sent" value={volume.sent_24h} />
+              <HealthStat label="Delivered" value={pct(volume.delivered_24h, volume.sent_24h)} />
+              <HealthStat label="Bounced" value={pct(volume.bounced_24h, volume.sent_24h)} />
+              <HealthStat label="Complaints" value={pct(volume.complaints_24h, volume.sent_24h)} />
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section className="mb-10">
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Owned sending domains
-        </h2>
-        {domains.length === 0 ? (
-          <EmptyState
-            title="No sending domains configured"
-            hint="Add a workspace-owned domain to start sending cold email at volume without using personal inboxes."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {domains.map((d) => (
-              <li key={d.id} className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                    {d.domain}
-                  </p>
-                  <span
-                    className={
-                      "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded " +
-                      warmupCls(d.warmup_state)
-                    }
-                  >
-                    {d.warmup_state}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-32 text-right">
-                    day {d.warmup_day} · {d.current_daily_cap}/{d.target_daily_cap}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
-                    {timeAgo(d.updated_at)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 mt-1 text-[10px] font-mono uppercase tracking-[0.16em] text-[var(--color-text-3)]">
-                  <span className={d.spf_verified ? "text-[var(--color-accent)]" : "text-[var(--color-text-4)]"}>
-                    {d.spf_verified ? "spf ok" : "spf ✗"}
-                  </span>
-                  <span className={d.dkim_verified ? "text-[var(--color-accent)]" : "text-[var(--color-text-4)]"}>
-                    {d.dkim_verified ? "dkim ok" : "dkim ✗"}
-                  </span>
-                  <span className={d.dmarc_verified ? "text-[var(--color-accent)]" : "text-[var(--color-text-4)]"}>
-                    {d.dmarc_verified ? "dmarc ok" : "dmarc ✗"}
-                  </span>
-                  <span className="ml-auto tabular-nums">
-                    bounce {(Number(d.bounce_rate_24h) * 100).toFixed(2)}%
-                  </span>
-                  <span className="tabular-nums">
-                    complaints {(Number(d.complaint_rate_24h) * 100).toFixed(2)}%
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <section className="mt-6 grid gap-6 xl:grid-cols-2">
+        <HealthPanel title="Sending domains" icon="alternate_email">
+          {domains.length === 0 ? (
+            <EmptyState
+              title="No owned domains yet"
+              hint="Add a domain when the workspace is ready for volume."
+            />
+          ) : (
+            <div className="grid gap-2">
+              {domains.map((domain) => (
+                <DomainRow key={domain.id} domain={domain} />
+              ))}
+            </div>
+          )}
+        </HealthPanel>
+
+        <HealthPanel title="Sending accounts" icon="mail">
+          {accounts.length === 0 ? (
+            <EmptyState
+              title="No sending accounts connected"
+              hint="Connect Outlook or add an owned domain before sending."
+            />
+          ) : (
+            <div className="grid gap-2">
+              {accounts.map((account) => (
+                <AccountRow key={account.id} account={account} />
+              ))}
+            </div>
+          )}
+        </HealthPanel>
       </section>
 
-      <section className="mb-10">
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Channel accounts
-        </h2>
-        {accounts.length === 0 ? (
-          <EmptyState
-            title="No channel accounts connected"
-            hint="OAuth an Outlook account or add an owned SES domain to start sending."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {accounts.map((a) => (
-              <li key={a.id} className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] w-32 truncate">
-                    {a.kind.replace(/_/g, " ")}
+      <section className="mt-6">
+        <HealthPanel title="Recent bounces" icon="warning">
+          {bounces.length === 0 ? (
+            <EmptyState
+              title="No bounces in the last 7 days"
+              hint="Bounce patterns will appear here before they become a freeze."
+            />
+          ) : (
+            <div className="grid gap-2">
+              {bounces.map((bounce) => (
+                <div key={bounce.external_id} className="grid gap-2 rounded-[12px] bg-[rgba(255,255,255,0.68)] p-3 sm:grid-cols-[120px_1fr_80px] sm:items-center">
+                  <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs text-[var(--color-accent)]">
+                    {bounce.bounce_type ?? "bounced"}
                   </span>
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                    {a.display_name}
+                  <p className="truncate text-sm text-[var(--color-text-1)]">
+                    {bounce.bounce_recipient ?? "(unknown recipient)"}
                   </p>
-                  <span
-                    className={
-                      "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded " +
-                      (a.status === "connected"
-                        ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
-                        : "bg-[var(--color-ink-3)] text-[var(--color-text-3)]")
-                    }
-                  >
-                    {a.status}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-24 text-right">
-                    {a.daily_used}/{a.daily_cap ?? "∞"}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
-                    {timeAgo(a.last_used_at)}
+                  <span className="text-xs tabular-nums text-[var(--color-text-3)] sm:text-right">
+                    {timeAgo(bounce.occurred_at)}
                   </span>
                 </div>
-                {a.last_error?.message ? (
-                  <p className="font-mono text-xs text-[var(--color-accent)] mt-1 truncate">
-                    error: {a.last_error.message}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Recent bounces
-        </h2>
-        {bounces.length === 0 ? (
-          <EmptyState
-            title="No bounces in the last 7 days"
-            hint="Bounces and complaints surface here so you can spot a deliverability dip before it becomes a freeze."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {bounces.map((b) => (
-              <li key={b.external_id} className="px-4 py-3 flex items-center gap-3">
-                <span
-                  className={
-                    "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded " +
-                    (b.bounce_type === "complaint" || b.bounce_type === "hard"
-                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
-                      : "bg-[var(--color-ink-3)] text-[var(--color-text-3)]")
-                  }
-                >
-                  {b.bounce_type ?? "bounced"}
-                </span>
-                <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                  {b.bounce_recipient ?? "(unknown recipient)"}
-                </p>
-                <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
-                  {timeAgo(b.occurred_at)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+              ))}
+            </div>
+          )}
+        </HealthPanel>
       </section>
     </>
+  );
+}
+
+function HealthPanel({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="section-note">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="brief-note-icon">
+          <Icon name={icon} size={18} />
+        </span>
+        <h2 className="text-lg font-semibold text-[var(--color-text-1)]">{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function DomainRow({ domain }: { domain: SendingDomainRow }) {
+  return (
+    <div className="rounded-[12px] bg-[rgba(255,255,255,0.68)] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-1)]">
+          {domain.domain}
+        </p>
+        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+          {domain.warmup_state}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-[var(--color-text-3)]">
+        Day {domain.warmup_day}. {domain.current_daily_cap}/{domain.target_daily_cap} daily. Updated {timeAgo(domain.updated_at)}.
+      </p>
+      <p className="mt-2 text-xs text-[var(--color-text-3)]">
+        SPF {domain.spf_verified ? "ready" : "needed"}. DKIM {domain.dkim_verified ? "ready" : "needed"}. DMARC {domain.dmarc_verified ? "ready" : "needed"}.
+      </p>
+      <p className="mt-2 text-xs text-[var(--color-text-3)]">
+        Bounce {(Number(domain.bounce_rate_24h) * 100).toFixed(2)}%. Complaints {(Number(domain.complaint_rate_24h) * 100).toFixed(2)}%.
+      </p>
+    </div>
+  );
+}
+
+function AccountRow({ account }: { account: ChannelAccountRow }) {
+  return (
+    <div className="rounded-[12px] bg-[rgba(255,255,255,0.68)] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-1)]">
+          {account.display_name}
+        </p>
+        <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs text-[var(--color-accent)]">
+          {account.status}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-[var(--color-text-3)]">
+        {account.kind.replace(/_/g, " ")}. {account.daily_used}/{account.daily_cap ?? "unlimited"} today. Last used {timeAgo(account.last_used_at)}.
+      </p>
+      {account.last_error?.message ? (
+        <p className="mt-2 text-xs text-[var(--color-neg)]">{account.last_error.message}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function HealthStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.56)] p-3">
+      <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
+      <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
+    </span>
+  );
+}
+
+function CanvasEmpty({ label, title }: { label: string; title: string }) {
+  return (
+    <section className="section-canvas p-6">
+      <p className="brief-kicker">{label}</p>
+      <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">{title}</h1>
+    </section>
   );
 }

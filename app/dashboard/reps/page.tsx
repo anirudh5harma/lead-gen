@@ -1,4 +1,5 @@
-import { EmptyState, SectionHeader } from "@/components/dashboard/Shell";
+import { EmptyState } from "@/components/dashboard/Shell";
+import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 
@@ -16,7 +17,6 @@ interface RepRow {
     do_not?: string[];
   };
   channels: string[];
-  autonomy: Record<string, unknown>;
   outbound_24h: string;
   positive_24h: string;
   conversations_open: string;
@@ -26,7 +26,7 @@ async function loadReps(workspaceId: string): Promise<RepRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<RepRow>(
     `select r.id, r.name, r.role::text as role, r.status::text as status,
-            r.persona, r.channels, r.autonomy,
+            r.persona, r.channels,
             (select count(*)::text from messages m
               where m.workspace_id = $1 and m.direction = 'outbound'
                 and m.status in ('sent','delivered','replied')
@@ -52,97 +52,103 @@ async function loadReps(workspaceId: string): Promise<RepRow[]> {
 
 export default async function RepsPage() {
   const workspace = await getActiveWorkspace();
-  if (!workspace) {
-    return (
-      <>
-        <SectionHeader eyebrow="reps" title="No workspace selected" />
-      </>
-    );
-  }
+  if (!workspace) return <CanvasEmpty label="Profile" title="No workspace selected." />;
+
   const reps = await loadReps(workspace.id);
+  const sent = reps.reduce((sum, rep) => sum + Number(rep.outbound_24h), 0);
+  const positives = reps.reduce((sum, rep) => sum + Number(rep.positive_24h), 0);
 
   return (
     <>
-      <SectionHeader
-        eyebrow="reps"
-        title="Your Reps"
-        subtitle="The named personas. Role-agent composition is an implementation detail."
-      />
-      {reps.length === 0 ? (
-        <EmptyState
-          title="No Reps yet"
-          hint="Open Setup to create the first named Rep and bind it to an email Play."
-        />
-      ) : (
-        <ul className="space-y-4">
-          {reps.map((r) => (
-            <li
-              key={r.id}
-              className="border border-[var(--color-line-1)] rounded-lg p-5 bg-[var(--color-ink-0)]"
-            >
-              <div className="flex items-start gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3">
-                    <h3 className="font-serif text-xl text-[var(--color-text-1)]">
-                      {r.name}
-                    </h3>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded bg-[var(--color-ink-3)] text-[var(--color-text-2)]">
-                      {r.role}
-                    </span>
-                    <span
-                      className={
-                        "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded " +
-                        (r.status === "active"
-                          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-                          : "bg-[var(--color-ink-3)] text-[var(--color-text-2)]")
-                      }
-                    >
-                      {r.status}
-                    </span>
-                  </div>
-                  {r.persona.voice ? (
-                    <p className="font-serif text-sm text-[var(--color-text-2)] mt-2 italic">
-                      &ldquo;{r.persona.voice}&rdquo;
-                    </p>
-                  ) : null}
-                  {r.persona.do_not && r.persona.do_not.length > 0 ? (
-                    <p className="font-mono text-xs text-[var(--color-text-3)] mt-2">
-                      do not: {r.persona.do_not.join(" · ")}
-                    </p>
-                  ) : null}
-                  <div className="flex gap-2 mt-3">
-                    {r.channels.map((c) => (
-                      <span
-                        key={c}
-                        className="font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded bg-[var(--color-ink-2)] text-[var(--color-text-2)]"
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-                    last 24h
-                  </p>
-                  <p className="font-serif text-2xl text-[var(--color-text-1)] mt-1 tabular-nums">
-                    {r.outbound_24h}
-                  </p>
-                  <p className="font-mono text-xs text-[var(--color-text-3)]">
-                    sent
-                  </p>
-                  <p className="font-mono text-xs text-[var(--color-pos)] mt-2">
-                    {r.positive_24h} positive
-                  </p>
-                  <p className="font-mono text-xs text-[var(--color-text-3)]">
-                    {r.conversations_open} open
-                  </p>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      <section className="section-canvas min-h-[420px] p-5 sm:p-8">
+        <div className="section-thread section-thread-a" />
+        <div className="grid gap-8 lg:grid-cols-[1fr_320px] lg:items-end">
+          <div>
+            <p className="brief-kicker">Profile</p>
+            <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
+              The voices doing the work.
+            </h1>
+            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+              Reps are the named voices users trust. Keep them few, specific, and tied to a clear channel.
+            </p>
+          </div>
+          <div className="section-note">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Today</p>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <SmallState label="Reps" value={reps.length} />
+              <SmallState label="Sent" value={sent} />
+              <SmallState label="Replies" value={positives} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-6 grid gap-4 lg:grid-cols-2">
+        {reps.length === 0 ? (
+          <EmptyState title="No voices yet" hint="Shape the profile to create the first sender." />
+        ) : (
+          reps.map((rep) => <RepNote key={rep.id} rep={rep} />)
+        )}
+      </section>
     </>
+  );
+}
+
+function RepNote({ rep }: { rep: RepRow }) {
+  return (
+    <article className="section-note">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon">
+          <Icon name="person" size={18} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">{rep.name}</h2>
+            <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+              {rep.role}
+            </span>
+            <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs text-[var(--color-accent)]">
+              {rep.status}
+            </span>
+          </div>
+          {rep.persona.voice ? (
+            <p className="mt-3 text-sm leading-6 text-[var(--color-text-2)]">{rep.persona.voice}</p>
+          ) : null}
+          {rep.persona.do_not?.length ? (
+            <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
+              Avoid {rep.persona.do_not.join(", ")}
+            </p>
+          ) : null}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {rep.channels.map((channel) => (
+              <span key={channel} className="rounded-full bg-[rgba(255,255,255,0.62)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+                {channel}
+              </span>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-[var(--color-text-3)]">
+            {rep.outbound_24h} sent today. {rep.positive_24h} positive. {rep.conversations_open} open.
+          </p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function SmallState({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.56)] p-3 text-center">
+      <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
+      <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
+    </span>
+  );
+}
+
+function CanvasEmpty({ label, title }: { label: string; title: string }) {
+  return (
+    <section className="section-canvas p-6">
+      <p className="brief-kicker">{label}</p>
+      <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">{title}</h1>
+    </section>
   );
 }

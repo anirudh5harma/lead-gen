@@ -1,9 +1,6 @@
-import {
-  EmptyState,
-  MetricCard,
-  SectionHeader,
-} from "@/components/dashboard/Shell";
+import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
+import type { ReactNode } from "react";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 import {
@@ -19,16 +16,6 @@ interface IngestionCounts {
   candidates_24h: number;
   signals_ingested_24h: number;
   matched_24h: number;
-  dismissed_24h: number;
-  expired_24h: number;
-}
-
-interface BudgetRow {
-  daily_candidate_cap: number;
-  daily_classify_cap: number;
-  daily_candidates_used: number;
-  daily_classify_used: number;
-  window_start: Date;
 }
 
 interface IcpRow {
@@ -36,8 +23,6 @@ interface IcpRow {
   name: string;
   enabled: boolean;
   match_threshold: string;
-  must_haves_count: number;
-  nice_to_haves_count: number;
   description: string;
 }
 
@@ -69,69 +54,42 @@ interface RecentSignalRow {
   ingested_at: Date;
 }
 
-interface OverflowRow {
-  reason: string;
-  count: string;
-  most_recent: Date;
-}
-
 async function loadCounts(workspaceId: string): Promise<IngestionCounts> {
   const pool = getPool();
   const { rows } = await pool.query<{
     candidates_24h: string;
     signals_ingested_24h: string;
     matched_24h: string;
-    dismissed_24h: string;
-    expired_24h: string;
   }>(
     `select
        (select count(*)::text from signal_candidates sc
           join signal_candidate_fanouts f on f.candidate_id = sc.id
          where f.workspace_id = $1 and sc.ingested_at >= now() - interval '24 hours') as candidates_24h,
        (select count(*)::text from signals where workspace_id = $1 and ingested_at >= now() - interval '24 hours') as signals_ingested_24h,
-       (select count(*)::text from signals where workspace_id = $1 and status = 'matched' and ingested_at >= now() - interval '24 hours') as matched_24h,
-       (select count(*)::text from signals where workspace_id = $1 and status = 'dismissed' and ingested_at >= now() - interval '24 hours') as dismissed_24h,
-       (select count(*)::text from signals where workspace_id = $1 and status = 'spent' and ingested_at >= now() - interval '24 hours') as expired_24h`,
+       (select count(*)::text from signals where workspace_id = $1 and status = 'matched' and ingested_at >= now() - interval '24 hours') as matched_24h`,
     [workspaceId],
   );
   return {
     candidates_24h: Number(rows[0].candidates_24h),
     signals_ingested_24h: Number(rows[0].signals_ingested_24h),
     matched_24h: Number(rows[0].matched_24h),
-    dismissed_24h: Number(rows[0].dismissed_24h),
-    expired_24h: Number(rows[0].expired_24h),
   };
-}
-
-async function loadBudget(workspaceId: string): Promise<BudgetRow | null> {
-  const pool = getPool();
-  const { rows } = await pool.query<BudgetRow>(
-    `select daily_candidate_cap, daily_classify_cap,
-            daily_candidates_used, daily_classify_used, window_start
-       from workspace_ingestion_budgets where workspace_id = $1`,
-    [workspaceId],
-  );
-  return rows[0] ?? null;
 }
 
 async function loadIcps(workspaceId: string): Promise<IcpRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<IcpRow>(
-    `select id, name, enabled, match_threshold::text as match_threshold,
-            jsonb_array_length(must_haves) as must_haves_count,
-            jsonb_array_length(nice_to_haves) as nice_to_haves_count,
-            description
+    `select id, name, enabled, match_threshold::text as match_threshold, description
        from workspace_icps
       where workspace_id = $1
-      order by enabled desc, name`,
+      order by enabled desc, name
+      limit 6`,
     [workspaceId],
   );
   return rows;
 }
 
-async function loadWorkspaceSources(
-  workspaceId: string,
-): Promise<WorkspaceSourceRow[]> {
+async function loadWorkspaceSources(workspaceId: string): Promise<WorkspaceSourceRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<WorkspaceSourceRow>(
     `select gs.id as source_id,
@@ -144,20 +102,15 @@ async function loadWorkspaceSources(
        left join workspace_source_configs wsc
               on wsc.workspace_id = gs.workspace_id and wsc.source_id = gs.id
       where gs.workspace_id = $1
-      order by wsc.last_polled_at desc nulls last, gs.name`,
+      order by wsc.last_polled_at desc nulls last, gs.name
+      limit 8`,
     [workspaceId],
   );
   return rows;
 }
 
-async function loadCatalogPolls(
-  workspaceId: string,
-): Promise<PlatformPollRow[]> {
+async function loadCatalogPolls(workspaceId: string): Promise<PlatformPollRow[]> {
   const pool = getPool();
-  // For each tracked company in this workspace, show the most recent
-  // poll cursor across all platform sources that watch it. This is the
-  // workspace's view of catalog-poll activity even though the actual
-  // polls run platform-wide.
   const { rows } = await pool.query<PlatformPollRow>(
     `select pss.adapter,
             pss.name as source_name,
@@ -173,15 +126,13 @@ async function loadCatalogPolls(
       where wtc.workspace_id = $1
         and pss.enabled
       order by cpc.last_polled_at desc nulls last, tc.name, pss.adapter
-      limit 50`,
+      limit 12`,
     [workspaceId],
   );
   return rows;
 }
 
-async function loadRecentSignals(
-  workspaceId: string,
-): Promise<RecentSignalRow[]> {
+async function loadRecentSignals(workspaceId: string): Promise<RecentSignalRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<RecentSignalRow>(
     `select id,
@@ -194,21 +145,7 @@ async function loadRecentSignals(
        from signals
       where workspace_id = $1
       order by ingested_at desc
-      limit 20`,
-    [workspaceId],
-  );
-  return rows;
-}
-
-async function loadOverflow(workspaceId: string): Promise<OverflowRow[]> {
-  const pool = getPool();
-  const { rows } = await pool.query<OverflowRow>(
-    `select reason, count(*)::text as count, max(occurred_at) as most_recent
-       from signal_overflow
-      where workspace_id = $1
-        and occurred_at >= now() - interval '24 hours'
-      group by reason
-      order by max(occurred_at) desc`,
+      limit 8`,
     [workspaceId],
   );
   return rows;
@@ -218,429 +155,211 @@ function timeAgo(d: Date | null): string {
   if (!d) return "never";
   const diff = Date.now() - new Date(d).getTime();
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function statusCls(status: string): string {
-  switch (status) {
-    case "matched":
-      return "bg-[var(--color-accent-bg)] text-[var(--color-accent)]";
-    case "dismissed":
-      return "bg-[var(--color-ink-3)] text-[var(--color-text-3)]";
-    case "spent":
-      return "bg-[var(--color-ink-3)] text-[var(--color-text-3)]";
-    default:
-      return "bg-[var(--color-ink-3)] text-[var(--color-text-2)]";
-  }
-}
-
-function pct(used: number, cap: number): number {
-  if (cap <= 0) return 0;
-  return Math.min(100, Math.round((used / cap) * 100));
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 export default async function IngestionPage() {
   const workspace = await getActiveWorkspace();
   if (!workspace) {
     return (
-      <>
-        <SectionHeader
-          eyebrow="ingestion"
-          title="No workspace yet"
-          subtitle="Create a workspace and configure ICPs before ingestion can run."
-        />
-        <EmptyState
-          title="No workspace found"
-          hint="Seed a workspace, then refresh."
-        />
-      </>
+      <section className="section-canvas p-6">
+        <p className="brief-kicker">Campaigns</p>
+        <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
+          No workspace yet.
+        </h1>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--color-text-2)]">
+          Create a profile, then choose the signals and companies Bombsell should watch.
+        </p>
+      </section>
     );
   }
 
-  const [counts, budget, icps, wsSources, catalogPolls, recent, overflow] =
-    await Promise.all([
-      loadCounts(workspace.id),
-      loadBudget(workspace.id),
-      loadIcps(workspace.id),
-      loadWorkspaceSources(workspace.id),
-      loadCatalogPolls(workspace.id),
-      loadRecentSignals(workspace.id),
-      loadOverflow(workspace.id),
-    ]);
+  const [counts, icps, sources, companies, recent] = await Promise.all([
+    loadCounts(workspace.id),
+    loadIcps(workspace.id),
+    loadWorkspaceSources(workspace.id),
+    loadCatalogPolls(workspace.id),
+    loadRecentSignals(workspace.id),
+  ]);
 
   return (
     <>
-      <SectionHeader
-        eyebrow="ingestion"
-        title="Signal ingestion"
-        subtitle="What's flowing in, what's matching, what's running into a cap."
-      />
+      <section className="section-canvas overflow-hidden">
+        <div className="section-thread section-thread-a" />
+        <div className="grid lg:grid-cols-[1fr_320px]">
+          <div className="p-5 sm:p-8">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="brief-kicker">Campaigns</p>
+                <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
+                  Tell Bombsell what to watch.
+                </h1>
+                <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+                  Campaigns start as a few high-signal notes: profile, companies, and sources. Everything else should stay quiet until there is useful work.
+                </p>
+              </div>
+              <form action={runSignalAggregatorAction}>
+                <button className="inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
+                  <Icon name="sync" size={16} />
+                  Refresh
+                </button>
+              </form>
+            </div>
 
-      <section className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-10">
-        <MetricCard
-          label="Candidates"
-          value={counts.candidates_24h}
-          hint="last 24h · shared pool"
-        />
-        <MetricCard
-          label="Ingested"
-          value={counts.signals_ingested_24h}
-          hint="workspace signals"
-        />
-        <MetricCard
-          label="Matched"
-          value={counts.matched_24h}
-          hint="passed ICP threshold"
-        />
-        <MetricCard
-          label="Dismissed"
-          value={counts.dismissed_24h}
-          hint="classifier rejected"
-        />
-        <MetricCard
-          label="Expired"
-          value={counts.expired_24h}
-          hint="TTL or upstream"
-        />
-      </section>
-
-      <section className="mb-10 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-sm font-semibold text-[var(--color-text-1)]">
-            Control room
-          </h2>
-          <form action={runSignalAggregatorAction}>
-            <button className="inline-flex min-h-9 items-center gap-2 rounded-md bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
-              <Icon name="sync" size={16} />
-              Run aggregator
-            </button>
-          </form>
-        </div>
-        <div className="grid gap-6 xl:grid-cols-3">
-          <form action={configureIcpAction} className="grid gap-3">
-            <Field name="icp_name" label="ICP" defaultValue="Hiring signal ICP" />
-            <Select
-              name="signal_kind"
-              label="Signal"
-              defaultValue="hiring"
-              options={[
-                ["hiring", "Hiring"],
-                ["funding", "Funding"],
-                ["product_launch", "Product launch"],
-                ["press_mention", "Press mention"],
-              ]}
-            />
-            <TextArea
-              name="icp_description"
-              label="Description"
-              defaultValue="Companies showing fresh hiring intent around GTM, operations, or revenue roles."
-            />
-            <Field name="match_threshold" label="Threshold" defaultValue="0.60" type="number" step="0.01" />
-            <ActionButton icon="rule" label="Save ICP" />
-          </form>
-
-          <form action={trackCompanyAction} className="grid gap-3">
-            <Field name="company_name" label="Company" defaultValue="Acme Payroll" />
-            <Field name="company_domain" label="Domain" defaultValue="acmepayroll.example" />
-            <Field name="company_industry" label="Industry" defaultValue="B2B SaaS" />
-            <Field name="greenhouse_id" label="Greenhouse" defaultValue="" />
-            <Field name="lever_id" label="Lever" defaultValue="" />
-            <ActionButton icon="add_business" label="Track company" />
-          </form>
-
-          <form action={configureSourceAction} className="grid gap-3">
-            <Field name="source_name" label="Source" defaultValue="Hiring signal feed" />
-            <Select
-              name="source_adapter"
-              label="Adapter"
-              defaultValue="google_news"
-              options={[
-                ["google_news", "Google News"],
-                ["rss", "RSS"],
-                ["hn_front", "HN front"],
-                ["hn_whos_hiring", "HN hiring"],
-                ["product_hunt", "Product Hunt"],
-                ["reddit", "Reddit"],
-              ]}
-            />
-            <Field name="source_query" label="Query" defaultValue="B2B SaaS hiring funding launch" />
-            <Field name="source_url" label="RSS URL" defaultValue="" type="url" />
-            <Field name="subreddit" label="Subreddit" defaultValue="SaaS" />
-            <Select
-              name="signal_kind"
-              label="Kind"
-              defaultValue="hiring"
-              options={[
-                ["hiring", "Hiring"],
-                ["funding", "Funding"],
-                ["product_launch", "Product launch"],
-                ["press_mention", "Press mention"],
-              ]}
-            />
-            <Field name="poll_interval_minutes" label="Minutes" defaultValue="60" type="number" />
-            <ActionButton icon="rss_feed" label="Save source" />
-          </form>
-        </div>
-      </section>
-
-      <section className="mb-10">
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Daily budget
-        </h2>
-        {budget ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <BudgetBar
-              label="Candidates"
-              used={budget.daily_candidates_used}
-              cap={budget.daily_candidate_cap}
-              windowStart={budget.window_start}
-            />
-            <BudgetBar
-              label="Classify (LLM)"
-              used={budget.daily_classify_used}
-              cap={budget.daily_classify_cap}
-              windowStart={budget.window_start}
-            />
+            <div className="relative min-h-[420px]">
+              <div className="graph-link left-[14%] top-[35%] w-[34%] rotate-[8deg]" />
+              <div className="graph-link left-[46%] top-[50%] w-[30%] -rotate-[12deg]" />
+              <SourceCard
+                className="left-[6%] top-[8%]"
+                title="Profile"
+                value={icps[0]?.name ?? "Add profile"}
+                detail={icps[0]?.description ?? "What good looks like"}
+              />
+              <SourceCard
+                className="right-[6%] top-[18%]"
+                title="Source"
+                value={sources[0]?.source_name ?? "Add source"}
+                detail={sources[0]?.source_kind ?? "Where to watch"}
+              />
+              <div className="brief-node section-note left-1/2 top-1/2 w-[min(62vw,280px)] -translate-x-1/2 -translate-y-1/2">
+                <p className="text-sm text-[var(--color-text-3)]">Signals</p>
+                <h3 className="mt-2 text-3xl font-semibold text-[var(--color-text-1)]">
+                  {counts.signals_ingested_24h === 0 ? "Quiet" : counts.signals_ingested_24h}
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-[var(--color-text-2)]">
+                  {counts.matched_24h} ready from {counts.candidates_24h} found today.
+                </p>
+              </div>
+              <SourceCard
+                className="bottom-[10%] left-[10%]"
+                title="Company"
+                value={companies[0]?.company_name ?? "Track company"}
+                detail={companies[0]?.adapter ?? "Hiring, funding, mentions"}
+              />
+              <SourceCard
+                className="bottom-[15%] right-[8%]"
+                title="Ready"
+                value={`${counts.matched_24h} good fit`}
+                detail="Only useful work moves forward"
+              />
+            </div>
           </div>
-        ) : (
-          <EmptyState
-            title="No budget row yet"
-            hint="Pollers create the budget row on first run; nothing has run for this workspace."
-          />
-        )}
-        {overflow.length > 0 ? (
-          <div className="mt-4 border border-[var(--color-line-1)] rounded-lg px-4 py-3 bg-[var(--color-ink-0)]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] mb-2">
-              Overflow · last 24h
-            </p>
-            <ul className="space-y-1">
-              {overflow.map((o) => (
-                <li key={o.reason} className="flex items-center gap-3 text-sm">
-                  <span className="font-mono text-xs text-[var(--color-text-3)] w-44">
-                    {o.reason}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-1)] tabular-nums">
-                    {o.count} dropped
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] ml-auto">
-                    last {timeAgo(o.most_recent)}
-                  </span>
-                </li>
+
+          <aside className="border-t border-[var(--color-line-1)] bg-[rgba(255,255,255,0.42)] p-5 lg:border-l lg:border-t-0">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Add notes</p>
+            <div className="mt-4 grid gap-4">
+              <MiniForm title="Profile">
+                <form action={configureIcpAction} className="grid gap-3">
+                  <Field name="icp_name" label="Name" defaultValue="Hiring lead profile" />
+                  <TextArea
+                    name="icp_description"
+                    label="Good lead"
+                    defaultValue="Companies showing fresh hiring intent around GTM, operations, or revenue roles."
+                  />
+                  <input type="hidden" name="signal_kind" value="hiring" />
+                  <input type="hidden" name="match_threshold" value="0.60" />
+                  <ActionButton icon="rule" label="Save" />
+                </form>
+              </MiniForm>
+              <MiniForm title="Company">
+                <form action={trackCompanyAction} className="grid gap-3">
+                  <Field name="company_name" label="Company" defaultValue="Acme Payroll" />
+                  <Field name="company_domain" label="Domain" defaultValue="acmepayroll.example" />
+                  <input type="hidden" name="company_industry" value="B2B SaaS" />
+                  <input type="hidden" name="greenhouse_id" value="" />
+                  <input type="hidden" name="lever_id" value="" />
+                  <ActionButton icon="add_business" label="Track" />
+                </form>
+              </MiniForm>
+              <MiniForm title="Source">
+                <form action={configureSourceAction} className="grid gap-3">
+                  <Field name="source_name" label="Source" defaultValue="Hiring signal feed" />
+                  <Field name="source_query" label="Search" defaultValue="B2B SaaS hiring funding launch" />
+                  <input type="hidden" name="source_adapter" value="google_news" />
+                  <input type="hidden" name="source_url" value="" />
+                  <input type="hidden" name="subreddit" value="SaaS" />
+                  <input type="hidden" name="signal_kind" value="hiring" />
+                  <input type="hidden" name="poll_interval_minutes" value="60" />
+                  <ActionButton icon="rss_feed" label="Save" />
+                </form>
+              </MiniForm>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Panel title="Recent leads">
+          {recent.length === 0 ? (
+            <EmptyState title="No leads yet" hint="Refresh sources to fill this page." />
+          ) : (
+            <div className="grid gap-2">
+              {recent.map((signal) => (
+                <LeadRow key={signal.id} signal={signal} />
               ))}
-            </ul>
-          </div>
-        ) : null}
-      </section>
-
-      <section className="mb-10">
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          ICP segments
-        </h2>
-        {icps.length === 0 ? (
-          <EmptyState
-            title="No ICPs configured"
-            hint="Stage 2 dismisses every signal until at least one ICP segment is defined."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {icps.map((i) => (
-              <li key={i.id} className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span
-                    className={
-                      "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded " +
-                      (i.enabled
-                        ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
-                        : "bg-[var(--color-ink-3)] text-[var(--color-text-3)]")
-                    }
-                  >
-                    {i.enabled ? "enabled" : "disabled"}
-                  </span>
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                    {i.name}
-                  </p>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums">
-                    threshold {Number(i.match_threshold).toFixed(2)}
-                  </span>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-24 text-right">
-                    {i.must_haves_count} must · {i.nice_to_haves_count} nice
-                  </span>
-                </div>
-                {i.description ? (
-                  <p className="font-serif text-[var(--color-text-2)] text-sm mt-1 italic truncate">
-                    {i.description}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mb-10">
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Workspace sources
-        </h2>
-        {wsSources.length === 0 ? (
-          <EmptyState
-            title="No workspace sources"
-            hint="Per-workspace adapters (custom RSS, Reddit subs, Google News keywords, HN front, ProductHunt) live here once configured."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {wsSources.map((s) => (
-              <li key={s.source_id} className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] w-28">
-                    {s.source_kind}
-                  </span>
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                    {s.source_name}
-                  </p>
-                  {s.enabled ? null : (
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded bg-[var(--color-ink-3)] text-[var(--color-text-3)]">
-                      disabled
-                    </span>
-                  )}
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-24 text-right">
-                    {timeAgo(s.last_polled_at)}
-                  </span>
-                </div>
-                {s.last_error?.message ? (
-                  <p className="font-mono text-xs text-[var(--color-accent)] mt-1 truncate">
-                    error: {s.last_error.message}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="mb-10">
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Catalog polls
-        </h2>
-        {catalogPolls.length === 0 ? (
-          <EmptyState
-            title="No catalog companies tracked"
-            hint="Add companies via workspace_tracked_companies to fan platform-wide polls (Greenhouse / Lever / Ashby / Workable / SEC EDGAR) out to this workspace."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {catalogPolls.map((p, idx) => (
-              <li key={`${p.company_id}-${p.adapter}-${idx}`} className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] w-24">
-                    {p.adapter}
-                  </span>
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                    {p.company_name ?? "(unknown)"}
-                  </p>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-24 text-right">
-                    {timeAgo(p.last_polled_at)}
-                  </span>
-                </div>
-                {p.last_error?.message ? (
-                  <p className="font-mono text-xs text-[var(--color-accent)] mt-1 truncate">
-                    error: {p.last_error.message}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Recent signals
-        </h2>
-        {recent.length === 0 ? (
-          <EmptyState
-            title="Nothing ingested yet"
-            hint="When pollers run, the last 20 signals will show here with their classification status."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {recent.map((s) => (
-              <li key={s.id} className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] w-24">
-                    {s.kind ?? "—"}
-                  </span>
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                    {s.title}
-                  </p>
-                  <span
-                    className={
-                      "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded " +
-                      statusCls(s.status)
-                    }
-                  >
-                    {s.status}
-                  </span>
-                  {s.match_score ? (
-                    <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums">
-                      match {Number(s.match_score).toFixed(2)}
-                    </span>
-                  ) : null}
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
-                    {timeAgo(s.ingested_at)}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+            </div>
+          )}
+        </Panel>
+        <Panel title="Watched sources">
+          {sources.length === 0 ? (
+            <EmptyState title="No sources yet" hint="Add a source to start watching." />
+          ) : (
+            <div className="grid gap-2">
+              {sources.map((source) => (
+                <NoteRow
+                  key={source.source_id}
+                  title={source.source_name}
+                  label={source.source_kind}
+                  meta={source.enabled ? `updated ${timeAgo(source.last_polled_at)}` : "disabled"}
+                />
+              ))}
+            </div>
+          )}
+        </Panel>
       </section>
     </>
   );
 }
 
-function BudgetBar({
-  label,
-  used,
-  cap,
-  windowStart,
+function SourceCard({
+  className,
+  title,
+  value,
+  detail,
 }: {
-  label: string;
-  used: number;
-  cap: number;
-  windowStart: Date;
+  className: string;
+  title: string;
+  value: string;
+  detail: string;
 }) {
-  const percent = pct(used, cap);
-  // Saturate the bar color once usage crosses 80 %.
-  const color =
-    percent >= 100
-      ? "bg-[var(--color-accent)]"
-      : percent >= 80
-        ? "bg-[var(--color-accent)] opacity-80"
-        : "bg-[var(--color-text-2)]";
   return (
-    <div className="border border-[var(--color-line-1)] rounded-lg p-4 bg-[var(--color-ink-0)]">
-      <div className="flex items-baseline justify-between">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-          {label}
-        </p>
-        <p className="font-mono text-xs text-[var(--color-text-3)] tabular-nums">
-          {used} / {cap}
-        </p>
-      </div>
-      <div className="h-2 mt-3 rounded bg-[var(--color-ink-3)] overflow-hidden">
-        <div
-          className={"h-full " + color}
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      <p className="font-mono text-[10px] text-[var(--color-text-4)] mt-2">
-        window started {timeAgo(windowStart)}
-      </p>
+    <div className={`brief-node section-note ${className} w-[min(56vw,248px)]`}>
+      <p className="text-xs text-[var(--color-text-3)]">{title}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-1)]">{value}</p>
+      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">{detail}</p>
     </div>
+  );
+}
+
+function Panel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="section-canvas p-5">
+      <h2 className="mb-4 text-lg font-semibold text-[var(--color-text-1)]">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function MiniForm({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)] p-3">
+      <h3 className="mb-3 text-sm font-semibold text-[var(--color-text-1)]">{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -648,26 +367,18 @@ function Field({
   name,
   label,
   defaultValue,
-  type = "text",
-  step,
 }: {
   name: string;
   label: string;
   defaultValue: string;
-  type?: string;
-  step?: string;
 }) {
   return (
     <label className="grid gap-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
-        {label}
-      </span>
+      <span className="text-xs font-medium text-[var(--color-text-3)]">{label}</span>
       <input
         name={name}
-        type={type}
-        step={step}
         defaultValue={defaultValue}
-        className="min-h-10 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 text-sm text-[var(--color-text-1)]"
+        className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 text-sm text-[var(--color-text-1)]"
       />
     </label>
   );
@@ -684,55 +395,56 @@ function TextArea({
 }) {
   return (
     <label className="grid gap-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
-        {label}
-      </span>
+      <span className="text-xs font-medium text-[var(--color-text-3)]">{label}</span>
       <textarea
         name={name}
-        rows={4}
+        rows={3}
         defaultValue={defaultValue}
-        className="rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+        className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
       />
-    </label>
-  );
-}
-
-function Select({
-  name,
-  label,
-  defaultValue,
-  options,
-}: {
-  name: string;
-  label: string;
-  defaultValue: string;
-  options: Array<[string, string]>;
-}) {
-  return (
-    <label className="grid gap-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
-        {label}
-      </span>
-      <select
-        name={name}
-        defaultValue={defaultValue}
-        className="min-h-10 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 text-sm text-[var(--color-text-1)]"
-      >
-        {options.map(([value, optionLabel]) => (
-          <option key={value} value={value}>
-            {optionLabel}
-          </option>
-        ))}
-      </select>
     </label>
   );
 }
 
 function ActionButton({ icon, label }: { icon: string; label: string }) {
   return (
-    <button className="inline-flex w-fit items-center gap-2 rounded-md bg-[var(--color-text-1)] px-3 py-2 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
-      <Icon name={icon} size={17} />
+    <button className="inline-flex min-h-9 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
+      <Icon name={icon} size={16} />
       {label}
     </button>
+  );
+}
+
+function NoteRow({ title, label, meta }: { title: string; label: string; meta: string }) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-3">
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">{title}</p>
+      <p className="mt-1 text-xs text-[var(--color-text-3)]">
+        {label}. {meta}
+      </p>
+    </div>
+  );
+}
+
+function LeadRow({ signal }: { signal: RecentSignalRow }) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-3">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs font-medium text-[var(--color-accent)]">
+          {signal.kind ?? "signal"}
+        </span>
+        <span className="ml-auto text-xs text-[var(--color-text-3)]">
+          {timeAgo(signal.ingested_at)}
+        </span>
+      </div>
+      <p className="mt-2 line-clamp-2 text-sm leading-5 text-[var(--color-text-1)]">
+        {signal.title}
+      </p>
+      {signal.match_score ? (
+        <p className="mt-2 text-xs text-[var(--color-text-3)]">
+          Fit {Number(signal.match_score).toFixed(2)}
+        </p>
+      ) : null}
+    </div>
   );
 }

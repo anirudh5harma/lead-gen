@@ -1,8 +1,5 @@
-import {
-  EmptyState,
-  MetricCard,
-  SectionHeader,
-} from "@/components/dashboard/Shell";
+import { EmptyState } from "@/components/dashboard/Shell";
+import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
@@ -43,24 +40,23 @@ function timeAgo(d: string | Date | null): string {
   if (!d) return "never";
   const diff = Date.now() - new Date(d).getTime();
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 export default async function OpsPage() {
   const workspace = await getActiveWorkspace();
   if (!workspace) {
     return (
-      <>
-        <SectionHeader
-          eyebrow="ops"
-          title="No workspace"
-          subtitle="Active workspace required to inspect the event dispatch queue."
-        />
-      </>
+      <section className="section-canvas p-6">
+        <p className="brief-kicker">AEO</p>
+        <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
+          No workspace selected.
+        </h1>
+      </section>
     );
   }
 
@@ -71,60 +67,62 @@ export default async function OpsPage() {
 
   return (
     <>
-      <SectionHeader
-        eyebrow="ops"
-        title="Event bus delivery"
-        subtitle="The production NATS dispatch queue. Dead-lettered events are no longer redriven automatically; pick them up here."
-      />
-
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-10">
-        <MetricCard
-          label="Pending"
-          value={counts.pending}
-          hint="waiting on NATS delivery"
-        />
-        <MetricCard
-          label="Delivered"
-          value={counts.delivered_24h}
-          hint="last 24h"
-        />
-        <MetricCard
-          label="Dead-lettered"
-          value={counts.dead_lettered}
-          hint="needs operator attention"
-        />
+      <section className="section-canvas min-h-[420px] p-5 sm:p-8">
+        <div className="section-thread section-thread-a" />
+        <div className="grid gap-8 lg:grid-cols-[1fr_340px] lg:items-end">
+          <div>
+            <p className="brief-kicker">AEO</p>
+            <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
+              Visibility and background work, only when it needs attention.
+            </h1>
+            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+              Keep this quiet by default. Bombsell should only surface blocked work, delivery problems, and visibility gaps worth fixing.
+            </p>
+          </div>
+          <div className="section-note">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Work state</p>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <State label="Waiting" value={counts.pending} />
+              <State label="Moved" value={counts.delivered_24h} />
+              <State label="Review" value={counts.dead_lettered} />
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section>
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Dead-lettered events
-        </h2>
+      <section className="mt-6 section-canvas p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="brief-note-icon">
+            <Icon name="travel_explore" size={18} />
+          </span>
+          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Needs attention</h2>
+        </div>
         {dead.length === 0 ? (
           <EmptyState
-            title="Nothing in the dead-letter queue"
-            hint="Events that fail NATS delivery 8 times in a row land here. None right now."
+            title="Nothing needs attention"
+            hint="Visibility and delivery work are moving normally."
           />
         ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
+          <ul className="grid gap-2">
             {dead.map((d) => (
-              <li key={d.event_id} className="px-4 py-3">
+              <li key={d.event_id} className="rounded-[12px] bg-[rgba(255,255,255,0.68)] px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] w-44 truncate">
+                  <span className="w-44 truncate text-xs text-[var(--color-text-3)]">
                     {d.event_type}
                   </span>
                   <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
                     {d.last_error ?? "(no error message)"}
                   </p>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
+                  <span className="w-20 text-right text-xs tabular-nums text-[var(--color-text-3)]">
                     {d.attempts} tries
                   </span>
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
+                  <span className="w-20 text-right text-xs tabular-nums text-[var(--color-text-3)]">
                     {timeAgo(d.dead_lettered_at)}
                   </span>
                 </div>
-                <p className="font-mono text-[10px] text-[var(--color-text-4)] mt-1 truncate">
-                  event {d.event_id} · source {d.source}
-                  {d.producer_ref ? ` · producer ${d.producer_ref}` : ""}
+                <p className="mt-1 truncate text-xs text-[var(--color-text-4)]">
+                  Event {d.event_id}. Source {d.source}
+                  {d.producer_ref ? `. Producer ${d.producer_ref}` : ""}
                 </p>
                 <form
                   action={`/api/internal/ops/dead-letter/redrive?event_id=${encodeURIComponent(d.event_id)}`}
@@ -133,9 +131,9 @@ export default async function OpsPage() {
                 >
                   <button
                     type="submit"
-                    className="font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                    className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent)]"
                   >
-                    Redrive
+                    Retry
                   </button>
                 </form>
               </li>
@@ -144,5 +142,14 @@ export default async function OpsPage() {
         )}
       </section>
     </>
+  );
+}
+
+function State({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.56)] p-3 text-center">
+      <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
+      <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
+    </span>
   );
 }

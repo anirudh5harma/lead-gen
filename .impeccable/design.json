@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-29T14:53:35Z",
+  "title": "Design System: Bombsell",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "main background",
+        "character": "light neutral workspace canvas"
+      },
+      "ink": {
+        "role": "primary text and command surface",
+        "character": "graphite workspace ink"
+      },
+      "accent": {
+        "role": "links, focus, graph relationships",
+        "character": "restrained Obsidian violet"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "role": "cinematic first-screen statements",
+        "notes": "Use rarely and only for true product-level moments."
+      },
+      "body": {
+        "role": "daily GTM work surfaces",
+        "notes": "Prioritize readable density over marketing flourish."
+      }
+    },
+    "elevationMeta": {
+      "philosophy": "Canvas first. Depth comes from floating rails, sparse notes, hairlines, and shallow ambient shadows.",
+      "pageRest": "0 24px 60px -48px rgba(32, 32, 28, 0.3)",
+      "cardRest": "0 14px 32px -28px rgba(32, 32, 28, 0.35)"
+    },
+    "componentMeta": {
+      "navigation": {
+        "visibleNouns": ["Brief", "Outreach", "Content", "Campaigns", "AEO", "Profile"],
+        "rule": "Use a floating left rail with outcome-facing nouns. Hide implementation nouns unless trust or admin context requires them."
+      },
+      "brief": {
+        "rule": "The first authenticated surface sits directly on the full-screen canvas with sparse notes for today's work, recent outcomes, and items needing review."
+      },
+      "cards": {
+        "maxRadius": "16px for canvases, 14px for pages, 10px for cards",
+        "rule": "Use page surfaces for writing and connected cards for canvas objects."
+      }
+    },
+    "accessibilityMeta": {
+      "target": "WCAG AA",
+      "motion": "Reduced-motion safe",
+      "color": "Color-blind safe; status must include text or icon support."
+    }
+  }
+}

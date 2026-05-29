@@ -1,4 +1,5 @@
-import { EmptyState, SectionHeader } from "@/components/dashboard/Shell";
+import { EmptyState } from "@/components/dashboard/Shell";
+import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 
@@ -11,7 +12,6 @@ interface PlayRow {
   declaration: string;
   status: string;
   version: number;
-  autonomy: Record<string, unknown>;
   runs_24h: string;
   last_run_at: Date | null;
 }
@@ -20,7 +20,7 @@ async function loadPlays(workspaceId: string): Promise<PlayRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<PlayRow>(
     `select p.id, p.name, p.description, p.declaration,
-            p.status::text as status, p.version, p.autonomy,
+            p.status::text as status, p.version,
             (select count(*)::text from play_runs pr
               where pr.workspace_id = $1 and pr.play_id = p.id
                 and pr.created_at >= now() - interval '24 hours') as runs_24h,
@@ -37,67 +37,101 @@ async function loadPlays(workspaceId: string): Promise<PlayRow[]> {
 export default async function PlaysPage() {
   const workspace = await getActiveWorkspace();
   if (!workspace) {
-    return (
-      <>
-        <SectionHeader eyebrow="plays" title="No workspace selected" />
-      </>
-    );
+    return <CanvasEmpty label="Content" title="No workspace selected." />;
   }
   const plays = await loadPlays(workspace.id);
+  const active = plays.filter((play) => play.status === "active");
+  const recentRun = plays.find((play) => play.last_run_at);
 
   return (
     <>
-      <SectionHeader
-        eyebrow="plays"
-        title="Plays"
-        subtitle="Declarative workflows. NL declaration on top, compiled spec underneath."
-      />
-      {plays.length === 0 ? (
-        <EmptyState
-          title="No Plays defined in this workspace"
-          hint="Open Setup to configure the first Signal-to-email Play with per-channel approval and volume gates."
-        />
-      ) : (
-        <ul className="space-y-4">
-          {plays.map((p) => (
-            <li
-              key={p.id}
-              className="border border-[var(--color-line-1)] rounded-lg p-5 bg-[var(--color-ink-0)]"
-            >
-              <div className="flex items-center gap-3">
-                <h3 className="font-serif text-xl text-[var(--color-text-1)]">
-                  {p.name}
-                </h3>
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded bg-[var(--color-ink-3)] text-[var(--color-text-2)]">
-                  v{p.version}
-                </span>
-                <span
-                  className={
-                    "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded " +
-                    (p.status === "active"
-                      ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-                      : "bg-[var(--color-ink-3)] text-[var(--color-text-2)]")
-                  }
-                >
-                  {p.status}
-                </span>
-                <span className="ml-auto font-mono text-xs text-[var(--color-text-3)]">
-                  {p.runs_24h} runs · last{" "}
-                  {p.last_run_at ? new Date(p.last_run_at).toLocaleString() : "never"}
-                </span>
-              </div>
-              {p.description ? (
-                <p className="font-sans text-sm text-[var(--color-text-2)] mt-2">
-                  {p.description}
-                </p>
-              ) : null}
-              <pre className="mt-3 font-mono text-xs text-[var(--color-text-2)] bg-[var(--color-ink-2)] rounded p-3 overflow-auto max-h-40 whitespace-pre-wrap">
-                {p.declaration}
-              </pre>
-            </li>
-          ))}
-        </ul>
-      )}
+      <section className="section-canvas min-h-[420px] p-5 sm:p-8">
+        <div className="section-thread section-thread-a" />
+        <div className="grid gap-8 lg:grid-cols-[1fr_320px] lg:items-end">
+          <div>
+            <p className="brief-kicker">Content</p>
+            <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
+              The plays Bombsell can turn into words.
+            </h1>
+            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+              Keep the library small. Each play is a reusable way to turn a real signal into outreach or content with the right review rule.
+            </p>
+          </div>
+          <div className="section-note">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Library shape</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <MiniStatus label="Active" value={active.length} />
+              <MiniStatus label="Total" value={plays.length} />
+            </div>
+            <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
+              {recentRun?.last_run_at
+                ? `Last movement ${new Date(recentRun.last_run_at).toLocaleDateString()}.`
+                : "Runs will appear after the first real signal moves."}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-6 grid gap-4 lg:grid-cols-2">
+        {plays.length === 0 ? (
+          <EmptyState
+            title="No content plays yet"
+            hint="Shape the profile first, then Bombsell can compile a small set of plays."
+          />
+        ) : (
+          plays.map((play) => <PlayNote key={play.id} play={play} />)
+        )}
+      </section>
     </>
+  );
+}
+
+function PlayNote({ play }: { play: PlayRow }) {
+  return (
+    <article className="section-note">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon">
+          <Icon name="edit_square" size={18} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">{play.name}</h2>
+            <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+              v{play.version}
+            </span>
+            <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs text-[var(--color-accent)]">
+              {play.status}
+            </span>
+          </div>
+          {play.description ? (
+            <p className="mt-3 text-sm leading-6 text-[var(--color-text-2)]">{play.description}</p>
+          ) : null}
+          <p className="mt-4 line-clamp-4 rounded-[10px] bg-[rgba(255,255,255,0.58)] p-3 text-sm leading-6 text-[var(--color-text-2)]">
+            {play.declaration}
+          </p>
+          <p className="mt-3 text-xs text-[var(--color-text-3)]">
+            {play.runs_24h} runs today. Last {play.last_run_at ? new Date(play.last_run_at).toLocaleDateString() : "never"}.
+          </p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MiniStatus({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.56)] p-3">
+      <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
+      <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
+    </span>
+  );
+}
+
+function CanvasEmpty({ label, title }: { label: string; title: string }) {
+  return (
+    <section className="section-canvas p-6">
+      <p className="brief-kicker">{label}</p>
+      <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">{title}</h1>
+    </section>
   );
 }

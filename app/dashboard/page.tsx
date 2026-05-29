@@ -1,9 +1,5 @@
 import Link from "next/link";
-import {
-  EmptyState,
-  MetricCard,
-  SectionHeader,
-} from "@/components/dashboard/Shell";
+import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 
@@ -24,8 +20,6 @@ interface ConversationRow {
   last_activity_at: Date;
   counterparty_name: string | null;
   rep_name: string | null;
-  inbound_count: string;
-  outbound_count: string;
 }
 
 interface TodayCounts {
@@ -35,6 +29,30 @@ interface TodayCounts {
   replies_24h: number;
   outcomes_24h: number;
 }
+
+interface Readiness {
+  reps: number;
+  profiles: number;
+  accounts: number;
+  plays: number;
+  sources: number;
+}
+
+const EMPTY_COUNTS: TodayCounts = {
+  signals_24h: 0,
+  drafts_24h: 0,
+  sent_24h: 0,
+  replies_24h: 0,
+  outcomes_24h: 0,
+};
+
+const EMPTY_READINESS: Readiness = {
+  reps: 0,
+  profiles: 0,
+  accounts: 0,
+  plays: 0,
+  sources: 0,
+};
 
 async function loadTodayCounts(workspaceId: string): Promise<TodayCounts> {
   const pool = getPool();
@@ -62,6 +80,32 @@ async function loadTodayCounts(workspaceId: string): Promise<TodayCounts> {
   };
 }
 
+async function loadReadiness(workspaceId: string): Promise<Readiness> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    reps: string;
+    profiles: string;
+    accounts: string;
+    plays: string;
+    sources: string;
+  }>(
+    `select
+       (select count(*)::text from reps where workspace_id = $1) as reps,
+       (select count(*)::text from workspace_icps where workspace_id = $1) as profiles,
+       (select count(*)::text from channel_accounts where workspace_id = $1) as accounts,
+       (select count(*)::text from plays where workspace_id = $1) as plays,
+       (select count(*)::text from graph_sources where workspace_id = $1 and enabled) as sources`,
+    [workspaceId],
+  );
+  return {
+    reps: Number(rows[0].reps),
+    profiles: Number(rows[0].profiles),
+    accounts: Number(rows[0].accounts),
+    plays: Number(rows[0].plays),
+    sources: Number(rows[0].sources),
+  };
+}
+
 async function loadRecentSignals(workspaceId: string): Promise<RecentSignalRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<RecentSignalRow>(
@@ -69,7 +113,7 @@ async function loadRecentSignals(workspaceId: string): Promise<RecentSignalRow[]
        from signals
       where workspace_id = $1
       order by freshness_at desc
-      limit 8`,
+      limit 5`,
     [workspaceId],
   );
   return rows;
@@ -80,18 +124,16 @@ async function loadActiveConversations(workspaceId: string): Promise<Conversatio
   const { rows } = await pool.query<ConversationRow>(
     `select c.id, c.status::text as status, c.topic, c.last_activity_at,
             p.full_name as counterparty_name,
-            r.name as rep_name,
-            (select count(*)::text from messages m
-              where m.conversation_id = c.id and m.direction = 'inbound') as inbound_count,
-            (select count(*)::text from messages m
-              where m.conversation_id = c.id and m.direction = 'outbound') as outbound_count
+            r.name as rep_name
        from conversations c
        left join graph_persons p on p.id = c.counterparty_person_id
        left join reps r on r.id = c.rep_id
       where c.workspace_id = $1
         and c.status in ('open','awaiting_them','awaiting_us')
-      order by c.last_activity_at desc
-      limit 8`,
+      order by
+        case when c.status = 'awaiting_us' then 0 else 1 end,
+        c.last_activity_at desc
+      limit 4`,
     [workspaceId],
   );
   return rows;
@@ -100,168 +142,169 @@ async function loadActiveConversations(workspaceId: string): Promise<Conversatio
 function timeAgo(d: Date): string {
   const diff = Date.now() - d.getTime();
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
-function statusBadge(status: string): { label: string; cls: string } {
-  switch (status) {
-    case "awaiting_us":
-      return {
-        label: "needs you",
-        cls: "bg-[var(--color-accent-bg)] text-[var(--color-accent)]",
-      };
-    case "awaiting_them":
-      return {
-        label: "awaiting them",
-        cls: "bg-[var(--color-ink-3)] text-[var(--color-text-2)]",
-      };
-    default:
-      return {
-        label: status,
-        cls: "bg-[var(--color-ink-3)] text-[var(--color-text-2)]",
-      };
-  }
-}
-
-export default async function MorningBriefPage() {
+export default async function BriefPage() {
   const workspace = await getActiveWorkspace();
   if (!workspace) {
     return (
-      <>
-        <SectionHeader
-          eyebrow="morning brief"
-          title="No workspace yet"
-          subtitle="Create a workspace, configure the first Rep and Play, then run one trusted Signal."
-        />
-        <EmptyState
-          title="No workspace found"
-          hint="Open Setup to create the workspace and launch the first GTM loop."
-        />
-        <Link
-          href="/dashboard/setup"
-          className="mt-4 inline-flex rounded-md bg-[var(--color-text-1)] px-4 py-2 text-sm font-semibold text-[var(--color-ink-0)] hover:bg-[var(--color-accent)]"
-        >
-          Open setup
-        </Link>
-      </>
+      <BriefCanvas
+        counts={EMPTY_COUNTS}
+        readiness={EMPTY_READINESS}
+        signals={[]}
+        conversations={[]}
+        workspaceName={null}
+      />
     );
   }
 
-  const [counts, signals, convs] = await Promise.all([
+  const [counts, readiness, signals, conversations] = await Promise.all([
     loadTodayCounts(workspace.id),
+    loadReadiness(workspace.id),
     loadRecentSignals(workspace.id),
     loadActiveConversations(workspace.id),
   ]);
 
   return (
-    <>
-      <SectionHeader
-        eyebrow="morning brief"
-        title="What your Reps did overnight"
-        subtitle="The last 24 hours, summarised. Click in for the trace."
+    <BriefCanvas
+      counts={counts}
+      readiness={readiness}
+      signals={signals}
+      conversations={conversations}
+      workspaceName={workspace.name}
+    />
+  );
+}
+
+function BriefCanvas({
+  counts,
+  readiness,
+  signals,
+  conversations,
+  workspaceName,
+}: {
+  counts: TodayCounts;
+  readiness: Readiness;
+  signals: RecentSignalRow[];
+  conversations: ConversationRow[];
+  workspaceName: string | null;
+}) {
+  const awaitingReplies = conversations.filter((c) => c.status === "awaiting_us");
+  const needsReview = counts.drafts_24h + awaitingReplies.length;
+  const outcomesToday = counts.replies_24h + counts.outcomes_24h;
+  const workToday = counts.signals_24h + counts.sent_24h + counts.drafts_24h;
+  const primaryConversation = conversations[0];
+  const latestSignal = signals[0];
+  const hasReadyShape = [readiness.profiles, readiness.reps, readiness.accounts, readiness.plays, readiness.sources].some((value) => value > 0);
+
+  return (
+    <section className="brief-canvas" aria-labelledby="brief-title">
+      <div className="brief-stream brief-stream-one" />
+      <div className="brief-stream brief-stream-two" />
+      <div className="brief-stream brief-stream-three" />
+      <div className="brief-constellation" aria-hidden="true">
+        <span className="brief-mark brief-mark-a" />
+        <span className="brief-mark brief-mark-b" />
+        <span className="brief-mark brief-mark-c" />
+        <span className="brief-mark brief-mark-d" />
+      </div>
+
+      <div className="brief-node brief-node-primary left-[6%] top-[7%]">
+        <p className="brief-kicker">Brief</p>
+        <h1 id="brief-title" className="mt-3 text-[38px] font-semibold leading-[1.03] tracking-[0] text-[var(--color-text-1)] sm:text-[56px]">
+          Today&apos;s work, on one canvas.
+        </h1>
+        <p className="mt-4 max-w-[56ch] text-[15px] leading-7 text-[var(--color-text-2)]">
+          {workspaceName
+            ? `${workspaceName} is watching signals, preparing outreach, and bringing back only the moments that need a decision.`
+            : "Set the profile once, then Bombsell can watch signals, prepare outreach, and bring back only the moments that need a decision."}
+        </p>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+          <Link href="/dashboard/setup" className="brief-button brief-button-primary">
+            <Icon name="tune" size={16} />
+            Shape profile
+          </Link>
+          <Link href="/dashboard/approvals" className="brief-button">
+            <Icon name="fact_check" size={16} />
+            Review work
+          </Link>
+        </div>
+      </div>
+
+      <BriefNote
+        className="right-[7%] top-[10%]"
+        href="/dashboard/approvals"
+        icon="fact_check"
+        title="Needs review"
+        value={needsReview === 0 ? "Clear" : needsReview}
+        text={needsReview === 0 ? "Nothing is waiting for approval." : "Drafts or replies need a human look."}
       />
 
-      <section className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-10">
-        <MetricCard label="Signals" value={counts.signals_24h} hint="last 24h" />
-        <MetricCard label="Drafts" value={counts.drafts_24h} />
-        <MetricCard label="Sent" value={counts.sent_24h} />
-        <MetricCard label="Replies" value={counts.replies_24h} />
-        <MetricCard label="Outcomes" value={counts.outcomes_24h} />
-      </section>
+      <BriefNote
+        className="bottom-[13%] left-[9%]"
+        href="/dashboard/conversations"
+        icon="mark_email_read"
+        title="Recent outcomes"
+        value={outcomesToday === 0 ? "Quiet" : outcomesToday}
+        text={
+          primaryConversation
+            ? `${primaryConversation.counterparty_name ?? "Open conversation"} moved ${timeAgo(new Date(primaryConversation.last_activity_at))} ago.`
+            : "Replies and booked outcomes will surface here."
+        }
+      />
 
-      <section className="mb-10">
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Active conversations
-        </h2>
-        {convs.length === 0 ? (
-          <EmptyState
-            title="No conversations yet"
-            hint="Run the first Signal from Setup; approved or autonomous sends open Conversations here."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {convs.map((c) => {
-              const badge = statusBadge(c.status);
-              return (
-                <li key={c.id}>
-                  <Link
-                    href={`/dashboard/conversations/${c.id}`}
-                    className="flex items-center px-4 py-3 gap-4 hover:bg-[var(--color-ink-2)] transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-sans text-sm text-[var(--color-text-1)] truncate">
-                        {c.counterparty_name ?? "(unknown)"}
-                        {c.rep_name ? (
-                          <span className="text-[var(--color-text-3)] font-mono text-xs ml-2">
-                            · {c.rep_name}
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="font-serif text-[var(--color-text-2)] text-sm truncate mt-0.5 italic">
-                        {c.topic ?? "(no topic)"}
-                      </p>
-                    </div>
-                    <span
-                      className={
-                        "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-1 rounded " +
-                        badge.cls
-                      }
-                    >
-                      {badge.label}
-                    </span>
-                    <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums">
-                      {c.outbound_count}↑ {c.inbound_count}↓
-                    </span>
-                    <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
-                      {timeAgo(new Date(c.last_activity_at))}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      <BriefNote
+        className="bottom-[10%] right-[10%]"
+        href="/dashboard/ingestion"
+        icon="radar"
+        title="Today's work"
+        value={workToday === 0 ? (hasReadyShape ? "Watching" : "Start") : workToday}
+        text={
+          latestSignal
+            ? latestSignal.title
+            : "Signals, safe sends, and prepared drafts will appear as the system works."
+        }
+      />
+    </section>
+  );
+}
 
-      <section>
-        <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-          Recent signals
-        </h2>
-        {signals.length === 0 ? (
-          <EmptyState
-            title="No signals yet"
-            hint="Configure sources in Setup or Ingestion, then run a Signal through the Play."
-          />
-        ) : (
-          <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
-            {signals.map((s) => (
-              <li key={s.id} className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] w-24">
-                    {s.kind}
-                  </span>
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
-                    {s.title}
-                  </p>
-                  {s.match_score ? (
-                    <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums">
-                      match {Number(s.match_score).toFixed(2)}
-                    </span>
-                  ) : null}
-                  <span className="font-mono text-xs text-[var(--color-text-3)] tabular-nums w-20 text-right">
-                    {timeAgo(new Date(s.freshness_at))}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </>
+function BriefNote({
+  className,
+  href,
+  icon,
+  title,
+  value,
+  text,
+}: {
+  className: string;
+  href: string;
+  icon: string;
+  title: string;
+  value: number | string;
+  text: string;
+}) {
+  return (
+    <Link href={href} className={`brief-node brief-note ${className}`}>
+      <span className="brief-note-icon">
+        <Icon name={icon} size={18} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+          {title}
+        </span>
+        <span className="mt-2 block text-[28px] font-semibold leading-none tabular-nums text-[var(--color-text-1)]">
+          {value}
+        </span>
+        <span className="mt-3 line-clamp-2 block text-sm leading-6 text-[var(--color-text-2)]">
+          {text}
+        </span>
+      </span>
+    </Link>
   );
 }

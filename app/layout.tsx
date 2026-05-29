@@ -21,9 +21,9 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Bombsell — AI-Native GTM Infrastructure",
+  title: "Bombsell | Autonomous GTM",
   description:
-    "AI-native GTM infrastructure for agents, founders, and small teams. Outbound, content, and campaigns on autopilot — reliably.",
+    "Autonomous GTM workspace for founders and lean teams. Tell it the outcome, connect the essentials, and review what matters.",
 };
 
 export default function RootLayout({

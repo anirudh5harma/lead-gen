@@ -38,17 +38,14 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center px-4 py-16">
-      <section className="w-full max-w-[440px] rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-6">
-        <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-          Bombsell account
-        </p>
+    <main className="canvas-bg flex flex-1 items-center justify-center px-4 py-16">
+      <section className="section-note w-full max-w-[440px]">
+        <p className="brief-kicker">Bombsell account</p>
         <h1 className="font-sans text-2xl font-semibold text-[var(--color-text-1)]">
-          Sign in to build the GTM loop
+          Sign in to your workspace
         </h1>
         <p className="mt-2 text-sm leading-6 text-[var(--color-text-2)]">
-          Google OAuth creates the user session. Workspace setup, profile extraction,
-          and signal ingestion stay inside the evented product runtime.
+          Use Google to continue. Brief, outreach, profile, and review work stay on one canvas.
         </p>
         {error ? (
           <p className="mt-4 rounded-md border border-[var(--color-line-2)] bg-[var(--color-ink-1)] px-3 py-2 text-sm text-[var(--color-accent)]">

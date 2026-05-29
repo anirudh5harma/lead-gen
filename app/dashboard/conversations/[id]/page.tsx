@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { EmptyState, SectionHeader } from "@/components/dashboard/Shell";
+import { EmptyState } from "@/components/dashboard/Shell";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 
@@ -168,9 +168,12 @@ export default async function ConversationDetailPage({
   const workspace = await getActiveWorkspace();
   if (!workspace) {
     return (
-      <>
-        <SectionHeader eyebrow="conversation" title="No workspace selected" />
-      </>
+      <section className="section-canvas p-6">
+        <p className="brief-kicker">Outreach</p>
+        <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
+          No workspace selected.
+        </h1>
+      </section>
     );
   }
   const conv = await loadConversation(workspace.id, id);
@@ -184,38 +187,41 @@ export default async function ConversationDetailPage({
 
   return (
     <>
-      <SectionHeader
-        eyebrow="conversation"
-        title={conv.counterparty_name ?? "(unknown counterparty)"}
-        subtitle={conv.topic ?? conv.signal_title ?? ""}
-      />
+      <section className="section-canvas min-h-[300px] p-5 sm:p-8">
+        <div className="section-thread section-thread-a" />
+        <p className="brief-kicker">Outreach</p>
+        <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
+          {conv.counterparty_name ?? "Unknown contact"}
+        </h1>
+        <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
+          {conv.topic ?? conv.signal_title ?? "Conversation detail and proof of work."}
+        </p>
+      </section>
 
-      <div className="grid grid-cols-[1fr_320px] gap-8">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
         <section>
-          <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
-            Messages
-          </h2>
+          <h2 className="mb-3 text-lg font-semibold text-[var(--color-text-1)]">Messages</h2>
           {messages.length === 0 ? (
             <EmptyState title="No messages yet" />
           ) : (
-            <ul className="space-y-4">
+            <ul className="grid gap-4">
               {messages.map((m) => (
                 <li
                   key={m.id}
                   className={
-                    "rounded-lg p-4 border " +
+                    "rounded-[14px] border p-4 " +
                     (m.direction === "outbound"
-                      ? "border-[var(--color-line-1)] bg-[var(--color-ink-0)]"
-                      : "border-[var(--color-line-2)] bg-[var(--color-ink-2)]")
+                      ? "border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)]"
+                      : "border-[var(--color-line-2)] bg-[rgba(238,238,234,0.72)]")
                   }
                 >
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)]">
-                      {m.direction} · {m.channel}
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[rgba(255,255,255,0.64)] px-2 py-1 text-xs text-[var(--color-text-3)]">
+                      {m.direction}. {m.channel}
                     </span>
                     <span
                       className={
-                        "font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded " +
+                        "rounded-full px-2 py-1 text-xs " +
                         (m.status === "sent" || m.status === "delivered"
                           ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
                           : m.status === "bounced" || m.status === "failed"
@@ -228,20 +234,20 @@ export default async function ConversationDetailPage({
                       {m.status}
                     </span>
                     {m.intent_class ? (
-                      <span className="font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded bg-[var(--color-ink-3)] text-[var(--color-text-2)]">
-                        intent · {m.intent_class}
+                      <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+                        reply. {m.intent_class}
                         {m.intent_confidence
                           ? ` (${Number(m.intent_confidence).toFixed(2)})`
                           : ""}
                       </span>
                     ) : null}
                     {m.eval_score ? (
-                      <span className="font-mono text-[10px] uppercase tracking-[0.16em] px-2 py-0.5 rounded bg-[var(--color-ink-3)] text-[var(--color-text-2)]">
-                        eval {Number(m.eval_score).toFixed(2)}
-                        {m.eval_passed === false ? " · failed" : ""}
+                      <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+                        quality {Number(m.eval_score).toFixed(2)}
+                        {m.eval_passed === false ? ". needs review" : ""}
                       </span>
                     ) : null}
-                    <span className="ml-auto font-mono text-xs text-[var(--color-text-3)]">
+                    <span className="ml-auto text-xs text-[var(--color-text-3)]">
                       {new Date(m.sent_at ?? m.created_at).toLocaleString()}
                     </span>
                   </div>
@@ -259,11 +265,9 @@ export default async function ConversationDetailPage({
           )}
         </section>
 
-        <aside className="space-y-6">
-          <div className="border border-[var(--color-line-1)] rounded-lg p-4 bg-[var(--color-ink-0)]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-              counterparty
-            </p>
+        <aside className="grid gap-4">
+          <div className="section-note">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact</p>
             <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
               {conv.counterparty_name}
             </p>
@@ -273,23 +277,21 @@ export default async function ConversationDetailPage({
               </p>
             ) : null}
             {conv.counterparty_emails?.[0] ? (
-              <p className="font-mono text-xs text-[var(--color-text-3)] mt-1">
+              <p className="text-xs text-[var(--color-text-3)] mt-1">
                 {conv.counterparty_emails[0]}
               </p>
             ) : null}
             {conv.rep_name ? (
-              <p className="font-mono text-xs text-[var(--color-text-3)] mt-3">
-                rep: <span className="text-[var(--color-text-1)]">{conv.rep_name}</span>
+              <p className="text-xs text-[var(--color-text-3)] mt-3">
+                Voice <span className="text-[var(--color-text-1)]">{conv.rep_name}</span>
               </p>
             ) : null}
           </div>
 
           {conv.signal_title ? (
-            <div className="border border-[var(--color-line-1)] rounded-lg p-4 bg-[var(--color-ink-0)]">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-                origin signal
-              </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] mt-1">
+            <div className="section-note">
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">Why now</p>
+              <p className="mt-1 text-xs text-[var(--color-text-3)]">
                 {conv.signal_kind}
               </p>
               <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
@@ -299,24 +301,19 @@ export default async function ConversationDetailPage({
           ) : null}
 
           {workflow ? (
-            <div className="border border-[var(--color-line-1)] rounded-lg p-4 bg-[var(--color-ink-0)]">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-                show your work
-              </p>
+            <div className="section-note">
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">Work path</p>
               <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
-                {workflow.run.workflow_name}{" "}
-                <span className="font-mono text-xs text-[var(--color-text-3)]">
-                  v{workflow.run.workflow_version}
-                </span>
+                Outreach flow
               </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-text-3)] mt-0.5">
+              <p className="mt-0.5 text-xs text-[var(--color-text-3)]">
                 {workflow.run.status}
               </p>
               <ol className="mt-3 space-y-1">
                 {workflow.steps.map((s) => (
                   <li
                     key={`${s.step_position}-${s.attempt}`}
-                    className="flex items-center gap-2 font-mono text-xs text-[var(--color-text-2)]"
+                    className="flex items-center gap-2 text-xs text-[var(--color-text-2)]"
                   >
                     <span
                       className={
@@ -340,13 +337,11 @@ export default async function ConversationDetailPage({
             </div>
           ) : null}
 
-          <div className="border border-[var(--color-line-1)] rounded-lg p-4 bg-[var(--color-ink-0)]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-              event trace
-            </p>
+          <div className="section-note">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Proof trail</p>
             <ol className="mt-2 space-y-1 max-h-80 overflow-auto">
               {events.map((e) => (
-                <li key={e.id} className="font-mono text-[10px] text-[var(--color-text-2)]">
+                <li key={e.id} className="text-xs text-[var(--color-text-2)]">
                   <span className="text-[var(--color-text-3)]">
                     {new Date(e.occurred_at).toLocaleTimeString()}
                   </span>{" "}
@@ -354,19 +349,19 @@ export default async function ConversationDetailPage({
                 </li>
               ))}
               {events.length === 0 ? (
-                <li className="font-mono text-xs text-[var(--color-text-3)]">
+                <li className="text-xs text-[var(--color-text-3)]">
                   (no events yet)
                 </li>
               ) : null}
             </ol>
           </div>
 
-          <p className="font-mono text-xs text-[var(--color-text-3)]">
+          <p className="text-xs text-[var(--color-text-3)]">
             <Link
               href="/dashboard/conversations"
               className="hover:text-[var(--color-text-1)]"
             >
-              ← back to conversations
+              Back to outreach
             </Link>
           </p>
         </aside>
