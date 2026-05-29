@@ -2,17 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 
 /**
- * Seed "Maya" — the demo Rep for the Series A cold-open Play. Creates:
- *
- *   - reps row (persona, channels, autonomy)
- *   - channel_accounts row of kind 'email_domain'
- *   - sending_domains row in 'warmed' state for demo purposes
- *
- * Returns the ids so the Play can be kicked with concrete params.
- *
- * Intended for: demo scripts, the end-to-end smoke test, and dev
- * onboarding. Not used in production workflows — those build Reps via
- * the UI / API once those land.
+ * Test-only fixture for the legacy Series A cold-open workflow tests. Product
+ * setup must use typed configuration events/projectors via bootstrapWorkspace.
  */
 
 export interface SeedMayaResult {
@@ -23,9 +14,7 @@ export interface SeedMayaResult {
 }
 
 export interface SeedMayaOptions {
-  /** Override the sending domain. Defaults to `go.bombsell.com`. */
   sending_domain?: string;
-  /** Override daily send cap on the channel account. Defaults to 50. */
   daily_cap?: number;
 }
 

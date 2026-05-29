@@ -33,8 +33,15 @@ import {
 } from "../core/channels/email/index.ts";
 import {
   createSeriesAColdOpenPlay,
-  seedMayaForDemo,
+  createPostgresVerticalSliceStore,
 } from "../core/plays/index.ts";
+import { ingestManualSignal } from "../core/signals/index.ts";
+import {
+  bootstrapWorkspace,
+  DEFAULT_PRODUCT_USER_ID,
+  resetProductEngineForTests,
+} from "../core/product/app.ts";
+import type { GraphCompany, GraphPerson } from "../core/graph/types.ts";
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -47,51 +54,94 @@ async function main(): Promise<void> {
 
   const slug = `demo-${Date.now().toString(36)}`;
   const workspace_id = randomUUID();
-  await pool.query(
-    `insert into workspaces (id, slug, name) values ($1, $2, $3)`,
-    [workspace_id, slug, "Demo Workspace"],
-  );
-  const demoUserId = process.env.BOMBSELL_DEMO_USER_ID;
-  if (demoUserId) {
-    await pool.query(
-      `insert into workspace_members (workspace_id, user_id, role, accepted_at)
-       values ($1, $2, 'owner', now())`,
-      [workspace_id, demoUserId],
-    );
-  } else {
+  const demoUserId = process.env.BOMBSELL_DEMO_USER_ID ?? DEFAULT_PRODUCT_USER_ID;
+  if (!process.env.BOMBSELL_DEMO_USER_ID) {
     console.warn(
-      "BOMBSELL_DEMO_USER_ID is unset; the authenticated dashboard will not expose this workspace.",
+      `BOMBSELL_DEMO_USER_ID is unset; using local demo user ${DEFAULT_PRODUCT_USER_ID}.`,
     );
   }
+  const boot = await bootstrapWorkspace(pool, demoUserId, {
+    workspace_id,
+    workspace_slug: slug,
+    workspace_name: "Demo Workspace",
+    ensureMembership: true,
+  });
   console.log(`workspace ${slug} (${workspace_id})`);
 
-  const { rep_id, channel_account_id, sending_domain_id } =
-    await seedMayaForDemo(pool, workspace_id);
+  const { rep_id, channel_account_id } = boot;
+  const sendingDomain = (await pool.query<{
+    id: string;
+    domain: string;
+  }>(
+    `select id, domain::text as domain
+       from sending_domains
+      where workspace_id = $1 and channel_account_id = $2
+      order by created_at asc
+      limit 1`,
+    [workspace_id, channel_account_id],
+  )).rows[0];
+  if (!sendingDomain) {
+    throw new Error("Product bootstrap did not configure a sending domain.");
+  }
+  const sending_domain_id = sendingDomain.id;
   console.log(`Maya rep_id=${rep_id}`);
 
+  const bus = await createPostgresEventBus({ pool });
+
   const company_id = randomUUID();
-  await pool.query(
-    `insert into graph_companies (id, workspace_id, name, domain, industry)
-     values ($1, $2, 'Acme AI', 'acme.ai', 'fintech')`,
-    [company_id, workspace_id],
-  );
   const person_id = randomUUID();
-  await pool.query(
-    `insert into graph_persons (id, workspace_id, full_name, title, company_id, emails)
-     values ($1, $2, 'Anne Brown', 'CEO', $3, array['anne@acme.ai']::citext[])`,
-    [person_id, workspace_id, company_id],
+  const now = new Date().toISOString();
+  const company: GraphCompany = {
+    id: company_id,
+    workspace_id,
+    name: "Acme AI",
+    domain: "acme.ai",
+    industry: "fintech",
+    size_bucket: null,
+    description: null,
+    properties: {},
+    provenance: { source: "demo-seed" },
+    embedded_at: null,
+    created_at: now,
+    updated_at: now,
+  };
+  const person: GraphPerson = {
+    id: person_id,
+    workspace_id,
+    full_name: "Anne Brown",
+    given_name: "Anne",
+    family_name: "Brown",
+    title: "CEO",
+    company_id,
+    emails: ["anne@acme.ai"],
+    phones: [],
+    linkedin_url: null,
+    x_handle: null,
+    properties: {},
+    provenance: { source: "demo-seed" },
+    embedded_at: null,
+    created_at: now,
+    updated_at: now,
+  };
+  const signal = await ingestManualSignal(
+    {
+      workspace_id,
+      kind: "funding",
+      title: "Acme AI raises $20M Series A",
+      content: "TechCrunch reports Acme AI closed a $20M Series A led by Sequoia.",
+      url: "https://techcrunch.com/demo",
+      icp_segment: "fintech-founder",
+      match_score: 0.92,
+      company,
+      person,
+    },
+    {
+      store: createPostgresVerticalSliceStore(pool),
+      bus,
+      producer_ref: "script:demo-seed",
+    },
   );
-  const signal_id = randomUUID();
-  await pool.query(
-    `insert into signals (
-       id, workspace_id, kind, title, content, url,
-       freshness_at, related_company_id, related_person_id, status, match_score
-     ) values ($1, $2, 'funding', 'Acme AI raises $20M Series A',
-               'TechCrunch reports Acme AI closed a $20M Series A led by Sequoia.',
-               'https://techcrunch.com/demo',
-               now(), $3, $4, 'matched', 0.92)`,
-    [signal_id, workspace_id, company_id, person_id],
-  );
+  const signal_id = signal.id;
   console.log(`signal seeded`);
 
   // Add a procedural exemplar so the writer has something to draw on and
@@ -112,7 +162,6 @@ async function main(): Promise<void> {
     },
   );
 
-  const bus = await createPostgresEventBus({ pool });
   const wired = await wireOutcomeFeedback({
     bus,
     procedural: memory.procedural,
@@ -205,6 +254,7 @@ async function main(): Promise<void> {
   await new Promise((r) => setTimeout(r, 300));
   await wired.unsubscribe();
   await bus.close();
+  await resetProductEngineForTests();
   await pool.end();
 
   void exemplar;

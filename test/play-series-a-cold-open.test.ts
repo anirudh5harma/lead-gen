@@ -18,8 +18,8 @@ import type {
 } from "../core/channels/email/index.ts";
 import {
   createSeriesAColdOpenPlay,
-  seedMayaForDemo,
 } from "../core/plays/index.ts";
+import { seedMayaForDemo } from "./_play_seed.ts";
 
 /**
  * End-to-end smoke test for the first Play. Wires the whole spine:

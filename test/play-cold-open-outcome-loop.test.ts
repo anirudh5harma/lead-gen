@@ -23,8 +23,8 @@ import {
 } from "../core/channels/email/index.ts";
 import {
   createSeriesAColdOpenPlay,
-  seedMayaForDemo,
 } from "../core/plays/index.ts";
+import { seedMayaForDemo } from "./_play_seed.ts";
 
 /**
  * The full outcome loop. Proves that:

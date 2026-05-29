@@ -14,9 +14,6 @@ export type {
   SeriesAColdOpenDeps,
 } from "./series_a_cold_open.ts";
 
-export { seedMayaForDemo } from "./seed.ts";
-export type { SeedMayaResult, SeedMayaOptions } from "./seed.ts";
-
 export {
   createSignalToEmailPlayWorkflow,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
