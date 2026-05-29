@@ -15,6 +15,7 @@ import {
 } from "../agents/reps/roles/writer.ts";
 import { createEmailSender } from "../agents/reps/roles/sender.ts";
 import { evalGate } from "../agents/eval/gate.ts";
+import { projectMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
 import type { EmailChannelDeps } from "../channels/email/index.ts";
 import type { Rep } from "../primitives/index.ts";
 
@@ -23,7 +24,7 @@ import type { Rep } from "../primitives/index.ts";
  *
  * Walks the whole pivot-v2 spine: load signal/person/company context →
  * retrieve procedural exemplars → draft via DeepSeek writer → create
- * conversation + message rows → eval gate (hot path) → record results →
+ * conversation + message rows → eval gate (hot path) → project results →
  * send via the email channel (which enforces eval gate, caps, warmup).
  *
  * Every external effect is wrapped in `ctx.step()` so the Postgres
@@ -376,21 +377,13 @@ export function createSeriesAColdOpenPlay(
         ),
       );
 
-      // 7. Record eval results on the message row regardless of outcome.
-      await ctx.step("record_eval", async () => {
-        await deps.pool.query(
-          `update messages
-              set eval_score = $2,
-                  eval_passed = $3,
-                  eval_notes = $4::jsonb
-            where id = $1`,
-          [
-            message_id,
-            verdict.verdict.score,
-            verdict.decision === "pass",
-            JSON.stringify(verdict.verdict.notes),
-          ],
-        );
+      // 7. Materialize the eval events for the read model. The typed event
+      //    remains the source of truth; this mirrors the durable projector.
+      await ctx.step("project_eval", async () => {
+        await projectMessageLifecycleEvent(deps.pool, verdict.events.judged);
+        if (verdict.events.rejected) {
+          await projectMessageLifecycleEvent(deps.pool, verdict.events.rejected);
+        }
       });
 
       if (verdict.decision !== "pass") {

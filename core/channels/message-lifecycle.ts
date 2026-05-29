@@ -8,6 +8,8 @@ import type {
 export const MESSAGE_LIFECYCLE_PROJECTION = "channel.message_lifecycle.v1";
 
 type MessageLifecycleEvent =
+  | PublishedEvent<EventPayload<"draft.judged">>
+  | PublishedEvent<EventPayload<"draft.rejected">>
   | PublishedEvent<EventPayload<"message.queued">>
   | PublishedEvent<EventPayload<"message.sent">>
   | PublishedEvent<EventPayload<"message.deferred">>;
@@ -15,7 +17,13 @@ type MessageLifecycleEvent =
 export function createMessageLifecycleProjection(pool: Pool): DurableEventProjection {
   return {
     name: MESSAGE_LIFECYCLE_PROJECTION,
-    eventTypes: ["message.queued", "message.sent", "message.deferred"],
+    eventTypes: [
+      "draft.judged",
+      "draft.rejected",
+      "message.queued",
+      "message.sent",
+      "message.deferred",
+    ],
     apply: (event) => projectMessageLifecycleEvent(pool, event),
   };
 }
@@ -24,7 +32,17 @@ export async function projectMessageLifecycleEvent(
   pool: Pool,
   event: PublishedEvent,
 ): Promise<void> {
-  if (event.event_type === "message.queued") {
+  if (event.event_type === "draft.judged") {
+    await projectDraftJudged(
+      pool,
+      event as PublishedEvent<EventPayload<"draft.judged">>,
+    );
+  } else if (event.event_type === "draft.rejected") {
+    await projectDraftRejected(
+      pool,
+      event as PublishedEvent<EventPayload<"draft.rejected">>,
+    );
+  } else if (event.event_type === "message.queued") {
     await projectMessageQueued(
       pool,
       event as PublishedEvent<EventPayload<"message.queued">>,
@@ -40,6 +58,52 @@ export async function projectMessageLifecycleEvent(
       event as PublishedEvent<EventPayload<"message.deferred">>,
     );
   }
+}
+
+async function projectDraftJudged(
+  pool: Pool,
+  event: MessageLifecycleEvent & PublishedEvent<EventPayload<"draft.judged">>,
+): Promise<void> {
+  const payload = event.payload;
+  const notes = payload.notes ?? {};
+  await pool.query(
+    `update messages
+        set eval_score = $3,
+            eval_passed = $4,
+            eval_notes = coalesce(eval_notes, '{}'::jsonb) || $5::jsonb,
+            properties = properties || $6::jsonb
+      where id = $1
+        and workspace_id = $2
+        and direction = 'outbound'`,
+    [
+      payload.message_id,
+      event.workspace_id,
+      payload.eval_score,
+      payload.passed,
+      JSON.stringify(notes),
+      JSON.stringify({ draft_judged_event_id: event.id }),
+    ],
+  );
+}
+
+async function projectDraftRejected(
+  pool: Pool,
+  event: MessageLifecycleEvent & PublishedEvent<EventPayload<"draft.rejected">>,
+): Promise<void> {
+  const payload = event.payload;
+  const notes = {
+    draft_rejection_reason: payload.reason,
+    draft_rejected_event_id: event.id,
+  };
+  await pool.query(
+    `update messages
+        set eval_notes = coalesce(eval_notes, '{}'::jsonb) || $3::jsonb,
+            properties = properties || $3::jsonb
+      where id = $1
+        and workspace_id = $2
+        and direction = 'outbound'`,
+    [payload.message_id, event.workspace_id, JSON.stringify(notes)],
+  );
 }
 
 async function projectMessageQueued(

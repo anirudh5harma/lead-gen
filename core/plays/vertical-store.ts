@@ -77,12 +77,6 @@ export interface VerticalSliceStore {
     message_id: string,
     input: { subject: string | null; body: string; properties?: Record<string, unknown> },
   ): Awaitable<Message>;
-  markMessageJudged(
-    message_id: string,
-    eval_score: number,
-    eval_passed: boolean,
-    eval_notes: Record<string, unknown>,
-  ): Awaitable<Message>;
   countPlayChannelMessages(input: CountPlayChannelMessagesInput): Awaitable<number>;
   recordOutcome(input: RecordOutcomeInput): Awaitable<Outcome>;
   snapshot(): Awaitable<{
@@ -93,6 +87,8 @@ export interface VerticalSliceStore {
 }
 
 type MessageLifecycleEvent =
+  | PublishedEvent<EventPayload<"draft.judged">>
+  | PublishedEvent<EventPayload<"draft.rejected">>
   | PublishedEvent<EventPayload<"message.queued">>
   | PublishedEvent<EventPayload<"message.sent">>
   | PublishedEvent<EventPayload<"message.deferred">>;
@@ -208,15 +204,6 @@ export function createInMemoryVerticalSliceStore(
       return row;
     },
 
-    markMessageJudged(message_id, eval_score, eval_passed, eval_notes) {
-      const row = messages.get(message_id);
-      if (!row) throw new Error(`Message not found: ${message_id}`);
-      row.eval_score = eval_score;
-      row.eval_passed = eval_passed;
-      row.eval_notes = eval_notes;
-      return row;
-    },
-
     countPlayChannelMessages(input) {
       const sinceMs = input.since?.getTime() ?? null;
       return Array.from(messages.values()).filter((message) => {
@@ -262,10 +249,35 @@ export function createInMemoryVerticalSliceStore(
     },
 
     projectMessageLifecycleEvent(event) {
-      const basePayload = event.payload as { message_id: string; channel: string };
+      const basePayload = event.payload as { message_id: string; channel?: string };
       const row = messages.get(basePayload.message_id);
       if (!row || row.workspace_id !== event.workspace_id) return null;
-      if (row.direction !== "outbound" || row.channel !== basePayload.channel) return null;
+      if (row.direction !== "outbound") return null;
+
+      if (event.event_type === "draft.judged") {
+        const payload = event.payload as EventPayload<"draft.judged">;
+        row.eval_score = payload.eval_score;
+        row.eval_passed = payload.passed;
+        row.eval_notes = { ...(row.eval_notes ?? {}), ...(payload.notes ?? {}) };
+        row.properties = {
+          ...row.properties,
+          draft_judged_event_id: event.id,
+        };
+        return row;
+      }
+
+      if (event.event_type === "draft.rejected") {
+        const payload = event.payload as EventPayload<"draft.rejected">;
+        const notes = {
+          draft_rejection_reason: payload.reason,
+          draft_rejected_event_id: event.id,
+        };
+        row.eval_notes = { ...(row.eval_notes ?? {}), ...notes };
+        row.properties = { ...row.properties, ...notes };
+        return row;
+      }
+
+      if (row.channel !== basePayload.channel) return null;
 
       if (event.event_type === "message.queued") {
         const payload = event.payload as EventPayload<"message.queued">;
@@ -319,6 +331,12 @@ export async function wireInMemoryVerticalSliceMessageLifecycleProjection(
   bus: EventBus,
 ): Promise<Subscription[]> {
   return Promise.all([
+    bus.subscribe("draft.judged", (event) => {
+      store.projectMessageLifecycleEvent(event);
+    }),
+    bus.subscribe("draft.rejected", (event) => {
+      store.projectMessageLifecycleEvent(event);
+    }),
     bus.subscribe("message.queued", (event) => {
       store.projectMessageLifecycleEvent(event);
     }),
@@ -855,25 +873,6 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
           input.body,
           JSON.stringify(input.properties ?? {}),
         ],
-      );
-      if (!rows[0]) throw new Error(`Message not found: ${message_id}`);
-      return messageFromRow(rows[0]);
-    },
-
-    async markMessageJudged(message_id, eval_score, eval_passed, eval_notes) {
-      const { rows } = await pool.query<MessageRow>(
-        `update messages
-            set eval_score = $2,
-                eval_passed = $3,
-                eval_notes = $4::jsonb
-          where id = $1
-        returning id, workspace_id, conversation_id, channel, direction, status,
-                  subject, body, body_html, external_id, external_thread_id,
-                  channel_account_id, eval_score::text as eval_score, eval_passed,
-                  eval_notes, intent_class, intent_confidence::text as intent_confidence,
-                  scheduled_at, sent_at, delivered_at, replied_at, properties,
-                  provenance, created_at`,
-        [message_id, eval_score, eval_passed, JSON.stringify(eval_notes)],
       );
       if (!rows[0]) throw new Error(`Message not found: ${message_id}`);
       return messageFromRow(rows[0]);

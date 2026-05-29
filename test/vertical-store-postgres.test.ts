@@ -185,7 +185,15 @@ test("postgres vertical store persists graph, signal, conversation, message, and
       body: "body",
       provenance: { exemplar_ids: [] },
     });
-    await store.markMessageJudged(message.id, 0.9, true, { critique: "ok" });
+    await projectMessageLifecycleEvent(
+      fx.pool,
+      event(workspace_id, "draft.judged", {
+        message_id: message.id,
+        eval_score: 0.9,
+        passed: true,
+        notes: { critique: "ok" },
+      }),
+    );
     await projectMessageLifecycleEvent(
       fx.pool,
       event(workspace_id, "message.sent", {

@@ -179,12 +179,6 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           },
         ),
       );
-      await deps.store.markMessageJudged(
-        message.id,
-        gate.verdict.score,
-        gate.verdict.passed,
-        gate.verdict.notes as unknown as Record<string, unknown>,
-      );
 
       if (gate.decision === "reject") {
         await publishPlayDeferred(
@@ -355,12 +349,6 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
                 },
               },
             ),
-          );
-          await deps.store.markMessageJudged(
-            edited.id,
-            editedGate.verdict.score,
-            editedGate.verdict.passed,
-            editedGate.verdict.notes as unknown as Record<string, unknown>,
           );
           if (editedGate.decision === "reject") {
             await publishPlayDeferred(

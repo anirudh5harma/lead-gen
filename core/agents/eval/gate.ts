@@ -37,7 +37,7 @@ export async function evalGate(
     opts.brandVoice,
   );
 
-  await bus.publish({
+  const judgedEvent = await bus.publish({
     workspace_id: input.workspace_id,
     event_type: "draft.judged",
     source: "agent",
@@ -51,10 +51,12 @@ export async function evalGate(
     },
   });
 
-  if (verdict.passed) return { verdict, decision: "pass" };
+  if (verdict.passed) {
+    return { verdict, decision: "pass", events: { judged: judgedEvent } };
+  }
 
   const reason = verdict.notes.critique ?? "sub-threshold";
-  await bus.publish({
+  const rejectedEvent = await bus.publish({
     workspace_id: input.workspace_id,
     event_type: "draft.rejected",
     source: "agent",
@@ -62,5 +64,10 @@ export async function evalGate(
     payload: { message_id: input.message_id, reason },
   });
 
-  return { verdict, decision: "reject", rejection_reason: reason };
+  return {
+    verdict,
+    decision: "reject",
+    events: { judged: judgedEvent, rejected: rejectedEvent },
+    rejection_reason: reason,
+  };
 }

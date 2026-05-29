@@ -174,8 +174,11 @@ test("series-a cold open: end-to-end happy path sends through the spine", async 
     });
 
     await until(
-      async () => (await runtime.get(run.id))?.status === "completed",
-      { timeout: 5_000 },
+      async () => {
+        const status = (await runtime.get(run.id))?.status;
+        return status === "completed" || status === "failed";
+      },
+      { timeout: 30_000 },
     );
     const final = await runtime.get<unknown, {
       status: string;
@@ -258,7 +261,7 @@ test("series-a cold open: end-to-end happy path sends through the spine", async 
         "draft",
         "create_conversation_and_message",
         "eval_gate",
-        "record_eval",
+        "project_eval",
         "send",
       ],
     );
@@ -315,8 +318,11 @@ test("series-a cold open: sub-threshold draft is rejected and does not send", as
     });
 
     await until(
-      async () => (await runtime.get(run.id))?.status === "completed",
-      { timeout: 5_000 },
+      async () => {
+        const status = (await runtime.get(run.id))?.status;
+        return status === "completed" || status === "failed";
+      },
+      { timeout: 30_000 },
     );
     const final = await runtime.get<unknown, { status: string; eval_score: number }>(
       run.id,

@@ -9,6 +9,10 @@
  */
 
 import type { Rep } from "../../primitives/index.ts";
+import type {
+  EventPayload,
+  PublishedEvent,
+} from "../../substrate/events/index.ts";
 import type { ProceduralExemplar } from "../memory/types.ts";
 
 export interface JudgeInput {
@@ -57,6 +61,10 @@ export interface Judge {
 export interface EvalGateResult {
   verdict: JudgeVerdict;
   decision: "pass" | "reject";
+  events: {
+    judged: PublishedEvent<EventPayload<"draft.judged">>;
+    rejected?: PublishedEvent<EventPayload<"draft.rejected">>;
+  };
   /** When decision === 'reject', this is the reason emitted to the bus. */
   rejection_reason?: string;
 }
