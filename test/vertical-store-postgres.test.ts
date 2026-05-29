@@ -4,9 +4,35 @@ import { randomUUID } from "node:crypto";
 import { setupPg } from "./_pg.ts";
 import { createPostgresVerticalSliceStore } from "../core/plays/index.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
+import { projectMessageLifecycleEvent } from "../core/channels/message-lifecycle.ts";
+import type {
+  EventPayload,
+  EventType,
+  PublishedEvent,
+} from "../core/substrate/events/index.ts";
 import { ingestManualSignal } from "../core/signals/index.ts";
 import type { GraphCompany, GraphPerson } from "../core/graph/types.ts";
 import type { Rep, Signal } from "../core/primitives/index.ts";
+
+function event<T extends EventType>(
+  workspace_id: string,
+  event_type: T,
+  payload: EventPayload<T>,
+): PublishedEvent<EventPayload<T>> {
+  return {
+    id: randomUUID(),
+    workspace_id,
+    event_type,
+    schema_version: 1,
+    correlation_id: null,
+    causation_id: null,
+    source: "system",
+    producer_ref: "test:vertical-store",
+    idempotency_key: null,
+    payload,
+    occurred_at: new Date().toISOString(),
+  };
+}
 
 test("postgres vertical store persists graph, signal, conversation, message, and outcome rows", async (t) => {
   const fx = await setupPg("vertical_store");
@@ -160,7 +186,14 @@ test("postgres vertical store persists graph, signal, conversation, message, and
       provenance: { exemplar_ids: [] },
     });
     await store.markMessageJudged(message.id, 0.9, true, { critique: "ok" });
-    await store.markMessageSent(message.id, "email_1");
+    await projectMessageLifecycleEvent(
+      fx.pool,
+      event(workspace_id, "message.sent", {
+        message_id: message.id,
+        channel: "email",
+        external_id: "email_1",
+      }),
+    );
     const outcome = await store.recordOutcome({
       workspace_id,
       kind: "positive_reply",

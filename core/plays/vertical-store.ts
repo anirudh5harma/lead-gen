@@ -8,6 +8,12 @@ import type {
   Rep,
   Signal,
 } from "../primitives/index.ts";
+import type {
+  EventBus,
+  EventPayload,
+  PublishedEvent,
+  Subscription,
+} from "../substrate/events/index.ts";
 
 export interface VerticalSliceStoreSeed {
   reps: Rep[];
@@ -77,8 +83,6 @@ export interface VerticalSliceStore {
     eval_passed: boolean,
     eval_notes: Record<string, unknown>,
   ): Awaitable<Message>;
-  markMessageSent(message_id: string, external_id: string | null): Awaitable<Message>;
-  markMessageDeferred(message_id: string, reason: string): Awaitable<Message>;
   countPlayChannelMessages(input: CountPlayChannelMessagesInput): Awaitable<number>;
   recordOutcome(input: RecordOutcomeInput): Awaitable<Outcome>;
   snapshot(): Awaitable<{
@@ -88,9 +92,31 @@ export interface VerticalSliceStore {
   }>;
 }
 
+type MessageLifecycleEvent =
+  | PublishedEvent<EventPayload<"message.queued">>
+  | PublishedEvent<EventPayload<"message.sent">>
+  | PublishedEvent<EventPayload<"message.deferred">>;
+
+export interface InMemoryVerticalSliceStore extends VerticalSliceStore {
+  projectMessageLifecycleEvent(event: MessageLifecycleEvent): Message | null;
+}
+
+const TERMINAL_SEND_STATUSES = new Set<Message["status"]>([
+  "delivered",
+  "bounced",
+  "replied",
+]);
+
+function shouldKeepCurrentStatus(
+  current: Message["status"],
+  preserving: readonly Message["status"][],
+): boolean {
+  return preserving.includes(current);
+}
+
 export function createInMemoryVerticalSliceStore(
   seed: VerticalSliceStoreSeed,
-): VerticalSliceStore {
+): InMemoryVerticalSliceStore {
   const reps = new Map(seed.reps.map((row) => [row.id, row]));
   const signals = new Map(seed.signals.map((row) => [row.id, row]));
   const persons = new Map(seed.persons.map((row) => [row.id, row]));
@@ -191,23 +217,6 @@ export function createInMemoryVerticalSliceStore(
       return row;
     },
 
-    markMessageSent(message_id, external_id) {
-      const row = messages.get(message_id);
-      if (!row) throw new Error(`Message not found: ${message_id}`);
-      row.status = "sent";
-      row.external_id = external_id;
-      row.sent_at = new Date().toISOString();
-      return row;
-    },
-
-    markMessageDeferred(message_id, reason) {
-      const row = messages.get(message_id);
-      if (!row) throw new Error(`Message not found: ${message_id}`);
-      row.status = "deferred";
-      row.properties = { ...row.properties, defer_reason: reason };
-      return row;
-    },
-
     countPlayChannelMessages(input) {
       const sinceMs = input.since?.getTime() ?? null;
       return Array.from(messages.values()).filter((message) => {
@@ -251,7 +260,75 @@ export function createInMemoryVerticalSliceStore(
         outcomes: Array.from(outcomes.values()),
       };
     },
+
+    projectMessageLifecycleEvent(event) {
+      const basePayload = event.payload as { message_id: string; channel: string };
+      const row = messages.get(basePayload.message_id);
+      if (!row || row.workspace_id !== event.workspace_id) return null;
+      if (row.direction !== "outbound" || row.channel !== basePayload.channel) return null;
+
+      if (event.event_type === "message.queued") {
+        const payload = event.payload as EventPayload<"message.queued">;
+        if (!shouldKeepCurrentStatus(row.status, ["sent", ...TERMINAL_SEND_STATUSES])) {
+          row.status = "queued";
+        }
+        row.channel_account_id = payload.channel_account_id ?? row.channel_account_id;
+        row.scheduled_at = row.scheduled_at ?? payload.scheduled_at ?? event.occurred_at;
+        row.properties = {
+          ...row.properties,
+          queued_event_id: event.id,
+          ...(payload.reserved_at ? { send_reserved_at: payload.reserved_at } : {}),
+        };
+        return row;
+      }
+
+      if (event.event_type === "message.sent") {
+        const payload = event.payload as EventPayload<"message.sent">;
+        if (!shouldKeepCurrentStatus(row.status, [...TERMINAL_SEND_STATUSES])) {
+          row.status = "sent";
+        }
+        row.external_id = payload.external_id ?? row.external_id;
+        row.channel_account_id = payload.channel_account_id ?? row.channel_account_id;
+        row.sent_at = row.sent_at ?? event.occurred_at;
+        row.properties = {
+          ...row.properties,
+          sent_event_id: event.id,
+          send_external_id: payload.external_id,
+        };
+        return row;
+      }
+
+      const payload = event.payload as EventPayload<"message.deferred">;
+      if (!shouldKeepCurrentStatus(row.status, ["sent", ...TERMINAL_SEND_STATUSES])) {
+        row.status = "deferred";
+      }
+      const notes = {
+        defer_reason: payload.defer_reason,
+        defer_detail: payload.detail ?? null,
+        defer_event_id: event.id,
+      };
+      row.eval_notes = { ...(row.eval_notes ?? {}), ...notes };
+      row.properties = { ...row.properties, ...notes };
+      return row;
+    },
   };
+}
+
+export async function wireInMemoryVerticalSliceMessageLifecycleProjection(
+  store: InMemoryVerticalSliceStore,
+  bus: EventBus,
+): Promise<Subscription[]> {
+  return Promise.all([
+    bus.subscribe("message.queued", (event) => {
+      store.projectMessageLifecycleEvent(event);
+    }),
+    bus.subscribe("message.sent", (event) => {
+      store.projectMessageLifecycleEvent(event);
+    }),
+    bus.subscribe("message.deferred", (event) => {
+      store.projectMessageLifecycleEvent(event);
+    }),
+  ]);
 }
 
 interface RepRow {
@@ -797,41 +874,6 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
                   scheduled_at, sent_at, delivered_at, replied_at, properties,
                   provenance, created_at`,
         [message_id, eval_score, eval_passed, JSON.stringify(eval_notes)],
-      );
-      if (!rows[0]) throw new Error(`Message not found: ${message_id}`);
-      return messageFromRow(rows[0]);
-    },
-
-    async markMessageSent(message_id, external_id) {
-      const { rows } = await pool.query<MessageRow>(
-        `update messages
-            set status = 'sent', external_id = $2, sent_at = now()
-          where id = $1
-        returning id, workspace_id, conversation_id, channel, direction, status,
-                  subject, body, body_html, external_id, external_thread_id,
-                  channel_account_id, eval_score::text as eval_score, eval_passed,
-                  eval_notes, intent_class, intent_confidence::text as intent_confidence,
-                  scheduled_at, sent_at, delivered_at, replied_at, properties,
-                  provenance, created_at`,
-        [message_id, external_id],
-      );
-      if (!rows[0]) throw new Error(`Message not found: ${message_id}`);
-      return messageFromRow(rows[0]);
-    },
-
-    async markMessageDeferred(message_id, reason) {
-      const { rows } = await pool.query<MessageRow>(
-        `update messages
-            set status = 'deferred',
-                properties = properties || $2::jsonb
-          where id = $1
-        returning id, workspace_id, conversation_id, channel, direction, status,
-                  subject, body, body_html, external_id, external_thread_id,
-                  channel_account_id, eval_score::text as eval_score, eval_passed,
-                  eval_notes, intent_class, intent_confidence::text as intent_confidence,
-                  scheduled_at, sent_at, delivered_at, replied_at, properties,
-                  provenance, created_at`,
-        [message_id, JSON.stringify({ defer_reason: reason })],
       );
       if (!rows[0]) throw new Error(`Message not found: ${message_id}`);
       return messageFromRow(rows[0]);

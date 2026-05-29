@@ -1,4 +1,4 @@
-import { defineWorkflow } from "../substrate/workflows/index.ts";
+import { defineWorkflow, type RunContext } from "../substrate/workflows/index.ts";
 import type { EventBus } from "../substrate/events/index.ts";
 import type { Judge } from "../agents/eval/types.ts";
 import type { LLMClient } from "../agents/llm/types.ts";
@@ -50,6 +50,20 @@ export interface SignalToEmailPlayDeps {
   writerLlm?: LLMClient;
   email: EmailChannel;
   bus: EventBus;
+}
+
+async function publishPlayDeferred(
+  ctx: RunContext,
+  message_id: string,
+  defer_reason: string,
+  retry_after: string | null,
+): Promise<void> {
+  await ctx.publish("message.deferred", {
+    message_id,
+    channel: "email",
+    defer_reason,
+    retry_after,
+  });
 }
 
 export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
@@ -173,7 +187,12 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       );
 
       if (gate.decision === "reject") {
-        await deps.store.markMessageDeferred(message.id, gate.rejection_reason ?? "eval_rejected");
+        await publishPlayDeferred(
+          ctx,
+          message.id,
+          gate.rejection_reason ?? "eval_rejected",
+          null,
+        );
         const output: SignalToEmailPlayOutput = {
           decision: "rejected",
           conversation_id: conversation.id,
@@ -196,7 +215,6 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         approval: input.email_approval ?? "none",
       };
       if (policy.approval === "research_only") {
-        await deps.store.markMessageDeferred(message.id, "play_research_only");
         const output: SignalToEmailPlayOutput = {
           decision: "deferred",
           conversation_id: conversation.id,
@@ -204,12 +222,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           eval_score: gate.verdict.score,
           pattern_key: research.pattern_key,
         };
-        await ctx.publish("message.deferred", {
-          message_id: message.id,
-          channel: "email",
-          defer_reason: "play_research_only",
-          retry_after: null,
-        });
+        await publishPlayDeferred(ctx, message.id, "play_research_only", null);
         await ctx.publish("play.run.completed", {
           play_id: input.play_id,
           play_run_id: input.play_run_id,
@@ -229,7 +242,6 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         }),
       );
       if (isDailyCapExceeded(policy, dailySendCount)) {
-        await deps.store.markMessageDeferred(message.id, "play_channel_daily_cap");
         const output: SignalToEmailPlayOutput = {
           decision: "deferred",
           conversation_id: conversation.id,
@@ -237,12 +249,12 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           eval_score: gate.verdict.score,
           pattern_key: research.pattern_key,
         };
-        await ctx.publish("message.deferred", {
-          message_id: message.id,
-          channel: "email",
-          defer_reason: "play_channel_daily_cap",
-          retry_after: nextDailyWindow(),
-        });
+        await publishPlayDeferred(
+          ctx,
+          message.id,
+          "play_channel_daily_cap",
+          nextDailyWindow(),
+        );
         await ctx.publish("play.run.completed", {
           play_id: input.play_id,
           play_run_id: input.play_run_id,
@@ -283,7 +295,6 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           },
         });
         if (decision.decision !== "approved") {
-          await deps.store.markMessageDeferred(message.id, `approval_${decision.decision}`);
           const output: SignalToEmailPlayOutput = {
             decision: "deferred",
             conversation_id: conversation.id,
@@ -291,12 +302,12 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             eval_score: gate.verdict.score,
             pattern_key: research.pattern_key,
           };
-          await ctx.publish("message.deferred", {
-            message_id: message.id,
-            channel: "email",
-            defer_reason: `approval_${decision.decision}`,
-            retry_after: null,
-          });
+          await publishPlayDeferred(
+            ctx,
+            message.id,
+            `approval_${decision.decision}`,
+            null,
+          );
           await ctx.publish("play.run.completed", {
             play_id: input.play_id,
             play_run_id: input.play_run_id,
@@ -352,9 +363,11 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             editedGate.verdict.notes as unknown as Record<string, unknown>,
           );
           if (editedGate.decision === "reject") {
-            await deps.store.markMessageDeferred(
+            await publishPlayDeferred(
+              ctx,
               edited.id,
               editedGate.rejection_reason ?? "eval_rejected_after_edit",
+              null,
             );
             const output: SignalToEmailPlayOutput = {
               decision: "rejected",
@@ -405,12 +418,6 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           roleContext,
         ),
       );
-
-      if (send.status === "deferred") {
-        await deps.store.markMessageDeferred(message.id, send.defer_reason);
-      } else {
-        await deps.store.markMessageSent(message.id, send.external_id);
-      }
 
       let outcome_id: string | undefined;
       if (send.status === "sent" && input.simulate_outcome_kind) {

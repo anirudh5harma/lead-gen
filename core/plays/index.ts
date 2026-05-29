@@ -26,11 +26,13 @@ export type {
 export {
   createInMemoryVerticalSliceStore,
   createPostgresVerticalSliceStore,
+  wireInMemoryVerticalSliceMessageLifecycleProjection,
 } from "./vertical-store.ts";
 export type {
   CreateConversationInput,
   CreateDraftMessageInput,
   CountPlayChannelMessagesInput,
+  InMemoryVerticalSliceStore,
   RecordOutcomeInput,
   VerticalSliceStore,
   VerticalSliceStoreSeed,

@@ -20,7 +20,10 @@ import {
   type SignalToEmailPlayInput,
   type SignalToEmailPlayOutput,
 } from "./signal-email-play.ts";
-import { createInMemoryVerticalSliceStore } from "./vertical-store.ts";
+import {
+  createInMemoryVerticalSliceStore,
+  wireInMemoryVerticalSliceMessageLifecycleProjection,
+} from "./vertical-store.ts";
 import type { PlayChannelPolicy } from "./autonomy.ts";
 
 async function waitFor(
@@ -190,6 +193,7 @@ export async function runFirstVerticalSlice(
     persons: [person],
     companies: [company],
   });
+  await wireInMemoryVerticalSliceMessageLifecycleProjection(store, bus);
   const transport = createDryRunEmailTransport();
   const email = createOwnedDomainEmailChannel({
     accounts: [
@@ -276,7 +280,18 @@ export async function runFirstVerticalSlice(
   if (!completed || completed.status !== "completed" || !completed.output) {
     throw new Error(completed?.error?.message ?? "Vertical slice workflow did not complete");
   }
-  if (completed.output.outcome_id) {
+  const output = completed.output;
+  await waitFor(async () => {
+    const state = await store.snapshot();
+    const message = state.messages.find(
+      (candidate) => candidate.id === output.message_id,
+    );
+    if (!message) return false;
+    return output.decision === "sent"
+      ? message.status === "sent"
+      : message.status === "deferred";
+  });
+  if (output.outcome_id) {
     await waitFor(async () => {
       const rows = await memory.procedural.topForPattern({ workspace_id, rep_id }, pattern_key);
       return (rows[0]?.win_count ?? 0) > 0;
@@ -286,7 +301,7 @@ export async function runFirstVerticalSlice(
   const top = await memory.procedural.topForPattern({ workspace_id, rep_id }, pattern_key);
   void exemplar;
   return {
-    output: completed.output,
+    output,
     sentEmailCount: transport.sent.length,
     eventTypes: bus.published.map((event) => event.event_type),
     proceduralScoreAfterOutcome: top[0]?.score ?? 0,
