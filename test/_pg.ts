@@ -55,7 +55,12 @@ export async function setupPg(label = "t"): Promise<PgFixture | null> {
     await migrationLock.query(
       `select pg_advisory_lock(hashtext('bombsell_test_migrations'))`,
     );
-    await runMigrations({ pool, dir: migrationsDir });
+    await runMigrations({
+      pool,
+      dir: migrationsDir,
+      sqlTransform: ({ filename, sql }) =>
+        transformMigrationForTestSchema(filename, sql, schema),
+    });
   } finally {
     try {
       await migrationLock.query(
@@ -80,6 +85,26 @@ export async function setupPg(label = "t"): Promise<PgFixture | null> {
       }
     },
   };
+}
+
+function transformMigrationForTestSchema(
+  filename: string,
+  sql: string,
+  schema: string,
+): string {
+  if (
+    filename !== "032_supabase_hardening.sql" &&
+    filename !== "033_supabase_advisor_cleanup.sql"
+  ) {
+    return sql;
+  }
+  const quotedSchema = `"${schema.replaceAll('"', '""')}"`;
+  return sql
+    .replaceAll("public.", "")
+    .replaceAll(
+      "set search_path = public, pg_catalog",
+      `set search_path = ${quotedSchema}, pg_catalog`,
+    );
 }
 
 async function ensureTestExtensions(connectionString: string): Promise<void> {

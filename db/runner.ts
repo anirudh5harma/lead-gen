@@ -28,6 +28,8 @@ export interface RunMigrationsOptions {
   dir: string;
   /** If true, do not actually apply; just report what would change. */
   dryRun?: boolean;
+  /** Test harnesses can adapt schema-qualified SQL while keeping file checksums stable. */
+  sqlTransform?: (input: { filename: string; sql: string }) => string;
 }
 
 export async function runMigrations(
@@ -42,8 +44,9 @@ export async function runMigrations(
   const results: MigrationResult[] = [];
   for (const filename of files) {
     const fullPath = path.join(opts.dir, filename);
-    const sql = await readFile(fullPath, "utf8");
-    const checksum = sha256(sql);
+    const rawSql = await readFile(fullPath, "utf8");
+    const checksum = sha256(rawSql);
+    const sql = opts.sqlTransform?.({ filename, sql: rawSql }) ?? rawSql;
     const priorChecksum = applied.get(filename);
 
     if (priorChecksum && priorChecksum !== checksum) {

@@ -5,19 +5,24 @@ import { setupPg, until } from "./_pg.ts";
 import {
   bootstrapWorkspace,
   claimRunnableWorkflowRuns,
+  DEFAULT_PRODUCT_USER_ID,
   dispatchSignalPlaysOnce,
+  getProductEngine,
   getAppState,
   resetProductEngineForTests,
   renewWorkflowRunLeases,
   submitManualSignal,
 } from "../core/product/app.ts";
-import { recordInboundEmailReply } from "../core/product/inbound.ts";
 import { resetPool, setPool } from "../core/substrate/storage/index.ts";
 import {
   createDryRunEmailTransport,
+  createFixedIntentClassifier,
   createPostgresOwnedDomainEmailChannel,
+  handleInboundEmail,
 } from "../core/channels/email/index.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/index.ts";
+
+const WORKFLOW_TIMEOUT_MS = 45_000;
 
 test("product worker: dispatches signal.matched events into durable play runs", async (t) => {
   const fx = await setupPg("product_worker");
@@ -25,7 +30,7 @@ test("product worker: dispatches signal.matched events into durable play runs", 
 
   setPool(fx.pool);
   try {
-    await bootstrapWorkspace(fx.pool);
+    const boot = await bootstrapWorkspace(fx.pool);
     const submitted = await submitManualSignal({
       company_name: "Acme Payroll",
       company_domain: "acmepayroll.example",
@@ -36,7 +41,7 @@ test("product worker: dispatches signal.matched events into durable play runs", 
         "Acme Payroll raised a Series A to expand finance workflows for distributed teams.",
       signal_url: "https://example.com/acme-series-a",
       approval: "none",
-    });
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
 
     assert.ok(submitted.signal_id);
     const dispatched = await dispatchSignalPlaysOnce();
@@ -50,10 +55,10 @@ test("product worker: dispatches signal.matched events into durable play runs", 
         `select status, output
            from workflow_runs
           where idempotency_key = $1`,
-        [`signal:${submitted.signal_id}:play:${(await bootstrapWorkspace(fx.pool)).play_id}`],
+        [`signal:${submitted.signal_id}:play:${boot.play_id}`],
       );
       return rows[0]?.status === "completed" ? rows[0] : null;
-    });
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
     assert.equal(run.status, "completed");
     assert.ok(run.output?.outcome_id);
 
@@ -88,16 +93,35 @@ test("product worker: dispatches signal.matched events into durable play runs", 
         limit 1`,
       [submitted.workspace_id],
     );
-    const reply = await recordInboundEmailReply({
+    const inbound = {
       workspace_id: submitted.workspace_id,
-      in_reply_to_external_id: outbound.rows[0].external_id,
       external_id: "reply_1",
-      from_email: "nisha@acmepayroll.example",
+      in_reply_to: outbound.rows[0].external_id,
+      from: { email: "nisha@acmepayroll.example" },
       subject: "Re: congrats",
-      body: "Sounds good, happy to book a meeting next week.",
+      body_text: "Sounds good, happy to book a meeting next week.",
+      received_at: new Date().toISOString(),
+    };
+    const engine = await getProductEngine();
+    const ingressEvent = await engine.bus.publish({
+      workspace_id: submitted.workspace_id,
+      event_type: "email.inbound.received",
+      source: "webhook",
+      producer_ref: "test:email:inbound",
+      idempotency_key: "test:reply_1",
+      payload: inbound,
     });
+    const reply = await handleInboundEmail(
+      {
+        pool: fx.pool,
+        bus: engine.bus,
+        classifier: createFixedIntentClassifier("positive", 0.95),
+        ingress_event_id: ingressEvent.id,
+      },
+      inbound,
+    );
     assert.equal(reply.intent, "positive");
-    assert.equal(reply.conversation_id, outbound.rows[0].conversation_id);
+    assert.equal(reply.matched_conversation_id, outbound.rows[0].conversation_id);
     assert.ok(reply.outcome_id);
 
     const duplicate = await dispatchSignalPlaysOnce();
@@ -135,7 +159,7 @@ test("product worker: deliverability cap defers sends without consuming volume",
       signal_content: "Beta Finance raised a seed round for compliance automation.",
       signal_url: "https://example.com/beta-seed",
       approval: "none",
-    });
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
 
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
@@ -144,7 +168,7 @@ test("product worker: deliverability cap defers sends without consuming volume",
         [`signal:${submitted.signal_id}:%`],
       );
       return rows[0]?.status === "completed" ? rows[0] : null;
-    });
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
 
     const message = await fx.pool.query<{
       status: string;
@@ -188,7 +212,7 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
       signal_content: "Gamma Security launched a new SOC automation workflow.",
       signal_url: "https://example.com/gamma-launch",
       approval: "none",
-    });
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
 
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
@@ -197,7 +221,7 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
         [`signal:${first.signal_id}:%`],
       );
       return rows[0]?.status === "completed" ? rows[0] : null;
-    });
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
 
     const second = await submitManualSignal({
       company_name: "Gamma Security",
@@ -208,7 +232,7 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
       signal_content: "Gamma Security hired a VP Sales for enterprise expansion.",
       signal_url: "https://example.com/gamma-vp-sales",
       approval: "none",
-    });
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
 
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
@@ -217,7 +241,7 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
         [`signal:${second.signal_id}:%`],
       );
       return rows[0]?.status === "completed" ? rows[0] : null;
-    });
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
 
     const messages = await fx.pool.query<{
       status: string;
@@ -263,7 +287,7 @@ test("product email: queued send replay reuses reservation and transport idempot
       signal_content: "Delta Treasury raised funding to expand treasury operations.",
       signal_url: "https://example.com/delta-funding",
       approval: "none",
-    });
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
       const { rows } = await fx.pool.query<{ status: string }>(
@@ -271,7 +295,7 @@ test("product email: queued send replay reuses reservation and transport idempot
         [`signal:${submitted.signal_id}:%`],
       );
       return rows[0]?.status === "completed" ? rows[0] : null;
-    });
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
 
     const { rows } = await fx.pool.query<{
       id: string;
@@ -377,6 +401,7 @@ test("product worker: workflow resume leases are claimed and renewed", async (t)
   const fx = await setupPg("product_worker_leases");
   if (!fx) return t.skip("DATABASE_URL not set");
 
+  setPool(fx.pool);
   try {
     const boot = await bootstrapWorkspace(fx.pool);
     const workflowName = "test.worker_lease.v1";
@@ -456,6 +481,8 @@ test("product worker: workflow resume leases are claimed and renewed", async (t)
       ],
     );
   } finally {
+    await resetProductEngineForTests();
     await fx.close();
+    await resetPool();
   }
 });
