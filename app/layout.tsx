@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ToastProvider } from "@/components/Toast";
-import { Geist, Geist_Mono, Instrument_Serif, Manrope } from "next/font/google";
+import { Geist, Geist_Mono, Manrope } from "next/font/google";
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -20,13 +20,6 @@ const manrope = Manrope({
   variable: "--font-manrope",
 });
 
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: ["400"],
-  style: ["normal", "italic"],
-  variable: "--font-instrument-serif",
-});
-
 export const metadata: Metadata = {
   title: "Bombsell — AI-Native GTM Infrastructure",
   description:
@@ -41,7 +34,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`h-full antialiased ${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${instrumentSerif.variable}`}
+      className={`h-full antialiased ${geistSans.variable} ${geistMono.variable} ${manrope.variable}`}
       style={{ colorScheme: "light" }}
     >
       <head>

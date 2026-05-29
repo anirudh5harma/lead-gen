@@ -21,6 +21,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Morning brief", icon: "wb_twilight" },
+  { href: "/dashboard/setup", label: "Setup", icon: "rocket_launch" },
   { href: "/dashboard/conversations", label: "Conversations", icon: "forum" },
   { href: "/dashboard/approvals", label: "Approvals", icon: "rule" },
   { href: "/dashboard/reps", label: "Reps", icon: "smart_toy" },
@@ -40,9 +41,9 @@ export function DashboardShell({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex bg-[var(--color-ink-1)] text-[var(--color-text-1)]">
-      <aside className="w-60 shrink-0 border-r border-[var(--color-line-1)] flex flex-col">
-        <div className="px-5 py-5 border-b border-[var(--color-line-1)]">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-[var(--color-ink-1)] text-[var(--color-text-1)]">
+      <aside className="lg:w-60 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--color-line-1)] flex flex-col">
+        <div className="px-5 py-4 lg:py-5 border-b border-[var(--color-line-1)]">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)]">
             workspace
           </p>
@@ -55,7 +56,7 @@ export function DashboardShell({
             </p>
           ) : null}
         </div>
-        <nav className="flex-1 px-2 py-4 space-y-0.5">
+        <nav className="flex lg:flex-1 gap-1 overflow-x-auto px-2 py-2 lg:block lg:space-y-0.5 lg:overflow-visible lg:py-4">
           {NAV.map((item) => {
             const active =
               current === item.href ||
@@ -65,7 +66,7 @@ export function DashboardShell({
                 key={item.href}
                 href={item.href}
                 className={
-                  "flex items-center gap-3 px-3 py-2 rounded-md font-sans text-sm " +
+                  "flex shrink-0 items-center gap-2 lg:gap-3 px-3 py-2 rounded-md font-sans text-sm " +
                   (active
                     ? "bg-[var(--color-ink-3)] text-[var(--color-text-1)]"
                     : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
@@ -77,7 +78,7 @@ export function DashboardShell({
             );
           })}
         </nav>
-        <div className="px-5 py-4 border-t border-[var(--color-line-1)]">
+        <div className="hidden lg:block px-5 py-4 border-t border-[var(--color-line-1)]">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-3)] mb-1">
             pivot-v2 · foundation
           </p>
@@ -87,7 +88,7 @@ export function DashboardShell({
         </div>
       </aside>
       <main className="flex-1 min-w-0">
-        <div className="max-w-6xl mx-auto px-8 py-8">{children}</div>
+        <div className="max-w-6xl mx-auto px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
       </main>
     </div>
   );

@@ -300,6 +300,71 @@ test("postgres workflow runtime: resume replays checkpoints and continues after 
   }
 });
 
+test("postgres workflow runtime: resume continues after a pre-checkpoint step row", async (t) => {
+  const fx = await setupPg("pg_wf_resume_step_row");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const runtime = createPostgresWorkflowRuntime({ pool: fx.pool, bus });
+    runtime.register(
+      defineWorkflow<unknown, string>({
+        name: "demo_resume_step_row",
+        version: "1",
+        async run(_input, ctx) {
+          return ctx.step("fragile", async () => "ok", {
+            retry: { max_attempts: 3, backoff: "fixed", base_ms: 1 },
+          });
+        },
+      }),
+    );
+
+    const runId = randomUUID();
+    const staleStepId = randomUUID();
+    await fx.pool.query(
+      `insert into workflow_runs (
+         id, workspace_id, workflow_name, workflow_version, status, input,
+         started_at, created_at
+       ) values ($1, $2, 'demo_resume_step_row', '1', 'running', 'null'::jsonb, now(), now())`,
+      [runId, ws],
+    );
+    await fx.pool.query(
+      `insert into workflow_steps (
+         id, run_id, workspace_id, step_name, step_position, attempt,
+         status, started_at, created_at
+       ) values ($1, $2, $3, 'fragile', 0, 1, 'running', now(), now())`,
+      [staleStepId, runId, ws],
+    );
+
+    await runtime.resume(runId);
+    await until(async () => (await runtime.get(runId))?.status === "completed");
+
+    const final = await runtime.get(runId);
+    assert.equal(final?.output, "ok");
+    const attempts = await fx.pool.query<{ attempt: number; status: string }>(
+      `select attempt, status
+         from workflow_steps
+        where run_id = $1 and step_position = 0
+        order by attempt`,
+      [runId],
+    );
+    assert.deepEqual(
+      attempts.rows.map((row) => [row.attempt, row.status]),
+      [
+        [1, "running"],
+        [2, "completed"],
+      ],
+    );
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
 
 test("postgres workflow runtime: idempotency_key collapses duplicate starts", async (t) => {
   const fx = await setupPg("pg_wf_idem");

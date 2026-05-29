@@ -151,8 +151,20 @@ export function createPostgresWorkflowRuntime(
           stepIds.set(pos, step_id);
         }
 
+        const prior = await pool.query<{ max_attempt: number | null }>(
+          `select max(attempt)::int as max_attempt
+             from workflow_steps
+            where run_id = $1 and step_position = $2`,
+          [rec.run.id, pos],
+        );
+        const firstAttempt = Math.max(1, (prior.rows[0]?.max_attempt ?? 0) + 1);
+        if (firstAttempt > retry.max_attempts) {
+          throw new Error(
+            `Step ${name} exhausted retry attempts for workflow run ${rec.run.id}`,
+          );
+        }
         let lastError: unknown;
-        for (let attempt = 1; attempt <= retry.max_attempts; attempt++) {
+        for (let attempt = firstAttempt; attempt <= retry.max_attempts; attempt++) {
           const attemptStepId = attempt === 1 ? step_id : randomUUID();
           await pool.query(
             `insert into workflow_steps (

@@ -46,6 +46,7 @@ export interface FirstVerticalSliceResult {
 export interface RunFirstVerticalSliceOptions {
   emailApproval?: SignalToEmailPlayInput["email_approval"];
   autoApprove?: boolean;
+  approvalNote?: string;
   writerLlm?: SignalToEmailPlayDeps["writerLlm"];
   emailDailyCap?: number;
   playChannelPolicy?: PlayChannelPolicy;
@@ -218,6 +219,7 @@ export async function runFirstVerticalSlice(
     await bus.subscribe("approval.requested", async (event) => {
       await runtime.resolveApproval(event.payload.approval_id, {
         decision: "approved",
+        note: opts.approvalNote,
       });
     });
   }

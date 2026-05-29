@@ -15,8 +15,10 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { connect } from "nats";
 import pg from "pg";
 import { createJournaledNatsEventBus } from "../core/substrate/events/adapters/journaled-nats.ts";
+import { buildAuthenticator } from "../core/substrate/events/adapters/nats.ts";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const NATS_URL = process.env.NATS_URL;
@@ -58,13 +60,16 @@ async function until<T>(
 async function main(): Promise<void> {
   let workspaceId: string | null = null;
   let bus: Awaited<ReturnType<typeof createJournaledNatsEventBus>> | null = null;
+  const streamPrefix = `verify_${Date.now().toString(36)}`;
 
   try {
     const natsCreds = process.env.NATS_CREDS?.trim();
     bus = await createJournaledNatsEventBus({
       pool,
       servers: NATS_URL!,
-      streamPrefix: `verify_${Date.now().toString(36)}`,
+      streamPrefix,
+      streamMaxAgeMs: 600_000,
+      streamMaxBytes: 1_048_576,
       ...(natsCreds ? { credentials: natsCreds } : {}),
     });
     note("nats: bus connected", true);
@@ -117,6 +122,7 @@ async function main(): Promise<void> {
     if (bus) {
       await bus.close().catch(() => undefined);
     }
+    await deleteVerifyStream(streamPrefix).catch(() => undefined);
     if (workspaceId) {
       await pool
         .query(`delete from workspaces where id = $1`, [workspaceId])
@@ -135,6 +141,21 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   console.log("\nNATS round-trip verified.");
+}
+
+async function deleteVerifyStream(streamPrefix: string): Promise<void> {
+  const natsCreds = process.env.NATS_CREDS?.trim();
+  const authenticator = buildAuthenticator(natsCreds);
+  const nc = await connect({
+    servers: NATS_URL!,
+    ...(authenticator ? { authenticator } : {}),
+  });
+  try {
+    const jsm = await nc.jetstreamManager();
+    await jsm.streams.delete(streamPrefix);
+  } finally {
+    await nc.close();
+  }
 }
 
 main().catch((err) => {

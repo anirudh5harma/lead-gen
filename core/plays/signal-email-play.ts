@@ -252,6 +252,11 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         return output;
       }
 
+      let sendDraft: { subject: string; body: string; eval_score: number } = {
+        subject: draft.subject,
+        body: draft.body,
+        eval_score: gate.verdict.score,
+      };
       const priorSendCount = await ctx.step("autonomy.play_email_prior_count", async () =>
         deps.store.countPlayChannelMessages({
           workspace_id: input.workspace_id,
@@ -300,6 +305,78 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           });
           return output;
         }
+        const override = parseApprovalDraftOverride(decision.note);
+        if (override) {
+          const edited = await ctx.step("approval.apply_draft_edits", async () => {
+            if (!deps.store.updateDraftMessage) {
+              throw new Error("Draft edits require a store that can update draft messages");
+            }
+            const row = await deps.store.updateDraftMessage(message.id, {
+              subject: override.subject,
+              body: override.body,
+              properties: { human_edited: true },
+            });
+            await ctx.publish("draft.proposed", {
+              conversation_id: conversation.id,
+              message_id: row.id,
+              channel: "email",
+              rep_id: rep.id,
+            });
+            return row;
+          });
+          const editedGate = await ctx.step("eval.hot_path.approval_edit", () =>
+            evalGate(
+              { judge: deps.judge, bus: deps.bus },
+              {
+                workspace_id: input.workspace_id,
+                rep,
+                message_id: edited.id,
+                artifact: {
+                  kind: "draft",
+                  channel: "email",
+                  subject: edited.subject,
+                  body: edited.body ?? "",
+                },
+                context: {
+                  signal_summary: research.signal_summary,
+                  counterparty_summary: research.counterparty_summary,
+                  procedural_exemplars: draft.procedural_exemplars,
+                },
+              },
+            ),
+          );
+          await deps.store.markMessageJudged(
+            edited.id,
+            editedGate.verdict.score,
+            editedGate.verdict.passed,
+            editedGate.verdict.notes as unknown as Record<string, unknown>,
+          );
+          if (editedGate.decision === "reject") {
+            await deps.store.markMessageDeferred(
+              edited.id,
+              editedGate.rejection_reason ?? "eval_rejected_after_edit",
+            );
+            const output: SignalToEmailPlayOutput = {
+              decision: "rejected",
+              conversation_id: conversation.id,
+              message_id: edited.id,
+              eval_score: editedGate.verdict.score,
+              pattern_key: research.pattern_key,
+            };
+            await ctx.publish("play.run.completed", {
+              play_id: input.play_id,
+              play_run_id: input.play_run_id,
+              workflow_run_id: ctx.run_id,
+              output,
+            });
+            return output;
+          }
+          sendDraft = {
+            subject: edited.subject ?? "",
+            body: edited.body ?? "",
+            eval_score: editedGate.verdict.score,
+          };
+        }
       }
 
       const send = await ctx.step("sender.email", () =>
@@ -316,10 +393,10 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             draft: {
               message_id: message.id,
               channel: "email",
-              subject: draft.subject,
-              body: draft.body,
+              subject: sendDraft.subject,
+              body: sendDraft.body,
               eval_passed: true,
-              eval_score: gate.verdict.score,
+              eval_score: sendDraft.eval_score,
             },
             email: deps.email,
             bus: deps.bus,
@@ -374,7 +451,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         conversation_id: conversation.id,
         message_id: message.id,
         outcome_id,
-        eval_score: gate.verdict.score,
+        eval_score: sendDraft.eval_score,
         pattern_key: research.pattern_key,
       };
       await ctx.publish("play.run.completed", {
@@ -386,4 +463,29 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       return output;
     },
   });
+}
+
+function parseApprovalDraftOverride(
+  note: string | undefined,
+): { subject: string | null; body: string } | null {
+  if (!note) return null;
+  try {
+    const parsed = JSON.parse(note) as {
+      type?: unknown;
+      subject?: unknown;
+      body?: unknown;
+    };
+    if (parsed.type !== "draft_override") return null;
+    const body = typeof parsed.body === "string" ? parsed.body.trim() : "";
+    if (!body) return null;
+    return {
+      subject:
+        typeof parsed.subject === "string" && parsed.subject.trim()
+          ? parsed.subject.trim()
+          : null,
+      body,
+    };
+  } catch {
+    return null;
+  }
 }

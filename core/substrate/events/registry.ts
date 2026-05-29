@@ -27,6 +27,33 @@ const WorkspaceMemberInvited = z.object({
   role: z.enum(["owner", "admin", "member"]),
 });
 
+const RepConfigured = z.object({
+  rep_id: z.string().uuid(),
+  name: z.string().min(1),
+  role: z.enum(["sdr", "content", "replier", "researcher", "campaign", "custom"]),
+  status: z.enum(["draft", "active", "paused", "retired"]),
+  persona: z.record(z.string(), z.unknown()),
+  channels: z.array(z.string()),
+  autonomy: z.record(z.string(), z.unknown()),
+});
+
+const WorkspaceIcpConfigured = z.object({
+  icp_id: z.string().uuid(),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  must_haves: z.array(z.record(z.string(), z.unknown())),
+  nice_to_haves: z.array(z.string()),
+  match_threshold: z.number().min(0).max(1),
+  enabled: z.boolean(),
+});
+
+const WorkspaceCompanyTracked = z.object({
+  company_id: z.string().uuid(),
+  name: z.string().min(1),
+  domain: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Signal lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,6 +168,17 @@ const PlayRunStarted = z.object({
   play_run_id: z.string().uuid(),
   workflow_run_id: z.string().uuid(),
   trigger_event_id: z.string().uuid().nullable(),
+});
+
+const PlayConfigured = z.object({
+  play_id: z.string().uuid(),
+  name: z.string().min(1),
+  declaration: z.string().min(1),
+  compiled: z.record(z.string(), z.unknown()),
+  autonomy: z.record(z.string(), z.unknown()),
+  default_rep_id: z.string().uuid().nullable(),
+  status: z.enum(["draft", "active", "paused", "archived"]),
+  version: z.number().int().positive(),
 });
 
 const PlayRunCompleted = z.object({
@@ -510,6 +548,9 @@ const RepMemoryProceduralUpdated = z.object({
 export const eventRegistry = {
   "workspace.created": WorkspaceCreated,
   "workspace.member.invited": WorkspaceMemberInvited,
+  "rep.configured": RepConfigured,
+  "workspace.icp.configured": WorkspaceIcpConfigured,
+  "workspace.company.tracked": WorkspaceCompanyTracked,
 
   "signal.discovered": SignalDiscovered,
   "signal.ingested": SignalIngested,
@@ -519,6 +560,7 @@ export const eventRegistry = {
   "signal.expired": SignalExpired,
   "signal.expiry.requested": SignalExpiryRequested,
 
+  "play.configured": PlayConfigured,
   "play.run.started": PlayRunStarted,
   "play.run.completed": PlayRunCompleted,
   "play.run.failed": PlayRunFailed,

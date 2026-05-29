@@ -44,6 +44,10 @@ test("SNS verification accepts a signed message from an allowed topic", async ()
   });
 });
 
+test("SNS string-to-sign keeps the final newline AWS signs", () => {
+  assert.equal(snsStringToSign(signedNotification()).endsWith("\n"), true);
+});
+
 test("SNS verification rejects tampered message content", async () => {
   const envelope = signedNotification();
   envelope.Message = "tampered";

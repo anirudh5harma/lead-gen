@@ -3,6 +3,22 @@ import type { Pool } from "pg";
 import { upsertSource } from "../graph/nodes/sources.ts";
 import type { GraphCompany, GraphPerson } from "../graph/types.ts";
 import {
+  addCompanyExplicit,
+  upsertTrackedCompany,
+  type TrackedCompany,
+} from "../ingest/catalog.ts";
+import {
+  createIcp,
+  updateIcp,
+  type IcpPredicateRule,
+  type IcpRow,
+} from "../ingest/icps.ts";
+import { RepRole, type RepRole as RepRoleValue } from "../primitives/rep.ts";
+import {
+  SignalKind,
+  type SignalKind as SignalKindValue,
+} from "../primitives/signal.ts";
+import {
   createFallbackJudge,
   createHeuristicJudge,
 } from "../agents/eval/index.ts";
@@ -116,12 +132,84 @@ export interface SubmitSignalInput {
   signal_title: string;
   signal_content: string;
   signal_url?: string;
+  signal_kind?: string;
+  icp_segment?: string;
+  match_score?: number;
+  simulate_outcome_kind?: SignalToEmailPlayInput["simulate_outcome_kind"];
   approval: SignalToEmailPlayInput["email_approval"];
 }
 
 export interface ConfigureEmailInput {
   display_name: string;
   daily_cap: number;
+}
+
+export interface ProductWorkspace {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface ConfigureRepInput {
+  name: string;
+  role?: RepRoleValue;
+  voice: string;
+  story?: string;
+  daily_cap?: number;
+  approval?: SignalToEmailPlayInput["email_approval"];
+  do_not?: string[];
+  samples?: string[];
+}
+
+export interface ConfigureIcpInput {
+  name: string;
+  description: string;
+  signal_kind?: string;
+  match_threshold?: number;
+  nice_to_haves?: string[];
+  enabled?: boolean;
+}
+
+export interface TrackCompanyInput {
+  name: string;
+  domain?: string;
+  industry?: string;
+  size_bucket?: string;
+  greenhouse_id?: string;
+  lever_id?: string;
+  ashby_id?: string;
+  workable_id?: string;
+  career_rss_url?: string;
+  reason?: string;
+}
+
+export interface ConfigureSignalEmailPlayInput {
+  rep_id: string;
+  name?: string;
+  description?: string;
+  signal_kind?: string;
+  icp_name?: string;
+  daily_cap?: number;
+  approval?: SignalToEmailPlayInput["email_approval"];
+}
+
+export interface ConfigureActivationInput {
+  rep: ConfigureRepInput;
+  icp: ConfigureIcpInput;
+  play?: Partial<Omit<ConfigureSignalEmailPlayInput, "rep_id">>;
+  email?: ConfigureEmailInput;
+  company?: TrackCompanyInput;
+  source?: ConfigureRssSourceInput;
+}
+
+export interface ActivationSetupResult {
+  workspace_id: string;
+  rep_id: string;
+  icp_id: string;
+  play_id: string;
+  channel_account_id?: string;
+  tracked_company_id?: string;
+  source_id?: string;
 }
 
 export interface ConfigureRssSourceInput {
@@ -387,6 +475,69 @@ export async function findFirstProductWorkspaceForUser(
   return result.rows[0]?.id ?? null;
 }
 
+export async function createProductWorkspaceForUser(
+  input: { name: string; slug?: string },
+  user_id: string,
+  pool = getPool(),
+): Promise<ProductWorkspace> {
+  const name = input.name.trim() || "Bombsell Workspace";
+  const baseSlug = slugifyWorkspace(input.slug || name);
+  let slug = baseSlug;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const id = randomUUID();
+    try {
+      const { rows } = await pool.query<ProductWorkspace>(
+        `insert into workspaces (id, slug, name, settings)
+         values ($1, $2, $3, $4::jsonb)
+         returning id, slug::text as slug, name`,
+        [
+          id,
+          slug,
+          name,
+          JSON.stringify({ mode: "product-activation", activated_from: "dashboard" }),
+        ],
+      );
+      await pool.query(
+        `insert into workspace_members (workspace_id, user_id, role, accepted_at)
+         values ($1, $2, 'owner', now())`,
+        [id, user_id],
+      );
+
+      const engine = await getProductEngine();
+      await engine.bus.publish({
+        workspace_id: id,
+        event_type: "workspace.created",
+        source: "user",
+        producer_ref: user_id,
+        payload: { workspace_id: id, created_by: user_id },
+      });
+      return rows[0]!;
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "23505"
+      ) {
+        slug = `${baseSlug}-${randomBytes(2).toString("hex")}`;
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Could not create a unique workspace slug");
+}
+
+function slugifyWorkspace(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug || `workspace-${randomBytes(2).toString("hex")}`;
+}
+
 async function ensureRep(pool: Pool, workspace_id: string): Promise<{ id: string }> {
   const existing = await pool.query<{ id: string }>(
     `select id from reps where workspace_id = $1 and lower(name) = lower($2)`,
@@ -543,7 +694,27 @@ async function ensureProceduralSeed(
   workspace_id: string,
   rep_id: string,
 ): Promise<void> {
-  const pattern_key = "icp:fintech-founder|signal:funding|stage:cold_open";
+  await ensureProceduralSeedFor(pool, workspace_id, rep_id, {
+    icp_segment: "fintech-founder",
+    signal_kind: "funding",
+    subject: "Congrats on the round",
+    body:
+      "Congrats on the raise. Usually this is when pipeline quality starts mattering more than raw volume.",
+  });
+}
+
+async function ensureProceduralSeedFor(
+  pool: Pool,
+  workspace_id: string,
+  rep_id: string,
+  input: {
+    icp_segment: string;
+    signal_kind: string;
+    subject?: string;
+    body?: string;
+  },
+): Promise<void> {
+  const pattern_key = `icp:${input.icp_segment}|signal:${input.signal_kind}|stage:cold_open`;
   const existing = await pool.query<{ id: string }>(
     `select id from rep_memory_procedural
       where workspace_id = $1 and rep_id = $2 and pattern_key = $3
@@ -560,11 +731,520 @@ async function ensureProceduralSeed(
       rep_id,
       pattern_key,
       JSON.stringify({
-        subject: "Congrats on the round",
-        body: "Congrats on the raise. Usually this is when pipeline quality starts mattering more than raw volume.",
+        subject: input.subject ?? "Saw the signal",
+        body:
+          input.body ??
+          "Saw the signal. The timing looked relevant enough to compare notes.",
       }),
     ],
   );
+}
+
+export async function configureRep(
+  input: ConfigureRepInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; rep_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const name = input.name.trim() || "Maya";
+  const role = parseRepRole(input.role);
+  const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 25));
+  const approval = parseApprovalPolicy(input.approval);
+  const existing = await engine.pool.query<{ id: string }>(
+    `select id from reps where workspace_id = $1 and lower(name) = lower($2) limit 1`,
+    [session.workspace_id, name],
+  );
+  const rep_id = existing.rows[0]?.id ?? randomUUID();
+  const persona = {
+    voice: input.voice.trim() || "Warm, precise, low-hype, founder-to-founder.",
+    story:
+      input.story?.trim() ||
+      "Acts on fresh buying signals without spraying generic outreach.",
+    kpis: ["positive replies", "meetings booked"],
+    do_not: input.do_not?.filter(Boolean) ?? [
+      "Do not mention being an AI.",
+      "Do not overpromise.",
+    ],
+    samples: input.samples?.filter(Boolean) ?? [
+      "Saw the timing and thought it was worth a quick compare-notes conversation.",
+    ],
+  };
+  const autonomy = {
+    channels: {
+      email: { daily_cap: dailyCap, approval },
+    },
+    global: {},
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "rep.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `rep.configured:${session.workspace_id}:${rep_id}`,
+    payload: {
+      rep_id,
+      name,
+      role,
+      status: "active",
+      persona,
+      channels: ["email"],
+      autonomy,
+    },
+  });
+  await projectRepConfigured(engine.pool, event);
+  return { workspace_id: session.workspace_id, rep_id };
+}
+
+function parseRepRole(role: unknown): RepRoleValue {
+  const parsed = RepRole.safeParse(role);
+  return parsed.success ? parsed.data : "sdr";
+}
+
+async function projectRepConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    rep_id: string;
+    name: string;
+    role: string;
+    status: string;
+    persona: Record<string, unknown>;
+    channels: string[];
+    autonomy: Record<string, unknown>;
+  };
+  await pool.query(
+    `insert into reps (
+       id, workspace_id, name, role, status, persona, channels, autonomy
+     ) values ($1, $2, $3, $4::rep_role, $5::rep_status, $6::jsonb, $7::text[], $8::jsonb)
+     on conflict (id) do update set
+       name = excluded.name,
+       role = excluded.role,
+       status = excluded.status,
+       persona = excluded.persona,
+       channels = excluded.channels,
+       autonomy = excluded.autonomy,
+       updated_at = now()`,
+    [
+      payload.rep_id,
+      event.workspace_id,
+      payload.name,
+      payload.role,
+      payload.status,
+      JSON.stringify(payload.persona),
+      payload.channels,
+      JSON.stringify(payload.autonomy),
+    ],
+  );
+}
+
+export async function configureIcpSegment(
+  input: ConfigureIcpInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; icp_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const signalKind = parseSignalKind(input.signal_kind);
+  const name = input.name.trim() || "Hiring signal ICP";
+  const existing = await engine.pool.query<{ id: string }>(
+    `select id from workspace_icps
+      where workspace_id = $1 and lower(name) = lower($2)
+      limit 1`,
+    [session.workspace_id, name],
+  );
+  const icp_id = existing.rows[0]?.id ?? randomUUID();
+  const must_haves: IcpPredicateRule[] = [
+    { field: "kind", op: "eq", value: signalKind },
+  ];
+  const payload = {
+    icp_id,
+    name,
+    description:
+      input.description.trim() ||
+      "Companies with fresh hiring signals that imply a near-term GTM or operations trigger.",
+    must_haves,
+    nice_to_haves: input.nice_to_haves?.filter(Boolean) ?? [
+      "Recent role opening",
+      "Clear buying committee",
+    ],
+    match_threshold: clamp01(input.match_threshold ?? 0.6),
+    enabled: input.enabled ?? true,
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "workspace.icp.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `workspace.icp.configured:${session.workspace_id}:${icp_id}`,
+    payload,
+  });
+  await projectIcpConfigured(engine.pool, event);
+  return { workspace_id: session.workspace_id, icp_id };
+}
+
+async function projectIcpConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<IcpRow> {
+  const payload = event.payload as {
+    icp_id: string;
+    name: string;
+    description: string;
+    must_haves: IcpPredicateRule[];
+    nice_to_haves: string[];
+    match_threshold: number;
+    enabled: boolean;
+  };
+  const existing = await pool.query<{ id: string }>(
+    `select id from workspace_icps where workspace_id = $1 and id = $2`,
+    [event.workspace_id, payload.icp_id],
+  );
+  if (existing.rows[0]) {
+    const updated = await updateIcp(pool, event.workspace_id, payload.icp_id, {
+      name: payload.name,
+      description: payload.description,
+      must_haves: payload.must_haves,
+      nice_to_haves: payload.nice_to_haves,
+      match_threshold: payload.match_threshold,
+      enabled: payload.enabled,
+    });
+    if (!updated) throw new Error(`ICP not found after update: ${payload.icp_id}`);
+    return updated;
+  }
+  return createIcpWithId(pool, event.workspace_id, payload);
+}
+
+async function createIcpWithId(
+  pool: Pool,
+  workspace_id: string,
+  input: {
+    icp_id: string;
+    name: string;
+    description: string;
+    must_haves: IcpPredicateRule[];
+    nice_to_haves: string[];
+    match_threshold: number;
+    enabled: boolean;
+  },
+): Promise<IcpRow> {
+  const created = await createIcp(pool, workspace_id, {
+    name: input.name,
+    description: input.description,
+    must_haves: input.must_haves,
+    nice_to_haves: input.nice_to_haves,
+    match_threshold: input.match_threshold,
+    enabled: input.enabled,
+  });
+  if (created.id === input.icp_id) return created;
+  await pool.query(
+    `update workspace_icps set id = $3 where workspace_id = $1 and id = $2`,
+    [workspace_id, created.id, input.icp_id],
+  );
+  const { rows } = await pool.query<{
+    id: string;
+    workspace_id: string;
+    name: string;
+    description: string;
+    must_haves: IcpPredicateRule[];
+    nice_to_haves: string[];
+    match_threshold: string;
+    enabled: boolean;
+    created_at: Date;
+    updated_at: Date;
+  }>(`select * from workspace_icps where id = $1`, [input.icp_id]);
+  const row = rows[0]!;
+  return {
+    id: row.id,
+    workspace_id: row.workspace_id,
+    name: row.name,
+    description: row.description,
+    must_haves: Array.isArray(row.must_haves) ? row.must_haves : [],
+    nice_to_haves: Array.isArray(row.nice_to_haves) ? row.nice_to_haves : [],
+    match_threshold: Number(row.match_threshold),
+    enabled: row.enabled,
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
+
+export async function trackCompanyForWorkspace(
+  input: TrackCompanyInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; company_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const company = await upsertTrackedCompany(engine.pool, {
+    name: input.name.trim(),
+    domain: blankToUndefined(input.domain),
+    industry: blankToUndefined(input.industry),
+    size_bucket: blankToUndefined(input.size_bucket),
+    greenhouse_id: blankToUndefined(input.greenhouse_id),
+    lever_id: blankToUndefined(input.lever_id),
+    ashby_id: blankToUndefined(input.ashby_id),
+    workable_id: blankToUndefined(input.workable_id),
+    career_rss_url: blankToUndefined(input.career_rss_url),
+    properties: { managed_by: "dashboard-activation" },
+  });
+  await addCompanyExplicit(
+    engine.pool,
+    session.workspace_id,
+    company.id,
+    input.reason ?? "activation",
+    session.user_id,
+  );
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "workspace.company.tracked",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `workspace.company.tracked:${session.workspace_id}:${company.id}`,
+    payload: {
+      company_id: company.id,
+      name: company.name,
+      domain: company.domain,
+      reason: input.reason ?? "activation",
+    },
+  });
+  await projectCompanyTracked(engine.pool, event, company);
+  return { workspace_id: session.workspace_id, company_id: company.id };
+}
+
+async function projectCompanyTracked(
+  pool: Pool,
+  event: PublishedEvent,
+  company?: TrackedCompany,
+): Promise<void> {
+  const payload = event.payload as {
+    company_id: string;
+    name: string;
+    domain: string | null;
+    reason: string | null;
+  };
+  if (!company) {
+    await upsertTrackedCompany(pool, {
+      name: payload.name,
+      domain: payload.domain ?? undefined,
+      properties: { projected_from: event.id },
+    });
+  }
+  await addCompanyExplicit(
+    pool,
+    event.workspace_id!,
+    payload.company_id,
+    payload.reason ?? "activation",
+    event.producer_ref,
+  );
+}
+
+export async function configureSignalEmailPlay(
+  input: ConfigureSignalEmailPlayInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; play_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const signalKind = parseSignalKind(input.signal_kind);
+  const name = input.name?.trim() || `${titleizeSignalKind(signalKind)} Signal Email`;
+  const existing = await engine.pool.query<{ id: string; version: number }>(
+    `select id, version from plays
+      where workspace_id = $1 and lower(name) = lower($2)
+      order by version desc
+      limit 1`,
+    [session.workspace_id, name],
+  );
+  const play_id = existing.rows[0]?.id ?? randomUUID();
+  const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 25));
+  const approval = parseApprovalPolicy(input.approval);
+  const declaration =
+    input.description?.trim() ||
+    `When a ${signalKind.replace(/_/g, " ")} Signal matches ${input.icp_name ?? "the ICP"}, draft, judge, gate, and send one concise founder-led email.`;
+  const compiled = {
+    trigger: { kind: "signal", filter: { kind: signalKind } },
+    steps: [
+      { id: "research", op: "research.signal_context" },
+      { id: "draft", op: "writer.compose_email" },
+      { id: "judge", op: "eval.hot_path" },
+      { id: "approval", op: "approval.channel_gate" },
+      { id: "send", op: "sender.email" },
+    ],
+  };
+  const autonomy = {
+    channels: { email: { daily_cap: dailyCap, approval } },
+    global: {},
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "play.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `play.configured:${session.workspace_id}:${play_id}`,
+    payload: {
+      play_id,
+      name,
+      declaration,
+      compiled,
+      autonomy,
+      default_rep_id: input.rep_id,
+      status: "active",
+      version: existing.rows[0]?.version ?? 1,
+    },
+  });
+  await projectPlayConfigured(engine.pool, event);
+  return { workspace_id: session.workspace_id, play_id };
+}
+
+async function projectPlayConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    play_id: string;
+    name: string;
+    declaration: string;
+    compiled: Record<string, unknown>;
+    autonomy: Record<string, unknown>;
+    default_rep_id: string | null;
+    status: string;
+    version: number;
+  };
+  await pool.query(
+    `insert into plays (
+       id, workspace_id, name, description, declaration, compiled,
+       compiler_version, autonomy, default_rep_id, status, version
+     ) values ($1, $2, $3, $4, $5, $6::jsonb, 'dashboard-v1', $7::jsonb, $8, $9::play_status, $10)
+     on conflict (id) do update set
+       name = excluded.name,
+       description = excluded.description,
+       declaration = excluded.declaration,
+       compiled = excluded.compiled,
+       compiler_version = excluded.compiler_version,
+       autonomy = excluded.autonomy,
+       default_rep_id = excluded.default_rep_id,
+       status = excluded.status,
+       updated_at = now()`,
+    [
+      payload.play_id,
+      event.workspace_id,
+      payload.name,
+      payload.declaration,
+      payload.declaration,
+      JSON.stringify(payload.compiled),
+      JSON.stringify(payload.autonomy),
+      payload.default_rep_id,
+      payload.status,
+      payload.version,
+    ],
+  );
+}
+
+export async function configureActivationSetup(
+  input: ConfigureActivationInput,
+  session: ProductWorkspaceSession,
+): Promise<ActivationSetupResult> {
+  const rep = await configureRep(input.rep, session);
+  const icp = await configureIcpSegment(input.icp, session);
+  const signalKind = parseSignalKind(input.icp.signal_kind);
+  const play = await configureSignalEmailPlay(
+    {
+      rep_id: rep.rep_id,
+      signal_kind: signalKind,
+      icp_name: input.icp.name,
+      daily_cap: input.play?.daily_cap ?? input.rep.daily_cap,
+      approval: input.play?.approval ?? input.rep.approval,
+      name: input.play?.name,
+      description: input.play?.description,
+    },
+    session,
+  );
+  let channel_account_id: string | undefined;
+  if (input.email?.display_name) {
+    const email = await configureWorkspaceEmailAccount(input.email, session);
+    channel_account_id = email.channel_account_id;
+  }
+  let tracked_company_id: string | undefined;
+  if (input.company?.name?.trim()) {
+    const tracked = await trackCompanyForWorkspace(input.company, session);
+    tracked_company_id = tracked.company_id;
+  }
+  let source_id: string | undefined;
+  if (input.source?.url?.trim()) {
+    await configureRssSource(input.source, session);
+    const row = await getPool().query<{ id: string }>(
+      `select id from graph_sources
+        where workspace_id = $1 and name = $2
+        order by created_at desc
+        limit 1`,
+      [session.workspace_id, input.source.name],
+    );
+    source_id = row.rows[0]?.id ?? source_id;
+  }
+  await ensureProceduralSeedFor(getPool(), session.workspace_id, rep.rep_id, {
+    icp_segment: icp.icp_id,
+    signal_kind: signalKind,
+    subject: "Saw the hiring signal",
+    body:
+      "Saw the new role. Usually that means the operating motion is changing fast enough to compare notes.",
+  });
+  return {
+    workspace_id: session.workspace_id,
+    rep_id: rep.rep_id,
+    icp_id: icp.icp_id,
+    play_id: play.play_id,
+    channel_account_id,
+    tracked_company_id,
+    source_id,
+  };
+}
+
+function parseSignalKind(kind: unknown): SignalKindValue {
+  const parsed = SignalKind.safeParse(kind);
+  return parsed.success ? parsed.data : "hiring";
+}
+
+function titleizeSignalKind(kind: string): string {
+  return kind
+    .split("_")
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0.6;
+  return Math.min(1, Math.max(0, value));
+}
+
+function blankToUndefined(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export async function configureWorkspaceEmailAccount(
+  input: ConfigureEmailInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; channel_account_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const account = await ensureChannelAccount(
+    engine.pool,
+    session.workspace_id,
+    !isProductionProductRuntime(),
+  );
+  const transport = resolveProductEmailTransportMode();
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "channel.account.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `channel.account.configured:${session.workspace_id}:${account.id}`,
+    payload: {
+      channel_account_id: account.id,
+      kind: "email_domain",
+      display_name: input.display_name,
+      daily_cap: Math.max(0, Math.trunc(input.daily_cap)),
+      transport,
+    },
+  });
+  await projectEmailAccountConfigured(engine.pool, event);
+  return { workspace_id: session.workspace_id, channel_account_id: account.id };
 }
 
 export async function configureEmailAccount(
@@ -741,10 +1421,12 @@ export async function configureRssSource(
 ): Promise<BootstrapResult> {
   const engine = await getProductEngine();
   const boot = session
-    ? await bootstrapWorkspace(engine.pool, session.user_id, {
-        ensureMembership: false,
+    ? {
         workspace_id: session.workspace_id,
-      })
+        rep_id: "",
+        play_id: "",
+        channel_account_id: "",
+      }
     : await bootstrapWorkspace(engine.pool);
   const scoped = session ?? {
     workspace_id: boot.workspace_id,
@@ -797,10 +1479,12 @@ export async function submitManualSignal(
 ): Promise<SubmittedSignalResult> {
   const engine = await getProductEngine();
   const boot = session
-    ? await bootstrapWorkspace(engine.pool, session.user_id, {
-        ensureMembership: false,
+    ? {
         workspace_id: session.workspace_id,
-      })
+        rep_id: "",
+        play_id: "",
+        channel_account_id: "",
+      }
     : await bootstrapWorkspace(engine.pool);
   const scoped = session ?? {
     workspace_id: boot.workspace_id,
@@ -810,6 +1494,11 @@ export async function submitManualSignal(
     throw new Error("Configured workspace does not match the product session.");
   }
   await assertProductWorkspaceAccess(scoped, engine.pool);
+  const signalKind = parseSignalKind(input.signal_kind ?? "funding");
+  const icpSegment =
+    input.icp_segment?.trim() ||
+    (await findDefaultIcpSegment(engine.pool, boot.workspace_id)) ||
+    "fintech-founder";
   const store = createPostgresVerticalSliceStore(engine.pool);
   const now = new Date().toISOString();
   const company: GraphCompany = {
@@ -848,17 +1537,19 @@ export async function submitManualSignal(
   const signal = await ingestManualSignal(
     {
       workspace_id: boot.workspace_id,
-      kind: "funding",
+      kind: signalKind,
       title: input.signal_title,
       content: input.signal_content,
       url: input.signal_url || null,
-      icp_segment: "fintech-founder",
-      match_score: 0.86,
+      icp_segment: icpSegment,
+      match_score: clamp01(input.match_score ?? 0.86),
       company,
       person,
       properties: {
         email_approval: input.approval,
-        simulate_outcome_kind: input.approval === "none" ? "positive_reply" : null,
+        simulate_outcome_kind:
+          input.simulate_outcome_kind ??
+          (input.approval === "none" ? "positive_reply" : null),
       },
     },
     {
@@ -868,6 +1559,20 @@ export async function submitManualSignal(
     },
   );
   return { signal_id: signal.id, workspace_id: boot.workspace_id };
+}
+
+async function findDefaultIcpSegment(
+  pool: Pool,
+  workspace_id: string,
+): Promise<string | null> {
+  const { rows } = await pool.query<{ id: string }>(
+    `select id from workspace_icps
+      where workspace_id = $1 and enabled
+      order by created_at asc
+      limit 1`,
+    [workspace_id],
+  );
+  return rows[0]?.id ?? null;
 }
 
 export async function submitSignalAndDispatch(
@@ -1055,7 +1760,7 @@ export async function dispatchSignalPlaysOnce(
         and p.compiled->'trigger'->>'kind' = 'signal'
         and (
           p.compiled #>> '{trigger,filter,kind}' is null
-          or p.compiled #>> '{trigger,filter,kind}' = s.kind
+          or p.compiled #>> '{trigger,filter,kind}' = s.kind::text
         )
        join lateral (
          select gp.id
@@ -1425,6 +2130,7 @@ export async function approveWorkflowApproval(
   approval_id: string,
   decision: "approved" | "rejected",
   session?: ProductWorkspaceSession,
+  note?: string,
 ): Promise<void> {
   const engine = await getProductEngine();
   if (session) {
@@ -1438,6 +2144,7 @@ export async function approveWorkflowApproval(
   await engine.runtime.resolveApproval(approval_id, {
     decision,
     decided_by: session?.user_id ?? DEFAULT_PRODUCT_USER_ID,
+    note,
   });
   await waitForApprovalDecision(engine.pool, approval_id);
 }

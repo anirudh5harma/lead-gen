@@ -97,7 +97,7 @@ export function snsStringToSign(envelope: SnsMessageEnvelope): string {
     }
     fields.push(key, value);
   }
-  return fields.join("\n");
+  return `${fields.join("\n")}\n`;
 }
 
 export function validSnsUrl(raw: string, requiredSuffix?: string): boolean {

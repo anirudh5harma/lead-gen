@@ -9,6 +9,7 @@
 import {
   GetAccountCommand,
   GetConfigurationSetEventDestinationsCommand,
+  GetEmailIdentityCommand,
   ListEmailIdentitiesCommand,
   SESv2Client,
 } from "@aws-sdk/client-sesv2";
@@ -26,6 +27,7 @@ const note = (label: string, ok: boolean, detail?: string): void => {
 
 const region = process.env.AWS_REGION?.trim() || "us-east-1";
 const configurationSet = process.env.SES_CONFIGURATION_SET?.trim() || "bombsell-outbound";
+const expectedIdentity = process.env.SES_SENDING_DOMAIN?.trim();
 const trustedTopics = (process.env.AWS_SNS_TOPIC_ARNS ?? "")
   .split(",")
   .map((value) => value.trim())
@@ -50,13 +52,43 @@ async function main(): Promise<void> {
     );
 
     const identities = await client.send(new ListEmailIdentitiesCommand({}));
-    const verified = (identities.EmailIdentities ?? []).filter(
-      (identity) => identity.VerifiedForSendingStatus === true,
+    const identityNames = (identities.EmailIdentities ?? [])
+      .map((identity) => identity.IdentityName)
+      .filter((name): name is string => Boolean(name));
+    const verificationResults = await Promise.all(
+      identityNames
+        .filter((name) => !expectedIdentity || name === expectedIdentity)
+        .map(async (name) => {
+          const identity = await client.send(
+            new GetEmailIdentityCommand({ EmailIdentity: name }),
+          );
+          return {
+            name,
+            verified: identity.VerifiedForSendingStatus === true,
+            dkim: identity.DkimAttributes?.Status,
+            configurationSet: identity.ConfigurationSetName,
+          };
+        }),
     );
+    const verified = verificationResults.filter((identity) => identity.verified);
     note(
       "ses: at least one verified sending identity",
       verified.length > 0,
-      verified.length > 0 ? verified.map((identity) => identity.IdentityName).join(", ") : "no verified identities",
+      verified.length > 0
+        ? verified
+            .map((identity) => {
+              const extras = [
+                identity.dkim ? `dkim=${identity.dkim}` : null,
+                identity.configurationSet
+                  ? `config=${identity.configurationSet}`
+                  : null,
+              ].filter(Boolean);
+              return `${identity.name}${extras.length ? ` (${extras.join(", ")})` : ""}`;
+            })
+            .join(", ")
+        : expectedIdentity
+          ? `${expectedIdentity} is not verified in ${region}`
+          : "no verified identities",
     );
 
     const destinations = await client.send(

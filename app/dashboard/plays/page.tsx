@@ -55,7 +55,7 @@ export default async function PlaysPage() {
       {plays.length === 0 ? (
         <EmptyState
           title="No Plays defined in this workspace"
-          hint='Plays are seeded by code today (see core/plays/series_a_cold_open.ts). A "create Play" UI is a later milestone.'
+          hint="Open Setup to configure the first Signal-to-email Play with per-channel approval and volume gates."
         />
       ) : (
         <ul className="space-y-4">

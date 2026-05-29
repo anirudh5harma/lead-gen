@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAuthConfigFromEnv } from "@/core/product/auth";
 
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  let response = nextWithPathname(request);
   const config = supabaseAuthConfigFromEnv();
   if (!config) return response;
 
@@ -16,7 +16,7 @@ export async function proxy(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
-        response = NextResponse.next({ request });
+        response = nextWithPathname(request);
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);
         });
@@ -29,6 +29,16 @@ export async function proxy(request: NextRequest) {
 
   await supabase.auth.getUser();
   return response;
+}
+
+function nextWithPathname(request: NextRequest): NextResponse {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
 }
 
 export const config = {

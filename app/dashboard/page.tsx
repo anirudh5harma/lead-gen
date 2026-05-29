@@ -136,12 +136,18 @@ export default async function MorningBriefPage() {
         <SectionHeader
           eyebrow="morning brief"
           title="No workspace yet"
-          subtitle="Create one and seed Maya to see this dashboard come alive."
+          subtitle="Create a workspace, configure the first Rep and Play, then run one trusted Signal."
         />
         <EmptyState
           title="No workspace found"
-          hint="Run the demo seed (core/plays/seed.ts → seedMayaForDemo) inside a fresh workspace, then refresh."
+          hint="Open Setup to create the workspace and launch the first GTM loop."
         />
+        <Link
+          href="/dashboard/setup"
+          className="mt-4 inline-flex rounded-md bg-[var(--color-text-1)] px-4 py-2 text-sm font-semibold text-[var(--color-ink-0)] hover:bg-[var(--color-accent)]"
+        >
+          Open setup
+        </Link>
       </>
     );
   }
@@ -175,7 +181,7 @@ export default async function MorningBriefPage() {
         {convs.length === 0 ? (
           <EmptyState
             title="No conversations yet"
-            hint="When a Play sends an email, the conversation it opened will appear here."
+            hint="Run the first Signal from Setup; approved or autonomous sends open Conversations here."
           />
         ) : (
           <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">
@@ -229,7 +235,7 @@ export default async function MorningBriefPage() {
         {signals.length === 0 ? (
           <EmptyState
             title="No signals yet"
-            hint="Ingestion will populate this view as your sources start landing in core/graph."
+            hint="Configure sources in Setup or Ingestion, then run a Signal through the Play."
           />
         ) : (
           <ul className="divide-y divide-[var(--color-line-1)] border border-[var(--color-line-1)] rounded-lg overflow-hidden bg-[var(--color-ink-0)]">

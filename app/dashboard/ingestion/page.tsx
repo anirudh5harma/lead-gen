@@ -3,8 +3,14 @@ import {
   MetricCard,
   SectionHeader,
 } from "@/components/dashboard/Shell";
+import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
+import {
+  configureIcpAction,
+  configureSourceAction,
+  trackCompanyAction,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -301,6 +307,62 @@ export default async function IngestionPage() {
         />
       </section>
 
+      <section className="mb-10 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5">
+        <h2 className="mb-4 text-sm font-semibold text-[var(--color-text-1)]">
+          Control room
+        </h2>
+        <div className="grid gap-6 xl:grid-cols-3">
+          <form action={configureIcpAction} className="grid gap-3">
+            <Field name="icp_name" label="ICP" defaultValue="Hiring signal ICP" />
+            <Select
+              name="signal_kind"
+              label="Signal"
+              defaultValue="hiring"
+              options={[
+                ["hiring", "Hiring"],
+                ["funding", "Funding"],
+                ["product_launch", "Product launch"],
+                ["press_mention", "Press mention"],
+              ]}
+            />
+            <TextArea
+              name="icp_description"
+              label="Description"
+              defaultValue="Companies showing fresh hiring intent around GTM, operations, or revenue roles."
+            />
+            <Field name="match_threshold" label="Threshold" defaultValue="0.60" type="number" step="0.01" />
+            <ActionButton icon="rule" label="Save ICP" />
+          </form>
+
+          <form action={trackCompanyAction} className="grid gap-3">
+            <Field name="company_name" label="Company" defaultValue="Acme Payroll" />
+            <Field name="company_domain" label="Domain" defaultValue="acmepayroll.example" />
+            <Field name="company_industry" label="Industry" defaultValue="B2B SaaS" />
+            <Field name="greenhouse_id" label="Greenhouse" defaultValue="" />
+            <Field name="lever_id" label="Lever" defaultValue="" />
+            <ActionButton icon="add_business" label="Track company" />
+          </form>
+
+          <form action={configureSourceAction} className="grid gap-3">
+            <Field name="source_name" label="Source" defaultValue="Hiring signal feed" />
+            <Field name="source_url" label="RSS URL" defaultValue="" type="url" />
+            <Select
+              name="signal_kind"
+              label="Kind"
+              defaultValue="hiring"
+              options={[
+                ["hiring", "Hiring"],
+                ["funding", "Funding"],
+                ["product_launch", "Product launch"],
+                ["press_mention", "Press mention"],
+              ]}
+            />
+            <Field name="poll_interval_minutes" label="Minutes" defaultValue="60" type="number" />
+            <ActionButton icon="rss_feed" label="Save source" />
+          </form>
+        </div>
+      </section>
+
       <section className="mb-10">
         <h2 className="font-serif text-xl text-[var(--color-text-1)] mb-3">
           Daily budget
@@ -555,5 +617,98 @@ function BudgetBar({
         window started {timeAgo(windowStart)}
       </p>
     </div>
+  );
+}
+
+function Field({
+  name,
+  label,
+  defaultValue,
+  type = "text",
+  step,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+  type?: string;
+  step?: string;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
+        {label}
+      </span>
+      <input
+        name={name}
+        type={type}
+        step={step}
+        defaultValue={defaultValue}
+        className="min-h-10 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 text-sm text-[var(--color-text-1)]"
+      />
+    </label>
+  );
+}
+
+function TextArea({
+  name,
+  label,
+  defaultValue,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
+        {label}
+      </span>
+      <textarea
+        name={name}
+        rows={4}
+        defaultValue={defaultValue}
+        className="rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+      />
+    </label>
+  );
+}
+
+function Select({
+  name,
+  label,
+  defaultValue,
+  options,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+  options: Array<[string, string]>;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
+        {label}
+      </span>
+      <select
+        name={name}
+        defaultValue={defaultValue}
+        className="min-h-10 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 text-sm text-[var(--color-text-1)]"
+      >
+        {options.map(([value, optionLabel]) => (
+          <option key={value} value={value}>
+            {optionLabel}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ActionButton({ icon, label }: { icon: string; label: string }) {
+  return (
+    <button className="inline-flex w-fit items-center gap-2 rounded-md bg-[var(--color-text-1)] px-3 py-2 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
+      <Icon name={icon} size={17} />
+      {label}
+    </button>
   );
 }

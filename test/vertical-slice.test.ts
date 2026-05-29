@@ -72,6 +72,35 @@ test("first vertical slice: approval gate parks then sends after approval", asyn
   );
 });
 
+test("first vertical slice: edited approval draft is rejudged before send", async () => {
+  const result = await runFirstVerticalSlice({
+    emailApproval: "always",
+    autoApprove: true,
+    approvalNote: JSON.stringify({
+      type: "draft_override",
+      subject: "Nisha, quick note on the Series A",
+      body: "Hi Nisha,\n\nSaw Acme Payroll raised a Series A and is expanding finance workflows for distributed teams. That usually creates a good moment to tighten founder-led pipeline quality before hiring ramps.\n\nWorth comparing notes this week?\n\n-Maya",
+    }),
+  });
+
+  assert.equal(result.output.decision, "sent");
+  assert.equal(result.state.messages[0].subject, "Nisha, quick note on the Series A");
+  assert.match(result.state.messages[0].body ?? "", /founder-led pipeline quality/);
+  assert.equal(result.state.messages[0].properties.human_edited, true);
+  assert.equal(
+    result.eventTypes.filter((eventType) => eventType === "draft.judged").length,
+    2,
+  );
+  assert.ok(
+    result.eventTypes.indexOf("approval.decided") <
+      result.eventTypes.lastIndexOf("draft.judged"),
+  );
+  assert.ok(
+    result.eventTypes.lastIndexOf("draft.judged") <
+      result.eventTypes.indexOf("message.sent"),
+  );
+});
+
 test("first vertical slice: play channel daily cap defers before send", async () => {
   const result = await runFirstVerticalSlice({
     playChannelPolicy: {

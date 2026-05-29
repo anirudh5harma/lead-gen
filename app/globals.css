@@ -1,84 +1,83 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────────
-   Bombsell — Editorial Design System
-   Inspired by Perplexity (command-bar primacy, hairline metadata,
-   single-accent restraint) and RunwayML (editorial calm, mono labels,
-   real-content density). Warm coral retained as the singular accent.
+   Bombsell — Operator Design System
+   Calm GTM control room: mineral paper surfaces, carbon text, one
+   high-signal vermilion accent, sans-led display type, compact data.
    No decoration. No gradients. No blobs. No animated chrome.
    ───────────────────────────────────────────────────────────── */
 
 @theme inline {
-  /* Surfaces — warm paper ladder (no pure white; warmed Stitch tokens) */
-  --color-ink-0: #fffefc;        /* highest / overlays / cards = surface-container-lowest */
-  --color-ink-1: #fbf7f1;        /* page bg                    = surface */
-  --color-ink-2: #f6f0e7;        /* panel / muted fill         = surface-container-low */
-  --color-ink-3: #f1eae0;        /* hairline fill              = surface-container */
-  --color-ink-4: #ede4d8;        /* hover                      = surface-container-high */
+  /* Surfaces — cool mineral ladder, built for dense operator screens */
+  --color-ink-0: #fffffd;        /* highest / overlays / cards */
+  --color-ink-1: #f4f7f3;        /* page bg */
+  --color-ink-2: #eaf0ea;        /* panel / muted fill */
+  --color-ink-3: #dde6df;        /* selected / secondary fill */
+  --color-ink-4: #d1ddd5;        /* hover */
 
-  /* Borders — warm ink hairlines (match .hairline-* utilities) */
-  --color-line-1: #1a181612;
-  --color-line-2: #1a181622;
-  --color-line-3: #1a181640;
+  /* Borders — carbon hairlines */
+  --color-line-1: #10201c12;
+  --color-line-2: #10201c24;
+  --color-line-3: #10201c44;
 
-  /* Text — warm grey ladder (aligned to Stitch on-surface tokens) */
-  --color-text-1: #1a1411;       /* primary  = on-surface */
-  --color-text-2: #665850;       /* secondary = on-surface-variant */
-  --color-text-3: #95847c;       /* tertiary / labels = outline */
-  --color-text-4: #ad9c93;       /* hints */
+  /* Text — graphite-green ladder */
+  --color-text-1: #10201c;       /* primary */
+  --color-text-2: #53635e;       /* secondary */
+  --color-text-3: #7a8a84;       /* tertiary / labels */
+  --color-text-4: #a0ada8;       /* hints */
 
-  /* Accent — single coral (aligned to Stitch "primary" #c2562f) */
-  --color-accent: #c2562f;
-  --color-accent-soft: #c2562f10;
-  --color-accent-bg: #fce4d6;
-  --color-accent-hi: #dd7445;
+  /* Accent — signal vermilion */
+  --color-accent: #d84f2a;
+  --color-accent-soft: #d84f2a12;
+  --color-accent-bg: #ffe1d6;
+  --color-accent-hi: #b83d1f;
   --color-accent-on: #ffffff;
 
   /* Semantic */
-  --color-pos: #2c9b4e;
-  --color-pos-bg: #d9f0df;
-  --color-warn: #a8841f;
-  --color-warn-bg: #f0e6cc;
-  --color-neg: #bf4b3d;
-  --color-neg-bg: #edd8d4;
+  --color-pos: #18745f;
+  --color-pos-bg: #d7efe8;
+  --color-warn: #986f10;
+  --color-warn-bg: #f1e5c5;
+  --color-neg: #bc3f34;
+  --color-neg-bg: #f0d7d3;
 
   /* Fonts */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas;
-  --font-serif: var(--font-instrument-serif), ui-serif, Georgia, "Times New Roman";
+  --font-serif: var(--font-manrope), var(--font-geist-sans), ui-sans-serif, system-ui;
 
-  /* ── "Bombsell — Agentic GTM" palette (warmed; no pure white) ── */
-  --color-surface: #fbf7f1;
-  --color-surface-bright: #fffefd;
-  --color-surface-dim: #dccebe;
-  --color-surface-container-lowest: #fffefc;
-  --color-surface-container-low: #f6f0e7;
-  --color-surface-container: #f1eae0;
-  --color-surface-container-high: #ede4d8;
-  --color-surface-container-highest: #e6dccf;
-  --color-on-surface: #1a1411;
-  --color-on-surface-variant: #665850;
-  --color-outline: #917f78;
-  --color-outline-variant: #ddccc1;
-  --color-background: #fbf7f1;
-  --color-on-background: #1a1411;
+  /* ── "Bombsell — Agentic GTM" palette ── */
+  --color-surface: #f4f7f3;
+  --color-surface-bright: #fffffd;
+  --color-surface-dim: #ccd8d0;
+  --color-surface-container-lowest: #fffffd;
+  --color-surface-container-low: #eaf0ea;
+  --color-surface-container: #dde6df;
+  --color-surface-container-high: #d1ddd5;
+  --color-surface-container-highest: #c4d1ca;
+  --color-on-surface: #10201c;
+  --color-on-surface-variant: #53635e;
+  --color-outline: #76877f;
+  --color-outline-variant: #c8d5ce;
+  --color-background: #f4f7f3;
+  --color-on-background: #10201c;
 
-  --color-primary: #c2562f;
+  --color-primary: #d84f2a;
   --color-on-primary: #ffffff;
-  --color-primary-container: #dd7445;
-  --color-on-primary-container: #ffe9e3;
+  --color-primary-container: #ffb9a5;
+  --color-on-primary-container: #511300;
   --color-primary-fixed: #ffdbd0;
   --color-primary-fixed-dim: #ffb59e;
   --color-inverse-primary: #ffb59e;
 
-  --color-secondary: #78564c;
+  --color-secondary: #52645d;
   --color-on-secondary: #ffffff;
-  --color-secondary-container: #fdd0c3;
-  --color-on-secondary-container: #79574d;
-  --color-secondary-fixed: #ffdbd0;
-  --color-secondary-fixed-dim: #e8bdb0;
+  --color-secondary-container: #d5e7df;
+  --color-on-secondary-container: #10201c;
+  --color-secondary-fixed: #d5e7df;
+  --color-secondary-fixed-dim: #b9cbc3;
 
-  --color-tertiary: #0e8f7c;
+  --color-tertiary: #18745f;
   --color-on-tertiary: #ffffff;
   --color-tertiary-container: #3aa193;
   --color-on-tertiary-container: #b0fcef;
@@ -90,9 +89,9 @@
   --color-error-container: #ffdad6;
   --color-on-error-container: #93000a;
 
-  --color-inverse-surface: #362f2d;
-  --color-inverse-on-surface: #fceeea;
-  --color-surface-tint: #c2562f;
+  --color-inverse-surface: #22302c;
+  --color-inverse-on-surface: #edf5f0;
+  --color-surface-tint: #d84f2a;
 
   /* ── Stitch spacing scale ── */
   --spacing-base: 4px;
@@ -122,15 +121,15 @@
 
   --text-h1-editorial: 34px;
   --text-h1-editorial--line-height: 1.08;
-  --text-h1-editorial--letter-spacing: -0.022em;
+  --text-h1-editorial--letter-spacing: 0;
   --text-h1-editorial--font-weight: 600;
   --text-display-sm: 34px;
   --text-display-sm--line-height: 1.15;
-  --text-display-sm--letter-spacing: -0.02em;
+  --text-display-sm--letter-spacing: 0;
   --text-display-sm--font-weight: 600;
   --text-display-lg: 56px;
   --text-display-lg--line-height: 1.04;
-  --text-display-lg--letter-spacing: -0.025em;
+  --text-display-lg--letter-spacing: 0;
   --text-display-lg--font-weight: 600;
   --text-body-large: 18px;
   --text-body-large--line-height: 1.6;
@@ -194,24 +193,32 @@ html, body {
 /* Big editorial headline */
 .editorial-h1 {
   font-family: var(--font-manrope), var(--font-geist-sans), ui-sans-serif, system-ui;
-  font-size: clamp(44px, 7.5vw, 84px);
+  font-size: 44px;
   line-height: 1.04;
-  letter-spacing: -0.022em;
+  letter-spacing: 0;
   font-weight: 600;
 }
 .editorial-h2 {
   font-family: var(--font-manrope), var(--font-geist-sans), ui-sans-serif, system-ui;
-  font-size: clamp(30px, 4.5vw, 48px);
+  font-size: 30px;
   line-height: 1.08;
-  letter-spacing: -0.018em;
+  letter-spacing: 0;
   font-weight: 600;
+}
+@media (min-width: 768px) {
+  .editorial-h1 { font-size: 68px; }
+  .editorial-h2 { font-size: 42px; }
+}
+@media (min-width: 1280px) {
+  .editorial-h1 { font-size: 84px; }
+  .editorial-h2 { font-size: 48px; }
 }
 
 /* Accent word — bold, slightly tight (no serif/italic anymore) */
 .serif-italic {
   font-weight: 700;
   font-style: normal;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 /* ── Buttons ────────────────────────────────────────────────── */
@@ -276,9 +283,9 @@ html, body {
 .dot-offline { background: var(--color-neg); }
 
 @keyframes dot-pulse {
-  0%   { box-shadow: 0 0 0 0 #2c9b4e55; }
-  70%  { box-shadow: 0 0 0 6px #2c9b4e00; }
-  100% { box-shadow: 0 0 0 0 #2c9b4e00; }
+  0%   { box-shadow: 0 0 0 0 #18745f55; }
+  70%  { box-shadow: 0 0 0 6px #18745f00; }
+  100% { box-shadow: 0 0 0 0 #18745f00; }
 }
 
 /* ── Command bar ────────────────────────────────────────────── */
@@ -337,8 +344,8 @@ html, body {
 
 /* Code block */
 .codeblock {
-  background: #16140f;
-  color: #ebe7df;
+  background: #111d19;
+  color: #edf5f0;
   border-radius: 12px;
   padding: 16px 18px;
   font-family: var(--font-mono);
@@ -440,14 +447,8 @@ select:focus, select:focus-visible {
 .drawer-panel[data-open="false"] { transform: translateX(100%); }
 .drawer-panel[data-open="true"] { transform: translateX(0); }
 
-/* Hero backdrop — warm glow */
-.hero-bg {
-  background:
-    radial-gradient(75% 65% at 50% -10%, color-mix(in srgb, var(--color-primary) 15%, transparent), transparent 70%),
-    radial-gradient(52% 55% at 90% 2%, color-mix(in srgb, var(--color-tertiary) 15%, transparent), transparent 72%),
-    radial-gradient(52% 50% at 6% 16%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 72%),
-    linear-gradient(180deg, color-mix(in srgb, var(--color-surface-container-low) 85%, transparent), transparent 45%);
-}
+/* Hero backdrop — deliberately plain for the operator theme */
+.hero-bg { background: var(--color-ink-1); }
 
 /* ── rig-style structural grid (landing) ─────────────────────── */
 .page-grid {
@@ -480,13 +481,10 @@ select:focus, select:focus-visible {
     linear-gradient(var(--m), var(--m)) right -6px bottom -6px / 1.5px 12px no-repeat;
 }
 .grid-block.no-marks::after { content: none; }
-/* soft outlined panel — light warm gradient fill + a clearer outline (pairs with .grid-block) */
+/* soft outlined panel — quiet fill + a clearer outline (pairs with .grid-block) */
 .panel-soft {
   border: 1px solid color-mix(in srgb, var(--color-on-surface) 14%, transparent);
-  background:
-    radial-gradient(135% 120% at 0% 0%, color-mix(in srgb, var(--color-primary)6%, transparent), transparent 62%),
-    radial-gradient(125% 110% at 100% 100%, color-mix(in srgb, var(--color-tertiary) 4%, transparent), transparent 62%),
-    var(--color-surface-container-lowest);
+  background: var(--color-surface-container-lowest);
 }
 
 /* ── motion: load-in reveal + marquee ──────────────────────── */
@@ -555,27 +553,13 @@ select:focus, select:focus-visible {
 
 /* ── depth / abstraction layers (landing) ──────────────────── */
 
-/* blurred decorative orb — sits behind hero/section content */
+/* Deprecated decorative orb classes: kept as no-ops for old markup. */
 .float-orb {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(64px);
-  opacity: 0.55;
-  pointer-events: none;
-  will-change: transform;
-  animation: bs-drift 18s ease-in-out infinite alternate;
+  display: none !important;
 }
-.float-orb.orb-primary {
-  background: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 50%, transparent) 0%, transparent 65%);
-}
-.float-orb.orb-tertiary {
-  background: radial-gradient(circle, color-mix(in srgb, var(--color-tertiary) 40%, transparent) 0%, transparent 65%);
-}
-.float-orb.orb-soft {
-  background: radial-gradient(circle, color-mix(in srgb, var(--color-secondary-container) 70%, transparent) 0%, transparent 70%);
-  filter: blur(80px);
-  opacity: 0.45;
-}
+.float-orb.orb-primary,
+.float-orb.orb-tertiary,
+.float-orb.orb-soft { background: none; }
 @keyframes bs-drift {
   0%   { transform: translate3d(0, 0, 0) scale(1); }
   50%  { transform: translate3d(18px, -24px, 0) scale(1.06); }

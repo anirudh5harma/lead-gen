@@ -71,7 +71,7 @@ export default async function RepsPage() {
       {reps.length === 0 ? (
         <EmptyState
           title="No Reps yet"
-          hint="Seed Maya via core/plays/seed.ts to see her here."
+          hint="Open Setup to create the first named Rep and bind it to an email Play."
         />
       ) : (
         <ul className="space-y-4">

@@ -49,6 +49,6 @@ export async function getRequestUserId(): Promise<string | null> {
     },
   });
   const { data, error } = await supabase.auth.getUser();
-  if (error) return null;
+  if (error) return localDemoUserId();
   return validUuid(data.user?.id) ?? localDemoUserId();
 }

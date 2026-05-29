@@ -61,11 +61,16 @@ export interface VerticalSliceStore {
   getSignal(id: string): Awaitable<Signal | null>;
   getPerson(id: string): Awaitable<GraphPerson | null>;
   getCompany(id: string | null | undefined): Awaitable<GraphCompany | null>;
+  getMessage(id: string): Awaitable<Message | null>;
   upsertCompany?(input: GraphCompany): Awaitable<GraphCompany>;
   upsertPerson?(input: GraphPerson): Awaitable<GraphPerson>;
   upsertSignal?(input: Signal): Awaitable<Signal>;
   createConversation(input: CreateConversationInput): Awaitable<Conversation>;
   createDraftMessage(input: CreateDraftMessageInput): Awaitable<Message>;
+  updateDraftMessage?(
+    message_id: string,
+    input: { subject: string | null; body: string; properties?: Record<string, unknown> },
+  ): Awaitable<Message>;
   markMessageJudged(
     message_id: string,
     eval_score: number,
@@ -99,6 +104,7 @@ export function createInMemoryVerticalSliceStore(
     getSignal: (id) => signals.get(id) ?? null,
     getPerson: (id) => persons.get(id) ?? null,
     getCompany: (id) => (id ? companies.get(id) ?? null : null),
+    getMessage: (id) => messages.get(id) ?? null,
 
     upsertCompany(input) {
       companies.set(input.id, input);
@@ -164,6 +170,15 @@ export function createInMemoryVerticalSliceStore(
         created_at: now,
       };
       messages.set(row.id, row);
+      return row;
+    },
+
+    updateDraftMessage(message_id, input) {
+      const row = messages.get(message_id);
+      if (!row) throw new Error(`Message not found: ${message_id}`);
+      row.subject = input.subject;
+      row.body = input.body;
+      row.properties = { ...row.properties, ...(input.properties ?? {}) };
       return row;
     },
 
@@ -492,6 +507,21 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
       return rows[0] ? companyFromRow(rows[0]) : null;
     },
 
+    async getMessage(id) {
+      const { rows } = await pool.query<MessageRow>(
+        `select id, workspace_id, conversation_id, channel, direction, status,
+                subject, body, body_html, external_id, external_thread_id,
+                channel_account_id, eval_score::text as eval_score, eval_passed,
+                eval_notes, intent_class, intent_confidence::text as intent_confidence,
+                scheduled_at, sent_at, delivered_at, replied_at, properties,
+                provenance, created_at
+           from messages
+          where id = $1`,
+        [id],
+      );
+      return rows[0] ? messageFromRow(rows[0]) : null;
+    },
+
     async upsertCompany(input) {
       const { rows } = await pool.query<CompanyRow>(
         `insert into graph_companies (
@@ -727,6 +757,30 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
         ],
       );
       return messageFromRow(rows[0]!);
+    },
+
+    async updateDraftMessage(message_id, input) {
+      const { rows } = await pool.query<MessageRow>(
+        `update messages
+            set subject = $2,
+                body = $3,
+                properties = properties || $4::jsonb
+          where id = $1 and status = 'draft'
+        returning id, workspace_id, conversation_id, channel, direction, status,
+                  subject, body, body_html, external_id, external_thread_id,
+                  channel_account_id, eval_score::text as eval_score, eval_passed,
+                  eval_notes, intent_class, intent_confidence::text as intent_confidence,
+                  scheduled_at, sent_at, delivered_at, replied_at, properties,
+                  provenance, created_at`,
+        [
+          message_id,
+          input.subject,
+          input.body,
+          JSON.stringify(input.properties ?? {}),
+        ],
+      );
+      if (!rows[0]) throw new Error(`Message not found: ${message_id}`);
+      return messageFromRow(rows[0]);
     },
 
     async markMessageJudged(message_id, eval_score, eval_passed, eval_notes) {
