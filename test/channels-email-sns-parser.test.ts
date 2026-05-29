@@ -35,6 +35,26 @@ function bouncePayload(workspaceId: string): string {
   });
 }
 
+function eventPublishingBouncePayload(workspaceId: string): string {
+  return JSON.stringify({
+    Type: "Notification",
+    MessageId: "sns-ep-bounce",
+    Message: JSON.stringify({
+      eventType: "Bounce",
+      bounce: {
+        bounceType: "Permanent",
+        bouncedRecipients: [{ emailAddress: "bounce@example.com" }],
+      },
+      mail: {
+        messageId: "ses-event-publishing-msg",
+        tags: { workspace_id: [workspaceId] },
+        commonHeaders: { messageId: "<event-publishing-rfc@example.com>" },
+      },
+    }),
+    Timestamp: "2026-05-24T00:00:00Z",
+  });
+}
+
 function complaintPayload(workspaceId: string): string {
   return JSON.stringify({
     Type: "Notification",
@@ -127,6 +147,17 @@ test("sns parser: Bounce → BounceEvent with workspace_id from SES tags", () =>
   }
 });
 
+test("sns parser: SES event publishing eventType Bounce maps to BounceEvent", () => {
+  const ws = "550e8400-e29b-41d4-a716-446655440000";
+  const parsed = parseSnsNotification(parseSnsEnvelope(eventPublishingBouncePayload(ws)));
+  assert.equal(parsed.kind, "bounce");
+  if (parsed.kind === "bounce") {
+    assert.equal(parsed.event.workspace_id, ws);
+    assert.equal(parsed.event.bounce_type, "hard");
+    assert.equal(parsed.event.recipient, "bounce@example.com");
+  }
+});
+
 test("sns parser: Complaint maps to bounce_type='complaint'", () => {
   const ws = "550e8400-e29b-41d4-a716-446655440000";
   const parsed = parseSnsNotification(parseSnsEnvelope(complaintPayload(ws)));
@@ -187,6 +218,22 @@ test("sns parser: unknown notificationType returns 'unsupported'", () => {
       Message: JSON.stringify({
         notificationType: "DeliveryDelay",
         mail: { messageId: "x", tags: { workspace_id: ["w"] }, commonHeaders: {} },
+      }),
+      Timestamp: "now",
+    }),
+  );
+  const parsed = parseSnsNotification(env);
+  assert.equal(parsed.kind, "unsupported");
+});
+
+test("sns parser: unsupported SES eventType does not require workspace_id", () => {
+  const env = parseSnsEnvelope(
+    JSON.stringify({
+      Type: "Notification",
+      MessageId: "x",
+      Message: JSON.stringify({
+        eventType: "Delivery",
+        mail: { messageId: "x", commonHeaders: {} },
       }),
       Timestamp: "now",
     }),

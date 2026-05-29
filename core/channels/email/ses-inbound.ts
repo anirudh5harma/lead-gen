@@ -9,7 +9,7 @@ import type { InboundEmail } from "./reply.ts";
  *      The route follows the URL once to confirm the subscription.
  *
  *   2. Notification — Type='Notification', Message=<JSON string>
- *      Inner Message has `notificationType`:
+ *      Inner Message has `notificationType` or SES event-publishing `eventType`:
  *        - 'Bounce'      → BounceEvent (hard/soft)
  *        - 'Complaint'   → BounceEvent (complaint)
  *        - 'Received'    → InboundEmail (when SES Inbound + SNS action used)
@@ -78,7 +78,7 @@ export function parseSnsEnvelope(body: unknown): SnsMessageEnvelope {
 }
 
 /**
- * Dispatch on the envelope's Type + the inner notificationType. Pure
+ * Dispatch on the envelope's Type + the inner SES notification/event type. Pure
  * function — every input → output is deterministic; the route layer
  * handles I/O (SubscribeURL fetch, handleBounce/handleInboundEmail calls).
  */
@@ -107,6 +107,11 @@ export function parseSnsNotification(
     throw new SnsParseError("SNS Notification.Message is not valid JSON");
   }
 
+  const eventType = sesEventType(inner);
+  if (eventType !== "Bounce" && eventType !== "Complaint" && eventType !== "Received") {
+    return { kind: "unsupported", notificationType: eventType };
+  }
+
   const workspaceId =
     workspaceIdResolver?.(inner) ??
     workspaceIdFromTags(inner) ??
@@ -117,20 +122,26 @@ export function parseSnsNotification(
     );
   }
 
-  switch (inner.notificationType) {
+  switch (eventType) {
     case "Bounce":
-      return { kind: "bounce", event: toBounceEvent(inner, workspaceId, "bounce") };
+      return {
+        kind: "bounce",
+        event: toBounceEvent(inner as SesBounceNotification, workspaceId, "bounce"),
+      };
     case "Complaint":
-      return { kind: "complaint", event: toBounceEvent(inner, workspaceId, "complaint") };
+      return {
+        kind: "complaint",
+        event: toBounceEvent(
+          inner as SesComplaintNotification,
+          workspaceId,
+          "complaint",
+        ),
+      };
     case "Received":
-      return { kind: "received", inbound: toInboundEmail(inner, workspaceId) };
-    default: {
-      // Exhaustive on the typed union; any new SES notificationType lands here
-      // and bubbles up as 'unsupported' so the route still 200s rather than
-      // tripping SNS retries.
-      const exhaust = inner as { notificationType: string };
-      return { kind: "unsupported", notificationType: exhaust.notificationType };
-    }
+      return {
+        kind: "received",
+        inbound: toInboundEmail(inner as SesReceivedNotification, workspaceId),
+      };
   }
 }
 
@@ -151,7 +162,8 @@ interface SesMail {
 }
 
 interface SesBounceNotification {
-  notificationType: "Bounce";
+  notificationType?: "Bounce";
+  eventType?: "Bounce";
   bounce: {
     bounceType: "Undetermined" | "Permanent" | "Transient";
     bounceSubType?: string;
@@ -166,7 +178,8 @@ interface SesBounceNotification {
 }
 
 interface SesComplaintNotification {
-  notificationType: "Complaint";
+  notificationType?: "Complaint";
+  eventType?: "Complaint";
   complaint: {
     complainedRecipients: Array<{ emailAddress: string }>;
     complaintFeedbackType?: string;
@@ -176,7 +189,8 @@ interface SesComplaintNotification {
 }
 
 interface SesReceivedNotification {
-  notificationType: "Received";
+  notificationType?: "Received";
+  eventType?: "Received";
   mail: SesMail;
   receipt?: {
     timestamp?: string;
@@ -194,6 +208,10 @@ export type SesNotification =
   | SesReceivedNotification;
 
 // ─── Conversion helpers ────────────────────────────────────────────────────
+
+function sesEventType(inner: SesNotification): string {
+  return inner.notificationType ?? inner.eventType ?? "unknown";
+}
 
 function workspaceIdFromTags(inner: SesNotification): string | null {
   const tags = inner.mail?.tags;
@@ -228,8 +246,8 @@ function toBounceEvent(
   workspaceId: string,
   kind: "bounce" | "complaint",
 ): BounceEvent {
-  if (kind === "bounce" && inner.notificationType === "Bounce") {
-    const b = inner.bounce;
+  if (kind === "bounce" && sesEventType(inner) === "Bounce") {
+    const b = (inner as SesBounceNotification).bounce;
     const bounceType: BounceEvent["bounce_type"] =
       b.bounceType === "Permanent" ? "hard" : "soft";
     const recipient = b.bouncedRecipients[0]?.emailAddress ?? "";
