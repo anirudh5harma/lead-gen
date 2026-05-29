@@ -583,6 +583,14 @@ const RepMemoryProceduralUpdated = z.object({
   win: z.boolean(),
 });
 
+const RepMemoryProceduralSeeded = z.object({
+  exemplar_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  pattern_key: z.string().min(1),
+  exemplar: z.record(z.string(), z.unknown()),
+  initial_score: z.number().min(0).max(1),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry
 // ─────────────────────────────────────────────────────────────────────────────
@@ -658,6 +666,7 @@ export const eventRegistry = {
   "llm.call.deferred": LLMCallDeferred,
 
   "rep.memory.procedural.updated": RepMemoryProceduralUpdated,
+  "rep.memory.procedural.seeded": RepMemoryProceduralSeeded,
 } as const;
 
 export type EventType = keyof typeof eventRegistry;

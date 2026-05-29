@@ -77,6 +77,29 @@ test("event bus: workspace.created carries replayable workspace metadata", async
   assert.equal(event.payload.owner_role, "owner");
 });
 
+test("event bus: procedural memory seed is a typed replayable event", async () => {
+  const bus = createInMemoryEventBus();
+  const event = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "rep.memory.procedural.seeded",
+    source: "system",
+    producer_ref: "bootstrap:test",
+    payload: {
+      exemplar_id: randomUUID(),
+      rep_id: randomUUID(),
+      pattern_key: "icp:fintech-founder|signal:funding|stage:cold_open",
+      exemplar: {
+        subject: "Congrats on the round",
+        body: "Usually this is when pipeline quality matters more than volume.",
+      },
+      initial_score: 0.55,
+    },
+  });
+
+  assert.equal(event.payload.initial_score, 0.55);
+  assert.equal(event.payload.exemplar.subject, "Congrats on the round");
+});
+
 test("event bus: wildcard subscriber receives every event", async () => {
   const bus = createInMemoryEventBus();
   const seen: string[] = [];

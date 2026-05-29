@@ -24,8 +24,10 @@ export { createPostgresOutcomeAttribution } from "./attribution.ts";
 export type { PostgresAttributionOptions } from "./attribution.ts";
 export {
   createOutcomeMemoryUpdateProjection,
+  createProceduralMemorySeedProjection,
   createProceduralMemoryStateProjection,
   OUTCOME_MEMORY_UPDATE_PROJECTION,
+  PROCEDURAL_MEMORY_SEED_PROJECTION,
   PROCEDURAL_MEMORY_STATE_PROJECTION,
 } from "./projections.ts";
 export type { OutcomeMemoryProjectionOptions } from "./projections.ts";

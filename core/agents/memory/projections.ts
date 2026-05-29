@@ -12,6 +12,7 @@ import {
 
 export const OUTCOME_MEMORY_UPDATE_PROJECTION = "rep.outcome_memory_update.v1";
 export const PROCEDURAL_MEMORY_STATE_PROJECTION = "rep.procedural_memory_state.v1";
+export const PROCEDURAL_MEMORY_SEED_PROJECTION = "rep.procedural_memory_seed.v1";
 
 export interface OutcomeMemoryProjectionOptions {
   bus: EventBus;
@@ -139,6 +140,48 @@ export function createProceduralMemoryStateProjection(
       } finally {
         client.release();
       }
+    },
+  };
+}
+
+export function createProceduralMemorySeedProjection(
+  pool: Pool,
+): DurableEventProjection {
+  return {
+    name: PROCEDURAL_MEMORY_SEED_PROJECTION,
+    eventTypes: ["rep.memory.procedural.seeded"],
+    async apply(event) {
+      const payload = event.payload as {
+        exemplar_id?: string;
+        rep_id?: string;
+        pattern_key?: string;
+        exemplar?: Record<string, unknown>;
+        initial_score?: number;
+      };
+      if (
+        !payload.exemplar_id ||
+        !payload.rep_id ||
+        !payload.pattern_key ||
+        !payload.exemplar ||
+        typeof payload.initial_score !== "number"
+      ) {
+        return;
+      }
+
+      await pool.query(
+        `insert into rep_memory_procedural (
+           id, workspace_id, rep_id, pattern_key, exemplar, score
+         ) values ($1, $2, $3, $4, $5::jsonb, $6)
+         on conflict (id) do nothing`,
+        [
+          payload.exemplar_id,
+          event.workspace_id,
+          payload.rep_id,
+          payload.pattern_key,
+          JSON.stringify(payload.exemplar),
+          payload.initial_score,
+        ],
+      );
     },
   };
 }

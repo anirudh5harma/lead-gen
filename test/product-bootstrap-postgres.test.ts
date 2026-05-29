@@ -30,7 +30,8 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
             'workspace.created',
             'rep.configured',
             'play.configured',
-            'channel.account.configured'
+            'channel.account.configured',
+            'rep.memory.procedural.seeded'
           )
         group by event_type`,
       [boot.workspace_id],
@@ -40,6 +41,7 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
     assert.equal(counts.get("rep.configured"), "1");
     assert.equal(counts.get("play.configured"), "1");
     assert.equal(counts.get("channel.account.configured"), "1");
+    assert.equal(counts.get("rep.memory.procedural.seeded"), "1");
 
     const membership = await fx.pool.query<{ role: string; accepted: boolean }>(
       `select role::text as role, accepted_at is not null as accepted
@@ -58,6 +60,17 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
     assert.equal(account.rows[0].id, boot.channel_account_id);
     assert.equal(account.rows[0].status, "connected");
 
+    const memory = await fx.pool.query<{ pattern_key: string; score: string }>(
+      `select pattern_key, score::text as score
+         from rep_memory_procedural
+        where workspace_id = $1 and rep_id = $2`,
+      [boot.workspace_id, boot.rep_id],
+    );
+    assert.deepEqual(memory.rows[0], {
+      pattern_key: "icp:fintech-founder|signal:funding|stage:cold_open",
+      score: "0.5500",
+    });
+
     await bootstrapWorkspace(fx.pool, userId, {
       workspace_slug: "evented-bootstrap",
       workspace_name: "Evented Bootstrap",
@@ -70,7 +83,8 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
             'workspace.created',
             'rep.configured',
             'play.configured',
-            'channel.account.configured'
+            'channel.account.configured',
+            'rep.memory.procedural.seeded'
           )
         group by event_type`,
       [boot.workspace_id],
@@ -82,6 +96,7 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
     assert.equal(repeatCounts.get("rep.configured"), "1");
     assert.equal(repeatCounts.get("play.configured"), "1");
     assert.equal(repeatCounts.get("channel.account.configured"), "1");
+    assert.equal(repeatCounts.get("rep.memory.procedural.seeded"), "1");
   } finally {
     await resetProductEngineForTests();
     await fx.close();

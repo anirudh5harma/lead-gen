@@ -24,6 +24,7 @@ import {
 import {
   createPostgresEpisodicRepository,
   createOutcomeMemoryUpdateProjection,
+  createProceduralMemorySeedProjection,
   createPostgresProceduralRepository,
   createProceduralMemoryStateProjection,
   createPostgresSemanticRepository,
@@ -515,7 +516,7 @@ export async function bootstrapWorkspace(
   const trustedDemoState = !isProductionProductRuntime();
   const account = await ensureChannelAccount(engine, ws, trustedDemoState, user_id);
   await ensureSendingDomain(pool, ws, account.id, account.display_name, trustedDemoState);
-  await ensureProceduralSeed(pool, ws, rep.id);
+  await ensureProceduralSeed(engine, ws, rep.id, user_id);
   return {
     workspace_id: ws,
     rep_id: rep.id,
@@ -834,11 +835,12 @@ function domainFromSender(display_name: string): string | null {
 }
 
 async function ensureProceduralSeed(
-  pool: Pool,
+  engine: ProductEngine,
   workspace_id: string,
   rep_id: string,
+  user_id: string,
 ): Promise<void> {
-  await ensureProceduralSeedFor(pool, workspace_id, rep_id, {
+  await ensureProceduralSeedFor(engine, workspace_id, rep_id, user_id, {
     icp_segment: "fintech-founder",
     signal_kind: "funding",
     subject: "Congrats on the round",
@@ -848,9 +850,10 @@ async function ensureProceduralSeed(
 }
 
 async function ensureProceduralSeedFor(
-  pool: Pool,
+  engine: ProductEngine,
   workspace_id: string,
   rep_id: string,
+  user_id: string,
   input: {
     icp_segment: string;
     signal_kind: string;
@@ -859,29 +862,34 @@ async function ensureProceduralSeedFor(
   },
 ): Promise<void> {
   const pattern_key = `icp:${input.icp_segment}|signal:${input.signal_kind}|stage:cold_open`;
-  const existing = await pool.query<{ id: string }>(
+  const existing = await engine.pool.query<{ id: string }>(
     `select id from rep_memory_procedural
       where workspace_id = $1 and rep_id = $2 and pattern_key = $3
       limit 1`,
     [workspace_id, rep_id, pattern_key],
   );
   if (existing.rows[0]) return;
-  await pool.query(
-    `insert into rep_memory_procedural (
-       workspace_id, rep_id, pattern_key, exemplar, score
-     ) values ($1, $2, $3, $4::jsonb, 0.55)`,
-    [
-      workspace_id,
+  const event = await engine.bus.publish({
+    workspace_id,
+    event_type: "rep.memory.procedural.seeded",
+    source: "system",
+    producer_ref: user_id,
+    idempotency_key:
+      `bootstrap:rep.memory.procedural.seeded:${workspace_id}:${rep_id}:${pattern_key}`,
+    payload: {
+      exemplar_id: randomUUID(),
       rep_id,
       pattern_key,
-      JSON.stringify({
+      exemplar: {
         subject: input.subject ?? "Saw the signal",
         body:
           input.body ??
           "Saw the signal. The timing looked relevant enough to compare notes.",
-      }),
-    ],
-  );
+      },
+      initial_score: 0.55,
+    },
+  });
+  await createProceduralMemorySeedProjection(engine.pool).apply(event);
 }
 
 export async function configureRep(
@@ -1451,6 +1459,7 @@ export async function configureActivationSetup(
   input: ConfigureActivationInput,
   session: ProductWorkspaceSession,
 ): Promise<ActivationSetupResult> {
+  const engine = await getProductEngine();
   const rep = await configureRep(input.rep, session);
   const icp = await configureIcpSegment(input.icp, session);
   const signalKind = parseSignalKind(input.icp.signal_kind);
@@ -1488,7 +1497,7 @@ export async function configureActivationSetup(
     );
     source_id = row.rows[0]?.id ?? source_id;
   }
-  await ensureProceduralSeedFor(getPool(), session.workspace_id, rep.rep_id, {
+  await ensureProceduralSeedFor(engine, session.workspace_id, rep.rep_id, session.user_id, {
     icp_segment: icp.icp_id,
     signal_kind: signalKind,
     subject: "Saw the hiring signal",
@@ -1873,6 +1882,7 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       bus: engine.bus,
       attribution: resolveProductOutcomeAttribution,
     }),
+    createProceduralMemorySeedProjection(engine.pool),
     createProceduralMemoryStateProjection(engine.pool),
     createSendingDomainProjection({
       pool: engine.pool,
