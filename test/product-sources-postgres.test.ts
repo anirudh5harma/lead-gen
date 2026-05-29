@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setupPg } from "./_pg.ts";
 import {
+  configureWorkspaceSignalSource,
   configureRssSource,
   findFirstProductWorkspaceForUser,
   getAppState,
@@ -32,6 +33,46 @@ test("product surface: configured RSS sources appear in app state with operator 
     assert.equal(source.poll_interval_minutes, 7);
     assert.equal(source.signal_count, 0);
     assert.equal(source.latest_run_status, null);
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product surface: webhook signal sources are push-only and skip poll maintenance", async (t) => {
+  const fx = await setupPg("product_push_source");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await configureWorkspaceSignalSource({
+      adapter: "webhook",
+      name: "Push Ingress",
+      signal_kind: "hiring",
+      poll_interval_minutes: 15,
+    });
+    const { rows } = await fx.pool.query<{
+      source_enabled: boolean;
+      config: Record<string, unknown>;
+      properties: Record<string, unknown>;
+      poll_enabled: boolean;
+    }>(
+      `select gs.enabled as source_enabled,
+              gs.config,
+              gs.properties,
+              wsc.enabled as poll_enabled
+         from graph_sources gs
+         join workspace_source_configs wsc
+           on wsc.workspace_id = gs.workspace_id and wsc.source_id = gs.id
+        where gs.workspace_id = $1 and gs.name = 'Push Ingress'`,
+      [boot.workspace_id],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].source_enabled, true);
+    assert.equal(rows[0].poll_enabled, false);
+    assert.equal(rows[0].config.adapter, "webhook");
+    assert.equal(rows[0].properties.acquisition_mode, "push");
   } finally {
     await resetProductEngineForTests();
     await fx.close();

@@ -12,7 +12,8 @@
  * Catalog-driven adapters (Greenhouse, Lever, Ashby, Workable, SEC EDGAR)
  * poll ONCE platform-wide and fan results out to interested workspaces.
  * Workspace-driven adapters (custom RSS, keyword searches) poll per
- * workspace.
+ * workspace, while push/webhook sources call the same workspace-discovery
+ * primitive directly.
  */
 
 export type { RawCandidate, EmbeddingInput } from "./types.ts";
@@ -160,6 +161,20 @@ export {
 export { productHuntAdapter, ProductHuntError } from "./adapters/product-hunt.ts";
 export { redditAdapter, RedditError } from "./adapters/reddit.ts";
 export { googleNewsAdapter } from "./adapters/google-news.ts";
+export {
+  createWorkspaceSignalDiscoveryContext,
+  discoverWorkspaceSignal,
+  discoverWorkspaceSignalOnce,
+  loadWorkspaceSignalSource,
+  prepareWorkspaceSignalDiscoveryContext,
+} from "./workspace-discovery.ts";
+export type {
+  WorkspaceSignalDiscoveryContext,
+  WorkspaceSignalDiscoveryDeps,
+  WorkspaceSignalDiscoveryItem,
+  WorkspaceSignalDiscoveryResult,
+  WorkspaceSignalSourceRow,
+} from "./workspace-discovery.ts";
 export {
   workspacePollOnce,
   createWorkspacePollWorkflow,

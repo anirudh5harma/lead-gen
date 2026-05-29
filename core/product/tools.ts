@@ -11,6 +11,7 @@ import {
   configureWorkspaceCompanyProfile,
   configureWorkspaceEmailAccount,
   configureWorkspaceSignalSource,
+  discoverSignalFromSource,
   dispatchSignalPlaysOnce,
   getAppState,
   retryFailedWorkflowRun,
@@ -57,6 +58,7 @@ const SourceAdapterSchema = z.enum([
   "hn_whos_hiring",
   "product_hunt",
   "reddit",
+  "webhook",
 ]);
 
 const WorkspaceResultSchema = z.object({
@@ -370,6 +372,37 @@ export function registerProductTools(): void {
         },
         sessionFromContext(ctx),
       );
+    },
+  });
+
+  registerTool({
+    name: "product.signal.discover",
+    description:
+      "Push a source-backed Signal into the evented aggregator path immediately. This is the push/webhook counterpart to source polling and emits signal.discovered.",
+    kind: "write",
+    input: z.object({
+      source_id: z.string().uuid(),
+      external_id: z.string().min(1),
+      title: z.string().min(1),
+      content: z.string().nullable().optional(),
+      url: z.string().nullable().optional(),
+      signal_kind: SignalKindSchema.optional(),
+      freshness_at: z.string().datetime().optional(),
+      structured: z.record(z.string(), z.unknown()).optional(),
+      provenance: z.record(z.string(), z.unknown()).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      outcome: z.enum([
+        "created",
+        "skipped:dedup",
+        "skipped:must_haves",
+        "skipped:budget",
+      ]),
+      signal_id: z.string().uuid().optional(),
+      event_id: z.string().uuid().optional(),
+    }),
+    async handler(input, ctx) {
+      return discoverSignalFromSource(input, sessionFromContext(ctx));
     },
   });
 

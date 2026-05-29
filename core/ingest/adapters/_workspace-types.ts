@@ -8,8 +8,9 @@ import type { RawCandidate } from "../types.ts";
  * Unlike catalog adapters, these bypass the shared signal_candidates
  * pool: their items are workspace-specific by definition (a custom RSS
  * feed the workspace added, a keyword search it cares about) so the
- * fanout shape doesn't apply. Items go straight into the workspace's
- * `signals` table via the workspace poll module.
+ * fanout shape doesn't apply. Polling adapters feed the shared
+ * workspace-discovery primitive, which emits signal.discovered; push
+ * sources call that same primitive directly.
  *
  * Adapters are pure — they normalise upstream payloads into RawCandidates
  * + a new cursor. The poll module owns dedup (check by external_id),

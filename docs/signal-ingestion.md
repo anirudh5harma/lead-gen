@@ -56,11 +56,27 @@ Goals:
 
 ## Two-stage pipeline
 
-Cost discipline is enforced by splitting ingestion into two stages: a cheap polling stage that runs everywhere, and an expensive LLM-classification stage that only runs on items that survive cheap filters.
+Cost discipline is enforced by splitting ingestion into two stages: a cheap acquisition stage that runs everywhere, and an expensive LLM-classification stage that only runs on items that survive cheap filters.
 
 ### Stage 1 — Ingest candidates  (cheap, high volume)
 
-For each `(workspace, source)` pair, a durable workflow polls on a cadence:
+Polling is an adapter, not the architecture. The ingestion primitive is
+`signal.discovered`: any source can push a normalized item immediately, and the
+projector materializes the Signal + emits `signal.ingested`. Poll workflows are
+only the catch-up/backfill adapter for sources that do not offer a webhook,
+stream, or native event feed.
+
+For push-capable sources:
+
+1. External source, MCP agent, or connector calls the source-backed discovery
+   primitive (`product.signal.discover` or the equivalent webhook handler).
+2. The primitive applies dedup, budget, cheap ICP filters, and embeddings.
+3. It publishes `signal.discovered` with an idempotency key derived from
+   `(workspace, source, external_id)`.
+4. The signal projector owns `signals` materialization and emits
+   `signal.ingested`.
+
+For pull-only sources, each `(workspace, source)` durable workflow polls on a cadence:
 
 1. Adapter fetches items since the stored cursor.
 2. Lightweight rules drop obvious noise (keyword filters, date-window, language).
@@ -205,6 +221,7 @@ core/ingest/
 ├── embeddings.ts             # DeepSeek embedding wrapper for stage 1
 ├── budget.ts                 # candidate + classify caps with daily rollover
 ├── classify.ts               # DeepSeek batch classifier + entity extractor
+├── workspace-discovery.ts    # event-first source-backed signal discovery primitive
 ├── poll-workflow.ts          # durable workflow per (workspace, source)
 ├── classify-workflow.ts      # durable workflow subscribed to signal.ingested
 ├── catalog.ts                # tracked_companies management

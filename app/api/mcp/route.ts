@@ -170,6 +170,7 @@ function mcpManifest(workspaceId: string | null) {
       "product.activation.configure",
       "product.sources.default_aggregator.configure",
       "product.sources.aggregate.run",
+      "product.signal.discover",
       "product.signal.submit",
       "product.signals.dispatch_plays",
       "product.approval.decide",

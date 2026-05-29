@@ -47,9 +47,11 @@ import {
   createMockEmbeddingClient,
   createOpenAIEmbeddingClient,
   createWorkspacePollWorkflow,
+  discoverWorkspaceSignalOnce,
   projectSignalClassification,
   projectSignalDiscovered,
   projectSignalExpiry,
+  type WorkspaceSignalDiscoveryResult,
   WORKSPACE_POLL_WORKFLOW,
   type EmbeddingClient,
 } from "../ingest/index.ts";
@@ -165,7 +167,8 @@ export type WorkspaceSignalSourceAdapter =
   | "hn_front"
   | "hn_whos_hiring"
   | "product_hunt"
-  | "reddit";
+  | "reddit"
+  | "webhook";
 
 export interface ProductWorkspaceSession {
   workspace_id: string;
@@ -283,6 +286,25 @@ export interface ConfigureWorkspaceSignalSourceInput {
   subreddit?: string;
   poll_interval_minutes?: number;
   enabled?: boolean;
+}
+
+export interface DiscoverWorkspaceSignalInput {
+  source_id: string;
+  external_id: string;
+  title: string;
+  content?: string | null;
+  url?: string | null;
+  signal_kind?: string;
+  freshness_at?: string;
+  structured?: Record<string, unknown>;
+  provenance?: Record<string, unknown>;
+}
+
+export interface DiscoveredSignalResult {
+  workspace_id: string;
+  outcome: WorkspaceSignalDiscoveryResult["outcome"];
+  signal_id?: string;
+  event_id?: string;
 }
 
 export interface ConfigureWorkspaceProfileInput {
@@ -2126,7 +2148,11 @@ export async function configureWorkspaceSignalSource(
     poll_cadence_sec: minutes * 60,
     properties: {
       managed_by: "signal-aggregator",
-      acquisition_mode: adapter === "rss" ? "workspace_pull" : "workspace_adapter",
+      acquisition_mode: adapter === "webhook"
+        ? "push"
+        : adapter === "rss"
+          ? "workspace_pull"
+          : "workspace_adapter",
     },
   };
   const event = await engine.bus.publish({
@@ -2187,8 +2213,50 @@ async function projectWorkspaceSourceConfigured(
      on conflict (workspace_id, source_id) do update set
        enabled = excluded.enabled,
        poll_cadence_sec = excluded.poll_cadence_sec`,
-    [event.workspace_id, payload.source_id, payload.enabled, payload.poll_cadence_sec],
+    [
+      event.workspace_id,
+      payload.source_id,
+      payload.adapter === "webhook" ? false : payload.enabled,
+      payload.poll_cadence_sec,
+    ],
   );
+}
+
+export async function discoverSignalFromSource(
+  input: DiscoverWorkspaceSignalInput,
+  session: ProductWorkspaceSession,
+): Promise<DiscoveredSignalResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const result = await discoverWorkspaceSignalOnce(
+    {
+      pool: engine.pool,
+      bus: engine.bus,
+      embedder: createProductEmbeddingClient(),
+    },
+    {
+      workspace_id: session.workspace_id,
+      source_id: input.source_id,
+      external_id: input.external_id,
+      title: input.title,
+      content: input.content ?? undefined,
+      url: input.url ?? undefined,
+      kind: input.signal_kind == null ? null : parseSignalKind(input.signal_kind),
+      freshness_at: input.freshness_at ?? new Date().toISOString(),
+      structured: input.structured ?? {},
+      provenance: input.provenance ?? {},
+      producer_ref: `surface:signal-discovery:${session.user_id}`,
+    },
+  );
+  if (result.outcome === "skipped:source_not_found") {
+    throw new Error("Signal source not found in this workspace.");
+  }
+  return {
+    workspace_id: session.workspace_id,
+    outcome: result.outcome,
+    signal_id: "signal_id" in result ? result.signal_id : undefined,
+    event_id: "event_id" in result ? result.event_id : undefined,
+  };
 }
 
 function parseWorkspaceSignalSourceAdapter(
@@ -2201,6 +2269,7 @@ function parseWorkspaceSignalSourceAdapter(
     case "hn_whos_hiring":
     case "product_hunt":
     case "reddit":
+    case "webhook":
       return adapter;
     default:
       return "rss";
@@ -2219,6 +2288,8 @@ function sourceKindForAdapter(adapter: WorkspaceSignalSourceAdapter): SourceKind
       return "rss";
     case "reddit":
       return "other";
+    case "webhook":
+      return "web_monitor";
   }
 }
 
@@ -2234,6 +2305,8 @@ function defaultWorkspaceSourceName(adapter: WorkspaceSignalSourceAdapter): stri
       return "Product Hunt launches";
     case "reddit":
       return "Reddit signals";
+    case "webhook":
+      return "Push signal ingress";
     case "rss":
       return "Signal feed";
   }
@@ -2264,6 +2337,8 @@ function sourceConfigForAdapter(
         ...base,
         subreddit: input.subreddit?.trim() || "SaaS",
       };
+    case "webhook":
+      return base;
     case "product_hunt":
       return {
         ...base,
@@ -2291,6 +2366,8 @@ function defaultSignalKindForAdapter(adapter: WorkspaceSignalSourceAdapter): str
     case "rss":
     case "reddit":
       return "press_mention";
+    case "webhook":
+      return "other";
   }
 }
 
