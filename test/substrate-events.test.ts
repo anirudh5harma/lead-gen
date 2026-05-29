@@ -77,6 +77,23 @@ test("event bus: workspace.created carries replayable workspace metadata", async
   assert.equal(event.payload.owner_role, "owner");
 });
 
+test("event bus: workspace.member.accepted carries replayable membership state", async () => {
+  const bus = createInMemoryEventBus();
+  const event = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "workspace.member.accepted",
+    source: "system",
+    producer_ref: "bootstrap:test",
+    payload: {
+      workspace_id: randomUUID(),
+      user_id: randomUUID(),
+      role: "owner",
+    },
+  });
+
+  assert.equal(event.payload.role, "owner");
+});
+
 test("event bus: procedural memory seed is a typed replayable event", async () => {
   const bus = createInMemoryEventBus();
   const event = await bus.publish({

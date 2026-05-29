@@ -46,10 +46,10 @@ projection, and visible UI feedback where applicable.
   metadata and projects the owner membership, but a fully event-first workspace
   lifecycle needs a substrate migration for platform/genesis events.
 - Local/demo bootstrap now emits typed `rep.configured`, `play.configured`,
-  `channel.account.configured`, and `rep.memory.procedural.seeded` events for
-  seeded primitives. Remaining direct setup is limited to existing-workspace
-  membership repair and sending-domain catch-up for previously seeded accounts
-  until those have first-class member/domain events.
+  `channel.account.configured`, `rep.memory.procedural.seeded`, and
+  `workspace.member.accepted` events for seeded primitives and membership
+  repair. Sending-domain catch-up is driven by re-projecting
+  `channel.account.configured` when the owned-domain row is missing.
 - User configuration events use content-addressed idempotency keys: retrying the
   exact same configuration dedupes, while actual Rep/Play/ICP/source/channel
   changes append new replayable events.

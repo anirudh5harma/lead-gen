@@ -31,6 +31,12 @@ const WorkspaceMemberInvited = z.object({
   role: z.enum(["owner", "admin", "member"]),
 });
 
+const WorkspaceMemberAccepted = z.object({
+  workspace_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  role: z.enum(["owner", "admin", "member"]),
+});
+
 const RepConfigured = z.object({
   rep_id: z.string().uuid(),
   name: z.string().min(1),
@@ -598,6 +604,7 @@ const RepMemoryProceduralSeeded = z.object({
 export const eventRegistry = {
   "workspace.created": WorkspaceCreated,
   "workspace.member.invited": WorkspaceMemberInvited,
+  "workspace.member.accepted": WorkspaceMemberAccepted,
   "rep.configured": RepConfigured,
   "workspace.icp.configured": WorkspaceIcpConfigured,
   "workspace.company.tracked": WorkspaceCompanyTracked,

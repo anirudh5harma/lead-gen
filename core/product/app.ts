@@ -124,6 +124,16 @@ const RUNNABLE_WORKFLOW_NAMES = [
   SENDING_DOMAIN_PROVISIONING_WORKFLOW,
   SENDING_DOMAIN_WARMUP_WORKFLOW,
 ] as const;
+type WorkspaceRoleValue = "owner" | "admin" | "member";
+type ProductEmailTransport = "resend" | "dry-run" | "unconfigured";
+
+interface EmailDomainAccount {
+  id: string;
+  display_name: string;
+  status: string;
+  daily_cap: number | null;
+  properties: Record<string, unknown> | null;
+}
 
 function configurationEventKey(
   eventType: string,
@@ -503,19 +513,13 @@ export async function bootstrapWorkspace(
     });
     await projectWorkspaceCreated(engine.pool, event);
   } else if (ensureMembership) {
-    await pool.query(
-      `insert into workspace_members (workspace_id, user_id, role, accepted_at)
-       values ($1, $2, 'owner', now())
-       on conflict (workspace_id, user_id) do nothing`,
-      [ws, user_id],
-    );
+    await ensureWorkspaceMembership(engine, ws, user_id, "owner");
   }
 
   const rep = await ensureRep(engine, ws, user_id);
   const play = await ensurePlay(engine, ws, rep.id, user_id);
   const trustedDemoState = !isProductionProductRuntime();
   const account = await ensureChannelAccount(engine, ws, trustedDemoState, user_id);
-  await ensureSendingDomain(pool, ws, account.id, account.display_name, trustedDemoState);
   await ensureProceduralSeed(engine, ws, rep.id, user_id);
   return {
     workspace_id: ws,
@@ -645,6 +649,58 @@ async function projectWorkspaceCreated(
   );
 }
 
+async function ensureWorkspaceMembership(
+  engine: ProductEngine,
+  workspace_id: string,
+  user_id: string,
+  role: WorkspaceRoleValue,
+): Promise<void> {
+  const existing = await engine.pool.query<{
+    role: WorkspaceRoleValue;
+    accepted: boolean;
+  }>(
+    `select role::text as role, accepted_at is not null as accepted
+       from workspace_members
+      where workspace_id = $1 and user_id = $2
+      limit 1`,
+    [workspace_id, user_id],
+  );
+  if (existing.rows[0]?.accepted && existing.rows[0].role === role) return;
+
+  const event = await engine.bus.publish({
+    workspace_id,
+    event_type: "workspace.member.accepted",
+    source: "system",
+    producer_ref: user_id,
+    idempotency_key: `bootstrap:workspace.member.accepted:${workspace_id}:${user_id}:${role}`,
+    payload: {
+      workspace_id,
+      user_id,
+      role,
+    },
+  });
+  await projectWorkspaceMemberAccepted(engine.pool, event);
+}
+
+async function projectWorkspaceMemberAccepted(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    workspace_id: string;
+    user_id: string;
+    role: WorkspaceRoleValue;
+  };
+  await pool.query(
+    `insert into workspace_members (workspace_id, user_id, role, accepted_at)
+     values ($1, $2, $3::workspace_role, now())
+     on conflict (workspace_id, user_id) do update set
+       role = excluded.role,
+       accepted_at = coalesce(workspace_members.accepted_at, excluded.accepted_at)`,
+    [payload.workspace_id, payload.user_id, payload.role],
+  );
+}
+
 function slugifyWorkspace(value: string): string {
   const slug = value
     .toLowerCase()
@@ -744,9 +800,14 @@ async function ensurePlay(
 async function findEmailDomainAccount(
   pool: Pool,
   workspace_id: string,
-): Promise<{ id: string; display_name: string } | null> {
-  const existing = await pool.query<{ id: string; display_name: string }>(
-    `select id, display_name from channel_accounts
+): Promise<EmailDomainAccount | null> {
+  const existing = await pool.query<EmailDomainAccount>(
+    `select id,
+            display_name,
+            status::text as status,
+            daily_cap,
+            properties
+       from channel_accounts
       where workspace_id = $1 and kind = 'email_domain'
       order by created_at asc limit 1`,
     [workspace_id],
@@ -761,27 +822,84 @@ async function ensureChannelAccount(
   user_id: string,
 ): Promise<{ id: string; display_name: string }> {
   const existing = await findEmailDomainAccount(engine.pool, workspace_id);
-  if (existing) return existing;
+  if (existing) {
+    await ensureEmailDomainProjection(engine, workspace_id, existing, trustedDemoState, user_id);
+    return existing;
+  }
   const id = randomUUID();
   const display_name = trustedDemoState
     ? "maya@go.bombsell.example"
     : "Email channel not configured";
+  const payload = {
+    channel_account_id: id,
+    kind: "email_domain" as const,
+    display_name,
+    daily_cap: trustedDemoState ? 25 : 0,
+    transport: trustedDemoState ? "dry-run" as const : "unconfigured" as const,
+  };
   const event = await engine.bus.publish({
     workspace_id,
     event_type: "channel.account.configured",
     source: "system",
     producer_ref: user_id,
     idempotency_key: `bootstrap:channel.account.configured:${workspace_id}:email-domain`,
-    payload: {
-      channel_account_id: id,
-      kind: "email_domain",
-      display_name,
-      daily_cap: trustedDemoState ? 25 : 0,
-      transport: trustedDemoState ? "dry-run" : "unconfigured",
-    },
+    payload,
   });
   await projectEmailAccountConfigured(engine.pool, event);
   return { id, display_name };
+}
+
+async function ensureEmailDomainProjection(
+  engine: ProductEngine,
+  workspace_id: string,
+  account: EmailDomainAccount,
+  trustedDemoState: boolean,
+  user_id: string,
+): Promise<void> {
+  const domain = domainFromSender(account.display_name);
+  if (!domain) return;
+  const existingDomain = await engine.pool.query<{ id: string }>(
+    `select id from sending_domains
+      where workspace_id = $1 and channel_account_id = $2 and domain = $3
+      limit 1`,
+    [workspace_id, account.id, domain],
+  );
+  if (existingDomain.rows[0]) return;
+
+  const payload = {
+    channel_account_id: account.id,
+    kind: "email_domain" as const,
+    display_name: account.display_name,
+    daily_cap: Math.max(0, Math.trunc(account.daily_cap ?? (trustedDemoState ? 25 : 0))),
+    transport: resolveChannelAccountTransport(account, trustedDemoState),
+  };
+  const event = await engine.bus.publish({
+    workspace_id,
+    event_type: "channel.account.configured",
+    source: "system",
+    producer_ref: user_id,
+    idempotency_key: configurationEventKey(
+      "channel.account.configured",
+      workspace_id,
+      account.id,
+      payload,
+    ),
+    payload,
+  });
+  await projectEmailAccountConfigured(engine.pool, event);
+}
+
+function resolveChannelAccountTransport(
+  account: EmailDomainAccount,
+  trustedDemoState: boolean,
+): ProductEmailTransport {
+  const transport = account.properties?.transport;
+  if (transport === "resend" || transport === "dry-run" || transport === "unconfigured") {
+    return transport;
+  }
+  if (account.status !== "connected") return "unconfigured";
+  if (trustedDemoState) return "dry-run";
+  return resolveProductEmailTransportMode();
 }
 
 async function ensureSendingDomain(
@@ -1749,6 +1867,11 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       name: "workspace.created.v1",
       eventTypes: ["workspace.created"],
       apply: (event) => projectWorkspaceCreated(engine.pool, event),
+    },
+    {
+      name: "workspace.member_accepted.v1",
+      eventTypes: ["workspace.member.accepted"],
+      apply: (event) => projectWorkspaceMemberAccepted(engine.pool, event),
     },
     {
       name: "workspace.company_profile.v1",

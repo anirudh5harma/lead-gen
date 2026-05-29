@@ -97,6 +97,62 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
     assert.equal(repeatCounts.get("play.configured"), "1");
     assert.equal(repeatCounts.get("channel.account.configured"), "1");
     assert.equal(repeatCounts.get("rep.memory.procedural.seeded"), "1");
+
+    const repairedUserId = randomUUID();
+    await bootstrapWorkspace(fx.pool, repairedUserId, {
+      workspace_id: boot.workspace_id,
+      ensureMembership: true,
+    });
+    await bootstrapWorkspace(fx.pool, repairedUserId, {
+      workspace_id: boot.workspace_id,
+      ensureMembership: true,
+    });
+    const repairedMembership = await fx.pool.query<{
+      role: string;
+      accepted: boolean;
+      accepted_events: string;
+    }>(
+      `select role::text as role,
+              accepted_at is not null as accepted,
+              (select count(*)::text
+                 from events
+                where workspace_id = $1
+                  and event_type = 'workspace.member.accepted'
+                  and payload->>'user_id' = $2) as accepted_events
+         from workspace_members
+        where workspace_id = $1 and user_id = $2`,
+      [boot.workspace_id, repairedUserId],
+    );
+    assert.deepEqual(repairedMembership.rows[0], {
+      role: "owner",
+      accepted: true,
+      accepted_events: "1",
+    });
+
+    await fx.pool.query(`delete from sending_domains where channel_account_id = $1`, [
+      boot.channel_account_id,
+    ]);
+    await bootstrapWorkspace(fx.pool, userId, {
+      workspace_slug: "evented-bootstrap",
+      workspace_name: "Evented Bootstrap",
+    });
+    const catchup = await fx.pool.query<{
+      domain_count: string;
+      account_configured_events: string;
+    }>(
+      `select (select count(*)::text
+                 from sending_domains
+                where workspace_id = $1
+                  and channel_account_id = $2) as domain_count,
+              (select count(*)::text
+                 from events
+                where workspace_id = $1
+                  and event_type = 'channel.account.configured'
+                  and source = 'system') as account_configured_events`,
+      [boot.workspace_id, boot.channel_account_id],
+    );
+    assert.equal(catchup.rows[0].domain_count, "1");
+    assert.equal(catchup.rows[0].account_configured_events, "2");
   } finally {
     await resetProductEngineForTests();
     await fx.close();
