@@ -433,6 +433,8 @@ const MessageBounced = z.object({
   external_id: z.string().nullable().optional(),
   provider_event_id: z.string().nullable().optional(),
   reason: z.string().nullable().optional(),
+  recipient: z.string().email().nullable().optional(),
+  detail: z.string().nullable().optional(),
 });
 
 const ReplyReceived = z.object({

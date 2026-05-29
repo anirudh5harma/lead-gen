@@ -12,7 +12,9 @@ type MessageLifecycleEvent =
   | PublishedEvent<EventPayload<"draft.rejected">>
   | PublishedEvent<EventPayload<"message.queued">>
   | PublishedEvent<EventPayload<"message.sent">>
-  | PublishedEvent<EventPayload<"message.deferred">>;
+  | PublishedEvent<EventPayload<"message.deferred">>
+  | PublishedEvent<EventPayload<"message.delivered">>
+  | PublishedEvent<EventPayload<"message.bounced">>;
 
 export function createMessageLifecycleProjection(pool: Pool): DurableEventProjection {
   return {
@@ -23,6 +25,8 @@ export function createMessageLifecycleProjection(pool: Pool): DurableEventProjec
       "message.queued",
       "message.sent",
       "message.deferred",
+      "message.delivered",
+      "message.bounced",
     ],
     apply: (event) => projectMessageLifecycleEvent(pool, event),
   };
@@ -56,6 +60,16 @@ export async function projectMessageLifecycleEvent(
     await projectMessageDeferred(
       pool,
       event as PublishedEvent<EventPayload<"message.deferred">>,
+    );
+  } else if (event.event_type === "message.delivered") {
+    await projectMessageDelivered(
+      pool,
+      event as PublishedEvent<EventPayload<"message.delivered">>,
+    );
+  } else if (event.event_type === "message.bounced") {
+    await projectMessageBounced(
+      pool,
+      event as PublishedEvent<EventPayload<"message.bounced">>,
     );
   }
 }
@@ -191,6 +205,65 @@ async function projectMessageDeferred(
                 then status
               else 'deferred'::message_status
             end,
+            eval_notes = coalesce(eval_notes, '{}'::jsonb) || $3::jsonb,
+            properties = properties || $3::jsonb
+      where id = $1
+        and workspace_id = $2
+        and direction = 'outbound'
+        and channel::text = $4`,
+    [payload.message_id, event.workspace_id, JSON.stringify(notes), payload.channel],
+  );
+}
+
+async function projectMessageDelivered(
+  pool: Pool,
+  event: MessageLifecycleEvent & PublishedEvent<EventPayload<"message.delivered">>,
+): Promise<void> {
+  const payload = event.payload;
+  await pool.query(
+    `update messages
+        set status = case
+              when status::text in ('bounced', 'replied')
+                then status
+              else 'delivered'::message_status
+            end,
+            delivered_at = coalesce(delivered_at, $3::timestamptz),
+            properties = properties || $4::jsonb
+      where id = $1
+        and workspace_id = $2
+        and direction = 'outbound'
+        and channel::text = $5`,
+    [
+      payload.message_id,
+      event.workspace_id,
+      event.occurred_at,
+      JSON.stringify({
+        delivered_event_id: event.id,
+        delivery_external_id: payload.external_id ?? null,
+        delivery_provider_event_id: payload.provider_event_id ?? null,
+      }),
+      payload.channel,
+    ],
+  );
+}
+
+async function projectMessageBounced(
+  pool: Pool,
+  event: MessageLifecycleEvent & PublishedEvent<EventPayload<"message.bounced">>,
+): Promise<void> {
+  const payload = event.payload;
+  const notes = {
+    bounce_type: payload.bounce_type,
+    bounce_reason: payload.reason ?? null,
+    bounce_recipient: payload.recipient ?? null,
+    bounce_detail: payload.detail ?? null,
+    bounce_event_id: event.id,
+    delivery_external_id: payload.external_id ?? null,
+    delivery_provider_event_id: payload.provider_event_id ?? null,
+  };
+  await pool.query(
+    `update messages
+        set status = 'bounced'::message_status,
             eval_notes = coalesce(eval_notes, '{}'::jsonb) || $3::jsonb,
             properties = properties || $3::jsonb
       where id = $1

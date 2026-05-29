@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
+import { projectMessageLifecycleEvent } from "../message-lifecycle.ts";
 import type { BounceEvent } from "./types.ts";
 
 export interface BounceProjectionContext {
@@ -12,10 +13,10 @@ export interface BounceProjectionContext {
  *
  * What happens:
  *   1. Look up the message by external_id.
- *   2. Update the message row: status='bounced', record bounce details.
+ *   2. Emit `message.bounced`; shared lifecycle projection materializes it.
  *   3. For hard bounces / complaints: mark the recipient with a
  *      `do_not_contact` outcome so no Rep tries them again.
- *   4. Emit `message.bounced` event so workflows park or escalate.
+ *   4. Workflows observing `message.bounced` can park or escalate.
  *
  * The deliverability subsystem also subscribes to message.bounced and
  * updates the sending_domain's bounce_rate_24h, which feeds the warmup
@@ -32,27 +33,19 @@ export async function handleBounce(
     id: string;
     conversation_id: string;
   }>(
-    `update messages
-        set status = 'bounced',
-            eval_notes = coalesce(eval_notes, '{}'::jsonb) || $2::jsonb
+    `select id, conversation_id
+      from messages
       where workspace_id = $1
         and channel = 'email'
-        and external_id = $3
-      returning id, conversation_id`,
-    [
-      event.workspace_id,
-      JSON.stringify({
-        bounce_type: event.bounce_type,
-        bounce_recipient: event.recipient,
-        bounce_detail: event.detail ?? null,
-      }),
-      event.external_id,
-    ],
+        and external_id = $2
+      order by created_at desc
+      limit 1`,
+    [event.workspace_id, event.external_id],
   );
   const row = rows[0];
   if (!row) return; // Bounce for a message we don't know — ignore.
 
-  await bus.publish({
+  const bounced = await bus.publish({
     workspace_id: event.workspace_id,
     event_type: "message.bounced",
     source: "webhook",
@@ -63,8 +56,13 @@ export async function handleBounce(
       message_id: row.id,
       channel: "email",
       bounce_type: event.bounce_type,
+      external_id: event.external_id,
+      recipient: event.recipient,
+      detail: event.detail ?? null,
+      reason: event.detail ?? null,
     },
   });
+  await projectMessageLifecycleEvent(pool, bounced);
 
   if (event.bounce_type === "hard" || event.bounce_type === "complaint") {
     // Record a do_not_contact outcome on the conversation. The outcomes

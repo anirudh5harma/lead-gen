@@ -152,6 +152,25 @@ export async function createPostgresEventBus(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnecting: Promise<void> | null = null;
   let listenClient: pg.Client | null = null;
+  const localDispatchIds: string[] = [];
+  const locallyDispatched = new Set<string>();
+
+  function rememberLocalDispatch(id: string): void {
+    locallyDispatched.add(id);
+    localDispatchIds.push(id);
+    while (localDispatchIds.length > 1000) {
+      const oldest = localDispatchIds.shift();
+      if (oldest) locallyDispatched.delete(oldest);
+    }
+  }
+
+  function dispatchEvent(event: PublishedEvent): void {
+    const typed = subscribers.get(event.event_type);
+    if (typed) {
+      for (const h of typed) safeCall(h, event, onError);
+    }
+    for (const h of wildcard) safeCall(h, event, onError);
+  }
 
   function handleNotification(msg: pg.Notification): void {
     if (msg.channel !== "events" || !msg.payload) return;
@@ -242,6 +261,7 @@ export async function createPostgresEventBus(
   listenClient = await openListener();
 
   async function dispatchById(id: string): Promise<void> {
+    if (locallyDispatched.has(id)) return;
     const { rows } = await opts.pool.query<PostgresEventRow>(
       `select id, workspace_id, event_type, schema_version,
               correlation_id, causation_id, source, producer_ref,
@@ -270,15 +290,19 @@ export async function createPostgresEventBus(
           : row.occurred_at,
     };
 
-    const typed = subscribers.get(event.event_type);
-    if (typed) {
-      for (const h of typed) safeCall(h, event, onError);
-    }
-    for (const h of wildcard) safeCall(h, event, onError);
+    dispatchEvent(event);
   }
 
   async function publish(input: EventInput): Promise<PublishedEvent> {
-    return appendPostgresEvent(opts.pool, input);
+    const event = await appendPostgresEvent(opts.pool, input);
+    if (
+      (!opts.workspaceId || opts.workspaceId === event.workspace_id) &&
+      !locallyDispatched.has(event.id)
+    ) {
+      rememberLocalDispatch(event.id);
+      dispatchEvent(event);
+    }
+    return event;
   }
 
   async function subscribe(

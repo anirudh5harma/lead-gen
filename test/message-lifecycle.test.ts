@@ -46,6 +46,8 @@ test("message lifecycle projection declares the outbound message event set", () 
     "message.queued",
     "message.sent",
     "message.deferred",
+    "message.delivered",
+    "message.bounced",
   ]);
 });
 
@@ -147,4 +149,54 @@ test("message lifecycle projection materializes draft and channel lifecycle even
   assert.equal(notes.defer_reason, "daily_cap_reached");
   assert.equal(notes.defer_detail, "0/0");
   assert.match(notes.defer_event_id, /^[0-9a-f-]{36}$/);
+
+  await projectMessageLifecycleEvent(
+    pool,
+    event("message.delivered", {
+      message_id,
+      channel: "email",
+      external_id: "provider-1",
+      provider_event_id: "evt-1",
+    }),
+  );
+  assert.match(calls[5]!.sql, /delivered_at/);
+  assert.equal(calls[5]!.values?.[0], message_id);
+  assert.equal(calls[5]!.values?.[4], "email");
+  const deliveredProperties = JSON.parse(String(calls[5]!.values?.[3])) as {
+    delivered_event_id: string;
+    delivery_external_id: string | null;
+    delivery_provider_event_id: string | null;
+  };
+  assert.equal(deliveredProperties.delivery_external_id, "provider-1");
+  assert.equal(deliveredProperties.delivery_provider_event_id, "evt-1");
+  assert.match(deliveredProperties.delivered_event_id, /^[0-9a-f-]{36}$/);
+
+  await projectMessageLifecycleEvent(
+    pool,
+    event("message.bounced", {
+      message_id,
+      channel: "email",
+      bounce_type: "hard",
+      external_id: "provider-1",
+      provider_event_id: "evt-2",
+      reason: "recipient_suppressed",
+      recipient: "anne@example.com",
+      detail: "mailbox missing",
+    }),
+  );
+  assert.match(calls[6]!.sql, /bounced/);
+  assert.equal(calls[6]!.values?.[0], message_id);
+  assert.equal(calls[6]!.values?.[3], "email");
+  const bounceNotes = JSON.parse(String(calls[6]!.values?.[2])) as {
+    bounce_type: string;
+    bounce_reason: string | null;
+    bounce_recipient: string | null;
+    bounce_detail: string | null;
+    bounce_event_id: string;
+  };
+  assert.equal(bounceNotes.bounce_type, "hard");
+  assert.equal(bounceNotes.bounce_reason, "recipient_suppressed");
+  assert.equal(bounceNotes.bounce_recipient, "anne@example.com");
+  assert.equal(bounceNotes.bounce_detail, "mailbox missing");
+  assert.match(bounceNotes.bounce_event_id, /^[0-9a-f-]{36}$/);
 });

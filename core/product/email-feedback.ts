@@ -5,6 +5,7 @@ import type {
   EventBus,
   PublishedEvent,
 } from "../substrate/events/index.ts";
+import { projectMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
 
 export const EMAIL_DELIVERY_FEEDBACK_PROJECTION = "channel.email_feedback.v1";
 
@@ -37,6 +38,8 @@ const MessageBouncedPayload = z.object({
   external_id: z.string().nullable().optional(),
   provider_event_id: z.string().nullable().optional(),
   reason: z.string().nullable().optional(),
+  recipient: z.string().email().nullable().optional(),
+  detail: z.string().nullable().optional(),
 });
 
 export type ResendWebhookAction =
@@ -235,26 +238,16 @@ async function applyMessageDelivered(
   event: PublishedEvent,
 ): Promise<void> {
   const payload = MessageDeliveredPayload.parse(event.payload);
+  await projectMessageLifecycleEvent(pool, event);
   const { rows } = await pool.query<{ channel_account_id: string | null }>(
-    `update messages
-        set status = case when status = 'bounced' then status else 'delivered' end,
-            delivered_at = coalesce(delivered_at, $3::timestamptz),
-            properties = properties || $4::jsonb
+    `select channel_account_id
+       from messages
       where id = $1
         and workspace_id = $2
         and channel = 'email'
         and direction = 'outbound'
-        and status <> 'replied'
-      returning channel_account_id`,
-    [
-      payload.message_id,
-      event.workspace_id,
-      event.occurred_at,
-      JSON.stringify({
-        delivered_event_id: event.id,
-        delivery_external_id: payload.external_id ?? null,
-      }),
-    ],
+      limit 1`,
+    [payload.message_id, event.workspace_id],
   );
   const accountId = rows[0]?.channel_account_id;
   if (accountId) {
@@ -268,6 +261,7 @@ async function applyMessageBounced(
   event: PublishedEvent,
 ): Promise<void> {
   const payload = MessageBouncedPayload.parse(event.payload);
+  await projectMessageLifecycleEvent(pool, event);
   const { rows } = await pool.query<{
     channel_account_id: string | null;
     outcome_id: string | null;
@@ -276,15 +270,13 @@ async function applyMessageBounced(
     score: string | null;
     properties: Record<string, unknown> | null;
   }>(
-    `with updated_message as (
-       update messages
-          set status = 'bounced',
-              properties = properties || $4::jsonb
+    `with matched_message as (
+       select id, workspace_id, conversation_id, channel_account_id
+         from messages
         where id = $1
           and workspace_id = $2
           and channel = 'email'
           and direction = 'outbound'
-        returning id, workspace_id, conversation_id, channel_account_id
      ),
      inserted_outcome as (
        insert into outcomes (
@@ -299,7 +291,7 @@ async function applyMessageBounced(
               c.rep_id,
               $4::jsonb,
               '{"source":"email-feedback"}'::jsonb
-         from updated_message m
+         from matched_message m
          join conversations c
            on c.id = m.conversation_id
           and c.workspace_id = m.workspace_id
@@ -318,7 +310,7 @@ async function applyMessageBounced(
             o.attributed_rep_id as rep_id,
             o.score,
             o.properties
-       from updated_message m
+       from matched_message m
        left join inserted_outcome o on true`,
     [
       payload.message_id,
