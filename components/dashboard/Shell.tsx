@@ -44,7 +44,7 @@ export function DashboardShell({
               height={24}
               priority
               unoptimized
-              className="size-6"
+              className="size-6 rounded-md"
             />
             Bombsell
           </Link>
