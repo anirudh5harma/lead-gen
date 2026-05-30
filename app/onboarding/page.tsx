@@ -33,7 +33,6 @@ export default async function OnboardingPage({
     <main className="canvas-bg flex min-h-[100dvh] flex-1 items-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[0.86fr_1.14fr]">
         <div className="flex flex-col justify-center">
-          <p className="brief-kicker">New workspace</p>
           <h1 className="mt-3 max-w-xl font-sans text-5xl font-semibold leading-[1.02] text-[var(--color-text-1)] sm:text-6xl">
             Start with a website and one clear intent.
           </h1>
