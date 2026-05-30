@@ -9,17 +9,24 @@ AWS now recommends moving App Runner-style workloads to **Amazon ECS Express
 Mode** ([AWS App Runner availability change](https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html)).
 Treat ECS Express Mode (or an equivalent long-running container runtime) as the
 production target for these workers. The old `worker:app-runner` script remains
-as a compatibility alias, but new services should use `worker:managed`.
+as a compatibility alias, but new background services should use
+`worker:managed`.
 
 ## Processes
 
-Deploy the same image three times with a different `WORKER_COMMAND`.
+Deploy the same image with a different `WORKER_COMMAND`.
 
 | Process | `WORKER_COMMAND` | Purpose |
 |---|---|---|
+| Production worker | `worker:production` | Restate workflow host, event-wait bridge, email projectors, signal projectors, and dispatch redrive over one shared NATS connection |
 | Email projectors | `worker:email-projectors` | SES/Outlook provider ingress to channel projections and workflow starts |
 | Signal projectors | `worker:signal-projectors` | Signal lifecycle projections and `signal.ingested` classification |
 | Restate workflows | `worker:restate-workflows` | Native Restate workflow handler host and event-wait bridge |
+
+Prefer `worker:production` until the NATS account supports enough active
+connections for separate long-running consumers plus app ingress. It preserves
+the same typed event bus and Restate workflow boundaries while reducing the
+runtime connection footprint.
 
 Build the worker image:
 
@@ -32,7 +39,7 @@ Run one process locally:
 ```bash
 docker run --rm \
   --env-file .env.local \
-  -e WORKER_COMMAND=worker:restate-workflows \
+  -e WORKER_COMMAND=worker:production \
   -p 9080:9080 \
   bombsell-worker
 ```
@@ -58,7 +65,7 @@ Workers that start or bridge Restate invocations also need:
 - `RESTATE_INGRESS_URL`
 - `RESTATE_BEARER_TOKEN` for Restate Cloud or any protected ingress
 
-`worker:restate-workflows` also needs:
+`worker:production` and `worker:restate-workflows` also need:
 
 - `APP_ORIGIN`
 - `OPENAI_API_KEY`
@@ -71,7 +78,7 @@ Workers that start or bridge Restate invocations also need:
 
 ## Restate Registration
 
-After deploying `worker:restate-workflows`, register its public HTTP endpoint
+After deploying `worker:production` or `worker:restate-workflows`, register its public HTTP endpoint
 with Restate. For Restate Cloud, create an Admin API key in the dashboard and
 set it as `RESTATE_BEARER_TOKEN` in Vercel and in every worker environment.
 

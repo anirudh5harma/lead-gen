@@ -148,6 +148,8 @@ async function deleteVerifyStream(streamPrefix: string): Promise<void> {
   const authenticator = buildAuthenticator(natsCreds);
   const nc = await connect({
     servers: NATS_URL!,
+    resolve: false,
+    ignoreClusterUpdates: true,
     ...(authenticator ? { authenticator } : {}),
   });
   try {

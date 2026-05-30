@@ -14,4 +14,4 @@ COPY lib ./lib
 COPY scripts ./scripts
 COPY next.config.ts package.json tsconfig.json ./
 
-CMD ["sh", "-c", "npm run ${WORKER_COMMAND:?set WORKER_COMMAND to worker:email-projectors, worker:signal-projectors, or worker:restate-workflows}"]
+CMD ["sh", "-c", "npm run ${WORKER_COMMAND:?set WORKER_COMMAND to worker:production, worker:email-projectors, worker:signal-projectors, or worker:restate-workflows}"]

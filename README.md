@@ -134,7 +134,15 @@ gating, audit, and replay until the event-log sink is deployed. A durable
 dispatch row allows the worker to redrive a journaled event if delivery was
 interrupted before JetStream acknowledged it.
 Authenticated SES and Outlook webhook routes now publish provider-ingress
-events only. Run their durable consumer alongside the app:
+events only. In production, prefer the consolidated worker when the hosted NATS
+account has a tight active-connection limit:
+
+```bash
+DATABASE_URL=... APP_ORIGIN=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... OPENAI_API_KEY=... MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=... npm run worker:production
+```
+
+For larger NATS accounts, the same image can be split into the durable
+consumers below. Run the email consumer alongside the app:
 
 ```bash
 DATABASE_URL=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... npm run worker:email-projectors

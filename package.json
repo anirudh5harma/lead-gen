@@ -15,6 +15,7 @@
     "worker:managed": "node --experimental-strip-types scripts/managed-worker.ts",
     "worker:app-runner": "node --experimental-strip-types scripts/managed-worker.ts",
     "worker:email-projectors": "node --experimental-strip-types scripts/email-projectors-worker.ts",
+    "worker:production": "node --experimental-strip-types scripts/production-worker.ts",
     "worker:projectors": "node --experimental-strip-types scripts/projectors-worker.ts",
     "worker:signal-projectors": "node --experimental-strip-types scripts/signal-projectors-worker.ts",
     "worker:restate-workflows": "node --experimental-strip-types scripts/restate-workflows-worker.ts",
