@@ -11,7 +11,7 @@ export default async function LoginPage({
   searchParams?: Promise<{ next?: string; error?: string }>;
 }) {
   const params = (await searchParams) ?? {};
-  const next = safeNextPath(params.next ?? "/onboarding");
+  const next = safeNextPath(params.next);
   const error = params.error;
 
   if (!error) {

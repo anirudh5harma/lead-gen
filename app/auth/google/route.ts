@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const next = safeNextPath(searchParams.get("next") ?? "/onboarding");
+  const next = safeNextPath(searchParams.get("next"));
   const supabase = await createServerSupabaseClient();
   const h = await headers();
   const origin =

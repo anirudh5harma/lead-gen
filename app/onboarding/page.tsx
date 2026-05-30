@@ -4,7 +4,8 @@ import { getRequestUserId } from "@/lib/auth";
 import {
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
-import { googleAuthPath } from "@/lib/auth/next";
+import { findCompletedOnboardingForUser } from "@/lib/auth/onboarding";
+import { googleAuthPath, PRODUCT_HOME_PATH } from "@/lib/auth/next";
 import OnboardingForm from "./OnboardingForm";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,8 @@ export default async function OnboardingPage({
         : "/onboarding";
     redirect(googleAuthPath(next));
   }
+  const completed = await findCompletedOnboardingForUser(userId);
+  if (completed) redirect(PRODUCT_HOME_PATH);
 
   return (
     <main className="canvas-bg flex min-h-[100dvh] flex-1 items-center px-4 py-8 sm:px-6 lg:px-8">
