@@ -1,8 +1,15 @@
 # Production Workers
 
 Bombsell production needs Vercel for the Next.js app and a separate
-long-running host for the worker processes. Do not run these as Vercel
-Functions; they hold durable NATS subscriptions and the Restate handler host.
+long-running container host for the worker processes. Do not run these as
+Vercel Functions; they hold durable NATS subscriptions and the Restate handler
+host.
+
+AWS now recommends moving App Runner-style workloads to **Amazon ECS Express
+Mode** ([AWS App Runner availability change](https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html)).
+Treat ECS Express Mode (or an equivalent long-running container runtime) as the
+production target for these workers. The old `worker:app-runner` script remains
+as a compatibility alias, but new services should use `worker:managed`.
 
 ## Processes
 
@@ -30,9 +37,9 @@ docker run --rm \
   bombsell-worker
 ```
 
-For managed runtimes that require a web health check for background workers,
-run `worker:app-runner` with `WORKER_TARGET_COMMAND` set to either
-`worker:email-projectors` or `worker:signal-projectors`.
+For managed runtimes that require a web health check for background workers
+such as ECS Express Mode, run `worker:managed` with `WORKER_TARGET_COMMAND`
+set to either `worker:email-projectors` or `worker:signal-projectors`.
 
 ## Required Shared Environment
 
@@ -43,8 +50,8 @@ All workers need:
 - `NATS_CREDS` when using Synadia/NGS
 - `NATS_STREAM_MAX_BYTES` when the hosted NATS account has a bounded stream quota
 - `DEEPSEEK_API_KEY`
-- `WORKER_HEALTH_PORT`, when running background workers through `worker:app-runner`
-- `WORKER_TARGET_COMMAND`, when running background workers through `worker:app-runner`
+- `WORKER_HEALTH_PORT`, when running background workers through `worker:managed`
+- `WORKER_TARGET_COMMAND`, when running background workers through `worker:managed`
 
 Workers that start or bridge Restate invocations also need:
 
@@ -60,7 +67,7 @@ Workers that start or bridge Restate invocations also need:
 - `AWS_REGION`
 - `SES_CONFIGURATION_SET`
 - `RESTATE_WORKFLOW_PORT`, default `9080`
-- `RESTATE_WORKFLOW_HTTP1=1` when the host is behind an HTTP/1.1 proxy such as AWS App Runner
+- `RESTATE_WORKFLOW_HTTP1=1` when the host is behind an HTTP/1.1 managed proxy
 
 ## Restate Registration
 

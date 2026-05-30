@@ -26,16 +26,16 @@ await new Promise<void>((resolve, reject) => {
   });
 });
 
-console.log(`[app-runner-worker] health server listening on ${port} for ${target}`);
+console.log(`[managed-worker] health server listening on ${port} for ${target}`);
 
 void import(modulePath)
   .then(() => {
     ready = true;
-    console.log(`[app-runner-worker] ${target} started`);
+    console.log(`[managed-worker] ${target} started`);
   })
   .catch((err) => {
     fatal = err instanceof Error ? err.message : String(err);
-    console.error(`[app-runner-worker] ${target} failed to start`, err);
+    console.error(`[managed-worker] ${target} failed to start`, err);
     process.exitCode = 1;
     setTimeout(() => process.exit(1), 250).unref();
   });

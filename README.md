@@ -153,6 +153,11 @@ endpoint with the Restate admin API:
 DATABASE_URL=... APP_ORIGIN=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... OPENAI_API_KEY=... MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=... npm run worker:restate-workflows
 ```
 
+Deploy these worker processes on a long-running container runtime. On AWS, use
+ECS Express Mode for new deployments and migrations from App Runner-style
+services. For managed services that need an HTTP health check, run
+`npm run worker:managed` with `WORKER_TARGET_COMMAND` set to the target worker.
+
 Production readiness requires `NATS_URL`, `RESTATE_INGRESS_URL`, and
 `MAINTENANCE_TRIGGER_SECRET`. Set `BOMBSELL_SUBSTRATE=nats_restate` when the
 NATS broker and Restate handler deployment are live; `postgres` is the
@@ -258,7 +263,7 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
 - `NATS_STREAM_MAX_AGE_MS` — JetStream events stream max age, default 30 days.
 - `RESTATE_WORKFLOW_PORT` — the Restate workflow worker port (default 9080).
 - `RESTATE_WORKFLOW_HTTP1` — set to `1` when the worker is behind a managed
-  HTTP/1.1 proxy such as AWS App Runner.
+  HTTP/1.1 proxy.
 - `WORKER_TARGET_COMMAND` — background worker selected by the managed-worker
   health wrapper (`worker:email-projectors` or `worker:signal-projectors`).
 - `WORKER_HEALTH_PORT` — health port exposed by managed background workers.
