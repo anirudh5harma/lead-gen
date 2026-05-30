@@ -20,7 +20,7 @@ import {
   createWorkspacePollWorkflow,
 } from "../core/ingest/index.ts";
 import { createSeriesAColdOpenPlay } from "../core/plays/index.ts";
-import { createRuntimeEventBus } from "../core/substrate/events/index.ts";
+import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
 import {
   createPostgresRestateEventSignalStore,
@@ -29,8 +29,19 @@ import {
 import { serveRestateWorkflows } from "../core/substrate/workflows/adapters/restate-host.ts";
 import { restateBearerFromEnv } from "../core/substrate/workflows/adapters/restate.ts";
 
+console.log("[restate-workflows] booting");
+const natsUrl = requiredEnv("NATS_URL");
+const natsCreds = process.env.NATS_CREDS?.trim();
 const pool = getPool();
-const bus = await createRuntimeEventBus({ pool });
+console.log("[restate-workflows] storage pool ready");
+const bus = await createJournaledNatsEventBus({
+  pool,
+  servers: natsUrl,
+  ...(natsCreds ? { credentials: natsCreds } : {}),
+  ...optionalPositiveNumber(process.env.NATS_STREAM_MAX_BYTES, "streamMaxBytes"),
+  ...optionalPositiveNumber(process.env.NATS_STREAM_MAX_AGE_MS, "streamMaxAgeMs"),
+});
+console.log("[restate-workflows] event bus ready");
 const llm = createDeepSeekClientFromEnv();
 const judge = createDeepSeekJudge({ llm });
 const memory = {
@@ -38,6 +49,7 @@ const memory = {
   semantic: createPostgresSemanticRepository({ pool }),
   procedural: createPostgresProceduralRepository({ pool }),
 };
+console.log("[restate-workflows] agent dependencies ready");
 
 const openAiKey = requiredEnv("OPENAI_API_KEY");
 const restateIngressUrl = requiredEnv("RESTATE_INGRESS_URL");
@@ -93,6 +105,7 @@ const bound = await serveRestateWorkflows({
   port,
   http1: process.env.RESTATE_WORKFLOW_HTTP1 === "1",
 });
+console.log(`[restate-workflows] handler listening on ${bound}`);
 await startRestateEventSignalBridge({
   pool,
   bus,
@@ -110,4 +123,16 @@ function requiredEnv(key: string): string {
   const value = process.env[key]?.trim();
   if (!value) throw new Error(`${key} is required for the Restate workflow worker`);
   return value;
+}
+
+function optionalPositiveNumber<K extends string>(
+  raw: string | undefined,
+  key: K,
+): Partial<Record<K, number>> {
+  if (!raw?.trim()) return {};
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${key} must be a positive number`);
+  }
+  return { [key]: value } as Partial<Record<K, number>>;
 }

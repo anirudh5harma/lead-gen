@@ -93,6 +93,7 @@ export async function createNatsEventBus(
     servers: opts.servers,
     name: "bombsell-event-bus",
     resolve: opts.resolve ?? shouldResolveServers(opts.servers),
+    ignoreClusterUpdates: shouldIgnoreClusterUpdates(opts.servers),
     ...(authenticator ? { authenticator } : {}),
   });
   const jsm = await nc.jetstreamManager();
@@ -378,6 +379,20 @@ export function buildAuthenticator(
 function shouldResolveServers(servers: string | string[]): boolean {
   const list = Array.isArray(servers) ? servers : [servers];
   return !list.some((server) => {
+    try {
+      const url = server.includes("://")
+        ? new URL(server)
+        : new URL(`nats://${server}`);
+      return url.hostname.endsWith("ngs.global");
+    } catch {
+      return false;
+    }
+  });
+}
+
+function shouldIgnoreClusterUpdates(servers: string | string[]): boolean {
+  const list = Array.isArray(servers) ? servers : [servers];
+  return list.some((server) => {
     try {
       const url = server.includes("://")
         ? new URL(server)

@@ -76,8 +76,19 @@ export async function serveRestateWorkflows(
     createRestateWorkflowComponent(workflow, opts),
   );
   if (opts.http1) {
+    const restateHandler = restate.createEndpointHandler({
+      services,
+      bidirectional: false,
+    });
     const server = createServer(
-      restate.createEndpointHandler({ services, bidirectional: false }),
+      (req, res) => {
+        if (req.url === "/health") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+        restateHandler(req, res);
+      },
     );
     const port = opts.port ?? 9080;
     await new Promise<void>((resolve, reject) => {
