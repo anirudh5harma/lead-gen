@@ -32,7 +32,7 @@ export default function Home() {
               height={28}
               priority
               unoptimized
-              className="size-7 rounded-md"
+              className="size-7"
             />
             Bombsell
           </span>
