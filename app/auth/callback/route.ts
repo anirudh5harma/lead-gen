@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeNextPath } from "@/lib/auth/next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -24,8 +25,4 @@ export async function GET(request: Request) {
   const response = NextResponse.redirect(destination);
   response.headers.set("Cache-Control", "private, no-store");
   return response;
-}
-
-function safeNextPath(value: string): string {
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/onboarding";
 }

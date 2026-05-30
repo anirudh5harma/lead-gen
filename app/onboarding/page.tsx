@@ -1,13 +1,33 @@
 import { redirect } from "next/navigation";
 import Icon from "@/components/Icon";
 import { getRequestUserId } from "@/lib/auth";
-import { createProfileAndAggregatorAction } from "./actions";
+import {
+  normalizeCompanyWebsiteUrl,
+} from "@/core/product/company-profile";
+import { googleAuthPath } from "@/lib/auth/next";
+import OnboardingForm from "./OnboardingForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ url?: string; company?: string }>;
+}) {
+  const params = (await searchParams) ?? {};
+  const initialWebsiteUrl = normalizeCompanyWebsiteUrl(params.url) ?? "";
+  const initialCompanyName = typeof params.company === "string" ? params.company : "";
   const userId = await getRequestUserId();
-  if (!userId) redirect("/login?next=/onboarding");
+  if (!userId) {
+    const next =
+      initialWebsiteUrl || initialCompanyName
+        ? `/onboarding?${new URLSearchParams({
+            ...(initialWebsiteUrl ? { url: initialWebsiteUrl } : {}),
+            ...(initialCompanyName ? { company: initialCompanyName } : {}),
+          }).toString()}`
+        : "/onboarding";
+    redirect(googleAuthPath(next));
+  }
 
   return (
     <main className="canvas-bg flex min-h-[100dvh] flex-1 items-center px-4 py-8 sm:px-6 lg:px-8">
@@ -31,52 +51,13 @@ export default async function OnboardingPage() {
           <h2 className="font-sans text-2xl font-semibold text-[var(--color-text-1)]">
             Create your workspace
           </h2>
-          <form action={createProfileAndAggregatorAction} className="mt-5 grid gap-4">
-            <Field
-              name="website_url"
-              label="Website"
-              type="url"
-              placeholder="https://yourcompany.com"
-            />
-            <Field
-              name="company_name"
-              label="Company name hint"
-              placeholder="Optional"
-            />
-            <button className="inline-flex min-h-11 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-5 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
-              <Icon name="arrow_forward" size={18} />
-              Create workspace
-            </button>
-          </form>
+          <OnboardingForm
+            initialWebsiteUrl={initialWebsiteUrl}
+            initialCompanyName={initialCompanyName}
+          />
         </section>
       </section>
     </main>
-  );
-}
-
-function Field({
-  name,
-  label,
-  type = "text",
-  placeholder,
-}: {
-  name: string;
-  label: string;
-  type?: string;
-  placeholder?: string;
-}) {
-  return (
-    <label className="grid gap-1.5">
-      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
-        {label}
-      </span>
-      <input
-        name={name}
-        type={type}
-        placeholder={placeholder}
-        className="min-h-11 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-sm text-[var(--color-text-1)] outline-none transition-colors placeholder:text-[var(--color-text-4)] focus:border-[var(--color-accent)]"
-      />
-    </label>
   );
 }
 

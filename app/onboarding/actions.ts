@@ -17,10 +17,15 @@ import {
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
 import { getRequestUserId } from "@/lib/auth";
+import { googleAuthPath } from "@/lib/auth/next";
 import {
   getActiveWorkspaceSession,
   setActiveWorkspaceCookie,
 } from "@/lib/workspace";
+
+export interface OnboardingActionState {
+  error: string | null;
+}
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
@@ -34,7 +39,7 @@ async function requireOnboardingSession(
     return { workspace_id: existing.workspace.id, user_id: existing.user_id };
   }
   const userId = await getRequestUserId();
-  if (!userId) redirect("/login?next=/onboarding");
+  if (!userId) redirect(googleAuthPath("/onboarding"));
   const workspace = await createProductWorkspaceForUser(
     {
       name: workspaceName,
@@ -47,6 +52,34 @@ async function requireOnboardingSession(
 }
 
 export async function createProfileAndAggregatorAction(formData: FormData) {
+  await createProfileAndAggregator(formData);
+  redirect("/dashboard/ingestion");
+}
+
+export async function createProfileAndAggregatorFormAction(
+  _prevState: OnboardingActionState,
+  formData: FormData,
+): Promise<OnboardingActionState> {
+  try {
+    await createProfileAndAggregator(formData);
+  } catch (error) {
+    if (isNextRedirectError(error)) throw error;
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not create the workspace. Try again.",
+    };
+  }
+  redirect("/dashboard/ingestion");
+}
+
+function isNextRedirectError(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("digest" in error)) return false;
+  return String((error as { digest?: unknown }).digest).startsWith("NEXT_REDIRECT;");
+}
+
+async function createProfileAndAggregator(formData: FormData): Promise<void> {
   const websiteUrl = normalizeCompanyWebsiteUrl(value(formData, "website_url"));
   if (!websiteUrl) throw new Error("Enter a valid company website.");
 
@@ -172,5 +205,4 @@ export async function createProfileAndAggregatorAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/setup");
   revalidatePath("/dashboard/ingestion");
-  redirect("/dashboard/ingestion");
 }

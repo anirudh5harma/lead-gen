@@ -1,11 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAuthConfigFromEnv } from "@/core/product/auth";
+import { googleAuthPath } from "@/lib/auth/next";
 
 export async function proxy(request: NextRequest) {
   let response = nextWithPathname(request);
+  const protectedRoute = isProtectedRoute(request);
+  if (localDemoAuthAllowed()) return response;
+
   const config = supabaseAuthConfigFromEnv();
-  if (!config) return response;
+  if (!config) {
+    return protectedRoute ? unauthenticatedResponse(request) : response;
+  }
 
   const supabase = createServerClient(config.url, config.anonKey, {
     cookies: {
@@ -27,7 +33,10 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const { data } = await supabase.auth.getUser();
+  if (protectedRoute && !data.user) {
+    return unauthenticatedResponse(request);
+  }
   return response;
 }
 
@@ -41,6 +50,41 @@ function nextWithPathname(request: NextRequest): NextResponse {
   });
 }
 
+function isProtectedRoute(request: NextRequest): boolean {
+  const pathname = request.nextUrl.pathname;
+  return (
+    pathname === "/onboarding" ||
+    pathname.startsWith("/dashboard") ||
+    pathname === "/brief" ||
+    pathname.startsWith("/brief/") ||
+    pathname.startsWith("/api/auth/outlook") ||
+    pathname.startsWith("/api/internal/ops/dead-letter")
+  );
+}
+
+function unauthenticatedResponse(request: NextRequest): NextResponse {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "authentication required" }, { status: 401 });
+  }
+  const next = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  return NextResponse.redirect(new URL(googleAuthPath(next), request.url));
+}
+
+function localDemoAuthAllowed(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.BOMBSELL_ALLOW_DEMO_AUTH === "1" &&
+    Boolean(process.env.BOMBSELL_DEMO_USER_ID)
+  );
+}
+
 export const config = {
-  matcher: ["/dashboard/:path*", "/api/auth/outlook/:path*", "/brief", "/brief/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/onboarding",
+    "/api/auth/outlook/:path*",
+    "/api/internal/ops/dead-letter/:path*",
+    "/brief",
+    "/brief/:path*",
+  ],
 };

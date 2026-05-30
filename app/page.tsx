@@ -27,7 +27,7 @@ export default function Home() {
             Bombsell
           </span>
           <Link
-            href="/login"
+            href="/auth/google?next=%2Fonboarding"
             className="text-sm font-medium text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text-1)]"
           >
             Sign in

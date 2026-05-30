@@ -2,6 +2,12 @@ import type { LLMClient } from "../agents/llm/index.ts";
 import { createDeepSeekClientFromEnv } from "../agents/llm/index.ts";
 
 const WEBSITE_SCRAPE_TIMEOUT_MS = 15_000;
+const DIRECT_FETCH_TIMEOUT_MS = 10_000;
+
+interface WebsiteContent {
+  markdown: string;
+  source: CompanyWebsiteProfile["source"];
+}
 
 export interface CompanyWebsiteProfile {
   company_name: string | null;
@@ -41,11 +47,23 @@ export async function analyzeCompanyWebsite(
 ): Promise<CompanyWebsiteProfile | null> {
   const websiteUrl = normalizeCompanyWebsiteUrl(opts.websiteUrl);
   if (!websiteUrl) return null;
-  const markdown = await scrapeWebsiteMarkdown(websiteUrl, opts.fetchImpl);
-  if (!markdown) return null;
-
   const allowed = (opts.allowedIndustries ?? []).filter(Boolean);
   const fallbackName = opts.companyHint?.trim() || companyNameFromHost(websiteUrl);
+  const websiteContent = await scrapeWebsiteContent(websiteUrl, opts.fetchImpl);
+
+  if (!websiteContent) {
+    const description = fallbackProfileDescription(fallbackName, websiteUrl);
+    return {
+      company_name: fallbackName || null,
+      website_url: websiteUrl,
+      domain: domainFromUrl(websiteUrl),
+      industry: null,
+      description,
+      source: "fallback",
+    };
+  }
+  const { markdown, source } = websiteContent;
+
   const llm = opts.llm ?? createOptionalLlm();
   if (llm) {
     try {
@@ -94,7 +112,7 @@ export async function analyzeCompanyWebsite(
           domain: domainFromUrl(websiteUrl),
           industry,
           description,
-          source: "firecrawl",
+          source,
         };
       }
     } catch {
@@ -110,19 +128,26 @@ export async function analyzeCompanyWebsite(
     domain: domainFromUrl(websiteUrl),
     industry: null,
     description,
-    source: "fallback",
+    source,
   };
 }
 
-async function scrapeWebsiteMarkdown(
+async function scrapeWebsiteContent(
   websiteUrl: string,
   fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<WebsiteContent | null> {
+  const firecrawl = await scrapeWithFirecrawl(websiteUrl, fetchImpl);
+  if (firecrawl) return { markdown: firecrawl, source: "firecrawl" };
+  return scrapeDirectHomepage(websiteUrl, fetchImpl);
+}
+
+async function scrapeWithFirecrawl(
+  websiteUrl: string,
+  fetchImpl: typeof fetch,
 ): Promise<string | null> {
   const apiKey = process.env.FIRECRAWL_API_KEY?.trim();
   if (!apiKey) return null;
-  const endpoint =
-    process.env.FIRECRAWL_API_URL?.trim() ||
-    "https://api.firecrawl.dev/v2/scrape";
+  const endpoint = process.env.FIRECRAWL_API_URL?.trim() || "https://api.firecrawl.dev/v2/scrape";
   try {
     const response = await fetchImpl(endpoint, {
       method: "POST",
@@ -144,6 +169,33 @@ async function scrapeWebsiteMarkdown(
     };
     const markdown = (json.data?.markdown ?? json.markdown ?? "").trim();
     return markdown.length >= 120 ? markdown : null;
+  } catch {
+    return null;
+  }
+}
+
+async function scrapeDirectHomepage(
+  websiteUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<WebsiteContent | null> {
+  try {
+    const response = await fetchImpl(websiteUrl, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
+        "User-Agent": "BombsellProfileBot/1.0 (+https://www.bombsell.com)",
+      },
+      signal: AbortSignal.timeout(DIRECT_FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const text = await response.text();
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType && !/text\/html|text\/plain|application\/xhtml\+xml/i.test(contentType)) {
+      return null;
+    }
+    const extracted = htmlToProfileText(text);
+    return extracted.length >= 80
+      ? { markdown: extracted, source: "fallback" }
+      : null;
   } catch {
     return null;
   }
@@ -194,6 +246,76 @@ function fallbackDescription(markdown: string): string | null {
     .filter((sentence): sentence is string => Boolean(sentence))
     .filter((sentence) => !/^(home|privacy|terms|copyright|login|sign up)\b/i.test(sentence));
   return cleanDescription(sentences.slice(0, 3).join(" "));
+}
+
+function fallbackProfileDescription(companyName: string, websiteUrl: string): string {
+  const domain = domainFromUrl(websiteUrl) ?? "the supplied website";
+  return `Public website profile for ${companyName || domain}. Bombsell could not read enough website content automatically, so this profile starts with the domain and can be refined in Profile.`;
+}
+
+function htmlToProfileText(html: string): string {
+  const withoutNoise = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ");
+  const title = matchTagText(withoutNoise, "title");
+  const description = matchMetaContent(withoutNoise, "description");
+  const ogDescription = matchMetaContent(withoutNoise, "og:description");
+  const headings = [...withoutNoise.matchAll(/<h[1-2]\b[^>]*>([\s\S]*?)<\/h[1-2]>/gi)]
+    .slice(0, 4)
+    .map((match) => stripHtml(match[1]));
+  const body = stripHtml(withoutNoise).slice(0, 4000);
+  return [title, description, ogDescription, ...headings, body]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join("\n")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function matchTagText(html: string, tag: string): string | null {
+  const match = html.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match?.[1] ? stripHtml(match[1]) : null;
+}
+
+function matchMetaContent(html: string, name: string): string | null {
+  const escaped = escapeRegExp(name);
+  const patterns = [
+    new RegExp(`<meta\\b(?=[^>]*(?:name|property)=["']${escaped}["'])(?=[^>]*content=["']([^"']+)["'])[^>]*>`, "i"),
+    new RegExp(`<meta\\b(?=[^>]*content=["']([^"']+)["'])(?=[^>]*(?:name|property)=["']${escaped}["'])[^>]*>`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) return decodeHtml(match[1]);
+  }
+  return null;
+}
+
+function stripHtml(html: string): string {
+  return decodeHtml(
+    html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+function decodeHtml(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function domainFromUrl(url: string): string | null {

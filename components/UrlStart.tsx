@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icon";
+import { googleAuthPath } from "@/lib/auth/next";
 
 export default function UrlStart() {
   const [url, setUrl] = useState("");
@@ -14,7 +15,7 @@ export default function UrlStart() {
     if (!v) return;
     const normalized = /^https?:\/\//i.test(v) ? v : `https://${v}`;
     const next = `/onboarding?url=${encodeURIComponent(normalized)}`;
-    router.push(`/login?next=${encodeURIComponent(next)}`);
+    router.push(googleAuthPath(next));
   }
 
   return (
