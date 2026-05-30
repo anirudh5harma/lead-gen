@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import Icon from "@/components/Icon";
 import UrlStart from "@/components/UrlStart";
@@ -21,9 +22,18 @@ export default function Home() {
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)]">
         <div className="mx-auto flex w-full max-w-[1240px] items-center justify-between px-6 py-4 md:px-10 lg:px-16">
           <span
-            className="text-[1.375rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
+            className="flex items-center gap-2.5 text-[1.375rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
+            <Image
+              src="/logo.svg"
+              alt=""
+              width={28}
+              height={28}
+              priority
+              unoptimized
+              className="size-7"
+            />
             Bombsell
           </span>
           <Link
@@ -50,7 +60,7 @@ export default function Home() {
         <section className="grid min-h-[calc(100dvh-72px)] items-center gap-10 py-10 sm:gap-12 sm:py-14 lg:grid-cols-[1fr_1fr] lg:gap-12 lg:py-0">
           <div className="max-w-xl">
             <h1 className="display-serif text-[clamp(3.25rem,7.5vw,6rem)] text-[var(--color-text-1)]">
-              The future
+              Autonomous
               <br />
               <em>GTM stack</em>.
             </h1>

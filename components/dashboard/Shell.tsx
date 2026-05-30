@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
@@ -36,9 +37,15 @@ export function DashboardShell({
             className="flex items-center gap-2 text-[1.0625rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            <span className="grid size-6 place-items-center rounded-full bg-[var(--color-accent-hi)] text-[10px] font-semibold text-white">
-              B
-            </span>
+            <Image
+              src="/logo.svg"
+              alt=""
+              width={24}
+              height={24}
+              priority
+              unoptimized
+              className="size-6"
+            />
             Bombsell
           </Link>
 
