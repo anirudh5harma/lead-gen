@@ -1,8 +1,10 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
-import type { ActiveWorkspace } from "@/lib/workspace";
 
 interface NavItem {
   href: string;
@@ -18,19 +20,20 @@ const NAV: NavItem[] = [
   { href: "/dashboard/setup", label: "Profile" },
 ];
 
-export function DashboardShell({
-  workspace,
-  current,
-  children,
-}: {
-  workspace: ActiveWorkspace | null;
-  current: string;
-  children: ReactNode;
-}) {
+// Brief ("/dashboard") matches only its own page; section links match the
+// page and any nested route under it.
+function isActivePath(pathname: string, href: string): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  return pathname === href || pathname.startsWith(href + "/");
+}
+
+export function DashboardShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname() ?? "/dashboard";
+
   return (
     <div className="canvas-bg relative isolate min-h-[100dvh] text-[var(--color-text-1)]">
-      {/* Top frame — full-viewport bar, top + bottom hairlines */}
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)]">
+      {/* Top frame — translucent full-viewport bar, top + bottom hairlines */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)] bg-[rgba(245,248,251,0.72)] backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
             href="/dashboard"
@@ -51,9 +54,7 @@ export function DashboardShell({
 
           <nav className="ml-2 hidden flex-1 items-center gap-1 md:flex">
             {NAV.map((item) => {
-              const active =
-                current === item.href ||
-                (item.href !== "/dashboard" && current.startsWith(item.href));
+              const active = isActivePath(pathname, item.href);
               return (
                 <Link
                   key={item.href}
@@ -73,11 +74,6 @@ export function DashboardShell({
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
-            {workspace ? (
-              <span className="hidden truncate text-[12.5px] text-[var(--color-text-3)] sm:inline">
-                {workspace.name}
-              </span>
-            ) : null}
             <Link
               href="/dashboard/setup"
               aria-label="Workspace settings"
@@ -100,15 +96,14 @@ export function DashboardShell({
       />
 
       {/* Mobile sub-nav (visible <md) — wraps the section list under the header */}
-      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-2)] px-6 py-2 md:hidden">
+      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-2)] bg-[rgba(245,248,251,0.72)] px-6 py-2 backdrop-blur-md md:hidden">
         {NAV.map((item) => {
-          const active =
-            current === item.href ||
-            (item.href !== "/dashboard" && current.startsWith(item.href));
+          const active = isActivePath(pathname, item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? "page" : undefined}
               className={
                 "shrink-0 rounded-md px-2.5 py-1 text-[13px] transition-colors " +
                 (active
