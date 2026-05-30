@@ -730,6 +730,96 @@ button:active, a:active {
   padding: 16px;
 }
 
+/* ── Onboarding panel ────────────────────────────────────────────
+   Elevated glass sheet that reads as a deliberate surface, not a
+   plain box. Layered wash + inset highlight + soft depth shadow,
+   accent hairline along the top edge. */
+.onboard-panel {
+  position: relative;
+  isolation: isolate;
+  border-radius: 18px;
+  border: 1px solid var(--color-line-1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(247, 250, 253, 0.88) 100%);
+  padding: clamp(24px, 3vw, 36px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 2px 6px -3px rgba(31, 42, 51, 0.12),
+    0 28px 60px -34px rgba(31, 42, 51, 0.45);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+.onboard-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    transparent 8%,
+    color-mix(in srgb, var(--color-accent) 70%, transparent),
+    var(--color-accent-hi),
+    color-mix(in srgb, var(--color-accent) 70%, transparent),
+    transparent 92%
+  );
+  opacity: 0.85;
+}
+/* faint corner glow so the sheet feels lit, not printed */
+.onboard-panel::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -40%;
+  right: -20%;
+  width: 70%;
+  height: 80%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-accent) 14%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.onboard-field {
+  position: relative;
+  display: grid;
+  gap: 7px;
+}
+.onboard-field-control { position: relative; }
+.onboard-field-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  color: var(--color-text-4);
+  pointer-events: none;
+  transition: color 160ms ease;
+}
+.onboard-field input {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 10px;
+  border: 1px solid var(--color-line-2);
+  background: var(--color-surface-bright);
+  padding: 0 14px 0 40px;
+  font-size: 14px;
+  color: var(--color-text-1);
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(31, 42, 51, 0.04);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+.onboard-field input::placeholder { color: var(--color-text-4); }
+.onboard-field input:hover { border-color: var(--color-line-3); }
+.onboard-field input:focus {
+  border-color: var(--color-accent);
+  box-shadow:
+    inset 0 1px 2px rgba(31, 42, 51, 0.04),
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+.onboard-field:focus-within .onboard-field-icon { color: var(--color-accent-hi); }
+
 .section-thread {
   position: absolute;
   height: 1px;

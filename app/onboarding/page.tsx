@@ -47,14 +47,32 @@ export default async function OnboardingPage({
           </div>
         </div>
 
-        <section className="section-note">
-          <h2 className="font-sans text-2xl font-semibold text-[var(--color-text-1)]">
-            Create your workspace
-          </h2>
+        <section className="onboard-panel flex flex-col justify-center">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-[var(--color-accent-hi)] text-[var(--color-accent-on)] shadow-[0_8px_20px_-12px_rgba(35,84,88,0.7)]">
+              <Icon name="rocket_launch" size={20} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="font-sans text-2xl font-semibold leading-tight text-[var(--color-text-1)]">
+                Create your workspace
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+                Two fields. We build the rest from your site.
+              </p>
+            </div>
+          </div>
+
+          <div className="my-6 h-px bg-[var(--color-line-1)]" />
+
           <OnboardingForm
             initialWebsiteUrl={initialWebsiteUrl}
             initialCompanyName={initialCompanyName}
           />
+
+          <p className="mt-6 flex items-center gap-1.5 text-xs leading-5 text-[var(--color-text-4)]">
+            <Icon name="lock" size={14} />
+            Private to your workspace. Nothing is published until you approve it.
+          </p>
         </section>
       </section>
     </main>
