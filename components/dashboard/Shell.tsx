@@ -6,16 +6,15 @@ import type { ActiveWorkspace } from "@/lib/workspace";
 interface NavItem {
   href: string;
   label: string;
-  icon: string;
 }
 
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Brief", icon: "auto_stories" },
-  { href: "/dashboard/conversations", label: "Outreach", icon: "mark_email_read" },
-  { href: "/dashboard/plays", label: "Content", icon: "edit_square" },
-  { href: "/dashboard/ingestion", label: "Campaigns", icon: "conversion_path" },
-  { href: "/dashboard/ops", label: "AEO", icon: "travel_explore" },
-  { href: "/dashboard/setup", label: "Profile", icon: "id_card" },
+  { href: "/dashboard", label: "Brief" },
+  { href: "/dashboard/conversations", label: "Outreach" },
+  { href: "/dashboard/plays", label: "Content" },
+  { href: "/dashboard/ingestion", label: "Campaigns" },
+  { href: "/dashboard/ops", label: "AEO" },
+  { href: "/dashboard/setup", label: "Profile" },
 ];
 
 export function DashboardShell({
@@ -28,26 +27,22 @@ export function DashboardShell({
   children: ReactNode;
 }) {
   return (
-    <div className="canvas-bg min-h-screen text-[var(--color-text-1)]">
-      <div className="app-canvas-shell">
-        <aside className="workspace-sidebar">
-          <div className="flex items-center gap-2 px-4 py-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-[var(--color-text-1)] font-mono text-xs font-semibold text-[var(--color-ink-0)]">
+    <div className="canvas-bg relative isolate min-h-[100dvh] text-[var(--color-text-1)]">
+      {/* Top frame — full-viewport bar, top + bottom hairlines */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)]">
+        <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2 text-[1.0625rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            <span className="grid size-6 place-items-center rounded-full bg-[var(--color-accent-hi)] text-[10px] font-semibold text-white">
               B
             </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
-                {workspace?.name ?? "No workspace"}
-              </span>
-              {workspace ? (
-                <span className="mt-0.5 block truncate text-xs text-[var(--color-text-3)]">
-                  {workspace.slug}
-                </span>
-              ) : null}
-            </span>
-          </div>
+            Bombsell
+          </Link>
 
-          <nav className="grid grid-cols-3 gap-1 px-2 pb-2 sm:grid-cols-6 lg:block lg:px-3">
+          <nav className="ml-2 hidden flex-1 items-center gap-1 md:flex">
             {NAV.map((item) => {
               const active =
                 current === item.href ||
@@ -58,43 +53,71 @@ export function DashboardShell({
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className={
-                    "workspace-row min-h-11 flex-col justify-center text-[11px] transition-colors hover:bg-[var(--color-ink-0)] sm:text-xs lg:min-h-9 lg:flex-row lg:justify-start lg:text-sm " +
-                    (active ? "workspace-row-active" : "")
+                    "rounded-md px-2.5 py-1.5 text-[13.5px] transition-colors " +
+                    (active
+                      ? "text-[var(--color-text-1)] bg-[var(--color-ink-2)]"
+                      : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                   }
                 >
-                  <Icon
-                    name={item.icon}
-                    className={
-                      "text-[18px] " +
-                      (active
-                        ? "text-[var(--color-accent)]"
-                        : "text-[var(--color-text-3)]")
-                    }
-                  />
-                  <span className="whitespace-nowrap leading-none">{item.label}</span>
+                  {item.label}
                 </Link>
               );
             })}
           </nav>
 
-          <div className="hidden px-3 pb-3 lg:block">
-            <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)] p-3">
-              <p className="text-xs font-semibold text-[var(--color-text-1)]">
-                Brief rhythm
-              </p>
-              <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-                Set intent, connect channels, review only the work that needs you.
-              </p>
-            </div>
+          <div className="ml-auto flex items-center gap-3">
+            {workspace ? (
+              <span className="hidden truncate text-[12.5px] text-[var(--color-text-3)] sm:inline">
+                {workspace.name}
+              </span>
+            ) : null}
+            <Link
+              href="/dashboard/setup"
+              aria-label="Workspace settings"
+              className="grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
+            >
+              <Icon name="settings" size={17} />
+            </Link>
           </div>
-        </aside>
+        </div>
+      </header>
 
-        <main className="workspace-main">
-          <div className="workspace-main-inner">
-            {children}
-          </div>
-        </main>
-      </div>
+      {/* Viewport-anchored side rules */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 left-6 top-0 z-10 w-px bg-[color:var(--color-line-2)] md:left-10 lg:left-16"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 right-6 top-0 z-10 w-px bg-[color:var(--color-line-2)] md:right-10 lg:right-16"
+      />
+
+      {/* Mobile sub-nav (visible <md) — wraps the section list under the header */}
+      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-2)] px-6 py-2 md:hidden">
+        {NAV.map((item) => {
+          const active =
+            current === item.href ||
+            (item.href !== "/dashboard" && current.startsWith(item.href));
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={
+                "shrink-0 rounded-md px-2.5 py-1 text-[13px] transition-colors " +
+                (active
+                  ? "text-[var(--color-text-1)] bg-[var(--color-ink-2)]"
+                  : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
+              }
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <main className="relative z-20 mx-auto w-full max-w-[1320px] px-6 pb-16 pt-[88px] md:px-10 md:pt-[80px] lg:px-16">
+        {children}
+      </main>
     </div>
   );
 }
@@ -107,10 +130,10 @@ export function EmptyState({
   hint?: string;
 }) {
   return (
-    <div className="section-note px-6 py-10 text-center">
-      <p className="text-xl font-semibold text-[var(--color-text-1)]">{title}</p>
+    <div className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
+      <p className="text-[17px] font-semibold text-[var(--color-text-1)]">{title}</p>
       {hint ? (
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--color-text-3)]">
+        <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-6 text-[var(--color-text-3)]">
           {hint}
         </p>
       ) : null}

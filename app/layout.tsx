@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ToastProvider } from "@/components/Toast";
-import { Geist, Geist_Mono, Manrope } from "next/font/google";
+import { Geist, Geist_Mono, Manrope, Bricolage_Grotesque } from "next/font/google";
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -20,6 +20,12 @@ const manrope = Manrope({
   variable: "--font-manrope",
 });
 
+const bricolage = Bricolage_Grotesque({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-bricolage",
+});
+
 export const metadata: Metadata = {
   title: "Bombsell | Autonomous GTM",
   description:
@@ -34,7 +40,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`h-full antialiased ${geistSans.variable} ${geistMono.variable} ${manrope.variable}`}
+      className={`h-full antialiased ${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${bricolage.variable}`}
       style={{ colorScheme: "light" }}
     >
       <head>

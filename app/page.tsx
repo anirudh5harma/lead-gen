@@ -1,87 +1,99 @@
 import Link from "next/link";
 import Icon from "@/components/Icon";
+import UrlStart from "@/components/UrlStart";
 
-const NOTES = [
-  { title: "Brief", text: "Today's work, replies, and review moments." },
-  { title: "Profile", text: "The audience, voice, and rules in plain language." },
-  { title: "Outreach", text: "Conversations that came back and need a next move." },
-] as const;
+const PLANETS: {
+  orbit: 1 | 2 | 3 | 4;
+  icon: string;
+  label: string;
+  title: string;
+}[] = [
+  { orbit: 1, icon: "send", label: "Outreach", title: "Outreach" },
+  { orbit: 2, icon: "article", label: "Content", title: "Content" },
+  { orbit: 3, icon: "campaign", label: "Campaigns", title: "Campaigns" },
+  { orbit: 4, icon: "travel_explore", label: "AEO", title: "Agentic Engine Optimization" },
+];
 
 export default function Home() {
   return (
-    <main className="canvas-bg min-h-[100dvh] px-4 py-5 sm:px-6 lg:px-8">
-      <section className="mx-auto grid min-h-[calc(100dvh-40px)] w-full max-w-7xl items-center gap-10 lg:grid-cols-[0.72fr_1.28fr]">
-        <div className="max-w-xl">
-          <p className="brief-kicker">Bombsell</p>
-          <h1 className="mt-4 text-[48px] font-semibold leading-[0.98] tracking-[0] text-[var(--color-text-1)] sm:text-[70px] lg:text-[82px]">
-            A canvas for autonomous GTM work.
-          </h1>
-          <p className="mt-5 max-w-md text-lg leading-8 text-[var(--color-text-2)]">
-            Describe the work once. Bombsell watches, writes, and brings back only the moments that need a decision.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link
-              href="/login?next=/onboarding"
-              className="brief-button brief-button-primary"
-            >
-              <Icon name="arrow_forward" size={17} />
-              Start workspace
-            </Link>
-            <Link
-              href="/dashboard"
-              className="brief-button"
-            >
-              Open canvas
-            </Link>
-          </div>
+    <main className="canvas-bg relative isolate min-h-[100dvh]">
+      {/* fixed top navbar — full-viewport bar with top + bottom hairlines */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)]">
+        <div className="mx-auto flex w-full max-w-[1240px] items-center justify-between px-6 py-4 md:px-10 lg:px-16">
+          <span
+            className="text-[1.375rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Bombsell
+          </span>
+          <Link
+            href="/login"
+            className="text-sm font-medium text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text-1)]"
+          >
+            Sign in
+          </Link>
         </div>
+      </header>
 
-        <WorkspacePreview />
-      </section>
+      {/* viewport-anchored side rules — stay put at any zoom */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 left-6 top-0 z-10 w-px bg-[color:var(--color-line-2)] md:left-10 lg:left-16"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 right-6 top-0 z-10 w-px bg-[color:var(--color-line-2)] md:right-10 lg:right-16"
+      />
+
+      {/* content — offset for fixed header */}
+      <div className="mx-auto flex w-full max-w-[1240px] flex-col px-6 pt-[72px] md:px-10 lg:px-16">
+        <section className="grid min-h-[calc(100dvh-72px)] items-center gap-10 py-10 sm:gap-12 sm:py-14 lg:grid-cols-[1fr_1fr] lg:gap-12 lg:py-0">
+          <div className="max-w-xl">
+            <h1 className="display-serif text-[clamp(3.25rem,7.5vw,6rem)] text-[var(--color-text-1)]">
+              The future
+              <br />
+              <em>GTM stack</em>.
+            </h1>
+
+            <UrlStart />
+          </div>
+
+          <SolarSystem />
+        </section>
+      </div>
     </main>
   );
 }
 
-function WorkspacePreview() {
+function SolarSystem() {
   return (
-    <div className="relative min-h-[620px] overflow-hidden">
-      <div className="brief-stream brief-stream-one" />
-      <div className="brief-stream brief-stream-two" />
-      <div className="absolute left-[8%] top-[10%] w-[min(72vw,470px)]">
-        <p className="brief-kicker">Brief</p>
-        <h2 className="mt-4 text-[38px] font-semibold leading-[1.04] text-[var(--color-text-1)]">
-          Find revenue teams hiring RevOps leaders.
-        </h2>
-        <p className="mt-4 max-w-lg text-[15px] leading-7 text-[var(--color-text-2)]">
-          Watch hiring pages, funding mentions, and founder posts. Draft only when there is a real reason to talk now.
-        </p>
-      </div>
+    <div className="mx-auto w-full max-w-[480px] px-2">
+      <div className="solar">
+        <div className="solar-halo" />
 
-      {NOTES.map((note, index) => (
-        <div
-          key={note.title}
-          className={
-            "brief-node brief-note " +
-            [
-              "right-[2%] top-[31%]",
-              "left-[2%] bottom-[10%]",
-              "right-[1%] bottom-[8%]",
-            ][index]
-          }
-        >
-          <span className="brief-note-icon">
-            <Icon name={["auto_stories", "id_card", "mark_email_read"][index]} size={18} />
-          </span>
-          <span>
-            <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-              {note.title}
-            </span>
-            <span className="mt-3 block text-sm leading-6 text-[var(--color-text-2)]">
-              {note.text}
-            </span>
-          </span>
+        {/* Sun — Bombsell at the centre */}
+        <div className="solar-sun">
+          <span className="solar-sun-mark">Bombsell</span>
         </div>
-      ))}
+
+        {/* Orbits + planets */}
+        {PLANETS.map((p) => (
+          <div key={p.label} className={`orbit orbit-${p.orbit}`}>
+            <div className="planet-pos">
+              <div className="planet-counter">
+                <div className="planet" title={p.title}>
+                  <span className="planet-icon">
+                    <Icon name={p.icon} size={14} />
+                  </span>
+                  <span className="text-[12px] font-medium text-[var(--color-text-1)]">
+                    {p.label}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

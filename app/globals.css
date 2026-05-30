@@ -6,70 +6,71 @@
    ───────────────────────────────────────────────────────────── */
 
 @theme inline {
-  /* Surfaces: quiet workspace canvas */
+  /* Surfaces: bright cool canvas */
   --color-ink-0: #ffffff;        /* page / cards */
-  --color-ink-1: #f7f7f4;        /* app bg */
-  --color-ink-2: #eeeeea;        /* panel / muted fill */
-  --color-ink-3: #e5e4de;        /* selected / secondary fill */
-  --color-ink-4: #dad8cf;        /* hover */
+  --color-ink-1: #f5f8fb;        /* app bg — bright cool */
+  --color-ink-2: #eaeff4;        /* panel / muted fill */
+  --color-ink-3: #dfe6ec;        /* selected / secondary fill */
+  --color-ink-4: #d0dae2;        /* hover */
 
-  /* Borders: Notion-like hairlines */
-  --color-line-1: #20201c12;
-  --color-line-2: #20201c20;
-  --color-line-3: #6f5bd540;
+  /* Borders: cool hairlines */
+  --color-line-1: #1f2a3318;
+  --color-line-2: #1f2a3333;
+  --color-line-3: #2e6f7455;
 
-  /* Text: graphite */
-  --color-text-1: #242421;       /* primary */
-  --color-text-2: #5f6059;       /* secondary */
-  --color-text-3: #85867e;       /* tertiary / labels */
-  --color-text-4: #a8a9a1;       /* hints */
+  /* Text: cool ink */
+  --color-text-1: #1d252e;       /* primary */
+  --color-text-2: #4d5660;       /* secondary */
+  --color-text-3: #69727d;       /* tertiary / labels */
+  --color-text-4: #a1aab4;       /* hints */
 
-  /* Accent: quiet Obsidian violet */
-  --color-accent: #6f5bd5;
-  --color-accent-soft: #6f5bd512;
-  --color-accent-bg: #eeebff;
-  --color-accent-hi: #5947bd;
+  /* Accent: muted teal (fills/decoration use --color-accent; text/links use -hi) */
+  --color-accent: #2e6f74;
+  --color-accent-soft: #2e6f7416;
+  --color-accent-bg: #d9eaea;
+  --color-accent-hi: #235458;
   --color-accent-on: #ffffff;
 
   /* Semantic */
   --color-pos: #2f8f6b;
-  --color-pos-bg: #e7f4ef;
+  --color-pos-bg: #e6f3ee;
   --color-warn: #9a6a15;
-  --color-warn-bg: #f7eed6;
+  --color-warn-bg: #f5ecd7;
   --color-neg: #c44e44;
-  --color-neg-bg: #f7e3df;
-  --color-canvas-grid: #20201c0a;
-  --color-canvas-grid-strong: #6f5bd51f;
-  --color-canvas-wash: #fbfbf8;
+  --color-neg-bg: #f6e2de;
+  --color-canvas-grid: #1f2a330a;
+  --color-canvas-grid-strong: #2e6f741f;
+  --color-canvas-wash: #fafcfe;
 
   /* Fonts */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas;
-  --font-serif: var(--font-manrope), var(--font-geist-sans), ui-sans-serif, system-ui;
+  --font-serif: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
 
   /* ── "Bombsell workspace canvas" palette ── */
-  --color-surface: #f7f7f4;
+  --color-surface: #f5f8fb;
   --color-surface-bright: #ffffff;
-  --color-surface-dim: #e7e6df;
+  --color-surface-dim: #e6ecf1;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f2f2ee;
-  --color-surface-container: #ecebe6;
-  --color-surface-container-high: #e2e0d8;
-  --color-surface-container-highest: #d6d3ca;
-  --color-on-surface: #242421;
-  --color-on-surface-variant: #5f6059;
-  --color-outline: #85867e;
-  --color-outline-variant: #d4d2ca;
-  --color-background: #f7f7f4;
-  --color-on-background: #242421;
+  --color-surface-container-low: #f0f4f8;
+  --color-surface-container: #e9eef3;
+  --color-surface-container-high: #e0e7ed;
+  --color-surface-container-highest: #d2dbe3;
+  --color-on-surface: #1d252e;
+  --color-on-surface-variant: #4d5660;
+  --color-outline: #69727d;
+  --color-outline-variant: #d5dde4;
+  --color-background: #f5f8fb;
+  --color-on-background: #1d252e;
 
-  --color-primary: #6f5bd5;
+  --color-primary: #2a6065;
   --color-on-primary: #ffffff;
-  --color-primary-container: #eeebff;
-  --color-on-primary-container: #21115a;
-  --color-primary-fixed: #eeebff;
-  --color-primary-fixed-dim: #d8d0ff;
-  --color-inverse-primary: #d8d0ff;
+  --color-primary-container: #d9eaea;
+  --color-on-primary-container: #06302f;
+  --color-primary-fixed: #d9eaea;
+  --color-primary-fixed-dim: #aed3d3;
+  --color-inverse-primary: #aed3d3;
 
   --color-secondary: #4f6f79;
   --color-on-secondary: #ffffff;
@@ -90,9 +91,9 @@
   --color-error-container: #f7e3df;
   --color-on-error-container: #5a120e;
 
-  --color-inverse-surface: #242421;
-  --color-inverse-on-surface: #f7f7f4;
-  --color-surface-tint: #6f5bd5;
+  --color-inverse-surface: #1d2430;
+  --color-inverse-on-surface: #f4f6f9;
+  --color-surface-tint: #2a6065;
 
   /* ── Stitch spacing scale ── */
   --spacing-base: 4px;
@@ -222,6 +223,20 @@ html, body {
   letter-spacing: 0;
 }
 
+/* Display — confident grotesque, landing + major workspace statements */
+.display-serif {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.0;
+  text-wrap: balance;
+}
+.display-serif em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--color-accent-hi);
+}
+
 /* ── Buttons ────────────────────────────────────────────────── */
 
 .btn-primary {
@@ -233,6 +248,31 @@ html, body {
 }
 .btn-primary:hover { background: var(--color-accent); }
 .btn-primary:active { transform: translateY(0.5px); }
+
+/* Landing buttons — calm, 10px radius */
+.btn-solid {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  height: 46px; padding: 0 1.25rem;
+  background: var(--color-text-1);
+  color: var(--color-ink-0);
+  font-size: 0.9375rem; font-weight: 500;
+  border-radius: 10px;
+  transition: background 180ms cubic-bezier(0.22,1,0.36,1), transform 180ms ease;
+}
+.btn-solid:hover { background: var(--color-accent-hi); }
+.btn-solid:active { transform: translateY(0.5px); }
+
+.btn-quiet {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  height: 46px; padding: 0 1.25rem;
+  background: transparent;
+  color: var(--color-text-1);
+  font-size: 0.9375rem; font-weight: 500;
+  border: 1px solid var(--color-line-2);
+  border-radius: 10px;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+.btn-quiet:hover { border-color: var(--color-line-3); background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
 
 .btn-accent {
   background: var(--color-accent);
@@ -366,18 +406,130 @@ button:active, a:active {
 
 /* ── Canvas surfaces ─────────────────────────────────────────── */
 
+/* Warm paper sheet: creamy wash + sheet vignette. Texture layers sit ABOVE
+   this wash (positive z) so they actually show; page content uses z-10. */
 .canvas-bg {
-  background:
-    radial-gradient(circle at 12% 16%, color-mix(in srgb, var(--color-accent) 9%, transparent) 0 1px, transparent 1.5px 5px),
-    radial-gradient(circle at 86% 22%, rgba(79, 111, 121, 0.1) 0 1px, transparent 1.5px 5px),
-    radial-gradient(circle at 48% 64%, rgba(138, 108, 58, 0.09) 0 1px, transparent 1.5px 5px),
-    radial-gradient(circle at 26% 18%, rgba(111, 91, 213, 0.08), transparent 22%),
-    radial-gradient(circle at 76% 72%, rgba(47, 143, 107, 0.08), transparent 24%),
-    linear-gradient(to right, var(--color-canvas-grid) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--color-canvas-grid) 1px, transparent 1px),
-    linear-gradient(135deg, #f7f7f4 0%, #fbfbf8 54%, #f1f0ea 100%);
-  background-size: 8px 8px, 10px 10px, 12px 12px, auto, auto, 72px 72px, 72px 72px, auto;
+  position: relative;
+  isolation: isolate;
+  background-color: var(--color-ink-1);
+  background-image:
+    /* structural grid — cool hairlines */
+    linear-gradient(to right, rgba(31, 42, 51, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(31, 42, 51, 0.06) 1px, transparent 1px),
+    radial-gradient(135% 110% at 30% 0%, rgba(255, 255, 255, 0.85), transparent 52%),
+    radial-gradient(125% 125% at 50% 34%, transparent 62%, rgba(31, 42, 51, 0.04) 100%),
+    linear-gradient(170deg, #fbfdff 0%, #f5f8fb 58%, #edf2f7 100%);
+  background-size: 64px 64px, 64px 64px, auto, auto, auto;
   background-position: center top;
+  background-attachment: fixed;
+}
+
+/* ── Bombsell solar system (landing centerpiece) ────────────────
+   Bombsell at the core, channels revolving around it. Each orbit
+   has its own period; planets counter-rotate to stay upright. */
+.solar { position: relative; width: 100%; aspect-ratio: 1 / 1; }
+
+.solar-halo {
+  position: absolute; left: 50%; top: 50%;
+  width: 90%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  border-radius: 999px; z-index: 0; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--color-accent) 26%, transparent), transparent 64%);
+  filter: blur(38px); opacity: 0.5;
+}
+
+/* Sun — Bombsell wordmark nucleus */
+.solar-sun {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 20%; aspect-ratio: 1; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--color-accent-hi);
+  border: 1px solid color-mix(in srgb, var(--color-accent-hi) 80%, #000 0%);
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--color-accent) 10%, transparent),
+    0 0 38px 10px color-mix(in srgb, var(--color-accent) 30%, transparent),
+    0 22px 50px -28px rgba(35, 84, 88, 0.55);
+  z-index: 6;
+}
+.solar-sun-mark {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(10px, 1.6vw, 12.5px);
+  letter-spacing: -0.015em;
+  color: #ffffff;
+  line-height: 1;
+}
+.solar-sun::after {
+  content: ""; position: absolute; inset: -5px; border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
+  animation: solar-breathe 5s ease-in-out infinite;
+}
+@keyframes solar-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50%      { transform: scale(1.08); opacity: 0.85; }
+}
+
+/* Orbit rings — rotate around the sun. Translate AND rotate in the
+   same keyframe so centring isn't lost when the animation runs. */
+.orbit {
+  position: absolute; left: 50%; top: 50%;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 30%, transparent);
+  pointer-events: none;
+  animation: solar-spin var(--orbit-t) linear infinite;
+  animation-delay: var(--orbit-d, 0s);
+}
+/* All orbits share the same period; per-orbit delay places each
+   planet 90° apart so they stay evenly spaced around the sun. */
+.orbit-1 { width: 50%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: 0s; }
+.orbit-2 { width: 66%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: -9s; }
+.orbit-3 { width: 82%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: -18s; }
+.orbit-4 { width: 96%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: -27s; }
+
+/* Per-orbit pill colors — distinct hues, complementing teal accent. */
+.orbit-1 .planet-icon { background: #d9eaea; color: #235458; } /* sea-teal */
+.orbit-2 .planet-icon { background: #dde2f1; color: #2e3d6b; } /* deep indigo */
+.orbit-3 .planet-icon { background: #f1e5cb; color: #7a5a1a; } /* warm amber */
+.orbit-4 .planet-icon { background: #dceadb; color: #2f5b3b; } /* muted sage */
+@keyframes solar-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Planet seat at orbit top — rotates with the orbit. */
+.planet-pos {
+  position: absolute; left: 50%; top: 0;
+  transform: translate(-50%, -50%);
+}
+
+/* Counter-rotates so the pill stays upright in the viewport. */
+.planet-counter {
+  animation: solar-counter var(--orbit-t) linear infinite;
+  animation-delay: var(--orbit-d, 0s);
+}
+@keyframes solar-counter {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+
+.planet {
+  display: flex; align-items: center; gap: 0.45rem;
+  padding: 0.35rem 0.7rem 0.35rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-line-2);
+  background: var(--color-ink-0);
+  box-shadow: 0 10px 22px -14px rgba(35, 84, 88, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+.planet-icon {
+  display: grid; place-items: center; flex: none;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: var(--color-accent-bg); color: var(--color-accent-hi);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbit, .planet-counter, .solar-sun::after { animation: none; }
+  .orbit { transform: translate(-50%, -50%); }
 }
 
 .app-canvas-shell {
