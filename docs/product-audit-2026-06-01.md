@@ -22,7 +22,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 | Owned-domain deliverability | Good | SES/domain workflows, warmup, feedback projectors, deliverability dashboard | Continue SES production review and real inbox feedback verification. |
 | Native channels | Early | Email and dry-run LinkedIn exist; voice/video/web are placeholders | Next channel iteration should add one real native non-email action path or keep them hidden. |
 | Agent-native action parity | Good | product tools + graph tools + MCP endpoint | Need parity tests that compare dashboard actions to registry tools automatically. |
-| Context injection | Weak | MCP exposes tools, but no rich runtime system prompt/context builder for Reps | Highest-leverage next iteration: build a workspace context provider for Reps/MCP clients. |
+| Context injection | Improving | `product.context.get` now returns prompt-ready workspace context from live primitives, tools, gates, traces, deliverability, and recovery state | Next step is wiring this context into Rep role prompts and MCP client instructions by default. |
 
 ## Fixes Applied In This Iteration
 
@@ -30,13 +30,13 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Added graph node deletion storage functions that also remove polymorphic graph edges in the same transaction.
 - Changed `/api/mcp` manifest generation to list the live Tool registry instead of a hard-coded tool list.
 - Updated the capability map so full graph CRUD is accurate and registry-first capability discovery is documented.
+- Added `product.context.get`, a prompt-ready dynamic workspace context tool for Reps and external agents.
 
 ## Recommended Next Iteration
 
-1. Build a dynamic workspace context provider for agent execution and MCP discovery:
-   - Inject active Rep, Play, Sources, pending approvals, recent Signals, recent Conversations, deliverability status, available tools, and current autonomy gates.
-   - Use user-facing vocabulary from the UI: Brief, Outreach, Content, Campaigns, AEO, Profile.
-   - Add a `product.context.get` read tool or include context in `product.state.get` with a prompt-ready markdown view.
+1. Wire dynamic context into actual Rep execution and MCP client instructions:
+   - Feed `product.context.get` output into researcher/writer/sender/replier prompts.
+   - Include context refresh guidance for long-running sessions.
 
 2. Add parity verification:
    - A test that enumerates dashboard server actions and checks the corresponding product/graph tool exists in the registry.

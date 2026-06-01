@@ -26,6 +26,7 @@ import {
   analyzeCompanyWebsite,
   normalizeCompanyWebsiteUrl,
 } from "./company-profile.ts";
+import { getWorkspaceAgentContext } from "./context.ts";
 
 const SignalKindSchema = z.enum([
   "funding",
@@ -88,6 +89,32 @@ export function registerProductTools(): void {
     output: z.unknown(),
     async handler(_input, ctx) {
       return getAppState(undefined, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.context.get",
+    description:
+      "Read prompt-ready dynamic workspace context for Reps and external agents: vocabulary, active resources, recent work, gates, and recovery state.",
+    kind: "read",
+    input: z.object({}),
+    output: z.object({
+      workspace_id: z.string().uuid(),
+      generated_at: z.string().datetime(),
+      markdown: z.string(),
+      counts: z.object({
+        reps: z.number().int().nonnegative(),
+        icps: z.number().int().nonnegative(),
+        plays: z.number().int().nonnegative(),
+        sources: z.number().int().nonnegative(),
+        pending_approvals: z.number().int().nonnegative(),
+        recent_signals: z.number().int().nonnegative(),
+        recent_conversations: z.number().int().nonnegative(),
+        recent_outcomes: z.number().int().nonnegative(),
+      }),
+    }),
+    async handler(_input, ctx) {
+      return getWorkspaceAgentContext(sessionFromContext(ctx));
     },
   });
 
