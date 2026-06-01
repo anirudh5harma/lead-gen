@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { listTools } from "@/core/agents/tools/index.ts";
 import { createBombsellMcpServer } from "@/core/mcp/index.ts";
+import { createMcpManifest } from "@/core/mcp/manifest.ts";
 import { findFirstProductWorkspaceForUser } from "@/core/product/app.ts";
 import { registerProductTools } from "@/core/product/tools.ts";
 import { registerGraphTools } from "@/core/graph/index.ts";
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 
   const auth = await resolveMcpAuth(request);
   if (!auth) {
-    return Response.json(mcpManifest(null), {
+    return Response.json(createMcpManifest(null), {
       status: 401,
       headers: {
         ...corsHeaders(),
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     });
   }
 
-  return Response.json(mcpManifest(auth.workspace_id), { headers: corsHeaders() });
+  return Response.json(createMcpManifest(auth.workspace_id), { headers: corsHeaders() });
 }
 
 export async function POST(request: Request) {
@@ -149,19 +149,6 @@ function bearerToken(request: Request): string | null {
   const [scheme, token] = auth.split(/\s+/, 2);
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
   return token.trim() || null;
-}
-
-function mcpManifest(workspaceId: string | null) {
-  registerGraphTools();
-  registerProductTools();
-  return {
-    name: "bombsell-mcp",
-    transport: "streamable-http",
-    endpoint: "/api/mcp",
-    auth: "Authorization: Bearer <Supabase user access token>",
-    workspace_id: workspaceId,
-    tools: listTools().map((tool) => tool.name).sort(),
-  };
 }
 
 function corsHeaders(): HeadersInit {

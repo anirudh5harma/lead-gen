@@ -2666,8 +2666,35 @@ function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: strin
       writerLlm,
       email: createDatabaseBackedEmailChannel(engine.pool, transport),
       bus: engine.bus,
+      workspaceContextProvider: (input) =>
+        getWorkflowWorkspaceContext(engine, input.workspace_id),
     }),
   );
+}
+
+async function getWorkflowWorkspaceContext(
+  engine: ProductEngine,
+  workspace_id: string,
+): Promise<string | null> {
+  const { rows } = await engine.pool.query<{ user_id: string }>(
+    `select user_id
+       from workspace_members
+      where workspace_id = $1
+        and accepted_at is not null
+      order by
+        case role when 'owner' then 0 when 'admin' then 1 else 2 end,
+        invited_at asc
+      limit 1`,
+    [workspace_id],
+  );
+  const user_id = rows[0]?.user_id;
+  if (!user_id) return null;
+  const { getWorkspaceAgentContext } = await import("./context.ts");
+  const context = await getWorkspaceAgentContext(
+    { workspace_id, user_id },
+    engine.pool,
+  );
+  return context.markdown;
 }
 
 function registerSignalIngestionWorkflows(engine: ProductEngine): void {
@@ -2750,6 +2777,8 @@ async function startSignalEmailPlay(
       writerLlm,
       email,
       bus: engine.bus,
+      workspaceContextProvider: (workflowInput) =>
+        getWorkflowWorkspaceContext(engine, workflowInput.workspace_id),
     }),
   );
   const play_run_id = randomUUID();

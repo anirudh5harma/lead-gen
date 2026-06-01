@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { findCompletedOnboardingForUser } from "@/lib/auth/onboarding";
 import { postAuthDestination, safeNextPath } from "@/lib/auth/next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  ACTIVE_WORKSPACE_COOKIE_NAME,
+  activeWorkspaceCookieOptions,
+} from "@/lib/workspace";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -29,6 +33,13 @@ export async function GET(request: Request) {
       ? new URL(destinationPath, origin)
       : new URL(destinationPath, `${forwardedProto}://${forwardedHost}`);
   const response = NextResponse.redirect(destination);
+  if (completed) {
+    response.cookies.set(
+      ACTIVE_WORKSPACE_COOKIE_NAME,
+      completed.workspace_id,
+      activeWorkspaceCookieOptions(),
+    );
+  }
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }

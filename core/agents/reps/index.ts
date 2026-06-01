@@ -108,6 +108,9 @@ export function createWriterRole(
               `Recipient first name: ${brief.recipient_name}`,
               `Signal: ${brief.research.signal_summary}`,
               `Counterparty: ${brief.research.counterparty_summary}`,
+              ctx.workspace_context_markdown
+                ? `Workspace context:\n${ctx.workspace_context_markdown}`
+                : null,
               "Constraints: 60-180 words, no generic opener, no clickbait subject, no long sign-off.",
             ]
               .filter(Boolean)

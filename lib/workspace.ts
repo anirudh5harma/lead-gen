@@ -13,7 +13,17 @@ export interface ActiveWorkspaceSession {
   user_id: string;
 }
 
-const COOKIE_NAME = "bs_ws";
+export const ACTIVE_WORKSPACE_COOKIE_NAME = "bs_ws";
+
+export function activeWorkspaceCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  };
+}
 
 export async function hasWorkspaceAccess(
   workspaceId: string,
@@ -34,7 +44,7 @@ export async function getActiveWorkspaceSession(): Promise<ActiveWorkspaceSessio
   if (!userId) return null;
 
   const jar = await cookies();
-  const selected = validUuid(jar.get(COOKIE_NAME)?.value);
+  const selected = validUuid(jar.get(ACTIVE_WORKSPACE_COOKIE_NAME)?.value);
   const params: string[] = selected ? [userId, selected] : [userId];
   const selectedClause = selected ? "and w.id = $2" : "";
   const { rows } = await getPool().query<ActiveWorkspace>(
@@ -80,11 +90,5 @@ export async function setActiveWorkspaceCookie(workspaceId: string): Promise<voi
     throw new Error("workspace access denied");
   }
   const jar = await cookies();
-  jar.set(COOKIE_NAME, id, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  jar.set(ACTIVE_WORKSPACE_COOKIE_NAME, id, activeWorkspaceCookieOptions());
 }

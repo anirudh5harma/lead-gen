@@ -41,6 +41,8 @@ export interface RoleAgentContext {
   memory: RepMemory;
   /** The judge available to this role agent for hot-path eval. */
   judge: Judge;
+  /** Prompt-ready runtime workspace context shared with internal Reps and MCP clients. */
+  workspace_context_markdown?: string | null;
 }
 
 /**

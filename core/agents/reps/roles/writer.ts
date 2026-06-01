@@ -77,7 +77,11 @@ export function buildPatternKey(brief: WriterBrief): string {
   return `icp:${segment}|signal:${brief.signal.kind}|channel:${brief.channel}|stage:${brief.stage}`;
 }
 
-function buildUserPrompt(brief: WriterBrief, rep: Rep): string {
+function buildUserPrompt(
+  brief: WriterBrief,
+  rep: Rep,
+  workspaceContextMarkdown?: string | null,
+): string {
   const lines: Array<string | null> = [
     `Rep: ${rep.name} (${rep.role})`,
     `Voice: ${rep.persona.voice}`,
@@ -95,6 +99,12 @@ function buildUserPrompt(brief: WriterBrief, rep: Rep): string {
     `Channel: ${brief.channel}`,
     `Stage: ${brief.stage}`,
   ];
+
+  if (workspaceContextMarkdown) {
+    lines.push("");
+    lines.push("Workspace context:");
+    lines.push(workspaceContextMarkdown);
+  }
 
   if (brief.exemplars.length > 0) {
     lines.push("");
@@ -132,7 +142,14 @@ export function createDeepSeekWriter(
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt(brief, ctx.rep) },
+          {
+            role: "user",
+            content: buildUserPrompt(
+              brief,
+              ctx.rep,
+              ctx.workspace_context_markdown,
+            ),
+          },
         ],
       });
 

@@ -53,6 +53,7 @@ export interface RunFirstVerticalSliceOptions {
   writerLlm?: SignalToEmailPlayDeps["writerLlm"];
   emailDailyCap?: number;
   playChannelPolicy?: PlayChannelPolicy;
+  workspaceContextMarkdown?: string;
 }
 
 export async function runFirstVerticalSlice(
@@ -217,6 +218,9 @@ export async function runFirstVerticalSlice(
       writerLlm: opts.writerLlm,
       email,
       bus,
+      workspaceContextProvider: opts.workspaceContextMarkdown
+        ? async () => opts.workspaceContextMarkdown
+        : undefined,
     }),
   );
   if (opts.autoApprove) {

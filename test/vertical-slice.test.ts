@@ -119,8 +119,10 @@ test("first vertical slice: play channel daily cap defers before send", async ()
 });
 
 test("first vertical slice: LLM-backed writer path is usable behind the same judge gate", async () => {
+  const calls: string[] = [];
   const llm: LLMClient = {
-    async complete() {
+    async complete(req) {
+      calls.push(req.messages.map((message) => message.content).join("\n"));
       return {
         content: JSON.stringify({
           subject: "Congrats on the Series A",
@@ -133,9 +135,15 @@ test("first vertical slice: LLM-backed writer path is usable behind the same jud
     },
   };
 
-  const result = await runFirstVerticalSlice({ writerLlm: llm });
+  const result = await runFirstVerticalSlice({
+    writerLlm: llm,
+    workspaceContextMarkdown:
+      "# Bombsell Workspace Context\n\n## Pending Review\n- approval=ap_123 kind=outbound.email.send",
+  });
   assert.equal(result.output.decision, "sent");
   assert.match(result.state.messages[0].body ?? "", /distributed payroll/);
+  assert.match(calls[0] ?? "", /Bombsell Workspace Context/);
+  assert.match(calls[0] ?? "", /Pending Review/);
 });
 
 test("email transport: Resend adapter posts the provider payload and returns provider id", async () => {

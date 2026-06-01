@@ -1,9 +1,15 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   listTools,
   _resetToolRegistry,
 } from "../core/agents/tools/registry.ts";
+import {
+  registerGraphTools,
+  _resetGraphToolsRegistration,
+} from "../core/graph/index.ts";
+import { createMcpManifest } from "../core/mcp/manifest.ts";
 import {
   registerProductTools,
   _resetProductToolsRegistration,
@@ -11,6 +17,7 @@ import {
 
 beforeEach(() => {
   _resetToolRegistry();
+  _resetGraphToolsRegistration();
   _resetProductToolsRegistration();
 });
 
@@ -60,4 +67,36 @@ test("product tools: write tools require authenticated user context", async () =
     ),
     /Authenticated user context/,
   );
+});
+
+test("agent-native capability map references registered tools", () => {
+  registerGraphTools();
+  registerProductTools();
+  const names = new Set(listTools().map((tool) => tool.name));
+  const map = readFileSync("docs/agent-native-capability-map.md", "utf8");
+  const refs = [...map.matchAll(/`((?:product|graph)\.[^`]+)`/g)]
+    .flatMap((match) => match[1]!.split(",").map((part) => part.trim()))
+    .filter(Boolean);
+
+  assert.ok(refs.length > 0, "capability map should reference agent tools");
+  for (const ref of refs) {
+    if (ref.endsWith(".*")) {
+      const prefix = ref.slice(0, -1);
+      assert.ok(
+        [...names].some((name) => name.startsWith(prefix)),
+        `expected registered tool with prefix ${prefix}`,
+      );
+      continue;
+    }
+    assert.ok(names.has(ref), `expected registered tool ${ref}`);
+  }
+});
+
+test("MCP manifest includes every registered product and graph tool", () => {
+  registerGraphTools();
+  registerProductTools();
+  const registered = listTools().map((tool) => tool.name).sort();
+  const manifest = createMcpManifest(null);
+
+  assert.deepEqual(manifest.tools, registered);
 });

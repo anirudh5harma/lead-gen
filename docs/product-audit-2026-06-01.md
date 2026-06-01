@@ -17,12 +17,12 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 | Typed event bus | Strong | `core/substrate/events/registry.ts`, NATS journal adapter, dead-letter UI | Some bootstrap/genesis writes remain known divergence because workspace rows must exist before workspace-scoped events. |
 | Knowledge graph | Good and improving | `graph_companies`, `graph_persons`, `graph_sources`, `graph_edges`, graph MCP tools | Node delete primitives were missing; fixed in this iteration. |
 | Five primitives | Good | migrations `006`-`010`, dashboard derived views | Legacy folder still contains old CRM/cron concepts; keep it quarantined or remove once no longer needed. |
-| Rep composition | Partial | `core/agents/reps/compose.ts`, Rep primitive and setup UI | Role-agent registry is still skeletal; next product iteration should make Rep execution feel like a composed team, not just one workflow. |
+| Rep composition | Improving | `core/agents/reps/compose.ts`, `core/plays/signal-email-play.ts`, Rep primitive and setup UI | Role-agent registry is still skeletal; next product iteration should make Rep execution feel like a composed team beyond the Signal email workflow. |
 | Hot-path eval | Good | `core/agents/eval`, `core/channels/email/eval-gate.ts`, Signal email Play judge step | Need richer visible "why this passed/failed" trace on each Conversation. |
 | Owned-domain deliverability | Good | SES/domain workflows, warmup, feedback projectors, deliverability dashboard | Continue SES production review and real inbox feedback verification. |
 | Native channels | Early | Email and dry-run LinkedIn exist; voice/video/web are placeholders | Next channel iteration should add one real native non-email action path or keep them hidden. |
-| Agent-native action parity | Good | product tools + graph tools + MCP endpoint | Need parity tests that compare dashboard actions to registry tools automatically. |
-| Context injection | Improving | `product.context.get` now returns prompt-ready workspace context from live primitives, tools, gates, traces, deliverability, and recovery state | Next step is wiring this context into Rep role prompts and MCP client instructions by default. |
+| Agent-native action parity | Strong | product tools + graph tools + MCP endpoint + `test/product-tools.test.ts` parity checks | Keep updating the capability map in the same PR as any new user-visible action. |
+| Context injection | Good | `product.context.get` returns prompt-ready workspace context, and the Signal email Play now injects it into writer and judge prompts | Extend the same context provider to new native-channel Plays as they become executable. |
 
 ## Fixes Applied In This Iteration
 
@@ -31,20 +31,18 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Changed `/api/mcp` manifest generation to list the live Tool registry instead of a hard-coded tool list.
 - Updated the capability map so full graph CRUD is accurate and registry-first capability discovery is documented.
 - Added `product.context.get`, a prompt-ready dynamic workspace context tool for Reps and external agents.
+- Wired prompt-ready workspace context into the Signal email Rep workflow so writer and judge prompts see the same live workspace state exposed to MCP clients.
+- Added automated parity checks that validate capability-map tool references and ensure the MCP manifest includes the live graph/product tool registry.
+- Fixed completed-user Google OAuth return flow by making onboarding completion detection tolerant of activated workspaces and restoring the active workspace cookie on auth callback.
 
 ## Recommended Next Iteration
 
-1. Wire dynamic context into actual Rep execution and MCP client instructions:
-   - Feed `product.context.get` output into researcher/writer/sender/replier prompts.
-   - Include context refresh guidance for long-running sessions.
-
-2. Add parity verification:
-   - A test that enumerates dashboard server actions and checks the corresponding product/graph tool exists in the registry.
-   - A test that verifies `/api/mcp` manifest includes every registered tool after graph/product registration.
-
-3. Make Rep composition executable:
+1. Make Rep composition executable:
    - Define role-agent prompts for researcher/writer/sender/replier.
-   - Feed the dynamic context provider into the Signal email Play and future native-channel Plays.
+   - Feed the dynamic context provider into future native-channel Plays.
 
-4. Improve user-facing trust:
+2. Improve user-facing trust:
    - Conversation detail should show Signal, retrieved context, judge score, approval gate, send/defer reason, and outcome trace in one place.
+
+3. Add one real native non-email path:
+   - LinkedIn currently has dry-run/channel primitives; either make one native action executable through a durable Play or keep it hidden from the product surface until ready.

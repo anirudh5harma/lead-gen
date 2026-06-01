@@ -32,6 +32,8 @@ export interface JudgeInput {
     signal_summary?: string;
     counterparty_summary?: string;
     procedural_exemplars?: ProceduralExemplar[];
+    /** Prompt-ready workspace context the writer saw. */
+    workspace_context_markdown?: string | null;
   };
 }
 

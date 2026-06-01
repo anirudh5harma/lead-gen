@@ -51,6 +51,9 @@ export interface SignalToEmailPlayDeps {
   writerLlm?: LLMClient;
   email: EmailChannel;
   bus: EventBus;
+  workspaceContextProvider?: (
+    input: SignalToEmailPlayInput,
+  ) => Promise<string | null | undefined>;
 }
 
 function playRunOutputPayload(output: SignalToEmailPlayOutput): Record<string, unknown> {
@@ -87,6 +90,11 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       const person = await deps.store.getPerson(input.person_id);
       if (!person) throw new Error(`Person not found: ${input.person_id}`);
       const company = await deps.store.getCompany(input.company_id ?? signal.related_company_id);
+      const workspaceContextMarkdown = deps.workspaceContextProvider
+        ? await ctx.step("context.workspace_agent", () =>
+            deps.workspaceContextProvider!(input),
+          )
+        : null;
 
       await ctx.step("play.run.start_event", async () => {
         await ctx.publish("play.run.started", {
@@ -106,6 +114,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         },
         memory: deps.memory,
         judge: deps.judge,
+        workspace_context_markdown: workspaceContextMarkdown ?? null,
       };
 
       const conversation = await ctx.step("conversation.open", async () => {
@@ -178,6 +187,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
               signal_summary: research.signal_summary,
               counterparty_summary: research.counterparty_summary,
               procedural_exemplars: draft.procedural_exemplars,
+              workspace_context_markdown: workspaceContextMarkdown ?? null,
             },
           },
         ),
@@ -353,6 +363,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
                   signal_summary: research.signal_summary,
                   counterparty_summary: research.counterparty_summary,
                   procedural_exemplars: draft.procedural_exemplars,
+                  workspace_context_markdown: workspaceContextMarkdown ?? null,
                 },
               },
             ),

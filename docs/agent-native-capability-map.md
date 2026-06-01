@@ -36,6 +36,9 @@ projection, and visible UI feedback where applicable.
 - `/api/mcp` builds its manifest from the live Tool registry, so capability
   discovery must stay registry-first rather than duplicating hard-coded tool
   lists.
+- `test/product-tools.test.ts` parses this map and fails when a referenced
+  `product.*` or `graph.*` tool is missing from the registry, and also verifies
+  the MCP manifest includes every registered product/graph tool.
 - Prefer primitive tools. Domain shortcuts are allowed only when the primitive
   tools remain available and the shortcut mirrors a real UI action.
 - Handlers and routes authenticate and translate intent. Durable work belongs in
