@@ -27,6 +27,7 @@ import {
   normalizeCompanyWebsiteUrl,
 } from "./company-profile.ts";
 import { getWorkspaceAgentContext } from "./context.ts";
+import { getConversationTrustTrace } from "./conversation-trust.ts";
 
 const SignalKindSchema = z.enum([
   "funding",
@@ -115,6 +116,21 @@ export function registerProductTools(): void {
     }),
     async handler(_input, ctx) {
       return getWorkspaceAgentContext(sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.conversation.trust.get",
+    description:
+      "Read the user-facing proof trace for one Conversation: Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes.",
+    kind: "read",
+    input: z.object({ conversation_id: z.string().uuid() }),
+    output: z.unknown(),
+    async handler(input, ctx) {
+      return getConversationTrustTrace({
+        workspace_id: ctx.workspace_id,
+        conversation_id: input.conversation_id,
+      });
     },
   });
 

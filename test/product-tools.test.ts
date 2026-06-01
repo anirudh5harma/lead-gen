@@ -28,6 +28,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
   for (const expected of [
     "product.state.get",
     "product.context.get",
+    "product.conversation.trust.get",
     "product.company.website_profile.extract",
     "product.company.profile.configure",
     "product.rep.configure",

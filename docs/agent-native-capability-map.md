@@ -9,6 +9,7 @@ projection, and visible UI feedback where applicable.
 |---|---|---|---|---|
 | Read morning brief/state | `/dashboard`, `/brief` | `product.state.get` | Read derived views from primitives/events | Ready |
 | Read prompt-ready workspace context | MCP/internal Rep execution | `product.context.get` | Builds dynamic context from Reps, ICPs, Plays, Sources, Signals, approvals, send traces, deliverability, and recovery state | Ready |
+| Read Conversation trust trace | `/dashboard/conversations/[id]` | `product.conversation.trust.get` | Reads Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes from the evented state | Ready |
 | Extract company profile from website | `/onboarding` | `product.company.website_profile.extract` | Firecrawl + LLM, no write | Ready |
 | Store company profile | `/onboarding` | `product.company.profile.configure` | `workspace.company.profiled` -> graph company | Ready |
 | Configure Rep | `/dashboard/setup` | `product.rep.configure` | `rep.configured` -> Rep projection | Ready |

@@ -18,7 +18,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 | Knowledge graph | Good and improving | `graph_companies`, `graph_persons`, `graph_sources`, `graph_edges`, graph MCP tools | Node delete primitives were missing; fixed in this iteration. |
 | Five primitives | Good | migrations `006`-`010`, dashboard derived views | Legacy folder still contains old CRM/cron concepts; keep it quarantined or remove once no longer needed. |
 | Rep composition | Improving | `core/agents/reps/compose.ts`, `core/plays/signal-email-play.ts`, Rep primitive and setup UI | Role-agent registry is still skeletal; next product iteration should make Rep execution feel like a composed team beyond the Signal email workflow. |
-| Hot-path eval | Good | `core/agents/eval`, `core/channels/email/eval-gate.ts`, Signal email Play judge step | Need richer visible "why this passed/failed" trace on each Conversation. |
+| Hot-path eval | Good | `core/agents/eval`, `core/channels/email/eval-gate.ts`, Signal email Play judge step, Conversation trust trace | Next step is making brand-voice drift checks richer than the current judge notes. |
 | Owned-domain deliverability | Good | SES/domain workflows, warmup, feedback projectors, deliverability dashboard | Continue SES production review and real inbox feedback verification. |
 | Native channels | Early | Email and dry-run LinkedIn exist; voice/video/web are placeholders | Next channel iteration should add one real native non-email action path or keep them hidden. |
 | Agent-native action parity | Strong | product tools + graph tools + MCP endpoint + `test/product-tools.test.ts` parity checks | Keep updating the capability map in the same PR as any new user-visible action. |
@@ -34,6 +34,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Wired prompt-ready workspace context into the Signal email Rep workflow so writer and judge prompts see the same live workspace state exposed to MCP clients.
 - Added automated parity checks that validate capability-map tool references and ensure the MCP manifest includes the live graph/product tool registry.
 - Fixed completed-user Google OAuth return flow by making onboarding completion detection tolerant of activated workspaces and restoring the active workspace cookie on auth callback.
+- Added `product.conversation.trust.get` and wired the Conversation detail view to show the Signal, retrieved context/procedural pattern, judge result, approval gate, channel send/defer state, and Outcome in one proof trace.
 
 ## Recommended Next Iteration
 
@@ -41,8 +42,8 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
    - Define role-agent prompts for researcher/writer/sender/replier.
    - Feed the dynamic context provider into future native-channel Plays.
 
-2. Improve user-facing trust:
-   - Conversation detail should show Signal, retrieved context, judge score, approval gate, send/defer reason, and outcome trace in one place.
-
-3. Add one real native non-email path:
+2. Add one real native non-email path:
    - LinkedIn currently has dry-run/channel primitives; either make one native action executable through a durable Play or keep it hidden from the product surface until ready.
+
+3. Improve user-facing trust depth:
+   - Add richer brand-voice drift and deliverability explanations to the Conversation trust trace once those signals are available in the event payloads.

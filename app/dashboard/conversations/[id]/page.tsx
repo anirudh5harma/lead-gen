@@ -1,162 +1,171 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { EmptyState } from "@/components/dashboard/Shell";
-import { getPool } from "@/core/substrate/storage/index.ts";
+import {
+  getConversationTrustTrace,
+  type ConversationTrustApproval,
+  type ConversationTrustConversation,
+  type ConversationTrustEvent,
+  type ConversationTrustMessage,
+  type ConversationTrustOutcome,
+  type ConversationTrustStep,
+  type ConversationTrustWorkflowRun,
+} from "@/core/product/conversation-trust";
 import { getActiveWorkspace } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
-interface ConversationDetail {
-  id: string;
-  status: string;
-  topic: string | null;
-  started_at: Date;
-  last_activity_at: Date;
-  counterparty_name: string | null;
-  counterparty_emails: string[] | null;
-  company_name: string | null;
-  rep_name: string | null;
-  rep_id: string | null;
-  signal_id: string | null;
-  signal_title: string | null;
-  signal_kind: string | null;
-}
-
-interface MessageRow {
-  id: string;
-  channel: string;
-  direction: string;
-  status: string;
-  subject: string | null;
-  body: string | null;
-  external_id: string | null;
-  eval_score: string | null;
-  eval_passed: boolean | null;
-  intent_class: string | null;
-  intent_confidence: string | null;
-  sent_at: Date | null;
-  created_at: Date;
-  provenance: Record<string, unknown> | null;
-  eval_notes: Record<string, unknown> | null;
-}
-
-interface EventRow {
-  id: string;
-  event_type: string;
-  source: string;
-  payload: Record<string, unknown>;
-  occurred_at: Date;
-}
-
-interface WorkflowRunRow {
-  id: string;
-  workflow_name: string;
-  workflow_version: string;
-  status: string;
-  started_at: Date | null;
-  ended_at: Date | null;
-}
-
-interface StepRow {
-  step_name: string;
-  step_position: number;
-  attempt: number;
-  status: string;
-  started_at: Date | null;
-  ended_at: Date | null;
-}
-
-async function loadConversation(
-  workspaceId: string,
-  id: string,
-): Promise<ConversationDetail | null> {
-  const pool = getPool();
-  const { rows } = await pool.query<ConversationDetail>(
-    `select c.id, c.status::text as status, c.topic, c.started_at, c.last_activity_at,
-            p.full_name as counterparty_name,
-            p.emails::text[] as counterparty_emails,
-            co.name as company_name,
-            r.name as rep_name,
-            r.id as rep_id,
-            s.id as signal_id,
-            s.title as signal_title,
-            s.kind::text as signal_kind
-       from conversations c
-       left join graph_persons p on p.id = c.counterparty_person_id
-       left join graph_companies co on co.id = c.counterparty_company_id
-       left join reps r on r.id = c.rep_id
-       left join signals s on s.id = c.origin_signal_id
-      where c.workspace_id = $1 and c.id = $2`,
-    [workspaceId, id],
-  );
-  return rows[0] ?? null;
-}
-
-async function loadMessages(workspaceId: string, conversationId: string): Promise<MessageRow[]> {
-  const pool = getPool();
-  const { rows } = await pool.query<MessageRow>(
-    `select id, channel::text as channel, direction::text as direction, status::text as status,
-            subject, body, external_id,
-            eval_score::text as eval_score, eval_passed,
-            intent_class, intent_confidence::text as intent_confidence,
-            sent_at, created_at, provenance, eval_notes
-       from messages
-      where workspace_id = $1 and conversation_id = $2
-      order by coalesce(sent_at, created_at) asc`,
-    [workspaceId, conversationId],
-  );
-  return rows;
-}
-
-async function loadEvents(workspaceId: string, conversationId: string): Promise<EventRow[]> {
-  const pool = getPool();
-  // Use two parameter slots so each comparison gets its own type:
-  // correlation_id is uuid; payload->>... returns text.
-  const { rows } = await pool.query<EventRow>(
-    `select id, event_type, source, payload, occurred_at
-       from events
-      where workspace_id = $1
-        and (
-          correlation_id = $2::uuid
-          or payload->>'conversation_id' = $3
-        )
-      order by occurred_at asc
-      limit 200`,
-    [workspaceId, conversationId, conversationId],
-  );
-  return rows;
-}
-
-async function loadWorkflowRunForSignal(
-  workspaceId: string,
-  signalId: string | null,
-): Promise<{ run: WorkflowRunRow; steps: StepRow[] } | null> {
-  if (!signalId) return null;
-  const pool = getPool();
-  const { rows: runs } = await pool.query<WorkflowRunRow>(
-    `select wr.id, wr.workflow_name, wr.workflow_version, wr.status::text as status,
-            wr.started_at, wr.ended_at
-       from workflow_runs wr
-      where wr.workspace_id = $1
-        and wr.input::jsonb->>'signal_id' = $2
-      order by wr.created_at desc
-      limit 1`,
-    [workspaceId, signalId],
-  );
-  const run = runs[0];
-  if (!run) return null;
-  const { rows: steps } = await pool.query<StepRow>(
-    `select step_name, step_position, attempt, status::text as status, started_at, ended_at
-       from workflow_steps where run_id = $1
-      order by step_position asc, attempt asc`,
-    [run.id],
-  );
-  return { run, steps };
-}
-
 function preview(body: string | null, max = 600): string {
   if (!body) return "(empty)";
   return body.length > max ? body.slice(0, max) + "…" : body;
+}
+
+function TrustTracePanel({
+  conversation,
+  messages,
+  workflow,
+  approvals,
+  outcomes,
+  events,
+}: {
+  conversation: ConversationTrustConversation;
+  messages: ConversationTrustMessage[];
+  workflow: {
+    run: ConversationTrustWorkflowRun;
+    steps: ConversationTrustStep[];
+  } | null;
+  approvals: ConversationTrustApproval[];
+  outcomes: ConversationTrustOutcome[];
+  events: ConversationTrustEvent[];
+}) {
+  const outbound =
+    [...messages].reverse().find((message) => message.direction === "outbound") ??
+    messages[0] ??
+    null;
+  const latestApproval = approvals.at(-1) ?? null;
+  const latestOutcome = outcomes.at(-1) ?? null;
+  const sendEvent = outbound
+    ? [...events]
+        .reverse()
+        .find(
+          (event) =>
+            ["message.sent", "message.deferred", "message.delivered", "message.bounced"].includes(
+              event.event_type,
+            ) && event.payload?.message_id === outbound.id,
+        )
+    : null;
+  const researchStep = workflow?.steps.find(
+    (step) => step.step_name === "research.signal_context",
+  );
+  const contextStep = workflow?.steps.find(
+    (step) => step.step_name === "context.workspace_agent",
+  );
+  const patternKey = textValue(outbound?.provenance?.pattern_key);
+  const exemplarCount = Array.isArray(outbound?.provenance?.exemplar_ids)
+    ? outbound.provenance.exemplar_ids.length
+    : 0;
+  const critique =
+    textValue(outbound?.eval_notes?.critique) ??
+    textValue(outbound?.eval_notes?.draft_rejection_reason);
+  const deferReason =
+    textValue(outbound?.properties?.defer_reason) ??
+    textValue(outbound?.eval_notes?.defer_reason) ??
+    textValue(sendEvent?.payload?.defer_reason);
+
+  return (
+    <div className="section-note">
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">Trust trace</p>
+      <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+        Why this happened, what checked it, and what came back.
+      </p>
+      <div className="mt-4 grid gap-3">
+        <TraceRow
+          label="Signal"
+          value={conversation.signal_title ?? conversation.topic ?? "No signal anchor"}
+          meta={conversation.signal_kind ?? undefined}
+        />
+        <TraceRow
+          label="Context"
+          value={
+            patternKey
+              ? `${patternKey}${exemplarCount ? ` · ${exemplarCount} exemplar${exemplarCount === 1 ? "" : "s"}` : ""}`
+              : researchStep
+                ? `Research step ${researchStep.status}`
+                : "No retrieved context recorded"
+          }
+          meta={contextStep ? `workspace context ${contextStep.status}` : undefined}
+        />
+        <TraceRow
+          label="Judge"
+          value={
+            outbound?.eval_score
+              ? `${Number(outbound.eval_score).toFixed(2)} · ${
+                  outbound.eval_passed ? "passed" : "blocked"
+                }`
+              : "No judge result yet"
+          }
+          meta={critique ?? undefined}
+        />
+        <TraceRow
+          label="Approval"
+          value={
+            latestApproval
+              ? `${latestApproval.decision} · ${latestApproval.kind}`
+              : "No approval gate requested"
+          }
+          meta={latestApproval?.reason ?? undefined}
+        />
+        <TraceRow
+          label="Channel"
+          value={
+            outbound
+              ? `${outbound.status}${deferReason ? ` · ${deferReason}` : ""}`
+              : "No channel attempt yet"
+          }
+          meta={sendEvent ? sendEvent.event_type : undefined}
+        />
+        <TraceRow
+          label="Outcome"
+          value={
+            latestOutcome
+              ? `${latestOutcome.kind.replace(/_/g, " ")} · ${Number(latestOutcome.score).toFixed(2)}`
+              : "No outcome recorded yet"
+          }
+          meta={latestOutcome ? formatWhen(latestOutcome.occurred_at) : undefined}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TraceRow({
+  label,
+  value,
+  meta,
+}: {
+  label: string;
+  value: string;
+  meta?: string;
+}) {
+  return (
+    <div className="border-t border-[var(--color-line-1)] pt-3 first:border-t-0 first:pt-0">
+      <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-4)]">
+        {label}
+      </p>
+      <p className="mt-1 text-sm leading-5 text-[var(--color-text-1)]">{value}</p>
+      {meta ? (
+        <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">{meta}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function formatWhen(value: Date): string {
+  return new Date(value).toLocaleString();
 }
 
 export default async function ConversationDetailPage({
@@ -176,14 +185,12 @@ export default async function ConversationDetailPage({
       </section>
     );
   }
-  const conv = await loadConversation(workspace.id, id);
-  if (!conv) return notFound();
-
-  const [messages, events, workflow] = await Promise.all([
-    loadMessages(workspace.id, conv.id),
-    loadEvents(workspace.id, conv.id),
-    loadWorkflowRunForSignal(workspace.id, conv.signal_id),
-  ]);
+  const trace = await getConversationTrustTrace({
+    workspace_id: workspace.id,
+    conversation_id: id,
+  });
+  if (!trace) return notFound();
+  const { conversation: conv, messages, events, workflow, approvals, outcomes } = trace;
 
   return (
     <>
@@ -266,6 +273,15 @@ export default async function ConversationDetailPage({
         </section>
 
         <aside className="grid gap-4">
+          <TrustTracePanel
+            conversation={conv}
+            messages={messages}
+            workflow={workflow}
+            approvals={approvals}
+            outcomes={outcomes}
+            events={events}
+          />
+
           <div className="section-note">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact</p>
             <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
