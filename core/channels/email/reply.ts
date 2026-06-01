@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { EventBus } from "../../substrate/events/index.ts";
+import { createNoopJudge } from "../../agents/eval/judge.ts";
+import { createInMemoryRepMemory, type RepMemory } from "../../agents/memory/index.ts";
+import { composeRep } from "../../agents/reps/compose.ts";
+import {
+  createReplierRole,
+  type ReplierBrief,
+  type ReplierResult,
+} from "../../agents/reps/roles/replier.ts";
+import type { RoleAgent } from "../../agents/reps/types.ts";
+import type { Rep } from "../../primitives/index.ts";
 import type {
   IntentClassification,
   IntentClassifier,
@@ -56,6 +66,7 @@ export interface HandleInboundDeps {
   pool: Pool;
   bus: EventBus;
   classifier: IntentClassifier;
+  memory?: RepMemory;
   /** Present when invoked from a durable provider-ingress projector. */
   ingress_event_id?: string;
 }
@@ -81,12 +92,6 @@ interface ExistingInbound {
   intent_confidence: string | null;
   provenance: { matched_outbound_message_id?: string } | null;
 }
-
-const POSITIVE_OUTCOMES: Partial<Record<ReplyIntent, { kind: string; score: number }>> = {
-  positive: { kind: "positive_reply", score: 1 },
-  unsubscribe: { kind: "unsubscribe", score: -1 },
-  do_not_contact: { kind: "do_not_contact", score: -1 },
-};
 
 export async function handleInboundEmail(
   deps: HandleInboundDeps,
@@ -179,6 +184,7 @@ export async function handleInboundEmail(
   // Classification + intent persistence. On a redelivery after this update,
   // reuse the persisted verdict rather than issuing another LLM call.
   let classification: IntentClassification;
+  let recommendedOutcome: { kind: string; score: number } | null = null;
   if (existingMessage?.intent_class && existingMessage.intent_confidence !== null) {
     classification = {
       intent: existingMessage.intent_class,
@@ -190,17 +196,47 @@ export async function handleInboundEmail(
       `select subject, body from messages where id = $1`,
       [matched.outbound_message_id],
     );
-    const repName = await loadRepName(pool, matched.conversation_id);
-    classification = await classifier.classify({
-      subject: inbound.subject,
-      body_text: inbound.body_text,
-      context: {
-        rep_name: repName ?? "the Rep",
-        prior_outbound_subject: priorOutbound.rows[0]?.subject,
-        prior_outbound_excerpt: priorOutbound.rows[0]?.body?.slice(0, 800),
-      },
-    });
-
+    const rep = await loadRepForConversation(pool, matched.conversation_id);
+    if (rep) {
+      const replier = createReplierRole({ classifier });
+      const composedRep = composeRep(rep, { replier });
+      const replierRole = composedRep.role("replier") as RoleAgent<ReplierBrief, ReplierResult>;
+      const result = await replierRole.invoke(
+        {
+          conversation: {
+            id: matched.conversation_id,
+            channel: "email",
+            prior_outbound_subject: priorOutbound.rows[0]?.subject,
+            prior_outbound_excerpt: priorOutbound.rows[0]?.body?.slice(0, 800),
+          },
+          inbound: {
+            message_id: inbound_message_id,
+            subject: inbound.subject,
+            body_text: inbound.body_text,
+            from_email: inbound.from.email,
+            received_at: inbound.received_at,
+          },
+        },
+        {
+          rep,
+          tool_context: { workspace_id: rep.workspace_id, rep_id: rep.id },
+          memory: deps.memory ?? createInMemoryRepMemory(),
+          judge: createNoopJudge(),
+        },
+      );
+      classification = result.classification;
+      recommendedOutcome = result.outcome;
+    } else {
+      classification = await classifier.classify({
+        subject: inbound.subject,
+        body_text: inbound.body_text,
+        context: {
+          rep_name: "the Rep",
+          prior_outbound_subject: priorOutbound.rows[0]?.subject,
+          prior_outbound_excerpt: priorOutbound.rows[0]?.body?.slice(0, 800),
+        },
+      });
+    }
   }
 
   const replyClassified = await bus.publish({
@@ -221,7 +257,7 @@ export async function handleInboundEmail(
   });
   await projectReplyLifecycleEvent(pool, replyClassified);
 
-  const outcome = POSITIVE_OUTCOMES[classification.intent];
+  const outcome = recommendedOutcome ?? outcomeForReplyIntent(classification.intent);
   let outcome_id: string | undefined;
   if (outcome) {
     // Find attributed_rep_id + play_id from the conversation for richer attribution.
@@ -341,12 +377,64 @@ async function matchConversation(
   return res.rows[0] ?? null;
 }
 
-async function loadRepName(pool: Pool, conversation_id: string): Promise<string | null> {
-  const { rows } = await pool.query<{ name: string }>(
-    `select r.name from conversations c
+function outcomeForReplyIntent(
+  intent: ReplyIntent,
+): { kind: string; score: number } | null {
+  if (intent === "positive") return { kind: "positive_reply", score: 1 };
+  if (intent === "unsubscribe") return { kind: "unsubscribe", score: -1 };
+  if (intent === "do_not_contact") return { kind: "do_not_contact", score: -1 };
+  return null;
+}
+
+async function loadRepForConversation(
+  pool: Pool,
+  conversation_id: string,
+): Promise<Rep | null> {
+  const { rows } = await pool.query<{
+    id: string;
+    workspace_id: string;
+    name: string;
+    role: Rep["role"];
+    status: Rep["status"];
+    persona: Partial<Rep["persona"]> | null;
+    channels: string[];
+    autonomy: Partial<Rep["autonomy"]> | null;
+    created_at: Date | string;
+    updated_at: Date | string;
+  }>(
+    `select r.id, r.workspace_id, r.name, r.role::text as role, r.status::text as status,
+            r.persona, r.channels, r.autonomy, r.created_at, r.updated_at
+       from conversations c
        join reps r on r.id = c.rep_id
       where c.id = $1`,
     [conversation_id],
   );
-  return rows[0]?.name ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  const persona = row.persona ?? {};
+  return {
+    id: row.id,
+    workspace_id: row.workspace_id,
+    name: row.name,
+    role: row.role,
+    status: row.status,
+    persona: {
+      voice: persona.voice ?? `${row.name} replies clearly and helpfully.`,
+      story: persona.story,
+      kpis: persona.kpis ?? [],
+      do_not: persona.do_not ?? [],
+      samples: persona.samples ?? [],
+    },
+    channels: row.channels ?? [],
+    autonomy: {
+      channels: row.autonomy?.channels ?? {},
+      global: row.autonomy?.global ?? {},
+    },
+    created_at: dateString(row.created_at),
+    updated_at: dateString(row.updated_at),
+  };
+}
+
+function dateString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

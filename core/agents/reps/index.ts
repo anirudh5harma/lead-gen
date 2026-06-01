@@ -35,6 +35,16 @@ export type {
   SignalLinkedInWriterBrief,
   SignalLinkedInWriterDraft,
 } from "./roles/linkedin.ts";
+export {
+  createReplierRole,
+  replierStub,
+} from "./roles/replier.ts";
+export type {
+  ReplierBrief,
+  ReplierOutcomeRecommendation,
+  ReplierResult,
+  ReplierRoleOptions,
+} from "./roles/replier.ts";
 
 export interface SignalEmailWriterBrief {
   channel: "email";
@@ -187,7 +197,4 @@ export function createSenderRole(): RoleAgent<SignalEmailSenderRequest, Awaited<
   };
 }
 
-// Stubs for roles not yet implemented. These throw on invoke with a clear
-// message so the failure is loud, not silent.
 export { researcherStub } from "./roles/researcher.ts";
-export { replierStub } from "./roles/replier.ts";

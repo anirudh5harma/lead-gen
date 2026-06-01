@@ -123,6 +123,7 @@ const emailSubscriptions = await registerEmailIngressProjectors(
     pool,
     bus,
     classifier: createDeepSeekIntentClassifier({ llm }),
+    memory,
     outlookSubscriptionRepair: {
       async start({ workspace_id, channel_account_id }) {
         await workflowsClient.start({

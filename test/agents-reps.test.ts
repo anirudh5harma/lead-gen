@@ -4,12 +4,16 @@ import { randomUUID } from "node:crypto";
 import { composeRep } from "../core/agents/reps/compose.ts";
 import { createNoopJudge } from "../core/agents/eval/judge.ts";
 import { createInMemoryRepMemory } from "../core/agents/memory/index.ts";
-import { createLinkedInWriterRole } from "../core/agents/reps/index.ts";
+import {
+  createLinkedInWriterRole,
+  createReplierRole,
+} from "../core/agents/reps/index.ts";
 import type {
   CompletionRequest,
   CompletionResponse,
   LLMClient,
 } from "../core/agents/llm/types.ts";
+import { createFixedIntentClassifier } from "../core/channels/email/intent.ts";
 import type { RoleAgent } from "../core/agents/reps/types.ts";
 import type { Rep } from "../core/primitives/rep.ts";
 
@@ -109,4 +113,43 @@ test("linkedin writer role uses Rep voice, workspace context, and procedural mem
   assert.match(prompt, /Voice: warm, direct/);
   assert.match(prompt, /Workspace: Bombsell watches funding signals/);
   assert.match(prompt, /Congrats on the raise/);
+});
+
+test("replier role classifies inbound replies and writes episodic memory", async () => {
+  const rep = fakeRep();
+  const memory = createInMemoryRepMemory();
+  const replier = createReplierRole({
+    classifier: createFixedIntentClassifier("positive", 0.94, "Asked for a time."),
+  });
+
+  const result = await replier.invoke(
+    {
+      conversation: {
+        id: randomUUID(),
+        channel: "email",
+        prior_outbound_subject: "Series A timing",
+        prior_outbound_excerpt: "Saw the funding news and thought it might matter.",
+      },
+      inbound: {
+        message_id: randomUUID(),
+        subject: "Re: Series A timing",
+        body_text: "Tuesday 3pm works.",
+        from_email: "nisha@example.com",
+        received_at: new Date().toISOString(),
+      },
+    },
+    {
+      rep,
+      tool_context: { workspace_id: rep.workspace_id, rep_id: rep.id },
+      memory,
+      judge: createNoopJudge(),
+    },
+  );
+
+  assert.equal(result.classification.intent, "positive");
+  assert.deepEqual(result.outcome, { kind: "positive_reply", score: 1 });
+  assert.equal(result.handoff_required, true);
+  const recent = await memory.episodic.recent({ workspace_id: rep.workspace_id, rep_id: rep.id });
+  assert.equal(recent[0]?.kind, "reply.classified");
+  assert.match(recent[0]?.content ?? "", /positive/);
 });

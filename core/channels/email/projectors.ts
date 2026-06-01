@@ -6,6 +6,7 @@ import type {
   Subscription,
 } from "../../substrate/events/index.ts";
 import { decryptCredentials } from "../../substrate/auth/index.ts";
+import type { RepMemory } from "../../agents/memory/index.ts";
 import type { IntentClassifier } from "./intent.ts";
 import { handleBounce } from "./bounces.ts";
 import { handleInboundEmail, type InboundEmail } from "./reply.ts";
@@ -27,6 +28,7 @@ export interface EmailIngressProjectorDeps {
   pool: Pool;
   bus: EventBus;
   classifier: IntentClassifier;
+  memory?: RepMemory;
   fetchImpl?: typeof fetch;
   outlookSubscriptionRepair?: OutlookSubscriptionRepairStarter;
 }
@@ -67,6 +69,7 @@ export async function registerEmailIngressProjectors(
             pool: deps.pool,
             bus: deps.bus,
             classifier: deps.classifier,
+            memory: deps.memory,
             ingress_event_id: event.id,
           },
           { workspace_id: event.workspace_id, ...event.payload },
@@ -90,6 +93,7 @@ export async function registerEmailIngressProjectors(
             pool: deps.pool,
             bus: deps.bus,
             classifier: deps.classifier,
+            memory: deps.memory,
             ingress_event_id: event.id,
           },
           inbound,

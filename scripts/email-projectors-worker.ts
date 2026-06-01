@@ -1,5 +1,10 @@
 import { createDeepSeekClientFromEnv } from "../core/agents/llm/index.ts";
 import {
+  createPostgresEpisodicRepository,
+  createPostgresProceduralRepository,
+  createPostgresSemanticRepository,
+} from "../core/agents/memory/index.ts";
+import {
   createDeepSeekIntentClassifier,
   registerEmailIngressProjectors,
 } from "../core/channels/email/index.ts";
@@ -17,6 +22,11 @@ if (!natsUrl) {
 
 const natsCreds = process.env.NATS_CREDS?.trim();
 const pool = getPool();
+const memory = {
+  episodic: createPostgresEpisodicRepository({ pool }),
+  semantic: createPostgresSemanticRepository({ pool }),
+  procedural: createPostgresProceduralRepository({ pool }),
+};
 const bus = await createJournaledNatsEventBus({
   pool,
   servers: natsUrl,
@@ -41,6 +51,7 @@ const subscriptions = await registerEmailIngressProjectors(
     pool,
     bus,
     classifier,
+    memory,
     outlookSubscriptionRepair: {
       async start({ workspace_id, channel_account_id }) {
         await workflows.start({
