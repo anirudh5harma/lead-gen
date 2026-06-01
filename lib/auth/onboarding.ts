@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { getPool } from "@/core/substrate/storage/index.ts";
+import { getPool } from "../../core/substrate/storage/index.ts";
 
 export interface CompletedOnboarding {
   workspace_id: string;
@@ -21,6 +21,12 @@ export async function findCompletedOnboardingForUser(
             where gc.workspace_id = w.id
               and gc.properties->>'profile_role' = 'workspace_company'
          ) as has_workspace_company_profile,
+         exists (
+           select 1
+             from events e
+            where e.workspace_id = w.id
+              and e.event_type = 'workspace.company.profiled'
+         ) as has_workspace_company_profile_event,
          exists (
            select 1 from graph_companies gc where gc.workspace_id = w.id
          ) as has_company_memory,
@@ -45,11 +51,12 @@ export async function findCompletedOnboardingForUser(
      select
        workspace_id,
        case
-         when has_workspace_company_profile then 'workspace_company_profile'
+         when has_workspace_company_profile or has_workspace_company_profile_event then 'workspace_company_profile'
          else 'activated_workspace'
        end as completion_source
       from candidate_workspaces
       where has_workspace_company_profile
+         or has_workspace_company_profile_event
          or (
            has_rep
            and has_play
@@ -57,7 +64,7 @@ export async function findCompletedOnboardingForUser(
            and (has_signal_source or has_company_memory)
          )
       order by
-        case when has_workspace_company_profile then 1 else 0 end desc,
+        case when has_workspace_company_profile or has_workspace_company_profile_event then 1 else 0 end desc,
         created_at desc,
         workspace_id desc
       limit 1`,
