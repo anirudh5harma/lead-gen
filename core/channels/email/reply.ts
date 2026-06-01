@@ -224,6 +224,29 @@ export async function handleInboundEmail(
           judge: createNoopJudge(),
         },
       );
+      await bus.publish({
+        workspace_id: inbound.workspace_id,
+        event_type: "rep.role.completed",
+        source: "system",
+        producer_ref: "channel:email:replier",
+        correlation_id: matched.conversation_id,
+        idempotency_key: projectionEventKey(deps.ingress_event_id, "rep.role.completed"),
+        payload: {
+          rep_id: rep.id,
+          role: "replier",
+          action: "classify_inbound_reply",
+          conversation_id: matched.conversation_id,
+          message_id: inbound_message_id,
+          summary: result.classification.intent,
+          output: {
+            intent: result.classification.intent,
+            confidence: result.classification.confidence,
+            handoff_required: result.handoff_required,
+            outcome_kind: result.outcome?.kind ?? null,
+          },
+          completed_at: new Date().toISOString(),
+        },
+      });
       classification = result.classification;
       recommendedOutcome = result.outcome;
     } else {

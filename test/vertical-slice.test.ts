@@ -28,6 +28,7 @@ test("first vertical slice: signal -> play -> judged draft -> email -> outcome -
     "signal.ingested",
     "play.run.started",
     "conversation.opened",
+    "rep.role.completed",
     "draft.proposed",
     "draft.judged",
     "message.queued",
@@ -45,6 +46,10 @@ test("first vertical slice: signal -> play -> judged draft -> email -> outcome -
   assert.ok(
     result.eventTypes.indexOf("draft.judged") < result.eventTypes.indexOf("message.sent"),
     "hot-path eval must happen before channel send",
+  );
+  assert.equal(
+    result.eventTypes.filter((eventType) => eventType === "rep.role.completed").length,
+    3,
   );
 
   const [message] = result.state.messages;

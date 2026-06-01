@@ -117,6 +117,30 @@ test("event bus: procedural memory seed is a typed replayable event", async () =
   assert.equal(event.payload.exemplar.subject, "Congrats on the round");
 });
 
+test("event bus: Rep role completion is a typed trust event", async () => {
+  const bus = createInMemoryEventBus();
+  const event = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "rep.role.completed",
+    source: "agent",
+    payload: {
+      rep_id: randomUUID(),
+      role: "writer",
+      action: "compose_email",
+      conversation_id: randomUUID(),
+      message_id: randomUUID(),
+      summary: "Drafted a founder-led opener",
+      output: {
+        procedural_exemplar_count: 2,
+      },
+      completed_at: new Date().toISOString(),
+    },
+  });
+
+  assert.equal(event.payload.role, "writer");
+  assert.equal(event.payload.action, "compose_email");
+});
+
 test("event bus: wildcard subscriber receives every event", async () => {
   const bus = createInMemoryEventBus();
   const seen: string[] = [];

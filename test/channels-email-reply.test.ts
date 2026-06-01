@@ -149,11 +149,15 @@ test("reply: matches by In-Reply-To header → records inbound, classifies, emit
 
     const seenReceived: string[] = [];
     const seenClassified: string[] = [];
+    const seenRoleActivity: string[] = [];
     await bus.subscribe("reply.received", (e) => {
       seenReceived.push((e.payload as { message_id: string }).message_id);
     });
     await bus.subscribe("reply.classified", (e) => {
       seenClassified.push((e.payload as { intent: string }).intent);
+    });
+    await bus.subscribe("rep.role.completed", (e) => {
+      seenRoleActivity.push((e.payload as { role: string; action: string }).action);
     });
 
     const inbound: InboundEmail = {
@@ -173,8 +177,14 @@ test("reply: matches by In-Reply-To header → records inbound, classifies, emit
     assert.equal(result.matched_conversation_id, seeded.conversation_id);
     assert.equal(result.intent, "positive");
 
-    await until(() => seenReceived.length === 1 && seenClassified.length === 1);
+    await until(
+      () =>
+        seenReceived.length === 1 &&
+        seenClassified.length === 1 &&
+        seenRoleActivity.length === 1,
+    );
     assert.deepEqual(seenClassified, ["positive"]);
+    assert.deepEqual(seenRoleActivity, ["classify_inbound_reply"]);
 
     // Inbound row exists with intent populated.
     const { rows: msgRows } = await fx.pool.query<{

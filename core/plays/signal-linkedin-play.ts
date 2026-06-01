@@ -156,20 +156,55 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
         Awaited<ReturnType<LinkedInChannel["send"]>>
       >;
 
-      const research = await ctx.step("research.signal_context", () =>
-        researchRole.invoke({ signal, person, company }, roleContext),
-      );
+      const research = await ctx.step("research.signal_context", async () => {
+        const result = await researchRole.invoke({ signal, person, company }, roleContext);
+        await ctx.publish("rep.role.completed", {
+          rep_id: rep.id,
+          role: "researcher",
+          action: "signal_context",
+          conversation_id: conversation.id,
+          signal_id: signal.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          workflow_run_id: ctx.run_id,
+          summary: result.signal_summary,
+          output: {
+            pattern_key: result.pattern_key,
+            counterparty_summary: result.counterparty_summary,
+          },
+          completed_at: new Date().toISOString(),
+        });
+        return result;
+      });
       const patternKey = `${research.pattern_key}|channel:${action}`;
 
-      const draft = await ctx.step("writer.compose_linkedin", () =>
-        writerRole.invoke({
+      const draft = await ctx.step("writer.compose_linkedin", async () => {
+        const result = await writerRole.invoke({
           action,
           pattern_key: patternKey,
           research,
           person,
           company,
-        }, roleContext),
-      );
+        }, roleContext);
+        await ctx.publish("rep.role.completed", {
+          rep_id: rep.id,
+          role: "writer",
+          action: "compose_linkedin",
+          conversation_id: conversation.id,
+          signal_id: signal.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          workflow_run_id: ctx.run_id,
+          summary: result.body.slice(0, 140),
+          output: {
+            channel: action,
+            exemplar_ids: result.exemplar_ids,
+            procedural_exemplar_count: result.procedural_exemplars.length,
+          },
+          completed_at: new Date().toISOString(),
+        });
+        return result;
+      });
 
       const message = await ctx.step("message.draft", async () => {
         const event = await ctx.publish("draft.proposed", {
@@ -425,8 +460,8 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
         }
       }
 
-      const send = await ctx.step("sender.linkedin", () =>
-        senderRole.invoke(
+      const send = await ctx.step("sender.linkedin", async () => {
+        const result = await senderRole.invoke(
           {
             conversation: {
               id: conversation.id,
@@ -447,8 +482,26 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
             correlation_id: ctx.correlation_id,
           },
           roleContext,
-        ),
-      );
+        );
+        await ctx.publish("rep.role.completed", {
+          rep_id: rep.id,
+          role: "sender",
+          action: "send_linkedin",
+          conversation_id: conversation.id,
+          message_id: message.id,
+          signal_id: signal.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          workflow_run_id: ctx.run_id,
+          summary: result.status,
+          output: {
+            channel: action,
+            status: result.status,
+          },
+          completed_at: new Date().toISOString(),
+        });
+        return result;
+      });
 
       let outcome_id: string | undefined;
       if (send.status === "sent" && input.simulate_outcome_kind) {

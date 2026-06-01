@@ -71,6 +71,7 @@ function TrustTracePanel({
     textValue(outbound?.properties?.defer_reason) ??
     textValue(outbound?.eval_notes?.defer_reason) ??
     textValue(sendEvent?.payload?.defer_reason);
+  const roleEvents = events.filter((event) => event.event_type === "rep.role.completed");
 
   return (
     <div className="section-note">
@@ -94,6 +95,18 @@ function TrustTracePanel({
                 : "No retrieved context recorded"
           }
           meta={contextStep ? `workspace context ${contextStep.status}` : undefined}
+        />
+        <TraceRow
+          label="Rep work"
+          value={
+            roleEvents.length
+              ? roleEvents
+                  .slice(-4)
+                  .map(roleEventSummary)
+                  .join(" -> ")
+              : "No role activity recorded"
+          }
+          meta={roleEvents.length ? roleOutputMeta(roleEvents.at(-1)) ?? undefined : undefined}
         />
         <TraceRow
           label="Judge"
@@ -162,6 +175,29 @@ function TraceRow({
 
 function textValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function roleEventSummary(event: ConversationTrustEvent): string {
+  const role = textValue(event.payload?.role) ?? "role";
+  const action = textValue(event.payload?.action)?.replace(/_/g, " ") ?? "completed";
+  const summary = textValue(event.payload?.summary);
+  return summary ? `${role}: ${action} (${summary})` : `${role}: ${action}`;
+}
+
+function roleOutputMeta(event: ConversationTrustEvent | undefined): string | null {
+  if (!event) return null;
+  const output = event.payload?.output;
+  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
+  const record = output as Record<string, unknown>;
+  const pieces = [
+    textValue(record.pattern_key),
+    textValue(record.status) ? `status ${textValue(record.status)}` : null,
+    typeof record.confidence === "number" ? `confidence ${record.confidence.toFixed(2)}` : null,
+    typeof record.procedural_exemplar_count === "number"
+      ? `${record.procedural_exemplar_count} procedural example${record.procedural_exemplar_count === 1 ? "" : "s"}`
+      : null,
+  ].filter((piece): piece is string => Boolean(piece));
+  return pieces.length ? pieces.join(" · ") : null;
 }
 
 function formatWhen(value: Date): string {

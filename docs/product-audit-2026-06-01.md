@@ -17,12 +17,13 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 | Typed event bus | Strong | `core/substrate/events/registry.ts`, NATS journal adapter, dead-letter UI | Some bootstrap/genesis writes remain known divergence because workspace rows must exist before workspace-scoped events. |
 | Knowledge graph | Good and improving | `graph_companies`, `graph_persons`, `graph_sources`, `graph_edges`, graph MCP tools | Node delete primitives were missing; fixed in this iteration. |
 | Five primitives | Good | migrations `006`-`010`, dashboard derived views | Legacy folder still contains old CRM/cron concepts; keep it quarantined or remove once no longer needed. |
-| Rep composition | Improving | `core/agents/reps/compose.ts`, Signal email and Signal LinkedIn Plays, inbound reply handling, Rep primitive and setup UI | Email/LinkedIn Plays use composed researcher/writer/sender roles, and inbound email now composes the owning Rep's replier role for intent triage; richer role observability and response drafting are still next. |
+| Rep composition | Improving | `core/agents/reps/compose.ts`, Signal email and Signal LinkedIn Plays, inbound reply handling, Rep primitive and setup UI | Email/LinkedIn Plays use composed researcher/writer/sender roles, and inbound email composes the owning Rep's replier role for intent triage; response drafting/approval for replies is still next. |
 | Hot-path eval | Good | `core/agents/eval`, `core/channels/email/eval-gate.ts`, Signal email Play judge step, Conversation trust trace | Next step is making brand-voice drift checks richer than the current judge notes. |
 | Owned-domain deliverability | Good | SES/domain workflows, warmup, feedback projectors, deliverability dashboard | Continue SES production review and real inbox feedback verification. |
 | Native channels | Improving | Email and a durable Signal-to-LinkedIn Play exist; LinkedIn currently uses the native channel abstraction with dry-run transport until a production session provider is connected | Voice/video/web are placeholders; LinkedIn needs production session/OAuth transport before real external sends. |
 | Agent-native action parity | Strong | product tools + graph tools + MCP endpoint + `test/product-tools.test.ts` parity checks | Keep updating the capability map in the same PR as any new user-visible action. |
 | Context injection | Good | `product.context.get` returns prompt-ready workspace context, and the Signal email Play now injects it into writer and judge prompts | Extend the same context provider to new native-channel Plays as they become executable. |
+| User-facing trust trace | Improving | Conversation detail reads email/LinkedIn workflow runs, lifecycle events, outcomes, approvals, and `rep.role.completed` events | Brand-voice drift and deliverability explanations still need richer event payloads before the trace can explain them deeply. |
 
 ## Fixes Applied In This Iteration
 
@@ -39,12 +40,14 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Added `product.play.signal_linkedin.configure` so agents can configure Signal-backed LinkedIn Plays with the same registry-first MCP discovery as UI-backed actions.
 - Moved Signal LinkedIn draft/send behavior behind Rep role agents and composed the Rep with researcher, LinkedIn writer, and LinkedIn sender roles inside the durable workflow.
 - Implemented the Rep replier role for inbound email intent triage, episodic memory capture, and outcome recommendation while preserving the typed reply/outcome event spine.
+- Added `rep.role.completed` as a typed trust event and publish it from email, LinkedIn, and inbound replier role execution.
+- Updated Conversation trust trace to find both email and LinkedIn Play workflow runs and summarize recent Rep role work.
 
 ## Recommended Next Iteration
 
 1. Make Rep composition executable:
    - Add response drafting/approval for positive and neutral replies.
-   - Make role-agent activity richer and visible in trust traces.
+   - Persist reply draft proposals through the same hot-path eval and approval rail as outbound drafts.
 
 2. Productionize the native LinkedIn path:
    - Replace the dry-run LinkedIn transport with a real session/OAuth provider, rate-limit telemetry, and recovery UX before exposing real external sends broadly.

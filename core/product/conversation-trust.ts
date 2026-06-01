@@ -1,5 +1,8 @@
 import type { Pool } from "pg";
-import { SIGNAL_TO_EMAIL_PLAY_WORKFLOW } from "../plays/index.ts";
+import {
+  SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+  SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+} from "../plays/index.ts";
 import { getPool } from "../substrate/storage/index.ts";
 
 export interface ConversationTrustConversation {
@@ -204,7 +207,7 @@ async function loadWorkflowRun(
             wr.started_at, wr.ended_at
        from workflow_runs wr
       where wr.workspace_id = $1
-        and wr.workflow_name = $2
+        and wr.workflow_name = any($2::text[])
         and (
           ($3::text is not null and wr.input::jsonb->>'signal_id' = $3)
           or wr.output::jsonb->>'conversation_id' = $4
@@ -214,7 +217,7 @@ async function loadWorkflowRun(
       limit 1`,
     [
       input.workspace_id,
-      SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+      [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW],
       input.signal_id,
       input.conversation_id,
       input.message_ids,

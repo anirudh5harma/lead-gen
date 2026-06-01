@@ -47,6 +47,21 @@ const RepConfigured = z.object({
   autonomy: z.record(z.string(), z.unknown()),
 });
 
+const RepRoleCompleted = z.object({
+  rep_id: z.string().uuid(),
+  role: z.enum(["researcher", "writer", "sender", "replier", "planner", "judge"]),
+  action: z.string().min(1),
+  conversation_id: z.string().uuid().nullable().optional(),
+  message_id: z.string().uuid().nullable().optional(),
+  signal_id: z.string().uuid().nullable().optional(),
+  play_id: z.string().uuid().nullable().optional(),
+  play_run_id: z.string().uuid().nullable().optional(),
+  workflow_run_id: z.string().uuid().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  output: z.record(z.string(), z.unknown()).optional(),
+  completed_at: z.string().datetime().optional(),
+});
+
 const WorkspaceIcpConfigured = z.object({
   icp_id: z.string().uuid(),
   name: z.string().min(1),
@@ -652,6 +667,7 @@ export const eventRegistry = {
   "workspace.member.invited": WorkspaceMemberInvited,
   "workspace.member.accepted": WorkspaceMemberAccepted,
   "rep.configured": RepConfigured,
+  "rep.role.completed": RepRoleCompleted,
   "workspace.icp.configured": WorkspaceIcpConfigured,
   "workspace.company.tracked": WorkspaceCompanyTracked,
   "workspace.company.profiled": WorkspaceCompanyProfiled,

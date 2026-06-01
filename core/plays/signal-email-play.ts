@@ -135,20 +135,54 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         return row;
       });
 
-      const research = await ctx.step("research.signal_context", () =>
-        researcher.invoke({ signal, person, company }, roleContext),
-      );
+      const research = await ctx.step("research.signal_context", async () => {
+        const result = await researcher.invoke({ signal, person, company }, roleContext);
+        await ctx.publish("rep.role.completed", {
+          rep_id: rep.id,
+          role: "researcher",
+          action: "signal_context",
+          conversation_id: conversation.id,
+          signal_id: signal.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          workflow_run_id: ctx.run_id,
+          summary: result.signal_summary,
+          output: {
+            pattern_key: result.pattern_key,
+            counterparty_summary: result.counterparty_summary,
+          },
+          completed_at: new Date().toISOString(),
+        });
+        return result;
+      });
 
-      const draft = await ctx.step("writer.compose_email", () =>
-        writer.invoke(
+      const draft = await ctx.step("writer.compose_email", async () => {
+        const result = await writer.invoke(
           {
             channel: "email",
             research,
             recipient_name: person.given_name ?? person.full_name.split(" ")[0] ?? person.full_name,
           },
           roleContext,
-        ),
-      );
+        );
+        await ctx.publish("rep.role.completed", {
+          rep_id: rep.id,
+          role: "writer",
+          action: "compose_email",
+          conversation_id: conversation.id,
+          signal_id: signal.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          workflow_run_id: ctx.run_id,
+          summary: result.subject,
+          output: {
+            exemplar_ids: result.exemplar_ids,
+            procedural_exemplar_count: result.procedural_exemplars.length,
+          },
+          completed_at: new Date().toISOString(),
+        });
+        return result;
+      });
 
       const message = await ctx.step("message.draft", async () => {
         const event = await ctx.publish("draft.proposed", {
@@ -398,8 +432,8 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         }
       }
 
-      const send = await ctx.step("sender.email", () =>
-        sender.invoke(
+      const send = await ctx.step("sender.email", async () => {
+        const result = await sender.invoke(
           {
             conversation: {
               id: conversation.id,
@@ -422,8 +456,25 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             correlation_id: ctx.correlation_id,
           },
           roleContext,
-        ),
-      );
+        );
+        await ctx.publish("rep.role.completed", {
+          rep_id: rep.id,
+          role: "sender",
+          action: "send_email",
+          conversation_id: conversation.id,
+          message_id: message.id,
+          signal_id: signal.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          workflow_run_id: ctx.run_id,
+          summary: result.status,
+          output: {
+            status: result.status,
+          },
+          completed_at: new Date().toISOString(),
+        });
+        return result;
+      });
 
       let outcome_id: string | undefined;
       if (send.status === "sent" && input.simulate_outcome_kind) {
