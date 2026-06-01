@@ -2,12 +2,14 @@ import { z } from "zod";
 import { getPool } from "../substrate/storage/index.ts";
 import { registerTool } from "../agents/tools/registry.ts";
 import {
+  deleteCompany,
   findCompanyByDomain,
   getCompany,
   listCompaniesByName,
   upsertCompany,
 } from "./nodes/companies.ts";
 import {
+  deletePerson,
   findPersonByEmail,
   findPersonByLinkedIn,
   getPerson,
@@ -15,6 +17,7 @@ import {
   upsertPerson,
 } from "./nodes/persons.ts";
 import {
+  deleteSource,
   getSource,
   listSources,
   upsertSource,
@@ -206,6 +209,20 @@ export function registerGraphTools(): void {
     },
   });
 
+  registerTool({
+    name: "graph.companies.delete",
+    description:
+      "Delete a company node from the workspace graph and remove its graph edges.",
+    kind: "write",
+    input: z.object({ id: z.string().uuid() }),
+    output: z.object({ deleted: z.boolean() }),
+    async handler({ id }, ctx) {
+      return {
+        deleted: await deleteCompany(getPool(), ctx.workspace_id, id),
+      };
+    },
+  });
+
   // ─── Persons ─────────────────────────────────────────────────────────
 
   registerTool({
@@ -282,6 +299,20 @@ export function registerGraphTools(): void {
     },
   });
 
+  registerTool({
+    name: "graph.persons.delete",
+    description:
+      "Delete a person node from the workspace graph and remove its graph edges.",
+    kind: "write",
+    input: z.object({ id: z.string().uuid() }),
+    output: z.object({ deleted: z.boolean() }),
+    async handler({ id }, ctx) {
+      return {
+        deleted: await deletePerson(getPool(), ctx.workspace_id, id),
+      };
+    },
+  });
+
   // ─── Sources ─────────────────────────────────────────────────────────
 
   registerTool({
@@ -320,6 +351,20 @@ export function registerGraphTools(): void {
     output: SourceSchema.nullable(),
     async handler({ id }, ctx) {
       return getSource(getPool(), ctx.workspace_id, id);
+    },
+  });
+
+  registerTool({
+    name: "graph.sources.delete",
+    description:
+      "Delete a source node from the workspace graph and remove its graph edges.",
+    kind: "write",
+    input: z.object({ id: z.string().uuid() }),
+    output: z.object({ deleted: z.boolean() }),
+    async handler({ id }, ctx) {
+      return {
+        deleted: await deleteSource(getPool(), ctx.workspace_id, id),
+      };
     },
   });
 

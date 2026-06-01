@@ -257,3 +257,34 @@ export async function listPersonsForCompany(
   );
   return rows.map(rowToPerson);
 }
+
+export async function deletePerson(
+  pool: Pool,
+  workspace_id: string,
+  id: string,
+): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      `delete from graph_edges
+        where workspace_id = $1
+          and (
+            (from_node_type = 'person' and from_node_id = $2)
+            or (to_node_type = 'person' and to_node_id = $2)
+          )`,
+      [workspace_id, id],
+    );
+    const result = await client.query(
+      `delete from graph_persons where workspace_id = $1 and id = $2`,
+      [workspace_id, id],
+    );
+    await client.query("commit");
+    return (result.rowCount ?? 0) > 0;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}

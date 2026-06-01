@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { listTools } from "@/core/agents/tools/index.ts";
 import { createBombsellMcpServer } from "@/core/mcp/index.ts";
 import { findFirstProductWorkspaceForUser } from "@/core/product/app.ts";
 import { registerProductTools } from "@/core/product/tools.ts";
@@ -151,36 +152,15 @@ function bearerToken(request: Request): string | null {
 }
 
 function mcpManifest(workspaceId: string | null) {
+  registerGraphTools();
+  registerProductTools();
   return {
     name: "bombsell-mcp",
     transport: "streamable-http",
     endpoint: "/api/mcp",
     auth: "Authorization: Bearer <Supabase user access token>",
     workspace_id: workspaceId,
-    tools: [
-      "product.state.get",
-      "product.company.website_profile.extract",
-      "product.company.profile.configure",
-      "product.rep.configure",
-      "product.icp.configure",
-      "product.play.signal_email.configure",
-      "product.email_account.configure",
-      "product.company.track",
-      "product.source.configure",
-      "product.activation.configure",
-      "product.sources.default_aggregator.configure",
-      "product.sources.aggregate.run",
-      "product.signal.discover",
-      "product.signal.submit",
-      "product.signals.dispatch_plays",
-      "product.approval.decide",
-      "product.workflow.retry",
-      "product.sending_domain.operate",
-      "graph.companies.*",
-      "graph.persons.*",
-      "graph.sources.*",
-      "graph.edges.*",
-    ],
+    tools: listTools().map((tool) => tool.name).sort(),
   };
 }
 

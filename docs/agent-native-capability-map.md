@@ -25,13 +25,16 @@ projection, and visible UI feedback where applicable.
 | Retry failed workflow | `/brief`, ops surfaces | `product.workflow.retry` | Durable workflow retry/resume | Ready |
 | Redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.redrive` | Shared substrate redrive primitive resets workspace-scoped NATS dispatch for replay | Ready |
 | Provision/verify/refresh sending domain | `/brief`, deliverability surfaces | `product.sending_domain.operate` | Starts sending-domain workflow | Ready |
-| CRUD graph companies/persons/sources/edges | Derived graph surfaces | `graph.*` tools | Shared workspace graph tables | Ready |
+| CRUD graph companies/persons/sources/edges | Derived graph surfaces | `graph.companies.*`, `graph.persons.*`, `graph.sources.*`, `graph.edges.*` | Shared workspace graph tables, including node delete primitives that clean graph edges | Ready |
 
 ## Guardrails
 
 - Add/update this map in the same PR as any new user-visible action.
 - Add the corresponding tool in `core/product/tools.ts` or a primitive graph/channel
   tool before the UI ships.
+- `/api/mcp` builds its manifest from the live Tool registry, so capability
+  discovery must stay registry-first rather than duplicating hard-coded tool
+  lists.
 - Prefer primitive tools. Domain shortcuts are allowed only when the primitive
   tools remain available and the shortcut mirrors a real UI action.
 - Handlers and routes authenticate and translate intent. Durable work belongs in

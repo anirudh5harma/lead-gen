@@ -40,12 +40,15 @@ test("graph tools: registerGraphTools populates the registry", () => {
     "graph.companies.upsert",
     "graph.companies.get",
     "graph.companies.find",
+    "graph.companies.delete",
     "graph.persons.upsert",
     "graph.persons.get",
     "graph.persons.find",
+    "graph.persons.delete",
     "graph.sources.upsert",
     "graph.sources.list",
     "graph.sources.get",
+    "graph.sources.delete",
     "graph.edges.connect",
     "graph.edges.disconnect",
     "graph.edges.outgoing",
@@ -78,6 +81,20 @@ test("graph tools: invoking via the registry hits Postgres", async (t) => {
     );
     assert.equal(found.length, 1);
     assert.equal(found[0].id, co.id);
+
+    const deleted = await invokeTool<{ deleted: boolean }>(
+      "graph.companies.delete",
+      { id: co.id },
+      { workspace_id: ws },
+    );
+    assert.equal(deleted.deleted, true);
+
+    const afterDelete = await invokeTool<Array<{ id: string }>>(
+      "graph.companies.find",
+      { domain: "tool.co" },
+      { workspace_id: ws },
+    );
+    assert.equal(afterDelete.length, 0);
   } finally {
     await fx.close();
   }
