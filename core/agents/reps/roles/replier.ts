@@ -4,6 +4,7 @@ import type {
   ReplyIntent,
 } from "../../../channels/email/intent.ts";
 import type { LLMClient } from "../../llm/types.ts";
+import type { ProceduralExemplar } from "../../memory/types.ts";
 import type { RoleAgent } from "../types.ts";
 
 /**
@@ -78,6 +79,9 @@ export interface ReplyDraftResult {
   subject: string;
   body: string;
   body_text: string;
+  pattern_key: string;
+  exemplar_ids: string[];
+  procedural_exemplars: ProceduralExemplar[];
 }
 
 export interface ReplyDraftRoleOptions {
@@ -141,8 +145,40 @@ function replySubject(subject: string | null): string {
   return /^re:/i.test(normalized) ? normalized : `Re: ${normalized}`;
 }
 
-function deterministicReplyDraft(brief: ReplyDraftBrief): ReplyDraftResult {
+export function buildReplyPatternKey(brief: ReplyDraftBrief): string {
+  const company =
+    brief.counterparty.company_name
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "unknown-company";
+  return `conversation:email|intent:${brief.inbound.intent}|company:${company}|stage:reply`;
+}
+
+function exemplarText(exemplar: ProceduralExemplar): string | null {
+  const body = exemplar.exemplar.body ?? exemplar.exemplar.body_text ?? exemplar.exemplar.reply;
+  return typeof body === "string" && body.trim() ? body.trim() : null;
+}
+
+function deterministicReplyDraft(
+  brief: ReplyDraftBrief,
+  procedural_exemplars: ProceduralExemplar[],
+): Pick<ReplyDraftResult, "subject" | "body" | "body_text"> {
   const firstName = brief.counterparty.given_name ?? brief.counterparty.name.split(" ")[0] ?? "there";
+  const exemplar = procedural_exemplars.map(exemplarText).find(Boolean);
+  if (exemplar) {
+    const body = [
+      `Hi ${firstName},`,
+      "",
+      exemplar.replace(/^hi\s+[^,\n]+,?\s*/iu, "").trim(),
+      "",
+      "-Maya",
+    ].join("\n");
+    return {
+      subject: replySubject(brief.inbound.subject),
+      body,
+      body_text: body,
+    };
+  }
   const positive = brief.inbound.intent === "positive";
   const body = positive
     ? [
@@ -181,12 +217,21 @@ export function createReplyDraftRole(
     kind: "replier",
     name: opts.llm ? "replier.email.draft.llm" : "replier.email.draft.deterministic",
     async invoke(brief, ctx) {
+      const pattern_key = buildReplyPatternKey(brief);
+      const procedural_exemplars = await ctx.memory.procedural.topForPattern(
+        { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id },
+        pattern_key,
+        3,
+      );
       if (!opts.llm) {
-        const draft = deterministicReplyDraft(brief);
+        const draft = deterministicReplyDraft(brief, procedural_exemplars);
         return {
           ...draft,
           body: draft.body.replace(/-Maya$/u, `-${ctx.rep.name}`),
           body_text: draft.body_text.replace(/-Maya$/u, `-${ctx.rep.name}`),
+          pattern_key,
+          exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
+          procedural_exemplars,
         };
       }
 
@@ -217,6 +262,15 @@ export function createReplyDraftRole(
                 ? `Prior outbound:\n${brief.prior_outbound.body_text.slice(0, 1200)}`
                 : null,
               `Inbound reply:\n${brief.inbound.body_text.slice(0, 2000)}`,
+              procedural_exemplars.length
+                ? [
+                    "Winning reply examples for this pattern (mirror approach, do NOT copy):",
+                    ...procedural_exemplars.map((exemplar, index) => {
+                      const body = exemplarText(exemplar) ?? JSON.stringify(exemplar.exemplar);
+                      return `${index + 1}. score=${exemplar.score.toFixed(2)} ${body}`;
+                    }),
+                  ].join("\n")
+                : null,
               ctx.workspace_context_markdown
                 ? `Workspace context:\n${ctx.workspace_context_markdown}`
                 : null,
@@ -235,6 +289,9 @@ export function createReplyDraftRole(
         subject: parsed.subject,
         body: parsed.body,
         body_text: parsed.body,
+        pattern_key,
+        exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
+        procedural_exemplars,
       };
     },
   };

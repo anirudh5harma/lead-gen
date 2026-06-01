@@ -6,6 +6,7 @@ import { createNoopJudge } from "../core/agents/eval/judge.ts";
 import { createInMemoryRepMemory } from "../core/agents/memory/index.ts";
 import {
   createLinkedInWriterRole,
+  createReplyDraftRole,
   createReplierRole,
 } from "../core/agents/reps/index.ts";
 import type {
@@ -152,4 +153,57 @@ test("replier role classifies inbound replies and writes episodic memory", async
   const recent = await memory.episodic.recent({ workspace_id: rep.workspace_id, rep_id: rep.id });
   assert.equal(recent[0]?.kind, "reply.classified");
   assert.match(recent[0]?.content ?? "", /positive/);
+});
+
+test("reply draft role retrieves procedural memory for the reply intent", async () => {
+  const rep = fakeRep();
+  const memory = createInMemoryRepMemory();
+  const pattern_key = "conversation:email|intent:positive|company:acme-payroll|stage:reply";
+  const exemplar = await memory.procedural.add(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      pattern_key,
+      initial_score: 0.88,
+      exemplar: {
+        body: "Happy to compare notes. The useful frame is what changed, what risk you want to avoid, and whether there is a focused next step.",
+      },
+    },
+  );
+  const replier = createReplyDraftRole();
+
+  const draft = await replier.invoke(
+    {
+      conversation: {
+        id: randomUUID(),
+        topic: "Series A expansion",
+      },
+      inbound: {
+        message_id: randomUUID(),
+        subject: "Re: Series A expansion",
+        body_text: "Happy to chat. What did you have in mind?",
+        from_email: "nisha@example.com",
+        intent: "positive",
+      },
+      counterparty: {
+        name: "Nisha Rao",
+        given_name: "Nisha",
+        company_name: "Acme Payroll",
+      },
+      prior_outbound: {
+        subject: "Series A expansion",
+        body_text: "Congrats on the round. Worth comparing notes?",
+      },
+    },
+    {
+      rep,
+      tool_context: { workspace_id: rep.workspace_id, rep_id: rep.id },
+      memory,
+      judge: createNoopJudge(),
+    },
+  );
+
+  assert.equal(draft.pattern_key, pattern_key);
+  assert.deepEqual(draft.exemplar_ids, [exemplar.id]);
+  assert.equal(draft.procedural_exemplars.length, 1);
+  assert.match(draft.body, /what changed/);
 });

@@ -3,7 +3,10 @@ import { getPool } from "../../core/substrate/storage/index.ts";
 
 export interface CompletedOnboarding {
   workspace_id: string;
-  completion_source: "workspace_company_profile" | "activated_workspace";
+  completion_source:
+    | "workspace_company_profile"
+    | "activated_workspace"
+    | "accepted_workspace";
 }
 
 export async function findCompletedOnboardingForUser(
@@ -52,19 +55,22 @@ export async function findCompletedOnboardingForUser(
        workspace_id,
        case
          when has_workspace_company_profile or has_workspace_company_profile_event then 'workspace_company_profile'
-         else 'activated_workspace'
+         when has_rep
+          and has_play
+          and has_icp
+          and (has_signal_source or has_company_memory) then 'activated_workspace'
+         else 'accepted_workspace'
        end as completion_source
       from candidate_workspaces
-      where has_workspace_company_profile
-         or has_workspace_company_profile_event
-         or (
-           has_rep
+      order by
+        case
+          when has_workspace_company_profile or has_workspace_company_profile_event then 3
+          when has_rep
            and has_play
            and has_icp
-           and (has_signal_source or has_company_memory)
-         )
-      order by
-        case when has_workspace_company_profile or has_workspace_company_profile_event then 1 else 0 end desc,
+           and (has_signal_source or has_company_memory) then 2
+          else 1
+        end desc,
         created_at desc,
         workspace_id desc
       limit 1`,

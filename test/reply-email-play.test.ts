@@ -152,6 +152,18 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
 
   const bus = createInMemoryEventBus();
   const runtime = createInProcessWorkflowRuntime({ bus });
+  const memory = createInMemoryRepMemory();
+  const pattern_key = "conversation:email|intent:positive|company:acme-payroll|stage:reply";
+  const exemplar = await memory.procedural.add(
+    { workspace_id, rep_id },
+    {
+      pattern_key,
+      initial_score: 0.91,
+      exemplar: {
+        body: "Happy to compare notes. The useful frame is what changed, what risk you want to avoid, and whether there is a focused next step.",
+      },
+    },
+  );
   const store = createInMemoryVerticalSliceStore({
     reps: [rep],
     signals: [],
@@ -168,7 +180,7 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
   runtime.register(
     createReplyToEmailPlayWorkflow({
       store,
-      memory: createInMemoryRepMemory(),
+      memory,
       judge: createHeuristicJudge({ threshold: 0.55 }),
       email: createOwnedDomainEmailChannel({
         accounts: [{
@@ -228,4 +240,17 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
   const reply = state.messages.find((message) => message.id === completed?.output?.message_id);
   assert.equal(reply?.status, "sent");
   assert.equal(reply?.provenance.inbound_message_id, inbound_message_id);
+  assert.equal(reply?.provenance.pattern_key, pattern_key);
+  assert.deepEqual(reply?.provenance.exemplar_ids, [exemplar.id]);
+  assert.match(reply?.body ?? "", /what risk you want to avoid/);
+
+  const roleEvent = bus.published.find(
+    (event) =>
+      event.event_type === "rep.role.completed" &&
+      event.payload.action === "draft_email_reply",
+  );
+  assert.equal(roleEvent?.payload.output.pattern_key, pattern_key);
+  assert.deepEqual(roleEvent?.payload.output.exemplar_ids, [exemplar.id]);
+
+  assert.equal(completed?.output?.pattern_key, pattern_key);
 });

@@ -38,6 +38,7 @@ export interface ReplyToEmailPlayOutput {
   inbound_message_id: string;
   message_id?: string;
   intent: string;
+  pattern_key?: string;
   eval_score?: number;
 }
 
@@ -185,6 +186,9 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
           output: {
             intent,
             inbound_message_id: inbound.id,
+            pattern_key: result.pattern_key,
+            exemplar_ids: result.exemplar_ids,
+            procedural_exemplar_count: result.procedural_exemplars.length,
           },
           completed_at: new Date().toISOString(),
         });
@@ -204,6 +208,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             play_run_id: input.play_run_id,
             inbound_message_id: inbound.id,
             intent,
+            pattern_key: draft.pattern_key,
+            exemplar_ids: draft.exemplar_ids,
           },
           properties: {
             reply_to_message_id: inbound.id,
@@ -234,6 +240,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
                 inbound.body ? `Inbound reply: ${inbound.body}` : null,
               ].filter(Boolean).join("\n"),
               counterparty_summary: `${person.full_name}${company ? ` at ${company.name}` : ""}`,
+              procedural_exemplars: draft.procedural_exemplars,
               workspace_context_markdown: workspaceContextMarkdown ?? null,
             },
           },
@@ -248,6 +255,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
           inbound_message_id: inbound.id,
           message_id: message.id,
           intent,
+          pattern_key: draft.pattern_key,
           eval_score: gate.verdict.score,
         };
         await ctx.publish("play.run.completed", {
@@ -267,6 +275,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
           inbound_message_id: inbound.id,
           message_id: message.id,
           intent,
+          pattern_key: draft.pattern_key,
           eval_score: gate.verdict.score,
         };
         await ctx.publish("play.run.completed", {
@@ -293,6 +302,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             message_id: message.id,
             channel: "email",
             intent,
+            pattern_key: draft.pattern_key,
             subject: draft.subject,
             body: draft.body,
             eval_score: gate.verdict.score,
@@ -306,6 +316,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             inbound_message_id: inbound.id,
             message_id: message.id,
             intent,
+            pattern_key: draft.pattern_key,
             eval_score: gate.verdict.score,
           };
           await ctx.publish("play.run.completed", {
@@ -359,6 +370,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
                     inbound.body ? `Inbound reply: ${inbound.body}` : null,
                   ].filter(Boolean).join("\n"),
                   counterparty_summary: `${person.full_name}${company ? ` at ${company.name}` : ""}`,
+                  procedural_exemplars: draft.procedural_exemplars,
                   workspace_context_markdown: workspaceContextMarkdown ?? null,
                 },
               },
@@ -376,6 +388,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
               inbound_message_id: inbound.id,
               message_id: edited.id,
               intent,
+              pattern_key: draft.pattern_key,
               eval_score: editedGate.verdict.score,
             };
             await ctx.publish("play.run.completed", {
@@ -448,6 +461,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
         inbound_message_id: inbound.id,
         message_id: message.id,
         intent,
+        pattern_key: draft.pattern_key,
         eval_score: sendDraft.eval_score,
       };
       await ctx.publish("play.run.completed", {

@@ -36,6 +36,7 @@ export type {
   SignalLinkedInWriterDraft,
 } from "./roles/linkedin.ts";
 export {
+  buildReplyPatternKey,
   createReplyDraftRole,
   createReplierRole,
   replierStub,
