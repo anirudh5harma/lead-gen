@@ -36,10 +36,14 @@ export type {
   SignalLinkedInWriterDraft,
 } from "./roles/linkedin.ts";
 export {
+  createReplyDraftRole,
   createReplierRole,
   replierStub,
 } from "./roles/replier.ts";
 export type {
+  ReplyDraftBrief,
+  ReplyDraftResult,
+  ReplyDraftRoleOptions,
   ReplierBrief,
   ReplierOutcomeRecommendation,
   ReplierResult,

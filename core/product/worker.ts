@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   dispatchRssSourceIngestionOnce,
+  dispatchReplyEmailPlaysOnce,
   dispatchSendingDomainWarmupsOnce,
   dispatchSignalPlaysOnce,
   dispatchWorkspaceSourcePollsOnce,
@@ -26,6 +27,7 @@ export interface ProductWorkerTick {
   warmed: number;
   projected: number;
   projectionFailed: number;
+  replyDispatched: number;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -71,6 +73,7 @@ export async function runProductWorker(
       const workspacePolls = await dispatchWorkspaceSourcePollsOnce({ limit: batchSize });
       const warmed = await dispatchSendingDomainWarmupsOnce({ limit: batchSize });
       const dispatched = await dispatchSignalPlaysOnce({ limit: batchSize });
+      const replyDispatched = await dispatchReplyEmailPlaysOnce({ limit: batchSize });
       opts.onTick?.({
         ingested: legacyRss + workspacePolls,
         dispatched,
@@ -78,6 +81,7 @@ export async function runProductWorker(
         warmed,
         projected: projections.completed,
         projectionFailed: projections.failed,
+        replyDispatched,
       });
       if (opts.once) return;
     } catch (err) {

@@ -67,9 +67,13 @@ import {
 import {
   createSignalToEmailPlayWorkflow,
   createSignalToLinkedInPlayWorkflow,
+  createReplyToEmailPlayWorkflow,
   createPostgresVerticalSliceStore,
+  REPLY_TO_EMAIL_PLAY_WORKFLOW,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+  type ReplyToEmailPlayInput,
+  type ReplyToEmailPlayOutput,
   type SignalToEmailPlayInput,
   type SignalToEmailPlayOutput,
   type SignalToLinkedInPlayInput,
@@ -137,6 +141,7 @@ const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
 const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configuration.v1";
 const RUNNABLE_WORKFLOW_NAMES = [
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+  REPLY_TO_EMAIL_PLAY_WORKFLOW,
   RSS_SIGNAL_INGESTION_WORKFLOW,
   WORKSPACE_POLL_WORKFLOW,
   SENDING_DOMAIN_PROVISIONING_WORKFLOW,
@@ -2776,6 +2781,30 @@ function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: strin
   );
 }
 
+function registerReplyEmailWorkflow(engine: ProductEngine, workspace_id?: string): void {
+  const store = createPostgresVerticalSliceStore(engine.pool);
+  const transport = createProductEmailTransport();
+  const writerLlm = workspace_id
+    ? createGovernedLLM(engine, workspace_id, "writer.email.reply")
+    : undefined;
+  const judge = workspace_id
+    ? createGovernedJudge(engine, workspace_id)
+    : createHeuristicJudge({ threshold: 0.55 });
+
+  engine.runtime.register(
+    createReplyToEmailPlayWorkflow({
+      store,
+      memory: engine.memory,
+      judge,
+      writerLlm,
+      email: createDatabaseBackedEmailChannel(engine.pool, transport),
+      bus: engine.bus,
+      workspaceContextProvider: (input) =>
+        getWorkflowWorkspaceContext(engine, input.workspace_id),
+    }),
+  );
+}
+
 async function getWorkflowWorkspaceContext(
   engine: ProductEngine,
   workspace_id: string,
@@ -3137,6 +3166,73 @@ export async function dispatchSignalPlaysOnce(
   return dispatched;
 }
 
+export async function dispatchReplyEmailPlaysOnce(
+  opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
+): Promise<number> {
+  const engine = await getProductEngine();
+  registerReplyEmailWorkflow(engine);
+  if (session) await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{
+    event_id: string;
+    workspace_id: string;
+    conversation_id: string;
+    inbound_message_id: string;
+    rep_id: string;
+  }>(
+    `select e.id as event_id,
+            e.workspace_id,
+            e.payload->>'conversation_id' as conversation_id,
+            e.payload->>'message_id' as inbound_message_id,
+            c.rep_id
+       from events e
+       join conversations c
+         on c.workspace_id = e.workspace_id
+        and c.id = (e.payload->>'conversation_id')::uuid
+       left join workflow_runs wr
+         on wr.workspace_id = e.workspace_id
+        and wr.workflow_name = $1
+        and wr.idempotency_key = concat('reply:', e.payload->>'message_id', ':email')
+      where e.event_type = 'reply.classified'
+        and e.payload->>'intent' in ('positive', 'neutral')
+        and wr.id is null
+        and ($3::uuid is null or e.workspace_id = $3)
+      order by e.occurred_at asc
+      limit $2`,
+    [
+      REPLY_TO_EMAIL_PLAY_WORKFLOW,
+      opts.limit ?? 25,
+      session?.workspace_id ?? null,
+    ],
+  );
+
+  let dispatched = 0;
+  for (const row of rows) {
+    registerReplyEmailWorkflow(engine, row.workspace_id);
+    const play_run_id = randomUUID();
+    await engine.runtime.start<ReplyToEmailPlayInput, ReplyToEmailPlayOutput>({
+      workspace_id: row.workspace_id,
+      workflow_name: REPLY_TO_EMAIL_PLAY_WORKFLOW,
+      play_run_id,
+      idempotency_key: `reply:${row.inbound_message_id}:email`,
+      correlation_id: row.event_id,
+      causation_id: row.event_id,
+      input: {
+        workspace_id: row.workspace_id,
+        play_id: null,
+        play_run_id,
+        rep_id: row.rep_id,
+        conversation_id: row.conversation_id,
+        inbound_message_id: row.inbound_message_id,
+        trigger_event_id: row.event_id,
+        reply_approval: "always",
+      },
+    });
+    dispatched++;
+  }
+  return dispatched;
+}
+
 interface RssSourceRow {
   id: string;
   workspace_id: string;
@@ -3389,6 +3485,8 @@ export async function resumeRunnableWorkflowsOnce(
   for (const row of rows) {
     if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
       registerSignalEmailWorkflow(engine, row.workspace_id);
+    } else if (row.workflow_name === REPLY_TO_EMAIL_PLAY_WORKFLOW) {
+      registerReplyEmailWorkflow(engine, row.workspace_id);
     } else if (row.workflow_name === WORKSPACE_POLL_WORKFLOW) {
       registerSignalIngestionWorkflows(engine);
     } else if (row.workflow_name === SENDING_DOMAIN_PROVISIONING_WORKFLOW) {
@@ -3489,6 +3587,8 @@ export async function retryFailedWorkflowRun(
   }
   if (run.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
     registerSignalEmailWorkflow(engine, run.workspace_id);
+  } else if (run.workflow_name === REPLY_TO_EMAIL_PLAY_WORKFLOW) {
+    registerReplyEmailWorkflow(engine, run.workspace_id);
   } else if (
     run.workflow_name === RSS_SIGNAL_INGESTION_WORKFLOW ||
     run.workflow_name === WORKSPACE_POLL_WORKFLOW

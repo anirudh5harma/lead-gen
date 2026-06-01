@@ -33,6 +33,15 @@ export type {
   SignalToLinkedInPlayOutput,
 } from "./signal-linkedin-play.ts";
 export {
+  createReplyToEmailPlayWorkflow,
+  REPLY_TO_EMAIL_PLAY_WORKFLOW,
+} from "./reply-email-play.ts";
+export type {
+  ReplyToEmailPlayDeps,
+  ReplyToEmailPlayInput,
+  ReplyToEmailPlayOutput,
+} from "./reply-email-play.ts";
+export {
   createInMemoryVerticalSliceStore,
   createPostgresVerticalSliceStore,
   wireInMemoryVerticalSliceMessageLifecycleProjection,

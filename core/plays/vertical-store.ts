@@ -21,6 +21,8 @@ export interface VerticalSliceStoreSeed {
   signals: Signal[];
   persons: GraphPerson[];
   companies?: GraphCompany[];
+  conversations?: Conversation[];
+  messages?: Message[];
 }
 
 type Awaitable<T> = T | Promise<T>;
@@ -38,6 +40,7 @@ export interface VerticalSliceStore {
   getSignal(id: string): Awaitable<Signal | null>;
   getPerson(id: string): Awaitable<GraphPerson | null>;
   getCompany(id: string | null | undefined): Awaitable<GraphCompany | null>;
+  getConversation(id: string): Awaitable<Conversation | null>;
   getMessage(id: string): Awaitable<Message | null>;
   upsertCompany?(input: GraphCompany): Awaitable<GraphCompany>;
   upsertPerson?(input: GraphPerson): Awaitable<GraphPerson>;
@@ -90,8 +93,8 @@ export function createInMemoryVerticalSliceStore(
   const signals = new Map(seed.signals.map((row) => [row.id, row]));
   const persons = new Map(seed.persons.map((row) => [row.id, row]));
   const companies = new Map((seed.companies ?? []).map((row) => [row.id, row]));
-  const conversations = new Map<string, Conversation>();
-  const messages = new Map<string, Message>();
+  const conversations = new Map((seed.conversations ?? []).map((row) => [row.id, row]));
+  const messages = new Map((seed.messages ?? []).map((row) => [row.id, row]));
   const outcomes = new Map<string, Outcome>();
 
   return {
@@ -99,6 +102,7 @@ export function createInMemoryVerticalSliceStore(
     getSignal: (id) => signals.get(id) ?? null,
     getPerson: (id) => persons.get(id) ?? null,
     getCompany: (id) => (id ? companies.get(id) ?? null : null),
+    getConversation: (id) => conversations.get(id) ?? null,
     getMessage: (id) => messages.get(id) ?? null,
 
     upsertCompany(input) {
@@ -601,6 +605,17 @@ export function createPostgresVerticalSliceStore(pool: Pool): VerticalSliceStore
         [id],
       );
       return rows[0] ? companyFromRow(rows[0]) : null;
+    },
+
+    async getConversation(id) {
+      const { rows } = await pool.query<ConversationRow>(
+        `select id, workspace_id, rep_id, counterparty_person_id,
+                counterparty_company_id, status, origin_signal_id, topic,
+                started_at, last_activity_at, closed_at, properties
+           from conversations where id = $1`,
+        [id],
+      );
+      return rows[0] ? conversationFromRow(rows[0]) : null;
     },
 
     async getMessage(id) {

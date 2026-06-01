@@ -3,6 +3,7 @@ import type {
   IntentClassifier,
   ReplyIntent,
 } from "../../../channels/email/intent.ts";
+import type { LLMClient } from "../../llm/types.ts";
 import type { RoleAgent } from "../types.ts";
 
 /**
@@ -47,6 +48,40 @@ export interface ReplierResult {
 
 export interface ReplierRoleOptions {
   classifier: IntentClassifier;
+}
+
+export interface ReplyDraftBrief {
+  conversation: {
+    id: string;
+    topic?: string | null;
+  };
+  inbound: {
+    message_id: string;
+    subject: string | null;
+    body_text: string;
+    from_email: string | null;
+    intent: ReplyIntent;
+    intent_reason?: string | null;
+  };
+  counterparty: {
+    name: string;
+    given_name?: string | null;
+    company_name?: string | null;
+  };
+  prior_outbound?: {
+    subject?: string | null;
+    body_text?: string | null;
+  } | null;
+}
+
+export interface ReplyDraftResult {
+  subject: string;
+  body: string;
+  body_text: string;
+}
+
+export interface ReplyDraftRoleOptions {
+  llm?: LLMClient;
 }
 
 const OUTCOME_BY_INTENT: Partial<Record<ReplyIntent, ReplierOutcomeRecommendation>> = {
@@ -96,6 +131,110 @@ export function createReplierRole(
         classification,
         outcome,
         handoff_required: classification.intent === "positive" || classification.intent === "neutral",
+      };
+    },
+  };
+}
+
+function replySubject(subject: string | null): string {
+  const normalized = subject?.trim() || "Quick follow-up";
+  return /^re:/i.test(normalized) ? normalized : `Re: ${normalized}`;
+}
+
+function deterministicReplyDraft(brief: ReplyDraftBrief): ReplyDraftResult {
+  const firstName = brief.counterparty.given_name ?? brief.counterparty.name.split(" ")[0] ?? "there";
+  const positive = brief.inbound.intent === "positive";
+  const body = positive
+    ? [
+        `Hi ${firstName},`,
+        "",
+        "Thanks for getting back. Glad this is relevant.",
+        "",
+        "The simplest next step is to compare notes on what changed, what you are trying to avoid, and whether there is a focused path worth exploring.",
+        "",
+        "Would a short conversation this week make sense?",
+        "",
+        "-Maya",
+      ].join("\n")
+    : [
+        `Hi ${firstName},`,
+        "",
+        "Totally fair, and thanks for the context.",
+        "",
+        "To keep this useful: the reason I reached out was the timing around the work on your side. If it is not a priority now, I can step back. If there is a specific question worth answering, I am happy to keep it tight.",
+        "",
+        "Worth a quick note either way?",
+        "",
+        "-Maya",
+      ].join("\n");
+  return {
+    subject: replySubject(brief.inbound.subject),
+    body,
+    body_text: body,
+  };
+}
+
+export function createReplyDraftRole(
+  opts: ReplyDraftRoleOptions = {},
+): RoleAgent<ReplyDraftBrief, ReplyDraftResult> {
+  return {
+    kind: "replier",
+    name: opts.llm ? "replier.email.draft.llm" : "replier.email.draft.deterministic",
+    async invoke(brief, ctx) {
+      if (!opts.llm) {
+        const draft = deterministicReplyDraft(brief);
+        return {
+          ...draft,
+          body: draft.body.replace(/-Maya$/u, `-${ctx.rep.name}`),
+          body_text: draft.body_text.replace(/-Maya$/u, `-${ctx.rep.name}`),
+        };
+      }
+
+      const response = await opts.llm.complete({
+        temperature: 0.5,
+        max_tokens: 700,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: [
+              `You are replying as ${ctx.rep.name}, a ${ctx.rep.role} Rep.`,
+              "Draft one concise email reply in the Rep voice.",
+              "Return only JSON: { \"subject\": \"string\", \"body\": \"string\" }.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: [
+              `Voice: ${ctx.rep.persona.voice}`,
+              ctx.rep.persona.story ? `Story: ${ctx.rep.persona.story}` : null,
+              ctx.rep.persona.do_not.length ? `Do not: ${ctx.rep.persona.do_not.join("; ")}` : null,
+              `Counterparty: ${brief.counterparty.name}${brief.counterparty.company_name ? ` at ${brief.counterparty.company_name}` : ""}`,
+              `Conversation topic: ${brief.conversation.topic ?? "-"}`,
+              `Reply intent: ${brief.inbound.intent}`,
+              brief.inbound.intent_reason ? `Intent reason: ${brief.inbound.intent_reason}` : null,
+              brief.prior_outbound?.body_text
+                ? `Prior outbound:\n${brief.prior_outbound.body_text.slice(0, 1200)}`
+                : null,
+              `Inbound reply:\n${brief.inbound.body_text.slice(0, 2000)}`,
+              ctx.workspace_context_markdown
+                ? `Workspace context:\n${ctx.workspace_context_markdown}`
+                : null,
+              "Constraints: 60-180 words, no overpromising, no fake scheduling claim, ask for one concrete next step.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          },
+        ],
+      });
+      const parsed = JSON.parse(response.content) as { subject?: string; body?: string };
+      if (!parsed.subject || !parsed.body) {
+        throw new Error(`replier draft role returned invalid JSON: ${response.content.slice(0, 200)}`);
+      }
+      return {
+        subject: parsed.subject,
+        body: parsed.body,
+        body_text: parsed.body,
       };
     },
   };

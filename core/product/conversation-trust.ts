@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import {
+  REPLY_TO_EMAIL_PLAY_WORKFLOW,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
 } from "../plays/index.ts";
@@ -217,7 +218,11 @@ async function loadWorkflowRun(
       limit 1`,
     [
       input.workspace_id,
-      [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW],
+      [
+        SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+        SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+        REPLY_TO_EMAIL_PLAY_WORKFLOW,
+      ],
       input.signal_id,
       input.conversation_id,
       input.message_ids,
