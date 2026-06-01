@@ -65,6 +65,8 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "RESTATE_WORKFLOW_HTTP1", tier: "optional", purpose: "Serve Restate workflow handlers over HTTP/1.1 for managed proxies" },
   { key: "WORKER_TARGET_COMMAND", tier: "optional", purpose: "Managed worker target process selected by the container health wrapper" },
   { key: "WORKER_HEALTH_PORT", tier: "optional", purpose: "HTTP health port for managed background worker services" },
+  { key: "ACTIVATION_VERIFY_AGGREGATOR_LIMIT", tier: "optional", purpose: "Activation verification signal aggregation limit" },
+  { key: "KEEP_VERIFY_WORKSPACE", tier: "optional", purpose: "Keep activation verification workspace for inspection" },
 ] as const;
 
 export const ENVIRONMENT_KEY_NAMES = new Set(ENVIRONMENT_KEYS.map(({ key }) => key));

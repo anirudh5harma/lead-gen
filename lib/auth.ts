@@ -1,14 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
-
-export function validUuid(value: string | undefined | null): string | null {
-  return value &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-    ? value
-    : null;
-}
+export { validUuid } from "@/lib/auth/uuid";
+import { validUuid } from "@/lib/auth/uuid";
 
 function localDemoUserId(): string | null {
   if (

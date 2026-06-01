@@ -20,7 +20,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 | Rep composition | Improving | `core/agents/reps/compose.ts`, `core/plays/signal-email-play.ts`, Rep primitive and setup UI | Role-agent registry is still skeletal; next product iteration should make Rep execution feel like a composed team beyond the Signal email workflow. |
 | Hot-path eval | Good | `core/agents/eval`, `core/channels/email/eval-gate.ts`, Signal email Play judge step, Conversation trust trace | Next step is making brand-voice drift checks richer than the current judge notes. |
 | Owned-domain deliverability | Good | SES/domain workflows, warmup, feedback projectors, deliverability dashboard | Continue SES production review and real inbox feedback verification. |
-| Native channels | Early | Email and dry-run LinkedIn exist; voice/video/web are placeholders | Next channel iteration should add one real native non-email action path or keep them hidden. |
+| Native channels | Improving | Email and a durable Signal-to-LinkedIn Play exist; LinkedIn currently uses the native channel abstraction with dry-run transport until a production session provider is connected | Voice/video/web are placeholders; LinkedIn needs production session/OAuth transport before real external sends. |
 | Agent-native action parity | Strong | product tools + graph tools + MCP endpoint + `test/product-tools.test.ts` parity checks | Keep updating the capability map in the same PR as any new user-visible action. |
 | Context injection | Good | `product.context.get` returns prompt-ready workspace context, and the Signal email Play now injects it into writer and judge prompts | Extend the same context provider to new native-channel Plays as they become executable. |
 
@@ -35,6 +35,8 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Added automated parity checks that validate capability-map tool references and ensure the MCP manifest includes the live graph/product tool registry.
 - Fixed completed-user Google OAuth return flow by making onboarding completion detection tolerant of activated workspaces and restoring the active workspace cookie on auth callback.
 - Added `product.conversation.trust.get` and wired the Conversation detail view to show the Signal, retrieved context/procedural pattern, judge result, approval gate, channel send/defer state, and Outcome in one proof trace.
+- Added `play.signal_to_linkedin.v1`, a durable Signal-to-LinkedIn Play that runs Rep research, LinkedIn draft generation, hot-path eval, per-Play channel policy, approval gate, and native channel send/defer through typed events.
+- Added `product.play.signal_linkedin.configure` so agents can configure Signal-backed LinkedIn Plays with the same registry-first MCP discovery as UI-backed actions.
 
 ## Recommended Next Iteration
 
@@ -42,8 +44,8 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
    - Define role-agent prompts for researcher/writer/sender/replier.
    - Feed the dynamic context provider into future native-channel Plays.
 
-2. Add one real native non-email path:
-   - LinkedIn currently has dry-run/channel primitives; either make one native action executable through a durable Play or keep it hidden from the product surface until ready.
+2. Productionize the native LinkedIn path:
+   - Replace the dry-run LinkedIn transport with a real session/OAuth provider, rate-limit telemetry, and recovery UX before exposing real external sends broadly.
 
 3. Improve user-facing trust depth:
    - Add richer brand-voice drift and deliverability explanations to the Conversation trust trace once those signals are available in the event payloads.

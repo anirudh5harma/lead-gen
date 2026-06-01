@@ -37,6 +37,13 @@ import {
   type EmailTransport,
   type EmailChannel,
 } from "../channels/email/index.ts";
+import {
+  createDryRunLinkedInTransport,
+  createNativeLinkedInChannel,
+  type LinkedInChannel,
+  type LinkedInChannelName,
+  type LinkedInSessionAccount,
+} from "../channels/linkedin/index.ts";
 import { createMessageLifecycleProjection } from "../channels/message-lifecycle.ts";
 import { createReplyLifecycleProjection } from "../channels/reply-lifecycle.ts";
 import {
@@ -59,10 +66,14 @@ import {
 } from "../ingest/index.ts";
 import {
   createSignalToEmailPlayWorkflow,
+  createSignalToLinkedInPlayWorkflow,
   createPostgresVerticalSliceStore,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+  SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
   type SignalToEmailPlayInput,
   type SignalToEmailPlayOutput,
+  type SignalToLinkedInPlayInput,
+  type SignalToLinkedInPlayOutput,
 } from "../plays/index.ts";
 import {
   parseApprovalPolicy,
@@ -254,6 +265,17 @@ export interface ConfigureSignalEmailPlayInput {
   icp_name?: string;
   daily_cap?: number;
   approval?: SignalToEmailPlayInput["email_approval"];
+}
+
+export interface ConfigureSignalLinkedInPlayInput {
+  rep_id: string;
+  name?: string;
+  description?: string;
+  signal_kind?: string;
+  icp_name?: string;
+  action?: LinkedInChannelName;
+  daily_cap?: number;
+  approval?: SignalToLinkedInPlayInput["linkedin_approval"];
 }
 
 export interface ConfigureActivationInput {
@@ -1520,6 +1542,8 @@ export async function configureSignalEmailPlay(
     input.description?.trim() ||
     `When a ${signalKind.replace(/_/g, " ")} Signal matches ${input.icp_name ?? "the ICP"}, draft, judge, gate, and send one concise founder-led email.`;
   const compiled = {
+    workflow: SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+    channel: "email",
     trigger: { kind: "signal", filter: { kind: signalKind } },
     steps: [
       { id: "research", op: "research.signal_context" },
@@ -1531,6 +1555,72 @@ export async function configureSignalEmailPlay(
   };
   const autonomy = {
     channels: { email: { daily_cap: dailyCap, approval } },
+    global: {},
+  };
+  const payload = {
+    play_id,
+    name,
+    declaration,
+    compiled,
+    autonomy,
+    default_rep_id: input.rep_id,
+    status: "active" as const,
+    version: existing.rows[0]?.version ?? 1,
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "play.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: configurationEventKey(
+      "play.configured",
+      session.workspace_id,
+      play_id,
+      payload,
+    ),
+    payload,
+  });
+  await projectPlayConfigured(engine.pool, event);
+  return { workspace_id: session.workspace_id, play_id };
+}
+
+export async function configureSignalLinkedInPlay(
+  input: ConfigureSignalLinkedInPlayInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; play_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const signalKind = parseSignalKind(input.signal_kind);
+  const action = parseLinkedInAction(input.action) ?? "linkedin_dm";
+  const actionLabel = titleizeLinkedInAction(action);
+  const name = input.name?.trim() || `${titleizeSignalKind(signalKind)} Signal ${actionLabel}`;
+  const existing = await engine.pool.query<{ id: string; version: number }>(
+    `select id, version from plays
+      where workspace_id = $1 and lower(name) = lower($2)
+      order by version desc
+      limit 1`,
+    [session.workspace_id, name],
+  );
+  const play_id = existing.rows[0]?.id ?? randomUUID();
+  const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 10));
+  const approval = parseApprovalPolicy(input.approval);
+  const declaration =
+    input.description?.trim() ||
+    `When a ${signalKind.replace(/_/g, " ")} Signal matches ${input.icp_name ?? "the ICP"}, research, draft, judge, gate, and send one concise LinkedIn touch.`;
+  const compiled = {
+    workflow: SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+    channel: action,
+    trigger: { kind: "signal", filter: { kind: signalKind } },
+    steps: [
+      { id: "research", op: "research.signal_context" },
+      { id: "draft", op: "writer.compose_linkedin" },
+      { id: "judge", op: "eval.hot_path" },
+      { id: "approval", op: "approval.channel_gate" },
+      { id: "send", op: "sender.linkedin" },
+    ],
+  };
+  const autonomy = {
+    channels: { [action]: { daily_cap: dailyCap, approval } },
     global: {},
   };
   const payload = {
@@ -1674,6 +1764,20 @@ function titleizeSignalKind(kind: string): string {
     .split("_")
     .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function parseLinkedInAction(action: unknown): LinkedInChannelName | null {
+  return action === "linkedin_connection" ||
+    action === "linkedin_dm" ||
+    action === "linkedin_comment"
+    ? action
+    : null;
+}
+
+function titleizeLinkedInAction(action: LinkedInChannelName): string {
+  if (action === "linkedin_connection") return "LinkedIn Connection";
+  if (action === "linkedin_comment") return "LinkedIn Comment";
+  return "LinkedIn DM";
 }
 
 function clamp01(value: number): number {
@@ -2746,6 +2850,41 @@ function createDatabaseBackedEmailChannel(
   return createPostgresOwnedDomainEmailChannel({ pool, transport });
 }
 
+async function createDatabaseBackedLinkedInChannel(
+  pool: Pool,
+  workspace_id: string,
+  action: LinkedInChannelName,
+): Promise<LinkedInChannel> {
+  const { rows } = await pool.query<{
+    id: string;
+    display_name: string;
+    kind: "linkedin_session" | "linkedin_oauth";
+    status: LinkedInSessionAccount["status"];
+    daily_cap: number | null;
+    daily_used: number | null;
+  }>(
+    `select id, display_name, kind::text as kind, status::text as status,
+            daily_cap, daily_used
+       from channel_accounts
+      where workspace_id = $1
+        and kind in ('linkedin_session','linkedin_oauth')
+      order by last_used_at nulls first, created_at asc`,
+    [workspace_id],
+  );
+  return createNativeLinkedInChannel({
+    action,
+    accounts: rows.map((row) => ({
+      id: row.id,
+      display_name: row.display_name,
+      kind: row.kind,
+      status: row.status,
+      daily_cap: Math.max(0, Math.trunc(row.daily_cap ?? 0)),
+      daily_used: Math.max(0, Math.trunc(row.daily_used ?? 0)),
+    })),
+    transport: createDryRunLinkedInTransport(),
+  });
+}
+
 async function startSignalEmailPlay(
   engine: ProductEngine,
   input: {
@@ -2806,6 +2945,71 @@ async function startSignalEmailPlay(
   });
 }
 
+async function startSignalLinkedInPlay(
+  engine: ProductEngine,
+  input: {
+    workspace_id: string;
+    play_id: string;
+    rep_id: string;
+    signal_id: string;
+    person_id: string;
+    trigger_event_id: string | null;
+    action: LinkedInChannelName;
+    approval: SignalToLinkedInPlayInput["linkedin_approval"];
+    policy: PlayChannelPolicy;
+    simulate_outcome_kind?: SignalToLinkedInPlayInput["simulate_outcome_kind"];
+  },
+) {
+  const store = createPostgresVerticalSliceStore(engine.pool);
+  const signal = await store.getSignal(input.signal_id);
+  if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
+  const person = await store.getPerson(input.person_id);
+  if (!person) throw new Error(`Person not found: ${input.person_id}`);
+  const linkedin = await createDatabaseBackedLinkedInChannel(
+    engine.pool,
+    input.workspace_id,
+    input.action,
+  );
+  const writerLlm = createGovernedLLM(engine, input.workspace_id, "writer.linkedin");
+  const judge = createGovernedJudge(engine, input.workspace_id);
+  engine.runtime.register(
+    createSignalToLinkedInPlayWorkflow({
+      store,
+      memory: engine.memory,
+      judge,
+      writerLlm,
+      linkedin,
+      bus: engine.bus,
+      workspaceContextProvider: (workflowInput) =>
+        getWorkflowWorkspaceContext(engine, workflowInput.workspace_id),
+    }),
+  );
+  const play_run_id = randomUUID();
+  return engine.runtime.start<SignalToLinkedInPlayInput, SignalToLinkedInPlayOutput>({
+    workspace_id: input.workspace_id,
+    workflow_name: SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+    play_id: input.play_id,
+    play_run_id,
+    idempotency_key: `signal:${signal.id}:play:${input.play_id}`,
+    correlation_id: input.trigger_event_id ?? undefined,
+    causation_id: input.trigger_event_id ?? undefined,
+    input: {
+      workspace_id: input.workspace_id,
+      play_id: input.play_id,
+      play_run_id,
+      rep_id: input.rep_id,
+      signal_id: signal.id,
+      person_id: person.id,
+      company_id: signal.related_company_id,
+      trigger_event_id: input.trigger_event_id,
+      action: input.action,
+      linkedin_approval: input.approval,
+      play_channel_policy: input.policy,
+      simulate_outcome_kind: input.simulate_outcome_kind ?? null,
+    },
+  });
+}
+
 export async function dispatchSignalPlaysOnce(
   opts: DispatchOptions = {},
   session?: ProductWorkspaceSession,
@@ -2820,6 +3024,8 @@ export async function dispatchSignalPlaysOnce(
     person_id: string;
     play_id: string;
     rep_id: string;
+    workflow_name: string;
+    target_channel: string;
     signal_properties: Record<string, unknown>;
     play_autonomy: Record<string, unknown>;
   }>(
@@ -2829,6 +3035,8 @@ export async function dispatchSignalPlaysOnce(
             target_person.id as person_id,
             p.id as play_id,
             p.default_rep_id as rep_id,
+            coalesce(p.compiled->>'workflow', $1) as workflow_name,
+            coalesce(p.compiled->>'channel', 'email') as target_channel,
             s.properties as signal_properties,
             p.autonomy as play_autonomy
        from events e
@@ -2848,7 +3056,17 @@ export async function dispatchSignalPlaysOnce(
          select gp.id
            from graph_persons gp
           where gp.workspace_id = e.workspace_id
-            and cardinality(gp.emails) > 0
+            and (
+              (coalesce(p.compiled->>'channel', 'email') = 'email' and cardinality(gp.emails) > 0)
+              or (
+                coalesce(p.compiled->>'channel', 'email') in (
+                  'linkedin_dm',
+                  'linkedin_connection',
+                  'linkedin_comment'
+                )
+                and gp.linkedin_url is not null
+              )
+            )
             and (
               gp.id = s.related_person_id
               or (
@@ -2862,33 +3080,58 @@ export async function dispatchSignalPlaysOnce(
        ) target_person on true
        left join workflow_runs wr
          on wr.workspace_id = e.workspace_id
-        and wr.workflow_name = $1
+        and wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
         and wr.idempotency_key = concat('signal:', e.payload->>'signal_id', ':play:', p.id::text)
       where e.event_type = 'signal.matched'
         and wr.id is null
-        and ($3::uuid is null or e.workspace_id = $3)
+        and coalesce(p.compiled->>'workflow', $1) = any($2::text[])
+        and ($4::uuid is null or e.workspace_id = $4)
       order by e.occurred_at asc
-      limit $2`,
-    [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, opts.limit ?? 25, session?.workspace_id ?? null],
+      limit $3`,
+    [
+      SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
+      [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW],
+      opts.limit ?? 25,
+      session?.workspace_id ?? null,
+    ],
   );
 
   let dispatched = 0;
   for (const row of rows) {
-    const policy = resolvePlayChannelPolicy(row.play_autonomy, "email", {
-      approval: parseApprovalPolicy(row.signal_properties.email_approval),
-    });
     const simulate = simulateOutcomeFromSignal(row.signal_properties);
-    await startSignalEmailPlay(engine, {
-      workspace_id: row.workspace_id,
-      play_id: row.play_id,
-      rep_id: row.rep_id,
-      signal_id: row.signal_id,
-      person_id: row.person_id,
-      trigger_event_id: row.event_id,
-      approval: policy.approval,
-      policy,
-      simulate_outcome_kind: simulate,
-    });
+    if (row.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW) {
+      const action = parseLinkedInAction(row.target_channel) ?? "linkedin_dm";
+      const policy = resolvePlayChannelPolicy(row.play_autonomy, action, {
+        approval: parseApprovalPolicy(row.signal_properties.linkedin_approval),
+      });
+      await startSignalLinkedInPlay(engine, {
+        workspace_id: row.workspace_id,
+        play_id: row.play_id,
+        rep_id: row.rep_id,
+        signal_id: row.signal_id,
+        person_id: row.person_id,
+        trigger_event_id: row.event_id,
+        action,
+        approval: policy.approval,
+        policy,
+        simulate_outcome_kind: simulate,
+      });
+    } else {
+      const policy = resolvePlayChannelPolicy(row.play_autonomy, "email", {
+        approval: parseApprovalPolicy(row.signal_properties.email_approval),
+      });
+      await startSignalEmailPlay(engine, {
+        workspace_id: row.workspace_id,
+        play_id: row.play_id,
+        rep_id: row.rep_id,
+        signal_id: row.signal_id,
+        person_id: row.person_id,
+        trigger_event_id: row.event_id,
+        approval: policy.approval,
+        policy,
+        simulate_outcome_kind: simulate,
+      });
+    }
     dispatched++;
   }
   return dispatched;

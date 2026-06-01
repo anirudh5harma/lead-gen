@@ -401,6 +401,20 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "9080",
   },
   {
+    name: "ACTIVATION_VERIFY_AGGREGATOR_LIMIT",
+    requirement: "optional",
+    category: "runtime",
+    description: "Number of signals the activation verifier should aggregate during smoke checks.",
+    example: "4",
+  },
+  {
+    name: "KEEP_VERIFY_WORKSPACE",
+    requirement: "optional",
+    category: "runtime",
+    description: "Set to 1 to keep the temporary activation verification workspace for inspection.",
+    example: "1",
+  },
+  {
     name: "NODE_ENV",
     requirement: "optional",
     category: "runtime",

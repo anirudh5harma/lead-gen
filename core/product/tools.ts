@@ -8,6 +8,7 @@ import {
   configureIcpSegment,
   configureRep,
   configureSignalEmailPlay,
+  configureSignalLinkedInPlay,
   configureWorkspaceCompanyProfile,
   configureWorkspaceEmailAccount,
   configureWorkspaceSignalSource,
@@ -46,6 +47,11 @@ const SignalKindSchema = z.enum([
 ]);
 
 const ApprovalSchema = z.enum(["none", "approve_first", "always", "research_only"]);
+const LinkedInActionSchema = z.enum([
+  "linkedin_connection",
+  "linkedin_dm",
+  "linkedin_comment",
+]);
 const RepRoleSchema = z.enum([
   "sdr",
   "content",
@@ -237,6 +243,27 @@ export function registerProductTools(): void {
     output: WorkspaceResultSchema.extend({ play_id: z.string().uuid() }),
     async handler(input, ctx) {
       return configureSignalEmailPlay(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.play.signal_linkedin.configure",
+    description:
+      "Create or update a Signal-to-LinkedIn Play. The Play declaration compiles to the durable workflow path with research, draft, judge, approval, and native LinkedIn channel send steps.",
+    kind: "write",
+    input: z.object({
+      rep_id: z.string().uuid(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      signal_kind: SignalKindSchema,
+      icp_name: z.string().optional(),
+      action: LinkedInActionSchema.optional(),
+      daily_cap: z.number().int().nonnegative().optional(),
+      approval: ApprovalSchema.optional(),
+    }),
+    output: WorkspaceResultSchema.extend({ play_id: z.string().uuid() }),
+    async handler(input, ctx) {
+      return configureSignalLinkedInPlay(input, sessionFromContext(ctx));
     },
   });
 

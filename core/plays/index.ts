@@ -24,6 +24,15 @@ export type {
   SignalToEmailPlayOutput,
 } from "./signal-email-play.ts";
 export {
+  createSignalToLinkedInPlayWorkflow,
+  SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+} from "./signal-linkedin-play.ts";
+export type {
+  SignalToLinkedInPlayDeps,
+  SignalToLinkedInPlayInput,
+  SignalToLinkedInPlayOutput,
+} from "./signal-linkedin-play.ts";
+export {
   createInMemoryVerticalSliceStore,
   createPostgresVerticalSliceStore,
   wireInMemoryVerticalSliceMessageLifecycleProjection,

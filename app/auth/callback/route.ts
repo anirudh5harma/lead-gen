@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { findCompletedOnboardingForUser } from "@/lib/auth/onboarding";
 import { postAuthDestination, safeNextPath } from "@/lib/auth/next";
+import { resolvePostAuthUserId } from "@/lib/auth/post-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   ACTIVE_WORKSPACE_COOKIE_NAME,
@@ -16,14 +17,17 @@ export async function GET(request: Request) {
   }
 
   const supabase = await createServerSupabaseClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data: exchangeData, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
     return NextResponse.redirect(new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin));
   }
 
-  const { data } = await supabase.auth.getUser();
-  const completed = data.user
-    ? await findCompletedOnboardingForUser(data.user.id)
+  const userId = await resolvePostAuthUserId(exchangeData.user, async () => {
+    const { data } = await supabase.auth.getUser();
+    return data.user;
+  });
+  const completed = userId
+    ? await findCompletedOnboardingForUser(userId)
     : null;
   const destinationPath = postAuthDestination(next, Boolean(completed));
   const forwardedHost = request.headers.get("x-forwarded-host");
