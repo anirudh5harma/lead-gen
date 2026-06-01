@@ -3,10 +3,19 @@ import { defineWorkflow, type RunContext } from "../substrate/workflows/index.ts
 import type { EventBus } from "../substrate/events/index.ts";
 import type { Judge } from "../agents/eval/types.ts";
 import type { LLMClient } from "../agents/llm/types.ts";
-import type { RepMemory, ProceduralExemplar } from "../agents/memory/types.ts";
+import type { RepMemory } from "../agents/memory/types.ts";
 import { evalGate } from "../agents/eval/gate.ts";
-import { createResearcherRole } from "../agents/reps/index.ts";
-import type { RoleAgentContext } from "../agents/reps/types.ts";
+import {
+  composeRep,
+  createLinkedInSenderRole,
+  createLinkedInWriterRole,
+  createResearcherRole,
+  type LinkedInSenderRequest,
+  type SignalLinkedInWriterBrief,
+  type SignalLinkedInWriterDraft,
+} from "../agents/reps/index.ts";
+import type { ResearchBrief, ResearchResult } from "../agents/reps/roles/researcher.ts";
+import type { RoleAgent, RoleAgentContext } from "../agents/reps/types.ts";
 import type { LinkedInChannel, LinkedInChannelName } from "../channels/linkedin/index.ts";
 import type { VerticalSliceStore } from "./vertical-store.ts";
 import {
@@ -55,12 +64,6 @@ export interface SignalToLinkedInPlayDeps {
   ) => Promise<string | null | undefined>;
 }
 
-interface LinkedInDraft {
-  body: string;
-  exemplar_ids: string[];
-  procedural_exemplars: ProceduralExemplar[];
-}
-
 function playRunOutputPayload(output: SignalToLinkedInPlayOutput): Record<string, unknown> {
   return output as unknown as Record<string, unknown>;
 }
@@ -82,7 +85,8 @@ async function publishPlayDeferred(
 
 export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDeps) {
   const researcher = createResearcherRole();
-
+  const writer = createLinkedInWriterRole({ llm: deps.writerLlm });
+  const sender = createLinkedInSenderRole({ linkedin: deps.linkedin, bus: deps.bus });
   return defineWorkflow<SignalToLinkedInPlayInput, SignalToLinkedInPlayOutput>({
     name: SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
     version: "1",
@@ -90,6 +94,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       const action = input.action ?? (deps.linkedin.name as LinkedInChannelName);
       const rep = await deps.store.getRep(input.rep_id);
       if (!rep) throw new Error(`Rep not found: ${input.rep_id}`);
+      const composedRep = composeRep(rep, { researcher, writer, sender });
       const signal = await deps.store.getSignal(input.signal_id);
       if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
       const person = await deps.store.getPerson(input.person_id);
@@ -141,22 +146,29 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
         return row;
       });
 
+      const researchRole = composedRep.role("researcher") as RoleAgent<ResearchBrief, ResearchResult>;
+      const writerRole = composedRep.role("writer") as RoleAgent<
+        SignalLinkedInWriterBrief,
+        SignalLinkedInWriterDraft
+      >;
+      const senderRole = composedRep.role("sender") as RoleAgent<
+        LinkedInSenderRequest,
+        Awaited<ReturnType<LinkedInChannel["send"]>>
+      >;
+
       const research = await ctx.step("research.signal_context", () =>
-        researcher.invoke({ signal, person, company }, roleContext),
+        researchRole.invoke({ signal, person, company }, roleContext),
       );
       const patternKey = `${research.pattern_key}|channel:${action}`;
 
       const draft = await ctx.step("writer.compose_linkedin", () =>
-        composeLinkedInDraft({
-          input,
+        writerRole.invoke({
           action,
-          patternKey,
+          pattern_key: patternKey,
           research,
           person,
           company,
-          ctx: roleContext,
-          llm: deps.writerLlm,
-        }),
+        }, roleContext),
       );
 
       const message = await ctx.step("message.draft", async () => {
@@ -414,28 +426,27 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       }
 
       const send = await ctx.step("sender.linkedin", () =>
-        deps.linkedin.send(
+        senderRole.invoke(
           {
-            id: conversation.id,
-            workspace_id: input.workspace_id,
-            rep_id: rep.id,
-            counterparty_person_id: person.id,
-            counterparty_linkedin_url: person.linkedin_url,
-            topic: conversation.topic,
-          },
-          {
-            message_id: message.id,
-            channel: action,
-            subject: null,
-            body: sendDraft.body,
-            eval_passed: true,
-            eval_score: sendDraft.eval_score,
-          },
-          {
-            workspace_id: input.workspace_id,
-            bus: deps.bus,
+            conversation: {
+              id: conversation.id,
+              workspace_id: input.workspace_id,
+              rep_id: rep.id,
+              counterparty_person_id: person.id,
+              counterparty_linkedin_url: person.linkedin_url,
+              topic: conversation.topic,
+            },
+            draft: {
+              message_id: message.id,
+              channel: action,
+              subject: null,
+              body: sendDraft.body,
+              eval_passed: true,
+              eval_score: sendDraft.eval_score,
+            },
             correlation_id: ctx.correlation_id,
           },
+          roleContext,
         ),
       );
 
@@ -482,112 +493,6 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       return output;
     },
   });
-}
-
-async function composeLinkedInDraft({
-  input,
-  action,
-  patternKey,
-  research,
-  person,
-  company,
-  ctx,
-  llm,
-}: {
-  input: SignalToLinkedInPlayInput;
-  action: LinkedInChannelName;
-  patternKey: string;
-  research: {
-    signal_summary: string;
-    counterparty_summary: string;
-  };
-  person: { full_name: string; given_name?: string | null };
-  company?: { name: string; industry?: string | null } | null;
-  ctx: RoleAgentContext;
-  llm?: LLMClient;
-}): Promise<LinkedInDraft> {
-  const procedural_exemplars = await ctx.memory.procedural.topForPattern(
-    { workspace_id: input.workspace_id, rep_id: ctx.rep.id },
-    patternKey,
-    3,
-  );
-  if (!llm) {
-    return deterministicLinkedInDraft(
-      action,
-      research,
-      person,
-      ctx,
-      procedural_exemplars,
-    );
-  }
-
-  const response = await llm.complete({
-    temperature: 0.6,
-    max_tokens: 420,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: [
-          `You are writing as ${ctx.rep.name}, a ${ctx.rep.role} Rep.`,
-          "Write one concise LinkedIn outreach draft tied to the provided signal.",
-          "Return only JSON: { \"body\": \"string\" }.",
-        ].join("\n"),
-      },
-      {
-        role: "user",
-        content: [
-          `Channel action: ${action}`,
-          `Voice: ${ctx.rep.persona.voice}`,
-          ctx.rep.persona.story ? `Story: ${ctx.rep.persona.story}` : null,
-          ctx.rep.persona.do_not.length ? `Do not: ${ctx.rep.persona.do_not.join("; ")}` : null,
-          `Recipient: ${person.full_name}`,
-          company?.name ? `Company: ${company.name}` : null,
-          company?.industry ? `Industry: ${company.industry}` : null,
-          `Signal: ${research.signal_summary}`,
-          `Counterparty: ${research.counterparty_summary}`,
-          ctx.workspace_context_markdown
-            ? `Workspace context:\n${ctx.workspace_context_markdown}`
-            : null,
-          "Constraints: 35-90 words, no fake familiarity, no unsupported claims, no sign-off.",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      },
-    ],
-  });
-  const parsed = JSON.parse(response.content) as { body?: string };
-  if (!parsed.body?.trim()) {
-    throw new Error(`LinkedIn writer returned invalid JSON: ${response.content.slice(0, 200)}`);
-  }
-  return {
-    body: parsed.body.trim(),
-    exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
-    procedural_exemplars,
-  };
-}
-
-function deterministicLinkedInDraft(
-  action: LinkedInChannelName,
-  research: { signal_summary: string; counterparty_summary: string },
-  person: { full_name: string; given_name?: string | null },
-  ctx: RoleAgentContext,
-  procedural_exemplars: ProceduralExemplar[],
-): LinkedInDraft {
-  const firstName = person.given_name ?? person.full_name.split(" ")[0] ?? person.full_name;
-  const opener = action === "linkedin_connection"
-    ? `Hi ${firstName}, I noticed ${research.signal_summary}.`
-    : `Hi ${firstName} - noticed ${research.signal_summary}.`;
-  const body = [
-    opener,
-    `${research.counterparty_summary} feels like relevant context for this timing.`,
-    `${ctx.rep.name} can compare notes if this is on your plate.`,
-  ].join(" ");
-  return {
-    body,
-    exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
-    procedural_exemplars,
-  };
 }
 
 function labelLinkedInAction(action: LinkedInChannelName): string {

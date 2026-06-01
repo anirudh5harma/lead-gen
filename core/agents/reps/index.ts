@@ -24,6 +24,17 @@ export type {
 export { createEmailSender } from "./roles/sender.ts";
 export type { SenderRequest, SenderResult, EmailSenderOptions } from "./roles/sender.ts";
 export { createResearcherRole } from "./roles/researcher.ts";
+export {
+  createLinkedInSenderRole,
+  createLinkedInWriterRole,
+} from "./roles/linkedin.ts";
+export type {
+  LinkedInSenderRequest,
+  LinkedInSenderRoleOptions,
+  LinkedInWriterRoleOptions,
+  SignalLinkedInWriterBrief,
+  SignalLinkedInWriterDraft,
+} from "./roles/linkedin.ts";
 
 export interface SignalEmailWriterBrief {
   channel: "email";
