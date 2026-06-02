@@ -24,6 +24,7 @@
     "verify:nats": "node --experimental-strip-types scripts/verify-nats.ts",
     "verify:restate": "node --experimental-strip-types scripts/verify-restate.ts",
     "verify:restate-runtime": "node --experimental-strip-types scripts/verify-restate-runtime.ts",
+    "verify:ingestion-scale": "node --experimental-strip-types scripts/verify-ingestion-scale.ts",
     "verify:production-app": "node --experimental-strip-types scripts/verify-production-app.ts",
     "verify:worker-release": "node --experimental-strip-types scripts/verify-worker-release.ts",
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
