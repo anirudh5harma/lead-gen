@@ -7,6 +7,7 @@ import type { LLMClient } from "../../llm/types.ts";
 import type {
   MemoryScope,
   ProceduralExemplar,
+  ProceduralRepository,
   SemanticEntry,
   SemanticRepository,
 } from "../../memory/types.ts";
@@ -94,6 +95,7 @@ export interface ReplyDraftResult {
   body: string;
   body_text: string;
   pattern_key: string;
+  seed_pattern_key: string | null;
   exemplar_ids: string[];
   procedural_exemplars: ProceduralExemplar[];
   semantic_subjects: string[];
@@ -312,12 +314,97 @@ function replySubject(subject: string | null): string {
 }
 
 export function buildReplyPatternKey(brief: ReplyDraftBrief): string {
+  return buildReplyBasePatternKey(brief);
+}
+
+function buildReplyBasePatternKey(brief: ReplyDraftBrief): string {
   const company =
     brief.counterparty.company_name
       ?.toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "") || "unknown-company";
   return `conversation:email|intent:${brief.inbound.intent}|company:${company}|stage:reply`;
+}
+
+function buildReplyPatternKeys(
+  brief: ReplyDraftBrief,
+  semantic_memory: SemanticEntry[],
+): string[] {
+  const base = buildReplyBasePatternKey(brief);
+  const tags = replyPatternTags(brief, semantic_memory);
+  if (tags.length === 0) return [base];
+  return [`${base}|${tags.join("|")}`, base];
+}
+
+function replyPatternTags(
+  brief: ReplyDraftBrief,
+  semantic_memory: SemanticEntry[],
+): string[] {
+  const tags = [
+    objectionTag(memoryFactText(semantic_memory, ["objection", "latest_contact_objection"])),
+    nextStepTag(memoryFactText(semantic_memory, [
+      "requested_next_step",
+      "latest_contact_requested_next_step",
+      "preference",
+      "latest_contact_preference",
+    ])),
+    seniorityTag(brief.counterparty.title),
+  ].filter((tag): tag is string => Boolean(tag));
+  return Array.from(new Set(tags));
+}
+
+function memoryFactText(entries: SemanticEntry[], keys: string[]): string | null {
+  for (const entry of entries) {
+    for (const key of keys) {
+      const value = entry.facts[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  return null;
+}
+
+function objectionTag(value: string | null): string | null {
+  if (!value) return null;
+  const text = value.toLowerCase();
+  if (/\bsecurity|review|legal|compliance|procurement\b/u.test(text)) {
+    return "objection:review";
+  }
+  if (/\bbudget|price|cost|expensive\b/u.test(text)) return "objection:budget";
+  if (/\btime|timing|busy|bandwidth|capacity\b/u.test(text)) return "objection:capacity";
+  if (/\balready|using|vendor|solution|tool\b/u.test(text)) {
+    return "objection:existing-solution";
+  }
+  if (/\bnot\s+(?:a\s+)?priority|not\s+interested\b/u.test(text)) {
+    return "objection:not-priority";
+  }
+  return "objection:other";
+}
+
+function nextStepTag(value: string | null): string | null {
+  if (!value) return null;
+  const text = value.toLowerCase();
+  if (/\bsend|email|details|options|deck|one-pager|pager\b/u.test(text)) {
+    return "next:send-details";
+  }
+  if (/\bbook|call|chat|meet|meeting|calendar\b/u.test(text)) {
+    return "next:book-time";
+  }
+  if (/\bfollow\s+up|circle\s+back|later|next\s+(?:week|month|quarter)\b/u.test(text)) {
+    return "next:follow-up";
+  }
+  if (/\bloop\s+in|cc\b/u.test(text)) return "next:loop-in";
+  return null;
+}
+
+function seniorityTag(title: string | null | undefined): string | null {
+  if (!title) return null;
+  const text = title.toLowerCase();
+  if (/\bfounder|co-?founder|owner\b/u.test(text)) return "seniority:founder";
+  if (/\bceo|cto|cfo|coo|chief|president\b/u.test(text)) return "seniority:exec";
+  if (/\bvp|vice president|head\b/u.test(text)) return "seniority:vp";
+  if (/\bdirector\b/u.test(text)) return "seniority:director";
+  if (/\bmanager|lead\b/u.test(text)) return "seniority:manager";
+  return null;
 }
 
 function exemplarText(exemplar: ProceduralExemplar): string | null {
@@ -418,17 +505,19 @@ export function createReplyDraftRole(
     kind: "replier",
     name: opts.llm ? "replier.email.draft.llm" : "replier.email.draft.deterministic",
     async invoke(brief, ctx) {
-      const pattern_key = buildReplyPatternKey(brief);
-      const procedural_exemplars = await ctx.memory.procedural.topForPattern(
-        { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id },
-        pattern_key,
-        3,
-      );
+      const scope = { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id };
       const semantic_memory = await ctx.memory.semantic.forSubjects(
-        { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id },
+        scope,
         semanticSubjects(brief),
       );
       const semantic_subjects = semantic_memory.map(semanticSubjectKey);
+      const pattern_keys = buildReplyPatternKeys(brief, semantic_memory);
+      const { pattern_key, procedural_exemplars } = await topProceduralForPatternKeys(
+        ctx.memory.procedural,
+        scope,
+        pattern_keys,
+        3,
+      );
       if (!opts.llm) {
         const draft = deterministicReplyDraft(brief, procedural_exemplars);
         return {
@@ -436,6 +525,7 @@ export function createReplyDraftRole(
           body: draft.body.replace(/-Maya$/u, `-${ctx.rep.name}`),
           body_text: draft.body_text.replace(/-Maya$/u, `-${ctx.rep.name}`),
           pattern_key,
+          seed_pattern_key: seedPatternKey(pattern_keys, pattern_key),
           exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
           procedural_exemplars,
           semantic_subjects,
@@ -505,6 +595,7 @@ export function createReplyDraftRole(
         body: parsed.body,
         body_text: parsed.body,
         pattern_key,
+        seed_pattern_key: seedPatternKey(pattern_keys, pattern_key),
         exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
         procedural_exemplars,
         semantic_subjects,
@@ -512,6 +603,24 @@ export function createReplyDraftRole(
       };
     },
   };
+}
+
+function seedPatternKey(pattern_keys: string[], selected: string): string | null {
+  const preferred = pattern_keys[0];
+  return preferred && preferred !== selected ? preferred : null;
+}
+
+async function topProceduralForPatternKeys(
+  procedural: ProceduralRepository,
+  scope: MemoryScope,
+  pattern_keys: string[],
+  limit: number,
+): Promise<{ pattern_key: string; procedural_exemplars: ProceduralExemplar[] }> {
+  for (const pattern_key of pattern_keys) {
+    const procedural_exemplars = await procedural.topForPattern(scope, pattern_key, limit);
+    if (procedural_exemplars.length > 0) return { pattern_key, procedural_exemplars };
+  }
+  return { pattern_key: pattern_keys[0]!, procedural_exemplars: [] };
 }
 
 export const replierStub: RoleAgent<unknown, unknown> = {

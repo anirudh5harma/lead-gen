@@ -651,6 +651,7 @@ const RepMemoryProceduralUpdated = z.object({
 });
 
 const RepMemoryProceduralSeeded = z.object({
+  outcome_event_id: z.string().uuid().optional(),
   exemplar_id: z.string().uuid(),
   rep_id: z.string().uuid(),
   pattern_key: z.string().min(1),

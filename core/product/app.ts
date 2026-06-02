@@ -744,7 +744,6 @@ export async function reconcileWorkspaceMembershipsForAuthIdentity(
        join auth.users member_user on member_user.id = wm.user_id
        join workspaces w on w.id = wm.workspace_id
       where lower(member_user.email) = $2
-        and member_user.email_confirmed_at is not null
         and wm.user_id <> $1
         and wm.accepted_at is not null
         and w.archived_at is null
@@ -2052,6 +2051,7 @@ async function projectEmailAccountConfigured(
 async function resolveProductOutcomeAttribution(event: PublishedEvent) {
   const payload = event.payload as {
     attributed_rep_id?: string | null;
+    attributed_message_id?: string | null;
     properties?: Record<string, unknown>;
   };
   const props = payload.properties ?? {};
@@ -2059,16 +2059,99 @@ async function resolveProductOutcomeAttribution(event: PublishedEvent) {
     ? props.exemplar_ids.filter((id): id is string => typeof id === "string")
     : [];
   const pattern_key = typeof props.pattern_key === "string" ? props.pattern_key : null;
-  if (!payload.attributed_rep_id || !pattern_key || exemplar_ids.length === 0) {
-    return null;
+  if (payload.attributed_rep_id && pattern_key && exemplar_ids.length > 0) {
+    return {
+      scope: {
+        workspace_id: event.workspace_id,
+        rep_id: payload.attributed_rep_id,
+      },
+      pattern_key,
+      exemplar_ids,
+      seed: productSeedFromProperties(props),
+    };
   }
+
+  if (payload.attributed_message_id) {
+    const engine = await getProductEngine();
+    const { rows } = await engine.pool.query<{
+      subject: string | null;
+      body: string | null;
+      provenance: Record<string, unknown> | null;
+      rep_id: string | null;
+    }>(
+      `select m.subject,
+              m.body,
+              m.provenance,
+              c.rep_id
+         from messages m
+         left join conversations c
+           on c.id = m.conversation_id
+          and c.workspace_id = m.workspace_id
+        where m.id = $1 and m.workspace_id = $2
+        limit 1`,
+      [payload.attributed_message_id, event.workspace_id],
+    );
+    const row = rows[0];
+    const rep_id = payload.attributed_rep_id ?? row?.rep_id ?? null;
+    const provenance = row?.provenance ?? null;
+    const messagePatternKey =
+      typeof provenance?.pattern_key === "string" ? provenance.pattern_key : null;
+    const messageExemplarIds = Array.isArray(provenance?.exemplar_ids)
+      ? provenance.exemplar_ids.filter((id): id is string => typeof id === "string")
+      : [];
+    if (rep_id && provenance && messagePatternKey && messageExemplarIds.length > 0) {
+      return {
+        scope: {
+          workspace_id: event.workspace_id,
+          rep_id,
+        },
+        pattern_key: messagePatternKey,
+        exemplar_ids: messageExemplarIds,
+        seed: productSeedFromMessage(provenance, row.subject, row.body),
+      };
+    }
+  }
+
+  return null;
+}
+
+function productSeedFromProperties(
+  properties: Record<string, unknown>,
+): { pattern_key: string; exemplar: Record<string, unknown>; initial_score?: number } | null {
+  const pattern_key =
+    typeof properties.seed_pattern_key === "string" ? properties.seed_pattern_key : null;
+  const exemplar =
+    properties.seed_exemplar &&
+    typeof properties.seed_exemplar === "object" &&
+    !Array.isArray(properties.seed_exemplar)
+      ? properties.seed_exemplar as Record<string, unknown>
+      : null;
+  if (!pattern_key || !exemplar) return null;
+  const initial_score =
+    typeof properties.seed_initial_score === "number"
+      ? properties.seed_initial_score
+      : undefined;
   return {
-    scope: {
-      workspace_id: event.workspace_id,
-      rep_id: payload.attributed_rep_id,
-    },
     pattern_key,
-    exemplar_ids,
+    exemplar,
+    initial_score,
+  };
+}
+
+function productSeedFromMessage(
+  provenance: Record<string, unknown>,
+  subject: string | null,
+  body: string | null,
+): { pattern_key: string; exemplar: Record<string, unknown> } | null {
+  const pattern_key =
+    typeof provenance.seed_pattern_key === "string" ? provenance.seed_pattern_key : null;
+  if (!pattern_key || !body?.trim()) return null;
+  return {
+    pattern_key,
+    exemplar: {
+      subject: subject ?? null,
+      body,
+    },
   };
 }
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { EventBus, PublishedEvent } from "../../substrate/events/index.ts";
 import type {
   MemoryScope,
@@ -68,6 +69,11 @@ export interface OutcomeAttributionFetcher {
     scope: MemoryScope;
     pattern_key: string;
     exemplar_ids: string[];
+    seed?: {
+      pattern_key: string;
+      exemplar: Record<string, unknown>;
+      initial_score?: number;
+    } | null;
   }>;
 }
 
@@ -123,6 +129,31 @@ export async function wireOutcomeFeedback(
       delta_score: feedback.delta_score,
       win: feedback.win,
     };
+
+    if (
+      feedback.win &&
+      attribution.seed?.pattern_key &&
+      attribution.seed.pattern_key !== attribution.pattern_key
+    ) {
+      await opts.bus.publish({
+        workspace_id: event.workspace_id,
+        event_type: "rep.memory.procedural.seeded",
+        source: "system",
+        producer_ref: "memory:procedural",
+        correlation_id: event.correlation_id ?? event.id,
+        causation_id: event.id,
+        idempotency_key: `memory:procedural:seed:${event.id}:${attribution.seed.pattern_key}`,
+        payload: {
+          outcome_event_id: event.id,
+          exemplar_id: randomUUID(),
+          rep_id: attribution.scope.rep_id,
+          pattern_key: attribution.seed.pattern_key,
+          exemplar: attribution.seed.exemplar,
+          initial_score: attribution.seed.initial_score ?? Math.min(1, 0.5 + feedback.delta_score),
+        },
+      });
+    }
+
     await opts.procedural.applyOutcome(
       attribution.scope,
       attribution.exemplar_ids,

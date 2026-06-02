@@ -20,6 +20,7 @@ import type { OutcomeAttributionFetcher } from "./bridges.ts";
 interface MessageProvenance {
   exemplar_ids?: string[];
   pattern_key?: string;
+  seed_pattern_key?: string | null;
 }
 
 export interface PostgresAttributionOptions {
@@ -61,10 +62,14 @@ export function createPostgresOutcomeAttribution(
 
     const { rows } = await opts.pool.query<{
       attributed_message_id: string | null;
+      subject: string | null;
+      body: string | null;
       provenance: MessageProvenance | null;
       rep_id: string | null;
     }>(
       `select o.attributed_message_id,
+              m.subject,
+              m.body,
               m.provenance,
               c.rep_id
          from outcomes o
@@ -87,6 +92,7 @@ export function createPostgresOutcomeAttribution(
       scope: { workspace_id: event.workspace_id, rep_id: row.rep_id },
       pattern_key,
       exemplar_ids,
+      seed: seedFromMessage(row.provenance, row.subject, row.body),
     };
   };
 }
@@ -107,6 +113,7 @@ function attributionFromProperties(
     scope: { workspace_id, rep_id },
     pattern_key,
     exemplar_ids,
+    seed: seedFromProperties(properties),
   };
 }
 
@@ -117,10 +124,14 @@ async function attributionFromMessage(
   eventRepId: string | null,
 ): Promise<Awaited<ReturnType<OutcomeAttributionFetcher>> | null> {
   const { rows } = await pool.query<{
+    subject: string | null;
+    body: string | null;
     provenance: MessageProvenance | null;
     rep_id: string | null;
   }>(
-    `select m.provenance,
+    `select m.subject,
+            m.body,
+            m.provenance,
             c.rep_id
        from messages m
        left join conversations c
@@ -142,5 +153,42 @@ async function attributionFromMessage(
     scope: { workspace_id, rep_id },
     pattern_key,
     exemplar_ids,
+    seed: seedFromMessage(row.provenance, row.subject, row.body),
+  };
+}
+
+function seedFromProperties(
+  properties: Record<string, unknown>,
+): { pattern_key: string; exemplar: Record<string, unknown>; initial_score?: number } | null {
+  const pattern_key =
+    typeof properties.seed_pattern_key === "string" ? properties.seed_pattern_key : null;
+  const exemplar =
+    properties.seed_exemplar &&
+    typeof properties.seed_exemplar === "object" &&
+    !Array.isArray(properties.seed_exemplar)
+      ? properties.seed_exemplar as Record<string, unknown>
+      : null;
+  if (!pattern_key || !exemplar) return null;
+  const initial_score =
+    typeof properties.seed_initial_score === "number"
+      ? properties.seed_initial_score
+      : undefined;
+  return { pattern_key, exemplar, initial_score };
+}
+
+function seedFromMessage(
+  provenance: MessageProvenance,
+  subject: string | null,
+  body: string | null,
+): { pattern_key: string; exemplar: Record<string, unknown> } | null {
+  const pattern_key =
+    typeof provenance.seed_pattern_key === "string" ? provenance.seed_pattern_key : null;
+  if (!pattern_key || !body?.trim()) return null;
+  return {
+    pattern_key,
+    exemplar: {
+      subject: subject ?? null,
+      body,
+    },
   };
 }

@@ -276,6 +276,149 @@ test("reply draft role retrieves procedural memory for the reply intent", async 
   assert.match(draft.body, /what changed/);
 });
 
+test("reply draft role routes procedural memory by extracted reply facts", async () => {
+  const rep = fakeRep();
+  const memory = createInMemoryRepMemory();
+  const personId = randomUUID();
+  const companyId = randomUUID();
+  const broadPatternKey = "conversation:email|intent:neutral|company:acme-payroll|stage:reply";
+  const specificPatternKey = `${broadPatternKey}|objection:review|next:send-details|seniority:founder`;
+  const broad = await memory.procedural.add(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      pattern_key: broadPatternKey,
+      initial_score: 0.95,
+      exemplar: {
+        body: "Happy to keep this simple. If timing is off, I can step back.",
+      },
+    },
+  );
+  const specific = await memory.procedural.add(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      pattern_key: specificPatternKey,
+      initial_score: 0.72,
+      exemplar: {
+        body: "Happy to send the security review notes first. I can keep it to two concrete options and then you can decide whether a call is useful.",
+      },
+    },
+  );
+  await memory.semantic.upsert(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      subject_type: "person",
+      subject_id: personId,
+      facts: {
+        objection: "needs to review security before booking time",
+        requested_next_step: "send over two concrete options",
+      },
+      confidence: 0.81,
+    },
+  );
+  const replier = createReplyDraftRole();
+
+  const draft = await replier.invoke(
+    {
+      conversation: {
+        id: randomUUID(),
+        topic: "Security review",
+      },
+      inbound: {
+        message_id: randomUUID(),
+        subject: "Re: Security review",
+        body_text: "Can you send over what you mean before we book time?",
+        from_email: "nisha@example.com",
+        intent: "neutral",
+      },
+      counterparty: {
+        name: "Nisha Rao",
+        person_id: personId,
+        given_name: "Nisha",
+        title: "Founder",
+        company_id: companyId,
+        company_name: "Acme Payroll",
+      },
+      prior_outbound: null,
+    },
+    {
+      rep,
+      tool_context: { workspace_id: rep.workspace_id, rep_id: rep.id },
+      memory,
+      judge: createNoopJudge(),
+    },
+  );
+
+  assert.equal(draft.pattern_key, specificPatternKey);
+  assert.equal(draft.seed_pattern_key, null);
+  assert.deepEqual(draft.exemplar_ids, [specific.id]);
+  assert.notDeepEqual(draft.exemplar_ids, [broad.id]);
+  assert.match(draft.body, /security review notes/);
+});
+
+test("reply draft role exposes a specific seed key when it falls back to broad memory", async () => {
+  const rep = fakeRep();
+  const memory = createInMemoryRepMemory();
+  const personId = randomUUID();
+  const broadPatternKey = "conversation:email|intent:neutral|company:acme-payroll|stage:reply";
+  const specificPatternKey = `${broadPatternKey}|objection:review|next:send-details|seniority:founder`;
+  const broad = await memory.procedural.add(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      pattern_key: broadPatternKey,
+      initial_score: 0.88,
+      exemplar: {
+        body: "Happy to keep this crisp and send the useful context first.",
+      },
+    },
+  );
+  await memory.semantic.upsert(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      subject_type: "person",
+      subject_id: personId,
+      facts: {
+        objection: "needs security review before meeting",
+        requested_next_step: "send details first",
+      },
+      confidence: 0.84,
+    },
+  );
+
+  const draft = await createReplyDraftRole().invoke(
+    {
+      conversation: {
+        id: randomUUID(),
+        topic: "Security review",
+      },
+      inbound: {
+        message_id: randomUUID(),
+        subject: "Re: Security review",
+        body_text: "Can you send details first?",
+        from_email: "nisha@example.com",
+        intent: "neutral",
+      },
+      counterparty: {
+        name: "Nisha Rao",
+        person_id: personId,
+        given_name: "Nisha",
+        title: "Founder",
+        company_name: "Acme Payroll",
+      },
+      prior_outbound: null,
+    },
+    {
+      rep,
+      tool_context: { workspace_id: rep.workspace_id, rep_id: rep.id },
+      memory,
+      judge: createNoopJudge(),
+    },
+  );
+
+  assert.equal(draft.pattern_key, broadPatternKey);
+  assert.equal(draft.seed_pattern_key, specificPatternKey);
+  assert.deepEqual(draft.exemplar_ids, [broad.id]);
+});
+
 test("reply draft role injects semantic memory into LLM replies", async () => {
   const rep = fakeRep();
   const memory = createInMemoryRepMemory();

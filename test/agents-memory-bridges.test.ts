@@ -84,6 +84,73 @@ test("outcome → procedural: positive_reply bumps score and emits update event"
   }
 });
 
+test("outcome → procedural: winning broad outcomes emit a specific seed event", async (t) => {
+  const fx = await setupPg("br_seed_specific");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = createInMemoryEventBus();
+  try {
+    const scope = await seedRep(fx.pool);
+    const repo = createPostgresProceduralRepository({ pool: fx.pool });
+    const pattern_key = "conversation:email|intent:neutral|company:acme|stage:reply";
+    const seedPatternKey = `${pattern_key}|objection:review|next:send-details|seniority:founder`;
+    const ex = await repo.add(scope, {
+      pattern_key,
+      exemplar: { body: "Happy to send context first." },
+      initial_score: 0.5,
+    });
+
+    const wired = await wireOutcomeFeedback({
+      bus,
+      procedural: repo,
+      async attribution() {
+        return {
+          scope,
+          pattern_key,
+          exemplar_ids: [ex.id],
+          seed: {
+            pattern_key: seedPatternKey,
+            exemplar: {
+              subject: "Re: Security review",
+              body: "Happy to send the security notes first.",
+            },
+          },
+        };
+      },
+    });
+
+    await bus.publish({
+      workspace_id: scope.workspace_id,
+      event_type: "outcome.recorded",
+      source: "system",
+      payload: {
+        outcome_id: randomUUID(),
+        kind: "positive_reply",
+        score: 1,
+        conversation_id: null,
+        attributed_play_id: null,
+      },
+    });
+
+    await until(async () =>
+      bus.published.some((event) => event.event_type === "rep.memory.procedural.seeded"),
+    );
+
+    const seedEvents = bus.published.filter(
+      (event) => event.event_type === "rep.memory.procedural.seeded",
+    );
+    assert.equal(seedEvents.length, 1);
+    assert.equal(seedEvents[0]?.payload.pattern_key, seedPatternKey);
+    assert.equal(seedEvents[0]?.payload.rep_id, scope.rep_id);
+    assert.deepEqual(seedEvents[0]?.payload.exemplar, {
+      subject: "Re: Security review",
+      body: "Happy to send the security notes first.",
+    });
+    await wired.unsubscribe();
+  } finally {
+    await fx.close();
+  }
+});
+
 test("outcome → procedural: unsubscribe lowers score, increments loss_count", async (t) => {
   const fx = await setupPg("br_unsub");
   if (!fx) return t.skip("DATABASE_URL not set");

@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { randomUUID } from "node:crypto";
 import type {
   DurableEventProjection,
   EventBus,
@@ -37,6 +38,30 @@ export function createOutcomeMemoryUpdateProjection(
       const attribution = await opts.attribution(event);
       if (!attribution || attribution.exemplar_ids.length === 0) return;
       const exemplar_ids = [...new Set(attribution.exemplar_ids)];
+
+      if (
+        feedback.win &&
+        attribution.seed?.pattern_key &&
+        attribution.seed.pattern_key !== attribution.pattern_key
+      ) {
+        await opts.bus.publish({
+          workspace_id: event.workspace_id,
+          event_type: "rep.memory.procedural.seeded",
+          source: "system",
+          producer_ref: "projector:outcome-memory",
+          correlation_id: event.correlation_id ?? event.id,
+          causation_id: event.id,
+          idempotency_key: `memory:procedural:seed:${event.id}:${attribution.seed.pattern_key}`,
+          payload: {
+            outcome_event_id: event.id,
+            exemplar_id: randomUUID(),
+            rep_id: attribution.scope.rep_id,
+            pattern_key: attribution.seed.pattern_key,
+            exemplar: attribution.seed.exemplar,
+            initial_score: attribution.seed.initial_score ?? Math.min(1, 0.5 + feedback.delta_score),
+          },
+        });
+      }
 
       await opts.bus.publish({
         workspace_id: event.workspace_id,

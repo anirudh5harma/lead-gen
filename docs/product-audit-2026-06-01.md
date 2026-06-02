@@ -49,13 +49,15 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Added compact reply proof rows to the Conversation trust trace so inbound intent, reply draft, judge score, approval decision, channel send/defer state, procedural pattern, and outcome are readable as one user-facing chain.
 - Added semantic memory retrieval to the reply drafting path so the Rep replier can use known person/company facts, carry semantic subject refs through draft provenance, and give the hot-path judge the same memory context the writer saw.
 - Hardened Google OAuth return and dashboard access so verified same-email Supabase identities are reconciled through `workspace.member.accepted`, completed users land on the product, and signed-in users without a workspace cannot bypass onboarding by opening `/dashboard` directly.
+- Fixed a returning-user onboarding regression by trusting the current verified Google identity during same-email workspace recovery, even when the legacy auth row attached to the completed workspace was not email-confirmed.
 - Added inbound reply semantic extraction so the Rep replier stores clear objections, preferences, requested next steps, timing, unsubscribe/DNC state, and latest intent metadata on person/company memory before a positive Outcome happens.
+- Routed reply procedural memory through extracted semantic facts so drafts first look for objection type, requested next-step style, and seniority-specific reply exemplars, then fall back to broad intent/company patterns for existing learning.
+- Added outcome-seeded fact-aware reply exemplars: when a broad reply pattern wins after semantic facts identify a more specific objection/next-step/seniority pattern, the outcome memory bridge emits a replayable `rep.memory.procedural.seeded` event for that specific pattern before scoring the broad exemplar.
 
 ## Recommended Next Iteration
 
 1. Make Rep composition executable:
-   - Expand procedural reply patterns beyond intent/company into objection type, seniority, and channel-specific next-step style.
-   - Use the extracted reply facts to route follow-up drafts through more specific procedural pattern keys.
+   - Add the same fact-aware seeding strategy to non-email native-channel replies once LinkedIn outcomes carry enough structured relationship context.
 
 2. Productionize the native LinkedIn path:
    - Replace the dry-run LinkedIn transport with a real session/OAuth provider, rate-limit telemetry, and recovery UX before exposing real external sends broadly.
