@@ -98,6 +98,59 @@ test("product surface: webhook signal sources are push-only and skip poll mainte
   }
 });
 
+test("product surface: X search sources stay pollable with provider budgets", async (t) => {
+  const fx = await setupPg("product_x_source");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await configureWorkspaceSignalSource({
+      adapter: "x_search",
+      name: "X buying intent",
+      provider: "TwitterAPI.io",
+      query: '"alternative to Apollo" OR "switching from Apollo"',
+      signal_kind: "competitor_move",
+      max_daily_items: 50,
+      max_daily_calls: 5,
+      monthly_spend_cap_usd: 15,
+      poll_interval_minutes: 30,
+    });
+    const { rows } = await fx.pool.query<{
+      kind: string;
+      config: Record<string, unknown>;
+      properties: Record<string, unknown>;
+      poll_enabled: boolean;
+      poll_cadence_sec: number;
+    }>(
+      `select gs.kind::text as kind,
+              gs.config,
+              gs.properties,
+              wsc.enabled as poll_enabled,
+              wsc.poll_cadence_sec
+         from graph_sources gs
+         join workspace_source_configs wsc
+           on wsc.workspace_id = gs.workspace_id and wsc.source_id = gs.id
+        where gs.workspace_id = $1 and gs.name = 'X buying intent'`,
+      [boot.workspace_id],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, "other");
+    assert.equal(rows[0].poll_enabled, true);
+    assert.equal(rows[0].poll_cadence_sec, 1800);
+    assert.equal(rows[0].config.adapter, "x_search");
+    assert.equal(rows[0].config.provider, "twitterapi_io");
+    assert.equal(rows[0].config.query, '"alternative to Apollo" OR "switching from Apollo"');
+    assert.equal(rows[0].config.max_daily_items, 50);
+    assert.equal(rows[0].config.max_daily_calls, 5);
+    assert.equal(rows[0].properties.acquisition_mode, "workspace_adapter");
+    assert.equal(rows[0].properties.provider, "twitterapi_io");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
 test("product surface: failed workflows appear in the recovery queue", async (t) => {
   const fx = await setupPg("product_recovery");
   if (!fx) return t.skip("DATABASE_URL not set");

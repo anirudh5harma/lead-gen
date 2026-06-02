@@ -70,6 +70,7 @@ const SourceAdapterSchema = z.enum([
   "hn_whos_hiring",
   "product_hunt",
   "reddit",
+  "x_search",
   "webhook",
 ]);
 

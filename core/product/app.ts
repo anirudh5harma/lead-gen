@@ -199,6 +199,7 @@ export type WorkspaceSignalSourceAdapter =
   | "hn_whos_hiring"
   | "product_hunt"
   | "reddit"
+  | "x_search"
   | "webhook";
 
 export interface ProductWorkspaceSession {
@@ -2654,6 +2655,7 @@ function parseWorkspaceSignalSourceAdapter(
     case "hn_whos_hiring":
     case "product_hunt":
     case "reddit":
+    case "x_search":
     case "webhook":
       return adapter;
     default:
@@ -2672,6 +2674,7 @@ function sourceKindForAdapter(adapter: WorkspaceSignalSourceAdapter): SourceKind
     case "google_news":
       return "rss";
     case "reddit":
+    case "x_search":
       return "other";
     case "webhook":
       return "web_monitor";
@@ -2690,6 +2693,8 @@ function defaultWorkspaceSourceName(adapter: WorkspaceSignalSourceAdapter): stri
       return "Product Hunt launches";
     case "reddit":
       return "Reddit signals";
+    case "x_search":
+      return "X search signals";
     case "webhook":
       return "Push signal ingress";
     case "rss":
@@ -2721,6 +2726,15 @@ function sourceConfigForAdapter(
       return {
         ...base,
         subreddit: input.subreddit?.trim() || "SaaS",
+      };
+    case "x_search":
+      return {
+        ...base,
+        provider: signalSourceProvider(input.provider) ?? "x_official",
+        query: input.query?.trim() || input.name.trim(),
+        limit: 25,
+        max_items_per_poll: 10,
+        ...(sourceQuotaConfig(input) ?? {}),
       };
     case "webhook":
       return {
@@ -2807,6 +2821,8 @@ function defaultSignalKindForAdapter(adapter: WorkspaceSignalSourceAdapter): str
     case "rss":
     case "reddit":
       return "press_mention";
+    case "x_search":
+      return "competitor_move";
     case "webhook":
       return "other";
   }

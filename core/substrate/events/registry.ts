@@ -109,6 +109,7 @@ const WorkspaceSourceConfigured = z.object({
     "hn_whos_hiring",
     "product_hunt",
     "reddit",
+    "x_search",
     "webhook",
   ]),
   name: z.string().min(1),

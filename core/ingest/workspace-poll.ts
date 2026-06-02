@@ -13,6 +13,7 @@ import {
   type WorkspaceSignalDiscoveryContext,
   type WorkspaceSignalDiscoveryItem,
 } from "./workspace-discovery.ts";
+import { recordOverflow } from "./budget.ts";
 import type { WorkspaceAdapter } from "./adapters/_workspace-types.ts";
 import { getWorkspaceAdapter } from "./adapters/registry.ts";
 
@@ -58,6 +59,7 @@ export interface WorkspacePollSummary {
 
 interface ConfigRow {
   cursor: Record<string, unknown>;
+  config_overrides?: Record<string, unknown>;
 }
 
 interface WorkspacePollPreparation {
@@ -162,6 +164,33 @@ async function prepareWorkspacePoll(
       save_cursor: false,
     };
   }
+  const reservedCall = await reserveSourcePollCall(
+    deps.pool,
+    input.workspace_id,
+    input.source_id,
+    source.config,
+  );
+  if (!reservedCall) {
+    await recordOverflow(
+      deps.pool,
+      input.workspace_id,
+      input.source_id,
+      "source_daily_call_cap_reached",
+      {
+        provider: source.config.provider ?? null,
+        adapter: adapterId,
+        max_daily_calls: source.config.max_daily_calls ?? null,
+      },
+    );
+    summary.skipped_budget += 1;
+    return {
+      summary,
+      discovery: null,
+      items: [],
+      cursor: {},
+      save_cursor: false,
+    };
+  }
   const cursor = await loadWsCursor(deps.pool, input.workspace_id, input.source_id);
   const discovery = await prepareWorkspaceSignalDiscoveryContext(deps, {
     workspace_id: input.workspace_id,
@@ -202,6 +231,78 @@ async function prepareWorkspacePoll(
     cursor: buildNextCursor(cursor, pollResult.cursor, pollResult.items, items),
     save_cursor: true,
   };
+}
+
+async function reserveSourcePollCall(
+  pool: Pool,
+  workspace_id: string,
+  source_id: string,
+  sourceConfig: Record<string, unknown>,
+): Promise<boolean> {
+  const cap = positiveInteger(sourceConfig.max_daily_calls);
+  if (cap === null) return true;
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      `insert into workspace_source_configs (workspace_id, source_id)
+       values ($1, $2)
+       on conflict (workspace_id, source_id) do nothing`,
+      [workspace_id, source_id],
+    );
+    const { rows } = await client.query<ConfigRow>(
+      `select config_overrides
+         from workspace_source_configs
+        where workspace_id = $1 and source_id = $2
+        for update`,
+      [workspace_id, source_id],
+    );
+    const overrides = rows[0]?.config_overrides ?? {};
+    const current = sourceCallQuotaState(overrides);
+    const expired = Date.parse(current.window_start) < Date.now() - 24 * 60 * 60 * 1000;
+    const nextUsed = expired ? 0 : current.daily_calls_used;
+    if (nextUsed >= cap) {
+      await client.query("commit");
+      return false;
+    }
+    const nextOverrides = {
+      ...overrides,
+      source_call_quota: {
+        window_start: expired ? new Date().toISOString() : current.window_start,
+        daily_calls_used: nextUsed + 1,
+      },
+    };
+    await client.query(
+      `update workspace_source_configs
+          set config_overrides = $3::jsonb
+        where workspace_id = $1 and source_id = $2`,
+      [workspace_id, source_id, JSON.stringify(nextOverrides)],
+    );
+    await client.query("commit");
+    return true;
+  } catch (err) {
+    await client.query("rollback").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+function sourceCallQuotaState(configOverrides: Record<string, unknown>): {
+  window_start: string;
+  daily_calls_used: number;
+} {
+  const raw = configOverrides.source_call_quota;
+  if (!raw || typeof raw !== "object") {
+    return { window_start: new Date(0).toISOString(), daily_calls_used: 0 };
+  }
+  const record = raw as Record<string, unknown>;
+  const windowStart =
+    typeof record.window_start === "string" && !Number.isNaN(Date.parse(record.window_start))
+      ? record.window_start
+      : new Date(0).toISOString();
+  const used = positiveInteger(record.daily_calls_used) ?? 0;
+  return { window_start: windowStart, daily_calls_used: used };
 }
 
 async function processPreparedWorkspacePoll(
@@ -300,6 +401,13 @@ export function maxItemsPerPoll(config: Record<string, unknown>): number {
   const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
   if (!Number.isFinite(value) || value <= 0) return DEFAULT_MAX_ITEMS_PER_POLL;
   return Math.min(Math.floor(value), HARD_MAX_ITEMS_PER_POLL);
+}
+
+function positiveInteger(value: unknown): number | null {
+  if (typeof value !== "number") return null;
+  if (!Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  return normalized >= 0 ? normalized : null;
 }
 
 export function selectNextWorkspacePollItems(

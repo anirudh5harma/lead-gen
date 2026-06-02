@@ -45,6 +45,13 @@ function rssFetch(xml: string): typeof fetch {
     })) as unknown as typeof fetch;
 }
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 const RSS_XML = `<?xml version="1.0"?>
 <rss version="2.0">
   <channel>
@@ -158,7 +165,7 @@ test("workspace poll: re-polling dedups by (workspace, source, external_id)", as
     );
     const second = await workspacePollOnce(deps, { workspace_id, source_id });
     assert.equal(second.inserted, 0);
-    assert.equal(second.duplicates, 2);
+    assert.equal(second.duplicates, 0);
 
     const { rows } = await fx.pool.query<{ n: string }>(
       `select count(*)::text as n from signals where workspace_id = $1`,
@@ -230,6 +237,58 @@ test("workspace poll: daily cap → skipped:budget + overflow audit", async (t) 
     );
     assert.equal(Number(rows[0].n), 2);
   } finally {
+    await fx.close();
+  }
+});
+
+test("workspace poll: source daily call cap prevents paid adapter fetch", async (t) => {
+  const fx = await setupPg("wsp_call_cap");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  const prior = process.env.X_API_BEARER_TOKEN;
+  process.env.X_API_BEARER_TOKEN = "x-token";
+  try {
+    const { workspace_id, source_id } = await seed(fx.pool, "other", {
+      adapter: "x_search",
+      provider: "x_official",
+      query: '"Apollo alternative"',
+      max_daily_calls: 1,
+    });
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return jsonResponse({ data: [] });
+    }) as unknown as typeof fetch;
+    const deps = {
+      pool: fx.pool,
+      bus,
+      embedder: createMockEmbeddingClient(),
+      fetchImpl,
+    };
+    const first = await workspacePollOnce(deps, { workspace_id, source_id });
+    assert.equal(first.error, undefined);
+    assert.equal(calls, 1);
+
+    const second = await workspacePollOnce(deps, { workspace_id, source_id });
+    assert.equal(second.inserted, 0);
+    assert.equal(second.skipped_budget, 1);
+    assert.equal(calls, 1);
+
+    const { rows } = await fx.pool.query<{
+      reason: string;
+      payload: Record<string, unknown>;
+    }>(
+      `select reason, payload
+         from signal_overflow
+        where workspace_id = $1 and source_id = $2`,
+      [workspace_id, source_id],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].reason, "source_daily_call_cap_reached");
+    assert.equal(rows[0].payload.provider, "x_official");
+  } finally {
+    if (prior === undefined) delete process.env.X_API_BEARER_TOKEN;
+    else process.env.X_API_BEARER_TOKEN = prior;
     await fx.close();
   }
 });

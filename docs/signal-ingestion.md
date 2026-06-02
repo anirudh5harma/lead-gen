@@ -64,10 +64,11 @@ Recommended provider order:
 1. **Native/free direct adapters first**: HN, RSS/Google News, Product Hunt,
    bounded Reddit, ATS job boards, and public company/blog feeds. This is the
    cheapest path and already runs through durable `ingest_workspace_poll`.
-2. **Paid X provider gateway after query proof**: compare official X API with
-   SocialData/TwitterAPI.io-style providers for 5-10 tightly scoped searches.
-   Enforce source-level item/call quotas, monthly spend caps, kill switches,
-   provenance, and dedupe by tweet id before storing.
+2. **Paid X provider gateway after query proof**: use the `x_search` workspace
+   adapter to compare official X API with SocialData/TwitterAPI.io-style
+   providers for 5-10 tightly scoped searches. Enforce source-level item/call
+   quotas, monthly spend caps, kill switches, provenance, and dedupe by tweet id
+   before storing.
 3. **Targeted LinkedIn company-post experiment** only for known company pages
    and public posts, via an Apify/Bright Data/Data365-style provider that does
    not require cookies or user accounts. Keep it off the hot path until terms,
@@ -112,6 +113,13 @@ unless the upstream payload overrides it. Providers still send the normalized
 fetch/scrape mechanics stay outside the product spine. Free streams such as HN,
 Reddit, RSS, Google News, Product Hunt, and ATS job boards stay native adapters
 rather than paid push providers.
+
+For X, prefer `adapter: "x_search"` over webhook glue. It is a pure workspace
+adapter that reads provider credentials from environment
+(`X_API_BEARER_TOKEN`, `SOCIALDATA_API_KEY`, or `TWITTERAPI_IO_API_KEY`),
+normalizes posts into source-backed `Signal` candidates, and lets the durable
+workspace poll workflow own cursors, `max_daily_calls`, `max_daily_items`,
+embedding, dedupe, and `signal.discovered` publication.
 
 References to recheck before procurement or provider enablement:
 

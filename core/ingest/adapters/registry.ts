@@ -11,6 +11,7 @@ import { hnWhosHiringAdapter } from "./hn-whos-hiring.ts";
 import { productHuntAdapter } from "./product-hunt.ts";
 import { redditAdapter } from "./reddit.ts";
 import { googleNewsAdapter } from "./google-news.ts";
+import { xSearchAdapter } from "./x-search.ts";
 
 /**
  * Adapter registry. Lookup by id. Adapters are registered statically here
@@ -46,6 +47,7 @@ export const workspaceAdapters: Record<string, WorkspaceAdapter> = {
   product_hunt: productHuntAdapter,
   reddit: redditAdapter,
   google_news: googleNewsAdapter,
+  x_search: xSearchAdapter,
 };
 
 export function getWorkspaceAdapter(id: string): WorkspaceAdapter | undefined {

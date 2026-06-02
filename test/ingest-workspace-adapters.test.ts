@@ -13,6 +13,7 @@ import {
 import { productHuntAdapter } from "../core/ingest/adapters/product-hunt.ts";
 import { redditAdapter, RedditError } from "../core/ingest/adapters/reddit.ts";
 import { googleNewsAdapter } from "../core/ingest/adapters/google-news.ts";
+import { xSearchAdapter, XSearchError } from "../core/ingest/adapters/x-search.ts";
 import {
   listWorkspaceAdapterIds,
   workspaceAdapters,
@@ -34,7 +35,7 @@ function textResponse(text: string, status = 200, headers: Record<string, string
 
 // ─── Registry ─────────────────────────────────────────────────────────────
 
-test("workspace registry: all six adapters registered with expected kindHints", () => {
+test("workspace registry: adapters registered with expected kindHints", () => {
   assert.deepEqual(
     listWorkspaceAdapterIds().sort(),
     [
@@ -44,6 +45,7 @@ test("workspace registry: all six adapters registered with expected kindHints", 
       "product_hunt",
       "reddit",
       "rss",
+      "x_search",
     ],
   );
   assert.equal(workspaceAdapters.rss.kindHint, null);
@@ -52,6 +54,7 @@ test("workspace registry: all six adapters registered with expected kindHints", 
   assert.equal(workspaceAdapters.product_hunt.kindHint, "product_launch");
   assert.equal(workspaceAdapters.reddit.kindHint, null);
   assert.equal(workspaceAdapters.google_news.kindHint, null);
+  assert.equal(workspaceAdapters.x_search.kindHint, null);
 });
 
 // ─── RSS adapter ──────────────────────────────────────────────────────────
@@ -155,6 +158,135 @@ test("rss adapter: missing config.url is a no-op", async () => {
   });
   assert.equal(result.items.length, 0);
   assert.equal(calls, 0);
+});
+
+// ─── X search adapter ────────────────────────────────────────────────────
+
+test("x_search adapter: official X recent search normalizes tweets and authors", async () => {
+  const prior = process.env.X_API_BEARER_TOKEN;
+  process.env.X_API_BEARER_TOKEN = "x-token";
+  let capturedUrl = "";
+  let capturedAuth = "";
+  const fetchImpl = (async (url: string, init?: RequestInit) => {
+    capturedUrl = url;
+    capturedAuth = String((init?.headers as Record<string, string>)?.Authorization ?? "");
+    return jsonResponse({
+      data: [
+        {
+          id: "1800000000000000001",
+          text: "Looking for an Apollo alternative for outbound.",
+          author_id: "42",
+          created_at: "2026-06-03T01:02:03.000Z",
+          conversation_id: "1800000000000000000",
+          public_metrics: { retweet_count: 1, reply_count: 2 },
+        },
+      ],
+      includes: {
+        users: [{ id: "42", username: "anne", name: "Anne" }],
+      },
+    });
+  }) as unknown as typeof fetch;
+  try {
+    const result = await xSearchAdapter.poll({
+      workspace_id: "ws",
+      source: {
+        id: "s",
+        name: "X intent",
+        config: {
+          provider: "x_official",
+          query: '"Apollo alternative" -is:retweet lang:en',
+          limit: 10,
+        },
+      },
+      cursor: {},
+      fetchImpl,
+    });
+    assert.match(capturedUrl, /api\.x\.com\/2\/tweets\/search\/recent/);
+    assert.match(capturedUrl, /tweet\.fields=/);
+    assert.equal(capturedAuth, "Bearer x-token");
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].external_id, "1800000000000000001");
+    assert.equal(result.items[0].url, "https://x.com/anne/status/1800000000000000001");
+    assert.equal(result.items[0].provenance?.provider, "x_official");
+    assert.equal(result.items[0].structured?.author_handle, "anne");
+    assert.equal(result.cursor.provider, "x_official");
+  } finally {
+    if (prior === undefined) delete process.env.X_API_BEARER_TOKEN;
+    else process.env.X_API_BEARER_TOKEN = prior;
+  }
+});
+
+test("x_search adapter: TwitterAPI.io advanced search uses API key and since_time cursor", async () => {
+  const prior = process.env.TWITTERAPI_IO_API_KEY;
+  process.env.TWITTERAPI_IO_API_KEY = "twio-key";
+  let capturedUrl = "";
+  let capturedKey = "";
+  const fetchImpl = (async (url: string, init?: RequestInit) => {
+    capturedUrl = url;
+    capturedKey = String((init?.headers as Record<string, string>)?.["X-API-Key"] ?? "");
+    return jsonResponse({
+      tweets: [
+        {
+          id: "1900000000000000001",
+          text: "We are switching from our current outbound tool.",
+          createdAt: "2026-06-03T02:00:00.000Z",
+          user: { username: "kai", name: "Kai" },
+          metrics: { reply_count: 3 },
+        },
+      ],
+    });
+  }) as unknown as typeof fetch;
+  try {
+    const result = await xSearchAdapter.poll({
+      workspace_id: "ws",
+      source: {
+        id: "s",
+        name: "X switchers",
+        config: {
+          provider: "twitterapi_io",
+          query: '"switching from" outbound',
+        },
+      },
+      cursor: { last_polled_at: "2026-06-03T01:00:00.000Z" },
+      fetchImpl,
+    });
+    assert.match(capturedUrl, /api\.twitterapi\.io\/twitter\/tweet\/advanced_search/);
+    assert.match(decodeURIComponent(capturedUrl), /since_time:1780448340/);
+    assert.equal(capturedKey, "twio-key");
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].url, "https://x.com/kai/status/1900000000000000001");
+    assert.equal(result.items[0].provenance?.provider, "twitterapi_io");
+  } finally {
+    if (prior === undefined) delete process.env.TWITTERAPI_IO_API_KEY;
+    else process.env.TWITTERAPI_IO_API_KEY = prior;
+  }
+});
+
+test("x_search adapter: missing provider token fails before fetch", async () => {
+  const prior = process.env.SOCIALDATA_API_KEY;
+  delete process.env.SOCIALDATA_API_KEY;
+  let calls = 0;
+  try {
+    await assert.rejects(
+      xSearchAdapter.poll({
+        workspace_id: "ws",
+        source: {
+          id: "s",
+          name: "X source",
+          config: { provider: "socialdata", query: "outbound recommendations" },
+        },
+        cursor: {},
+        fetchImpl: (async () => {
+          calls += 1;
+          return jsonResponse({});
+        }) as unknown as typeof fetch,
+      }),
+      (err) => err instanceof XSearchError && /SOCIALDATA_API_KEY/.test(err.message),
+    );
+    assert.equal(calls, 0);
+  } finally {
+    if (prior !== undefined) process.env.SOCIALDATA_API_KEY = prior;
+  }
 });
 
 // ─── HN front ─────────────────────────────────────────────────────────────
