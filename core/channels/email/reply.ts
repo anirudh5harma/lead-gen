@@ -198,6 +198,7 @@ export async function handleInboundEmail(
     );
     const rep = await loadRepForConversation(pool, matched.conversation_id);
     if (rep) {
+      const memorySubjects = await loadReplyMemorySubjects(pool, matched.conversation_id);
       const replier = createReplierRole({ classifier });
       const composedRep = composeRep(rep, { replier });
       const replierRole = composedRep.role("replier") as RoleAgent<ReplierBrief, ReplierResult>;
@@ -208,6 +209,10 @@ export async function handleInboundEmail(
             channel: "email",
             prior_outbound_subject: priorOutbound.rows[0]?.subject,
             prior_outbound_excerpt: priorOutbound.rows[0]?.body?.slice(0, 800),
+          },
+          counterparty: {
+            person_id: memorySubjects?.person_id ?? null,
+            company_id: memorySubjects?.company_id ?? null,
           },
           inbound: {
             message_id: inbound_message_id,
@@ -243,6 +248,8 @@ export async function handleInboundEmail(
             confidence: result.classification.confidence,
             handoff_required: result.handoff_required,
             outcome_kind: result.outcome?.kind ?? null,
+            semantic_subjects: result.semantic_subjects,
+            semantic_facts: result.semantic_facts,
           },
           completed_at: new Date().toISOString(),
         },
@@ -398,6 +405,24 @@ async function matchConversation(
     [inbound.workspace_id, inbound.from.email],
   );
   return res.rows[0] ?? null;
+}
+
+async function loadReplyMemorySubjects(
+  pool: Pool,
+  conversation_id: string,
+): Promise<{ person_id: string | null; company_id: string | null } | null> {
+  const { rows } = await pool.query<{
+    person_id: string | null;
+    company_id: string | null;
+  }>(
+    `select counterparty_person_id as person_id,
+            counterparty_company_id as company_id
+       from conversations
+      where id = $1
+      limit 1`,
+    [conversation_id],
+  );
+  return rows[0] ?? null;
 }
 
 function outcomeForReplyIntent(

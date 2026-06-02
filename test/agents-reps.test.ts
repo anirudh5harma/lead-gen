@@ -155,6 +155,74 @@ test("replier role classifies inbound replies and writes episodic memory", async
   assert.match(recent[0]?.content ?? "", /positive/);
 });
 
+test("replier role extracts reply objections and preferences into semantic memory", async () => {
+  const rep = fakeRep();
+  const memory = createInMemoryRepMemory();
+  const personId = randomUUID();
+  const companyId = randomUUID();
+  const replier = createReplierRole({
+    classifier: createFixedIntentClassifier(
+      "neutral",
+      0.81,
+      "Asked for more detail before scheduling.",
+    ),
+  });
+
+  const result = await replier.invoke(
+    {
+      conversation: {
+        id: randomUUID(),
+        channel: "email",
+        prior_outbound_subject: "Security review",
+        prior_outbound_excerpt: "Worth comparing notes on the rollout?",
+      },
+      counterparty: {
+        person_id: personId,
+        company_id: companyId,
+      },
+      inbound: {
+        message_id: randomUUID(),
+        subject: "Re: Security review",
+        body_text:
+          "We need to review security before booking time. Prefer email first; send over two concrete options for next week.",
+        from_email: "nisha@example.com",
+        received_at: "2026-06-02T09:00:00.000Z",
+      },
+    },
+    {
+      rep,
+      tool_context: { workspace_id: rep.workspace_id, rep_id: rep.id },
+      memory,
+      judge: createNoopJudge(),
+    },
+  );
+
+  assert.deepEqual(result.semantic_subjects, [
+    `person:${personId}`,
+    `company:${companyId}`,
+  ]);
+  assert.equal(result.semantic_facts.latest_reply_intent, "neutral");
+  assert.match(String(result.semantic_facts.objection), /review security/);
+  assert.match(String(result.semantic_facts.preference), /Prefer email first/);
+  assert.match(String(result.semantic_facts.requested_next_step), /send over two concrete options/);
+  assert.match(String(result.semantic_facts.timing), /next week/);
+
+  const personMemory = await memory.semantic.get(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    "person",
+    personId,
+  );
+  const companyMemory = await memory.semantic.get(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    "company",
+    companyId,
+  );
+  assert.equal(personMemory?.facts.latest_reply_intent, "neutral");
+  assert.match(String(personMemory?.facts.objection), /review security/);
+  assert.match(String(companyMemory?.facts.latest_contact_objection), /review security/);
+  assert.match(String(companyMemory?.facts.latest_contact_preference), /Prefer email first/);
+});
+
 test("reply draft role retrieves procedural memory for the reply intent", async () => {
   const rep = fakeRep();
   const memory = createInMemoryRepMemory();

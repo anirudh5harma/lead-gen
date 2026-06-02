@@ -4,7 +4,12 @@ import type {
   ReplyIntent,
 } from "../../../channels/email/intent.ts";
 import type { LLMClient } from "../../llm/types.ts";
-import type { ProceduralExemplar, SemanticEntry } from "../../memory/types.ts";
+import type {
+  MemoryScope,
+  ProceduralExemplar,
+  SemanticEntry,
+  SemanticRepository,
+} from "../../memory/types.ts";
 import type { RoleAgent } from "../types.ts";
 
 /**
@@ -27,6 +32,10 @@ export interface ReplierBrief {
     prior_outbound_subject?: string | null;
     prior_outbound_excerpt?: string | null;
   };
+  counterparty?: {
+    person_id?: string | null;
+    company_id?: string | null;
+  };
   inbound: {
     message_id: string;
     subject: string;
@@ -45,6 +54,8 @@ export interface ReplierResult {
   classification: IntentClassification;
   outcome: ReplierOutcomeRecommendation | null;
   handoff_required: boolean;
+  semantic_subjects: string[];
+  semantic_facts: Record<string, unknown>;
 }
 
 export interface ReplierRoleOptions {
@@ -99,6 +110,43 @@ const OUTCOME_BY_INTENT: Partial<Record<ReplyIntent, ReplierOutcomeRecommendatio
   do_not_contact: { kind: "do_not_contact", score: -1 },
 };
 
+const OBJECTION_PATTERNS = [
+  /\bnot\s+(?:a\s+)?priority\b/i,
+  /\bno\s+(?:budget|time|capacity|bandwidth)\b/i,
+  /\btoo\s+(?:expensive|early|busy)\b/i,
+  /\balready\s+(?:use|using|have|working)\b/i,
+  /\bneed\s+to\s+(?:check|review|discuss|think)\b/i,
+  /\bnot\s+interested\b/i,
+  /\bconcern(?:ed)?\b/i,
+];
+
+const PREFERENCE_PATTERNS = [
+  /\bprefer\b/i,
+  /\bwould\s+rather\b/i,
+  /\bbest\s+way\b/i,
+  /\bsend\s+(?:me|over|across)\b/i,
+  /\bemail\s+me\b/i,
+  /\bkeep\s+it\s+(?:brief|short|tight|focused)\b/i,
+];
+
+const NEXT_STEP_PATTERNS = [
+  /\bsend\s+(?:me|over|across)\b/i,
+  /\bfollow\s+up\b/i,
+  /\bloop\s+in\b/i,
+  /\bbook\b/i,
+  /\bcall\b/i,
+  /\bchat\b/i,
+  /\bmeet\b/i,
+  /\bcalendar\b/i,
+];
+
+const TIMING_PATTERNS = [
+  /\b(?:next|this)\s+(?:week|month|quarter)\b/i,
+  /\b(?:monday|tuesday|wednesday|thursday|friday|today|tomorrow)\b/i,
+  /\b(?:q[1-4]|january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+  /\b(?:later|soon)\b/i,
+];
+
 export function createReplierRole(
   opts: ReplierRoleOptions,
 ): RoleAgent<ReplierBrief, ReplierResult> {
@@ -116,8 +164,16 @@ export function createReplierRole(
         },
       });
       const outcome = OUTCOME_BY_INTENT[classification.intent] ?? null;
+      const scope = { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id };
+      const semantic_facts = replySemanticFacts(brief, classification, outcome);
+      const semantic_subjects = await writeReplySemanticMemory(
+        brief,
+        ctx.memory.semantic,
+        scope,
+        semantic_facts,
+      );
       await ctx.memory.episodic.append(
-        { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id },
+        scope,
         {
           kind: "reply.classified",
           content: [
@@ -140,9 +196,114 @@ export function createReplierRole(
         classification,
         outcome,
         handoff_required: classification.intent === "positive" || classification.intent === "neutral",
+        semantic_subjects,
+        semantic_facts,
       };
     },
   };
+}
+
+function replySemanticFacts(
+  brief: ReplierBrief,
+  classification: IntentClassification,
+  outcome: ReplierOutcomeRecommendation | null,
+): Record<string, unknown> {
+  const body = brief.inbound.body_text;
+  const facts: Record<string, unknown> = {
+    latest_reply_intent: classification.intent,
+    latest_reply_confidence: Number(classification.confidence.toFixed(2)),
+    latest_reply_reason: classification.reason,
+    latest_reply_at: brief.inbound.received_at,
+    latest_reply_excerpt: excerpt(body, 320),
+  };
+
+  const objection = sentenceMatching(body, OBJECTION_PATTERNS);
+  if (objection) facts.objection = objection;
+  const preference = sentenceMatching(body, PREFERENCE_PATTERNS);
+  if (preference) facts.preference = preference;
+  const requested_next_step = sentenceMatching(body, NEXT_STEP_PATTERNS);
+  if (requested_next_step) facts.requested_next_step = requested_next_step;
+  const timing = sentenceMatching(body, TIMING_PATTERNS);
+  if (timing) facts.timing = timing;
+
+  if (classification.intent === "unsubscribe") {
+    facts.unsubscribe_requested = true;
+    facts.channel_preference = "do_not_email";
+  }
+  if (classification.intent === "do_not_contact" || outcome?.kind === "do_not_contact") {
+    facts.do_not_contact = true;
+    facts.channel_preference = "do_not_contact";
+  }
+
+  return facts;
+}
+
+async function writeReplySemanticMemory(
+  brief: ReplierBrief,
+  semantic: SemanticRepository,
+  scope: MemoryScope,
+  facts: Record<string, unknown>,
+): Promise<string[]> {
+  const subjects = [
+    brief.counterparty?.person_id
+      ? { subject_type: "person" as const, subject_id: brief.counterparty.person_id, facts }
+      : null,
+    brief.counterparty?.company_id
+      ? {
+          subject_type: "company" as const,
+          subject_id: brief.counterparty.company_id,
+          facts: companyReplyFacts(facts),
+        }
+      : null,
+  ].filter(
+    (subject): subject is {
+      subject_type: "person" | "company";
+      subject_id: string;
+      facts: Record<string, unknown>;
+    } => Boolean(subject),
+  );
+
+  const written: string[] = [];
+  for (const subject of subjects) {
+    await semantic.upsert(scope, {
+      subject_type: subject.subject_type,
+      subject_id: subject.subject_id,
+      facts: subject.facts,
+      confidence: 0.72,
+    });
+    written.push(`${subject.subject_type}:${subject.subject_id}`);
+  }
+  return written;
+}
+
+function companyReplyFacts(facts: Record<string, unknown>): Record<string, unknown> {
+  const companyFacts: Record<string, unknown> = {
+    latest_contact_reply_intent: facts.latest_reply_intent,
+    latest_contact_reply_at: facts.latest_reply_at,
+  };
+  for (const key of ["objection", "preference", "requested_next_step", "timing"] as const) {
+    if (facts[key]) companyFacts[`latest_contact_${key}`] = facts[key];
+  }
+  return companyFacts;
+}
+
+function sentenceMatching(body: string, patterns: RegExp[]): string | null {
+  return sentences(body).find((sentence) => patterns.some((pattern) => pattern.test(sentence))) ?? null;
+}
+
+function sentences(body: string): string[] {
+  return body
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+|\n+/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .map((sentence) => excerpt(sentence, 260));
+}
+
+function excerpt(value: string, max: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, max - 1).trimEnd()}...`;
 }
 
 function replySubject(subject: string | null): string {
