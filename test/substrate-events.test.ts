@@ -247,3 +247,21 @@ test("event bus: idempotency key returns the original event without redispatch",
   assert.equal(bus.published.length, 1);
   assert.deepEqual(seen, [first.id]);
 });
+
+test("event bus: event dispatch redrive is a typed audit event", async () => {
+  const bus = createInMemoryEventBus();
+  const event = await bus.publish({
+    workspace_id: randomUUID(),
+    event_type: "event.dispatch.redriven",
+    source: "user",
+    producer_ref: randomUUID(),
+    causation_id: randomUUID(),
+    payload: {
+      event_id: randomUUID(),
+      redriven_by: randomUUID(),
+      status: "pending",
+    },
+  });
+
+  assert.equal(event.payload.status, "pending");
+});

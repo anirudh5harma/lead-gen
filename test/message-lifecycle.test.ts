@@ -165,11 +165,13 @@ test("message lifecycle projection materializes draft and channel lifecycle even
       defer_reason: "daily_cap_reached",
       retry_after: null,
       detail: "0/0",
+      channel_account_id,
     }),
   );
   assert.match(calls[5]!.sql, /eval_notes/);
   assert.equal(calls[5]!.values?.[0], message_id);
   assert.equal(calls[5]!.values?.[3], "email");
+  assert.equal(calls[5]!.values?.[4], channel_account_id);
   const notes = JSON.parse(String(calls[5]!.values?.[2])) as {
     defer_reason: string;
     defer_detail: string | null;

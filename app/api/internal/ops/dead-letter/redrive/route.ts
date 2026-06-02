@@ -1,6 +1,5 @@
 import type { NextRequest } from "next/server";
-import { getPool } from "@/core/substrate/storage/index.ts";
-import { redriveDeadLetteredDispatch } from "@/core/substrate/events/index.ts";
+import { redriveDeadLetteredEventDispatch } from "@/core/product/app";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 
 /**
@@ -9,9 +8,9 @@ import { getActiveWorkspaceSession } from "@/lib/workspace";
  * so the redrive worker picks it up on the next pass.
  *
  * This is a *flip*, not a re-publish — the canonical event in `events`
- * remains the same; we're only nudging delivery. Therefore the route
- * works even if NATS is still down: the worker will retry the same way
- * the regular pending dispatch loop does.
+ * remains the same; we're only nudging delivery. The product-layer wrapper
+ * also emits `event.dispatch.redriven` so operator recovery stays auditably
+ * visible on the typed event spine.
  */
 export const dynamic = "force-dynamic";
 
@@ -24,8 +23,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!session) {
     return new Response("unauthorized", { status: 401 });
   }
-  const redriven = await redriveDeadLetteredDispatch(getPool(), eventId, {
+  const redriven = await redriveDeadLetteredEventDispatch(eventId, {
     workspace_id: session.workspace.id,
+    user_id: session.user_id,
   });
   if (!redriven) {
     return new Response("not found in dead-letter queue", { status: 404 });

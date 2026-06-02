@@ -37,12 +37,18 @@ import {
   type EmailTransport,
   type EmailChannel,
 } from "../channels/email/index.ts";
+import { createChannelAccountLifecycleProjection } from "../channels/account-lifecycle.ts";
 import {
   createDryRunLinkedInTransport,
+  createHttpLinkedInTransport,
+  createLinkedInProviderAuthorizationProjection,
   createNativeLinkedInChannel,
+  resolveLinkedInProviderAuthUrl,
+  createUnconfiguredLinkedInTransport,
   type LinkedInChannel,
   type LinkedInChannelName,
   type LinkedInSessionAccount,
+  type LinkedInTransport,
 } from "../channels/linkedin/index.ts";
 import { createMessageLifecycleProjection } from "../channels/message-lifecycle.ts";
 import { createReplyLifecycleProjection } from "../channels/reply-lifecycle.ts";
@@ -119,14 +125,18 @@ import {
   ProductEnvironmentError,
   requireOutboundEmailExecutionEnvironment,
   resolveProductEmailTransportMode,
+  resolveProductLinkedInTransportMode,
 } from "./env.ts";
 import {
+  listDeadLetteredDispatches,
   runDurableEventProjectionsOnce,
   redriveDeadLetteredDispatch,
+  type DeadLetteredDispatch,
   type EventBus,
   type DurableEventProjection,
   type DurableProjectionTick,
   type PublishedEvent,
+  type Subscription,
 } from "../substrate/events/index.ts";
 import {
   getPool,
@@ -281,6 +291,12 @@ export interface ConfigureSignalLinkedInPlayInput {
   action?: LinkedInChannelName;
   daily_cap?: number;
   approval?: SignalToLinkedInPlayInput["linkedin_approval"];
+}
+
+export interface LinkedInAccountConnectIntent {
+  workspace_id: string;
+  connect_url: string;
+  provider_configured: boolean;
 }
 
 export interface ConfigureActivationInput {
@@ -1962,6 +1978,18 @@ export async function configureWorkspaceEmailAccount(
   return { workspace_id: session.workspace_id, channel_account_id };
 }
 
+export async function getLinkedInAccountConnectIntent(
+  session: ProductWorkspaceSession,
+): Promise<LinkedInAccountConnectIntent> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return {
+    workspace_id: session.workspace_id,
+    connect_url: productRouteUrl("/api/auth/linkedin"),
+    provider_configured: resolveLinkedInProviderAuthUrl() !== null,
+  };
+}
+
 export async function configureEmailAccount(
   input: ConfigureEmailInput,
   session?: ProductWorkspaceSession,
@@ -2004,6 +2032,12 @@ export async function configureEmailAccount(
   });
   await projectEmailAccountConfigured(engine.pool, event);
   return boot;
+}
+
+function productRouteUrl(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const origin = process.env.APP_ORIGIN?.replace(/\/$/, "");
+  return origin ? `${origin}${normalized}` : normalized;
 }
 
 async function projectEmailAccountConfigured(
@@ -2291,10 +2325,15 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       eventTypes: ["channel.account.configured"],
       apply: (event) => projectEmailAccountConfigured(engine.pool, event),
     },
+    createLinkedInProviderAuthorizationProjection({
+      pool: engine.pool,
+      bus: engine.bus,
+    }),
     createEmailDeliveryFeedbackProjection({
       pool: engine.pool,
       bus: engine.bus,
     }),
+    createChannelAccountLifecycleProjection(engine.pool),
     createConversationLifecycleProjection(engine.pool),
     createMessageLifecycleProjection(engine.pool),
     createReplyLifecycleProjection(engine.pool),
@@ -3064,8 +3103,20 @@ async function createDatabaseBackedLinkedInChannel(
       daily_cap: Math.max(0, Math.trunc(row.daily_cap ?? 0)),
       daily_used: Math.max(0, Math.trunc(row.daily_used ?? 0)),
     })),
-    transport: createDryRunLinkedInTransport(),
+    transport: createProductLinkedInTransport(),
   });
+}
+
+function createProductLinkedInTransport(): LinkedInTransport {
+  const mode = resolveProductLinkedInTransportMode();
+  if (mode === "provider") {
+    return createHttpLinkedInTransport({
+      endpoint: process.env.LINKEDIN_PROVIDER_URL!,
+      apiKey: process.env.LINKEDIN_PROVIDER_API_KEY!,
+    });
+  }
+  if (mode === "dry-run") return createDryRunLinkedInTransport();
+  return createUnconfiguredLinkedInTransport();
 }
 
 async function startSignalEmailPlay(
@@ -3385,6 +3436,49 @@ export async function dispatchReplyEmailPlaysOnce(
     dispatched++;
   }
   return dispatched;
+}
+
+type ProductDispatchEventType = "signal.matched" | "reply.classified";
+
+interface ProductEventDispatchSubscriptionAdapter {
+  subscribe(
+    eventType: ProductDispatchEventType,
+    handler: (event: PublishedEvent) => Promise<void>,
+    durableName: string,
+  ): Promise<Subscription>;
+}
+
+interface ProductEventDispatcherOptions {
+  limit?: number;
+  dispatchSignalPlays?: typeof dispatchSignalPlaysOnce;
+  dispatchReplyEmailPlays?: typeof dispatchReplyEmailPlaysOnce;
+}
+
+export async function registerProductEventDispatchers(
+  adapter: ProductEventDispatchSubscriptionAdapter,
+  opts: ProductEventDispatcherOptions = {},
+): Promise<Subscription[]> {
+  const limit = opts.limit ?? 25;
+  const dispatchSignalPlays = opts.dispatchSignalPlays ?? dispatchSignalPlaysOnce;
+  const dispatchReplyEmailPlays =
+    opts.dispatchReplyEmailPlays ?? dispatchReplyEmailPlaysOnce;
+
+  const signalSubscription = await adapter.subscribe(
+    "signal.matched",
+    async () => {
+      await dispatchSignalPlays({ limit });
+    },
+    "product-signal-play-dispatcher-v1",
+  );
+  const replySubscription = await adapter.subscribe(
+    "reply.classified",
+    async () => {
+      await dispatchReplyEmailPlays({ limit });
+    },
+    "product-reply-play-dispatcher-v1",
+  );
+
+  return [signalSubscription, replySubscription];
 }
 
 interface RssSourceRow {
@@ -3791,9 +3885,33 @@ export async function redriveDeadLetteredEventDispatch(
 ): Promise<boolean> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  return redriveDeadLetteredDispatch(engine.pool, event_id, {
+  const redriven = await redriveDeadLetteredDispatch(engine.pool, event_id, {
     workspace_id: session.workspace_id,
   });
+  if (!redriven) return false;
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "event.dispatch.redriven",
+    source: "user",
+    producer_ref: session.user_id,
+    correlation_id: event_id,
+    causation_id: event_id,
+    payload: {
+      event_id,
+      redriven_by: session.user_id,
+      status: "pending",
+    },
+  });
+  return true;
+}
+
+export async function listDeadLetteredEventDispatches(
+  session: ProductWorkspaceSession,
+  input: { limit?: number } = {},
+): Promise<DeadLetteredDispatch[]> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return listDeadLetteredDispatches(engine.pool, session.workspace_id, input.limit ?? 50);
 }
 
 function simulateOutcomeFromSignal(

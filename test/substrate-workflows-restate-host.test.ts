@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import * as restate from "@restatedev/restate-sdk";
 import { randomUUID } from "node:crypto";
 import { defineWorkflow } from "../core/substrate/workflows/define.ts";
+import { createRestateRuntimeProbeWorkflow } from "../core/substrate/workflows/probe.ts";
 import {
   createRestateWorkflowComponent,
   createRunContext,
+  serveRestateWorkflows,
   type RestateWorkflowRequest,
 } from "../core/substrate/workflows/adapters/restate-host.ts";
 import type {
@@ -103,6 +105,27 @@ const request = {
   },
 } satisfies RestateWorkflowRequest<{ value: number }>;
 
+test("Restate HTTP/1 host keeps bidirectional protocol enabled", async () => {
+  const sentinel = new Error("stop before binding test server");
+  const definition = defineWorkflow<null, void>({
+    name: "protocol_guard",
+    version: "1",
+    async run() {},
+  });
+
+  await assert.rejects(
+    serveRestateWorkflows({
+      workflows: [definition],
+      http1: true,
+      createEndpointHandler(options) {
+        assert.equal(options.bidirectional, true);
+        throw sentinel;
+      },
+    }),
+    sentinel,
+  );
+});
+
 test("Restate host bridge maps WorkflowDefinition.run to a native workflow run handler", async () => {
   const definition = defineWorkflow<{ value: number }, number>({
     name: "demo_workflow",
@@ -191,6 +214,47 @@ test("Restate platform context checkpoints work but rejects unscoped event publi
     (err: unknown) => err instanceof restate.TerminalError,
   );
   assert.equal(bus.events.length, 0);
+});
+
+test("Restate runtime probe completes one platform checkpoint", async () => {
+  const component = createRestateWorkflowComponent(createRestateRuntimeProbeWorkflow());
+  const fx = fakeCtx({ invocationId: "inv-probe" });
+
+  const output = await (component as never as {
+    workflow: {
+      run: (
+        ctx: restate.WorkflowContext,
+        input: RestateWorkflowRequest<{ marker: string }>,
+      ) => Promise<{ marker: string; checkpoint: string }>;
+    };
+  }).workflow.run(fx.ctx, {
+    request: { marker: "probe-test" },
+    metadata: { execution_scope: "platform", workspace_id: null },
+  });
+
+  assert.deepEqual(output, { marker: "probe-test", checkpoint: "ok" });
+  assert.deepEqual(fx.runs, [{ name: "checkpoint", options: {} }]);
+});
+
+test("Restate runtime probe rejects workspace-scoped execution", async () => {
+  const component = createRestateWorkflowComponent(createRestateRuntimeProbeWorkflow());
+  const fx = fakeCtx({ invocationId: "inv-probe-bad-scope" });
+
+  await assert.rejects(
+    (component as never as {
+      workflow: {
+        run: (
+          ctx: restate.WorkflowContext,
+          input: RestateWorkflowRequest<{ marker: string }>,
+        ) => Promise<{ marker: string; checkpoint: string }>;
+      };
+    }).workflow.run(fx.ctx, {
+      request: { marker: "probe-test" },
+      metadata: { workspace_id: request.metadata.workspace_id },
+    }),
+    /platform scope/,
+  );
+  assert.deepEqual(fx.runs, []);
 });
 
 test("Restate RunContext requests approval with an awakeable id", async () => {

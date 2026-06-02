@@ -293,6 +293,12 @@ const WorkflowRunRetried = z.object({
   retry_run_id: z.string().uuid(),
 });
 
+const EventDispatchRedriven = z.object({
+  event_id: z.string().uuid(),
+  redriven_by: z.string().uuid(),
+  status: z.literal("pending"),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Draft / send pipeline — the hot-path eval lives here.
 // `draft.judged` ALWAYS fires before `message.queued` or `message.sent`.
@@ -442,6 +448,7 @@ const MessageDeferred = z.object({
   defer_reason: z.string(),
   retry_after: z.string().datetime().nullable(),
   detail: z.string().nullable().optional(),
+  channel_account_id: z.string().uuid().nullable().optional(),
 });
 
 const MessageDelivered = z.object({
@@ -544,6 +551,9 @@ const OutcomeRecorded = z.object({
 const ChannelAccountConnected = z.object({
   channel_account_id: z.string().uuid(),
   kind: z.string(),
+  account_display_name: z.string().min(1).optional(),
+  provider_account_id: z.string().min(1).optional(),
+  provider_event_id: z.string().min(1).optional(),
 });
 
 const ChannelAccountConfigured = z.object({
@@ -558,6 +568,28 @@ const ChannelAccountErrored = z.object({
   channel_account_id: z.string().uuid(),
   kind: z.string(),
   error: z.string(),
+  status: z.enum([
+    "connected",
+    "needs_reauth",
+    "rate_limited",
+    "suspended",
+    "disconnected",
+  ]).nullable().optional(),
+  account_display_name: z.string().min(1).optional(),
+  provider_account_id: z.string().min(1).optional(),
+  provider_event_id: z.string().min(1).optional(),
+  provider_incident_id: z.string().min(1).optional(),
+  retry_after: z.string().min(1).optional(),
+});
+
+const LinkedInAccountAuthorizationReceived = z.object({
+  channel_account_id: z.string().uuid(),
+  kind: z.enum(["linkedin_session", "linkedin_oauth"]),
+  display_name: z.string().min(1),
+  provider_account_id: z.string().min(1),
+  profile_url: z.string().url().nullable().optional(),
+  daily_cap: z.number().int().nonnegative().nullable().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
 });
 
 const ChannelDomainRecord = z.object({
@@ -692,6 +724,7 @@ export const eventRegistry = {
   "workflow.step.failed": WorkflowStepFailed,
   "workflow.run.failed": WorkflowRunFailed,
   "workflow.run.retried": WorkflowRunRetried,
+  "event.dispatch.redriven": EventDispatchRedriven,
 
   "draft.proposed": DraftProposed,
   "draft.judged": DraftJudged,
@@ -726,6 +759,7 @@ export const eventRegistry = {
   "channel.account.connected": ChannelAccountConnected,
   "channel.account.configured": ChannelAccountConfigured,
   "channel.account.errored": ChannelAccountErrored,
+  "linkedin.account.authorization.received": LinkedInAccountAuthorizationReceived,
   "channel.domain.provisioned": ChannelDomainSnapshot,
   "channel.domain.verification.requested": ChannelDomainVerificationRequested,
   "channel.domain.status.received": ChannelDomainSnapshot,

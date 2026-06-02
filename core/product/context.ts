@@ -185,13 +185,11 @@ export async function getWorkspaceAgentContext(
       ),
     ),
     "",
-    "## Deliverability",
-    listOrEmpty(
-      state.channelAccounts.map(
-        (account) =>
-          `- ${line(account.display_name)} status=${account.status} domain=${account.domain ?? "-"} warmup=${account.warmup_state ?? "-"} cap=${account.daily_used}/${account.current_daily_cap ?? account.daily_cap ?? "-"} bounce24h=${account.bounce_rate_24h ?? "-"}`,
-      ),
-    ),
+    "## Channel Readiness",
+    formatChannelReadiness(state.channelAccounts),
+    "",
+    "## Email Deliverability",
+    formatEmailDeliverability(state.channelAccounts),
     "",
     "## Recovery",
     listOrEmpty(
@@ -221,6 +219,32 @@ export async function getWorkspaceAgentContext(
 
 function listOrEmpty(items: string[]): string {
   return items.length > 0 ? items.join("\n") : "- none";
+}
+
+type ContextChannelAccount = Awaited<ReturnType<typeof getAppState>>["channelAccounts"][number];
+
+export function formatChannelReadiness(accounts: readonly ContextChannelAccount[]): string {
+  return listOrEmpty(
+    accounts.map((account) => {
+      const cap = account.daily_cap == null ? "unlimited" : account.daily_cap;
+      const provider =
+        account.kind.startsWith("linkedin_") && account.provider_status
+          ? ` provider=${account.provider_status}`
+          : "";
+      return `- ${line(account.display_name)} kind=${account.kind} status=${account.status} used=${account.daily_used}/${cap}${provider}`;
+    }),
+  );
+}
+
+export function formatEmailDeliverability(accounts: readonly ContextChannelAccount[]): string {
+  return listOrEmpty(
+    accounts
+      .filter((account) => account.kind === "email_domain" || account.kind === "email_oauth")
+      .map(
+        (account) =>
+          `- ${line(account.display_name)} status=${account.status} domain=${account.domain ?? "-"} warmup=${account.warmup_state ?? "-"} cap=${account.daily_used}/${account.current_daily_cap ?? account.daily_cap ?? "-"} bounce24h=${account.bounce_rate_24h ?? "-"}`,
+      ),
+  );
 }
 
 function line(value: unknown): string {

@@ -1,20 +1,12 @@
+import { pathToFileURL } from "node:url";
 import { restateBearerFromEnv } from "../core/substrate/workflows/index.ts";
-
-const EXPECTED_SERVICES = [
-  "series_a_cold_open",
-  "ingest_catalog_poll",
-  "ingest_workspace_poll",
-  "ingest_expire_sweep",
-  "email_domain_warmup_sweep",
-  "email_outlook_subscription_repair",
-];
-
-interface RestateDeployment {
-  services?: Array<{ name?: string }>;
-}
+import {
+  summarizeRestateDeployments,
+  type RestateDeploymentSummary,
+} from "../core/product/health.ts";
 
 interface RestateDeploymentsResponse {
-  deployments?: RestateDeployment[];
+  deployments?: Parameters<typeof summarizeRestateDeployments>[0]["deployments"];
 }
 
 const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
@@ -102,20 +94,42 @@ async function main(): Promise<void> {
   }
   record("admin deployments JSON", true, "response parsed");
 
-  const services = new Set(
-    (payload.deployments ?? []).flatMap((deployment) =>
-      (deployment.services ?? []).map((service) => service.name).filter(Boolean),
-    ),
-  );
-  const missing = EXPECTED_SERVICES.filter((service) => !services.has(service));
+  const summary = summarizeRestateDeployments(payload);
+  for (const deployment of summary.deployments) {
+    record(
+      `deployment ${deployment.id ?? "unknown"}`,
+      true,
+      `${deployment.uri ?? "unknown URI"} services: ${
+        deployment.services.length ? deployment.services.join(", ") : "none"
+      }`,
+    );
+  }
   record(
     "workflow services registered",
-    missing.length === 0,
-    missing.length === 0 ? "all expected services are registered" : `missing: ${missing.join(", ")}`,
+    summary.missing.length === 0,
+    summary.missing.length === 0
+      ? "all expected services are registered"
+      : `missing: ${summary.missing.join(", ")}`,
+  );
+  record(
+    "workflow deployments complete",
+    summary.incompleteRequiredDeployments.length === 0,
+    summary.incompleteRequiredDeployments.length === 0
+      ? "every deployment that advertises required services has the full required workflow set"
+      : summary.incompleteRequiredDeployments
+          .map(
+            (deployment) =>
+              `${deployment.id ?? "unknown"}@${
+                deployment.uri ?? "unknown"
+              } missing ${deployment.missingRequiredServices.join(", ")}`,
+          )
+          .join("; "),
   );
 
   finish();
 }
+
+export { summarizeRestateDeployments, type RestateDeploymentSummary };
 
 function finish(): never {
   const failed = checks.filter((check) => !check.ok);
@@ -127,4 +141,6 @@ function finish(): never {
   process.exit(0);
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

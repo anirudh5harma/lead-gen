@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseFeed, rssAdapter } from "../core/ingest/adapters/rss.ts";
+import {
+  parseFeed,
+  rssAdapter,
+  rssFetchTimeoutMs,
+} from "../core/ingest/adapters/rss.ts";
 import { hnFrontAdapter, HnError } from "../core/ingest/adapters/hn-front.ts";
 import {
   hnWhosHiringAdapter,
@@ -100,8 +104,10 @@ test("rss adapter: parses Atom <feed><entry>", async () => {
 
 test("rss adapter: poll fetches the config.url and applies novelty_domain", async () => {
   let captured = "";
-  const fetchImpl = (async (url: string) => {
+  let signal: AbortSignal | undefined;
+  const fetchImpl = (async (url: string, init?: RequestInit) => {
     captured = url;
+    signal = init?.signal as AbortSignal | undefined;
     return textResponse(`<?xml version="1.0"?>
     <rss version="2.0"><channel>
       <item><guid>g1</guid><title>x</title><link>https://example.com/x</link>
@@ -116,14 +122,23 @@ test("rss adapter: poll fetches the config.url and applies novelty_domain", asyn
       config: {
         url: "https://example.com/feed.xml",
         novelty_domain: "example.com",
+        fetch_timeout_ms: 5000,
       },
     },
     cursor: {},
     fetchImpl,
   });
   assert.equal(captured, "https://example.com/feed.xml");
+  assert.ok(signal);
   assert.equal(result.items.length, 1);
   assert.equal((result.items[0].novelty_hint ?? {}).domain, "example.com");
+});
+
+test("rss adapter: fetch timeout config is bounded", () => {
+  assert.equal(rssFetchTimeoutMs({}), 10_000);
+  assert.equal(rssFetchTimeoutMs({ fetch_timeout_ms: "2500" }), 2500);
+  assert.equal(rssFetchTimeoutMs({ fetch_timeout_ms: 90_000 }), 30_000);
+  assert.equal(rssFetchTimeoutMs({ fetch_timeout_ms: 0 }), 10_000);
 });
 
 test("rss adapter: missing config.url is a no-op", async () => {

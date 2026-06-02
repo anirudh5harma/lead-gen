@@ -1,7 +1,14 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
 export { validUuid } from "@/lib/auth/uuid";
 import { validUuid } from "@/lib/auth/uuid";
+
+export interface RequestAuthIdentity {
+  id: string;
+  email: string | null;
+  email_verified: boolean;
+}
 
 function localDemoUserId(): string | null {
   if (
@@ -13,12 +20,17 @@ function localDemoUserId(): string | null {
   return validUuid(process.env.BOMBSELL_DEMO_USER_ID);
 }
 
-export async function getRequestUserId(): Promise<string | null> {
+function demoIdentity(): RequestAuthIdentity | null {
+  const id = localDemoUserId();
+  return id ? { id, email: null, email_verified: false } : null;
+}
+
+export async function getRequestAuthIdentity(): Promise<RequestAuthIdentity | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !anonKey) return localDemoUserId();
+  if (!url || !anonKey) return demoIdentity();
 
   const cookieStore = await cookies();
   const supabase = createServerClient(url, anonKey, {
@@ -44,6 +56,16 @@ export async function getRequestUserId(): Promise<string | null> {
     },
   });
   const { data, error } = await supabase.auth.getUser();
-  if (error) return localDemoUserId();
-  return validUuid(data.user?.id) ?? localDemoUserId();
+  if (error) return demoIdentity();
+  const id = validUuid(data.user?.id);
+  if (!id) return demoIdentity();
+  return {
+    id,
+    email: data.user.email ?? null,
+    email_verified: hasVerifiedEmail(data.user as AuthVerifiedEmailUser | null),
+  };
+}
+
+export async function getRequestUserId(): Promise<string | null> {
+  return (await getRequestAuthIdentity())?.id ?? null;
 }

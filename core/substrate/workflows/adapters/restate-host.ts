@@ -29,6 +29,7 @@ export interface RestateWorkflowRequest<I = unknown> {
 export interface RestateWorkflowHostOptions {
   bus?: EventBus;
   eventSignals?: RestateEventSignalStore;
+  createEndpointHandler?: typeof restate.createEndpointHandler;
 }
 
 export type RestateWorkflowComponent = ReturnType<typeof restate.workflow>;
@@ -76,9 +77,11 @@ export async function serveRestateWorkflows(
     createRestateWorkflowComponent(workflow, opts),
   );
   if (opts.http1) {
-    const restateHandler = restate.createEndpointHandler({
+    const createEndpointHandler =
+      opts.createEndpointHandler ?? restate.createEndpointHandler;
+    const restateHandler = createEndpointHandler({
       services,
-      bidirectional: false,
+      bidirectional: true,
     });
     const server = createServer(
       (req, res) => {

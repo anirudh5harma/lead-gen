@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findCompletedOnboardingForUser } from "../lib/auth/onboarding.ts";
+import {
+  findCompletedOnboardingForAuthIdentity,
+  findCompletedOnboardingForUser,
+} from "../lib/auth/onboarding.ts";
 import type { Pool } from "pg";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -64,4 +67,76 @@ test("completed onboarding falls back to an accepted workspace for returning use
     workspace_id: "33333333-3333-4333-8333-333333333333",
     completion_source: "accepted_workspace",
   });
+});
+
+test("completed onboarding repairs verified auth identity memberships before deciding", async () => {
+  let reconciled: unknown = null;
+  let reconcileDeps: unknown = null;
+  const pool = {
+    async query(_sql: string, params: unknown[]) {
+      assert.deepEqual(params, [USER_ID]);
+      return {
+        rows: [
+          {
+            workspace_id: "44444444-4444-4444-8444-444444444444",
+            completion_source: "workspace_company_profile",
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+
+  const completed = await findCompletedOnboardingForAuthIdentity(
+    {
+      id: USER_ID,
+      email: "Founder@Example.com",
+      email_verified: true,
+    },
+    pool,
+    {
+      async reconcileWorkspaceMemberships(input, deps) {
+        reconciled = input;
+        reconcileDeps = deps;
+        return [];
+      },
+    },
+  );
+
+  assert.deepEqual(reconciled, {
+    user_id: USER_ID,
+    email: "Founder@Example.com",
+    email_verified: true,
+  });
+  assert.deepEqual(reconcileDeps, { pool });
+  assert.deepEqual(completed, {
+    workspace_id: "44444444-4444-4444-8444-444444444444",
+    completion_source: "workspace_company_profile",
+  });
+});
+
+test("completed onboarding does not repair unverified auth identities", async () => {
+  let reconciled = false;
+  const pool = {
+    async query(_sql: string, params: unknown[]) {
+      assert.deepEqual(params, [USER_ID]);
+      return { rows: [] };
+    },
+  } as unknown as Pool;
+
+  await findCompletedOnboardingForAuthIdentity(
+    {
+      id: USER_ID,
+      email: "founder@example.com",
+      email_verified: false,
+    },
+    pool,
+    {
+      async reconcileWorkspaceMemberships() {
+        reconciled = true;
+        return [];
+      },
+    },
+  );
+
+  assert.equal(reconciled, false);
 });

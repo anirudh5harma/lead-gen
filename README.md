@@ -73,7 +73,9 @@ npm run build    # production build sanity check
 `.env.example` is the tracked configuration contract. Production health at
 `/api/health` fails closed when core authentication, database, origin, or
 credential-encryption configuration is absent, and reports integrations whose
-keys are not active.
+keys are not active. In production `nats_restate` mode, health also checks the
+Restate admin deployment list and reports stale worker URIs/services when the
+required workflow handlers are missing.
 
 ### Database
 
@@ -161,10 +163,23 @@ endpoint with the Restate admin API:
 DATABASE_URL=... APP_ORIGIN=... NATS_URL=... RESTATE_INGRESS_URL=... DEEPSEEK_API_KEY=... OPENAI_API_KEY=... MICROSOFT_CLIENT_ID=... MICROSOFT_CLIENT_SECRET=... npm run worker:restate-workflows
 ```
 
+Before pushing a worker image, run the static release contract check:
+
+```bash
+npm run verify:worker-release
+```
+
+It verifies the Restate-capable worker entrypoints register every workflow
+service that production readiness and `npm run verify:restate` require.
+
 Deploy these worker processes on a long-running container runtime. On AWS, use
 ECS Express Mode for new deployments and migrations from App Runner-style
 services. For managed services that need an HTTP health check, run
-`npm run worker:managed` with `WORKER_TARGET_COMMAND` set to the target worker.
+`npm run worker:managed` with `WORKER_TARGET_COMMAND` set to the target worker,
+including `worker:production` or `worker:restate-workflows` for the Restate
+handler host. Restate-capable managed workers use `WORKER_HEALTH_PORT=9081` by
+default so the health server does not collide with the Restate handler on
+`RESTATE_WORKFLOW_PORT=9080`.
 
 Production readiness requires `NATS_URL`, `RESTATE_INGRESS_URL`, and
 `MAINTENANCE_TRIGGER_SECRET`. Set `BOMBSELL_SUBSTRATE=nats_restate` when the
@@ -273,8 +288,11 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
 - `RESTATE_WORKFLOW_HTTP1` — set to `1` when the worker is behind a managed
   HTTP/1.1 proxy.
 - `WORKER_TARGET_COMMAND` — background worker selected by the managed-worker
-  health wrapper (`worker:email-projectors` or `worker:signal-projectors`).
+  health wrapper (`worker:production`, `worker:email-projectors`,
+  `worker:signal-projectors`, `worker:projectors`, or
+  `worker:restate-workflows`).
 - `WORKER_HEALTH_PORT` — health port exposed by managed background workers.
+  Defaults to `9081` for Restate-capable managed targets and `9080` otherwise.
 - `OUTLOOK_DEFAULT_DAILY_CAP` — connected-inbox per-day send ceiling
   (default 25).
 - `BOMBSELL_ALLOW_DEMO_AUTH`, `BOMBSELL_DEMO_USER_ID` — **leave unset in

@@ -38,6 +38,7 @@ interface SetupPlayRow {
 
 interface SetupAccountRow {
   id: string;
+  kind?: string;
   display_name: string;
   status: string;
   daily_cap: number | null;
@@ -60,7 +61,8 @@ interface SetupSourceRow {
 
 async function loadSetupState(workspaceId: string) {
   const pool = getPool();
-  const [reps, icps, plays, accounts, companies, sources] = await Promise.all([
+  const [reps, icps, plays, accounts, linkedinAccounts, companies, sources] =
+    await Promise.all([
     pool.query<SetupRepRow>(
       `select id, name, role::text as role, status::text as status, persona, autonomy
          from reps
@@ -89,6 +91,13 @@ async function loadSetupState(workspaceId: string) {
         order by created_at asc`,
       [workspaceId],
     ),
+    pool.query<SetupAccountRow>(
+      `select id, kind::text as kind, display_name, status::text as status, daily_cap
+         from channel_accounts
+        where workspace_id = $1 and kind in ('linkedin_session','linkedin_oauth')
+        order by created_at asc`,
+      [workspaceId],
+    ),
     pool.query<SetupCompanyRow>(
       `select tc.id, tc.name, tc.domain::text as domain, tc.industry
          from tracked_companies tc
@@ -113,6 +122,7 @@ async function loadSetupState(workspaceId: string) {
     icps: icps.rows,
     plays: plays.rows,
     accounts: accounts.rows,
+    linkedinAccounts: linkedinAccounts.rows,
     companies: companies.rows,
     sources: sources.rows,
   };
@@ -126,8 +136,13 @@ export default async function SetupPage() {
   const rep = state.reps[0];
   const icp = state.icps[0];
   const account = state.accounts[0];
+  const linkedinAccount = state.linkedinAccounts[0];
   const play = state.plays[0];
   const signalKind = inferSignalKind(icp, play);
+  const linkedinProviderConfigured = Boolean(
+    process.env.LINKEDIN_PROVIDER_AUTH_URL?.trim() ||
+      process.env.LINKEDIN_PROVIDER_URL?.trim(),
+  );
   const ready = [
     state.reps.length > 0,
     state.icps.length > 0,
@@ -265,6 +280,7 @@ export default async function SetupPage() {
               <MapStep label="Sender" ready={ready[0]} detail={rep?.name ?? "Needed"} />
               <MapStep label="Profile" ready={ready[1]} detail={icp?.name ?? "Needed"} />
               <MapStep label="Channel" ready={ready[2]} detail={account?.display_name ?? "Needed"} />
+              <MapStep label="LinkedIn" ready={Boolean(linkedinAccount)} detail={linkedinAccount?.display_name ?? "Optional"} />
               <MapStep label="Play" ready={ready[3]} detail={play?.name ?? "Needed"} />
               <MapStep label="Signals" ready={ready[4]} detail={`${state.sources.length} connected`} />
             </div>
@@ -316,6 +332,13 @@ export default async function SetupPage() {
 
         <Panel title="Connected notes">
           <Note title="Company" value={state.companies[0]?.name ?? "Add a company"} />
+          <IntegrationNote
+            connected={Boolean(linkedinAccount)}
+            configured={linkedinProviderConfigured}
+            title="LinkedIn"
+            value={linkedinAccount?.display_name ?? "Connect account"}
+            href="/api/auth/linkedin"
+          />
           <Note title="Source" value={state.sources[0]?.name ?? "Add a source"} />
           <Note title="Play" value={play?.declaration ?? "The first play appears here."} />
         </Panel>
@@ -364,6 +387,43 @@ function Note({ title, value }: { title: string; value: string }) {
     <div className="mb-3 rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] p-3 last:mb-0">
       <p className="text-xs text-[var(--color-text-3)]">{title}</p>
       <p className="mt-1 text-sm leading-6 text-[var(--color-text-1)]">{value}</p>
+    </div>
+  );
+}
+
+function IntegrationNote({
+  title,
+  value,
+  href,
+  connected,
+  configured,
+}: {
+  title: string;
+  value: string;
+  href: string;
+  connected: boolean;
+  configured: boolean;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] p-3 last:mb-0">
+      <span className={connected ? "dot dot-running" : "dot dot-idle"} />
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs text-[var(--color-text-3)]">{title}</span>
+        <span className="block truncate text-sm leading-6 text-[var(--color-text-1)]">{value}</span>
+      </span>
+      {connected ? (
+        <span className="text-xs font-semibold text-[var(--color-text-3)]">Connected</span>
+      ) : configured ? (
+        <a
+          href={href}
+          className="inline-flex min-h-9 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+        >
+          <Icon name="link" size={16} />
+          Connect
+        </a>
+      ) : (
+        <span className="text-xs font-semibold text-[var(--color-text-3)]">Not ready</span>
+      )}
     </div>
   );
 }

@@ -16,8 +16,9 @@ import {
   analyzeCompanyWebsite,
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
-import { getRequestUserId } from "@/lib/auth";
-import { googleAuthPath } from "@/lib/auth/next";
+import { getRequestAuthIdentity } from "@/lib/auth";
+import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
+import { googleAuthPath, PRODUCT_HOME_PATH } from "@/lib/auth/next";
 import {
   getActiveWorkspaceSession,
   setActiveWorkspaceCookie,
@@ -38,17 +39,22 @@ async function requireOnboardingSession(
   if (existing) {
     return { workspace_id: existing.workspace.id, user_id: existing.user_id };
   }
-  const userId = await getRequestUserId();
-  if (!userId) redirect(googleAuthPath("/onboarding"));
+  const identity = await getRequestAuthIdentity();
+  if (!identity) redirect(googleAuthPath("/onboarding"));
+  const completed = await findCompletedOnboardingForAuthIdentity(identity);
+  if (completed) {
+    await setActiveWorkspaceCookie(completed.workspace_id);
+    redirect(PRODUCT_HOME_PATH);
+  }
   const workspace = await createProductWorkspaceForUser(
     {
       name: workspaceName,
       slug: workspaceName,
     },
-    userId,
+    identity.id,
   );
   await setActiveWorkspaceCookie(workspace.id);
-  return { workspace_id: workspace.id, user_id: userId };
+  return { workspace_id: workspace.id, user_id: identity.id };
 }
 
 export async function createProfileAndAggregatorAction(formData: FormData) {

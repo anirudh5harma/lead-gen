@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { createHash } from "node:crypto";
 import type { EventBus } from "../substrate/events/index.ts";
 import {
   defineWorkflow,
@@ -9,6 +10,8 @@ import {
   discoverWorkspaceSignal,
   loadWorkspaceSignalSource,
   prepareWorkspaceSignalDiscoveryContext,
+  type WorkspaceSignalDiscoveryContext,
+  type WorkspaceSignalDiscoveryItem,
 } from "./workspace-discovery.ts";
 import type { WorkspaceAdapter } from "./adapters/_workspace-types.ts";
 import { getWorkspaceAdapter } from "./adapters/registry.ts";
@@ -27,6 +30,9 @@ import { getWorkspaceAdapter } from "./adapters/registry.ts";
  */
 
 export const WORKSPACE_POLL_WORKFLOW = "ingest_workspace_poll";
+const DEFAULT_MAX_ITEMS_PER_POLL = 3;
+const HARD_MAX_ITEMS_PER_POLL = 10;
+const MAX_PREPARED_CONTENT_CHARS = 600;
 
 export interface WorkspacePollDeps {
   pool: Pool;
@@ -52,6 +58,14 @@ export interface WorkspacePollSummary {
 
 interface ConfigRow {
   cursor: Record<string, unknown>;
+}
+
+interface WorkspacePollPreparation {
+  summary: WorkspacePollSummary;
+  discovery: WorkspaceSignalDiscoveryContext | null;
+  items: WorkspaceSignalDiscoveryItem[];
+  cursor: Record<string, unknown>;
+  save_cursor: boolean;
 }
 
 async function loadWsCursor(
@@ -102,6 +116,14 @@ export async function workspacePollOnce(
   deps: WorkspacePollDeps,
   input: WorkspacePollInput,
 ): Promise<WorkspacePollSummary> {
+  const prepared = await prepareWorkspacePoll(deps, input);
+  return processPreparedWorkspacePoll(deps, prepared);
+}
+
+async function prepareWorkspacePoll(
+  deps: WorkspacePollDeps,
+  input: WorkspacePollInput,
+): Promise<WorkspacePollPreparation> {
   const summary: WorkspacePollSummary = {
     workspace_id: input.workspace_id,
     source_id: input.source_id,
@@ -117,7 +139,13 @@ export async function workspacePollOnce(
   );
   if (!source) {
     summary.error = "source not found";
-    return summary;
+    return {
+      summary,
+      discovery: null,
+      items: [],
+      cursor: {},
+      save_cursor: false,
+    };
   }
   const adapterId =
     typeof source.config.adapter === "string" && source.config.adapter.trim()
@@ -126,7 +154,13 @@ export async function workspacePollOnce(
   const adapter = getWorkspaceAdapter(adapterId);
   if (!adapter) {
     summary.error = `no workspace adapter for '${adapterId}'`;
-    return summary;
+    return {
+      summary,
+      discovery: null,
+      items: [],
+      cursor: {},
+      save_cursor: false,
+    };
   }
   const cursor = await loadWsCursor(deps.pool, input.workspace_id, input.source_id);
   const discovery = await prepareWorkspaceSignalDiscoveryContext(deps, {
@@ -147,18 +181,51 @@ export async function workspacePollOnce(
   } catch (err) {
     await saveWsCursor(deps.pool, input.workspace_id, input.source_id, cursor, err);
     summary.error = err instanceof Error ? err.message : String(err);
-    return summary;
+    return {
+      summary,
+      discovery: null,
+      items: [],
+      cursor,
+      save_cursor: false,
+    };
   }
 
-  for (const item of pollResult.items) {
-    const result = await discoverWorkspaceSignal(deps, discovery, item);
-    if (result.outcome === "created") summary.inserted += 1;
-    if (result.outcome === "skipped:dedup") summary.duplicates += 1;
-    if (result.outcome === "skipped:must_haves") summary.skipped_must_haves += 1;
-    if (result.outcome === "skipped:budget") summary.skipped_budget += 1;
+  const items = selectNextWorkspacePollItems(
+    pollResult.items,
+    cursor,
+    maxItemsPerPoll(source.config),
+  ).map(compactPreparedItem);
+  return {
+    summary,
+    discovery,
+    items,
+    cursor: buildNextCursor(cursor, pollResult.cursor, pollResult.items, items),
+    save_cursor: true,
+  };
+}
+
+async function processPreparedWorkspacePoll(
+  deps: WorkspacePollDeps,
+  prepared: WorkspacePollPreparation,
+): Promise<WorkspacePollSummary> {
+  const summary = { ...prepared.summary };
+  if (prepared.discovery) {
+    for (const item of prepared.items) {
+      const result = await discoverWorkspaceSignal(deps, prepared.discovery, item);
+      applyDiscoveryResult(summary, result);
+    }
   }
 
-  await saveWsCursor(deps.pool, input.workspace_id, input.source_id, pollResult.cursor, null);
+  if (prepared.save_cursor) {
+    await saveWsCursor(
+      deps.pool,
+      summary.workspace_id,
+      summary.source_id,
+      prepared.cursor,
+      null,
+    );
+  }
+
   return summary;
 }
 
@@ -178,13 +245,113 @@ export function createWorkspacePollWorkflow(
           "workspace poll input workspace does not match workflow workspace",
         );
       }
-      return ctx.step(
-        "poll_once",
-        () => workspacePollOnce(deps, input),
+      const prepared = await ctx.step(
+        "prepare_poll",
+        () => prepareWorkspacePoll(deps, input),
         {
           retry: { max_attempts: 2, backoff: "exponential", base_ms: 200 },
         },
       );
+      const summary = { ...prepared.summary };
+      if (prepared.discovery) {
+        for (const item of prepared.items) {
+          const result = await ctx.step(
+            `discover:${stableStepSuffix(item.external_id)}`,
+            () => discoverWorkspaceSignal(deps, prepared.discovery!, item),
+            {
+              retry: { max_attempts: 2, backoff: "exponential", base_ms: 200 },
+            },
+          );
+          applyDiscoveryResult(summary, result);
+        }
+      }
+      if (prepared.save_cursor) {
+        await ctx.step(
+          "save_cursor",
+          () => saveWsCursor(
+            deps.pool,
+            input.workspace_id,
+            input.source_id,
+            prepared.cursor,
+            null,
+          ),
+          {
+            retry: { max_attempts: 2, backoff: "exponential", base_ms: 200 },
+          },
+        );
+      }
+      return summary;
     },
   });
+}
+
+function applyDiscoveryResult(
+  summary: WorkspacePollSummary,
+  result: Awaited<ReturnType<typeof discoverWorkspaceSignal>>,
+): void {
+  if (result.outcome === "created") summary.inserted += 1;
+  if (result.outcome === "skipped:dedup") summary.duplicates += 1;
+  if (result.outcome === "skipped:must_haves") summary.skipped_must_haves += 1;
+  if (result.outcome === "skipped:budget") summary.skipped_budget += 1;
+}
+
+export function maxItemsPerPoll(config: Record<string, unknown>): number {
+  const raw = config.max_items_per_poll;
+  const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_MAX_ITEMS_PER_POLL;
+  return Math.min(Math.floor(value), HARD_MAX_ITEMS_PER_POLL);
+}
+
+export function selectNextWorkspacePollItems(
+  items: WorkspaceSignalDiscoveryItem[],
+  cursor: Record<string, unknown>,
+  maxItems: number,
+): WorkspaceSignalDiscoveryItem[] {
+  const seen = cursorSeenExternalIds(cursor);
+  const selected: WorkspaceSignalDiscoveryItem[] = [];
+  for (const item of items) {
+    if (seen.has(item.external_id)) continue;
+    selected.push(item);
+    if (selected.length >= maxItems) break;
+  }
+  return selected;
+}
+
+function compactPreparedItem(
+  item: WorkspaceSignalDiscoveryItem,
+): WorkspaceSignalDiscoveryItem {
+  return {
+    ...item,
+    content: item.content ? item.content.slice(0, MAX_PREPARED_CONTENT_CHARS) : item.content,
+  };
+}
+
+export function buildNextCursor(
+  previousCursor: Record<string, unknown>,
+  adapterCursor: Record<string, unknown>,
+  polledItems: WorkspaceSignalDiscoveryItem[],
+  selectedItems: WorkspaceSignalDiscoveryItem[],
+): Record<string, unknown> {
+  const currentIds = new Set(polledItems.map((item) => item.external_id));
+  const seen = [...cursorSeenExternalIds(previousCursor)]
+    .filter((externalId) => currentIds.has(externalId));
+  for (const item of selectedItems) {
+    if (!seen.includes(item.external_id)) seen.push(item.external_id);
+  }
+  return {
+    ...adapterCursor,
+    seen_external_ids: seen.slice(-500),
+    selected_count: selectedItems.length,
+    polled_count: polledItems.length,
+  };
+}
+
+function cursorSeenExternalIds(cursor: Record<string, unknown>): Set<string> {
+  const raw = cursor.seen_external_ids;
+  if (!Array.isArray(raw)) return new Set();
+  return new Set(raw.filter((value): value is string => typeof value === "string"));
+}
+
+function stableStepSuffix(externalId: string): string {
+  return createHash("sha256").update(externalId).digest("hex").slice(0, 16);
 }

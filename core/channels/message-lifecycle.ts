@@ -255,13 +255,20 @@ async function projectMessageDeferred(
                 then status
               else 'deferred'::message_status
             end,
+            channel_account_id = coalesce($5::uuid, channel_account_id),
             eval_notes = coalesce(eval_notes, '{}'::jsonb) || $3::jsonb,
             properties = properties || $3::jsonb
       where id = $1
         and workspace_id = $2
         and direction = 'outbound'
         and channel::text = $4`,
-    [payload.message_id, event.workspace_id, JSON.stringify(notes), payload.channel],
+    [
+      payload.message_id,
+      event.workspace_id,
+      JSON.stringify(notes),
+      payload.channel,
+      payload.channel_account_id ?? null,
+    ],
   );
 }
 

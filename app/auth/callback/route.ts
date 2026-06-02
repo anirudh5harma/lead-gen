@@ -1,19 +1,16 @@
 import { NextResponse } from "next/server";
-import { reconcileWorkspaceMembershipsForAuthIdentity } from "@/core/product/app";
-import { findCompletedOnboardingForUser } from "@/lib/auth/onboarding";
+import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
 import { postAuthDestination, safeNextPath } from "@/lib/auth/next";
 import { resolvePostAuthUserId } from "@/lib/auth/post-auth";
+import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   ACTIVE_WORKSPACE_COOKIE_NAME,
   activeWorkspaceCookieOptions,
 } from "@/lib/workspace";
 
-interface PostAuthUser {
+interface PostAuthUser extends AuthVerifiedEmailUser {
   id?: string | null;
-  email?: string | null;
-  email_confirmed_at?: string | null;
-  confirmed_at?: string | null;
 }
 
 export async function GET(request: Request) {
@@ -66,10 +63,9 @@ async function findCompletedOnboardingAfterIdentityReconciliation(
   userId: string,
   user: PostAuthUser | null | undefined,
 ) {
-  await reconcileWorkspaceMembershipsForAuthIdentity({
-    user_id: userId,
-    email: user?.email,
-    email_verified: Boolean(user?.email_confirmed_at || user?.confirmed_at),
+  return findCompletedOnboardingForAuthIdentity({
+    id: userId,
+    email: user?.email ?? null,
+    email_verified: hasVerifiedEmail(user),
   });
-  return findCompletedOnboardingForUser(userId);
 }

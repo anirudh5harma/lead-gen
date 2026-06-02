@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Pool } from "pg";
-import { checkProductReadiness } from "../core/product/health.ts";
+import {
+  REQUIRED_RESTATE_SERVICES,
+  checkProductReadiness,
+} from "../core/product/health.ts";
 import { setupPg } from "./_pg.ts";
 
 test("product health: reports unconfigured when no pool is provided", async () => {
@@ -23,10 +26,25 @@ test("product health: reports ready against a migrated schema", async (t) => {
     assert.equal(readiness.ready, true);
     assert.deepEqual(
       readiness.checks.map((check) => check.status),
-      ["ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+      ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
     );
   } finally {
     await fx.close();
+  }
+});
+
+test("product health: Restate readiness covers critical Play and channel workflows", () => {
+  for (const workflow of [
+    "play.signal_to_email.v1",
+    "play.signal_to_linkedin.v1",
+    "play.reply_to_email.v1",
+    "channel.email_domain_provision.v1",
+    "channel.email_domain_warmup.v1",
+  ]) {
+    assert.ok(
+      REQUIRED_RESTATE_SERVICES.includes(workflow),
+      `expected readiness to require ${workflow}`,
+    );
   }
 });
 
@@ -54,6 +72,7 @@ test("product health: production NATS Restate mode verifies live NATS auth", asy
       },
       probeRestateIngress: async () => undefined,
       probeRestateServices: async () => undefined,
+      probeLinkedInProvider: async () => undefined,
     },
   );
 
@@ -76,6 +95,7 @@ test("product health: production NATS Restate mode is ready when NATS probe pass
       probeNatsConnection: async () => undefined,
       probeRestateIngress: async () => undefined,
       probeRestateServices: async () => undefined,
+      probeLinkedInProvider: async () => undefined,
     },
   );
 
@@ -97,6 +117,7 @@ test("product health: production Restate Cloud ingress requires bearer token", a
       probeNatsConnection: async () => undefined,
       probeRestateIngress: async () => undefined,
       probeRestateServices: async () => undefined,
+      probeLinkedInProvider: async () => undefined,
     },
   );
 
@@ -121,6 +142,7 @@ test("product health: production NATS Restate mode verifies live Restate auth", 
         throw new Error("HTTP 403");
       },
       probeRestateServices: async () => undefined,
+      probeLinkedInProvider: async () => undefined,
     },
   );
 
@@ -131,31 +153,112 @@ test("product health: production NATS Restate mode verifies live Restate auth", 
 });
 
 test("product health: production NATS Restate mode verifies registered services", async () => {
-  const readiness = await checkProductReadiness(
-    readyPool(),
-    {
-      ...productionEnv(),
-      BOMBSELL_SUBSTRATE: "nats_restate",
-      RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
-      RESTATE_AUTH_TOKEN: "valid-token",
-    },
-    {
-      probeNatsConnection: async () => undefined,
-      probeRestateIngress: async () => undefined,
-      probeRestateServices: async () => {
-        throw new Error("missing workflow services: ingest_expire_sweep");
-      },
-    },
-  );
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    assert.equal(String(input), "https://tenant.env.us.restate.cloud:9070/deployments");
+    return new Response(
+      JSON.stringify({
+        deployments: [
+          {
+            id: "dp_old",
+            uri: "https://old-worker.example.com/",
+            services: [
+              { name: "series_a_cold_open" },
+              { name: "ingest_workspace_poll" },
+            ],
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
 
-  assert.equal(readiness.ready, false);
-  const restate = readiness.checks.find((check) => check.name === "restate.ingress");
-  assert.equal(restate?.status, "degraded");
-  assert.match(restate?.detail ?? "", /missing workflow services/);
+  try {
+    const readiness = await checkProductReadiness(
+      readyPool(),
+      {
+        ...productionEnv(),
+        BOMBSELL_SUBSTRATE: "nats_restate",
+        RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+        RESTATE_AUTH_TOKEN: "valid-token",
+      },
+      {
+        probeNatsConnection: async () => undefined,
+        probeRestateIngress: async () => undefined,
+        probeLinkedInProvider: async () => undefined,
+      },
+    );
+
+    assert.equal(readiness.ready, false);
+    const restate = readiness.checks.find((check) => check.name === "restate.ingress");
+    assert.equal(restate?.status, "degraded");
+    assert.match(restate?.detail ?? "", /missing workflow services/);
+    assert.match(restate?.detail ?? "", /https:\/\/old-worker\.example\.com/);
+    assert.match(restate?.detail ?? "", /series_a_cold_open/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("product health: production degrades on stale partial Restate deployments", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    assert.equal(String(input), "https://tenant.env.us.restate.cloud:9070/deployments");
+    return new Response(
+      JSON.stringify({
+        deployments: [
+          {
+            id: "dp_new",
+            uri: "https://new-worker.example.com/",
+            services: REQUIRED_RESTATE_SERVICES.map((name) => ({ name })),
+          },
+          {
+            id: "dp_old",
+            uri: "https://old-worker.example.com/",
+            services: [
+              { name: "series_a_cold_open" },
+              { name: "ingest_workspace_poll" },
+            ],
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const readiness = await checkProductReadiness(
+      readyPool(),
+      {
+        ...productionEnv(),
+        BOMBSELL_SUBSTRATE: "nats_restate",
+        RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+        RESTATE_AUTH_TOKEN: "valid-token",
+      },
+      {
+        probeNatsConnection: async () => undefined,
+        probeRestateIngress: async () => undefined,
+        probeLinkedInProvider: async () => undefined,
+      },
+    );
+
+    assert.equal(readiness.ready, false);
+    const restate = readiness.checks.find((check) => check.name === "restate.ingress");
+    assert.equal(restate?.status, "degraded");
+    assert.match(restate?.detail ?? "", /incomplete workflow deployments/);
+    assert.match(restate?.detail ?? "", /https:\/\/old-worker\.example\.com/);
+    assert.match(restate?.detail ?? "", /play\.signal_to_email\.v1/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("product health: production degrades while product substrate uses Postgres bridge", async () => {
-  const readiness = await checkProductReadiness(readyPool(), productionEnv());
+  const readiness = await checkProductReadiness(
+    readyPool(),
+    productionEnv(),
+    { probeLinkedInProvider: async () => undefined },
+  );
 
   assert.equal(readiness.ready, false);
   const substrate = readiness.checks.find((check) => check.name === "substrate");
@@ -174,6 +277,67 @@ test("product health: production env gaps degrade readiness", async () => {
   assert.equal(environment?.status, "degraded");
   assert.match(environment?.detail ?? "", /NEXT_PUBLIC_SUPABASE_URL/);
   assert.match(environment?.detail ?? "", /RESEND_WEBHOOK_SECRET/);
+});
+
+test("product health: production reports missing LinkedIn provider config", async () => {
+  const env = productionEnv();
+  delete env.LINKEDIN_PROVIDER_URL;
+  delete env.LINKEDIN_PROVIDER_HEALTH_URL;
+  delete env.LINKEDIN_PROVIDER_API_KEY;
+  delete env.LINKEDIN_PROVIDER_WEBHOOK_SECRET;
+
+  const readiness = await checkProductReadiness(readyPool(), {
+    ...env,
+    BOMBSELL_SUBSTRATE: "nats_restate",
+  }, {
+    probeNatsConnection: async () => undefined,
+    probeRestateIngress: async () => undefined,
+    probeRestateServices: async () => undefined,
+    probeLinkedInProvider: async () => undefined,
+  });
+
+  assert.equal(readiness.ready, false);
+  const linkedin = readiness.checks.find((check) => check.name === "linkedin.provider");
+  assert.equal(linkedin?.status, "degraded");
+  assert.match(linkedin?.detail ?? "", /LINKEDIN_PROVIDER_URL/);
+  assert.match(linkedin?.detail ?? "", /LINKEDIN_PROVIDER_HEALTH_URL/);
+});
+
+test("product health: production requires HTTPS LinkedIn provider URLs", async () => {
+  const readiness = await checkProductReadiness(readyPool(), {
+    ...productionEnv(),
+    BOMBSELL_SUBSTRATE: "nats_restate",
+    LINKEDIN_PROVIDER_URL: "http://provider.example/send",
+  }, {
+    probeNatsConnection: async () => undefined,
+    probeRestateIngress: async () => undefined,
+    probeRestateServices: async () => undefined,
+    probeLinkedInProvider: async () => undefined,
+  });
+
+  assert.equal(readiness.ready, false);
+  const linkedin = readiness.checks.find((check) => check.name === "linkedin.provider");
+  assert.equal(linkedin?.status, "degraded");
+  assert.match(linkedin?.detail ?? "", /HTTPS/);
+});
+
+test("product health: production verifies live LinkedIn provider health", async () => {
+  const readiness = await checkProductReadiness(readyPool(), {
+    ...productionEnv(),
+    BOMBSELL_SUBSTRATE: "nats_restate",
+  }, {
+    probeNatsConnection: async () => undefined,
+    probeRestateIngress: async () => undefined,
+    probeRestateServices: async () => undefined,
+    probeLinkedInProvider: async () => {
+      throw new Error("HTTP 503");
+    },
+  });
+
+  assert.equal(readiness.ready, false);
+  const linkedin = readiness.checks.find((check) => check.name === "linkedin.provider");
+  assert.equal(linkedin?.status, "degraded");
+  assert.match(linkedin?.detail ?? "", /HTTP 503/);
 });
 
 test("product health: reports unsupported substrate configuration", async (t) => {
@@ -231,5 +395,9 @@ function productionEnv(): Record<string, string> {
       "-----BEGIN USER NKEY SEED-----\nSUxxx\n------END USER NKEY SEED------",
     RESTATE_INGRESS_URL: "https://restate.example",
     MAINTENANCE_TRIGGER_SECRET: "secret",
+    LINKEDIN_PROVIDER_URL: "https://linkedin-provider.example/send",
+    LINKEDIN_PROVIDER_HEALTH_URL: "https://linkedin-provider.example/health",
+    LINKEDIN_PROVIDER_API_KEY: "provider-key",
+    LINKEDIN_PROVIDER_WEBHOOK_SECRET: "webhook-secret",
   };
 }

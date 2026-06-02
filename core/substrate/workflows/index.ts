@@ -54,5 +54,13 @@ export type {
   WorkspaceMaintenanceTriggerDeps,
   WorkspaceMaintenanceTriggerSummary,
 } from "./maintenance-trigger.ts";
+export {
+  createRestateRuntimeProbeWorkflow,
+  RESTATE_RUNTIME_PROBE_WORKFLOW,
+} from "./probe.ts";
+export type {
+  RestateRuntimeProbeInput,
+  RestateRuntimeProbeOutput,
+} from "./probe.ts";
 export { createPostgresWorkflowRuntime } from "./adapters/postgres.ts";
 export type { PostgresWorkflowRuntimeOptions } from "./adapters/postgres.ts";

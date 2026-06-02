@@ -72,12 +72,8 @@ interface RestateInvocationResponse {
   output?: unknown;
 }
 
-interface RestateStatusResponse {
-  status?: string;
-  output?: unknown;
-  error?: { message?: string };
-  startedAt?: string;
-  completedAt?: string;
+interface RestateOutputResponse {
+  message?: string;
 }
 
 export function createRestateWorkflowRuntime(
@@ -134,28 +130,47 @@ export function createRestateWorkflowRuntime(
   async function getRun<I = unknown, O = unknown>(
     run_id: string,
   ): Promise<WorkflowRun<I, O> | null> {
-    const path = `/restate/invocation/${encodeURIComponent(run_id)}`;
+    const path = `/restate/invocation/${encodeURIComponent(run_id)}/output`;
     try {
-      const status = await request<RestateStatusResponse>("GET", path);
+      const response = await requestResponse("GET", path);
+      const text = await response.text();
+      const payload = text ? (JSON.parse(text) as RestateOutputResponse | O) : undefined;
+      if (isRestateOutputMessage(payload, "not found")) return null;
+      const nowIso = new Date().toISOString();
       return {
         id: run_id,
         execution_scope: "workspace",
         workspace_id: "",
         workflow_name: "",
         workflow_version: "",
-        status: mapRestateStatus(status.status),
+        status: isRestateOutputMessage(payload, "not ready")
+          ? "running"
+          : "completed",
         input: undefined as I,
-        output: status.output as O | undefined,
-        error: status.error?.message
-          ? { message: status.error.message }
-          : undefined,
-        started_at: status.startedAt,
-        ended_at: status.completedAt,
-        created_at: status.startedAt ?? new Date().toISOString(),
+        output: isRestateOutputResponse(payload) ? undefined : payload as O | undefined,
+        ended_at: isRestateOutputMessage(payload, "not ready") ? undefined : nowIso,
+        created_at: nowIso,
       };
     } catch (err) {
       if (err instanceof RestateClientError && err.status === 404) {
         return null;
+      }
+      if (
+        err instanceof RestateClientError &&
+        err.status === 470 &&
+        err.body.includes("has not completed yet")
+      ) {
+        const nowIso = new Date().toISOString();
+        return {
+          id: run_id,
+          execution_scope: "workspace",
+          workspace_id: "",
+          workflow_name: "",
+          workflow_version: "",
+          status: "running",
+          input: undefined as I,
+          created_at: nowIso,
+        };
       }
       throw err;
     }
@@ -252,26 +267,20 @@ export function createRestateWorkflowRuntime(
   };
 }
 
-function mapRestateStatus(status: string | undefined): WorkflowRunStatus {
-  switch ((status ?? "").toLowerCase()) {
-    case "running":
-    case "executing":
-      return "running";
-    case "suspended":
-    case "waiting":
-      return "awaiting_event";
-    case "completed":
-    case "succeeded":
-      return "completed";
-    case "failed":
-    case "errored":
-      return "failed";
-    case "cancelled":
-    case "killed":
-      return "cancelled";
-    default:
-      return "pending";
-  }
+function isRestateOutputResponse(value: unknown): value is RestateOutputResponse {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "message" in value &&
+      typeof (value as RestateOutputResponse).message === "string",
+  );
+}
+
+function isRestateOutputMessage(
+  value: unknown,
+  message: string,
+): value is RestateOutputResponse {
+  return isRestateOutputResponse(value) && value.message === message;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

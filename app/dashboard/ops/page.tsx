@@ -3,6 +3,11 @@ import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
+import {
+  checkProductReadiness,
+  type ProductReadiness,
+  type ProductReadinessStatus,
+} from "@/core/product/health";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +65,11 @@ export default async function OpsPage() {
     );
   }
 
-  const [counts, dead] = await Promise.all([
+  const pool = getPool();
+  const [counts, dead, readiness] = await Promise.all([
     loadDispatchCounts(workspace.id),
-    listDeadLetteredDispatches(getPool(), workspace.id, 100),
+    listDeadLetteredDispatches(pool, workspace.id, 100),
+    checkProductReadiness(pool),
   ]);
 
   return (
@@ -88,6 +95,16 @@ export default async function OpsPage() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="mt-6 section-canvas p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="brief-note-icon">
+            <Icon name="fact_check" size={18} />
+          </span>
+          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Readiness</h2>
+        </div>
+        <ReadinessPanel readiness={readiness} />
       </section>
 
       <section className="mt-6 section-canvas p-5">
@@ -143,6 +160,72 @@ export default async function OpsPage() {
       </section>
     </>
   );
+}
+
+function ReadinessPanel({ readiness }: { readiness: ProductReadiness }) {
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-[rgba(255,255,255,0.68)] px-4 py-3">
+        <StatusDot status={readiness.status} />
+        <p className="font-sans text-sm font-semibold text-[var(--color-text-1)]">
+          Product runtime is {readiness.status}
+        </p>
+        <span className="text-xs text-[var(--color-text-3)]">
+          Checked {timeAgo(readiness.checked_at)}
+        </span>
+      </div>
+      <div className="grid gap-2 lg:grid-cols-2">
+        {readiness.checks.map((check) => (
+          <div
+            key={check.name}
+            className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.56)] px-4 py-3"
+          >
+            <div className="flex items-center gap-2">
+              <StatusDot status={check.status} />
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-1)]">
+                {check.name}
+              </span>
+              <span className="text-xs font-semibold text-[var(--color-text-3)]">
+                {check.status}
+              </span>
+            </div>
+            {check.detail ? <ReadinessDetail detail={check.detail} /> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReadinessDetail({ detail }: { detail: string }) {
+  if (detail.length <= 180) {
+    return (
+      <p className="mt-2 break-words text-xs leading-5 text-[var(--color-text-3)]">
+        {detail}
+      </p>
+    );
+  }
+
+  return (
+    <details className="group mt-2">
+      <summary className="cursor-pointer select-none text-xs font-semibold text-[var(--color-accent)] marker:text-[var(--color-accent)]">
+        Details
+      </summary>
+      <p className="mt-2 max-h-40 overflow-auto break-words rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] p-3 font-mono text-[11px] leading-5 text-[var(--color-text-3)]">
+        {detail}
+      </p>
+    </details>
+  );
+}
+
+function StatusDot({ status }: { status: ProductReadinessStatus }) {
+  const className =
+    status === "ok"
+      ? "dot dot-running"
+      : status === "degraded"
+        ? "dot dot-degraded"
+        : "dot dot-idle";
+  return <span className={className} />;
 }
 
 function State({ label, value }: { label: string; value: number }) {

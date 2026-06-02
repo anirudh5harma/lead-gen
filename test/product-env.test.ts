@@ -8,6 +8,7 @@ import {
   checkProductEnvironment,
   requireOutboundEmailExecutionEnvironment,
   resolveProductEmailTransportMode,
+  resolveProductLinkedInTransportMode,
 } from "../core/product/env.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -63,6 +64,25 @@ test("product env: email transport can be dry-run only outside production", () =
       RESEND_API_KEY: "re_live",
     }),
     "resend",
+  );
+});
+
+test("product env: LinkedIn transport can be dry-run only outside production", () => {
+  assert.equal(
+    resolveProductLinkedInTransportMode({ NODE_ENV: "development" }),
+    "dry-run",
+  );
+  assert.equal(
+    resolveProductLinkedInTransportMode({ NODE_ENV: "production" }),
+    "unconfigured",
+  );
+  assert.equal(
+    resolveProductLinkedInTransportMode({
+      NODE_ENV: "production",
+      LINKEDIN_PROVIDER_URL: "https://provider.example/send",
+      LINKEDIN_PROVIDER_API_KEY: "provider-key",
+    }),
+    "provider",
   );
 });
 

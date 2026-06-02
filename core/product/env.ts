@@ -29,6 +29,7 @@ export const OUTBOUND_EMAIL_PRODUCTION_KEYS = [
 ] as const;
 
 export type ProductEmailTransportMode = "resend" | "dry-run" | "unconfigured";
+export type ProductLinkedInTransportMode = "provider" | "dry-run" | "unconfigured";
 
 export class ProductEnvironmentError extends Error {
   readonly operation: string;
@@ -281,6 +282,46 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "25",
   },
   {
+    name: "LINKEDIN_PROVIDER_URL",
+    requirement: "optional",
+    category: "channels",
+    description: "HTTP endpoint for the native LinkedIn session/OAuth provider send adapter.",
+    example: "https://linkedin-provider.example.com/send",
+  },
+  {
+    name: "LINKEDIN_PROVIDER_AUTH_URL",
+    requirement: "optional",
+    category: "channels",
+    description: "Native LinkedIn provider authorization handoff URL. Defaults to /auth/linkedin/start on LINKEDIN_PROVIDER_URL origin.",
+    example: "https://linkedin-provider.example.com/auth/linkedin/start",
+  },
+  {
+    name: "LINKEDIN_PROVIDER_HEALTH_URL",
+    requirement: "optional",
+    category: "channels",
+    description: "Native LinkedIn provider health endpoint used by production readiness checks.",
+    example: "https://linkedin-provider.example.com/health",
+  },
+  {
+    name: "LINKEDIN_PROVIDER_API_KEY",
+    requirement: "optional",
+    category: "channels",
+    description: "Bearer token used by the native LinkedIn provider send adapter.",
+  },
+  {
+    name: "LINKEDIN_PROVIDER_WEBHOOK_SECRET",
+    requirement: "optional",
+    category: "channels",
+    description: "HMAC secret used to authenticate native LinkedIn provider lifecycle callbacks.",
+  },
+  {
+    name: "LINKEDIN_REDIRECT_URI",
+    requirement: "optional",
+    category: "channels",
+    description: "Override for the LinkedIn provider callback route.",
+    example: "https://app.example.com/api/auth/linkedin/callback",
+  },
+  {
     name: "PRODUCT_HUNT_TOKEN",
     requirement: "optional",
     category: "channels",
@@ -466,6 +507,15 @@ export function resolveProductEmailTransportMode(
   env: Record<string, string | undefined> = process.env,
 ): ProductEmailTransportMode {
   if (hasEnvValue(env.RESEND_API_KEY)) return "resend";
+  return isProductionProductRuntime(env) ? "unconfigured" : "dry-run";
+}
+
+export function resolveProductLinkedInTransportMode(
+  env: Record<string, string | undefined> = process.env,
+): ProductLinkedInTransportMode {
+  if (hasEnvValue(env.LINKEDIN_PROVIDER_URL) && hasEnvValue(env.LINKEDIN_PROVIDER_API_KEY)) {
+    return "provider";
+  }
   return isProductionProductRuntime(env) ? "unconfigured" : "dry-run";
 }
 

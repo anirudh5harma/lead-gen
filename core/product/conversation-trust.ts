@@ -41,6 +41,7 @@ export interface ConversationTrustMessage {
   provenance: Record<string, unknown> | null;
   properties: Record<string, unknown> | null;
   eval_notes: Record<string, unknown> | null;
+  channel_account_id: string | null;
 }
 
 export interface ConversationTrustEvent {
@@ -157,6 +158,7 @@ export async function getConversationTrustTrace(
       ...input,
       signal_id: conversation.signal_id,
       message_ids: messageIds,
+      channel_account_ids: channelAccountIds(messages),
       workflow_run_id: workflow?.run.id ?? null,
     }),
     workflow
@@ -304,6 +306,7 @@ export function buildGateExplanations(input: {
       ].includes(event.event_type),
     )
     .at(-1);
+  const accountEvent = latestChannelAccountError(input.events, message, gateEvents);
   const notes =
     recordField(judgedEvent?.payload?.notes) ??
     message.eval_notes ??
@@ -342,8 +345,34 @@ export function buildGateExplanations(input: {
   if (channelEvent) {
     explanations.push(channelExplanation(channelEvent));
   }
+  if (accountEvent) {
+    explanations.push(channelAccountExplanation(accountEvent));
+  }
 
   return explanations;
+}
+
+function latestChannelAccountError(
+  events: ConversationTrustEvent[],
+  message: ConversationTrustMessage,
+  gateEvents: ConversationTrustEvent[],
+): ConversationTrustEvent | undefined {
+  const ids = new Set(
+    [
+      message.channel_account_id,
+      textField(message.properties?.channel_account_id),
+      textField(message.provenance?.channel_account_id),
+      ...gateEvents.map((event) => textField(event.payload?.channel_account_id)),
+    ].filter((id): id is string => Boolean(id)),
+  );
+  if (ids.size === 0) return undefined;
+  return events
+    .filter(
+      (event) =>
+        event.event_type === "channel.account.errored" &&
+        ids.has(textField(event.payload?.channel_account_id) ?? ""),
+    )
+    .at(-1);
 }
 
 function latestOutboundMessage(
@@ -444,6 +473,46 @@ function channelExplanation(
   };
 }
 
+function channelAccountExplanation(
+  event: ConversationTrustEvent,
+): ConversationTrustGateExplanation {
+  const status = textField(event.payload.status) ?? "errored";
+  const blocked = ["needs_reauth", "suspended", "disconnected"].includes(status);
+  return {
+    kind: "channel",
+    status: blocked ? "blocked" : "deferred",
+    severity: blocked ? "block" : "warn",
+    summary: `Channel account ${friendlyChannelAccountStatus(status)}`,
+    detail: [
+      textField(event.payload.error),
+      textField(event.payload.account_display_name),
+      textField(event.payload.provider_incident_id)
+        ? `Incident ${textField(event.payload.provider_incident_id)}`
+        : null,
+      textField(event.payload.provider_event_id)
+        ? `Provider event ${textField(event.payload.provider_event_id)}`
+        : null,
+      textField(event.payload.retry_after)
+        ? `Retry after ${textField(event.payload.retry_after)}`
+        : null,
+      textField(event.payload.channel_account_id)
+        ? `Account ${textField(event.payload.channel_account_id)}`
+        : null,
+    ].filter((piece): piece is string => Boolean(piece)).join(" ") || null,
+  };
+}
+
+function friendlyChannelAccountStatus(status: string): string {
+  const known: Record<string, string> = {
+    needs_reauth: "needs reauthorization",
+    rate_limited: "is rate-limited",
+    suspended: "is suspended",
+    disconnected: "is disconnected",
+    errored: "reported a provider error",
+  };
+  return known[status] ?? status.replace(/_/g, " ");
+}
+
 const deliverabilityReasons = new Set([
   "deliverability_cap_zero",
   "deliverability_cap_exhausted",
@@ -451,7 +520,6 @@ const deliverabilityReasons = new Set([
   "frequency_cap_reached",
   "provider_error_transient",
   "provider_error_permanent",
-  "linkedin_daily_cap_exhausted",
 ]);
 
 function friendlyDeferReason(reason: string): string {
@@ -461,7 +529,12 @@ function friendlyDeferReason(reason: string): string {
     daily_cap_reached: "the channel daily cap is reached",
     frequency_cap_reached: "this recipient was contacted too recently",
     missing_linkedin_profile: "the person has no LinkedIn profile on the graph",
-    linkedin_daily_cap_exhausted: "the LinkedIn session daily cap is reached",
+    linkedin_account_unavailable: "no LinkedIn sending account is available",
+    linkedin_daily_cap_exhausted: "the LinkedIn account daily cap is reached",
+    linkedin_needs_reauth: "the LinkedIn account needs reauthorization",
+    linkedin_rate_limited: "LinkedIn rate-limited the account",
+    linkedin_account_suspended: "the LinkedIn account is suspended",
+    linkedin_account_disconnected: "the LinkedIn account is disconnected",
     eval_rejected: "the hot-path judge rejected the draft",
     eval_rejected_after_edit: "the edited draft did not pass the judge",
     reply_research_only: "the Play is set to research-only for replies",
@@ -559,7 +632,8 @@ async function loadMessages(
             subject, body, external_id,
             eval_score::text as eval_score, eval_passed,
             intent_class, intent_confidence::text as intent_confidence,
-            sent_at, created_at, provenance, properties, eval_notes
+            sent_at, created_at, provenance, properties, eval_notes,
+            channel_account_id::text as channel_account_id
        from messages
       where workspace_id = $1 and conversation_id = $2
       order by coalesce(sent_at, created_at) asc`,
@@ -624,6 +698,7 @@ async function loadEvents(
     conversation_id: string;
     signal_id: string | null;
     message_ids: string[];
+    channel_account_ids: string[];
     workflow_run_id: string | null;
   },
 ): Promise<ConversationTrustEvent[]> {
@@ -639,6 +714,7 @@ async function loadEvents(
           or payload->>'matched_outbound_message_id' = any($3::text[])
           or payload#>>'{provenance,inbound_message_id}' = any($3::text[])
           or payload#>>'{output,inbound_message_id}' = any($3::text[])
+          or payload->>'channel_account_id' = any($6::text[])
           or (
             $4::text is not null
             and (
@@ -663,9 +739,24 @@ async function loadEvents(
       input.message_ids,
       input.signal_id,
       input.workflow_run_id,
+      input.channel_account_ids,
     ],
   );
   return rows;
+}
+
+function channelAccountIds(messages: ConversationTrustMessage[]): string[] {
+  return [
+    ...new Set(
+      messages
+        .flatMap((message) => [
+          message.channel_account_id,
+          textField(message.properties?.channel_account_id),
+          textField(message.provenance?.channel_account_id),
+        ])
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
 }
 
 async function loadApprovals(

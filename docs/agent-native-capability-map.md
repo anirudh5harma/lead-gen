@@ -9,6 +9,7 @@ projection, and visible UI feedback where applicable.
 |---|---|---|---|---|
 | Read morning brief/state | `/dashboard`, `/brief` | `product.state.get` | Read derived views from primitives/events | Ready |
 | Read prompt-ready workspace context | MCP/internal Rep execution | `product.context.get` | Builds dynamic context from Reps, ICPs, Plays, Sources, Signals, approvals, send traces, deliverability, and recovery state | Ready |
+| Read product runtime readiness | `/dashboard/ops`, `/api/health` | `product.readiness.get` | Reads environment, provider, substrate, database, schema table, and migration readiness without mutating state | Ready |
 | Read Conversation trust trace | `/dashboard/conversations/[id]` | `product.conversation.trust.get` | Reads Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes from the evented state | Ready |
 | Extract company profile from website | `/onboarding` | `product.company.website_profile.extract` | Firecrawl + LLM, no write | Ready |
 | Store company profile | `/onboarding` | `product.company.profile.configure` | `workspace.company.profiled` -> graph company | Ready |
@@ -17,6 +18,7 @@ projection, and visible UI feedback where applicable.
 | Configure Signal email Play | `/dashboard/setup` | `product.play.signal_email.configure` | `play.configured` -> Play projection | Ready |
 | Configure Signal LinkedIn Play | MCP/internal Rep execution | `product.play.signal_linkedin.configure` | `play.configured` -> durable Signal-to-LinkedIn workflow with hot-path judge and native channel send/defer | Ready |
 | Configure email account | `/dashboard/setup`, `/brief` | `product.email_account.configure` | `channel.account.configured` -> channel projection | Ready |
+| Connect LinkedIn account | `/dashboard/setup` | `product.linkedin_account.connect_url.get` | Provider auth URL -> `linkedin.account.authorization.received` -> channel account projection -> `channel.account.connected` | Ready |
 | Track company | `/dashboard/ingestion` | `product.company.track` | `workspace.company.tracked` -> graph/source projection | Ready |
 | Configure signal source | `/dashboard/ingestion`, `/brief` | `product.source.configure` | `workspace.source.configured` -> source config; push sources do not enter poll maintenance | Ready |
 | Configure default aggregator | `/onboarding` | `product.sources.default_aggregator.configure` | Emits source configuration events per adapter | Ready |
@@ -26,7 +28,7 @@ projection, and visible UI feedback where applicable.
 | Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email Play workflows | Ready |
 | Approve/reject draft | `/dashboard/approvals`, `/brief` | `product.approval.decide` | Resolves workflow approval gate | Ready |
 | Retry failed workflow | `/brief`, ops surfaces | `product.workflow.retry` | Durable workflow retry/resume | Ready |
-| Redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.redrive` | Shared substrate redrive primitive resets workspace-scoped NATS dispatch for replay | Ready |
+| Inspect/redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |
 | Provision/verify/refresh sending domain | `/brief`, deliverability surfaces | `product.sending_domain.operate` | Starts sending-domain workflow | Ready |
 | CRUD graph companies/persons/sources/edges | Derived graph surfaces | `graph.companies.*`, `graph.persons.*`, `graph.sources.*`, `graph.edges.*` | Shared workspace graph tables, including node delete primitives that clean graph edges | Ready |
 

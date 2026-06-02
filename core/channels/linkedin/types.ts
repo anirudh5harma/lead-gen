@@ -32,6 +32,32 @@ export interface LinkedInTransportResult {
   external_id: string;
 }
 
+export type LinkedInTransportErrorReason =
+  | "rate_limited"
+  | "needs_reauth"
+  | "suspended"
+  | "disconnected"
+  | "provider_error_transient"
+  | "provider_error_permanent";
+
+export class LinkedInTransportError extends Error {
+  readonly reason: LinkedInTransportErrorReason;
+  readonly retry_after: string | null;
+  readonly detail: string | null;
+
+  constructor(
+    reason: LinkedInTransportErrorReason,
+    message: string,
+    opts: { retry_after?: string | null; detail?: string | null } = {},
+  ) {
+    super(message);
+    this.name = "LinkedInTransportError";
+    this.reason = reason;
+    this.retry_after = opts.retry_after ?? null;
+    this.detail = opts.detail ?? null;
+  }
+}
+
 export interface LinkedInTransport {
   send(envelope: LinkedInSendEnvelope): Promise<LinkedInTransportResult>;
 }

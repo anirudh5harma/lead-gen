@@ -185,26 +185,28 @@ test("restate client: starts without an idempotency key receive distinct workflo
   assert.notEqual(calls[0].url, calls[1].url);
 });
 
-test("restate client: get() maps Restate statuses to our WorkflowRunStatus", async () => {
-  const cases: Array<{ restate: string; ours: string }> = [
-    { restate: "Running", ours: "running" },
-    { restate: "Suspended", ours: "awaiting_event" },
-    { restate: "Completed", ours: "completed" },
-    { restate: "Failed", ours: "failed" },
-    { restate: "Cancelled", ours: "cancelled" },
-    { restate: "wat", ours: "pending" },
-  ];
-  for (const c of cases) {
-    const { fetchImpl } = spyFetch(() => ({
-      body: { status: c.restate, output: { ok: true }, startedAt: "2026-01-01T00:00:00Z" },
-    }));
-    const runtime = createRestateWorkflowRuntime({
-      ingressUrl: ingress,
-      fetchImpl,
-    });
-    const run = await runtime.get("inv-1");
-    assert.equal(run?.status, c.ours, `restate=${c.restate}`);
-  }
+test("restate client: get() reads the output endpoint state", async () => {
+  const completed = spyFetch(() => ({ body: { ok: true } }));
+  const completedRuntime = createRestateWorkflowRuntime({
+    ingressUrl: ingress,
+    fetchImpl: completed.fetchImpl,
+  });
+  const completedRun = await completedRuntime.get("inv-1");
+  assert.equal(
+    completed.calls[0].url,
+    `${ingress}/restate/invocation/inv-1/output`,
+  );
+  assert.equal(completedRun?.status, "completed");
+  assert.deepEqual(completedRun?.output, { ok: true });
+
+  const running = spyFetch(() => ({ body: { message: "not ready" } }));
+  const runningRuntime = createRestateWorkflowRuntime({
+    ingressUrl: ingress,
+    fetchImpl: running.fetchImpl,
+  });
+  const runningRun = await runningRuntime.get("inv-2");
+  assert.equal(runningRun?.status, "running");
+  assert.equal(runningRun?.output, undefined);
 });
 
 test("restate client: get() returns null on 404 (unknown invocation)", async () => {

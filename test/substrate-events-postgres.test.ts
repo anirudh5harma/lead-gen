@@ -1,8 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import type { Pool } from "pg";
 import { setupPg, until } from "./_pg.ts";
-import { createPostgresEventBus } from "../core/substrate/events/adapters/postgres.ts";
+import {
+  appendPostgresEvent,
+  createPostgresEventBus,
+} from "../core/substrate/events/adapters/postgres.ts";
 
 async function seedWorkspace(pool: import("pg").Pool): Promise<string> {
   const ws = randomUUID();
@@ -12,6 +16,48 @@ async function seedWorkspace(pool: import("pg").Pool): Promise<string> {
   );
   return ws;
 }
+
+test("postgres event append: recovers when idempotent conflict is invisible to insert CTE", async () => {
+  const workspace_id = randomUUID();
+  const event_id = randomUUID();
+  const calls: string[] = [];
+  const fakePool = {
+    query: async (sql: string) => {
+      calls.push(sql);
+      if (calls.length === 1) return { rows: [] };
+      return {
+        rows: [
+          {
+            id: event_id,
+            workspace_id,
+            event_type: "signal.dismissed",
+            schema_version: 1,
+            correlation_id: null,
+            causation_id: null,
+            source: "system",
+            producer_ref: null,
+            idempotency_key: "provider:event-1",
+            payload: { signal_id: randomUUID(), reason: "duplicate" },
+            occurred_at: new Date("2026-06-02T00:00:00.000Z"),
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+
+  const event = await appendPostgresEvent(fakePool, {
+    workspace_id,
+    event_type: "signal.dismissed",
+    source: "system",
+    idempotency_key: "provider:event-1",
+    payload: { signal_id: randomUUID(), reason: "retry" },
+  });
+
+  assert.equal(event.id, event_id);
+  assert.equal(event.idempotency_key, "provider:event-1");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1], /from events/);
+});
 
 test("postgres event bus: publish writes to events and wakes a LISTEN subscriber", async (t) => {
   const fx = await setupPg("pg_events");

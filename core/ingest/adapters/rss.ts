@@ -28,6 +28,9 @@ export class RssError extends Error {
   }
 }
 
+const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+const MAX_FETCH_TIMEOUT_MS = 30_000;
+
 interface RssItem {
   guid?: string | { _: string; $?: Record<string, string> };
   id?: string;
@@ -157,8 +160,10 @@ export const rssAdapter: WorkspaceAdapter = {
       return { items: [], cursor: input.cursor };
     }
     const fetchImpl = input.fetchImpl ?? globalThis.fetch;
+    const timeoutMs = rssFetchTimeoutMs(input.source.config);
     const response = await fetchImpl(url, {
       headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" },
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       throw new RssError(`failed to fetch ${url}`, response.status);
@@ -175,3 +180,10 @@ export const rssAdapter: WorkspaceAdapter = {
     };
   },
 };
+
+export function rssFetchTimeoutMs(config: Record<string, unknown>): number {
+  const raw = (config as { fetch_timeout_ms?: unknown }).fetch_timeout_ms;
+  const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_FETCH_TIMEOUT_MS;
+  return Math.min(Math.floor(value), MAX_FETCH_TIMEOUT_MS);
+}

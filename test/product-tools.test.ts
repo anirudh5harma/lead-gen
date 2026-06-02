@@ -2,6 +2,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  invokeTool,
   listTools,
   _resetToolRegistry,
 } from "../core/agents/tools/registry.ts";
@@ -28,6 +29,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
   for (const expected of [
     "product.state.get",
     "product.context.get",
+    "product.readiness.get",
     "product.conversation.trust.get",
     "product.company.website_profile.extract",
     "product.company.profile.configure",
@@ -36,6 +38,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.play.signal_email.configure",
     "product.play.signal_linkedin.configure",
     "product.email_account.configure",
+    "product.linkedin_account.connect_url.get",
     "product.company.track",
     "product.source.configure",
     "product.activation.configure",
@@ -46,6 +49,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.signals.dispatch_plays",
     "product.approval.decide",
     "product.workflow.retry",
+    "product.event_dispatch.dead_letters.list",
     "product.event_dispatch.redrive",
     "product.sending_domain.operate",
   ]) {
@@ -67,6 +71,15 @@ test("product tools: write tools require authenticated user context", async () =
       },
       { workspace_id: crypto.randomUUID() },
     ),
+    /Authenticated user context/,
+  );
+});
+
+test("product tools: readiness read requires authenticated user context", async () => {
+  registerProductTools();
+
+  await assert.rejects(
+    invokeTool("product.readiness.get", {}, { workspace_id: crypto.randomUUID() }),
     /Authenticated user context/,
   );
 });

@@ -1,5 +1,7 @@
 import type { Pool } from "pg";
+import { reconcileWorkspaceMembershipsForAuthIdentity } from "../../core/product/app.ts";
 import { getPool } from "../../core/substrate/storage/index.ts";
+import type { RequestAuthIdentity } from "../auth.ts";
 
 export interface CompletedOnboarding {
   workspace_id: string;
@@ -7,6 +9,10 @@ export interface CompletedOnboarding {
     | "workspace_company_profile"
     | "activated_workspace"
     | "accepted_workspace";
+}
+
+interface AuthOnboardingDeps {
+  reconcileWorkspaceMemberships?: typeof reconcileWorkspaceMembershipsForAuthIdentity;
 }
 
 export async function findCompletedOnboardingForUser(
@@ -77,4 +83,21 @@ export async function findCompletedOnboardingForUser(
     [userId],
   );
   return rows[0] ?? null;
+}
+
+export async function findCompletedOnboardingForAuthIdentity(
+  identity: RequestAuthIdentity,
+  pool: Pool = getPool(),
+  deps: AuthOnboardingDeps = {},
+): Promise<CompletedOnboarding | null> {
+  if (identity.email && identity.email_verified) {
+    const reconcile =
+      deps.reconcileWorkspaceMemberships ?? reconcileWorkspaceMembershipsForAuthIdentity;
+    await reconcile({
+      user_id: identity.id,
+      email: identity.email,
+      email_verified: true,
+    }, { pool });
+  }
+  return findCompletedOnboardingForUser(identity.id, pool);
 }

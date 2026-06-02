@@ -14,7 +14,9 @@ import {
   configureWorkspaceSignalSource,
   discoverSignalFromSource,
   dispatchSignalPlaysOnce,
+  getLinkedInAccountConnectIntent,
   getAppState,
+  listDeadLetteredEventDispatches,
   redriveDeadLetteredEventDispatch,
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
@@ -29,6 +31,7 @@ import {
 } from "./company-profile.ts";
 import { getWorkspaceAgentContext } from "./context.ts";
 import { getConversationTrustTrace } from "./conversation-trust.ts";
+import { checkProductReadiness } from "./health.ts";
 
 const SignalKindSchema = z.enum([
   "funding",
@@ -72,6 +75,30 @@ const SourceAdapterSchema = z.enum([
 
 const WorkspaceResultSchema = z.object({
   workspace_id: z.string().uuid(),
+});
+const ProductReadinessStatusSchema = z.enum(["ok", "degraded", "unconfigured"]);
+const ProductReadinessSchema = z.object({
+  service: z.literal("bombsell-product"),
+  status: ProductReadinessStatusSchema,
+  ready: z.boolean(),
+  checked_at: z.string().datetime(),
+  checks: z.array(
+    z.object({
+      name: z.string(),
+      status: ProductReadinessStatusSchema,
+      detail: z.string().optional(),
+    }),
+  ),
+});
+const DeadLetteredDispatchSchema = z.object({
+  event_id: z.string().uuid(),
+  workspace_id: z.string().uuid(),
+  event_type: z.string(),
+  attempts: z.number().int().nonnegative(),
+  last_error: z.string().nullable(),
+  dead_lettered_at: z.string().datetime(),
+  source: z.string(),
+  producer_ref: z.string().nullable(),
 });
 
 let registered = false;
@@ -122,6 +149,19 @@ export function registerProductTools(): void {
     }),
     async handler(_input, ctx) {
       return getWorkspaceAgentContext(sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.readiness.get",
+    description:
+      "Read the product runtime readiness shown in Ops: environment, provider configuration, durable substrate, database, schema tables, and migrations.",
+    kind: "read",
+    input: z.object({}),
+    output: ProductReadinessSchema,
+    async handler(_input, ctx) {
+      sessionFromContext(ctx);
+      return checkProductReadiness();
     },
   });
 
@@ -279,6 +319,21 @@ export function registerProductTools(): void {
     output: WorkspaceResultSchema.extend({ channel_account_id: z.string().uuid() }),
     async handler(input, ctx) {
       return configureWorkspaceEmailAccount(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.linkedin_account.connect_url.get",
+    description:
+      "Return the workspace-scoped LinkedIn provider authorization URL. Opening this URL starts human OAuth/session handoff; the callback emits typed channel account events.",
+    kind: "read",
+    input: z.object({}),
+    output: WorkspaceResultSchema.extend({
+      connect_url: z.string().min(1),
+      provider_configured: z.boolean(),
+    }),
+    async handler(_input, ctx) {
+      return getLinkedInAccountConnectIntent(sessionFromContext(ctx));
     },
   });
 
@@ -553,6 +608,27 @@ export function registerProductTools(): void {
     async handler(input, ctx) {
       await retryFailedWorkflowRun(input.run_id, sessionFromContext(ctx));
       return { ok: true as const };
+    },
+  });
+
+  registerTool({
+    name: "product.event_dispatch.dead_letters.list",
+    description:
+      "List dead-lettered event-bus deliveries for the active workspace so agents can inspect the same Ops recovery queue users see before redriving.",
+    kind: "read",
+    input: z.object({
+      limit: z.number().int().positive().max(500).optional(),
+    }),
+    output: z.object({
+      dead_letters: z.array(DeadLetteredDispatchSchema),
+    }),
+    async handler(input, ctx) {
+      return {
+        dead_letters: await listDeadLetteredEventDispatches(
+          sessionFromContext(ctx),
+          { limit: input.limit },
+        ),
+      };
     },
   });
 

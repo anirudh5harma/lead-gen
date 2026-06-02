@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import Icon from "@/components/Icon";
-import { getRequestUserId } from "@/lib/auth";
+import { getRequestAuthIdentity } from "@/lib/auth";
 import {
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
-import { findCompletedOnboardingForUser } from "@/lib/auth/onboarding";
+import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
 import { googleAuthPath, PRODUCT_HOME_PATH } from "@/lib/auth/next";
 import OnboardingForm from "./OnboardingForm";
 
@@ -18,8 +18,8 @@ export default async function OnboardingPage({
   const params = (await searchParams) ?? {};
   const initialWebsiteUrl = normalizeCompanyWebsiteUrl(params.url) ?? "";
   const initialCompanyName = typeof params.company === "string" ? params.company : "";
-  const userId = await getRequestUserId();
-  if (!userId) {
+  const identity = await getRequestAuthIdentity();
+  if (!identity) {
     const next =
       initialWebsiteUrl || initialCompanyName
         ? `/onboarding?${new URLSearchParams({
@@ -29,7 +29,7 @@ export default async function OnboardingPage({
         : "/onboarding";
     redirect(googleAuthPath(next));
   }
-  const completed = await findCompletedOnboardingForUser(userId);
+  const completed = await findCompletedOnboardingForAuthIdentity(identity);
   if (completed) redirect(PRODUCT_HOME_PATH);
 
   return (

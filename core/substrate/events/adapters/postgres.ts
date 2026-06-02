@@ -117,7 +117,59 @@ export async function appendPostgresEvent(
       input.occurred_at ?? null,
     ],
   );
-  const row = rows[0]!;
+  const row =
+    rows[0] ??
+    (input.idempotency_key
+      ? await selectExistingIdempotentEvent(pool, {
+          workspace_id: input.workspace_id,
+          event_type: input.event_type,
+          idempotency_key: input.idempotency_key,
+        })
+      : null);
+  if (!row) {
+    throw new Error(
+      input.idempotency_key
+        ? `Event append conflict did not return an event row for ${input.event_type}:${input.idempotency_key}`
+        : `Event append did not return an event row for ${input.event_type}`,
+    );
+  }
+  return toPublishedPostgresEvent(row, parsed);
+}
+
+async function selectExistingIdempotentEvent(
+  pool: Pool | PoolClient,
+  input: {
+    workspace_id: string;
+    event_type: string;
+    idempotency_key: string;
+  },
+): Promise<PostgresEventRow | null> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { rows } = await pool.query<PostgresEventRow>(
+      `select id, workspace_id, event_type, schema_version,
+              correlation_id, causation_id, source, producer_ref,
+              idempotency_key, payload, occurred_at
+         from events
+        where workspace_id = $1
+          and event_type = $2
+          and idempotency_key = $3
+        limit 1`,
+      [input.workspace_id, input.event_type, input.idempotency_key],
+    );
+    if (rows[0]) return rows[0];
+    await sleep(10 * 2 ** attempt);
+  }
+  return null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toPublishedPostgresEvent(
+  row: PostgresEventRow,
+  parsed: unknown,
+): PublishedEvent {
   return {
     id: row.id,
     workspace_id: row.workspace_id,

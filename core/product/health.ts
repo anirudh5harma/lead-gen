@@ -24,6 +24,36 @@ interface ProductReadinessDeps {
   probeNatsConnection?: (env: Record<string, string | undefined>) => Promise<void>;
   probeRestateIngress?: (env: Record<string, string | undefined>) => Promise<void>;
   probeRestateServices?: (env: Record<string, string | undefined>) => Promise<void>;
+  probeLinkedInProvider?: (env: Record<string, string | undefined>) => Promise<void>;
+}
+
+interface RestateDeployment {
+  id?: string;
+  uri?: string;
+  endpoint?: string;
+  address?: string;
+  services?: Array<{ name?: string }>;
+}
+
+interface RestateDeploymentsResponse {
+  deployments?: RestateDeployment[];
+}
+
+export interface RestateDeploymentSummary {
+  deployments: Array<{
+    id: string | null;
+    uri: string | null;
+    services: string[];
+    missingRequiredServices: string[];
+  }>;
+  services: string[];
+  missing: string[];
+  incompleteRequiredDeployments: Array<{
+    id: string | null;
+    uri: string | null;
+    services: string[];
+    missingRequiredServices: string[];
+  }>;
 }
 
 const REQUIRED_TABLES = [
@@ -59,14 +89,20 @@ const REQUIRED_MIGRATIONS = [
   "031_procedural_memory_applications.sql",
 ];
 
-const REQUIRED_RESTATE_SERVICES = [
+export const REQUIRED_RESTATE_SERVICES = [
+  "system.restate_runtime_probe.v1",
   "series_a_cold_open",
+  "play.signal_to_email.v1",
+  "play.signal_to_linkedin.v1",
+  "play.reply_to_email.v1",
   "ingest_catalog_poll",
   "ingest_workspace_poll",
   "ingest_expire_sweep",
+  "channel.email_domain_provision.v1",
+  "channel.email_domain_warmup.v1",
   "email_domain_warmup_sweep",
   "email_outlook_subscription_repair",
-];
+] as const;
 
 export async function checkProductReadiness(
   pool: Pool | null = tryGetPool(),
@@ -81,11 +117,13 @@ export async function checkProductReadiness(
       detail: "DATABASE_URL is not configured",
     });
     checks.push(formatEnvironmentCheck(env));
+    checks.push(await formatLinkedInProviderCheck(env, deps));
     return formatReadiness(checks);
   }
 
   try {
     checks.push(formatEnvironmentCheck(env));
+    checks.push(await formatLinkedInProviderCheck(env, deps));
     checks.push(await formatNatsCredentialCheck(env, deps));
     checks.push(await formatRestateIngressCheck(env, deps));
 
@@ -146,6 +184,110 @@ function formatEnvironmentCheck(
     status: "degraded",
     detail: `Missing production env keys: ${report.missingProductionKeys.join(", ")}`,
   };
+}
+
+export function formatLinkedInProviderCheck(
+  env: Record<string, string | undefined>,
+  deps: ProductReadinessDeps = {},
+): Promise<ProductReadinessCheck> {
+  return formatLinkedInProviderCheckInternal(env, deps);
+}
+
+async function formatLinkedInProviderCheckInternal(
+  env: Record<string, string | undefined>,
+  deps: ProductReadinessDeps,
+): Promise<ProductReadinessCheck> {
+  if (env.NODE_ENV !== "production") {
+    return {
+      name: "linkedin.provider",
+      status: "ok",
+      detail: "Production LinkedIn provider validation is active when NODE_ENV=production",
+    };
+  }
+
+  const missing = [
+    "LINKEDIN_PROVIDER_URL",
+    "LINKEDIN_PROVIDER_HEALTH_URL",
+    "LINKEDIN_PROVIDER_API_KEY",
+    "LINKEDIN_PROVIDER_WEBHOOK_SECRET",
+  ].filter((key) => !env[key]?.trim());
+  if (missing.length > 0) {
+    return {
+      name: "linkedin.provider",
+      status: "degraded",
+      detail: `Missing LinkedIn provider env keys: ${missing.join(", ")}`,
+    };
+  }
+
+  for (const key of [
+    "LINKEDIN_PROVIDER_URL",
+    "LINKEDIN_PROVIDER_AUTH_URL",
+    "LINKEDIN_PROVIDER_HEALTH_URL",
+  ] as const) {
+    const raw = env[key]?.trim();
+    if (!raw) continue;
+    try {
+      const url = new URL(raw);
+      if (url.protocol !== "https:") throw new Error("not https");
+    } catch {
+      return {
+        name: "linkedin.provider",
+        status: "degraded",
+        detail: `${key} must be a valid HTTPS URL`,
+      };
+    }
+  }
+
+  const redirect = env.LINKEDIN_REDIRECT_URI?.trim();
+  if (redirect) {
+    try {
+      const url = new URL(redirect);
+      if (url.protocol !== "https:") throw new Error("not https");
+    } catch {
+      return {
+        name: "linkedin.provider",
+        status: "degraded",
+        detail: "LINKEDIN_REDIRECT_URI must be a valid HTTPS URL when set in production",
+      };
+    }
+  }
+
+  try {
+    await (deps.probeLinkedInProvider ?? probeLinkedInProvider)(env);
+  } catch (err) {
+    return {
+      name: "linkedin.provider",
+      status: "degraded",
+      detail: `LinkedIn provider health check failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    };
+  }
+
+  return {
+    name: "linkedin.provider",
+    status: "ok",
+    detail: env.LINKEDIN_PROVIDER_AUTH_URL?.trim()
+      ? "LinkedIn provider send, auth, and webhook ingress are configured"
+      : "LinkedIn provider send and webhook ingress are configured; auth URL falls back to provider origin",
+  };
+}
+
+async function probeLinkedInProvider(
+  env: Record<string, string | undefined>,
+): Promise<void> {
+  const rawUrl = env.LINKEDIN_PROVIDER_HEALTH_URL?.trim();
+  if (!rawUrl) throw new Error("LINKEDIN_PROVIDER_HEALTH_URL is missing");
+  const apiKey = env.LINKEDIN_PROVIDER_API_KEY?.trim();
+  if (!apiKey) throw new Error("LINKEDIN_PROVIDER_API_KEY is missing");
+
+  const res = await fetch(rawUrl, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
 async function formatNatsCredentialCheck(
@@ -347,18 +489,65 @@ async function probeRestateServices(env: Record<string, string | undefined>): Pr
     throw new Error(`admin HTTP ${res.status}`);
   }
 
-  const payload = await res.json() as {
-    deployments?: Array<{ services?: Array<{ name?: string }> }>;
-  };
-  const services = new Set(
-    (payload.deployments ?? []).flatMap((deployment) =>
-      (deployment.services ?? []).map((service) => service.name).filter(Boolean),
-    ),
-  );
-  const missing = REQUIRED_RESTATE_SERVICES.filter((service) => !services.has(service));
-  if (missing.length > 0) {
-    throw new Error(`missing workflow services: ${missing.join(", ")}`);
+  const payload = await res.json() as RestateDeploymentsResponse;
+  const summary = summarizeRestateDeployments(payload);
+  if (summary.missing.length > 0) throw new Error(formatMissingRestateServices(summary));
+  if (summary.incompleteRequiredDeployments.length > 0) {
+    throw new Error(formatIncompleteRestateDeployments(summary));
   }
+}
+
+export function summarizeRestateDeployments(
+  payload: RestateDeploymentsResponse,
+  requiredServices: readonly string[] = REQUIRED_RESTATE_SERVICES,
+): RestateDeploymentSummary {
+  const deployments = (payload.deployments ?? []).map((deployment) => {
+    const services = (deployment.services ?? [])
+      .map((service) => service.name)
+      .filter((name): name is string => Boolean(name))
+      .sort();
+    const serviceSet = new Set(services);
+    return {
+      id: deployment.id ?? null,
+      uri: deployment.uri ?? deployment.endpoint ?? deployment.address ?? null,
+      services,
+      missingRequiredServices: requiredServices.filter((service) => !serviceSet.has(service)),
+    };
+  });
+  const services = [...new Set(deployments.flatMap((deployment) => deployment.services))].sort();
+  const serviceSet = new Set(services);
+  const missing = requiredServices.filter((service) => !serviceSet.has(service));
+  const requiredServiceSet = new Set(requiredServices);
+  const incompleteRequiredDeployments = deployments.filter(
+    (deployment) =>
+      deployment.services.some((service) => requiredServiceSet.has(service)) &&
+      deployment.missingRequiredServices.length > 0,
+  );
+  return { deployments, services, missing, incompleteRequiredDeployments };
+}
+
+function formatMissingRestateServices(summary: RestateDeploymentSummary): string {
+  const deployments = summary.deployments.length
+    ? summary.deployments
+        .map((deployment) => {
+          const services = deployment.services.length ? deployment.services.join("|") : "none";
+          return `${deployment.id ?? "unknown"}@${deployment.uri ?? "unknown"}[${services}]`;
+        })
+        .join("; ")
+    : "none";
+  return `missing workflow services: ${summary.missing.join(", ")}; deployments: ${deployments}`;
+}
+
+function formatIncompleteRestateDeployments(summary: RestateDeploymentSummary): string {
+  const deployments = summary.incompleteRequiredDeployments
+    .map((deployment) => {
+      const services = deployment.services.length ? deployment.services.join("|") : "none";
+      return `${deployment.id ?? "unknown"}@${deployment.uri ?? "unknown"}[${services}] missing ${
+        deployment.missingRequiredServices.join("|")
+      }`;
+    })
+    .join("; ");
+  return `incomplete workflow deployments still registered: ${deployments}`;
 }
 
 function restateAdminUrl(env: Record<string, string | undefined>): string | null {

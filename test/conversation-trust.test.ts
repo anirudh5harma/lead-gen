@@ -32,6 +32,7 @@ function message(
     provenance: input.provenance ?? {},
     properties: input.properties ?? {},
     eval_notes: input.eval_notes ?? {},
+    channel_account_id: input.channel_account_id ?? null,
   };
 }
 
@@ -198,4 +199,82 @@ test("buildGateExplanations explains deliverability defers", () => {
   );
   assert.match(explanations[0]?.detail ?? "", /warmed daily cap reached/);
   assert.match(explanations[0]?.detail ?? "", /Retry after/);
+});
+
+test("buildGateExplanations explains LinkedIn account recovery as channel state", () => {
+  const draftId = randomUUID();
+  const deferred: ConversationTrustEvent = {
+    id: randomUUID(),
+    event_type: "message.deferred",
+    source: "agent",
+    payload: {
+      message_id: draftId,
+      channel: "linkedin_dm",
+      defer_reason: "linkedin_rate_limited",
+      retry_after: "2026-06-02T10:00:00.000Z",
+      detail: "LinkedIn account Maya LinkedIn is rate-limited.",
+      channel_account_id: randomUUID(),
+    },
+    occurred_at: now,
+  };
+
+  const explanations = buildGateExplanations({
+    message: message({
+      id: draftId,
+      direction: "outbound",
+      channel: "linkedin_dm",
+      status: "deferred",
+    }),
+    events: [deferred],
+  });
+
+  assert.equal(explanations.length, 1);
+  assert.equal(explanations[0]?.kind, "channel");
+  assert.equal(explanations[0]?.status, "deferred");
+  assert.match(explanations[0]?.summary ?? "", /LinkedIn rate-limited the account/);
+  assert.match(explanations[0]?.detail ?? "", /Maya LinkedIn/);
+});
+
+test("buildGateExplanations explains provider account lifecycle errors", () => {
+  const draftId = randomUUID();
+  const accountId = randomUUID();
+  const accountError: ConversationTrustEvent = {
+    id: randomUUID(),
+    event_type: "channel.account.errored",
+    source: "provider",
+    payload: {
+      channel_account_id: accountId,
+      kind: "linkedin_oauth",
+      status: "needs_reauth",
+      error: "LinkedIn provider requires account reauthorization.",
+      account_display_name: "Maya LinkedIn",
+      provider_event_id: "evt_reauth_123",
+      provider_incident_id: "inc_456",
+      retry_after: "2026-06-02T11:00:00.000Z",
+    },
+    occurred_at: now,
+  };
+
+  const explanations = buildGateExplanations({
+    message: message({
+      id: draftId,
+      direction: "outbound",
+      channel: "linkedin_dm",
+      status: "queued",
+      channel_account_id: accountId,
+    }),
+    events: [accountError],
+  });
+
+  assert.equal(explanations.length, 1);
+  assert.equal(explanations[0]?.kind, "channel");
+  assert.equal(explanations[0]?.status, "blocked");
+  assert.equal(explanations[0]?.severity, "block");
+  assert.match(explanations[0]?.summary ?? "", /needs reauthorization/);
+  assert.match(explanations[0]?.detail ?? "", /provider requires account reauthorization/);
+  assert.match(explanations[0]?.detail ?? "", /Maya LinkedIn/);
+  assert.match(explanations[0]?.detail ?? "", /Incident inc_456/);
+  assert.match(explanations[0]?.detail ?? "", /Provider event evt_reauth_123/);
+  assert.match(explanations[0]?.detail ?? "", /Retry after 2026-06-02T11:00:00.000Z/);
+  assert.match(explanations[0]?.detail ?? "", new RegExp(accountId));
 });

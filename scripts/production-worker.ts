@@ -9,10 +9,18 @@ import {
   createDeepSeekIntentClassifier,
   createOutlookSender,
   createOutlookSubscriptionRepairWorkflow,
+  createPostgresOwnedDomainEmailChannel,
+  createResendEmailTransport,
   createSesSender,
   createWarmupSweepWorkflow,
   registerEmailIngressProjectors,
 } from "../core/channels/email/index.ts";
+import {
+  createHttpLinkedInTransport,
+  createPostgresLinkedInChannel,
+  createUnconfiguredLinkedInTransport,
+  type LinkedInTransport,
+} from "../core/channels/linkedin/index.ts";
 import {
   createOpenAIEmbeddingClient,
   createCatalogPollWorkflow,
@@ -21,7 +29,23 @@ import {
   registerSignalProjectors,
   startClassifyWorkflow,
 } from "../core/ingest/index.ts";
-import { createSeriesAColdOpenPlay } from "../core/plays/index.ts";
+import {
+  createPostgresVerticalSliceStore,
+  createReplyToEmailPlayWorkflow,
+  createSeriesAColdOpenPlay,
+  createSignalToEmailPlayWorkflow,
+  createSignalToLinkedInPlayWorkflow,
+} from "../core/plays/index.ts";
+import { getWorkspaceAgentContext } from "../core/product/context.ts";
+import {
+  createSendingDomainProvisioningWorkflow,
+  createSendingDomainWarmupWorkflow,
+} from "../core/product/domain-provisioning.ts";
+import {
+  dispatchReplyEmailPlaysOnce,
+  dispatchSignalPlaysOnce,
+  registerProductEventDispatchers,
+} from "../core/product/app.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
 import {
@@ -31,10 +55,13 @@ import {
 import { serveRestateWorkflows } from "../core/substrate/workflows/adapters/restate-host.ts";
 import {
   createRestateWorkflowRuntime,
+  createRestateRuntimeProbeWorkflow,
   restateBearerFromEnv,
 } from "../core/substrate/workflows/index.ts";
 
 console.log("[production-worker] booting");
+
+process.env.BOMBSELL_SUBSTRATE ??= "nats_restate";
 
 const natsUrl = requiredEnv("NATS_URL");
 const natsCreds = process.env.NATS_CREDS?.trim();
@@ -75,8 +102,18 @@ const outlook = createOutlookSender({
   clientId: microsoftClientId,
   clientSecret: microsoftClientSecret,
 });
+const verticalStore = createPostgresVerticalSliceStore(pool);
+const emailChannel = createPostgresOwnedDomainEmailChannel({
+  pool,
+  transport: createResendEmailTransport({ apiKey: requiredEnv("RESEND_API_KEY") }),
+});
+const linkedinChannel = createPostgresLinkedInChannel({
+  pool,
+  transport: createProductLinkedInTransport(),
+});
 
 const workflows = [
+  createRestateRuntimeProbeWorkflow(),
   createSeriesAColdOpenPlay({
     pool,
     bus,
@@ -88,6 +125,33 @@ const workflows = [
       outlook,
       sesConfigurationSet,
     },
+  }),
+  createSignalToEmailPlayWorkflow({
+    store: verticalStore,
+    memory,
+    judge,
+    writerLlm: llm,
+    email: emailChannel,
+    bus,
+    workspaceContextProvider: workflowWorkspaceContext,
+  }),
+  createSignalToLinkedInPlayWorkflow({
+    store: verticalStore,
+    memory,
+    judge,
+    writerLlm: llm,
+    linkedin: linkedinChannel,
+    bus,
+    workspaceContextProvider: workflowWorkspaceContext,
+  }),
+  createReplyToEmailPlayWorkflow({
+    store: verticalStore,
+    memory,
+    judge,
+    writerLlm: llm,
+    email: emailChannel,
+    bus,
+    workspaceContextProvider: workflowWorkspaceContext,
   }),
   createCatalogPollWorkflow({
     pool,
@@ -101,6 +165,8 @@ const workflows = [
   }),
   createExpireWorkflow({ pool, bus }),
   createWarmupSweepWorkflow({ pool }),
+  createSendingDomainProvisioningWorkflow({ bus }),
+  createSendingDomainWarmupWorkflow({ bus }),
   createOutlookSubscriptionRepairWorkflow({
     pool,
     accessTokens: outlook,
@@ -162,7 +228,17 @@ const classifier = await startClassifyWorkflow(
     },
   },
 );
+const playDispatchSubscriptions = await registerProductEventDispatchers(
+  {
+    subscribe(eventType, handler, durableName) {
+      return bus.subscribeScoped("*", eventType, handler, { durableName });
+    },
+  },
+  { limit: 50 },
+);
 console.log("[production-worker] projectors consuming events");
+
+await redriveProductPlayDispatches();
 
 await redrivePendingDispatches();
 const relayTimer = setInterval(() => {
@@ -194,6 +270,18 @@ async function redrivePendingDispatches(): Promise<void> {
   }
 }
 
+async function redriveProductPlayDispatches(): Promise<void> {
+  const [signalDispatched, replyDispatched] = await Promise.all([
+    dispatchSignalPlaysOnce({ limit: 100 }),
+    dispatchReplyEmailPlaysOnce({ limit: 100 }),
+  ]);
+  if (signalDispatched > 0 || replyDispatched > 0) {
+    console.log(
+      `[production-worker] product play redrive: ${signalDispatched} signal plays, ${replyDispatched} reply plays`,
+    );
+  }
+}
+
 async function shutdown(): Promise<void> {
   clearInterval(relayTimer);
   clearInterval(recoveryTimer);
@@ -201,6 +289,7 @@ async function shutdown(): Promise<void> {
     classifier.subscription.unsubscribe(),
     ...emailSubscriptions.map((subscription) => subscription.unsubscribe()),
     ...signalSubscriptions.map((subscription) => subscription.unsubscribe()),
+    ...playDispatchSubscriptions.map((subscription) => subscription.unsubscribe()),
   ]);
   await bus.close();
   await pool.end();
@@ -217,6 +306,34 @@ function requiredEnv(key: string): string {
   const value = process.env[key]?.trim();
   if (!value) throw new Error(`${key} is required for the production worker`);
   return value;
+}
+
+function createProductLinkedInTransport(): LinkedInTransport {
+  const endpoint = process.env.LINKEDIN_PROVIDER_URL?.trim();
+  const apiKey = process.env.LINKEDIN_PROVIDER_API_KEY?.trim();
+  if (endpoint && apiKey) return createHttpLinkedInTransport({ endpoint, apiKey });
+  return createUnconfiguredLinkedInTransport();
+}
+
+async function workflowWorkspaceContext(input: { workspace_id: string }): Promise<string | null> {
+  const { rows } = await pool.query<{ user_id: string }>(
+    `select user_id
+       from workspace_members
+      where workspace_id = $1
+        and accepted_at is not null
+      order by
+        case role when 'owner' then 0 when 'admin' then 1 else 2 end,
+        invited_at asc
+      limit 1`,
+    [input.workspace_id],
+  );
+  const userId = rows[0]?.user_id;
+  if (!userId) return null;
+  const context = await getWorkspaceAgentContext(
+    { workspace_id: input.workspace_id, user_id: userId },
+    pool,
+  );
+  return context.markdown;
 }
 
 function optionalPositiveNumber<K extends string>(

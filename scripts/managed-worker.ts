@@ -1,8 +1,12 @@
 import { createServer } from "node:http";
+import {
+  moduleForTarget,
+  resolveWorkerHealthPort,
+} from "./managed-worker-config.ts";
 
 const target = process.env.WORKER_TARGET_COMMAND?.trim();
 const modulePath = moduleForTarget(target);
-const port = Number(process.env.WORKER_HEALTH_PORT ?? 9080);
+const port = resolveWorkerHealthPort(target);
 
 let ready = false;
 let fatal: string | null = null;
@@ -39,18 +43,3 @@ void import(modulePath)
     process.exitCode = 1;
     setTimeout(() => process.exit(1), 250).unref();
   });
-
-function moduleForTarget(command: string | undefined): string {
-  switch (command) {
-    case "worker:email-projectors":
-      return "./email-projectors-worker.ts";
-    case "worker:signal-projectors":
-      return "./signal-projectors-worker.ts";
-    case "worker:projectors":
-      return "./projectors-worker.ts";
-    default:
-      throw new Error(
-        "WORKER_TARGET_COMMAND must be worker:email-projectors, worker:signal-projectors, or worker:projectors",
-      );
-  }
-}

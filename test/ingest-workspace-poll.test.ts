@@ -5,7 +5,12 @@ import type { Pool } from "pg";
 import { setupPg, until } from "./_pg.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import { createMockEmbeddingClient } from "../core/ingest/embeddings.ts";
-import { workspacePollOnce } from "../core/ingest/workspace-poll.ts";
+import {
+  buildNextCursor,
+  maxItemsPerPoll,
+  selectNextWorkspacePollItems,
+  workspacePollOnce,
+} from "../core/ingest/workspace-poll.ts";
 import { registerSignalProjectors } from "../core/ingest/projectors.ts";
 
 interface Seeded {
@@ -59,6 +64,32 @@ const RSS_XML = `<?xml version="1.0"?>
     </item>
   </channel>
 </rss>`;
+
+test("workspace poll batching: advances through feed items with cursor seen ids", () => {
+  const items = Array.from({ length: 5 }, (_, i) => ({
+    external_id: `item-${i + 1}`,
+    title: `Item ${i + 1}`,
+    freshness_at: "2026-06-02T00:00:00.000Z",
+  }));
+
+  const first = selectNextWorkspacePollItems(items, {}, 2);
+  assert.deepEqual(first.map((item) => item.external_id), ["item-1", "item-2"]);
+
+  const cursor = buildNextCursor({}, { count: 5 }, items, first);
+  assert.deepEqual(cursor.seen_external_ids, ["item-1", "item-2"]);
+  assert.equal(cursor.selected_count, 2);
+  assert.equal(cursor.polled_count, 5);
+
+  const second = selectNextWorkspacePollItems(items, cursor, 2);
+  assert.deepEqual(second.map((item) => item.external_id), ["item-3", "item-4"]);
+});
+
+test("workspace poll batching: bounds configured batch size", () => {
+  assert.equal(maxItemsPerPoll({}), 3);
+  assert.equal(maxItemsPerPoll({ max_items_per_poll: "3" }), 3);
+  assert.equal(maxItemsPerPoll({ max_items_per_poll: 500 }), 10);
+  assert.equal(maxItemsPerPoll({ max_items_per_poll: -1 }), 3);
+});
 
 async function createProjectingBus(pool: Pool) {
   const bus = createInMemoryEventBus();
