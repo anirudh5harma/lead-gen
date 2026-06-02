@@ -43,15 +43,15 @@ Legal/acquisition decision:
 |---|---|---|
 | Hacker News | Keep native HN Firebase/Algolia adapters | Official HN API exposes public data near real time and currently has no stated rate limit; cheap and clean. |
 | Reddit | Keep native subreddit adapter for bounded, OAuth-ready use; add commercial access review before broad scale | Reddit's official Data API is the authorized path and commercial/significant usage can require approval/fees. Use descriptive user agents, caching, tight subreddit/keyword scope, and source budgets. |
-| X/Twitter | Start with a social-listening aggregator; later add official X API adapter for customers who need dedicated X volume | Official X API is legal and now priced around post-read usage tiers, with search and stream endpoints available through the developer platform. It is still another provider, billing model, compliance surface, and stream worker to operate. |
-| LinkedIn | Do **not** build or buy a scraper/cookie-session ingestion path. Use an aggregator/vendor only if they contractually provide compliant mention data; use LinkedIn official APIs only for owned/admin assets and approved Community Management use cases | LinkedIn explicitly prohibits scraping/crawling/automation outside its APIs, and official API access is permission-gated and not a broad public-post search firehose. |
-| Cross-platform social listening | Pilot Octolens first for Brand/Competitor/Buy Intent feeds | It covers Reddit, X, LinkedIn, Hacker News, GitHub, YouTube, podcasts/newsletters/news, includes API/webhooks/MCP on every plan, and is cheaper than operating many APIs while the product is still validating signal quality. |
+| X/Twitter | Add one narrow, usage-priced unofficial/provider-backed X data API only after native/free sources prove which queries matter | SocialData/TwitterAPI.io-style APIs are materially cheaper than social-listening suites when we cap keyword rules and store only normalized `Signal`s. |
+| LinkedIn | Avoid broad LinkedIn listening at launch. If needed, test targeted company-page/post actors for known accounts only | LinkedIn is the highest cost/risk surface. Do not use cookies, user sessions, profile crawling, or broad people scraping in the product path. |
+| Cross-platform social listening | Defer Octolens/Trigify/Syften until signal quality proves the subscription cost | Aggregators are useful, but they are not the cheapest way to validate the first live signal loop. |
 
 Practical startup provider stack:
 
 | Tier | Providers to test | Fit | Risk posture |
 |---|---|---|---|
-| **Signal-listening aggregators** | Octolens, Trigify, Syften | Best first layer for live GTM signals. They already package keywords, filtering, routing, webhooks/API, and source maintenance. | Lowest engineering cost. Verify contract/data-use terms, source coverage, export rights, and whether LinkedIn data is included in our plan. |
+| **Signal-listening aggregators** | Octolens, Trigify, Syften | Useful later when we need managed cross-platform coverage and team routing. | Higher recurring cost. Defer until free/native + narrow paid APIs prove signal-to-outcome value. |
 | **Dedicated social data APIs** | SocialData / TwitterAPI.io for X; Data365 for broader social data | Better when a source proves high-volume enough that we want cheaper per-item X/search access or raw structured feeds. | Medium. Treat as provider-backed unofficial access; require kill switches, provenance, monthly budget caps, and a replacement path. |
 | **Scraper marketplaces** | Apify Actors for X and LinkedIn company posts; Bright Data for enterprise-scale public web data | Good for experiments, narrow backfills, and monitoring known company/profile URLs when aggregators miss a source. | Highest operational/compliance risk. Never put user cookies in the system. Keep off the hot path until provider terms, data deletion, and anti-abuse behavior are signed off. |
 | **Native/free sources** | HN Firebase/Algolia, RSS, Google News, Product Hunt, bounded Reddit JSON/API | Keep owning these because they are cheap, stable enough, and already fit the workflow/event architecture. | Low, but Reddit commercial scale still needs terms review. |
@@ -61,35 +61,24 @@ Practical startup provider stack:
 
 Recommended provider order:
 
-1. **Octolens pilot** for cross-platform social mentions. Configure 5-10
-   workspace keywords: brand, top competitors, category terms, pain phrases,
-   and integration partners. Route feeds into our existing push-signal webhook
-   with source provenance preserved.
-2. **Trigify or Syften comparator** depending on the experiment. Use Trigify if
-   LinkedIn/professional-network GTM signals are the main gap; use Syften if
-   Reddit, HN, GitHub, forums, YouTube, newsletters, and podcasts matter more
-   and LinkedIn can wait.
-3. **Crustdata trial** for B2B graph and live signal APIs. Evaluate company,
-   people, jobs, posts, and watcher coverage against 50 target accounts. If it
-   delivers fresh posts/jobs/funding/headcount data with clean terms, make it a
-   first-class provider for `Rep` research and `Signal` acquisition.
-4. **Exa monitors/search** for open-web discovery and enrichment. Use it to
-   find fresh evidence, company/person pages, source URLs, and long-tail social
-   mentions; do not depend on it for social network completeness.
-5. **Native direct adapters where free/clean**: HN, RSS/Google News, Product
-   Hunt, GitHub/public developer sources, and bounded Reddit.
-6. **Unofficial X data API** after the aggregator proves X quality. Start with
-   SocialData or TwitterAPI.io-style usage pricing for search/profile/tweet
-   retrieval before building an official X integration. Enforce monthly spend,
-   source-level quotas, and provider health fallback.
-7. **LinkedIn company-post scraping/API experiment** only for known company
-   pages and public posts, preferably via an Apify/Bright Data/Data365-style
-   provider that does not require cookies or user accounts. Keep it isolated
-   behind a provider interface and do not use it for logged-in profile crawling.
-8. **LinkedIn official Community Management** only for owned/admin page and
-   authenticated member/community operations after approval. For broad LinkedIn
-   market listening, keep it behind a vendor source and fail closed if provider
-   compliance is unclear.
+1. **Native/free direct adapters first**: HN, RSS/Google News, Product Hunt,
+   bounded Reddit, ATS job boards, and public company/blog feeds. This is the
+   cheapest path and already runs through durable `ingest_workspace_poll`.
+2. **Free alert backup**: add F5Bot/manual email-forward or webhook bridge for
+   Reddit/HN-style mentions if our polling misses useful conversations. Treat
+   it as source redundancy, not the main product architecture.
+3. **Cheap X data API only after query proof**: start with SocialData or
+   TwitterAPI.io-style usage pricing for 5-10 tightly scoped searches. Enforce
+   monthly spend, source-level quotas, and dedupe by tweet id before storing.
+4. **Targeted LinkedIn company-post experiment** only for known company pages
+   and public posts, via an Apify/Bright Data/Data365-style provider that does
+   not require cookies or user accounts. Keep it off the hot path until terms,
+   data deletion, and rate behavior are reviewed.
+5. **Exa enrichment/search** for open-web evidence, company/person pages, and
+   source discovery when native feeds do not explain a signal. Do not count it
+   as a LinkedIn/X firehose.
+6. **Crustdata or Octolens later** only after cheap sources prove that managed
+   coverage would save enough engineering time or improve outcome volume.
 
 Competitor/product inference:
 
@@ -114,6 +103,16 @@ not alternate workflows. They push normalized mentions into the same typed event
 bus, and Reps see them as ordinary `Signal`s with source confidence,
 provenance, and channel-specific response guidance.
 
+Implementation convention: configure provider trials through
+`product.source.configure` with `adapter: "webhook"` and a provider label such
+as `f5bot`, `socialdata`, `twitterapi_io`, `apify`, `data365`, `exa`,
+`crustdata`, or `octolens`. The projector stores the provider on
+`graph_sources.config/properties`, keeps the source out of poll maintenance, and
+stamps ingested `Signal` provenance with the same provider unless the upstream
+payload overrides it. Providers still send the normalized `bombsell_signal_v1`
+payload to `/api/webhooks/signals`; provider-specific fetch/scrape mechanics
+stay outside the product spine.
+
 References to recheck before procurement or provider enablement:
 
 - Octolens social-signal playbook and pricing: <https://octolens.com/blog/track-social-signals>, <https://octolens.com/pricing>
@@ -121,7 +120,7 @@ References to recheck before procurement or provider enablement:
 - Exa AI search/monitoring substrate: <https://exa.ai/docs/reference/search>, <https://exa.ai/pricing>
 - Crustdata B2B graph, post APIs, and pricing: <https://docs.crustdata.com/general/introduction>, <https://crustdata.com/apis/posts>, <https://crustdata.com/pricing>
 - Gojiberry product positioning/FAQ: <https://gojiberry.ai/faq>, <https://gojiberry.ai/>
-- Unofficial/provider-backed X data APIs: <https://docs.socialdata.tools/getting-started/pricing/>, <https://twitterapi.io/blog/twitter-api-pricing>
+- Free/cheap alerting and unofficial/provider-backed X data APIs: <https://f5bot.com/faq>, <https://f5bot.com/>, <https://docs.socialdata.tools/getting-started/pricing/>, <https://twitterapi.io/twitter-api-pricing>
 - Scraper marketplace options to test carefully: <https://apify.com/apidojo/tweet-scraper>, <https://apify.com/harvestapi/linkedin-company-posts>, <https://data365.co/solutions/ai-apis>
 - HN official public API: <https://github.com/HackerNews/API>
 - Reddit Data API Terms: <https://redditinc.com/policies/data-api-terms>

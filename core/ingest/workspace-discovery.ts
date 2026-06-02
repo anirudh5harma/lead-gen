@@ -186,6 +186,10 @@ export async function discoverWorkspaceSignal(
       },
       provenance: {
         adapter: ctx.adapter_id,
+        ...(typeof ctx.source.config.provider === "string" &&
+        ctx.source.config.provider.trim()
+          ? { provider: ctx.source.config.provider.trim() }
+          : {}),
         external_id: item.external_id,
         ...(item.provenance ?? {}),
       },

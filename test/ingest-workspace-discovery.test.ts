@@ -34,7 +34,7 @@ async function seedPushSource(pool: Pool): Promise<{
     [
       source_id,
       workspace_id,
-      JSON.stringify({ adapter: "webhook", kind: "hiring" }),
+      JSON.stringify({ adapter: "webhook", kind: "hiring", provider: "f5bot" }),
     ],
   );
   return { workspace_id, source_id };
@@ -84,6 +84,7 @@ test("workspace discovery: push item emits signal.discovered and materializes on
     assert.equal(rows[0].id, first.signal_id);
     assert.equal(rows[0].kind, "hiring");
     assert.equal(rows[0].provenance.adapter, "webhook");
+    assert.equal(rows[0].provenance.provider, "unit-test");
     assert.equal(rows[0].provenance.external_id, "push-evt-1");
     assert.deepEqual(rows[0].properties.structured, {
       function: "sales",
@@ -175,6 +176,7 @@ test("signal webhook route: authenticated push ingress emits and projects signal
     assert.equal(rows.length, 1);
     assert.equal(rows[0].title, "Beta hired a VP Sales");
     assert.equal(rows[0].provenance.adapter, "webhook");
+    assert.equal(rows[0].provenance.provider, "f5bot");
     assert.equal(rows[0].provenance.external_id, "provider-evt-1");
   } finally {
     if (priorSecret === undefined) delete process.env.SIGNAL_WEBHOOK_SECRET;

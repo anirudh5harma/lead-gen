@@ -166,6 +166,7 @@ export async function trackCompanyAction(formData: FormData) {
 export async function configureSourceAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
   const adapter = value(formData, "source_adapter") || "rss";
+  const provider = value(formData, "source_provider");
   const url = value(formData, "source_url");
   const query = value(formData, "source_query");
   const subreddit = value(formData, "subreddit");
@@ -185,6 +186,7 @@ export async function configureSourceAction(formData: FormData) {
       {
         adapter: adapter as never,
         name: value(formData, "source_name") || "Signal source",
+        provider,
         query,
         subreddit,
         signal_kind: value(formData, "signal_kind") || "press_mention",

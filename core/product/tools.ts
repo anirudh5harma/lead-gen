@@ -368,6 +368,7 @@ export function registerProductTools(): void {
     input: z.object({
       adapter: SourceAdapterSchema,
       name: z.string().min(1),
+      provider: z.string().optional(),
       url: z.string().optional(),
       query: z.string().optional(),
       subreddit: z.string().optional(),

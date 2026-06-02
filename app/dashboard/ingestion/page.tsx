@@ -277,9 +277,10 @@ export default async function IngestionPage() {
               </MiniForm>
               <MiniForm title="Source">
                 <form action={configureSourceAction} className="grid gap-3">
-                  <Field name="source_name" label="Source" defaultValue="Hiring signal feed" />
+                  <Field name="source_name" label="Source" defaultValue="Hiring signal search" />
                   <Field name="source_query" label="Search" defaultValue="B2B SaaS hiring funding launch" />
                   <input type="hidden" name="source_adapter" value="google_news" />
+                  <input type="hidden" name="source_provider" value="" />
                   <input type="hidden" name="source_url" value="" />
                   <input type="hidden" name="subreddit" value="SaaS" />
                   <input type="hidden" name="signal_kind" value="hiring" />

@@ -328,6 +328,7 @@ export interface ConfigureRssSourceInput {
 export interface ConfigureWorkspaceSignalSourceInput {
   adapter: WorkspaceSignalSourceAdapter;
   name: string;
+  provider?: string;
   signal_kind?: string;
   url?: string;
   query?: string;
@@ -2457,6 +2458,7 @@ export async function configureWorkspaceSignalSource(
   const sourceKind = sourceKindForAdapter(adapter);
   const name = input.name.trim() || defaultWorkspaceSourceName(adapter);
   const config = sourceConfigForAdapter(adapter, input, minutes);
+  const provider = signalSourceProvider(input.provider);
   const existing = await engine.pool.query<{ id: string }>(
     `select id from graph_sources
       where workspace_id = $1 and kind = $2::source_kind and lower(name) = lower($3)
@@ -2475,11 +2477,15 @@ export async function configureWorkspaceSignalSource(
     poll_cadence_sec: minutes * 60,
     properties: {
       managed_by: "signal-aggregator",
-      acquisition_mode: adapter === "webhook"
+      acquisition_mode: isPushSignalSourceAdapter(adapter)
         ? "push"
         : adapter === "rss"
           ? "workspace_pull"
           : "workspace_adapter",
+      ...(provider ? { provider } : {}),
+      ...(isPushSignalSourceAdapter(adapter)
+        ? { ingestion_contract: "bombsell_signal_v1" }
+        : {}),
     },
   };
   const event = await engine.bus.publish({
@@ -2543,7 +2549,7 @@ async function projectWorkspaceSourceConfigured(
     [
       event.workspace_id,
       payload.source_id,
-      payload.adapter === "webhook" ? false : payload.enabled,
+      isPushSignalSourceAdapter(payload.adapter) ? false : payload.enabled,
       payload.poll_cadence_sec,
     ],
   );
@@ -2712,7 +2718,21 @@ function sourceConfigForAdapter(
         subreddit: input.subreddit?.trim() || "SaaS",
       };
     case "webhook":
-      return base;
+      return {
+        ...base,
+        provider: signalSourceProvider(input.provider) ?? "generic",
+        query: input.query?.trim() || undefined,
+        ingestion_contract: "bombsell_signal_v1",
+        webhook_payload: {
+          external_id: "provider event id",
+          title: "required",
+          content: "optional",
+          url: "optional",
+          signal_kind: signalKind,
+          structured: {},
+          provenance: {},
+        },
+      };
     case "product_hunt":
       return {
         ...base,
@@ -2727,6 +2747,16 @@ function sourceConfigForAdapter(
         url: input.url?.trim(),
       };
   }
+}
+
+function isPushSignalSourceAdapter(adapter: WorkspaceSignalSourceAdapter): boolean {
+  return adapter === "webhook";
+}
+
+function signalSourceProvider(provider: unknown): string | undefined {
+  if (typeof provider !== "string") return undefined;
+  const normalized = provider.trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, "_");
+  return normalized || undefined;
 }
 
 function defaultSignalKindForAdapter(adapter: WorkspaceSignalSourceAdapter): string {
