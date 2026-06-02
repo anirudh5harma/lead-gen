@@ -6,6 +6,7 @@ import {
   type ConversationTrustApproval,
   type ConversationTrustConversation,
   type ConversationTrustEvent,
+  type ConversationTrustGateExplanation,
   type ConversationTrustMessage,
   type ConversationTrustOutcome,
   type ConversationTrustReplyProof,
@@ -29,6 +30,7 @@ function TrustTracePanel({
   outcomes,
   events,
   replyProofs,
+  gateExplanations,
 }: {
   conversation: ConversationTrustConversation;
   messages: ConversationTrustMessage[];
@@ -40,6 +42,7 @@ function TrustTracePanel({
   outcomes: ConversationTrustOutcome[];
   events: ConversationTrustEvent[];
   replyProofs: ConversationTrustReplyProof[];
+  gateExplanations: ConversationTrustGateExplanation[];
 }) {
   const outbound =
     [...messages].reverse().find((message) => message.direction === "outbound") ??
@@ -76,6 +79,9 @@ function TrustTracePanel({
     textValue(sendEvent?.payload?.defer_reason);
   const roleEvents = events.filter((event) => event.event_type === "rep.role.completed");
   const latestReplyProof = replyProofs.at(-1) ?? null;
+  const trustGates = latestReplyProof?.gate_explanations.length
+    ? latestReplyProof.gate_explanations
+    : gateExplanations;
 
   return (
     <div className="section-note">
@@ -127,6 +133,23 @@ function TrustTracePanel({
               : "No judge result yet"
           }
           meta={critique ?? undefined}
+        />
+        <TraceRow
+          label="Trust gates"
+          value={
+            trustGates.length
+              ? trustGates.map((gate) => gate.summary).join(" -> ")
+              : "No gate explanation recorded yet"
+          }
+          meta={
+            trustGates.length
+              ? trustGates
+                  .map((gate) => gate.detail)
+                  .filter((detail): detail is string => Boolean(detail))
+                  .slice(0, 2)
+                  .join(" ")
+              : undefined
+          }
         />
         <TraceRow
           label="Approval"
@@ -258,6 +281,7 @@ export default async function ConversationDetailPage({
     workflow,
     approvals,
     outcomes,
+    gate_explanations: gateExplanations,
     reply_proofs: replyProofs,
   } = trace;
 
@@ -350,6 +374,7 @@ export default async function ConversationDetailPage({
             outcomes={outcomes}
             events={events}
             replyProofs={replyProofs}
+            gateExplanations={gateExplanations}
           />
 
           <div className="section-note">

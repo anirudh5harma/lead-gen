@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
+  buildGateExplanations,
   buildReplyProofs,
   type ConversationTrustApproval,
   type ConversationTrustEvent,
@@ -111,7 +112,90 @@ test("buildReplyProofs groups reply intent, draft, approval, send, and outcome",
   assert.equal(proofs[0]?.approval_decision, "approved");
   assert.equal(proofs[0]?.channel_event_type, "message.sent");
   assert.equal(proofs[0]?.outcome_kind, "positive_reply");
+  assert.ok(
+    proofs[0]?.gate_explanations.some((item) => /Channel sent/.test(item.summary)),
+  );
   assert.match(proofs[0]?.summary ?? "", /intent positive -> draft sent -> judge 0\.87/);
   assert.match(proofs[0]?.summary ?? "", /approval approved -> sent/);
   assert.match(proofs[0]?.summary ?? "", /outcome positive reply/);
+});
+
+test("buildGateExplanations explains brand voice blocks from judge notes", () => {
+  const draftId = randomUUID();
+  const judged: ConversationTrustEvent = {
+    id: randomUUID(),
+    event_type: "draft.judged",
+    source: "agent",
+    payload: {
+      message_id: draftId,
+      eval_score: 0.35,
+      passed: false,
+      notes: {
+        axes: {
+          brand_voice: 0.35,
+          voice_do_not: 1,
+          voice_sample_overlap: 0.22,
+          voice_low_hype: 0.35,
+        },
+        critique: "draft uses hype that conflicts with the Rep's voice",
+        suggestions: ["replace hype with concrete context"],
+      },
+    },
+    occurred_at: now,
+  };
+
+  const explanations = buildGateExplanations({
+    message: message({
+      id: draftId,
+      direction: "outbound",
+      status: "draft",
+      eval_score: "0.35",
+      eval_passed: false,
+    }),
+    events: [judged],
+  });
+
+  assert.equal(explanations[0]?.kind, "judge");
+  assert.equal(explanations[0]?.status, "blocked");
+  assert.equal(explanations[1]?.kind, "brand_voice");
+  assert.equal(explanations[1]?.severity, "block");
+  assert.match(explanations[1]?.summary ?? "", /Brand voice blocked at 0\.35/);
+  assert.match(explanations[1]?.detail ?? "", /low hype 0\.35/);
+  assert.match(explanations[1]?.detail ?? "", /replace hype/);
+});
+
+test("buildGateExplanations explains deliverability defers", () => {
+  const draftId = randomUUID();
+  const deferred: ConversationTrustEvent = {
+    id: randomUUID(),
+    event_type: "message.deferred",
+    source: "agent",
+    payload: {
+      message_id: draftId,
+      channel: "email",
+      defer_reason: "deliverability_cap_exhausted",
+      retry_after: "2026-06-02T10:00:00.000Z",
+      detail: "warmed daily cap reached",
+    },
+    occurred_at: now,
+  };
+
+  const explanations = buildGateExplanations({
+    message: message({
+      id: draftId,
+      direction: "outbound",
+      status: "deferred",
+    }),
+    events: [deferred],
+  });
+
+  assert.equal(explanations.length, 1);
+  assert.equal(explanations[0]?.kind, "deliverability");
+  assert.equal(explanations[0]?.status, "deferred");
+  assert.match(
+    explanations[0]?.summary ?? "",
+    /today's warmed sending capacity is exhausted/,
+  );
+  assert.match(explanations[0]?.detail ?? "", /warmed daily cap reached/);
+  assert.match(explanations[0]?.detail ?? "", /Retry after/);
 });

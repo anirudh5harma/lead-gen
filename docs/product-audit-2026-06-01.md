@@ -23,7 +23,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 | Native channels | Improving | Email and a durable Signal-to-LinkedIn Play exist; LinkedIn currently uses the native channel abstraction with dry-run transport until a production session provider is connected | Voice/video/web are placeholders; LinkedIn needs production session/OAuth transport before real external sends. |
 | Agent-native action parity | Strong | product tools + graph tools + MCP endpoint + `test/product-tools.test.ts` parity checks | Keep updating the capability map in the same PR as any new user-visible action. |
 | Context injection | Good | `product.context.get` returns prompt-ready workspace context, and the Signal email Play now injects it into writer and judge prompts | Extend the same context provider to new native-channel Plays as they become executable. |
-| User-facing trust trace | Improving | Conversation detail reads email/LinkedIn workflow runs, lifecycle events, outcomes, approvals, and `rep.role.completed` events | Brand-voice drift and deliverability explanations still need richer event payloads before the trace can explain them deeply. |
+| User-facing trust trace | Good and improving | Conversation detail reads email/LinkedIn workflow runs, lifecycle events, outcomes, approvals, `rep.role.completed` events, judge notes, brand-voice axes, and channel/defer events | Next step is expanding the same plain-English gate explanations to new native channels as their provider telemetry becomes real. |
 
 ## Fixes Applied In This Iteration
 
@@ -53,6 +53,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Added inbound reply semantic extraction so the Rep replier stores clear objections, preferences, requested next steps, timing, unsubscribe/DNC state, and latest intent metadata on person/company memory before a positive Outcome happens.
 - Routed reply procedural memory through extracted semantic facts so drafts first look for objection type, requested next-step style, and seniority-specific reply exemplars, then fall back to broad intent/company patterns for existing learning.
 - Added outcome-seeded fact-aware reply exemplars: when a broad reply pattern wins after semantic facts identify a more specific objection/next-step/seniority pattern, the outcome memory bridge emits a replayable `rep.memory.procedural.seeded` event for that specific pattern before scoring the broad exemplar.
+- Added plain-English trust gate explanations to Conversation traces so brand-voice drift, judge blocks, deliverability capacity defers, bounces, and channel sends are surfaced from typed `draft.judged` / `message.*` events instead of buried in raw payloads.
 
 ## Recommended Next Iteration
 
@@ -63,4 +64,4 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
    - Replace the dry-run LinkedIn transport with a real session/OAuth provider, rate-limit telemetry, and recovery UX before exposing real external sends broadly.
 
 3. Improve user-facing trust depth:
-   - Add richer brand-voice drift and deliverability explanations to the Conversation trust trace once those signals are available in the event payloads.
+   - Extend trust gate explanations with real LinkedIn provider telemetry once the production LinkedIn session/OAuth transport is connected.

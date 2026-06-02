@@ -94,6 +94,14 @@ export interface ConversationTrustOutcome {
   occurred_at: Date;
 }
 
+export interface ConversationTrustGateExplanation {
+  kind: "judge" | "brand_voice" | "channel" | "deliverability";
+  status: "passed" | "blocked" | "deferred" | "sent" | "delivered" | "bounced";
+  severity: "ok" | "warn" | "block";
+  summary: string;
+  detail: string | null;
+}
+
 export interface ConversationTrustReplyProof {
   inbound_message_id: string;
   draft_message_id: string | null;
@@ -111,6 +119,7 @@ export interface ConversationTrustReplyProof {
   channel_event_type: string | null;
   outcome_kind: string | null;
   outcome_score: string | null;
+  gate_explanations: ConversationTrustGateExplanation[];
   summary: string;
 }
 
@@ -124,6 +133,7 @@ export interface ConversationTrustTrace {
   } | null;
   approvals: ConversationTrustApproval[];
   outcomes: ConversationTrustOutcome[];
+  gate_explanations: ConversationTrustGateExplanation[];
   reply_proofs: ConversationTrustReplyProof[];
 }
 
@@ -166,6 +176,10 @@ export async function getConversationTrustTrace(
     workflow,
     approvals,
     outcomes,
+    gate_explanations: buildGateExplanations({
+      message: latestOutboundMessage(messages),
+      events,
+    }),
     reply_proofs: buildReplyProofs({ messages, events, approvals, outcomes }),
   };
 }
@@ -234,6 +248,10 @@ export function buildReplyProofs(input: {
         textField(channelEvent?.payload?.defer_reason) ??
         draft?.status ??
         null;
+      const gate_explanations = buildGateExplanations({
+        message: draft,
+        events: input.events,
+      });
 
       return {
         inbound_message_id: inbound.id,
@@ -252,6 +270,7 @@ export function buildReplyProofs(input: {
         channel_event_type: channelEvent?.event_type ?? null,
         outcome_kind: outcome?.kind ?? null,
         outcome_score: outcome?.score ?? null,
+        gate_explanations,
         summary: replyProofSummary({
           intent: inbound.intent_class,
           draft,
@@ -261,6 +280,193 @@ export function buildReplyProofs(input: {
         }),
       };
     });
+}
+
+export function buildGateExplanations(input: {
+  message: ConversationTrustMessage | null;
+  events: ConversationTrustEvent[];
+}): ConversationTrustGateExplanation[] {
+  const message = input.message;
+  if (!message) return [];
+  const gateEvents = input.events.filter(
+    (event) => textField(event.payload?.message_id) === message.id,
+  );
+  const judgedEvent = gateEvents
+    .filter((event) => event.event_type === "draft.judged")
+    .at(-1);
+  const channelEvent = gateEvents
+    .filter((event) =>
+      [
+        "message.sent",
+        "message.deferred",
+        "message.delivered",
+        "message.bounced",
+      ].includes(event.event_type),
+    )
+    .at(-1);
+  const notes =
+    recordField(judgedEvent?.payload?.notes) ??
+    message.eval_notes ??
+    {};
+  const axes = recordField(notes.axes) ?? {};
+  const explanations: ConversationTrustGateExplanation[] = [];
+  const score =
+    numericField(judgedEvent?.payload?.eval_score) ??
+    numberFromString(message.eval_score);
+  const passed =
+    booleanField(judgedEvent?.payload?.passed) ??
+    message.eval_passed;
+
+  if (score !== null || passed !== null) {
+    explanations.push({
+      kind: "judge",
+      status: passed === false ? "blocked" : "passed",
+      severity: passed === false ? "block" : "ok",
+      summary: `Quality judge ${passed === false ? "blocked" : "passed"}${score !== null ? ` at ${score.toFixed(2)}` : ""}`,
+      detail: judgeDetail(notes),
+    });
+  }
+
+  const brandVoice = numericField(axes.brand_voice);
+  if (brandVoice !== null) {
+    const blocked = brandVoice < 0.55 || (passed === false && mentionsVoice(notes));
+    explanations.push({
+      kind: "brand_voice",
+      status: blocked ? "blocked" : "passed",
+      severity: blocked ? "block" : brandVoice < 0.75 ? "warn" : "ok",
+      summary: `Brand voice ${blocked ? "blocked" : "passed"} at ${brandVoice.toFixed(2)}`,
+      detail: brandVoiceDetail(notes, axes),
+    });
+  }
+
+  if (channelEvent) {
+    explanations.push(channelExplanation(channelEvent));
+  }
+
+  return explanations;
+}
+
+function latestOutboundMessage(
+  messages: ConversationTrustMessage[],
+): ConversationTrustMessage | null {
+  return [...messages].reverse().find((message) => message.direction === "outbound") ?? null;
+}
+
+function judgeDetail(notes: Record<string, unknown>): string | null {
+  const critique = textField(notes.critique);
+  const suggestions = Array.isArray(notes.suggestions)
+    ? notes.suggestions.filter((item): item is string => typeof item === "string")
+    : [];
+  return [critique, suggestions.length ? `Suggestions: ${suggestions.join("; ")}` : null]
+    .filter((piece): piece is string => Boolean(piece))
+    .join(" ")
+    || null;
+}
+
+function mentionsVoice(notes: Record<string, unknown>): boolean {
+  const text = [
+    textField(notes.critique),
+    ...(Array.isArray(notes.suggestions)
+      ? notes.suggestions.filter((item): item is string => typeof item === "string")
+      : []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  return /\bvoice\b|do-not|canonical|hype|samples?/.test(text);
+}
+
+function brandVoiceDetail(
+  notes: Record<string, unknown>,
+  axes: Record<string, unknown>,
+): string | null {
+  const pieces = [
+    axisDetail(axes, "voice_do_not", "do-not"),
+    axisDetail(axes, "voice_sample_overlap", "sample match"),
+    axisDetail(axes, "voice_low_hype", "low hype"),
+    judgeDetail(notes),
+  ].filter((piece): piece is string => Boolean(piece));
+  return pieces.length ? pieces.join(" · ") : null;
+}
+
+function axisDetail(
+  axes: Record<string, unknown>,
+  key: string,
+  label: string,
+): string | null {
+  const value = numericField(axes[key]);
+  return value === null ? null : `${label} ${value.toFixed(2)}`;
+}
+
+function channelExplanation(
+  event: ConversationTrustEvent,
+): ConversationTrustGateExplanation {
+  if (event.event_type === "message.deferred") {
+    const reason = textField(event.payload.defer_reason) ?? "deferred";
+    const kind = deliverabilityReasons.has(reason) ? "deliverability" : "channel";
+    return {
+      kind,
+      status: "deferred",
+      severity: "warn",
+      summary: `${kind === "deliverability" ? "Deliverability" : "Channel"} deferred: ${friendlyDeferReason(reason)}`,
+      detail: [
+        textField(event.payload.detail),
+        textField(event.payload.retry_after)
+          ? `Retry after ${textField(event.payload.retry_after)}`
+          : null,
+      ].filter((piece): piece is string => Boolean(piece)).join(" ") || null,
+    };
+  }
+
+  if (event.event_type === "message.bounced") {
+    return {
+      kind: "deliverability",
+      status: "bounced",
+      severity: "block",
+      summary: "Deliverability blocked: message bounced",
+      detail: textField(event.payload.reason) ?? textField(event.payload.detail),
+    };
+  }
+
+  if (event.event_type === "message.delivered") {
+    return {
+      kind: "channel",
+      status: "delivered",
+      severity: "ok",
+      summary: "Channel delivered",
+      detail: textField(event.payload.external_id),
+    };
+  }
+
+  return {
+    kind: "channel",
+    status: "sent",
+    severity: "ok",
+    summary: "Channel sent",
+    detail: textField(event.payload.external_id),
+  };
+}
+
+const deliverabilityReasons = new Set([
+  "deliverability_cap_zero",
+  "deliverability_cap_exhausted",
+  "daily_cap_reached",
+  "frequency_cap_reached",
+  "provider_error_transient",
+  "provider_error_permanent",
+  "linkedin_daily_cap_exhausted",
+]);
+
+function friendlyDeferReason(reason: string): string {
+  const known: Record<string, string> = {
+    deliverability_cap_zero: "sending domain is not warmed yet",
+    deliverability_cap_exhausted: "today's warmed sending capacity is exhausted",
+    daily_cap_reached: "the channel daily cap is reached",
+    frequency_cap_reached: "this recipient was contacted too recently",
+    missing_linkedin_profile: "the person has no LinkedIn profile on the graph",
+    linkedin_daily_cap_exhausted: "the LinkedIn session daily cap is reached",
+    eval_rejected: "the hot-path judge rejected the draft",
+    eval_rejected_after_edit: "the edited draft did not pass the judge",
+    reply_research_only: "the Play is set to research-only for replies",
+  };
+  return known[reason] ?? reason.replace(/_/g, " ");
 }
 
 function replyProofSummary(input: {
@@ -297,6 +503,16 @@ function textField(value: unknown): string | null {
 
 function numericField(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function numberFromString(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function booleanField(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 async function loadConversation(
