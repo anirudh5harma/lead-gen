@@ -485,6 +485,17 @@ interface ProductEngine {
   memory: RepMemory;
 }
 
+export interface AuthIdentityWorkspaceReconciliation {
+  workspace_id: string;
+  role: WorkspaceRoleValue;
+}
+
+interface AuthIdentityWorkspaceReconciliationDeps {
+  pool?: Pool;
+  bus?: Pick<EventBus, "publish">;
+  applyMembership?: (event: PublishedEvent) => Promise<void>;
+}
+
 let enginePromise: Promise<ProductEngine> | null = null;
 
 export function hasDatabase(): boolean {
@@ -705,6 +716,66 @@ async function projectWorkspaceCreated(
        accepted_at = coalesce(workspace_members.accepted_at, excluded.accepted_at)`,
     [payload.workspace_id, payload.created_by, payload.owner_role ?? "owner"],
   );
+}
+
+export async function reconcileWorkspaceMembershipsForAuthIdentity(
+  input: {
+    user_id: string;
+    email?: string | null;
+    email_verified?: boolean;
+  },
+  deps: AuthIdentityWorkspaceReconciliationDeps = {},
+): Promise<AuthIdentityWorkspaceReconciliation[]> {
+  if (!input.email_verified) return [];
+  const email = input.email?.trim().toLowerCase();
+  if (!email) return [];
+
+  const engine = !deps.pool || !deps.bus ? await getProductEngine() : null;
+  const pool = deps.pool ?? engine!.pool;
+  const bus = deps.bus ?? engine!.bus;
+  const applyMembership =
+    deps.applyMembership ?? ((event: PublishedEvent) => projectWorkspaceMemberAccepted(pool, event));
+
+  const { rows } = await pool.query<AuthIdentityWorkspaceReconciliation>(
+    `select distinct
+        wm.workspace_id,
+        wm.role::text as role
+       from workspace_members wm
+       join auth.users member_user on member_user.id = wm.user_id
+       join workspaces w on w.id = wm.workspace_id
+      where lower(member_user.email) = $2
+        and member_user.email_confirmed_at is not null
+        and wm.user_id <> $1
+        and wm.accepted_at is not null
+        and w.archived_at is null
+        and not exists (
+          select 1
+            from workspace_members current_member
+           where current_member.workspace_id = wm.workspace_id
+             and current_member.user_id = $1
+             and current_member.accepted_at is not null
+        )
+      order by wm.workspace_id`,
+    [input.user_id, email],
+  );
+
+  for (const row of rows) {
+    const event = await bus.publish({
+      workspace_id: row.workspace_id,
+      event_type: "workspace.member.accepted",
+      source: "system",
+      producer_ref: input.user_id,
+      idempotency_key: `auth.identity.reconciled:${row.workspace_id}:${input.user_id}:${row.role}`,
+      payload: {
+        workspace_id: row.workspace_id,
+        user_id: input.user_id,
+        role: row.role,
+      },
+    });
+    await applyMembership(event);
+  }
+
+  return rows;
 }
 
 async function ensureWorkspaceMembership(

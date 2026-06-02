@@ -205,6 +205,9 @@ function roleOutputMeta(event: ConversationTrustEvent | undefined): string | nul
     typeof record.procedural_exemplar_count === "number"
       ? `${record.procedural_exemplar_count} procedural example${record.procedural_exemplar_count === 1 ? "" : "s"}`
       : null,
+    typeof record.semantic_memory_count === "number"
+      ? `${record.semantic_memory_count} memory fact set${record.semantic_memory_count === 1 ? "" : "s"}`
+      : null,
   ].filter((piece): piece is string => Boolean(piece));
   return pieces.length ? pieces.join(" · ") : null;
 }

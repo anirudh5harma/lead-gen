@@ -4,7 +4,7 @@ import type {
   ReplyIntent,
 } from "../../../channels/email/intent.ts";
 import type { LLMClient } from "../../llm/types.ts";
-import type { ProceduralExemplar } from "../../memory/types.ts";
+import type { ProceduralExemplar, SemanticEntry } from "../../memory/types.ts";
 import type { RoleAgent } from "../types.ts";
 
 /**
@@ -66,7 +66,10 @@ export interface ReplyDraftBrief {
   };
   counterparty: {
     name: string;
+    person_id?: string | null;
     given_name?: string | null;
+    title?: string | null;
+    company_id?: string | null;
     company_name?: string | null;
   };
   prior_outbound?: {
@@ -82,6 +85,8 @@ export interface ReplyDraftResult {
   pattern_key: string;
   exemplar_ids: string[];
   procedural_exemplars: ProceduralExemplar[];
+  semantic_subjects: string[];
+  semantic_memory: SemanticEntry[];
 }
 
 export interface ReplyDraftRoleOptions {
@@ -159,6 +164,41 @@ function exemplarText(exemplar: ProceduralExemplar): string | null {
   return typeof body === "string" && body.trim() ? body.trim() : null;
 }
 
+function semanticSubjects(brief: ReplyDraftBrief): Array<{ type: "person" | "company"; id: string }> {
+  return [
+    brief.counterparty.person_id
+      ? { type: "person" as const, id: brief.counterparty.person_id }
+      : null,
+    brief.counterparty.company_id
+      ? { type: "company" as const, id: brief.counterparty.company_id }
+      : null,
+  ].filter((subject): subject is { type: "person" | "company"; id: string } => Boolean(subject));
+}
+
+function semanticSubjectKey(entry: SemanticEntry): string {
+  return `${entry.subject_type}:${entry.subject_id}`;
+}
+
+function semanticFactLines(entries: SemanticEntry[]): string[] {
+  return entries.flatMap((entry) => {
+    const facts = Object.entries(entry.facts)
+      .filter(([, value]) => value !== null && value !== undefined && value !== "")
+      .slice(0, 8)
+      .map(([key, value]) => `${key}=${formatFactValue(value)}`);
+    return facts.length ? [`${semanticSubjectKey(entry)} ${facts.join("; ")}`] : [];
+  });
+}
+
+function formatFactValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(formatFactValue).join(", ");
+  }
+  if (typeof value === "object" && value !== null) {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
 function deterministicReplyDraft(
   brief: ReplyDraftBrief,
   procedural_exemplars: ProceduralExemplar[],
@@ -223,6 +263,11 @@ export function createReplyDraftRole(
         pattern_key,
         3,
       );
+      const semantic_memory = await ctx.memory.semantic.forSubjects(
+        { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id },
+        semanticSubjects(brief),
+      );
+      const semantic_subjects = semantic_memory.map(semanticSubjectKey);
       if (!opts.llm) {
         const draft = deterministicReplyDraft(brief, procedural_exemplars);
         return {
@@ -232,9 +277,12 @@ export function createReplyDraftRole(
           pattern_key,
           exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
           procedural_exemplars,
+          semantic_subjects,
+          semantic_memory,
         };
       }
 
+      const semanticLines = semanticFactLines(semantic_memory);
       const response = await opts.llm.complete({
         temperature: 0.5,
         max_tokens: 700,
@@ -254,7 +302,7 @@ export function createReplyDraftRole(
               `Voice: ${ctx.rep.persona.voice}`,
               ctx.rep.persona.story ? `Story: ${ctx.rep.persona.story}` : null,
               ctx.rep.persona.do_not.length ? `Do not: ${ctx.rep.persona.do_not.join("; ")}` : null,
-              `Counterparty: ${brief.counterparty.name}${brief.counterparty.company_name ? ` at ${brief.counterparty.company_name}` : ""}`,
+              `Counterparty: ${brief.counterparty.name}${brief.counterparty.title ? `, ${brief.counterparty.title}` : ""}${brief.counterparty.company_name ? ` at ${brief.counterparty.company_name}` : ""}`,
               `Conversation topic: ${brief.conversation.topic ?? "-"}`,
               `Reply intent: ${brief.inbound.intent}`,
               brief.inbound.intent_reason ? `Intent reason: ${brief.inbound.intent_reason}` : null,
@@ -269,6 +317,12 @@ export function createReplyDraftRole(
                       const body = exemplarText(exemplar) ?? JSON.stringify(exemplar.exemplar);
                       return `${index + 1}. score=${exemplar.score.toFixed(2)} ${body}`;
                     }),
+                  ].join("\n")
+                : null,
+              semanticLines.length
+                ? [
+                    "Known memory facts about this person/company (use only if relevant):",
+                    ...semanticLines,
                   ].join("\n")
                 : null,
               ctx.workspace_context_markdown
@@ -292,6 +346,8 @@ export function createReplyDraftRole(
         pattern_key,
         exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
         procedural_exemplars,
+        semantic_subjects,
+        semantic_memory,
       };
     },
   };

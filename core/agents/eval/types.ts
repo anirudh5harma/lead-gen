@@ -13,7 +13,7 @@ import type {
   EventPayload,
   PublishedEvent,
 } from "../../substrate/events/index.ts";
-import type { ProceduralExemplar } from "../memory/types.ts";
+import type { ProceduralExemplar, SemanticEntry } from "../memory/types.ts";
 
 export interface JudgeInput {
   workspace_id: string;
@@ -32,6 +32,7 @@ export interface JudgeInput {
     signal_summary?: string;
     counterparty_summary?: string;
     procedural_exemplars?: ProceduralExemplar[];
+    semantic_memory?: SemanticEntry[];
     /** Prompt-ready workspace context the writer saw. */
     workspace_context_markdown?: string | null;
   };

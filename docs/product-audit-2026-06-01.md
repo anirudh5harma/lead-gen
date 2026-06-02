@@ -47,12 +47,14 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Improved reply drafting by retrieving Rep procedural memory for the conversation intent/company reply pattern, carrying exemplar IDs through draft provenance, and passing the same examples into the hot-path judge.
 - Made returning-user onboarding detection tolerant of an accepted workspace so completed users are not sent back to the company URL/name form if profile projection evidence is incomplete.
 - Added compact reply proof rows to the Conversation trust trace so inbound intent, reply draft, judge score, approval decision, channel send/defer state, procedural pattern, and outcome are readable as one user-facing chain.
+- Added semantic memory retrieval to the reply drafting path so the Rep replier can use known person/company facts, carry semantic subject refs through draft provenance, and give the hot-path judge the same memory context the writer saw.
+- Hardened Google OAuth return and dashboard access so verified same-email Supabase identities are reconciled through `workspace.member.accepted`, completed users land on the product, and signed-in users without a workspace cannot bypass onboarding by opening `/dashboard` directly.
 
 ## Recommended Next Iteration
 
 1. Make Rep composition executable:
    - Expand procedural reply patterns beyond intent/company into objection type, seniority, and channel-specific next-step style.
-   - Add richer semantic memory retrieval for the replier so follow-ups can reference prior objections and known account facts, not just winning procedural examples.
+   - Extract objection and preference facts from inbound replies into semantic memory so reply quality compounds before a positive Outcome happens.
 
 2. Productionize the native LinkedIn path:
    - Replace the dry-run LinkedIn transport with a real session/OAuth provider, rate-limit telemetry, and recovery UX before exposing real external sends broadly.

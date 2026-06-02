@@ -164,6 +164,28 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
       },
     },
   );
+  await memory.semantic.upsert(
+    { workspace_id, rep_id },
+    {
+      subject_type: "person",
+      subject_id: person_id,
+      facts: {
+        objection: "asked for a focused path before scheduling",
+      },
+      confidence: 0.86,
+    },
+  );
+  await memory.semantic.upsert(
+    { workspace_id, rep_id },
+    {
+      subject_type: "company",
+      subject_id: company_id,
+      facts: {
+        priority: "compare Series A operating changes",
+      },
+      confidence: 0.8,
+    },
+  );
   const store = createInMemoryVerticalSliceStore({
     reps: [rep],
     signals: [],
@@ -242,6 +264,10 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
   assert.equal(reply?.provenance.inbound_message_id, inbound_message_id);
   assert.equal(reply?.provenance.pattern_key, pattern_key);
   assert.deepEqual(reply?.provenance.exemplar_ids, [exemplar.id]);
+  assert.deepEqual(reply?.provenance.semantic_subjects, [
+    `person:${person_id}`,
+    `company:${company_id}`,
+  ]);
   assert.match(reply?.body ?? "", /what risk you want to avoid/);
 
   const roleEvent = bus.published.find(
@@ -251,6 +277,11 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
   );
   assert.equal(roleEvent?.payload.output.pattern_key, pattern_key);
   assert.deepEqual(roleEvent?.payload.output.exemplar_ids, [exemplar.id]);
+  assert.deepEqual(roleEvent?.payload.output.semantic_subjects, [
+    `person:${person_id}`,
+    `company:${company_id}`,
+  ]);
+  assert.equal(roleEvent?.payload.output.semantic_memory_count, 2);
 
   assert.equal(completed?.output?.pattern_key, pattern_key);
 });

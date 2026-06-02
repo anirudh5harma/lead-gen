@@ -161,7 +161,10 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             },
             counterparty: {
               name: person.full_name,
+              person_id: person.id,
               given_name: person.given_name,
+              title: person.title,
+              company_id: company?.id ?? null,
               company_name: company?.name ?? null,
             },
             prior_outbound: priorOutbound
@@ -189,6 +192,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             pattern_key: result.pattern_key,
             exemplar_ids: result.exemplar_ids,
             procedural_exemplar_count: result.procedural_exemplars.length,
+            semantic_subjects: result.semantic_subjects,
+            semantic_memory_count: result.semantic_memory.length,
           },
           completed_at: new Date().toISOString(),
         });
@@ -210,6 +215,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             intent,
             pattern_key: draft.pattern_key,
             exemplar_ids: draft.exemplar_ids,
+            semantic_subjects: draft.semantic_subjects,
           },
           properties: {
             reply_to_message_id: inbound.id,
@@ -241,6 +247,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
               ].filter(Boolean).join("\n"),
               counterparty_summary: `${person.full_name}${company ? ` at ${company.name}` : ""}`,
               procedural_exemplars: draft.procedural_exemplars,
+              semantic_memory: draft.semantic_memory,
               workspace_context_markdown: workspaceContextMarkdown ?? null,
             },
           },
@@ -371,6 +378,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
                   ].filter(Boolean).join("\n"),
                   counterparty_summary: `${person.full_name}${company ? ` at ${company.name}` : ""}`,
                   procedural_exemplars: draft.procedural_exemplars,
+                  semantic_memory: draft.semantic_memory,
                   workspace_context_markdown: workspaceContextMarkdown ?? null,
                 },
               },

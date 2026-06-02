@@ -120,6 +120,18 @@ test("deepseek judge: includes Rep persona + procedural exemplars in the prompt"
           last_used_at: null,
         },
       ],
+      semantic_memory: [
+        {
+          id: randomUUID(),
+          rep_id: randomUUID(),
+          workspace_id: randomUUID(),
+          subject_type: "company",
+          subject_id: randomUUID(),
+          facts: { objection: "needs security review before booking" },
+          confidence: 0.8,
+          last_observed_at: new Date().toISOString(),
+        },
+      ],
     },
   });
   const userPrompt = llm.calls[0].messages.find((m) => m.role === "user")!.content;
@@ -128,4 +140,6 @@ test("deepseek judge: includes Rep persona + procedural exemplars in the prompt"
   assert.match(userPrompt, /Series A close at \$20M/);
   assert.match(userPrompt, /Winning examples/);
   assert.match(userPrompt, /score 0\.91/);
+  assert.match(userPrompt, /Known semantic memory/);
+  assert.match(userPrompt, /security review/);
 });

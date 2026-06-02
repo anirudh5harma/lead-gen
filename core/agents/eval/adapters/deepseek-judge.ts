@@ -56,6 +56,12 @@ function buildUserPrompt(input: JudgeInput): string {
         `Example ${i + 1} (winning, score ${e.score.toFixed(2)}): ${JSON.stringify(e.exemplar)}`,
     )
     .join("\n");
+  const semanticMemory = (input.context?.semantic_memory ?? [])
+    .map(
+      (entry) =>
+        `${entry.subject_type}:${entry.subject_id} facts=${JSON.stringify(entry.facts)}`,
+    )
+    .join("\n");
 
   return [
     `Rep: ${input.rep.name} (${input.rep.role})`,
@@ -76,6 +82,9 @@ function buildUserPrompt(input: JudgeInput): string {
     exemplars
       ? `Winning examples from past outcomes for this pattern:\n${exemplars}`
       : "Winning examples from past outcomes for this pattern: (none yet)",
+    semanticMemory
+      ? `Known semantic memory for this counterparty:\n${semanticMemory}`
+      : "Known semantic memory for this counterparty: (none yet)",
     "",
     "Draft to judge:",
     input.artifact.subject ? `Subject: ${input.artifact.subject}` : null,

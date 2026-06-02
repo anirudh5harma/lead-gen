@@ -207,3 +207,88 @@ test("reply draft role retrieves procedural memory for the reply intent", async 
   assert.equal(draft.procedural_exemplars.length, 1);
   assert.match(draft.body, /what changed/);
 });
+
+test("reply draft role injects semantic memory into LLM replies", async () => {
+  const rep = fakeRep();
+  const memory = createInMemoryRepMemory();
+  const personId = randomUUID();
+  const companyId = randomUUID();
+  await memory.semantic.upsert(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      subject_type: "person",
+      subject_id: personId,
+      facts: {
+        objection: "wants a focused security review before meeting",
+        preferred_next_step: "send two concrete options",
+      },
+      confidence: 0.82,
+    },
+  );
+  await memory.semantic.upsert(
+    { workspace_id: rep.workspace_id, rep_id: rep.id },
+    {
+      subject_type: "company",
+      subject_id: companyId,
+      facts: { priority: "reduce manual payroll ops before Q3" },
+      confidence: 0.76,
+    },
+  );
+  const calls: CompletionRequest[] = [];
+  const llm: LLMClient = {
+    async complete(req: CompletionRequest): Promise<CompletionResponse> {
+      calls.push(req);
+      return {
+        content: JSON.stringify({
+          subject: "Re: Series A expansion",
+          body: "Hi Nisha,\n\nHappy to keep this focused around the review and next step.\n\n-Maya",
+        }),
+        model: "test-model",
+        finish_reason: "stop",
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      };
+    },
+  };
+  const replier = createReplyDraftRole({ llm });
+
+  const draft = await replier.invoke(
+    {
+      conversation: {
+        id: randomUUID(),
+        topic: "Series A expansion",
+      },
+      inbound: {
+        message_id: randomUUID(),
+        subject: "Re: Series A expansion",
+        body_text: "Can you send over what you mean before we book time?",
+        from_email: "nisha@example.com",
+        intent: "neutral",
+      },
+      counterparty: {
+        name: "Nisha Rao",
+        person_id: personId,
+        given_name: "Nisha",
+        title: "Founder",
+        company_id: companyId,
+        company_name: "Acme Payroll",
+      },
+      prior_outbound: null,
+    },
+    {
+      rep,
+      tool_context: { workspace_id: rep.workspace_id, rep_id: rep.id },
+      memory,
+      judge: createNoopJudge(),
+    },
+  );
+
+  assert.deepEqual(draft.semantic_subjects, [
+    `person:${personId}`,
+    `company:${companyId}`,
+  ]);
+  assert.equal(draft.semantic_memory.length, 2);
+  const prompt = calls[0].messages.map((message) => message.content).join("\n");
+  assert.match(prompt, /Known memory facts/);
+  assert.match(prompt, /focused security review/);
+  assert.match(prompt, /reduce manual payroll ops/);
+});
