@@ -52,6 +52,9 @@ test("product surface: webhook signal sources are push-only and skip poll mainte
       provider: "SocialData",
       query: "recent VP Sales posts",
       signal_kind: "hiring",
+      max_daily_items: 25,
+      max_daily_calls: 10,
+      monthly_spend_cap_usd: 20,
       poll_interval_minutes: 15,
     });
     const { rows } = await fx.pool.query<{
@@ -76,9 +79,17 @@ test("product surface: webhook signal sources are push-only and skip poll mainte
     assert.equal(rows[0].config.adapter, "webhook");
     assert.equal(rows[0].config.provider, "socialdata");
     assert.equal(rows[0].config.query, "recent VP Sales posts");
+    assert.equal(rows[0].config.max_daily_items, 25);
+    assert.equal(rows[0].config.max_daily_calls, 10);
+    assert.equal(rows[0].config.monthly_spend_cap_usd, 20);
     assert.equal(rows[0].config.ingestion_contract, "bombsell_signal_v1");
     assert.equal(rows[0].properties.acquisition_mode, "push");
     assert.equal(rows[0].properties.provider, "socialdata");
+    assert.deepEqual(rows[0].properties.quota, {
+      max_daily_items: 25,
+      max_daily_calls: 10,
+      monthly_spend_cap_usd: 20,
+    });
     assert.equal(rows[0].properties.ingestion_contract, "bombsell_signal_v1");
   } finally {
     await resetProductEngineForTests();

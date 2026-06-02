@@ -147,6 +147,24 @@ export async function discoverWorkspaceSignal(
     return { outcome: "skipped:must_haves" };
   }
 
+  const sourceLimit = await sourceDailyItemLimitState(deps.pool, ctx);
+  if (sourceLimit && sourceLimit.used >= sourceLimit.cap) {
+    await recordOverflow(
+      deps.pool,
+      ctx.workspace_id,
+      ctx.source.id,
+      "source_daily_item_cap_reached",
+      {
+        external_id: item.external_id,
+        title: item.title,
+        provider: ctx.source.config.provider ?? null,
+        cap: sourceLimit.cap,
+        used: sourceLimit.used,
+      },
+    );
+    return { outcome: "skipped:budget" };
+  }
+
   const reserved = await reserveCandidate(deps.pool, ctx.workspace_id);
   if (!reserved) {
     await recordOverflow(
@@ -231,6 +249,30 @@ async function existingSignalId(
     [workspace_id, source_id, external_id],
   );
   return rows[0]?.id ?? null;
+}
+
+async function sourceDailyItemLimitState(
+  pool: Pool,
+  ctx: WorkspaceSignalDiscoveryContext,
+): Promise<{ cap: number; used: number } | null> {
+  const cap = positiveInteger(ctx.source.config.max_daily_items);
+  if (cap === null) return null;
+  const { rows } = await pool.query<{ used: string }>(
+    `select count(*)::text as used
+       from signals
+      where workspace_id = $1
+        and source_id = $2
+        and ingested_at >= now() - interval '24 hours'`,
+    [ctx.workspace_id, ctx.source.id],
+  );
+  return { cap, used: Number(rows[0]?.used ?? 0) };
+}
+
+function positiveInteger(value: unknown): number | null {
+  if (typeof value !== "number") return null;
+  if (!Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  return normalized > 0 ? normalized : null;
 }
 
 function parseConfiguredSignalKind(config: Record<string, unknown>): SignalKind | null {

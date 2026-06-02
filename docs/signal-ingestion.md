@@ -64,20 +64,18 @@ Recommended provider order:
 1. **Native/free direct adapters first**: HN, RSS/Google News, Product Hunt,
    bounded Reddit, ATS job boards, and public company/blog feeds. This is the
    cheapest path and already runs through durable `ingest_workspace_poll`.
-2. **Free alert backup**: add F5Bot/manual email-forward or webhook bridge for
-   Reddit/HN-style mentions if our polling misses useful conversations. Treat
-   it as source redundancy, not the main product architecture.
-3. **Cheap X data API only after query proof**: start with SocialData or
-   TwitterAPI.io-style usage pricing for 5-10 tightly scoped searches. Enforce
-   monthly spend, source-level quotas, and dedupe by tweet id before storing.
-4. **Targeted LinkedIn company-post experiment** only for known company pages
+2. **Paid X provider gateway after query proof**: compare official X API with
+   SocialData/TwitterAPI.io-style providers for 5-10 tightly scoped searches.
+   Enforce source-level item/call quotas, monthly spend caps, kill switches,
+   provenance, and dedupe by tweet id before storing.
+3. **Targeted LinkedIn company-post experiment** only for known company pages
    and public posts, via an Apify/Bright Data/Data365-style provider that does
    not require cookies or user accounts. Keep it off the hot path until terms,
    data deletion, and rate behavior are reviewed.
-5. **Exa enrichment/search** for open-web evidence, company/person pages, and
+4. **Exa enrichment/search** for open-web evidence, company/person pages, and
    source discovery when native feeds do not explain a signal. Do not count it
    as a LinkedIn/X firehose.
-6. **Crustdata or Octolens later** only after cheap sources prove that managed
+5. **Crustdata or Octolens later** only after cheap sources prove that managed
    coverage would save enough engineering time or improve outcome volume.
 
 Competitor/product inference:
@@ -104,14 +102,16 @@ bus, and Reps see them as ordinary `Signal`s with source confidence,
 provenance, and channel-specific response guidance.
 
 Implementation convention: configure provider trials through
-`product.source.configure` with `adapter: "webhook"` and a provider label such
-as `f5bot`, `socialdata`, `twitterapi_io`, `apify`, `data365`, `exa`,
-`crustdata`, or `octolens`. The projector stores the provider on
-`graph_sources.config/properties`, keeps the source out of poll maintenance, and
-stamps ingested `Signal` provenance with the same provider unless the upstream
-payload overrides it. Providers still send the normalized `bombsell_signal_v1`
-payload to `/api/webhooks/signals`; provider-specific fetch/scrape mechanics
-stay outside the product spine.
+`product.source.configure` with `adapter: "webhook"` and a paid-provider label
+such as `x_official`, `socialdata`, `twitterapi_io`, `apify`, `data365`,
+`exa`, `crustdata`, or `octolens`. The projector stores the provider and quota
+metadata on `graph_sources.config/properties`, keeps the source out of poll
+maintenance, and stamps ingested `Signal` provenance with the same provider
+unless the upstream payload overrides it. Providers still send the normalized
+`bombsell_signal_v1` payload to `/api/webhooks/signals`; provider-specific
+fetch/scrape mechanics stay outside the product spine. Free streams such as HN,
+Reddit, RSS, Google News, Product Hunt, and ATS job boards stay native adapters
+rather than paid push providers.
 
 References to recheck before procurement or provider enablement:
 
@@ -120,7 +120,7 @@ References to recheck before procurement or provider enablement:
 - Exa AI search/monitoring substrate: <https://exa.ai/docs/reference/search>, <https://exa.ai/pricing>
 - Crustdata B2B graph, post APIs, and pricing: <https://docs.crustdata.com/general/introduction>, <https://crustdata.com/apis/posts>, <https://crustdata.com/pricing>
 - Gojiberry product positioning/FAQ: <https://gojiberry.ai/faq>, <https://gojiberry.ai/>
-- Free/cheap alerting and unofficial/provider-backed X data APIs: <https://f5bot.com/faq>, <https://f5bot.com/>, <https://docs.socialdata.tools/getting-started/pricing/>, <https://twitterapi.io/twitter-api-pricing>
+- X official and provider-backed X data APIs: <https://docs.x.com/x-api/getting-started/about-x-api>, <https://docs.socialdata.tools/getting-started/pricing/>, <https://twitterapi.io/twitter-api-pricing>
 - Scraper marketplace options to test carefully: <https://apify.com/apidojo/tweet-scraper>, <https://apify.com/harvestapi/linkedin-company-posts>, <https://data365.co/solutions/ai-apis>
 - HN official public API: <https://github.com/HackerNews/API>
 - Reddit Data API Terms: <https://redditinc.com/policies/data-api-terms>

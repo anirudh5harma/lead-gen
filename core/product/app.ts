@@ -333,6 +333,9 @@ export interface ConfigureWorkspaceSignalSourceInput {
   url?: string;
   query?: string;
   subreddit?: string;
+  max_daily_items?: number;
+  max_daily_calls?: number;
+  monthly_spend_cap_usd?: number;
   poll_interval_minutes?: number;
   enabled?: boolean;
 }
@@ -2459,6 +2462,7 @@ export async function configureWorkspaceSignalSource(
   const name = input.name.trim() || defaultWorkspaceSourceName(adapter);
   const config = sourceConfigForAdapter(adapter, input, minutes);
   const provider = signalSourceProvider(input.provider);
+  const quota = sourceQuotaConfig(input);
   const existing = await engine.pool.query<{ id: string }>(
     `select id from graph_sources
       where workspace_id = $1 and kind = $2::source_kind and lower(name) = lower($3)
@@ -2483,6 +2487,7 @@ export async function configureWorkspaceSignalSource(
           ? "workspace_pull"
           : "workspace_adapter",
       ...(provider ? { provider } : {}),
+      ...(quota ? { quota } : {}),
       ...(isPushSignalSourceAdapter(adapter)
         ? { ingestion_contract: "bombsell_signal_v1" }
         : {}),
@@ -2722,6 +2727,7 @@ function sourceConfigForAdapter(
         ...base,
         provider: signalSourceProvider(input.provider) ?? "generic",
         query: input.query?.trim() || undefined,
+        ...(sourceQuotaConfig(input) ?? {}),
         ingestion_contract: "bombsell_signal_v1",
         webhook_payload: {
           external_id: "provider event id",
@@ -2757,6 +2763,37 @@ function signalSourceProvider(provider: unknown): string | undefined {
   if (typeof provider !== "string") return undefined;
   const normalized = provider.trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, "_");
   return normalized || undefined;
+}
+
+function sourceQuotaConfig(
+  input: Pick<
+    ConfigureWorkspaceSignalSourceInput,
+    "max_daily_items" | "max_daily_calls" | "monthly_spend_cap_usd"
+  >,
+): Record<string, number> | undefined {
+  const quota: Record<string, number> = {};
+  const maxDailyItems = positiveInteger(input.max_daily_items);
+  const maxDailyCalls = positiveInteger(input.max_daily_calls);
+  const monthlySpendCapUsd = positiveNumber(input.monthly_spend_cap_usd);
+  if (maxDailyItems !== undefined) quota.max_daily_items = maxDailyItems;
+  if (maxDailyCalls !== undefined) quota.max_daily_calls = maxDailyCalls;
+  if (monthlySpendCapUsd !== undefined) {
+    quota.monthly_spend_cap_usd = Number(monthlySpendCapUsd.toFixed(2));
+  }
+  return Object.keys(quota).length > 0 ? quota : undefined;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined;
+  if (!Number.isFinite(value)) return undefined;
+  const normalized = Math.trunc(value);
+  return normalized > 0 ? normalized : undefined;
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  if (typeof value !== "number") return undefined;
+  if (!Number.isFinite(value)) return undefined;
+  return value > 0 ? value : undefined;
 }
 
 function defaultSignalKindForAdapter(adapter: WorkspaceSignalSourceAdapter): string {

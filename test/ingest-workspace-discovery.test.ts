@@ -17,6 +17,20 @@ import { POST as signalWebhookPost } from "../app/api/webhooks/signals/route.ts"
 async function seedPushSource(pool: Pool): Promise<{
   workspace_id: string;
   source_id: string;
+}>;
+async function seedPushSource(
+  pool: Pool,
+  config: Record<string, unknown>,
+): Promise<{
+  workspace_id: string;
+  source_id: string;
+}>;
+async function seedPushSource(
+  pool: Pool,
+  config: Record<string, unknown> = {},
+): Promise<{
+  workspace_id: string;
+  source_id: string;
 }> {
   const workspace_id = randomUUID();
   await pool.query(
@@ -34,7 +48,12 @@ async function seedPushSource(pool: Pool): Promise<{
     [
       source_id,
       workspace_id,
-      JSON.stringify({ adapter: "webhook", kind: "hiring", provider: "f5bot" }),
+      JSON.stringify({
+        adapter: "webhook",
+        kind: "hiring",
+        provider: "socialdata",
+        ...config,
+      }),
     ],
   );
   return { workspace_id, source_id };
@@ -100,6 +119,63 @@ test("workspace discovery: push item emits signal.discovered and materializes on
     });
     assert.equal(second.outcome, "skipped:dedup");
     assert.equal(second.signal_id, first.signal_id);
+  } finally {
+    await fx.close();
+  }
+});
+
+test("workspace discovery: source daily item cap records overflow before paid-source spend grows", async (t) => {
+  const fx = await setupPg("wsp_src_cap");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool: fx.pool, bus });
+  try {
+    const { workspace_id, source_id } = await seedPushSource(fx.pool, {
+      max_daily_items: 1,
+    });
+    const deps = {
+      pool: fx.pool,
+      bus,
+      embedder: createMockEmbeddingClient(),
+    };
+    const first = await discoverWorkspaceSignalOnce(deps, {
+      workspace_id,
+      source_id,
+      external_id: "paid-x-1",
+      title: "Acme asks for a competitor alternative",
+      content: "Looking for alternatives to an incumbent vendor.",
+      freshness_at: "2026-05-29T00:00:00.000Z",
+      provenance: { provider: "socialdata" },
+    });
+    assert.equal(first.outcome, "created");
+    await until(() =>
+      bus.published.some((event) => event.event_type === "signal.ingested"),
+    );
+
+    const second = await discoverWorkspaceSignalOnce(deps, {
+      workspace_id,
+      source_id,
+      external_id: "paid-x-2",
+      title: "Beta asks for a competitor alternative",
+      content: "Looking for alternatives to the same incumbent vendor.",
+      freshness_at: "2026-05-29T01:00:00.000Z",
+      provenance: { provider: "socialdata" },
+    });
+    assert.equal(second.outcome, "skipped:budget");
+
+    const { rows } = await fx.pool.query<{
+      reason: string;
+      payload: Record<string, unknown>;
+    }>(
+      `select reason, payload
+         from signal_overflow
+        where workspace_id = $1 and source_id = $2`,
+      [workspace_id, source_id],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].reason, "source_daily_item_cap_reached");
+    assert.equal(rows[0].payload.provider, "socialdata");
+    assert.equal(rows[0].payload.cap, 1);
   } finally {
     await fx.close();
   }
@@ -176,7 +252,7 @@ test("signal webhook route: authenticated push ingress emits and projects signal
     assert.equal(rows.length, 1);
     assert.equal(rows[0].title, "Beta hired a VP Sales");
     assert.equal(rows[0].provenance.adapter, "webhook");
-    assert.equal(rows[0].provenance.provider, "f5bot");
+    assert.equal(rows[0].provenance.provider, "socialdata");
     assert.equal(rows[0].provenance.external_id, "provider-evt-1");
   } finally {
     if (priorSecret === undefined) delete process.env.SIGNAL_WEBHOOK_SECRET;
