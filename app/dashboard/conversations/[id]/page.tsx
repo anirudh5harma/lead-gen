@@ -8,6 +8,7 @@ import {
   type ConversationTrustEvent,
   type ConversationTrustMessage,
   type ConversationTrustOutcome,
+  type ConversationTrustReplyProof,
   type ConversationTrustStep,
   type ConversationTrustWorkflowRun,
 } from "@/core/product/conversation-trust";
@@ -27,6 +28,7 @@ function TrustTracePanel({
   approvals,
   outcomes,
   events,
+  replyProofs,
 }: {
   conversation: ConversationTrustConversation;
   messages: ConversationTrustMessage[];
@@ -37,6 +39,7 @@ function TrustTracePanel({
   approvals: ConversationTrustApproval[];
   outcomes: ConversationTrustOutcome[];
   events: ConversationTrustEvent[];
+  replyProofs: ConversationTrustReplyProof[];
 }) {
   const outbound =
     [...messages].reverse().find((message) => message.direction === "outbound") ??
@@ -72,6 +75,7 @@ function TrustTracePanel({
     textValue(outbound?.eval_notes?.defer_reason) ??
     textValue(sendEvent?.payload?.defer_reason);
   const roleEvents = events.filter((event) => event.event_type === "rep.role.completed");
+  const latestReplyProof = replyProofs.at(-1) ?? null;
 
   return (
     <div className="section-note">
@@ -95,6 +99,11 @@ function TrustTracePanel({
                 : "No retrieved context recorded"
           }
           meta={contextStep ? `workspace context ${contextStep.status}` : undefined}
+        />
+        <TraceRow
+          label="Reply"
+          value={latestReplyProof?.summary ?? "No inbound reply follow-up yet"}
+          meta={latestReplyProof ? replyProofMeta(latestReplyProof) ?? undefined : undefined}
         />
         <TraceRow
           label="Rep work"
@@ -200,6 +209,19 @@ function roleOutputMeta(event: ConversationTrustEvent | undefined): string | nul
   return pieces.length ? pieces.join(" · ") : null;
 }
 
+function replyProofMeta(proof: ConversationTrustReplyProof): string | null {
+  const pieces = [
+    proof.pattern_key,
+    proof.exemplar_count
+      ? `${proof.exemplar_count} example${proof.exemplar_count === 1 ? "" : "s"}`
+      : null,
+    proof.approval_kind ? `gate ${proof.approval_kind}` : null,
+    proof.channel_event_type,
+    proof.outcome_score ? `outcome ${Number(proof.outcome_score).toFixed(2)}` : null,
+  ].filter((piece): piece is string => Boolean(piece));
+  return pieces.length ? pieces.join(" · ") : null;
+}
+
 function formatWhen(value: Date): string {
   return new Date(value).toLocaleString();
 }
@@ -226,7 +248,15 @@ export default async function ConversationDetailPage({
     conversation_id: id,
   });
   if (!trace) return notFound();
-  const { conversation: conv, messages, events, workflow, approvals, outcomes } = trace;
+  const {
+    conversation: conv,
+    messages,
+    events,
+    workflow,
+    approvals,
+    outcomes,
+    reply_proofs: replyProofs,
+  } = trace;
 
   return (
     <>
@@ -316,6 +346,7 @@ export default async function ConversationDetailPage({
             approvals={approvals}
             outcomes={outcomes}
             events={events}
+            replyProofs={replyProofs}
           />
 
           <div className="section-note">

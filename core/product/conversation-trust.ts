@@ -94,6 +94,26 @@ export interface ConversationTrustOutcome {
   occurred_at: Date;
 }
 
+export interface ConversationTrustReplyProof {
+  inbound_message_id: string;
+  draft_message_id: string | null;
+  intent: string | null;
+  intent_confidence: string | null;
+  draft_status: string | null;
+  draft_subject: string | null;
+  pattern_key: string | null;
+  exemplar_count: number;
+  eval_score: string | null;
+  eval_passed: boolean | null;
+  approval_decision: string | null;
+  approval_kind: string | null;
+  channel_status: string | null;
+  channel_event_type: string | null;
+  outcome_kind: string | null;
+  outcome_score: string | null;
+  summary: string;
+}
+
 export interface ConversationTrustTrace {
   conversation: ConversationTrustConversation;
   messages: ConversationTrustMessage[];
@@ -104,6 +124,7 @@ export interface ConversationTrustTrace {
   } | null;
   approvals: ConversationTrustApproval[];
   outcomes: ConversationTrustOutcome[];
+  reply_proofs: ConversationTrustReplyProof[];
 }
 
 export async function getConversationTrustTrace(
@@ -138,7 +159,144 @@ export async function getConversationTrustTrace(
     }),
   ]);
 
-  return { conversation, messages, events, workflow, approvals, outcomes };
+  return {
+    conversation,
+    messages,
+    events,
+    workflow,
+    approvals,
+    outcomes,
+    reply_proofs: buildReplyProofs({ messages, events, approvals, outcomes }),
+  };
+}
+
+export function buildReplyProofs(input: {
+  messages: ConversationTrustMessage[];
+  events: ConversationTrustEvent[];
+  approvals: ConversationTrustApproval[];
+  outcomes: ConversationTrustOutcome[];
+}): ConversationTrustReplyProof[] {
+  return input.messages
+    .filter((message) => message.direction === "inbound" && Boolean(message.intent_class))
+    .map((inbound) => {
+      const replies = input.messages.filter(
+        (message) =>
+          message.direction === "outbound" &&
+          textField(message.provenance?.inbound_message_id) === inbound.id,
+      );
+      const draft = replies.at(-1) ?? null;
+      const roleEvent = input.events
+        .filter(
+          (event) =>
+            event.event_type === "rep.role.completed" &&
+            textField(event.payload?.action) === "draft_email_reply" &&
+            textField(recordField(event.payload?.output)?.inbound_message_id) === inbound.id,
+        )
+        .at(-1);
+      const approval = input.approvals
+        .filter((item) => {
+          const payload = item.payload;
+          return (
+            textField(payload.inbound_message_id) === inbound.id ||
+            (draft ? textField(payload.message_id) === draft.id : false)
+          );
+        })
+        .at(-1);
+      const channelEvent = draft
+        ? input.events
+            .filter(
+              (event) =>
+                [
+                  "message.sent",
+                  "message.deferred",
+                  "message.delivered",
+                  "message.bounced",
+                ].includes(event.event_type) &&
+                textField(event.payload?.message_id) === draft.id,
+            )
+            .at(-1)
+        : undefined;
+      const outcome = input.outcomes
+        .filter((item) =>
+          draft
+            ? item.attributed_message_id === draft.id
+            : item.attributed_message_id === inbound.id,
+        )
+        .at(-1);
+      const pattern_key =
+        textField(draft?.provenance?.pattern_key) ??
+        textField(recordField(roleEvent?.payload?.output)?.pattern_key);
+      const exemplar_count = Array.isArray(draft?.provenance?.exemplar_ids)
+        ? draft.provenance.exemplar_ids.length
+        : numericField(recordField(roleEvent?.payload?.output)?.procedural_exemplar_count) ?? 0;
+      const channel_status =
+        textField(channelEvent?.payload?.status) ??
+        textField(channelEvent?.payload?.defer_reason) ??
+        draft?.status ??
+        null;
+
+      return {
+        inbound_message_id: inbound.id,
+        draft_message_id: draft?.id ?? null,
+        intent: inbound.intent_class,
+        intent_confidence: inbound.intent_confidence,
+        draft_status: draft?.status ?? null,
+        draft_subject: draft?.subject ?? null,
+        pattern_key,
+        exemplar_count,
+        eval_score: draft?.eval_score ?? null,
+        eval_passed: draft?.eval_passed ?? null,
+        approval_decision: approval?.decision ?? null,
+        approval_kind: approval?.kind ?? null,
+        channel_status,
+        channel_event_type: channelEvent?.event_type ?? null,
+        outcome_kind: outcome?.kind ?? null,
+        outcome_score: outcome?.score ?? null,
+        summary: replyProofSummary({
+          intent: inbound.intent_class,
+          draft,
+          approval,
+          channelEvent,
+          outcome,
+        }),
+      };
+    });
+}
+
+function replyProofSummary(input: {
+  intent: string | null;
+  draft: ConversationTrustMessage | null;
+  approval: ConversationTrustApproval | undefined;
+  channelEvent: ConversationTrustEvent | undefined;
+  outcome: ConversationTrustOutcome | undefined;
+}): string {
+  const pieces = [
+    input.intent ? `intent ${input.intent}` : "intent pending",
+    input.draft ? `draft ${input.draft.status}` : "draft pending",
+    input.draft?.eval_score
+      ? `judge ${Number(input.draft.eval_score).toFixed(2)}`
+      : null,
+    input.approval ? `approval ${input.approval.decision}` : "approval not requested",
+    input.channelEvent
+      ? input.channelEvent.event_type.replace("message.", "")
+      : input.draft?.status ?? null,
+    input.outcome ? `outcome ${input.outcome.kind.replace(/_/g, " ")}` : null,
+  ].filter((piece): piece is string => Boolean(piece));
+  return pieces.join(" -> ");
+}
+
+function recordField(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function textField(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numericField(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 async function loadConversation(
@@ -211,7 +369,10 @@ async function loadWorkflowRun(
         and wr.workflow_name = any($2::text[])
         and (
           ($3::text is not null and wr.input::jsonb->>'signal_id' = $3)
+          or wr.input::jsonb->>'conversation_id' = $4
+          or wr.input::jsonb->>'inbound_message_id' = any($5::text[])
           or wr.output::jsonb->>'conversation_id' = $4
+          or wr.output::jsonb->>'inbound_message_id' = any($5::text[])
           or wr.output::jsonb->>'message_id' = any($5::text[])
         )
       order by wr.created_at desc
@@ -257,8 +418,11 @@ async function loadEvents(
         and (
           payload->>'conversation_id' = $2
           or payload->>'message_id' = any($3::text[])
+          or payload->>'inbound_message_id' = any($3::text[])
           or payload->>'attributed_message_id' = any($3::text[])
           or payload->>'matched_outbound_message_id' = any($3::text[])
+          or payload#>>'{provenance,inbound_message_id}' = any($3::text[])
+          or payload#>>'{output,inbound_message_id}' = any($3::text[])
           or (
             $4::text is not null
             and (

@@ -46,12 +46,13 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Added product-worker dispatch for positive/neutral `reply.classified` events so reply follow-up runs from the event spine instead of the webhook handler.
 - Improved reply drafting by retrieving Rep procedural memory for the conversation intent/company reply pattern, carrying exemplar IDs through draft provenance, and passing the same examples into the hot-path judge.
 - Made returning-user onboarding detection tolerant of an accepted workspace so completed users are not sent back to the company URL/name form if profile projection evidence is incomplete.
+- Added compact reply proof rows to the Conversation trust trace so inbound intent, reply draft, judge score, approval decision, channel send/defer state, procedural pattern, and outcome are readable as one user-facing chain.
 
 ## Recommended Next Iteration
 
 1. Make Rep composition executable:
-   - Add trust-trace affordances that group reply intent, draft, approval, and send into one compact proof row.
    - Expand procedural reply patterns beyond intent/company into objection type, seniority, and channel-specific next-step style.
+   - Add richer semantic memory retrieval for the replier so follow-ups can reference prior objections and known account facts, not just winning procedural examples.
 
 2. Productionize the native LinkedIn path:
    - Replace the dry-run LinkedIn transport with a real session/OAuth provider, rate-limit telemetry, and recovery UX before exposing real external sends broadly.
