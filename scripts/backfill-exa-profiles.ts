@@ -30,6 +30,8 @@ interface CandidateRow {
 }
 
 loadDotenvLocal();
+process.env.BOMBSELL_SUBSTRATE = "nats_restate";
+process.env.RESTATE_BEARER_TOKEN ||= process.env.RESTATE_AUTH_TOKEN;
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -37,7 +39,6 @@ async function main(): Promise<void> {
   if (!process.env.EXA_API_KEY?.trim()) throw new Error("EXA_API_KEY is required");
   if (!process.env.RESTATE_INGRESS_URL?.trim()) throw new Error("RESTATE_INGRESS_URL is required");
 
-  const pool = getPool();
   const candidates = await listCandidates(args.limit, args.force);
 
   const results: Array<{
@@ -100,8 +101,7 @@ async function main(): Promise<void> {
   }, null, 2));
 
   await resetProductEngineForTests();
-  await pool.end();
-  if (failed > 0) process.exit(1);
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 async function listCandidates(limit: number, force: boolean): Promise<CandidateRow[]> {

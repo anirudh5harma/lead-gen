@@ -2433,19 +2433,19 @@ function buildExaProfileIntelligence(results: readonly ExaResult[]): {
   const sourceDomains = new Set<string>();
   const termCounts = new Map<string, number>();
   const evidenceCards = results.flatMap((result) => {
-    const url = canonicalUrl(result.url) ?? result.url;
-    const sourceDomain = domainFromWebsiteUrl(url);
-    if (sourceDomain) sourceDomains.add(sourceDomain);
+    const url = canonicalUrl(result.url);
     for (const term of profileTermsFromResult(result)) {
       termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
     }
     if (!url) return [];
+    const sourceDomain = domainFromWebsiteUrl(url);
+    if (sourceDomain) sourceDomains.add(sourceDomain);
     return [{
       title: (result.title || sourceDomain || url).replace(/\s+/g, " ").trim().slice(0, 160),
       url,
       source_domain: sourceDomain,
       snippet: profileSnippetFromResult(result),
-      published_at: result.publishedDate ?? null,
+      published_at: normalizeOptionalDate(result.publishedDate),
     }];
   }).slice(0, 8);
 
@@ -2506,6 +2506,12 @@ function profileSnippetFromResult(result: ExaResult): string | null {
   if (!value) return null;
   const cleaned = value.replace(/\s+/g, " ").trim();
   return cleaned ? cleaned.slice(0, 260) : null;
+}
+
+function normalizeOptionalDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
 function canonicalUrl(raw: string): string | null {
