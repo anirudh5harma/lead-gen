@@ -29,6 +29,7 @@
     "verify:worker-release": "node --experimental-strip-types scripts/verify-worker-release.ts",
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
     "verify:ses": "node --experimental-strip-types scripts/verify-ses.ts",
+    "backfill:exa-profiles": "node --experimental-strip-types scripts/backfill-exa-profiles.ts",
     "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "dependencies": {
