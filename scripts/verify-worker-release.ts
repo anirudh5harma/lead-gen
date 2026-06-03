@@ -25,6 +25,12 @@ const WORKFLOW_FACTORIES: WorkerServiceContract[] = [
   { service: "channel.email_domain_warmup.v1", factory: "createSendingDomainWarmupWorkflow" },
   { service: "email_domain_warmup_sweep", factory: "createWarmupSweepWorkflow" },
   { service: "email_outlook_subscription_repair", factory: "createOutlookSubscriptionRepairWorkflow" },
+  { service: "profile.bootstrap.exa", factory: "createExaProfileBootstrapWorkflow" },
+  { service: "rep.research.exa", factory: "createExaRepResearchWorkflow" },
+  { service: "draft.grounding.exa", factory: "createExaDraftGroundingWorkflow" },
+  { service: "content.opportunity.exa", factory: "createExaContentOpportunityWorkflow" },
+  { service: "aeo.audit.exa", factory: "createExaAeoAuditWorkflow" },
+  { service: "signal.discover.open_web.exa", factory: "createExaOpenWebSignalWorkflow" },
 ];
 
 export interface WorkerReleaseCheck {

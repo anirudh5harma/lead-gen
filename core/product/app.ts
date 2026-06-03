@@ -118,6 +118,12 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
+import {
+  createExaClientFromEnv,
+  projectExaEvidence,
+  summarizeExaEvidence,
+  type ExaResult,
+} from "../exa/index.ts";
 import { createConversationLifecycleProjection } from "../primitives/conversation-lifecycle.ts";
 import { createOutcomeLifecycleProjection } from "../primitives/outcome-lifecycle.ts";
 import {
@@ -199,6 +205,7 @@ export type WorkspaceSignalSourceAdapter =
   | "hn_whos_hiring"
   | "product_hunt"
   | "reddit"
+  | "exa"
   | "x_search"
   | "webhook";
 
@@ -334,6 +341,7 @@ export interface ConfigureWorkspaceSignalSourceInput {
   url?: string;
   query?: string;
   subreddit?: string;
+  limit?: number;
   max_daily_items?: number;
   max_daily_calls?: number;
   monthly_spend_cap_usd?: number;
@@ -371,6 +379,44 @@ export interface ConfigureWorkspaceProfileInput {
   description?: string | null;
 }
 
+export interface ProductExaProfileInput {
+  company_id?: string;
+  company_name: string;
+  website_url?: string;
+  industry?: string | null;
+  description?: string | null;
+  max_results?: number;
+}
+
+export interface ProductExaResearchInput {
+  query: string;
+  intent?:
+    | "rep_research"
+    | "draft_grounding"
+    | "content_research"
+    | "aeo_audit";
+  num_results?: number;
+  include_text?: boolean;
+}
+
+export interface ProductExaResearchResult {
+  workspace_id: string;
+  request_id: string | null;
+  evidence_source_ids: string[];
+  summary: string;
+}
+
+export interface ProductExaSignalDiscoveryInput {
+  query: string;
+  source_name?: string;
+  signal_kind?: string;
+  limit?: number;
+  max_daily_items?: number;
+  max_daily_calls?: number;
+  monthly_spend_cap_usd?: number;
+  enabled?: boolean;
+}
+
 export interface SubmittedSignalResult {
   signal_id: string;
   workspace_id: string;
@@ -392,6 +438,27 @@ export interface WorkflowLeaseOptions {
 export interface AppState {
   configured: boolean;
   bootstrap?: BootstrapResult;
+  profile: {
+    company_id: string;
+    company_name: string;
+    domain: string | null;
+    website_url: string | null;
+    industry: string | null;
+    description: string | null;
+    exa_summary: string | null;
+    exa_source_domains: string[];
+    exa_market_terms: string[];
+    exa_evidence_cards: Array<{
+      title: string;
+      url: string;
+      source_domain: string | null;
+      snippet: string | null;
+      published_at: string | null;
+    }>;
+    exa_evidence_source_ids: string[];
+    exa_result_count: number;
+    exa_enriched_at: string | null;
+  } | null;
   approvals: Array<{
     id: string;
     run_id: string;
@@ -1522,6 +1589,327 @@ export async function configureWorkspaceCompanyProfile(
   return { workspace_id: session.workspace_id, company_id };
 }
 
+export async function enrichWorkspaceProfileWithExa(
+  input: ProductExaProfileInput,
+  session: ProductWorkspaceSession,
+): Promise<{
+  workspace_id: string;
+  company_id: string;
+  evidence_source_ids: string[];
+  summary: string;
+}> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const websiteUrl = input.website_url ? normalizeWebsiteUrl(input.website_url) : null;
+  const domain = websiteUrl ? domainFromWebsiteUrl(websiteUrl) : null;
+  const companyName = input.company_name.trim() || (domain ? titleizeDomain(domain) : "Workspace company");
+  const company_id =
+    input.company_id ??
+    (await findWorkspaceCompanyId(engine.pool, session.workspace_id, {
+      domain,
+      name: companyName,
+    })) ??
+    randomUUID();
+  const queries = exaProfileQueries({
+    companyName,
+    domain,
+    industry: input.industry ?? null,
+    description: input.description ?? null,
+  });
+  const client = createExaClientFromEnv();
+  const results: ExaResult[] = [];
+  const requestIds: string[] = [];
+  const maxPerQuery = Math.max(2, Math.min(5, Math.trunc(input.max_results ?? 8)));
+  const profileQuery = queries.join(" | ");
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.query.requested",
+    source: "system",
+    producer_ref: `exa:profile:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.query.requested",
+      session.workspace_id,
+      company_id,
+      { query: profileQuery, intent: "profile_bootstrap", maxPerQuery },
+    ),
+    payload: {
+      query: profileQuery,
+      intent: "profile_bootstrap",
+    },
+  });
+  for (const query of queries) {
+    const response = await client.search({
+      query,
+      type: "auto",
+      numResults: maxPerQuery,
+      includeText: true,
+      textMaxCharacters: 1600,
+      highlights: true,
+      summary: true,
+    });
+    if (response.requestId) requestIds.push(response.requestId);
+    results.push(...response.results);
+  }
+  const deduped = dedupeExaResults(results).slice(0, Math.max(3, Math.min(18, input.max_results ?? 12)));
+  const projected = await projectExaEvidence(engine.pool, {
+    workspace_id: session.workspace_id,
+    query: profileQuery,
+    query_intent: "profile_bootstrap",
+    request_id: requestIds[0] ?? null,
+    results: deduped,
+    properties: {
+      company_id,
+      company_name: companyName,
+      website_url: websiteUrl,
+      phase: "profile_bootstrap",
+    },
+  });
+  const summary = summarizeExaEvidence(deduped, 8);
+  const intelligence = buildExaProfileIntelligence(deduped);
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.query.completed",
+    source: "system",
+    producer_ref: `exa:profile:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.query.completed",
+      session.workspace_id,
+      company_id,
+      { query: profileQuery, intent: "profile_bootstrap", request_ids: requestIds },
+    ),
+    payload: {
+      query: profileQuery,
+      intent: "profile_bootstrap",
+      request_id: requestIds[0] ?? null,
+      result_count: deduped.length,
+    },
+  });
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.evidence.projected",
+    source: "system",
+    producer_ref: `exa:profile:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.evidence.projected",
+      session.workspace_id,
+      company_id,
+      { query: profileQuery, intent: "profile_bootstrap", sources: projected.sources.map((source) => source.id) },
+    ),
+    payload: {
+      query: profileQuery,
+      intent: "profile_bootstrap",
+      evidence_source_ids: projected.sources.map((source) => source.id),
+      result_count: deduped.length,
+    },
+  });
+  const payload = {
+    company_id,
+    company_name: companyName,
+    website_url: websiteUrl,
+    evidence_source_ids: projected.sources.map((source) => source.id),
+    summary,
+    intelligence,
+    query_count: queries.length,
+    result_count: deduped.length,
+    request_ids: requestIds,
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "workspace.profile.enriched",
+    source: "system",
+    producer_ref: `exa:profile:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "workspace.profile.enriched",
+      session.workspace_id,
+      company_id,
+      payload,
+    ),
+    payload,
+  });
+  await projectWorkspaceProfileEnriched(engine.pool, event);
+  return {
+    workspace_id: session.workspace_id,
+    company_id,
+    evidence_source_ids: payload.evidence_source_ids,
+    summary,
+  };
+}
+
+export async function startWorkspaceProfileEnrichmentWithExa(
+  input: ProductExaProfileInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; workflow_run_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const {
+    createExaProfileBootstrapWorkflow,
+    EXA_PROFILE_BOOTSTRAP_WORKFLOW,
+  } = await import("../exa/workflows.ts");
+  engine.runtime.register(createExaProfileBootstrapWorkflow());
+  const workflowInput = {
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+    ...input,
+  };
+  const entityId =
+    input.company_id ??
+    createHash("sha256")
+      .update(`${input.company_name}:${input.website_url ?? ""}`)
+      .digest("hex")
+      .slice(0, 20);
+  const run = await engine.runtime.start({
+    workspace_id: session.workspace_id,
+    workflow_name: EXA_PROFILE_BOOTSTRAP_WORKFLOW,
+    idempotency_key: configurationEventKey(
+      EXA_PROFILE_BOOTSTRAP_WORKFLOW,
+      session.workspace_id,
+      entityId,
+      workflowInput,
+    ),
+    input: workflowInput,
+  });
+  return { workspace_id: session.workspace_id, workflow_run_id: run.id };
+}
+
+export async function researchWorkspaceWithExa(
+  input: ProductExaResearchInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductExaResearchResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const query = input.query.trim();
+  if (!query) throw new Error("query required");
+  const intent = input.intent ?? "rep_research";
+  const researchEntityId = createHash("sha256")
+    .update(`${intent}:${query}`)
+    .digest("hex")
+    .slice(0, 20);
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.query.requested",
+    source: "system",
+    producer_ref: `exa:${intent}:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.query.requested",
+      session.workspace_id,
+      researchEntityId,
+      { query, intent, num_results: input.num_results ?? 8 },
+    ),
+    payload: {
+      query,
+      intent,
+    },
+  });
+  const response = await createExaClientFromEnv().search({
+    query,
+    type: "auto",
+    numResults: Math.max(1, Math.min(25, Math.trunc(input.num_results ?? 8))),
+    includeText: input.include_text ?? true,
+    textMaxCharacters: 1800,
+    highlights: true,
+    summary: true,
+  });
+  const projected = await projectExaEvidence(engine.pool, {
+    workspace_id: session.workspace_id,
+    query,
+    query_intent: intent,
+    request_id: response.requestId,
+    results: response.results,
+    properties: { phase: intent },
+  });
+  const evidenceSourceIds = projected.sources.map((source) => source.id);
+  const summary = summarizeExaEvidence(response.results, 8);
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.query.completed",
+    source: "system",
+    producer_ref: `exa:${intent}:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.query.completed",
+      session.workspace_id,
+      researchEntityId,
+      { query, intent, request_id: response.requestId },
+    ),
+    payload: {
+      query,
+      intent,
+      request_id: response.requestId,
+      result_count: response.results.length,
+    },
+  });
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.evidence.projected",
+    source: "system",
+    producer_ref: `exa:${intent}:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.evidence.projected",
+      session.workspace_id,
+      researchEntityId,
+      { query, intent, evidence_source_ids: evidenceSourceIds },
+    ),
+    payload: {
+      query,
+      intent,
+      evidence_source_ids: evidenceSourceIds,
+      result_count: response.results.length,
+    },
+  });
+  const eventType =
+    intent === "content_research"
+      ? "content.opportunity.discovered"
+      : intent === "aeo_audit"
+        ? "aeo.audit.completed"
+        : "rep.research.completed";
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: eventType,
+    source: "system",
+    producer_ref: `exa:${intent}:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      eventType,
+      session.workspace_id,
+      createHash("sha256").update(query).digest("hex").slice(0, 20),
+      { query, evidence_source_ids: evidenceSourceIds, request_id: response.requestId },
+    ),
+    payload: {
+      query,
+      request_id: response.requestId,
+      evidence_source_ids: evidenceSourceIds,
+      summary,
+      result_count: response.results.length,
+    },
+  });
+  return {
+    workspace_id: session.workspace_id,
+    request_id: response.requestId,
+    evidence_source_ids: evidenceSourceIds,
+    summary,
+  };
+}
+
+export async function configureExaOpenWebSignalSource(
+  input: ProductExaSignalDiscoveryInput,
+  session: ProductWorkspaceSession,
+): Promise<BootstrapResult> {
+  return configureWorkspaceSignalSource(
+    {
+      adapter: "exa",
+      name: input.source_name?.trim() || "Exa open-web intelligence",
+      provider: "exa",
+      query: input.query,
+      signal_kind: input.signal_kind,
+      limit: input.limit,
+      max_daily_items: input.max_daily_items,
+      max_daily_calls: input.max_daily_calls,
+      monthly_spend_cap_usd: input.monthly_spend_cap_usd,
+      poll_interval_minutes: 60,
+      enabled: input.enabled ?? true,
+    },
+    session,
+  );
+}
+
 async function projectWorkspaceCompanyProfiled(
   pool: Pool,
   event: PublishedEvent,
@@ -1562,6 +1950,57 @@ async function projectWorkspaceCompanyProfiled(
       JSON.stringify({
         source: "firecrawl",
         event_id: event.id,
+      }),
+    ],
+  );
+}
+
+async function projectWorkspaceProfileEnriched(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    company_id: string;
+    evidence_source_ids: string[];
+    summary: string;
+    intelligence?: {
+      source_domains?: string[];
+      market_terms?: string[];
+      evidence_cards?: Array<{
+        title?: string;
+        url?: string;
+        source_domain?: string | null;
+        snippet?: string | null;
+        published_at?: string | null;
+      }>;
+    };
+    query_count: number;
+    result_count: number;
+    request_ids: string[];
+  };
+  await pool.query(
+    `update graph_companies
+        set properties = properties || $3::jsonb,
+            updated_at = now()
+      where workspace_id = $1
+        and id = $2`,
+    [
+      event.workspace_id,
+      payload.company_id,
+      JSON.stringify({
+        exa_profile: {
+          evidence_source_ids: payload.evidence_source_ids,
+          summary: payload.summary,
+          intelligence: payload.intelligence ?? {
+            source_domains: [],
+            market_terms: [],
+            evidence_cards: [],
+          },
+          query_count: payload.query_count,
+          result_count: payload.result_count,
+          request_ids: payload.request_ids,
+          enriched_at: event.occurred_at,
+        },
       }),
     ],
   );
@@ -1608,6 +2047,18 @@ export async function configureDefaultSignalAggregator(
       poll_interval_minutes: 60,
     },
   ];
+  if (process.env.EXA_API_KEY?.trim()) {
+    sourceInputs.unshift({
+      adapter: "exa",
+      name: `${companyName} public-web intelligence`,
+      query: `${companyName} ${marketPhrase} customers competitors launch hiring funding alternatives`,
+      signal_kind: input.signal_kind ?? "other",
+      max_daily_calls: 12,
+      max_daily_items: 50,
+      monthly_spend_cap_usd: 20,
+      poll_interval_minutes: 120,
+    });
+  }
   let source_count = 0;
   for (const source of sourceInputs) {
     await configureWorkspaceSignalSource(source, session);
@@ -1919,6 +2370,157 @@ function titleizeDomain(domain: string | null): string {
   return stem.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+async function findWorkspaceCompanyId(
+  pool: Pool,
+  workspace_id: string,
+  input: { domain: string | null; name: string },
+): Promise<string | null> {
+  const existing = input.domain
+    ? await pool.query<{ id: string }>(
+        `select id from graph_companies
+          where workspace_id = $1 and domain = $2
+          limit 1`,
+        [workspace_id, input.domain],
+      )
+    : await pool.query<{ id: string }>(
+        `select id from graph_companies
+          where workspace_id = $1 and lower(name) = lower($2)
+          order by created_at asc
+          limit 1`,
+        [workspace_id, input.name],
+      );
+  return existing.rows[0]?.id ?? null;
+}
+
+function exaProfileQueries(input: {
+  companyName: string;
+  domain: string | null;
+  industry: string | null;
+  description: string | null;
+}): string[] {
+  const market = input.industry || signalKeywordsFromDescription(input.description) || "B2B SaaS";
+  const domainPart = input.domain ? ` ${input.domain}` : "";
+  return [
+    `${input.companyName}${domainPart} product customers competitors positioning`,
+    `${input.companyName}${domainPart} recent launch funding hiring news`,
+    `${market} competitors alternatives buyer pain points ${input.companyName}`,
+  ];
+}
+
+function dedupeExaResults(results: readonly ExaResult[]): ExaResult[] {
+  const seen = new Set<string>();
+  const out: ExaResult[] = [];
+  for (const result of results) {
+    const key = canonicalUrl(result.url) ?? result.id ?? result.url;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(result);
+  }
+  return out;
+}
+
+function buildExaProfileIntelligence(results: readonly ExaResult[]): {
+  source_domains: string[];
+  market_terms: string[];
+  evidence_cards: Array<{
+    title: string;
+    url: string;
+    source_domain: string | null;
+    snippet: string | null;
+    published_at: string | null;
+  }>;
+} {
+  const sourceDomains = new Set<string>();
+  const termCounts = new Map<string, number>();
+  const evidenceCards = results.flatMap((result) => {
+    const url = canonicalUrl(result.url) ?? result.url;
+    const sourceDomain = domainFromWebsiteUrl(url);
+    if (sourceDomain) sourceDomains.add(sourceDomain);
+    for (const term of profileTermsFromResult(result)) {
+      termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
+    }
+    if (!url) return [];
+    return [{
+      title: (result.title || sourceDomain || url).replace(/\s+/g, " ").trim().slice(0, 160),
+      url,
+      source_domain: sourceDomain,
+      snippet: profileSnippetFromResult(result),
+      published_at: result.publishedDate ?? null,
+    }];
+  }).slice(0, 8);
+
+  return {
+    source_domains: [...sourceDomains].slice(0, 10),
+    market_terms: [...termCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([term]) => term)
+      .slice(0, 12),
+    evidence_cards: evidenceCards,
+  };
+}
+
+function profileTermsFromResult(result: ExaResult): string[] {
+  const stopwords = new Set([
+    "about",
+    "after",
+    "also",
+    "and",
+    "are",
+    "business",
+    "can",
+    "company",
+    "customer",
+    "customers",
+    "from",
+    "has",
+    "have",
+    "into",
+    "more",
+    "news",
+    "new",
+    "our",
+    "platform",
+    "product",
+    "software",
+    "that",
+    "the",
+    "their",
+    "this",
+    "with",
+    "your",
+  ]);
+  const text = [
+    result.title,
+    result.summary,
+    result.highlights.join(" "),
+  ].filter(Boolean).join(" ");
+  const terms = text
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .match(/[a-z][a-z0-9-]{3,}/g) ?? [];
+  return [...new Set(terms.filter((term) => !stopwords.has(term)))].slice(0, 20);
+}
+
+function profileSnippetFromResult(result: ExaResult): string | null {
+  const value = result.summary ?? result.highlights[0] ?? result.text ?? null;
+  if (!value) return null;
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, 260) : null;
+}
+
+function canonicalUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    url.hash = "";
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^utm_|^(ref|ref_src)$/i.test(key)) url.searchParams.delete(key);
+    }
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
 function signalKeywordsFromDescription(description: string | null | undefined): string | null {
   const words =
     description
@@ -2210,6 +2812,11 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       name: "workspace.company_profile.v1",
       eventTypes: ["workspace.company.profiled"],
       apply: (event) => projectWorkspaceCompanyProfiled(engine.pool, event),
+    },
+    {
+      name: "workspace.profile_enrichment.v1",
+      eventTypes: ["workspace.profile.enriched"],
+      apply: (event) => projectWorkspaceProfileEnriched(engine.pool, event),
     },
     {
       name: "workspace.source_configuration.v1",
@@ -2655,6 +3262,7 @@ function parseWorkspaceSignalSourceAdapter(
     case "hn_whos_hiring":
     case "product_hunt":
     case "reddit":
+    case "exa":
     case "x_search":
     case "webhook":
       return adapter;
@@ -2673,6 +3281,8 @@ function sourceKindForAdapter(adapter: WorkspaceSignalSourceAdapter): SourceKind
     case "rss":
     case "google_news":
       return "rss";
+    case "exa":
+      return "web_monitor";
     case "reddit":
     case "x_search":
       return "other";
@@ -2693,6 +3303,8 @@ function defaultWorkspaceSourceName(adapter: WorkspaceSignalSourceAdapter): stri
       return "Product Hunt launches";
     case "reddit":
       return "Reddit signals";
+    case "exa":
+      return "Exa open-web intelligence";
     case "x_search":
       return "X search signals";
     case "webhook":
@@ -2732,8 +3344,20 @@ function sourceConfigForAdapter(
         ...base,
         provider: signalSourceProvider(input.provider) ?? "x_official",
         query: input.query?.trim() || input.name.trim(),
-        limit: 25,
+        limit: positiveInteger(input.limit) ?? 25,
         max_items_per_poll: 10,
+        ...(sourceQuotaConfig(input) ?? {}),
+      };
+    case "exa":
+      return {
+        ...base,
+        provider: "exa",
+        query: input.query?.trim() || input.name.trim(),
+        limit: positiveInteger(input.limit) ?? 10,
+        include_text: true,
+        text_max_characters: 1600,
+        highlights: true,
+        summary: true,
         ...(sourceQuotaConfig(input) ?? {}),
       };
     case "webhook":
@@ -2821,6 +3445,8 @@ function defaultSignalKindForAdapter(adapter: WorkspaceSignalSourceAdapter): str
     case "rss":
     case "reddit":
       return "press_mention";
+    case "exa":
+      return "other";
     case "x_search":
       return "competitor_move";
     case "webhook":
@@ -4063,6 +4689,7 @@ export async function getAppState(
       outcomes: [],
       conversations: [],
       channelAccounts: [],
+      profile: null,
       llmUsage: { used_tokens_24h: 0, daily_token_cap: 0 },
       sources: [],
       eventTrace: {
@@ -4097,7 +4724,17 @@ export async function getAppState(
   await projectVisibleProductState(await getProductEngine());
   const store = createPostgresVerticalSliceStore(pool);
   const snapshot = await store.snapshot();
-  const [approvals, llmUsage, runs, recovery, events, sendTraces, accounts, sources] = await Promise.all([
+  const [
+    approvals,
+    llmUsage,
+    runs,
+    recovery,
+    events,
+    sendTraces,
+    accounts,
+    sources,
+    profile,
+  ] = await Promise.all([
     pool.query<{
       id: string;
       run_id: string;
@@ -4368,6 +5005,22 @@ export async function getAppState(
         order by gs.created_at desc`,
       [boot.workspace_id, [RSS_SIGNAL_INGESTION_WORKFLOW, WORKSPACE_POLL_WORKFLOW]],
     ),
+    pool.query<{
+      id: string;
+      name: string;
+      domain: string | null;
+      industry: string | null;
+      description: string | null;
+      properties: Record<string, unknown>;
+    }>(
+      `select id, name, domain::text as domain, industry, description, properties
+         from graph_companies
+        where workspace_id = $1
+          and properties->>'profile_role' = 'workspace_company'
+        order by updated_at desc, created_at desc
+        limit 1`,
+      [boot.workspace_id],
+    ),
   ]);
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
   const eventTrace = latestWorkflowRunId
@@ -4407,6 +5060,7 @@ export async function getAppState(
       occurred_at: row.occurred_at.toISOString(),
     })),
     eventTrace,
+    profile: productProfileState(profile.rows[0] ?? null),
     sendTraces: sendTraces.rows.map((row) => ({
       message_id: row.message_id,
       status: row.status,
@@ -4463,6 +5117,66 @@ export async function getAppState(
       };
     }),
   };
+}
+
+function productProfileState(row: {
+  id: string;
+  name: string;
+  domain: string | null;
+  industry: string | null;
+  description: string | null;
+  properties: Record<string, unknown>;
+} | null): AppState["profile"] {
+  if (!row) return null;
+  const exaProfile = recordStateValue(row.properties.exa_profile);
+  const intelligence = recordStateValue(exaProfile?.intelligence);
+  const evidenceIds = arrayStringStateValue(exaProfile?.evidence_source_ids);
+  return {
+    company_id: row.id,
+    company_name: row.name,
+    domain: row.domain,
+    website_url: stringStateValue(row.properties.website_url),
+    industry: row.industry,
+    description: row.description,
+    exa_summary: stringStateValue(exaProfile?.summary),
+    exa_source_domains: arrayStringStateValue(intelligence?.source_domains),
+    exa_market_terms: arrayStringStateValue(intelligence?.market_terms),
+    exa_evidence_cards: profileEvidenceCardsStateValue(intelligence?.evidence_cards),
+    exa_evidence_source_ids: evidenceIds,
+    exa_result_count: numericConfigValue(exaProfile?.result_count) ?? 0,
+    exa_enriched_at: stringStateValue(exaProfile?.enriched_at),
+  };
+}
+
+function profileEvidenceCardsStateValue(value: unknown): AppState["profile"] extends infer P
+  ? P extends { exa_evidence_cards: infer C } ? C : never
+  : never {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const card = recordStateValue(item);
+    const title = stringStateValue(card?.title);
+    const url = stringStateValue(card?.url);
+    if (!title || !url) return [];
+    return [{
+      title,
+      url,
+      source_domain: stringStateValue(card?.source_domain),
+      snippet: stringStateValue(card?.snippet),
+      published_at: stringStateValue(card?.published_at),
+    }];
+  }).slice(0, 8);
+}
+
+function recordStateValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function arrayStringStateValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
 }
 
 function stringStateValue(value: unknown): string | null {

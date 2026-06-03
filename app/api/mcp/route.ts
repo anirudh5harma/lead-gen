@@ -5,6 +5,7 @@ import { createMcpManifest } from "@/core/mcp/manifest.ts";
 import { findFirstProductWorkspaceForUser } from "@/core/product/app.ts";
 import { registerProductTools } from "@/core/product/tools.ts";
 import { registerGraphTools } from "@/core/graph/index.ts";
+import { registerExaTools } from "@/core/exa/index.ts";
 import { validUuid, getRequestUserId } from "@/lib/auth";
 import {
   getActiveWorkspaceSession,
@@ -65,6 +66,7 @@ async function handleMcpRequest(request: Request): Promise<Response> {
   }
 
   registerGraphTools();
+  registerExaTools();
   registerProductTools();
 
   const server = createBombsellMcpServer({

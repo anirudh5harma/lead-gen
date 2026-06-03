@@ -7,6 +7,7 @@ export interface ProductEnvVar {
     | "auth"
     | "channels"
     | "database"
+    | "intelligence"
     | "llm"
     | "local"
     | "runtime"
@@ -161,6 +162,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "llm",
     description: "Optional override for the Firecrawl scrape endpoint.",
     example: "https://api.firecrawl.dev/v2/scrape",
+  },
+  {
+    name: "EXA_API_KEY",
+    requirement: "production",
+    category: "intelligence",
+    description: "Exa API key for public-web intelligence, profile enrichment, Rep research, draft grounding, open-web signals, content, and AEO.",
+    example: "exa_...",
   },
   {
     name: "DEEPSEEK_PROMPT_USD_PER_MILLION",

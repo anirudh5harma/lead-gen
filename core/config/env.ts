@@ -32,6 +32,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "OPENAI_API_KEY", tier: "feature", purpose: "Signal embedding model" },
   { key: "FIRECRAWL_API_KEY", tier: "feature", purpose: "Company website profile extraction" },
   { key: "FIRECRAWL_API_URL", tier: "optional", purpose: "Override Firecrawl scrape endpoint" },
+  { key: "EXA_API_KEY", tier: "feature", purpose: "Exa public-web intelligence layer" },
   { key: "AWS_REGION", tier: "feature", purpose: "SES owned-domain sender" },
   { key: "AWS_ACCESS_KEY_ID", tier: "optional", purpose: "Local AWS credentials" },
   { key: "AWS_SECRET_ACCESS_KEY", tier: "optional", purpose: "Local AWS credentials" },

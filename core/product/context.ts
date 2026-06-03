@@ -130,6 +130,9 @@ export async function getWorkspaceAgentContext(
     `- Recent outcomes: ${state.outcomes.length}`,
     `- LLM tokens used in 24h: ${state.llmUsage.used_tokens_24h}/${state.llmUsage.daily_token_cap}`,
     "",
+    "## Profile Intelligence",
+    formatProfileIntelligence(state.profile),
+    "",
     "## Reps",
     listOrEmpty(
       reps.rows.map((rep) => {
@@ -222,6 +225,22 @@ function listOrEmpty(items: string[]): string {
 }
 
 type ContextChannelAccount = Awaited<ReturnType<typeof getAppState>>["channelAccounts"][number];
+type ContextProfile = Awaited<ReturnType<typeof getAppState>>["profile"];
+
+export function formatProfileIntelligence(profile: ContextProfile): string {
+  if (!profile) return "- none";
+  return [
+    `- Company: ${line(profile.company_name)}`,
+    `- Domain: ${profile.domain ?? "-"}`,
+    `- Website: ${profile.website_url ?? "-"}`,
+    `- Industry: ${line(profile.industry)}`,
+    `- Description: ${line(profile.description)}`,
+    `- Public-web summary: ${line(profile.exa_summary)}`,
+    `- Market terms: ${profile.exa_market_terms.length > 0 ? profile.exa_market_terms.join(", ") : "-"}`,
+    `- Source domains: ${profile.exa_source_domains.length > 0 ? profile.exa_source_domains.join(", ") : "-"}`,
+    `- Evidence: ${profile.exa_evidence_source_ids.length} sources, ${profile.exa_result_count} Exa results, enriched=${profile.exa_enriched_at ?? "-"}`,
+  ].join("\n");
+}
 
 export function formatChannelReadiness(accounts: readonly ContextChannelAccount[]): string {
   return listOrEmpty(

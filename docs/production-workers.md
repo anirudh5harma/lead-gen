@@ -167,3 +167,9 @@ The verifier expects these services:
 - `channel.email_domain_warmup.v1`
 - `email_domain_warmup_sweep`
 - `email_outlook_subscription_repair`
+- `profile.bootstrap.exa`
+- `rep.research.exa`
+- `draft.grounding.exa`
+- `content.opportunity.exa`
+- `aeo.audit.exa`
+- `signal.discover.open_web.exa`

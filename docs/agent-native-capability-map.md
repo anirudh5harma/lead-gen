@@ -13,6 +13,8 @@ projection, and visible UI feedback where applicable.
 | Read Conversation trust trace | `/dashboard/conversations/[id]` | `product.conversation.trust.get` | Reads Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes from the evented state | Ready |
 | Extract company profile from website | `/onboarding` | `product.company.website_profile.extract` | Firecrawl + LLM, no write | Ready |
 | Store company profile | `/onboarding` | `product.company.profile.configure` | `workspace.company.profiled` -> graph company | Ready |
+| Enrich Profile from public web | `/onboarding`, `/dashboard/setup`, MCP/internal Rep execution | `product.profile.enrich` | `profile.bootstrap.exa`: Exa Search/Contents -> graph evidence sources -> `workspace.profile.enriched` | Ready |
+| Run Rep public-web research | MCP/internal Rep execution | `product.rep.research` | `rep.research.exa`: Exa Search/Contents -> graph evidence sources -> `rep.research.completed` | Ready |
 | Configure Rep | `/dashboard/setup` | `product.rep.configure` | `rep.configured` -> Rep projection | Ready |
 | Configure ICP | `/dashboard/setup`, `/dashboard/ingestion` | `product.icp.configure` | `workspace.icp.configured` -> ICP projection | Ready |
 | Configure Signal email Play | `/dashboard/setup` | `product.play.signal_email.configure` | `play.configured` -> Play projection | Ready |
@@ -21,11 +23,15 @@ projection, and visible UI feedback where applicable.
 | Connect LinkedIn account | `/dashboard/setup` | `product.linkedin_account.connect_url.get` | Provider auth URL -> `linkedin.account.authorization.received` -> channel account projection -> `channel.account.connected` | Ready |
 | Track company | `/dashboard/ingestion` | `product.company.track` | `workspace.company.tracked` -> graph/source projection | Ready |
 | Configure signal source | `/dashboard/ingestion`, `/brief` | `product.source.configure` | `workspace.source.configured` -> source config; push sources do not enter poll maintenance | Ready |
+| Configure Exa open-web Signals | `/dashboard/ingestion`, MCP/internal Rep execution | `product.signal.discover_open_web` | `signal.discover.open_web.exa` configures adapter `exa` -> durable workspace poll -> `signal.discovered` | Ready |
 | Configure default aggregator | `/onboarding` | `product.sources.default_aggregator.configure` | Emits source configuration events per adapter | Ready |
 | Run signal aggregator | `/dashboard/ingestion`, `/brief` | `product.sources.aggregate.run` | Starts `ingest_workspace_poll` workflow | Ready |
 | Push source-backed Signal | `/api/webhooks/signals`, external source, agent tool | `product.signal.discover` | Authenticated webhook/tool emits `signal.discovered`; projector materializes `Signal` and emits `signal.ingested` | Ready |
 | Submit manual signal | `/dashboard`, `/brief` | `product.signal.submit` | Manual Signal ingestion event path | Ready |
 | Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email Play workflows | Ready |
+| Ground draft with public evidence | MCP/internal Rep execution | `product.draft.ground` | `draft.grounding.exa`: Exa Search/Contents -> graph evidence sources -> judge/writer-ready proof summary | Ready |
+| Discover content opportunities | `/dashboard/content`, MCP/internal Rep execution | `product.content.opportunities.discover` | `content.opportunity.exa`: Exa Search/Contents -> graph evidence sources -> `content.opportunity.discovered` | Ready |
+| Audit AEO coverage | `/dashboard/aeo`, MCP/internal Rep execution | `product.aeo.audit` | `aeo.audit.exa`: Exa Search/Contents -> graph evidence sources -> `aeo.audit.completed` | Ready |
 | Approve/reject draft | `/dashboard/approvals`, `/brief` | `product.approval.decide` | Resolves workflow approval gate | Ready |
 | Retry failed workflow | `/brief`, ops surfaces | `product.workflow.retry` | Durable workflow retry/resume | Ready |
 | Inspect/redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |

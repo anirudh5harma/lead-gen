@@ -9,14 +9,17 @@ import {
   configureRep,
   configureSignalEmailPlay,
   configureSignalLinkedInPlay,
+  configureExaOpenWebSignalSource,
   configureWorkspaceCompanyProfile,
   configureWorkspaceEmailAccount,
   configureWorkspaceSignalSource,
   discoverSignalFromSource,
   dispatchSignalPlaysOnce,
+  enrichWorkspaceProfileWithExa,
   getLinkedInAccountConnectIntent,
   getAppState,
   listDeadLetteredEventDispatches,
+  researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
@@ -70,6 +73,7 @@ const SourceAdapterSchema = z.enum([
   "hn_whos_hiring",
   "product_hunt",
   "reddit",
+  "exa",
   "x_search",
   "webhook",
 ]);
@@ -228,6 +232,74 @@ export function registerProductTools(): void {
   });
 
   registerTool({
+    name: "product.profile.enrich",
+    description:
+      "Enrich the workspace Profile with Exa public-web evidence, projecting results into graph sources and updating company memory through a typed event.",
+    kind: "write",
+    input: z.object({
+      company_id: z.string().uuid().optional(),
+      company_name: z.string().min(1),
+      website_url: z.string().optional(),
+      industry: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+      max_results: z.number().int().positive().max(25).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      company_id: z.string().uuid(),
+      evidence_source_ids: z.array(z.string().uuid()),
+      summary: z.string(),
+    }),
+    async handler(input, ctx) {
+      return enrichWorkspaceProfileWithExa(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.rep.research",
+    description:
+      "Let a Rep research the public web with Exa and store evidence in the graph for future context.",
+    kind: "write",
+    input: z.object({
+      query: z.string().min(1),
+      num_results: z.number().int().positive().max(25).optional(),
+      include_text: z.boolean().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      request_id: z.string().nullable(),
+      evidence_source_ids: z.array(z.string().uuid()),
+      summary: z.string(),
+    }),
+    async handler(input, ctx) {
+      return researchWorkspaceWithExa(
+        { ...input, intent: "rep_research" },
+        sessionFromContext(ctx),
+      );
+    },
+  });
+
+  registerTool({
+    name: "product.draft.ground",
+    description:
+      "Use Exa to gather factual evidence for a draft before writer/judge steps use it.",
+    kind: "write",
+    input: z.object({
+      query: z.string().min(1),
+      num_results: z.number().int().positive().max(25).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      request_id: z.string().nullable(),
+      evidence_source_ids: z.array(z.string().uuid()),
+      summary: z.string(),
+    }),
+    async handler(input, ctx) {
+      return researchWorkspaceWithExa(
+        { ...input, intent: "draft_grounding", include_text: true },
+        sessionFromContext(ctx),
+      );
+    },
+  });
+
+  registerTool({
     name: "product.rep.configure",
     description:
       "Create or update a user-facing Rep persona with voice, KPIs, channels, and per-channel autonomy.",
@@ -374,6 +446,7 @@ export function registerProductTools(): void {
       query: z.string().optional(),
       subreddit: z.string().optional(),
       signal_kind: SignalKindSchema.optional(),
+      limit: z.number().int().positive().max(100).optional(),
       max_daily_items: z.number().int().positive().optional(),
       max_daily_calls: z.number().int().positive().optional(),
       monthly_spend_cap_usd: z.number().positive().optional(),
@@ -476,6 +549,75 @@ export function registerProductTools(): void {
     output: WorkspaceResultSchema.extend({ source_count: z.number().int().nonnegative() }),
     async handler(input, ctx) {
       return configureDefaultSignalAggregator(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.signal.discover_open_web",
+    description:
+      "Configure an Exa open-web Signal source. The durable workspace poll workflow owns fetching, budgets, dedupe, projection, and signal.discovered publication.",
+    kind: "write",
+    input: z.object({
+      query: z.string().min(1),
+      source_name: z.string().optional(),
+      signal_kind: SignalKindSchema.optional(),
+      limit: z.number().int().positive().max(100).optional(),
+      max_daily_items: z.number().int().positive().optional(),
+      max_daily_calls: z.number().int().positive().optional(),
+      monthly_spend_cap_usd: z.number().positive().optional(),
+      enabled: z.boolean().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      rep_id: z.string(),
+      play_id: z.string(),
+      channel_account_id: z.string(),
+    }),
+    async handler(input, ctx) {
+      return configureExaOpenWebSignalSource(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.content.opportunities.discover",
+    description:
+      "Discover content opportunities with Exa, store evidence in the graph, and emit content.opportunity.discovered.",
+    kind: "write",
+    input: z.object({
+      query: z.string().min(1),
+      num_results: z.number().int().positive().max(25).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      request_id: z.string().nullable(),
+      evidence_source_ids: z.array(z.string().uuid()),
+      summary: z.string(),
+    }),
+    async handler(input, ctx) {
+      return researchWorkspaceWithExa(
+        { ...input, intent: "content_research", include_text: true },
+        sessionFromContext(ctx),
+      );
+    },
+  });
+
+  registerTool({
+    name: "product.aeo.audit",
+    description:
+      "Audit category visibility and answer gaps with Exa, store evidence in the graph, and emit aeo.audit.completed.",
+    kind: "write",
+    input: z.object({
+      query: z.string().min(1),
+      num_results: z.number().int().positive().max(25).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      request_id: z.string().nullable(),
+      evidence_source_ids: z.array(z.string().uuid()),
+      summary: z.string(),
+    }),
+    async handler(input, ctx) {
+      return researchWorkspaceWithExa(
+        { ...input, intent: "aeo_audit", include_text: true },
+        sessionFromContext(ctx),
+      );
     },
   });
 

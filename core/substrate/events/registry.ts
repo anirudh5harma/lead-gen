@@ -88,6 +88,28 @@ const WorkspaceCompanyProfiled = z.object({
   description: z.string().nullable(),
 });
 
+const WorkspaceProfileEnriched = z.object({
+  company_id: z.string().uuid(),
+  company_name: z.string().min(1),
+  website_url: z.string().url().nullable(),
+  evidence_source_ids: z.array(z.string().uuid()),
+  summary: z.string(),
+  intelligence: z.object({
+    source_domains: z.array(z.string()),
+    market_terms: z.array(z.string()),
+    evidence_cards: z.array(z.object({
+      title: z.string(),
+      url: z.string().url(),
+      source_domain: z.string().nullable(),
+      snippet: z.string().nullable(),
+      published_at: z.string().nullable(),
+    })),
+  }).optional(),
+  query_count: z.number().int().nonnegative(),
+  result_count: z.number().int().nonnegative(),
+  request_ids: z.array(z.string()),
+});
+
 const WorkspaceSourceConfigured = z.object({
   source_id: z.string().uuid(),
   source_kind: z.enum([
@@ -109,6 +131,7 @@ const WorkspaceSourceConfigured = z.object({
     "hn_whos_hiring",
     "product_hunt",
     "reddit",
+    "exa",
     "x_search",
     "webhook",
   ]),
@@ -671,6 +694,49 @@ const LLMCallDeferred = z.object({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Public-web intelligence (Exa)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ExaQueryRequested = z.object({
+  query: z.string().min(1),
+  intent: z.string().min(1),
+  source_id: z.string().uuid().nullable().optional(),
+});
+
+const ExaQueryCompleted = z.object({
+  query: z.string().min(1),
+  intent: z.string().min(1),
+  request_id: z.string().nullable(),
+  result_count: z.number().int().nonnegative(),
+});
+
+const ExaContentsFetched = z.object({
+  request_id: z.string().nullable(),
+  ids: z.array(z.string()),
+  urls: z.array(z.string()),
+  result_count: z.number().int().nonnegative(),
+});
+
+const ExaEvidenceProjected = z.object({
+  query: z.string().min(1),
+  intent: z.string().min(1),
+  evidence_source_ids: z.array(z.string().uuid()),
+  result_count: z.number().int().nonnegative(),
+});
+
+const RepResearchCompleted = z.object({
+  query: z.string().min(1),
+  request_id: z.string().nullable(),
+  evidence_source_ids: z.array(z.string().uuid()),
+  summary: z.string(),
+  result_count: z.number().int().nonnegative(),
+});
+
+const AeoAuditCompleted = RepResearchCompleted;
+
+const ContentOpportunityDiscovered = RepResearchCompleted;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Memory updates (procedural memory grows from outcomes)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -705,6 +771,7 @@ export const eventRegistry = {
   "workspace.icp.configured": WorkspaceIcpConfigured,
   "workspace.company.tracked": WorkspaceCompanyTracked,
   "workspace.company.profiled": WorkspaceCompanyProfiled,
+  "workspace.profile.enriched": WorkspaceProfileEnriched,
   "workspace.source.configured": WorkspaceSourceConfigured,
 
   "signal.discovered": SignalDiscovered,
@@ -770,6 +837,14 @@ export const eventRegistry = {
 
   "llm.usage.recorded": LLMUsageRecorded,
   "llm.call.deferred": LLMCallDeferred,
+
+  "exa.query.requested": ExaQueryRequested,
+  "exa.query.completed": ExaQueryCompleted,
+  "exa.contents.fetched": ExaContentsFetched,
+  "exa.evidence.projected": ExaEvidenceProjected,
+  "rep.research.completed": RepResearchCompleted,
+  "aeo.audit.completed": AeoAuditCompleted,
+  "content.opportunity.discovered": ContentOpportunityDiscovered,
 
   "rep.memory.procedural.updated": RepMemoryProceduralUpdated,
   "rep.memory.procedural.seeded": RepMemoryProceduralSeeded,

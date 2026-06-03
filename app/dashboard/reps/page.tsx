@@ -1,7 +1,9 @@
 import { EmptyState } from "@/components/dashboard/Shell";
+import { ProfileIntelligence } from "@/components/dashboard/ProfileIntelligence";
 import Icon from "@/components/Icon";
+import { getAppState } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { getActiveWorkspaceSession } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +53,20 @@ async function loadReps(workspaceId: string): Promise<RepRow[]> {
 }
 
 export default async function RepsPage() {
-  const workspace = await getActiveWorkspace();
-  if (!workspace) return <CanvasEmpty label="Profile" title="No workspace selected." />;
+  const active = await getActiveWorkspaceSession();
+  if (!active) return <CanvasEmpty label="Profile" title="No workspace selected." />;
 
-  const reps = await loadReps(workspace.id);
+  const pool = getPool();
+  const [reps, state] = await Promise.all([
+    loadReps(active.workspace.id),
+    getAppState(pool, {
+      workspace_id: active.workspace.id,
+      user_id: active.user_id,
+    }),
+  ]);
   const sent = reps.reduce((sum, rep) => sum + Number(rep.outbound_24h), 0);
   const positives = reps.reduce((sum, rep) => sum + Number(rep.positive_24h), 0);
+  const profile = state.profile;
 
   return (
     <>
@@ -66,10 +76,10 @@ export default async function RepsPage() {
           <div>
             <p className="brief-kicker">Profile</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              The voices doing the work.
+              The context behind the work.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Reps are the named voices users trust. Keep them few, specific, and tied to a clear channel.
+              Bombsell uses this profile to brief Reps, ground outreach, find signal sources, and shape content.
             </p>
           </div>
           <div className="section-note">
@@ -82,6 +92,8 @@ export default async function RepsPage() {
           </div>
         </div>
       </section>
+
+      <ProfileIntelligence profile={profile} />
 
       <section className="mt-6 grid gap-4 lg:grid-cols-2">
         {reps.length === 0 ? (

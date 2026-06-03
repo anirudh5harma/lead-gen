@@ -4,6 +4,11 @@
 
 The Signal primitive is the platform's *input*. Every Play, Rep, and outcome chain downstream is reactive — they fire because a signal landed. Today signals only exist when hand-inserted; this design turns the system from demand-driven to **continuously fed**, with cost discipline so the bill stays predictable.
 
+Exa is now treated as a first-class public-web intelligence layer across
+Profile, Reps, Signals, Outreach, Content, Campaigns, and AEO. This document
+covers Signal ingestion specifics; the broader product architecture lives in
+[`docs/exa-intelligence-layer.md`](./exa-intelligence-layer.md).
+
 **Primary product focus: hiring signals across the web.** Users want a live picture of who in their domain is hiring for what — so the ATS adapters (Greenhouse, Lever, Ashby, plus HN "Who is hiring" and career-page RSS) are first-class. Funding / leadership / M&A / launches stay in the mix as auxiliary signals.
 
 Goals:
@@ -55,7 +60,7 @@ Practical startup provider stack:
 | **Dedicated social data APIs** | SocialData / TwitterAPI.io for X; Data365 for broader social data | Better when a source proves high-volume enough that we want cheaper per-item X/search access or raw structured feeds. | Medium. Treat as provider-backed unofficial access; require kill switches, provenance, monthly budget caps, and a replacement path. |
 | **Scraper marketplaces** | Apify Actors for X and LinkedIn company posts; Bright Data for enterprise-scale public web data | Good for experiments, narrow backfills, and monitoring known company/profile URLs when aggregators miss a source. | Highest operational/compliance risk. Never put user cookies in the system. Keep off the hot path until provider terms, data deletion, and anti-abuse behavior are signed off. |
 | **Native/free sources** | HN Firebase/Algolia, RSS, Google News, Product Hunt, bounded Reddit JSON/API | Keep owning these because they are cheap, stable enough, and already fit the workflow/event architecture. | Low, but Reddit commercial scale still needs terms review. |
-| **AI web/search substrates** | Exa Search/Contents/Monitors | Best for broad web discovery, long-tail company/person research, "what changed?" monitors, and source discovery when no dedicated social provider has coverage. | Low-to-medium. It is web search/crawl, not a guaranteed LinkedIn/X firehose; use it to find and enrich evidence, not as the only social ingestion layer. |
+| **AI web/search substrates** | Exa Search/Contents/Websets | Best for broad web discovery, profile enrichment, Rep research, draft grounding, content/AEO discovery, long-tail company/person research, "what changed?" monitors, and source discovery when no dedicated social provider has coverage. | Low-to-medium. It is web search/crawl, not a guaranteed LinkedIn/X firehose; use it to find and enrich evidence, not as the only social ingestion layer. |
 | **B2B graph + live signal APIs** | Crustdata Company/Person/Job/Social Post/Watcher APIs | Strong candidate for our graph backbone: company/person enrichment, hiring/funding/company-event signals, recent public posts by person/company, keyword post search, and agent/MCP use. | Medium. Enterprise/live endpoints may be plan-specific; verify freshness, LinkedIn/social coverage, redistribution rights, and whether post search can be called at our cadence. |
 | **Packaged AI GTM operators** | Gojiberry-style products | Useful competitive/product inspiration: detect buying/social signals, match ICP, score leads, then launch LinkedIn/email outreach. | Not a source layer unless they expose an API. Public positioning suggests the winning UX is "tell the agent your ICP and get warm leads," not a dashboard of feeds. |
 
@@ -73,9 +78,9 @@ Recommended provider order:
    and public posts, via an Apify/Bright Data/Data365-style provider that does
    not require cookies or user accounts. Keep it off the hot path until terms,
    data deletion, and rate behavior are reviewed.
-4. **Exa enrichment/search** for open-web evidence, company/person pages, and
-   source discovery when native feeds do not explain a signal. Do not count it
-   as a LinkedIn/X firehose.
+4. **Exa intelligence layer before X/LinkedIn procurement**: use Exa for
+   profile enrichment, Rep research, draft grounding, open-web Signals, content
+   opportunities, and AEO audits. Do not count it as a LinkedIn/X firehose.
 5. **Crustdata or Octolens later** only after cheap sources prove that managed
    coverage would save enough engineering time or improve outcome volume.
 
@@ -92,10 +97,12 @@ Competitor/product inference:
   posts, watcher APIs, and MCP/agent access. For us, it is more strategic than a
   one-off scraper because it can fill both graph enrichment and signal
   acquisition.
-- **Exa** is not a LinkedIn/X replacement. It is the cheap AI-native way to let
-  agents discover current public web evidence, monitor broad web changes, and
-  fetch clean content with citations. Use it beside Crustdata/Octolens, not
-  instead of them.
+- **Exa** is not a LinkedIn/X replacement. It is the AI-native public-web
+  intelligence layer: agents use it to discover current evidence, monitor broad
+  web changes, fetch clean content with citations, ground drafts, enrich
+  profiles, and find AEO/content gaps. Use it before Crustdata/Octolens for the
+  first product loop, and use dedicated social providers later only for measured
+  gaps.
 
 This keeps the product agent-native: external aggregators are source adapters,
 not alternate workflows. They push normalized mentions into the same typed event
@@ -125,7 +132,7 @@ References to recheck before procurement or provider enablement:
 
 - Octolens social-signal playbook and pricing: <https://octolens.com/blog/track-social-signals>, <https://octolens.com/pricing>
 - Trigify and Syften social-listening surfaces: <https://www.trigify.io/>, <https://syften.com/>
-- Exa AI search/monitoring substrate: <https://exa.ai/docs/reference/search>, <https://exa.ai/pricing>
+- Exa intelligence layer: <https://exa.ai/docs/reference/search>, <https://docs.exa.ai/reference/get-contents>, <https://docs.exa.ai/websets/api/overview>, <https://exa.ai/pricing>
 - Crustdata B2B graph, post APIs, and pricing: <https://docs.crustdata.com/general/introduction>, <https://crustdata.com/apis/posts>, <https://crustdata.com/pricing>
 - Gojiberry product positioning/FAQ: <https://gojiberry.ai/faq>, <https://gojiberry.ai/>
 - X official and provider-backed X data APIs: <https://docs.x.com/x-api/getting-started/about-x-api>, <https://docs.socialdata.tools/getting-started/pricing/>, <https://twitterapi.io/twitter-api-pricing>

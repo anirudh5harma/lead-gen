@@ -14,6 +14,7 @@ import { productHuntAdapter } from "../core/ingest/adapters/product-hunt.ts";
 import { redditAdapter, RedditError } from "../core/ingest/adapters/reddit.ts";
 import { googleNewsAdapter } from "../core/ingest/adapters/google-news.ts";
 import { xSearchAdapter, XSearchError } from "../core/ingest/adapters/x-search.ts";
+import { exaAdapter } from "../core/ingest/adapters/exa.ts";
 import {
   listWorkspaceAdapterIds,
   workspaceAdapters,
@@ -39,6 +40,7 @@ test("workspace registry: adapters registered with expected kindHints", () => {
   assert.deepEqual(
     listWorkspaceAdapterIds().sort(),
     [
+      "exa",
       "google_news",
       "hn_front",
       "hn_whos_hiring",
@@ -54,7 +56,73 @@ test("workspace registry: adapters registered with expected kindHints", () => {
   assert.equal(workspaceAdapters.product_hunt.kindHint, "product_launch");
   assert.equal(workspaceAdapters.reddit.kindHint, null);
   assert.equal(workspaceAdapters.google_news.kindHint, null);
+  assert.equal(workspaceAdapters.exa.kindHint, null);
   assert.equal(workspaceAdapters.x_search.kindHint, null);
+});
+
+// ─── Exa adapter ─────────────────────────────────────────────────────────
+
+test("exa adapter: searches public web and normalizes evidence candidates", async () => {
+  const prior = process.env.EXA_API_KEY;
+  process.env.EXA_API_KEY = "exa-test";
+  let capturedUrl = "";
+  let capturedBody: Record<string, unknown> = {};
+  let capturedKey = "";
+  const fetchImpl = (async (url: string, init?: RequestInit) => {
+    capturedUrl = url;
+    capturedBody = JSON.parse(String(init?.body ?? "{}"));
+    capturedKey = String((init?.headers as Record<string, string>)?.["x-api-key"] ?? "");
+    return jsonResponse({
+      requestId: "req_1",
+      results: [
+        {
+          id: "https://example.com/post",
+          url: "https://example.com/post",
+          title: "Acme launches an AI workflow",
+          publishedDate: "2026-06-03T03:00:00.000Z",
+          score: 0.91,
+          text: "Acme launched a new AI workflow for GTM teams.",
+          highlights: ["AI workflow for GTM teams"],
+          summary: "Acme launched a GTM workflow product.",
+        },
+      ],
+    });
+  }) as unknown as typeof fetch;
+  try {
+    const result = await exaAdapter.poll({
+      workspace_id: "ws",
+      source: {
+        id: "s",
+        name: "Exa market",
+        config: {
+          query: "Acme AI workflow launch",
+          limit: 5,
+          signal_kind: "product_launch",
+          summary: true,
+        },
+      },
+      cursor: {},
+      fetchImpl,
+    });
+    assert.match(capturedUrl, /api\.exa\.ai\/search/);
+    assert.equal(capturedKey, "exa-test");
+    assert.equal(capturedBody.query, "Acme AI workflow launch");
+    assert.deepEqual(capturedBody.contents, {
+      text: { maxCharacters: 1600 },
+      highlights: true,
+      summary: true,
+    });
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].external_id, "https://example.com/post");
+    assert.equal(result.items[0].url, "https://example.com/post");
+    assert.equal(result.items[0].freshness_at, "2026-06-03T03:00:00.000Z");
+    assert.equal(result.items[0].provenance?.adapter, "exa");
+    assert.equal(result.items[0].structured?.source, "exa");
+    assert.equal(result.cursor.request_id, "req_1");
+  } finally {
+    if (prior === undefined) delete process.env.EXA_API_KEY;
+    else process.env.EXA_API_KEY = prior;
+  }
 });
 
 // ─── RSS adapter ──────────────────────────────────────────────────────────

@@ -1,68 +1,36 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  formatChannelReadiness,
-  formatEmailDeliverability,
-} from "../core/product/context.ts";
+import { formatProfileIntelligence } from "../core/product/context.ts";
 
-const accounts = [
-  {
-    id: "11111111-1111-4111-8111-111111111111",
-    display_name: "maya@go.example.com",
-    kind: "email_domain",
-    daily_cap: 25,
-    daily_used: 7,
-    daily_window_start: null,
-    status: "connected",
-    domain: "go.example.com",
-    sending_domain_id: "22222222-2222-4222-8222-222222222222",
-    warmup_state: "warming",
-    current_daily_cap: 12,
-    spf_verified: true,
-    dkim_verified: true,
-    dmarc_verified: true,
-    provider_status: "verified",
-    provider_domain_id: "domain-1",
-    dns_records: [],
-    bounce_rate_24h: 0.01,
-    complaint_rate_24h: 0,
-  },
-  {
-    id: "33333333-3333-4333-8333-333333333333",
-    display_name: "Founder LinkedIn",
-    kind: "linkedin_oauth",
-    daily_cap: 15,
-    daily_used: 2,
-    daily_window_start: null,
-    status: "needs_reauth",
-    domain: null,
-    sending_domain_id: null,
-    warmup_state: null,
-    current_daily_cap: null,
-    spf_verified: null,
-    dkim_verified: null,
-    dmarc_verified: null,
-    provider_status: null,
-    provider_domain_id: null,
-    dns_records: [],
-    bounce_rate_24h: null,
-    complaint_rate_24h: null,
-  },
-] as const;
+test("product context includes Exa-enriched profile intelligence", () => {
+  const markdown = formatProfileIntelligence({
+    company_id: "00000000-0000-4000-8000-000000000001",
+    company_name: "Acme GTM",
+    domain: "acmegtm.example",
+    website_url: "https://acmegtm.example",
+    industry: "AI GTM",
+    description: "Helps lean teams find buying signals.",
+    exa_summary: "Acme appears in competitor and category conversations.",
+    exa_source_domains: ["g2.com", "producthunt.com"],
+    exa_market_terms: ["category", "competitor", "signals"],
+    exa_evidence_cards: [{
+      title: "Acme GTM alternatives",
+      url: "https://g2.com/acme",
+      source_domain: "g2.com",
+      snippet: "Buyers compare Acme with outbound automation tools.",
+      published_at: null,
+    }],
+    exa_evidence_source_ids: [
+      "00000000-0000-4000-8000-000000000101",
+      "00000000-0000-4000-8000-000000000102",
+    ],
+    exa_result_count: 6,
+    exa_enriched_at: "2026-06-03T12:00:00.000Z",
+  });
 
-test("product context: channel readiness includes native LinkedIn account state", () => {
-  const readiness = formatChannelReadiness(accounts);
-
-  assert.match(readiness, /maya@go\.example\.com kind=email_domain status=connected/);
-  assert.match(
-    readiness,
-    /Founder LinkedIn kind=linkedin_oauth status=needs_reauth used=2\/15/,
-  );
-});
-
-test("product context: email deliverability excludes LinkedIn account noise", () => {
-  const deliverability = formatEmailDeliverability(accounts);
-
-  assert.match(deliverability, /go\.example\.com/);
-  assert.doesNotMatch(deliverability, /LinkedIn/);
+  assert.match(markdown, /Company: Acme GTM/);
+  assert.match(markdown, /Public-web summary: Acme appears/);
+  assert.match(markdown, /Market terms: category, competitor, signals/);
+  assert.match(markdown, /Source domains: g2.com, producthunt.com/);
+  assert.match(markdown, /Evidence: 2 sources, 6 Exa results/);
 });

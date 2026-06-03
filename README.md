@@ -7,6 +7,7 @@ This branch is a clean-slate rebuild against a state-of-the-art architecture. Th
 ## Read first
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — the design. Five primitives (Rep, Signal, Play, Conversation, Outcome). Five layers (Substrate → Knowledge Graph → Agent Fabric → Channels → Surfaces). The non-negotiables.
+- [`docs/exa-intelligence-layer.md`](./docs/exa-intelligence-layer.md) — how Exa becomes the public-web intelligence layer for Profile, Reps, Signals, Outreach, Content, Campaigns, and AEO before X/LinkedIn provider work.
 - [`AGENTS.md`](./AGENTS.md) — the no-shortcuts rules. Build to the architecture; document any forced divergence in your PR.
 
 ## Layout

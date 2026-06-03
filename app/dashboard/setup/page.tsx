@@ -1,8 +1,10 @@
 import Icon from "@/components/Icon";
 import type { ReactNode } from "react";
+import { ProfileIntelligence } from "@/components/dashboard/ProfileIntelligence";
 import { EmptyState } from "@/components/dashboard/Shell";
+import { getAppState } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
   configureActivationAction,
   createWorkspaceAction,
@@ -129,10 +131,17 @@ async function loadSetupState(workspaceId: string) {
 }
 
 export default async function SetupPage() {
-  const workspace = await getActiveWorkspace();
-  if (!workspace) return <NoWorkspaceSetup />;
+  const active = await getActiveWorkspaceSession();
+  if (!active) return <NoWorkspaceSetup />;
 
-  const state = await loadSetupState(workspace.id);
+  const pool = getPool();
+  const [state, appState] = await Promise.all([
+    loadSetupState(active.workspace.id),
+    getAppState(pool, {
+      workspace_id: active.workspace.id,
+      user_id: active.user_id,
+    }),
+  ]);
   const rep = state.reps[0];
   const icp = state.icps[0];
   const account = state.accounts[0];
@@ -287,6 +296,8 @@ export default async function SetupPage() {
           </aside>
         </div>
       </section>
+
+      <ProfileIntelligence profile={appState.profile} />
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_0.8fr]">
         <Panel title="Try one lead">

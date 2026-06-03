@@ -12,6 +12,7 @@ import { productHuntAdapter } from "./product-hunt.ts";
 import { redditAdapter } from "./reddit.ts";
 import { googleNewsAdapter } from "./google-news.ts";
 import { xSearchAdapter } from "./x-search.ts";
+import { exaAdapter } from "./exa.ts";
 
 /**
  * Adapter registry. Lookup by id. Adapters are registered statically here
@@ -47,6 +48,7 @@ export const workspaceAdapters: Record<string, WorkspaceAdapter> = {
   product_hunt: productHuntAdapter,
   reddit: redditAdapter,
   google_news: googleNewsAdapter,
+  exa: exaAdapter,
   x_search: xSearchAdapter,
 };
 

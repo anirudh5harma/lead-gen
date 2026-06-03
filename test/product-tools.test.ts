@@ -10,6 +10,10 @@ import {
   registerGraphTools,
   _resetGraphToolsRegistration,
 } from "../core/graph/index.ts";
+import {
+  registerExaTools,
+  _resetExaToolsRegistration,
+} from "../core/exa/index.ts";
 import { createMcpManifest } from "../core/mcp/manifest.ts";
 import {
   registerProductTools,
@@ -19,6 +23,7 @@ import {
 beforeEach(() => {
   _resetToolRegistry();
   _resetGraphToolsRegistration();
+  _resetExaToolsRegistration();
   _resetProductToolsRegistration();
 });
 
@@ -33,6 +38,9 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.conversation.trust.get",
     "product.company.website_profile.extract",
     "product.company.profile.configure",
+    "product.profile.enrich",
+    "product.rep.research",
+    "product.draft.ground",
     "product.rep.configure",
     "product.icp.configure",
     "product.play.signal_email.configure",
@@ -43,6 +51,9 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.source.configure",
     "product.activation.configure",
     "product.sources.default_aggregator.configure",
+    "product.signal.discover_open_web",
+    "product.content.opportunities.discover",
+    "product.aeo.audit",
     "product.sources.aggregate.run",
     "product.signal.discover",
     "product.signal.submit",
@@ -86,6 +97,7 @@ test("product tools: readiness read requires authenticated user context", async 
 
 test("agent-native capability map references registered tools", () => {
   registerGraphTools();
+  registerExaTools();
   registerProductTools();
   const names = new Set(listTools().map((tool) => tool.name));
   const map = readFileSync("docs/agent-native-capability-map.md", "utf8");
@@ -109,6 +121,7 @@ test("agent-native capability map references registered tools", () => {
 
 test("MCP manifest includes every registered product and graph tool", () => {
   registerGraphTools();
+  registerExaTools();
   registerProductTools();
   const registered = listTools().map((tool) => tool.name).sort();
   const manifest = createMcpManifest(null);

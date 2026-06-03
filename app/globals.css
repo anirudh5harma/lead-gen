@@ -675,6 +675,17 @@ button:active, a:active {
   font-weight: 600;
 }
 
+.profile-chip {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border: 1px solid rgba(36, 36, 33, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 0 10px;
+  color: var(--color-text-3);
+}
+
 .brief-button {
   display: inline-flex;
   min-height: 42px;

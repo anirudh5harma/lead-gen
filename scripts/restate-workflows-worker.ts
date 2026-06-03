@@ -22,6 +22,14 @@ import {
   type LinkedInTransport,
 } from "../core/channels/linkedin/index.ts";
 import {
+  createExaAeoAuditWorkflow,
+  createExaContentOpportunityWorkflow,
+  createExaDraftGroundingWorkflow,
+  createExaOpenWebSignalWorkflow,
+  createExaProfileBootstrapWorkflow,
+  createExaRepResearchWorkflow,
+} from "../core/exa/workflows.ts";
+import {
   createOpenAIEmbeddingClient,
   createCatalogPollWorkflow,
   createExpireWorkflow,
@@ -154,6 +162,12 @@ const workflows = [
     accessTokens: outlook,
     notificationUrl: `${appOrigin}/api/webhooks/outlook`,
   }),
+  createExaProfileBootstrapWorkflow(),
+  createExaRepResearchWorkflow(),
+  createExaDraftGroundingWorkflow(),
+  createExaContentOpportunityWorkflow(),
+  createExaAeoAuditWorkflow(),
+  createExaOpenWebSignalWorkflow(),
 ];
 
 const port = Number(process.env.RESTATE_WORKFLOW_PORT ?? 9080);
