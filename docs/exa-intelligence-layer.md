@@ -127,7 +127,7 @@ Recommended evidence shape:
   "published_at": "2026-06-03T00:00:00.000Z",
   "fetched_at": "2026-06-03T00:00:00.000Z",
   "query": "semantic query used",
-  "query_intent": "profile_bootstrap | signal_discovery | draft_grounding | content_research | aeo_audit",
+  "query_intent": "profile_bootstrap | brief_refresh | rep_research | signal_discovery | draft_grounding | content_research | aeo_audit",
   "confidence": 0.82,
   "cost_units": 1,
   "workspace_id": "..."
@@ -309,8 +309,9 @@ Implemented and verified:
 - Product tools for Profile enrichment, Rep research, durable Exa research
   starts, draft grounding, content opportunities, AEO audit, and open-web Signal
   source configuration.
-- Restate workflow services for `profile.bootstrap.exa`, `rep.research.exa`,
-  `draft.grounding.exa`, `content.opportunity.exa`, `aeo.audit.exa`, and
+- Restate workflow services for `profile.bootstrap.exa`,
+  `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`,
+  `content.opportunity.exa`, `aeo.audit.exa`, and
   `signal.discover.open_web.exa`.
 - Graph evidence projection into `graph_sources` with provider, URL, Exa result
   id, query, query intent, snippet, request id, and timestamps.
@@ -323,6 +324,10 @@ Implemented and verified:
 - Direct Exa search/contents primitive calls are routed through the workspace
   cache/ledger with daily search, daily contents, monthly unit, and per-Play
   research gates before live Exa calls.
+- Brief refresh uses durable `rep.brief.refresh.exa` to gather fresh public-web
+  evidence, project sources into the graph, and emit `rep.brief.refreshed` with
+  notes, review items, recent changes, and quiet exceptions for the morning
+  Brief surface.
 - `exa.costs.get` reports configured state, caps, 24-hour/monthly usage,
   remaining budget, active cache entries, cache hits, and deferred calls.
 - Typed Exa event metadata for cache hits, query hashes, usage ids, content
@@ -336,7 +341,6 @@ Implemented and verified:
 
 Still incomplete:
 
-- `rep.brief.refresh.exa` has not been built as a separate durable wake.
 - Exa Websets create/list remain registered primitive tools but are not yet
   routed through the workspace cache/ledger. Use them only for constrained
   operator-approved research until Webset lifecycle accounting is added.

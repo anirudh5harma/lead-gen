@@ -26,6 +26,7 @@ const WORKFLOW_FACTORIES: WorkerServiceContract[] = [
   { service: "email_domain_warmup_sweep", factory: "createWarmupSweepWorkflow" },
   { service: "email_outlook_subscription_repair", factory: "createOutlookSubscriptionRepairWorkflow" },
   { service: "profile.bootstrap.exa", factory: "createExaProfileBootstrapWorkflow" },
+  { service: "rep.brief.refresh.exa", factory: "createExaBriefRefreshWorkflow" },
   { service: "rep.research.exa", factory: "createExaRepResearchWorkflow" },
   { service: "draft.grounding.exa", factory: "createExaDraftGroundingWorkflow" },
   { service: "content.opportunity.exa", factory: "createExaContentOpportunityWorkflow" },

@@ -5,8 +5,11 @@ import {
 import {
   configureExaOpenWebSignalSource,
   enrichWorkspaceProfileWithExa,
+  refreshWorkspaceBriefWithExa,
   researchWorkspaceWithExa,
   type BootstrapResult,
+  type ProductExaBriefRefreshInput,
+  type ProductExaBriefRefreshResult,
   type ProductExaProfileInput,
   type ProductExaResearchInput,
   type ProductExaResearchResult,
@@ -15,6 +18,7 @@ import {
 } from "../product/app.ts";
 
 export const EXA_PROFILE_BOOTSTRAP_WORKFLOW = "profile.bootstrap.exa";
+export const EXA_BRIEF_REFRESH_WORKFLOW = "rep.brief.refresh.exa";
 export const EXA_REP_RESEARCH_WORKFLOW = "rep.research.exa";
 export const EXA_DRAFT_GROUNDING_WORKFLOW = "draft.grounding.exa";
 export const EXA_CONTENT_OPPORTUNITY_WORKFLOW = "content.opportunity.exa";
@@ -26,6 +30,10 @@ export type ExaProfileBootstrapWorkflowInput =
 export type ExaProfileBootstrapWorkflowOutput = Awaited<
   ReturnType<typeof enrichWorkspaceProfileWithExa>
 >;
+
+export type ExaBriefRefreshWorkflowInput =
+  ProductWorkspaceSession & ProductExaBriefRefreshInput;
+export type ExaBriefRefreshWorkflowOutput = ProductExaBriefRefreshResult;
 
 export type ExaResearchWorkflowInput =
   ProductWorkspaceSession & Omit<ProductExaResearchInput, "intent">;
@@ -46,6 +54,22 @@ export function createExaProfileBootstrapWorkflow(): WorkflowDefinition<
       const { workspace_id, user_id, ...payload } = input;
       return ctx.step("profile.bootstrap", () =>
         enrichWorkspaceProfileWithExa(payload, { workspace_id, user_id }),
+      );
+    },
+  });
+}
+
+export function createExaBriefRefreshWorkflow(): WorkflowDefinition<
+  ExaBriefRefreshWorkflowInput,
+  ExaBriefRefreshWorkflowOutput
+> {
+  return defineWorkflow<ExaBriefRefreshWorkflowInput, ExaBriefRefreshWorkflowOutput>({
+    name: EXA_BRIEF_REFRESH_WORKFLOW,
+    version: "1",
+    async run(input, ctx) {
+      const { workspace_id, user_id, ...payload } = input;
+      return ctx.step("brief.refresh", () =>
+        refreshWorkspaceBriefWithExa(payload, { workspace_id, user_id }),
       );
     },
   });

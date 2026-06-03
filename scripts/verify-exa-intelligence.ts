@@ -20,6 +20,7 @@ import {
 } from "../core/product/app.ts";
 import {
   createExaAeoAuditWorkflow,
+  createExaBriefRefreshWorkflow,
   createExaContentOpportunityWorkflow,
   createExaDraftGroundingWorkflow,
 } from "../core/exa/workflows.ts";
@@ -63,6 +64,11 @@ const CANARY_CASES: CanaryCase[] = [
     intent: "draft_grounding",
     label: "draft.grounding.exa",
     query: "AI native GTM platform outbound automation public evidence for sales teams",
+  },
+  {
+    intent: "brief_refresh",
+    label: "rep.brief.refresh.exa",
+    query: "AI native GTM platform public web changes brief review outcomes",
   },
   {
     intent: "content_research",
@@ -295,7 +301,7 @@ async function readEventState(
   }>(
     `select
         count(*) filter (
-          where event_type in ('rep.research.completed', 'content.opportunity.discovered', 'aeo.audit.completed')
+          where event_type in ('rep.research.completed', 'rep.brief.refreshed', 'content.opportunity.discovered', 'aeo.audit.completed')
         )::text as completed_count,
         count(*) filter (where event_type = 'exa.evidence.projected')::text as projected_count
        from events
@@ -303,7 +309,7 @@ async function readEventState(
         and payload->>'query' = $2
         and (
           payload->>'intent' = $3
-          or event_type in ('rep.research.completed', 'content.opportunity.discovered', 'aeo.audit.completed')
+          or event_type in ('rep.research.completed', 'rep.brief.refreshed', 'content.opportunity.discovered', 'aeo.audit.completed')
         )`,
     [workspace_id, entry.query, entry.intent],
   );
@@ -315,6 +321,7 @@ async function readEventState(
 }
 
 function registerCanaryWorkflows(runtime: WorkflowRuntime): void {
+  runtime.register(createExaBriefRefreshWorkflow());
   runtime.register(createExaDraftGroundingWorkflow());
   runtime.register(createExaContentOpportunityWorkflow());
   runtime.register(createExaAeoAuditWorkflow());

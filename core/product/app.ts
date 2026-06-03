@@ -394,6 +394,7 @@ export interface ProductExaResearchInput {
   query: string;
   intent?:
     | "rep_research"
+    | "brief_refresh"
     | "draft_grounding"
     | "content_research"
     | "aeo_audit";
@@ -407,6 +408,27 @@ export interface ProductExaResearchResult {
   request_id: string | null;
   evidence_source_ids: string[];
   summary: string;
+}
+
+export interface ProductExaBriefRefreshInput {
+  query?: string;
+  num_results?: number;
+  include_text?: boolean;
+  idempotency_nonce?: string;
+}
+
+export interface ProductBriefItem {
+  title: string;
+  detail: string;
+  url?: string | null;
+  evidence_source_ids?: string[];
+}
+
+export interface ProductExaBriefRefreshResult extends ProductExaResearchResult {
+  notes: ProductBriefItem[];
+  review_items: ProductBriefItem[];
+  recent_changes: ProductBriefItem[];
+  quiet_exceptions: ProductBriefItem[];
 }
 
 export interface ProductExaSignalDiscoveryInput {
@@ -570,6 +592,17 @@ export interface AppState {
     latest_run_created_at: string | null;
     latest_run_error: string | null;
   }>;
+  brief: {
+    refreshed_at: string | null;
+    query: string | null;
+    request_id: string | null;
+    summary: string | null;
+    evidence_source_ids: string[];
+    notes: ProductBriefItem[];
+    review_items: ProductBriefItem[];
+    recent_changes: ProductBriefItem[];
+    quiet_exceptions: ProductBriefItem[];
+  } | null;
 }
 
 interface ProductEngine {
@@ -1812,17 +1845,21 @@ export async function startWorkspaceExaResearchWorkflow(
   await assertProductWorkspaceAccess(session, engine.pool);
   const intent = input.intent ?? "rep_research";
   const {
+    createExaBriefRefreshWorkflow,
     createExaAeoAuditWorkflow,
     createExaContentOpportunityWorkflow,
     createExaDraftGroundingWorkflow,
     createExaRepResearchWorkflow,
     EXA_AEO_AUDIT_WORKFLOW,
+    EXA_BRIEF_REFRESH_WORKFLOW,
     EXA_CONTENT_OPPORTUNITY_WORKFLOW,
     EXA_DRAFT_GROUNDING_WORKFLOW,
     EXA_REP_RESEARCH_WORKFLOW,
   } = await import("../exa/workflows.ts");
   const workflow =
-    intent === "draft_grounding"
+    intent === "brief_refresh"
+      ? createExaBriefRefreshWorkflow()
+      : intent === "draft_grounding"
       ? createExaDraftGroundingWorkflow()
       : intent === "content_research"
         ? createExaContentOpportunityWorkflow()
@@ -1830,7 +1867,9 @@ export async function startWorkspaceExaResearchWorkflow(
           ? createExaAeoAuditWorkflow()
           : createExaRepResearchWorkflow();
   const workflow_name =
-    intent === "draft_grounding"
+    intent === "brief_refresh"
+      ? EXA_BRIEF_REFRESH_WORKFLOW
+      : intent === "draft_grounding"
       ? EXA_DRAFT_GROUNDING_WORKFLOW
       : intent === "content_research"
         ? EXA_CONTENT_OPPORTUNITY_WORKFLOW
@@ -1864,6 +1903,194 @@ export async function startWorkspaceExaResearchWorkflow(
   return { workspace_id: session.workspace_id, workflow_run_id: run.id, workflow_name };
 }
 
+export async function startWorkspaceBriefRefreshWithExa(
+  input: ProductExaBriefRefreshInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; workflow_run_id: string; workflow_name: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const {
+    createExaBriefRefreshWorkflow,
+    EXA_BRIEF_REFRESH_WORKFLOW,
+  } = await import("../exa/workflows.ts");
+  engine.runtime.register(createExaBriefRefreshWorkflow());
+  const workflowInput = {
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+    query: input.query,
+    num_results: input.num_results,
+    include_text: input.include_text,
+    idempotency_nonce: input.idempotency_nonce,
+  };
+  const entityId = createHash("sha256")
+    .update(`${input.query?.trim() ?? "auto"}:${new Date().toISOString().slice(0, 10)}`)
+    .digest("hex")
+    .slice(0, 20);
+  const run = await engine.runtime.start({
+    workspace_id: session.workspace_id,
+    workflow_name: EXA_BRIEF_REFRESH_WORKFLOW,
+    idempotency_key: configurationEventKey(
+      EXA_BRIEF_REFRESH_WORKFLOW,
+      session.workspace_id,
+      entityId,
+      { ...workflowInput, idempotency_nonce: input.idempotency_nonce ?? null },
+    ),
+    input: workflowInput,
+  });
+  return {
+    workspace_id: session.workspace_id,
+    workflow_run_id: run.id,
+    workflow_name: EXA_BRIEF_REFRESH_WORKFLOW,
+  };
+}
+
+export async function refreshWorkspaceBriefWithExa(
+  input: ProductExaBriefRefreshInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductExaBriefRefreshResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const context = await loadBriefRefreshContext(engine.pool, session.workspace_id);
+  const query = (input.query?.trim() || buildBriefRefreshQuery(context)).trim();
+  if (!query) throw new Error("brief refresh query required");
+  const entityId = createHash("sha256")
+    .update(`brief_refresh:${query}`)
+    .digest("hex")
+    .slice(0, 20);
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.query.requested",
+    source: "system",
+    producer_ref: `exa:brief:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.query.requested",
+      session.workspace_id,
+      entityId,
+      { query, intent: "brief_refresh", num_results: input.num_results ?? 8 },
+    ),
+    payload: {
+      query,
+      intent: "brief_refresh",
+    },
+  });
+  const search = await searchExaWithWorkspaceCache({
+    pool: engine.pool,
+    workspace_id: session.workspace_id,
+    intent: "brief_refresh",
+    client: createExaClientFromEnv(),
+    search: {
+      query,
+      type: "auto",
+      numResults: Math.max(3, Math.min(12, Math.trunc(input.num_results ?? 8))),
+      includeText: input.include_text ?? true,
+      textMaxCharacters: 1600,
+      highlights: true,
+      summary: true,
+    },
+  });
+  const response = search.response;
+  await publishExaContentsFetched(engine, session, {
+    entity_id: entityId,
+    intent: "brief_refresh",
+    request_id: response.requestId,
+    results: response.results,
+    cache_hit: search.cache_hit,
+  });
+  const projected = await projectExaEvidence(engine.pool, {
+    workspace_id: session.workspace_id,
+    query,
+    query_intent: "brief_refresh",
+    request_id: response.requestId,
+    results: response.results,
+    properties: {
+      phase: "brief_refresh",
+      company_name: context.company?.name ?? null,
+      recent_signal_ids: context.signals.map((signal) => signal.id),
+    },
+  });
+  const evidenceSourceIds = projected.sources.map((source) => source.id);
+  const summary = summarizeExaEvidence(response.results, 6);
+  const brief = buildBriefRefreshPayload({
+    context,
+    results: response.results,
+    evidence_source_ids: evidenceSourceIds,
+  });
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.query.completed",
+    source: "system",
+    producer_ref: `exa:brief:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.query.completed",
+      session.workspace_id,
+      entityId,
+      { query, intent: "brief_refresh", request_id: response.requestId },
+    ),
+    payload: {
+      query,
+      intent: "brief_refresh",
+      request_id: response.requestId,
+      result_count: response.results.length,
+      cache_hit: search.cache_hit,
+      cache_hit_count: search.cache_hit ? 1 : 0,
+      query_hashes: [search.query_hash],
+      usage_ids: search.usage_id ? [search.usage_id] : [],
+    },
+  });
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.evidence.projected",
+    source: "system",
+    producer_ref: `exa:brief:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.evidence.projected",
+      session.workspace_id,
+      entityId,
+      { query, intent: "brief_refresh", evidence_source_ids: evidenceSourceIds },
+    ),
+    payload: {
+      query,
+      intent: "brief_refresh",
+      evidence_source_ids: evidenceSourceIds,
+      result_count: response.results.length,
+    },
+  });
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "rep.brief.refreshed",
+    source: "system",
+    producer_ref: `exa:brief:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "rep.brief.refreshed",
+      session.workspace_id,
+      entityId,
+      {
+        query,
+        request_id: response.requestId,
+        evidence_source_ids: evidenceSourceIds,
+        usage_id: search.usage_id,
+      },
+    ),
+    payload: {
+      query,
+      request_id: response.requestId,
+      evidence_source_ids: evidenceSourceIds,
+      summary,
+      result_count: response.results.length,
+      cache_hit: search.cache_hit,
+      exa_usage_id: search.usage_id,
+      ...brief,
+    },
+  });
+  return {
+    workspace_id: session.workspace_id,
+    request_id: response.requestId,
+    evidence_source_ids: evidenceSourceIds,
+    summary,
+    ...brief,
+  };
+}
+
 export async function researchWorkspaceWithExa(
   input: ProductExaResearchInput,
   session: ProductWorkspaceSession,
@@ -1873,6 +2100,17 @@ export async function researchWorkspaceWithExa(
   const query = input.query.trim();
   if (!query) throw new Error("query required");
   const intent = input.intent ?? "rep_research";
+  if (intent === "brief_refresh") {
+    return refreshWorkspaceBriefWithExa(
+      {
+        query,
+        num_results: input.num_results,
+        include_text: input.include_text,
+        idempotency_nonce: input.idempotency_nonce,
+      },
+      session,
+    );
+  }
   const researchEntityId = createHash("sha256")
     .update(`${intent}:${query}`)
     .digest("hex")
@@ -2568,6 +2806,179 @@ function exaProfileQueries(input: {
     `${input.companyName}${domainPart} recent launch funding hiring news`,
     `${market} competitors alternatives buyer pain points ${input.companyName}`,
   ];
+}
+
+interface BriefRefreshContext {
+  company: {
+    name: string;
+    domain: string | null;
+    industry: string | null;
+    description: string | null;
+    exa_summary: string | null;
+  } | null;
+  signals: Array<{
+    id: string;
+    kind: string;
+    title: string;
+    content: string | null;
+    url: string | null;
+    freshness_at: Date;
+  }>;
+  approvals: Array<{
+    id: string;
+    kind: string;
+    reason: string | null;
+  }>;
+  conversations: Array<{
+    id: string;
+    status: string;
+    topic: string | null;
+  }>;
+}
+
+async function loadBriefRefreshContext(
+  pool: Pool,
+  workspace_id: string,
+): Promise<BriefRefreshContext> {
+  const [company, signals, approvals, conversations] = await Promise.all([
+    pool.query<{
+      name: string;
+      domain: string | null;
+      industry: string | null;
+      description: string | null;
+      exa_summary: string | null;
+    }>(
+      `select name,
+              domain::text as domain,
+              industry,
+              description,
+              properties #>> '{exa_profile,summary}' as exa_summary
+         from graph_companies
+        where workspace_id = $1
+          and properties->>'profile_role' = 'workspace_company'
+        order by updated_at desc, created_at desc
+        limit 1`,
+      [workspace_id],
+    ),
+    pool.query<{
+      id: string;
+      kind: string;
+      title: string;
+      content: string | null;
+      url: string | null;
+      freshness_at: Date;
+    }>(
+      `select id, kind::text as kind, title, content, url, freshness_at
+         from signals
+        where workspace_id = $1
+        order by freshness_at desc
+        limit 5`,
+      [workspace_id],
+    ),
+    pool.query<{
+      id: string;
+      kind: string;
+      reason: string | null;
+    }>(
+      `select id, kind, reason
+         from workflow_approvals
+        where workspace_id = $1
+          and decision = 'pending'
+        order by created_at desc
+        limit 5`,
+      [workspace_id],
+    ),
+    pool.query<{
+      id: string;
+      status: string;
+      topic: string | null;
+    }>(
+      `select id, status::text as status, topic
+         from conversations
+        where workspace_id = $1
+        order by last_activity_at desc
+        limit 5`,
+      [workspace_id],
+    ),
+  ]);
+  return {
+    company: company.rows[0] ?? null,
+    signals: signals.rows,
+    approvals: approvals.rows,
+    conversations: conversations.rows,
+  };
+}
+
+function buildBriefRefreshQuery(context: BriefRefreshContext): string {
+  const companyName = context.company?.name ?? "workspace company";
+  const domain = context.company?.domain ? ` ${context.company.domain}` : "";
+  const market = context.company?.industry ?? signalKeywordsFromDescription(context.company?.description) ?? "B2B SaaS";
+  const signals = context.signals
+    .slice(0, 3)
+    .map((signal) => `${signal.kind}: ${signal.title}`)
+    .join("; ");
+  const focus = signals
+    ? `Recent watched signals: ${signals}.`
+    : "Look for recent launches, hiring, funding, market shifts, competitor mentions, and buyer pain changes.";
+  return [
+    `${companyName}${domain}`,
+    market,
+    "what changed today for GTM outreach content AEO review",
+    focus,
+  ].join(" ");
+}
+
+function buildBriefRefreshPayload(input: {
+  context: BriefRefreshContext;
+  results: readonly ExaResult[];
+  evidence_source_ids: string[];
+}): Omit<ProductExaBriefRefreshResult, "workspace_id" | "request_id" | "summary" | "evidence_source_ids"> {
+  const evidenceItems: ProductBriefItem[] = input.results.slice(0, 4).map((result, index) =>
+    briefItemFromExaResult(result, input.evidence_source_ids[index] ? [input.evidence_source_ids[index]!] : []),
+  );
+  const recentChanges: ProductBriefItem[] = input.context.signals.slice(0, 3).map((signal) => ({
+    title: signal.title,
+    detail: `${signal.kind.replace(/_/g, " ")} signal from ${signal.freshness_at.toISOString().slice(0, 10)}.`,
+    url: signal.url,
+    evidence_source_ids: [],
+  }));
+  const reviewItems: ProductBriefItem[] = input.context.approvals.slice(0, 3).map((approval) => ({
+    title: approval.kind.replace(/_/g, " "),
+    detail: approval.reason ?? "A workflow is waiting for review.",
+    evidence_source_ids: [],
+  }));
+  const quietExceptions: ProductBriefItem[] = input.context.conversations
+    .filter((conversation) => conversation.status === "awaiting_us")
+    .slice(0, 3)
+    .map((conversation) => ({
+      title: conversation.topic ?? "Conversation needs attention",
+      detail: "A conversation is waiting on the workspace before the Rep can continue.",
+      evidence_source_ids: [],
+    }));
+  if (quietExceptions.length === 0 && input.context.signals.length === 0) {
+    quietExceptions.push({
+      title: "No urgent public-web changes",
+      detail: "Exa did not find a stronger change than the current watched context for this Brief refresh.",
+      evidence_source_ids: input.evidence_source_ids.slice(0, 2),
+    });
+  }
+  return {
+    notes: evidenceItems.slice(0, 3),
+    review_items: reviewItems,
+    recent_changes: recentChanges,
+    quiet_exceptions: quietExceptions,
+  };
+}
+
+function briefItemFromExaResult(result: ExaResult, evidence_source_ids: string[]): ProductBriefItem {
+  const url = canonicalUrl(result.url);
+  const host = url ? domainFromWebsiteUrl(url) : null;
+  return {
+    title: (result.title || host || "Public-web evidence").replace(/\s+/g, " ").trim().slice(0, 140),
+    detail: profileSnippetFromResult(result) ?? "Fresh public-web evidence is available for Rep context.",
+    url,
+    evidence_source_ids,
+  };
 }
 
 function dedupeExaResults(results: readonly ExaResult[]): ExaResult[] {
@@ -4939,6 +5350,7 @@ export async function getAppState(
       conversations: [],
       channelAccounts: [],
       profile: null,
+      brief: null,
       llmUsage: { used_tokens_24h: 0, daily_token_cap: 0 },
       sources: [],
       eventTrace: {
@@ -4983,6 +5395,7 @@ export async function getAppState(
     accounts,
     sources,
     profile,
+    brief,
   ] = await Promise.all([
     pool.query<{
       id: string;
@@ -5270,6 +5683,18 @@ export async function getAppState(
         limit 1`,
       [boot.workspace_id],
     ),
+    pool.query<{
+      payload: Record<string, unknown>;
+      occurred_at: Date;
+    }>(
+      `select payload, occurred_at
+         from events
+        where workspace_id = $1
+          and event_type = 'rep.brief.refreshed'
+        order by occurred_at desc
+        limit 1`,
+      [boot.workspace_id],
+    ),
   ]);
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
   const eventTrace = latestWorkflowRunId
@@ -5310,6 +5735,7 @@ export async function getAppState(
     })),
     eventTrace,
     profile: productProfileState(profile.rows[0] ?? null),
+    brief: productBriefState(brief.rows[0] ?? null),
     sendTraces: sendTraces.rows.map((row) => ({
       message_id: row.message_id,
       status: row.status,
@@ -5399,6 +5825,40 @@ function productProfileState(row: {
     exa_result_count: numericConfigValue(exaProfile?.result_count) ?? 0,
     exa_enriched_at: stringStateValue(exaProfile?.enriched_at),
   };
+}
+
+function productBriefState(row: {
+  payload: Record<string, unknown>;
+  occurred_at: Date;
+} | null): AppState["brief"] {
+  if (!row) return null;
+  const payload = row.payload;
+  return {
+    refreshed_at: row.occurred_at.toISOString(),
+    query: stringStateValue(payload.query),
+    request_id: stringStateValue(payload.request_id),
+    summary: stringStateValue(payload.summary),
+    evidence_source_ids: arrayStringStateValue(payload.evidence_source_ids),
+    notes: briefItemsStateValue(payload.notes),
+    review_items: briefItemsStateValue(payload.review_items),
+    recent_changes: briefItemsStateValue(payload.recent_changes),
+    quiet_exceptions: briefItemsStateValue(payload.quiet_exceptions),
+  };
+}
+
+function briefItemsStateValue(value: unknown): ProductBriefItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = recordStateValue(item);
+    const title = stringStateValue(record?.title);
+    if (!record || !title) return [];
+    return [{
+      title,
+      detail: stringStateValue(record.detail) ?? "",
+      url: stringStateValue(record.url),
+      evidence_source_ids: arrayStringStateValue(record.evidence_source_ids),
+    }];
+  });
 }
 
 function profileEvidenceCardsStateValue(value: unknown): AppState["profile"] extends infer P

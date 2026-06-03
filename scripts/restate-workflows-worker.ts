@@ -23,6 +23,7 @@ import {
 } from "../core/channels/linkedin/index.ts";
 import {
   createExaAeoAuditWorkflow,
+  createExaBriefRefreshWorkflow,
   createExaContentOpportunityWorkflow,
   createExaDraftGroundingWorkflow,
   createExaOpenWebSignalWorkflow,
@@ -163,6 +164,7 @@ const workflows = [
     notificationUrl: `${appOrigin}/api/webhooks/outlook`,
   }),
   createExaProfileBootstrapWorkflow(),
+  createExaBriefRefreshWorkflow(),
   createExaRepResearchWorkflow(),
   createExaDraftGroundingWorkflow(),
   createExaContentOpportunityWorkflow(),

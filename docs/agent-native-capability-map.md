@@ -8,6 +8,7 @@ projection, and visible UI feedback where applicable.
 | UI Action | Surface | Agent Tool | Runtime Path | Status |
 |---|---|---|---|---|
 | Read morning brief/state | `/dashboard`, `/brief` | `product.state.get` | Read derived views from primitives/events | Ready |
+| Refresh morning brief from public web | `/brief`, MCP/internal Rep execution | `product.brief.refresh` | `rep.brief.refresh.exa`: Exa Search/Contents -> graph evidence sources -> `rep.brief.refreshed` | Ready |
 | Read prompt-ready workspace context | MCP/internal Rep execution | `product.context.get` | Builds dynamic context from Reps, ICPs, Plays, Sources, Signals, approvals, send traces, deliverability, and recovery state | Ready |
 | Read product runtime readiness | `/dashboard/ops`, `/api/health` | `product.readiness.get` | Reads environment, provider, substrate, database, schema table, and migration readiness without mutating state | Ready |
 | Read Conversation trust trace | `/dashboard/conversations/[id]` | `product.conversation.trust.get` | Reads Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes from the evented state | Ready |
@@ -15,7 +16,7 @@ projection, and visible UI feedback where applicable.
 | Store company profile | `/onboarding` | `product.company.profile.configure` | `workspace.company.profiled` -> graph company | Ready |
 | Enrich Profile from public web | `/onboarding`, `/dashboard/setup`, MCP/internal Rep execution | `product.profile.enrich` | `profile.bootstrap.exa`: Exa Search/Contents -> graph evidence sources -> `workspace.profile.enriched` | Ready |
 | Run Rep public-web research | MCP/internal Rep execution | `product.rep.research` | `rep.research.exa`: Exa Search/Contents -> graph evidence sources -> `rep.research.completed` | Ready |
-| Start durable Exa research | MCP/internal Rep execution | `product.exa.research_workflow.start` | Starts one of `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, or `aeo.audit.exa` with a Restate/Postgres workflow runtime | Ready |
+| Start durable Exa research | MCP/internal Rep execution | `product.exa.research_workflow.start` | Starts one of `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, or `aeo.audit.exa` with a Restate/Postgres workflow runtime | Ready |
 | Configure Rep | `/dashboard/setup` | `product.rep.configure` | `rep.configured` -> Rep projection | Ready |
 | Configure ICP | `/dashboard/setup`, `/dashboard/ingestion` | `product.icp.configure` | `workspace.icp.configured` -> ICP projection | Ready |
 | Configure Signal email Play | `/dashboard/setup` | `product.play.signal_email.configure` | `play.configured` -> Play projection | Ready |

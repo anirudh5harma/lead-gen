@@ -9,6 +9,7 @@ export interface ExaEvidenceProjectionInput {
   query_intent:
     | "profile_bootstrap"
     | "rep_research"
+    | "brief_refresh"
     | "signal_discovery"
     | "draft_grounding"
     | "content_research"

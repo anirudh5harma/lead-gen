@@ -747,6 +747,20 @@ const AeoAuditCompleted = RepResearchCompleted;
 
 const ContentOpportunityDiscovered = RepResearchCompleted;
 
+const BriefItem = z.object({
+  title: z.string().min(1),
+  detail: z.string(),
+  url: z.string().url().nullable().optional(),
+  evidence_source_ids: z.array(z.string().uuid()).optional(),
+});
+
+const RepBriefRefreshed = RepResearchCompleted.extend({
+  notes: z.array(BriefItem),
+  review_items: z.array(BriefItem),
+  recent_changes: z.array(BriefItem),
+  quiet_exceptions: z.array(BriefItem),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Memory updates (procedural memory grows from outcomes)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -854,6 +868,7 @@ export const eventRegistry = {
   "exa.contents.fetched": ExaContentsFetched,
   "exa.evidence.projected": ExaEvidenceProjected,
   "rep.research.completed": RepResearchCompleted,
+  "rep.brief.refreshed": RepBriefRefreshed,
   "aeo.audit.completed": AeoAuditCompleted,
   "content.opportunity.discovered": ContentOpportunityDiscovered,
 

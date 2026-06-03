@@ -12,6 +12,7 @@ const SearchTypeSchema = z.enum(["auto", "neural", "keyword", "fast"]);
 const ExaIntentSchema = z.enum([
   "profile_bootstrap",
   "rep_research",
+  "brief_refresh",
   "draft_grounding",
   "content_research",
   "aeo_audit",

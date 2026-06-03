@@ -24,6 +24,7 @@ import {
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
   startSendingDomainOperation,
+  startWorkspaceBriefRefreshWithExa,
   startWorkspaceExaResearchWorkflow,
   submitManualSignal,
   trackCompanyForWorkspace,
@@ -56,6 +57,7 @@ const SignalKindSchema = z.enum([
 const ApprovalSchema = z.enum(["none", "approve_first", "always", "research_only"]);
 const ExaResearchIntentSchema = z.enum([
   "rep_research",
+  "brief_refresh",
   "draft_grounding",
   "content_research",
   "aeo_audit",
@@ -258,6 +260,25 @@ export function registerProductTools(): void {
     }),
     async handler(input, ctx) {
       return enrichWorkspaceProfileWithExa(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.brief.refresh",
+    description:
+      "Start the durable Exa-backed morning Brief refresh. It gathers fresh public-web evidence, projects it into the graph, and emits rep.brief.refreshed.",
+    kind: "write",
+    input: z.object({
+      query: z.string().min(1).optional(),
+      num_results: z.number().int().positive().max(12).optional(),
+      include_text: z.boolean().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      workflow_run_id: z.string(),
+      workflow_name: z.string(),
+    }),
+    async handler(input, ctx) {
+      return startWorkspaceBriefRefreshWithExa(input, sessionFromContext(ctx));
     },
   });
 

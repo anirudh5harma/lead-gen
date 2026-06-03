@@ -103,6 +103,7 @@ export const REQUIRED_RESTATE_SERVICES = [
   "email_domain_warmup_sweep",
   "email_outlook_subscription_repair",
   "profile.bootstrap.exa",
+  "rep.brief.refresh.exa",
   "rep.research.exa",
   "draft.grounding.exa",
   "content.opportunity.exa",
