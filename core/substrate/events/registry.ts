@@ -743,15 +743,21 @@ const RepResearchCompleted = z.object({
   exa_usage_id: z.string().uuid().nullable().optional(),
 });
 
-const AeoAuditCompleted = RepResearchCompleted;
-
-const ContentOpportunityDiscovered = RepResearchCompleted;
-
 const BriefItem = z.object({
   title: z.string().min(1),
   detail: z.string(),
   url: z.string().url().nullable().optional(),
   evidence_source_ids: z.array(z.string().uuid()).optional(),
+});
+
+const AeoAuditCompleted = RepResearchCompleted.extend({
+  gaps: z.array(BriefItem).optional(),
+  review_items: z.array(BriefItem).optional(),
+});
+
+const ContentOpportunityDiscovered = RepResearchCompleted.extend({
+  opportunities: z.array(BriefItem).optional(),
+  review_items: z.array(BriefItem).optional(),
 });
 
 const RepBriefRefreshed = RepResearchCompleted.extend({

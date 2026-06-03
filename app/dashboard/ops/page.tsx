@@ -1,7 +1,8 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
+import { getAppState, type ProductBriefItem } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
 import {
   checkProductReadiness,
@@ -53,8 +54,8 @@ function timeAgo(d: string | Date | null): string {
 }
 
 export default async function OpsPage() {
-  const workspace = await getActiveWorkspace();
-  if (!workspace) {
+  const session = await getActiveWorkspaceSession();
+  if (!session) {
     return (
       <section className="section-canvas p-6">
         <p className="brief-kicker">AEO</p>
@@ -66,11 +67,16 @@ export default async function OpsPage() {
   }
 
   const pool = getPool();
-  const [counts, dead, readiness] = await Promise.all([
-    loadDispatchCounts(workspace.id),
-    listDeadLetteredDispatches(pool, workspace.id, 100),
+  const [counts, dead, readiness, state] = await Promise.all([
+    loadDispatchCounts(session.workspace.id),
+    listDeadLetteredDispatches(pool, session.workspace.id, 100),
     checkProductReadiness(pool),
+    getAppState(pool, {
+      workspace_id: session.workspace.id,
+      user_id: session.user_id,
+    }),
   ]);
+  const aeoReviews = state.aeo_reviews;
 
   return (
     <>
@@ -111,6 +117,27 @@ export default async function OpsPage() {
         <div className="mb-4 flex items-center gap-3">
           <span className="brief-note-icon">
             <Icon name="travel_explore" size={18} />
+          </span>
+          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Visibility gaps</h2>
+        </div>
+        {aeoReviews.length === 0 ? (
+          <EmptyState
+            title="No fresh visibility gaps"
+            hint="When Exa finds missing answer coverage, it will appear here with proof."
+          />
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {aeoReviews.map((item, index) => (
+              <ReviewNote key={`${item.title}:${index}`} item={item} icon="find_in_page" />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-6 section-canvas p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="brief-note-icon">
+            <Icon name="report" size={18} />
           </span>
           <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Needs attention</h2>
         </div>
@@ -159,6 +186,32 @@ export default async function OpsPage() {
         )}
       </section>
     </>
+  );
+}
+
+function ReviewNote({ item, icon }: { item: ProductBriefItem; icon: string }) {
+  return (
+    <article className="section-note">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon">
+          <Icon name={icon} size={18} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold leading-6 text-[var(--color-text-1)]">{item.title}</h3>
+          <p className="mt-2 line-clamp-4 text-sm leading-6 text-[var(--color-text-2)]">{item.detail}</p>
+          {item.url ? (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-flex text-xs font-semibold text-[var(--color-accent)]"
+            >
+              View proof
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </article>
   );
 }
 

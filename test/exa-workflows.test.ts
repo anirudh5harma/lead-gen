@@ -78,3 +78,46 @@ test("Exa event contract includes Brief refresh output", () => {
 
   assert.equal(parsed.notes[0]?.title, "New proof");
 });
+
+test("Exa event contract includes Content and AEO review projections", () => {
+  const evidence = ["00000000-0000-4000-8000-000000000001"];
+  const content = eventRegistry["content.opportunity.discovered"].parse({
+    query: "buyer questions",
+    request_id: "req_content",
+    evidence_source_ids: evidence,
+    summary: "content summary",
+    result_count: 1,
+    opportunities: [{
+      title: "Pricing objection angle",
+      detail: "Market evidence suggests a buyer question.",
+      url: "https://example.com/pricing",
+      evidence_source_ids: evidence,
+    }],
+    review_items: [{
+      title: "Pricing objection angle",
+      detail: "Review this content angle.",
+      evidence_source_ids: evidence,
+    }],
+  });
+  const aeo = eventRegistry["aeo.audit.completed"].parse({
+    query: "category answers",
+    request_id: "req_aeo",
+    evidence_source_ids: evidence,
+    summary: "aeo summary",
+    result_count: 1,
+    gaps: [{
+      title: "Comparison answer gap",
+      detail: "Answer visibility gap to review.",
+      url: "https://example.com/compare",
+      evidence_source_ids: evidence,
+    }],
+    review_items: [{
+      title: "Comparison answer gap",
+      detail: "Review this answer gap.",
+      evidence_source_ids: evidence,
+    }],
+  });
+
+  assert.equal(content.opportunities?.[0]?.title, "Pricing objection angle");
+  assert.equal(aeo.gaps?.[0]?.title, "Comparison answer gap");
+});

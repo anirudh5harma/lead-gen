@@ -1,7 +1,8 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
+import { getAppState, type ProductBriefItem } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { getActiveWorkspaceSession } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -35,13 +36,21 @@ async function loadPlays(workspaceId: string): Promise<PlayRow[]> {
 }
 
 export default async function PlaysPage() {
-  const workspace = await getActiveWorkspace();
-  if (!workspace) {
+  const session = await getActiveWorkspaceSession();
+  if (!session) {
     return <CanvasEmpty label="Content" title="No workspace selected." />;
   }
-  const plays = await loadPlays(workspace.id);
-  const active = plays.filter((play) => play.status === "active");
+  const pool = getPool();
+  const [plays, state] = await Promise.all([
+    loadPlays(session.workspace.id),
+    getAppState(pool, {
+      workspace_id: session.workspace.id,
+      user_id: session.user_id,
+    }),
+  ]);
+  const activePlays = plays.filter((play) => play.status === "active");
   const recentRun = plays.find((play) => play.last_run_at);
+  const reviews = state.content_reviews;
 
   return (
     <>
@@ -60,7 +69,7 @@ export default async function PlaysPage() {
           <div className="section-note">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">Library shape</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <MiniStatus label="Active" value={active.length} />
+              <MiniStatus label="Active" value={activePlays.length} />
               <MiniStatus label="Total" value={plays.length} />
             </div>
             <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
@@ -70,6 +79,27 @@ export default async function PlaysPage() {
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="mt-6 section-canvas p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="brief-note-icon">
+            <Icon name="travel_explore" size={18} />
+          </span>
+          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Angles to review</h2>
+        </div>
+        {reviews.length === 0 ? (
+          <EmptyState
+            title="No fresh angles yet"
+            hint="When Exa finds market questions or competitor narratives, they will appear here."
+          />
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {reviews.map((item, index) => (
+              <ReviewNote key={`${item.title}:${index}`} item={item} icon="lightbulb" />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mt-6 grid gap-4 lg:grid-cols-2">
@@ -83,6 +113,32 @@ export default async function PlaysPage() {
         )}
       </section>
     </>
+  );
+}
+
+function ReviewNote({ item, icon }: { item: ProductBriefItem; icon: string }) {
+  return (
+    <article className="section-note">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon">
+          <Icon name={icon} size={18} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold leading-6 text-[var(--color-text-1)]">{item.title}</h3>
+          <p className="mt-2 line-clamp-4 text-sm leading-6 text-[var(--color-text-2)]">{item.detail}</p>
+          {item.url ? (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-flex text-xs font-semibold text-[var(--color-accent)]"
+            >
+              View proof
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </article>
   );
 }
 

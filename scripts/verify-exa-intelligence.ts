@@ -146,6 +146,7 @@ export async function runExaIntelligenceCanary(
     const evidenceIds = output?.evidence_source_ids ?? [];
     const ledger = await readLedgerState(pool, session.workspace_id, entry.intent, canaryStartedAt);
     const eventState = await readEventState(pool, session.workspace_id, entry);
+    const reviewCount = exaReviewCount(entry.intent, output);
     const ok =
       completed.status === "completed" &&
       evidenceIds.length > 0 &&
@@ -153,7 +154,10 @@ export async function runExaIntelligenceCanary(
       ledger.usage_count > 0 &&
       ledger.content_cache_count > 0 &&
       eventState.completed_count > 0 &&
-      eventState.projected_count > 0;
+      eventState.projected_count > 0 &&
+      (entry.intent === "content_research" || entry.intent === "aeo_audit"
+        ? reviewCount > 0 && eventState.review_count > 0
+        : true);
 
     results.push({
       workflow: entry.label,
@@ -169,6 +173,8 @@ export async function runExaIntelligenceCanary(
       content_cache_count: ledger.content_cache_count,
       completed_event_count: eventState.completed_count,
       projected_event_count: eventState.projected_count,
+      review_item_count: reviewCount,
+      review_event_count: eventState.review_count,
       detail: ok
         ? "completed with evidence, events, and Exa ledger/cache state"
         : completed.error?.message ?? "missing one or more Exa completion proofs",
@@ -294,16 +300,26 @@ async function readEventState(
   pool: Pool,
   workspace_id: string,
   entry: CanaryCase,
-): Promise<{ completed_count: number; projected_count: number }> {
+): Promise<{ completed_count: number; projected_count: number; review_count: number }> {
   const { rows } = await pool.query<{
     completed_count: string;
     projected_count: string;
+    review_count: string;
   }>(
     `select
         count(*) filter (
           where event_type in ('rep.research.completed', 'rep.brief.refreshed', 'content.opportunity.discovered', 'aeo.audit.completed')
         )::text as completed_count,
-        count(*) filter (where event_type = 'exa.evidence.projected')::text as projected_count
+        count(*) filter (where event_type = 'exa.evidence.projected')::text as projected_count,
+        coalesce(sum(
+          case
+            when event_type = 'content.opportunity.discovered'
+              then jsonb_array_length(coalesce(payload->'opportunities', '[]'::jsonb))
+            when event_type = 'aeo.audit.completed'
+              then jsonb_array_length(coalesce(payload->'gaps', '[]'::jsonb))
+            else 0
+          end
+        ), 0)::text as review_count
        from events
       where workspace_id = $1
         and payload->>'query' = $2
@@ -317,7 +333,15 @@ async function readEventState(
   return {
     completed_count: Number(row.completed_count),
     projected_count: Number(row.projected_count),
+    review_count: Number(row.review_count),
   };
+}
+
+function exaReviewCount(intent: CanaryIntent, output: ProductExaResearchResult | undefined): number {
+  if (!output) return 0;
+  if (intent === "content_research") return output.opportunities?.length ?? output.review_items?.length ?? 0;
+  if (intent === "aeo_audit") return output.gaps?.length ?? output.review_items?.length ?? 0;
+  return output.review_items?.length ?? 0;
 }
 
 function registerCanaryWorkflows(runtime: WorkflowRuntime): void {

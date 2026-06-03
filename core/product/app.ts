@@ -84,6 +84,7 @@ import {
   type SignalToEmailPlayOutput,
   type SignalToLinkedInPlayInput,
   type SignalToLinkedInPlayOutput,
+  type DraftGroundingProviderInput,
 } from "../plays/index.ts";
 import {
   parseApprovalPolicy,
@@ -408,6 +409,9 @@ export interface ProductExaResearchResult {
   request_id: string | null;
   evidence_source_ids: string[];
   summary: string;
+  review_items?: ProductBriefItem[];
+  opportunities?: ProductBriefItem[];
+  gaps?: ProductBriefItem[];
 }
 
 export interface ProductExaBriefRefreshInput {
@@ -603,6 +607,8 @@ export interface AppState {
     recent_changes: ProductBriefItem[];
     quiet_exceptions: ProductBriefItem[];
   } | null;
+  content_reviews: ProductBriefItem[];
+  aeo_reviews: ProductBriefItem[];
 }
 
 interface ProductEngine {
@@ -2164,6 +2170,7 @@ export async function researchWorkspaceWithExa(
   });
   const evidenceSourceIds = projected.sources.map((source) => source.id);
   const summary = summarizeExaEvidence(response.results, 8);
+  const reviewPayload = buildExaResearchReviewPayload(intent, response.results, evidenceSourceIds);
   await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: "exa.query.completed",
@@ -2210,6 +2217,14 @@ export async function researchWorkspaceWithExa(
       : intent === "aeo_audit"
         ? "aeo.audit.completed"
         : "rep.research.completed";
+  const completionKeyPayload = {
+    query,
+    evidence_source_ids: evidenceSourceIds,
+    request_id: response.requestId,
+    ...(intent === "content_research" || intent === "aeo_audit"
+      ? { review_contract: "structured_review_v1" }
+      : {}),
+  };
   await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: eventType,
@@ -2219,7 +2234,7 @@ export async function researchWorkspaceWithExa(
       eventType,
       session.workspace_id,
       createHash("sha256").update(query).digest("hex").slice(0, 20),
-      { query, evidence_source_ids: evidenceSourceIds, request_id: response.requestId },
+      completionKeyPayload,
     ),
     payload: {
       query,
@@ -2229,6 +2244,7 @@ export async function researchWorkspaceWithExa(
       result_count: response.results.length,
       cache_hit: search.cache_hit,
       exa_usage_id: search.usage_id,
+      ...reviewPayload,
     },
   });
   return {
@@ -2236,6 +2252,7 @@ export async function researchWorkspaceWithExa(
     request_id: response.requestId,
     evidence_source_ids: evidenceSourceIds,
     summary,
+    ...reviewPayload,
   };
 }
 
@@ -2979,6 +2996,52 @@ function briefItemFromExaResult(result: ExaResult, evidence_source_ids: string[]
     url,
     evidence_source_ids,
   };
+}
+
+function buildExaResearchReviewPayload(
+  intent: NonNullable<ProductExaResearchInput["intent"]>,
+  results: readonly ExaResult[],
+  evidence_source_ids: string[],
+): Pick<ProductExaResearchResult, "review_items" | "opportunities" | "gaps"> {
+  if (intent !== "content_research" && intent !== "aeo_audit") return {};
+  const items = results.slice(0, 6).map((result, index) =>
+    briefItemFromExaResult(
+      result,
+      evidence_source_ids[index] ? [evidence_source_ids[index]!] : [],
+    ),
+  );
+  if (intent === "content_research") {
+    const opportunities = items.map((item) => ({
+      ...item,
+      detail: contentOpportunityDetail(item.detail),
+    }));
+    return {
+      opportunities,
+      review_items: opportunities.slice(0, 3),
+    };
+  }
+  const gaps = items.map((item) => ({
+    ...item,
+    detail: aeoGapDetail(item.detail),
+  }));
+  return {
+    gaps,
+    review_items: gaps.slice(0, 3),
+  };
+}
+
+function contentOpportunityDetail(detail: string): string {
+  const cleaned = cleanProfileLine(detail, 220);
+  return cleaned
+    ? `Market evidence suggests an angle to review: ${cleaned}`
+    : "Market evidence suggests a content angle worth reviewing.";
+}
+
+function aeoGapDetail(detail: string): string {
+  const cleaned = cleanProfileLine(detail, 220);
+  return cleaned
+    ? `Answer visibility gap to review: ${cleaned}`
+    : "Answer visibility evidence suggests a gap worth reviewing.";
 }
 
 function dedupeExaResults(results: readonly ExaResult[]): ExaResult[] {
@@ -4339,6 +4402,8 @@ function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: strin
       bus: engine.bus,
       workspaceContextProvider: (input) =>
         getWorkflowWorkspaceContext(engine, input.workspace_id),
+      draftGroundingProvider: (input) =>
+        groundDraftWithExaForWorkflow(engine, input),
     }),
   );
 }
@@ -4371,7 +4436,18 @@ async function getWorkflowWorkspaceContext(
   engine: ProductEngine,
   workspace_id: string,
 ): Promise<string | null> {
-  const { rows } = await engine.pool.query<{ user_id: string }>(
+  const user_id = await getWorkflowUserId(engine.pool, workspace_id);
+  if (!user_id) return null;
+  const { getWorkspaceAgentContext } = await import("./context.ts");
+  const context = await getWorkspaceAgentContext(
+    { workspace_id, user_id },
+    engine.pool,
+  );
+  return context.markdown;
+}
+
+async function getWorkflowUserId(pool: Pool, workspace_id: string): Promise<string | null> {
+  const { rows } = await pool.query<{ user_id: string }>(
     `select user_id
        from workspace_members
       where workspace_id = $1
@@ -4382,14 +4458,25 @@ async function getWorkflowWorkspaceContext(
       limit 1`,
     [workspace_id],
   );
-  const user_id = rows[0]?.user_id;
+  return rows[0]?.user_id ?? null;
+}
+
+async function groundDraftWithExaForWorkflow(
+  engine: ProductEngine,
+  input: DraftGroundingProviderInput,
+): Promise<ProductExaResearchResult | null> {
+  const user_id = await getWorkflowUserId(engine.pool, input.workspace_id);
   if (!user_id) return null;
-  const { getWorkspaceAgentContext } = await import("./context.ts");
-  const context = await getWorkspaceAgentContext(
-    { workspace_id, user_id },
-    engine.pool,
+  return researchWorkspaceWithExa(
+    {
+      query: input.query,
+      intent: "draft_grounding",
+      num_results: 3,
+      include_text: true,
+      idempotency_nonce: `play:${input.play_run_id}:${input.signal.id}:${input.channel}`,
+    },
+    { workspace_id: input.workspace_id, user_id },
   );
-  return context.markdown;
 }
 
 function registerSignalIngestionWorkflows(engine: ProductEngine): void {
@@ -4521,6 +4608,8 @@ async function startSignalEmailPlay(
       bus: engine.bus,
       workspaceContextProvider: (workflowInput) =>
         getWorkflowWorkspaceContext(engine, workflowInput.workspace_id),
+      draftGroundingProvider: (workflowInput) =>
+        groundDraftWithExaForWorkflow(engine, workflowInput),
     }),
   );
   const play_run_id = randomUUID();
@@ -4585,6 +4674,8 @@ async function startSignalLinkedInPlay(
       bus: engine.bus,
       workspaceContextProvider: (workflowInput) =>
         getWorkflowWorkspaceContext(engine, workflowInput.workspace_id),
+      draftGroundingProvider: (workflowInput) =>
+        groundDraftWithExaForWorkflow(engine, workflowInput),
     }),
   );
   const play_run_id = randomUUID();
@@ -5351,6 +5442,8 @@ export async function getAppState(
       channelAccounts: [],
       profile: null,
       brief: null,
+      content_reviews: [],
+      aeo_reviews: [],
       llmUsage: { used_tokens_24h: 0, daily_token_cap: 0 },
       sources: [],
       eventTrace: {
@@ -5396,6 +5489,7 @@ export async function getAppState(
     sources,
     profile,
     brief,
+    exaReviews,
   ] = await Promise.all([
     pool.query<{
       id: string;
@@ -5695,6 +5789,45 @@ export async function getAppState(
         limit 1`,
       [boot.workspace_id],
     ),
+    pool.query<{
+      event_type: string;
+      payload: Record<string, unknown>;
+      occurred_at: Date;
+      evidence: Array<{
+        id: string;
+        url: string | null;
+        title: string | null;
+        snippet: string | null;
+      }>;
+    }>(
+      `select e.event_type,
+              e.payload,
+              e.occurred_at,
+              coalesce(
+                jsonb_agg(
+                  distinct jsonb_build_object(
+                    'id', gs.id::text,
+                    'url', gs.config->>'url',
+                    'title', coalesce(gs.properties->>'title', gs.name),
+                    'snippet', gs.properties->>'snippet'
+                  )
+                ) filter (where gs.id is not null),
+                '[]'::jsonb
+              ) as evidence
+         from events e
+         left join lateral jsonb_array_elements_text(
+           coalesce(e.payload->'evidence_source_ids', '[]'::jsonb)
+         ) evidence_ids(id) on true
+         left join graph_sources gs
+           on gs.workspace_id = e.workspace_id
+          and gs.id::text = evidence_ids.id
+        where e.workspace_id = $1
+          and e.event_type in ('content.opportunity.discovered', 'aeo.audit.completed')
+        group by e.id
+        order by e.occurred_at desc
+        limit 10`,
+      [boot.workspace_id],
+    ),
   ]);
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
   const eventTrace = latestWorkflowRunId
@@ -5736,6 +5869,8 @@ export async function getAppState(
     eventTrace,
     profile: productProfileState(profile.rows[0] ?? null),
     brief: productBriefState(brief.rows[0] ?? null),
+    content_reviews: productExaReviewState(exaReviews.rows, "content.opportunity.discovered"),
+    aeo_reviews: productExaReviewState(exaReviews.rows, "aeo.audit.completed"),
     sendTraces: sendTraces.rows.map((row) => ({
       message_id: row.message_id,
       status: row.status,
@@ -5844,6 +5979,51 @@ function productBriefState(row: {
     recent_changes: briefItemsStateValue(payload.recent_changes),
     quiet_exceptions: briefItemsStateValue(payload.quiet_exceptions),
   };
+}
+
+function productExaReviewState(
+  rows: Array<{
+    event_type: string;
+    payload: Record<string, unknown>;
+    occurred_at: Date;
+    evidence: Array<{
+      id: string;
+      url: string | null;
+      title: string | null;
+      snippet: string | null;
+    }>;
+  }>,
+  eventType: "content.opportunity.discovered" | "aeo.audit.completed",
+): ProductBriefItem[] {
+  return rows
+    .filter((row) => row.event_type === eventType)
+    .flatMap((row) => {
+      const key = eventType === "content.opportunity.discovered" ? "opportunities" : "gaps";
+      const payloadItems = briefItemsStateValue(row.payload[key] ?? row.payload.review_items);
+      if (payloadItems.length > 0) return payloadItems;
+      const evidence = row.evidence[0];
+      if (evidence) {
+        return [{
+          title: evidence.title ?? (eventType === "content.opportunity.discovered"
+            ? "Content angle to review"
+            : "Answer gap to review"),
+          detail: evidence.snippet ?? stringStateValue(row.payload.summary) ?? "",
+          url: evidence.url,
+          evidence_source_ids: [evidence.id],
+        }];
+      }
+      const summary = stringStateValue(row.payload.summary);
+      return summary
+        ? [{
+          title: eventType === "content.opportunity.discovered"
+            ? "Content angle to review"
+            : "Answer gap to review",
+          detail: summary,
+          evidence_source_ids: arrayStringStateValue(row.payload.evidence_source_ids),
+        }]
+        : [];
+    })
+    .slice(0, 8);
 }
 
 function briefItemsStateValue(value: unknown): ProductBriefItem[] {

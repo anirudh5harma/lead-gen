@@ -44,6 +44,7 @@ import {
   createSeriesAColdOpenPlay,
   createSignalToEmailPlayWorkflow,
   createSignalToLinkedInPlayWorkflow,
+  type DraftGroundingProviderInput,
 } from "../core/plays/index.ts";
 import { getWorkspaceAgentContext } from "../core/product/context.ts";
 import {
@@ -54,6 +55,7 @@ import {
   dispatchReplyEmailPlaysOnce,
   dispatchSignalPlaysOnce,
   registerProductEventDispatchers,
+  researchWorkspaceWithExa,
 } from "../core/product/app.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
@@ -143,6 +145,7 @@ const workflows = [
     email: emailChannel,
     bus,
     workspaceContextProvider: workflowWorkspaceContext,
+    draftGroundingProvider: workflowDraftGrounding,
   }),
   createSignalToLinkedInPlayWorkflow({
     store: verticalStore,
@@ -152,6 +155,7 @@ const workflows = [
     linkedin: linkedinChannel,
     bus,
     workspaceContextProvider: workflowWorkspaceContext,
+    draftGroundingProvider: workflowDraftGrounding,
   }),
   createReplyToEmailPlayWorkflow({
     store: verticalStore,
@@ -332,6 +336,31 @@ function createProductLinkedInTransport(): LinkedInTransport {
 }
 
 async function workflowWorkspaceContext(input: { workspace_id: string }): Promise<string | null> {
+  const userId = await workflowUserId(input.workspace_id);
+  if (!userId) return null;
+  const context = await getWorkspaceAgentContext(
+    { workspace_id: input.workspace_id, user_id: userId },
+    pool,
+  );
+  return context.markdown;
+}
+
+async function workflowDraftGrounding(input: DraftGroundingProviderInput) {
+  const userId = await workflowUserId(input.workspace_id);
+  if (!userId) return null;
+  return researchWorkspaceWithExa(
+    {
+      query: input.query,
+      intent: "draft_grounding",
+      num_results: 3,
+      include_text: true,
+      idempotency_nonce: `play:${input.play_run_id}:${input.signal.id}:${input.channel}`,
+    },
+    { workspace_id: input.workspace_id, user_id: userId },
+  );
+}
+
+async function workflowUserId(workspace_id: string): Promise<string | null> {
   const { rows } = await pool.query<{ user_id: string }>(
     `select user_id
        from workspace_members
@@ -341,15 +370,9 @@ async function workflowWorkspaceContext(input: { workspace_id: string }): Promis
         case role when 'owner' then 0 when 'admin' then 1 else 2 end,
         invited_at asc
       limit 1`,
-    [input.workspace_id],
+    [workspace_id],
   );
-  const userId = rows[0]?.user_id;
-  if (!userId) return null;
-  const context = await getWorkspaceAgentContext(
-    { workspace_id: input.workspace_id, user_id: userId },
-    pool,
-  );
-  return context.markdown;
+  return rows[0]?.user_id ?? null;
 }
 
 function optionalPositiveNumber<K extends string>(

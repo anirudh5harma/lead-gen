@@ -2,7 +2,9 @@ import { z } from "zod";
 import { registerTool } from "../agents/tools/registry.ts";
 import { getPool } from "../substrate/storage/index.ts";
 import {
+  createExaWebsetWithWorkspaceBudget,
   getExaContentsWithWorkspaceBudget,
+  listExaWebsetItemsWithWorkspaceBudget,
   getWorkspaceExaCostSummary,
   searchExaWithWorkspaceCache,
 } from "./cache.ts";
@@ -248,13 +250,26 @@ export function registerExaTools(): void {
       id: z.string().nullable(),
       status: z.string().nullable(),
       raw: z.record(z.string(), z.unknown()),
+      webset_hash: z.string(),
+      usage_id: z.string().nullable(),
     }),
-    async handler(input) {
-      return createExaClientFromEnv().createWebset({
-        search: { query: input.query, count: input.count },
-        enrichments: input.enrichments,
-        metadata: input.metadata,
+    async handler(input, ctx) {
+      const result = await createExaWebsetWithWorkspaceBudget({
+        pool: getPool(),
+        workspace_id: ctx.workspace_id,
+        intent: "signal_discovery",
+        client: createExaClientFromEnv(),
+        webset: {
+          search: { query: input.query, count: input.count },
+          enrichments: input.enrichments,
+          metadata: input.metadata,
+        },
       });
+      return {
+        ...result.response,
+        webset_hash: result.webset_hash,
+        usage_id: result.usage_id,
+      };
     },
   });
 
@@ -263,9 +278,24 @@ export function registerExaTools(): void {
     description: "List items from an Exa Webset by id.",
     kind: "external",
     input: z.object({ webset_id: z.string().min(1) }),
-    output: z.record(z.string(), z.unknown()),
-    async handler(input) {
-      return createExaClientFromEnv().listWebsetItems(input.webset_id);
+    output: z.object({
+      response: z.record(z.string(), z.unknown()),
+      webset_hash: z.string(),
+      usage_id: z.string().nullable(),
+    }),
+    async handler(input, ctx) {
+      const result = await listExaWebsetItemsWithWorkspaceBudget({
+        pool: getPool(),
+        workspace_id: ctx.workspace_id,
+        intent: "signal_discovery",
+        client: createExaClientFromEnv(),
+        webset_id: input.webset_id,
+      });
+      return {
+        response: result.response,
+        webset_hash: result.webset_hash,
+        usage_id: result.usage_id,
+      };
     },
   });
 

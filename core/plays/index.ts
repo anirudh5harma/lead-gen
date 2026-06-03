@@ -62,3 +62,8 @@ export {
 export type { ApprovalPolicy, PlayChannelPolicy } from "./autonomy.ts";
 export { runFirstVerticalSlice } from "./demo.ts";
 export type { FirstVerticalSliceResult, RunFirstVerticalSliceOptions } from "./demo.ts";
+export type {
+  DraftGroundingProvider,
+  DraftGroundingProviderInput,
+  DraftGroundingResult,
+} from "./exa-draft-grounding.ts";

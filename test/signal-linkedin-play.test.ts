@@ -258,6 +258,90 @@ test("signal LinkedIn Play runs research, draft, judge, approval policy, and nat
   );
 });
 
+test("signal LinkedIn Play grounds weak signals with Exa before writing", async () => {
+  const s = seed();
+  const bus = createInMemoryEventBus();
+  const memory = createInMemoryRepMemory();
+  const store = createInMemoryVerticalSliceStore({
+    reps: [s.rep],
+    signals: [s.signal],
+    persons: [s.person],
+    companies: [s.company],
+  });
+  await wireInMemoryVerticalSliceMessageLifecycleProjection(store, bus);
+  const transport = createDryRunLinkedInTransport();
+  const linkedin = createNativeLinkedInChannel({
+    action: "linkedin_dm",
+    accounts: [{
+      id: randomUUID(),
+      display_name: "Maya LinkedIn",
+      kind: "linkedin_session",
+      status: "connected",
+      daily_cap: 3,
+      daily_used: 0,
+    }],
+    transport,
+  });
+  let groundingCalls = 0;
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  runtime.register(
+    createSignalToLinkedInPlayWorkflow({
+      store,
+      memory,
+      judge: createNoopJudge(0.9, 0.6),
+      linkedin,
+      bus,
+      draftGroundingProvider: async (input) => {
+        groundingCalls += 1;
+        assert.match(input.query, /Acme Payroll announced a Series A/);
+        return {
+          request_id: "req_grounding_1",
+          evidence_source_ids: ["00000000-0000-4000-8000-000000000001"],
+          summary: "1. Acme proof - Fresh public evidence for the draft.",
+        };
+      },
+    }),
+  );
+
+  const play_id = randomUUID();
+  const play_run_id = randomUUID();
+  const run = await runtime.start<SignalToLinkedInPlayInput, SignalToLinkedInPlayOutput>({
+    workspace_id: s.workspace_id,
+    workflow_name: SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+    play_id,
+    play_run_id,
+    input: {
+      workspace_id: s.workspace_id,
+      play_id,
+      play_run_id,
+      rep_id: s.rep_id,
+      signal_id: s.signal_id,
+      person_id: s.person_id,
+      company_id: s.company_id,
+      action: "linkedin_dm",
+      linkedin_approval: "none",
+    },
+  });
+
+  await waitFor(async () => {
+    const current = await runtime.get<SignalToLinkedInPlayInput, SignalToLinkedInPlayOutput>(run.id);
+    return current?.status === "completed" || current?.status === "failed";
+  });
+  const completed = await runtime.get<SignalToLinkedInPlayInput, SignalToLinkedInPlayOutput>(run.id);
+  assert.equal(completed?.status, "completed");
+  assert.equal(completed?.output?.decision, "sent");
+  assert.equal(groundingCalls, 1);
+
+  const snapshot = await store.snapshot();
+  const message = snapshot.messages.find((candidate) => candidate.id === completed?.output?.message_id);
+  const grounding = message?.provenance.exa_grounding as
+    | { request_id?: string; evidence_source_ids?: string[]; summary?: string }
+    | undefined;
+  assert.equal(grounding?.request_id, "req_grounding_1");
+  assert.deepEqual(grounding?.evidence_source_ids, ["00000000-0000-4000-8000-000000000001"]);
+  assert.match(grounding?.summary ?? "", /Fresh public evidence/);
+});
+
 test("signal LinkedIn Play defers safely when the target has no LinkedIn profile", async () => {
   const s = seed();
   const bus = createInMemoryEventBus();

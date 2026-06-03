@@ -324,10 +324,22 @@ Implemented and verified:
 - Direct Exa search/contents primitive calls are routed through the workspace
   cache/ledger with daily search, daily contents, monthly unit, and per-Play
   research gates before live Exa calls.
+- Exa Webset create/list primitive calls are routed through the same
+  workspace ledger and budget gates as monitored public-web research, with
+  `webset_create`, `webset_list`, and deferred lifecycle rows in
+  `workspace_exa_usage`.
 - Brief refresh uses durable `rep.brief.refresh.exa` to gather fresh public-web
   evidence, project sources into the graph, and emit `rep.brief.refreshed` with
   notes, review items, recent changes, and quiet exceptions for the morning
   Brief surface.
+- Content opportunities emit structured `opportunities` / `review_items`, and
+  AEO audits emit structured `gaps` / `review_items`; both are projected into
+  the Content and AEO canvas surfaces and into prompt-ready workspace context
+  with graph evidence source ids and proof URLs.
+- Signal-to-email and Signal-to-LinkedIn Plays automatically call Exa draft
+  grounding when the triggering Signal lacks Exa proof or carries stale proof;
+  the grounding summary reaches the writer and hot-path judge, and the draft
+  stores `exa_grounding` provenance.
 - `exa.costs.get` reports configured state, caps, 24-hour/monthly usage,
   remaining budget, active cache entries, cache hits, and deferred calls.
 - Typed Exa event metadata for cache hits, query hashes, usage ids, content
@@ -335,20 +347,17 @@ Implemented and verified:
 - Exa-sourced Signal influence on Signal-to-email and Signal-to-LinkedIn draft
   provenance and simulated Outcome properties/provenance.
 - Production canary: `npm run verify:exa` starts `draft.grounding.exa`,
-  `content.opportunity.exa`, and `aeo.audit.exa`, waits for completion, and
-  verifies evidence sources, typed completion/projection events, query cache,
-  content cache, and usage ledger rows.
+  `rep.brief.refresh.exa`, `content.opportunity.exa`, and `aeo.audit.exa`,
+  waits for completion, and verifies evidence sources, typed
+  completion/projection events, query cache, content cache, usage ledger rows,
+  and Content/AEO review payloads.
 
-Still incomplete:
+Remaining hardening:
 
-- Exa Websets create/list remain registered primitive tools but are not yet
-  routed through the workspace cache/ledger. Use them only for constrained
-  operator-approved research until Webset lifecycle accounting is added.
-- Content opportunities and AEO audits currently store evidence and emit typed
-  events, but do not yet project rich opportunity/gap nodes or dedicated review
-  surfaces.
-- Draft grounding returns judge/writer-ready proof summaries, but Play writers
-  do not yet automatically call it when existing graph evidence is stale.
+- Expand authenticated product QA around the Content/AEO review canvases once
+  real operator feedback exists.
+- Add historical quality metrics for opportunity/gap acceptance after users
+  have accepted, edited, or ignored enough recommendations.
 
 ## Cost And Quality Controls
 
@@ -374,13 +383,13 @@ Current enforcement:
 
 - Implemented: query cache, content cache, usage ledger, source-level kill switch
   and source-level call/item/spend controls for Exa open-web Signal polling,
-  direct daily/monthly/per-Play gates for search and contents primitives,
-  `exa.costs.get`, graph projection, and provenance on stored Exa evidence.
+  direct daily/monthly/per-Play gates for search, contents, and Webset
+  primitives, `exa.costs.get`, graph projection, and provenance on stored Exa
+  evidence.
 - Partial: judge/classifier protection exists in the downstream Play/send path,
   but standalone Exa research events are evidence-gathering steps and do not
   trigger channel action by themselves.
-- Remaining: Webset lifecycle accounting and richer content/AEO review
-  projections.
+- Remaining: outcome-quality metrics for accepted Content/AEO recommendations.
 
 ## UI Contract
 

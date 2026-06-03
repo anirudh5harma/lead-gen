@@ -7,6 +7,8 @@ import type {
   ExaResult,
   ExaSearchInput,
   ExaSearchResponse,
+  ExaWebsetCreateInput,
+  ExaWebsetResponse,
 } from "./client.ts";
 
 export interface ExaCachedSearchInput {
@@ -38,6 +40,36 @@ export interface ExaBudgetedContentsInput {
 export interface ExaBudgetedContentsResult {
   response: ExaContentsResponse;
   content_hash: string;
+  usage_id: string | null;
+}
+
+export interface ExaBudgetedWebsetCreateInput {
+  pool: Pool;
+  workspace_id: string;
+  intent: string;
+  client: Pick<ExaClient, "createWebset">;
+  webset: ExaWebsetCreateInput;
+  play_id?: string | null;
+}
+
+export interface ExaBudgetedWebsetCreateResult {
+  response: ExaWebsetResponse;
+  webset_hash: string;
+  usage_id: string | null;
+}
+
+export interface ExaBudgetedWebsetListInput {
+  pool: Pool;
+  workspace_id: string;
+  intent: string;
+  client: Pick<ExaClient, "listWebsetItems">;
+  webset_id: string;
+  play_id?: string | null;
+}
+
+export interface ExaBudgetedWebsetListResult {
+  response: Record<string, unknown>;
+  webset_hash: string;
   usage_id: string | null;
 }
 
@@ -123,6 +155,20 @@ export function exaContentsHash(input: {
     .update(stableJson({
       intent: input.intent.trim().toLowerCase(),
       contents: normalizedContentsOptions(input.contents),
+    }))
+    .digest("hex");
+}
+
+export function exaWebsetHash(input: {
+  intent: string;
+  webset: ExaWebsetCreateInput | { webset_id: string };
+}): string {
+  return createHash("sha256")
+    .update(stableJson({
+      intent: input.intent.trim().toLowerCase(),
+      webset: "webset_id" in input.webset
+        ? { webset_id: input.webset.webset_id.trim() }
+        : normalizedWebsetOptions(input.webset),
     }))
     .digest("hex");
 }
@@ -252,6 +298,81 @@ export async function getExaContentsWithWorkspaceBudget(
   };
 }
 
+export async function createExaWebsetWithWorkspaceBudget(
+  input: ExaBudgetedWebsetCreateInput,
+): Promise<ExaBudgetedWebsetCreateResult> {
+  const query = input.webset.search.query.replace(/\s+/g, " ").trim();
+  if (!query) throw new Error("Exa Webset create requires search.query");
+  const webset = {
+    ...input.webset,
+    search: {
+      ...input.webset.search,
+      query,
+    },
+  };
+  const websetHash = exaWebsetHash({ intent: input.intent, webset });
+  await assertExaWebsetCreateBudgetAvailable(input.pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    play_id: input.play_id ?? null,
+    webset_hash: websetHash,
+    query,
+  });
+  const response = await input.client.createWebset(webset);
+  const usageId = await recordExaUsage(input.pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    operation: "webset_create",
+    query_hash: websetHash,
+    request_id: response.id,
+    result_count: 1,
+    estimated_units: 1,
+    properties: {
+      query,
+      webset_id: response.id,
+      status: response.status,
+      count: webset.search.count ?? null,
+      play_id: input.play_id ?? null,
+    },
+  });
+  return { response, webset_hash: websetHash, usage_id: usageId };
+}
+
+export async function listExaWebsetItemsWithWorkspaceBudget(
+  input: ExaBudgetedWebsetListInput,
+): Promise<ExaBudgetedWebsetListResult> {
+  const websetId = input.webset_id.trim();
+  if (!websetId) throw new Error("Exa Webset list requires webset_id");
+  const websetHash = exaWebsetHash({
+    intent: input.intent,
+    webset: { webset_id: websetId },
+  });
+  await assertExaWebsetListBudgetAvailable(input.pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    play_id: input.play_id ?? null,
+    webset_hash: websetHash,
+    webset_id: websetId,
+  });
+  const response = await input.client.listWebsetItems(websetId);
+  const itemCount = websetItemCount(response);
+  const usageId = await recordExaUsage(input.pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    operation: "webset_list",
+    query_hash: websetHash,
+    request_id: websetId,
+    result_count: itemCount,
+    estimated_units: 1,
+    properties: {
+      webset_id: websetId,
+      item_count: itemCount,
+      play_id: input.play_id ?? null,
+    },
+  });
+  return { response, webset_hash: websetHash, usage_id: usageId };
+}
+
 export async function getWorkspaceExaCostSummary(
   pool: Pool,
   workspace_id: string,
@@ -281,28 +402,28 @@ export async function getWorkspaceExaCostSummary(
           select count(*)::text
             from workspace_exa_usage
            where workspace_id = workspaces.id
-             and operation = 'search'
+             and operation in ('search', 'webset_create')
              and created_at >= now() - interval '24 hours'
         ), '0') as queries_24h,
         coalesce((
           select sum(result_count)::text
             from workspace_exa_usage
            where workspace_id = workspaces.id
-             and operation in ('search', 'contents')
+             and operation in ('search', 'contents', 'webset_list')
              and created_at >= now() - interval '24 hours'
         ), '0') as contents_24h,
         coalesce((
           select sum(estimated_units)::text
             from workspace_exa_usage
            where workspace_id = workspaces.id
-             and operation in ('search', 'contents')
+             and operation in ('search', 'contents', 'webset_create', 'webset_list')
              and created_at >= date_trunc('month', now())
         ), '0') as units_month,
         coalesce((
           select count(*)::text
             from workspace_exa_usage
            where workspace_id = workspaces.id
-             and operation = 'search'
+             and operation in ('search', 'webset_create')
              and properties->>'play_id' = $2
              and created_at >= now() - interval '24 hours'
         ), '0') as play_research_24h,
@@ -310,7 +431,7 @@ export async function getWorkspaceExaCostSummary(
           select count(*)::text
             from workspace_exa_usage
            where workspace_id = workspaces.id
-             and operation in ('search_deferred', 'contents_deferred')
+             and operation in ('search_deferred', 'contents_deferred', 'webset_create_deferred', 'webset_list_deferred')
              and created_at >= now() - interval '24 hours'
         ), '0') as deferred_24h,
         coalesce((
@@ -439,6 +560,17 @@ function normalizedContentsOptions(input: ExaContentsInput): Record<string, unkn
   };
 }
 
+function normalizedWebsetOptions(input: ExaWebsetCreateInput): Record<string, unknown> {
+  return {
+    search: {
+      query: input.search.query.replace(/\s+/g, " ").trim(),
+      count: input.search.count ?? null,
+    },
+    enrichments: normalizeJsonValue(input.enrichments ?? []),
+    metadata: normalizeJsonValue(input.metadata ?? {}),
+  };
+}
+
 async function assertExaBudgetAvailable(
   pool: Pool,
   input: {
@@ -559,6 +691,119 @@ async function assertExaContentsBudgetAvailable(
   });
 }
 
+async function assertExaWebsetCreateBudgetAvailable(
+  pool: Pool,
+  input: {
+    workspace_id: string;
+    intent: string;
+    play_id: string | null;
+    webset_hash: string;
+    query: string;
+  },
+): Promise<void> {
+  const summary = await getWorkspaceExaCostSummary(pool, input.workspace_id, process.env, input.play_id);
+  const checks = [
+    {
+      reason: "daily_query_cap_exhausted",
+      cap: summary.caps.daily_query_cap,
+      used: summary.used.queries_24h,
+      requested: 1,
+    },
+    {
+      reason: "monthly_unit_cap_exhausted",
+      cap: summary.caps.monthly_unit_cap,
+      used: summary.used.units_month,
+      requested: 1,
+    },
+    {
+      reason: "per_play_research_cap_exhausted",
+      cap: input.play_id ? summary.caps.per_play_research_cap : Number.MAX_SAFE_INTEGER,
+      used: input.play_id ? summary.used.play_research_24h : 0,
+      requested: 1,
+    },
+  ];
+  const failed = checks.find((check) => check.used + check.requested > check.cap);
+  if (!failed) return;
+  await recordExaUsage(pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    operation: "webset_create_deferred",
+    query_hash: input.webset_hash,
+    result_count: 0,
+    estimated_units: 0,
+    properties: {
+      query: input.query,
+      reason: failed.reason,
+      cap: failed.cap,
+      used: failed.used,
+      requested: failed.requested,
+      play_id: input.play_id,
+    },
+  });
+  throw new ExaBudgetExceededError({
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    reason: failed.reason,
+    cap: failed.cap,
+    used: failed.used,
+    requested: failed.requested,
+  });
+}
+
+async function assertExaWebsetListBudgetAvailable(
+  pool: Pool,
+  input: {
+    workspace_id: string;
+    intent: string;
+    play_id: string | null;
+    webset_hash: string;
+    webset_id: string;
+  },
+): Promise<void> {
+  const summary = await getWorkspaceExaCostSummary(pool, input.workspace_id, process.env, input.play_id);
+  const checks = [
+    {
+      reason: "daily_contents_cap_exhausted",
+      cap: summary.caps.daily_contents_cap,
+      used: summary.used.contents_24h,
+      requested: 1,
+    },
+    {
+      reason: "monthly_unit_cap_exhausted",
+      cap: summary.caps.monthly_unit_cap,
+      used: summary.used.units_month,
+      requested: 1,
+    },
+  ];
+  const failed = checks.find((check) => check.used + check.requested > check.cap);
+  if (!failed) return;
+  await recordExaUsage(pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    operation: "webset_list_deferred",
+    query_hash: input.webset_hash,
+    request_id: input.webset_id,
+    result_count: 0,
+    estimated_units: 0,
+    properties: {
+      webset_id: input.webset_id,
+      reason: failed.reason,
+      cap: failed.cap,
+      used: failed.used,
+      requested: failed.requested,
+      play_id: input.play_id,
+    },
+  });
+  throw new ExaBudgetExceededError({
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    reason: failed.reason,
+    cap: failed.cap,
+    used: failed.used,
+    requested: failed.requested,
+  });
+}
+
 function requestedResultCount(input: ExaSearchInput): number {
   const value = input.numResults ?? 10;
   return Math.max(1, Math.min(100, Math.trunc(value)));
@@ -594,6 +839,18 @@ function remaining(cap: number, used: number): number {
 function normalizeSummaryOption(summary: ExaSearchInput["summary"]): unknown {
   if (!summary || summary === true) return summary ?? false;
   return { query: summary.query ?? null };
+}
+
+function normalizeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeJsonValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, normalizeJsonValue(entry)]),
+    );
+  }
+  return value;
 }
 
 function cleanStringArray(values: string[] | undefined): string[] {
@@ -735,6 +992,15 @@ function canonicalUrl(value: string | null | undefined): string | null {
   } catch {
     return value.trim() || null;
   }
+}
+
+function websetItemCount(response: Record<string, unknown>): number {
+  for (const key of ["items", "results", "data"]) {
+    const value = response[key];
+    if (Array.isArray(value)) return value.length;
+  }
+  const total = response.total ?? response.totalCount ?? response.count;
+  return Number.isFinite(Number(total)) ? Math.max(0, Math.trunc(Number(total))) : 0;
 }
 
 function stableJson(value: unknown): string {

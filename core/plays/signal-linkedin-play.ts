@@ -20,6 +20,13 @@ import type { LinkedInChannel, LinkedInChannelName } from "../channels/linkedin/
 import type { VerticalSliceStore } from "./vertical-store.ts";
 import { exaInfluenceFromSignal } from "./exa-influence.ts";
 import {
+  applyDraftGrounding,
+  buildDraftGroundingQuery,
+  draftGroundingProvenance,
+  shouldGroundDraftWithExa,
+  type DraftGroundingProvider,
+} from "./exa-draft-grounding.ts";
+import {
   isDailyCapExceeded,
   nextDailyWindow,
   shouldRequestApproval,
@@ -63,6 +70,7 @@ export interface SignalToLinkedInPlayDeps {
   workspaceContextProvider?: (
     input: SignalToLinkedInPlayInput,
   ) => Promise<string | null | undefined>;
+  draftGroundingProvider?: DraftGroundingProvider;
 }
 
 function playRunOutputPayload(output: SignalToLinkedInPlayOutput): Record<string, unknown> {
@@ -178,13 +186,38 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
         });
         return result;
       });
+      const draftGrounding = deps.draftGroundingProvider &&
+        shouldGroundDraftWithExa(signal, exaInfluence)
+        ? await ctx.step("exa.draft_grounding", async () =>
+            deps.draftGroundingProvider!({
+              workspace_id: input.workspace_id,
+              play_id: input.play_id,
+              play_run_id: input.play_run_id,
+              rep_id: rep.id,
+              signal,
+              person,
+              company,
+              channel: "linkedin",
+              query: buildDraftGroundingQuery({
+                workspace_id: input.workspace_id,
+                play_id: input.play_id,
+                play_run_id: input.play_run_id,
+                rep_id: rep.id,
+                signal,
+                person,
+                company,
+                channel: "linkedin",
+              }),
+            }) ?? null)
+        : null;
+      const groundedResearch = applyDraftGrounding(research, draftGrounding);
       const patternKey = `${research.pattern_key}|channel:${action}`;
 
       const draft = await ctx.step("writer.compose_linkedin", async () => {
         const result = await writerRole.invoke({
           action,
           pattern_key: patternKey,
-          research,
+          research: groundedResearch,
           person,
           company,
         }, roleContext);
@@ -222,6 +255,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
             play_id: input.play_id,
             play_run_id: input.play_run_id,
             ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
+            ...(draftGrounding ? { exa_grounding: draftGroundingProvenance(draftGrounding) } : {}),
           },
         });
         const row = await deps.store.projectMessageLifecycleEvent(event);
@@ -243,7 +277,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
               body: draft.body,
             },
             context: {
-              signal_summary: research.signal_summary,
+              signal_summary: groundedResearch.signal_summary,
               counterparty_summary: research.counterparty_summary,
               procedural_exemplars: draft.procedural_exemplars,
               workspace_context_markdown: workspaceContextMarkdown ?? null,

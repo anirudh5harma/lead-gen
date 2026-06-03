@@ -30,10 +30,10 @@ projection, and visible UI feedback where applicable.
 | Run signal aggregator | `/dashboard/ingestion`, `/brief` | `product.sources.aggregate.run` | Starts `ingest_workspace_poll` workflow | Ready |
 | Push source-backed Signal | `/api/webhooks/signals`, external source, agent tool | `product.signal.discover` | Authenticated webhook/tool emits `signal.discovered`; projector materializes `Signal` and emits `signal.ingested` | Ready |
 | Submit manual signal | `/dashboard`, `/brief` | `product.signal.submit` | Manual Signal ingestion event path | Ready |
-| Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email Play workflows | Ready |
-| Ground draft with public evidence | MCP/internal Rep execution | `product.draft.ground` | `draft.grounding.exa`: Exa Search/Contents -> graph evidence sources -> judge/writer-ready proof summary | Ready |
-| Discover content opportunities | `/dashboard/content`, MCP/internal Rep execution | `product.content.opportunities.discover` | `content.opportunity.exa`: Exa Search/Contents -> graph evidence sources -> `content.opportunity.discovered` | Ready |
-| Audit AEO coverage | `/dashboard/aeo`, MCP/internal Rep execution | `product.aeo.audit` | `aeo.audit.exa`: Exa Search/Contents -> graph evidence sources -> `aeo.audit.completed` | Ready |
+| Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email/LinkedIn Play workflows; weak or stale evidence triggers Exa draft grounding before writer/judge | Ready |
+| Ground draft with public evidence | MCP/internal Rep execution, automatic Play step | `product.draft.ground` | `draft.grounding.exa`: Exa Search/Contents -> graph evidence sources -> judge/writer-ready proof summary -> draft `exa_grounding` provenance | Ready |
+| Discover content opportunities | `/dashboard/content`, MCP/internal Rep execution | `product.content.opportunities.discover` | `content.opportunity.exa`: Exa Search/Contents -> graph evidence sources -> `content.opportunity.discovered` with structured opportunities/review items | Ready |
+| Audit AEO coverage | `/dashboard/aeo`, MCP/internal Rep execution | `product.aeo.audit` | `aeo.audit.exa`: Exa Search/Contents -> graph evidence sources -> `aeo.audit.completed` with structured gaps/review items | Ready |
 | Approve/reject draft | `/dashboard/approvals`, `/brief` | `product.approval.decide` | Resolves workflow approval gate | Ready |
 | Retry failed workflow | `/brief`, ops surfaces | `product.workflow.retry` | Durable workflow retry/resume | Ready |
 | Inspect/redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |
@@ -43,11 +43,12 @@ projection, and visible UI feedback where applicable.
 ## Guardrails
 
 Production proof for Exa research variants lives in `npm run verify:exa`. The
-canary starts `draft.grounding.exa`, `content.opportunity.exa`, and
-`aeo.audit.exa` through the product workflow entrypoint, waits for Restate
-completion, and verifies graph evidence, typed events, query/content cache, and
-usage ledger rows. Keep it green when changing Exa runtime, cache, event, or
-workflow code.
+canary starts `draft.grounding.exa`, `rep.brief.refresh.exa`,
+`content.opportunity.exa`, and `aeo.audit.exa` through the product workflow
+entrypoint, waits for Restate completion, and verifies graph evidence, typed
+events, query/content cache, usage ledger rows, and Content/AEO review payloads.
+Keep it green when changing Exa runtime, cache, event, workflow, or review
+projection code.
 
 - Add/update this map in the same PR as any new user-visible action.
 - Add the corresponding tool in `core/product/tools.ts` or a primitive graph/channel

@@ -92,7 +92,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Ran an eight-source controlled `ingest_workspace_poll` batch through production Restate on ECS rev18; all eight completed, producing `13` inserts and `8` duplicates total, with no batch-run Restate stream errors in the CloudWatch log scan.
 - Paused the unused AWS App Runner service that was still running the old `main-449a0c2` image after its Restate deployment registration was removed.
 - Added `npm run verify:production-app`, a Vercel production smoke gate that checks `/api/health`, allows only the known LinkedIn provider readiness warning, and verifies `/dashboard` plus `/onboarding` redirect directly to Google OAuth for unauthenticated users.
-- Added Exa workflow services for profile bootstrap, Brief refresh, Rep research, draft grounding, content opportunities, AEO audit, and open-web signal source configuration: `profile.bootstrap.exa`, `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, `aeo.audit.exa`, and `signal.discover.open_web.exa`. These now sit in the Restate readiness contract and must be deployed with the worker before production readiness returns to its previous state.
+- Added and deployed Exa workflow services for profile bootstrap, Brief refresh, Rep research, draft grounding, content opportunities, AEO audit, and open-web signal source configuration: `profile.bootstrap.exa`, `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, `aeo.audit.exa`, and `signal.discover.open_web.exa`. Restate readiness and `npm run verify:exa` now cover the expanded Exa service set.
 
 ## Recommended Next Iteration
 

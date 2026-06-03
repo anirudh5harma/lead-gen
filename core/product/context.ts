@@ -128,6 +128,8 @@ export async function getWorkspaceAgentContext(
     `- Recent signals: ${signals.rows.length}`,
     `- Recent conversations: ${state.conversations.length}`,
     `- Recent outcomes: ${state.outcomes.length}`,
+    `- Content review items: ${state.content_reviews.length}`,
+    `- AEO review items: ${state.aeo_reviews.length}`,
     `- LLM tokens used in 24h: ${state.llmUsage.used_tokens_24h}/${state.llmUsage.daily_token_cap}`,
     "",
     "## Profile Intelligence",
@@ -180,6 +182,12 @@ export async function getWorkspaceAgentContext(
       ),
     ),
     "",
+    "## Content Review",
+    formatBriefItems(state.content_reviews),
+    "",
+    "## AEO Review",
+    formatBriefItems(state.aeo_reviews),
+    "",
     "## Recent Send Traces",
     listOrEmpty(
       state.sendTraces.slice(0, 8).map(
@@ -226,6 +234,7 @@ function listOrEmpty(items: string[]): string {
 
 type ContextChannelAccount = Awaited<ReturnType<typeof getAppState>>["channelAccounts"][number];
 type ContextProfile = Awaited<ReturnType<typeof getAppState>>["profile"];
+type ContextBriefItem = Awaited<ReturnType<typeof getAppState>>["content_reviews"][number];
 
 export function formatProfileIntelligence(profile: ContextProfile): string {
   if (!profile) return "- none";
@@ -267,6 +276,18 @@ export function formatEmailDeliverability(accounts: readonly ContextChannelAccou
         (account) =>
           `- ${line(account.display_name)} status=${account.status} domain=${account.domain ?? "-"} warmup=${account.warmup_state ?? "-"} cap=${account.daily_used}/${account.current_daily_cap ?? account.daily_cap ?? "-"} bounce24h=${account.bounce_rate_24h ?? "-"}`,
       ),
+  );
+}
+
+function formatBriefItems(items: readonly ContextBriefItem[]): string {
+  return listOrEmpty(
+    items.slice(0, 8).map((item) => {
+      const proof = item.url ? ` proof=${item.url}` : "";
+      const evidence = item.evidence_source_ids?.length
+        ? ` evidence=${item.evidence_source_ids.length}`
+        : "";
+      return `- ${line(item.title)}: ${line(item.detail)}${proof}${evidence}`;
+    }),
   );
 }
 

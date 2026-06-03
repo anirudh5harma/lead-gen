@@ -3,11 +3,15 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
   ExaBudgetExceededError,
+  createExaWebsetWithWorkspaceBudget,
   exaQueryHash,
+  exaWebsetHash,
   getExaContentsWithWorkspaceBudget,
+  listExaWebsetItemsWithWorkspaceBudget,
   searchExaWithWorkspaceCache,
   type ExaContentsResponse,
   type ExaSearchResponse,
+  type ExaWebsetResponse,
 } from "../core/exa/index.ts";
 import type { Pool } from "pg";
 
@@ -28,6 +32,25 @@ test("Exa query hash normalizes whitespace and ordered domain options", () => {
       includeDomains: ["a.example", "b.example"],
       numResults: 8,
       includeText: true,
+    },
+  });
+
+  assert.equal(first, second);
+});
+
+test("Exa Webset hash normalizes metadata ordering", () => {
+  const first = exaWebsetHash({
+    intent: "signal_discovery",
+    webset: {
+      search: { query: "  founder signals  ", count: 25 },
+      metadata: { b: 2, a: 1 },
+    },
+  });
+  const second = exaWebsetHash({
+    intent: "signal_discovery",
+    webset: {
+      search: { query: "founder signals", count: 25 },
+      metadata: { a: 1, b: 2 },
     },
   });
 
@@ -183,6 +206,75 @@ test("Exa contents fetch records usage and defers when contents budget is exhaus
       err.reason === "daily_contents_cap_exhausted",
   );
   assert.deepEqual(exhaustedPool.operations, ["contents_deferred"]);
+});
+
+test("Exa Webset create/list records ledger usage and budget deferrals", async () => {
+  const pool = createMockExaPool();
+  const workspaceId = randomUUID();
+  let createCalls = 0;
+  let listCalls = 0;
+  const client = {
+    async createWebset(): Promise<ExaWebsetResponse> {
+      createCalls += 1;
+      return { id: "webset_1", status: "running", raw: { id: "webset_1" } };
+    },
+    async listWebsetItems(): Promise<Record<string, unknown>> {
+      listCalls += 1;
+      return { items: [{ id: "item_1" }, { id: "item_2" }] };
+    },
+  };
+
+  const created = await createExaWebsetWithWorkspaceBudget({
+    pool,
+    workspace_id: workspaceId,
+    intent: "signal_discovery",
+    client,
+    webset: { search: { query: "AI GTM launch signals", count: 10 } },
+  });
+  const listed = await listExaWebsetItemsWithWorkspaceBudget({
+    pool,
+    workspace_id: workspaceId,
+    intent: "signal_discovery",
+    client,
+    webset_id: created.response.id!,
+  });
+
+  assert.equal(createCalls, 1);
+  assert.equal(listCalls, 1);
+  assert.equal(listed.response.items instanceof Array, true);
+  assert.deepEqual(pool.operations, ["webset_create", "webset_list"]);
+
+  const exhaustedCreatePool = createMockExaPool({
+    budget: { daily_query_cap: "0", queries_24h: "0" },
+  });
+  await assert.rejects(
+    createExaWebsetWithWorkspaceBudget({
+      pool: exhaustedCreatePool,
+      workspace_id: randomUUID(),
+      intent: "signal_discovery",
+      client,
+      webset: { search: { query: "blocked watch", count: 5 } },
+    }),
+    (err) => err instanceof ExaBudgetExceededError &&
+      err.reason === "daily_query_cap_exhausted",
+  );
+  assert.deepEqual(exhaustedCreatePool.operations, ["webset_create_deferred"]);
+
+  const exhaustedListPool = createMockExaPool({
+    budget: { monthly_unit_cap: "0", units_month: "0" },
+  });
+  await assert.rejects(
+    listExaWebsetItemsWithWorkspaceBudget({
+      pool: exhaustedListPool,
+      workspace_id: randomUUID(),
+      intent: "signal_discovery",
+      client,
+      webset_id: "webset_blocked",
+    }),
+    (err) => err instanceof ExaBudgetExceededError &&
+      err.reason === "monthly_unit_cap_exhausted",
+  );
+  assert.deepEqual(exhaustedListPool.operations, ["webset_list_deferred"]);
 });
 
 interface MockExaPool extends Pick<Pool, "query"> {
