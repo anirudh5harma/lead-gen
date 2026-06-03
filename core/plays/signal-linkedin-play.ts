@@ -18,6 +18,7 @@ import type { ResearchBrief, ResearchResult } from "../agents/reps/roles/researc
 import type { RoleAgent, RoleAgentContext } from "../agents/reps/types.ts";
 import type { LinkedInChannel, LinkedInChannelName } from "../channels/linkedin/index.ts";
 import type { VerticalSliceStore } from "./vertical-store.ts";
+import { exaInfluenceFromSignal } from "./exa-influence.ts";
 import {
   isDailyCapExceeded,
   nextDailyWindow,
@@ -97,6 +98,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       const composedRep = composeRep(rep, { researcher, writer, sender });
       const signal = await deps.store.getSignal(input.signal_id);
       if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
+      const exaInfluence = exaInfluenceFromSignal(signal);
       const person = await deps.store.getPerson(input.person_id);
       if (!person) throw new Error(`Person not found: ${input.person_id}`);
       const company = await deps.store.getCompany(input.company_id ?? signal.related_company_id);
@@ -219,6 +221,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
             exemplar_ids: draft.exemplar_ids,
             play_id: input.play_id,
             play_run_id: input.play_run_id,
+            ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
           },
         });
         const row = await deps.store.projectMessageLifecycleEvent(event);
@@ -520,8 +523,12 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
             properties: {
               pattern_key: patternKey,
               exemplar_ids: draft.exemplar_ids,
+              ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
             },
-            provenance: { source: "signal-linkedin-play" },
+            provenance: {
+              source: "signal-linkedin-play",
+              ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
+            },
             occurred_at: new Date().toISOString(),
           });
           return outcomeId;

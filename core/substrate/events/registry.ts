@@ -712,6 +712,10 @@ const ExaQueryCompleted = z.object({
   intent: z.string().min(1),
   request_id: z.string().nullable(),
   result_count: z.number().int().nonnegative(),
+  cache_hit: z.boolean().optional(),
+  cache_hit_count: z.number().int().nonnegative().optional(),
+  query_hashes: z.array(z.string()).optional(),
+  usage_ids: z.array(z.string().uuid()).optional(),
 });
 
 const ExaContentsFetched = z.object({
@@ -719,6 +723,7 @@ const ExaContentsFetched = z.object({
   ids: z.array(z.string()),
   urls: z.array(z.string()),
   result_count: z.number().int().nonnegative(),
+  cache_hit: z.boolean().optional(),
 });
 
 const ExaEvidenceProjected = z.object({
@@ -734,6 +739,8 @@ const RepResearchCompleted = z.object({
   evidence_source_ids: z.array(z.string().uuid()),
   summary: z.string(),
   result_count: z.number().int().nonnegative(),
+  cache_hit: z.boolean().optional(),
+  exa_usage_id: z.string().uuid().nullable().optional(),
 });
 
 const AeoAuditCompleted = RepResearchCompleted;

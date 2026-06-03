@@ -121,6 +121,7 @@ import {
 import {
   createExaClientFromEnv,
   projectExaEvidence,
+  searchExaWithWorkspaceCache,
   summarizeExaEvidence,
   type ExaResult,
 } from "../exa/index.ts";
@@ -1624,6 +1625,9 @@ export async function enrichWorkspaceProfileWithExa(
   const client = createExaClientFromEnv();
   const results: ExaResult[] = [];
   const requestIds: string[] = [];
+  const queryHashes: string[] = [];
+  const usageIds: string[] = [];
+  let cacheHitCount = 0;
   const maxPerQuery = Math.max(2, Math.min(5, Math.trunc(input.max_results ?? 8)));
   const profileQuery = queries.join(" | ");
   await engine.bus.publish({
@@ -1643,22 +1647,33 @@ export async function enrichWorkspaceProfileWithExa(
     },
   });
   for (const query of queries) {
-    const response = await client.search({
-      query,
-      type: "auto",
-      numResults: maxPerQuery,
-      includeText: true,
-      textMaxCharacters: 1600,
-      highlights: true,
-      summary: true,
+    const search = await searchExaWithWorkspaceCache({
+      pool: engine.pool,
+      workspace_id: session.workspace_id,
+      intent: "profile_bootstrap",
+      client,
+      search: {
+        query,
+        type: "auto",
+        numResults: maxPerQuery,
+        includeText: true,
+        textMaxCharacters: 1600,
+        highlights: true,
+        summary: true,
+      },
     });
+    const response = search.response;
     if (response.requestId) requestIds.push(response.requestId);
+    queryHashes.push(search.query_hash);
+    if (search.usage_id) usageIds.push(search.usage_id);
+    if (search.cache_hit) cacheHitCount += 1;
     results.push(...response.results);
     await publishExaContentsFetched(engine, session, {
       entity_id: company_id,
       intent: "profile_bootstrap",
       request_id: response.requestId,
       results: response.results,
+      cache_hit: search.cache_hit,
     });
   }
   const deduped = dedupeExaResults(results).slice(0, Math.max(3, Math.min(18, input.max_results ?? 12)));
@@ -1693,6 +1708,10 @@ export async function enrichWorkspaceProfileWithExa(
       intent: "profile_bootstrap",
       request_id: requestIds[0] ?? null,
       result_count: deduped.length,
+      cache_hit: cacheHitCount === queries.length,
+      cache_hit_count: cacheHitCount,
+      query_hashes: queryHashes,
+      usage_ids: usageIds,
     },
   });
   await engine.bus.publish({
@@ -1723,6 +1742,8 @@ export async function enrichWorkspaceProfileWithExa(
     query_count: queries.length,
     result_count: deduped.length,
     request_ids: requestIds,
+    cache_hit_count: cacheHitCount,
+    exa_usage_ids: usageIds,
   };
   const event = await engine.bus.publish({
     workspace_id: session.workspace_id,
@@ -1870,20 +1891,28 @@ export async function researchWorkspaceWithExa(
       intent,
     },
   });
-  const response = await createExaClientFromEnv().search({
-    query,
-    type: "auto",
-    numResults: Math.max(1, Math.min(25, Math.trunc(input.num_results ?? 8))),
-    includeText: input.include_text ?? true,
-    textMaxCharacters: 1800,
-    highlights: true,
-    summary: true,
+  const search = await searchExaWithWorkspaceCache({
+    pool: engine.pool,
+    workspace_id: session.workspace_id,
+    intent,
+    client: createExaClientFromEnv(),
+    search: {
+      query,
+      type: "auto",
+      numResults: Math.max(1, Math.min(25, Math.trunc(input.num_results ?? 8))),
+      includeText: input.include_text ?? true,
+      textMaxCharacters: 1800,
+      highlights: true,
+      summary: true,
+    },
   });
+  const response = search.response;
   await publishExaContentsFetched(engine, session, {
     entity_id: researchEntityId,
     intent,
     request_id: response.requestId,
     results: response.results,
+    cache_hit: search.cache_hit,
   });
   const projected = await projectExaEvidence(engine.pool, {
     workspace_id: session.workspace_id,
@@ -1911,6 +1940,10 @@ export async function researchWorkspaceWithExa(
       intent,
       request_id: response.requestId,
       result_count: response.results.length,
+      cache_hit: search.cache_hit,
+      cache_hit_count: search.cache_hit ? 1 : 0,
+      query_hashes: [search.query_hash],
+      usage_ids: search.usage_id ? [search.usage_id] : [],
     },
   });
   await engine.bus.publish({
@@ -1954,6 +1987,8 @@ export async function researchWorkspaceWithExa(
       evidence_source_ids: evidenceSourceIds,
       summary,
       result_count: response.results.length,
+      cache_hit: search.cache_hit,
+      exa_usage_id: search.usage_id,
     },
   });
   return {
@@ -1972,6 +2007,7 @@ async function publishExaContentsFetched(
     intent: string;
     request_id: string | null;
     results: readonly ExaResult[];
+    cache_hit?: boolean;
   },
 ): Promise<void> {
   const ids = input.results.flatMap((result) => (result.id ? [result.id] : []));
@@ -1998,6 +2034,7 @@ async function publishExaContentsFetched(
       ids,
       urls,
       result_count: input.results.length,
+      cache_hit: input.cache_hit ?? false,
     },
   });
 }

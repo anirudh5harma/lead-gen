@@ -12,6 +12,7 @@ import {
 } from "../agents/reps/index.ts";
 import type { EmailChannel } from "../channels/email/index.ts";
 import type { VerticalSliceStore } from "./vertical-store.ts";
+import { exaInfluenceFromSignal } from "./exa-influence.ts";
 import {
   isDailyCapExceeded,
   nextDailyWindow,
@@ -87,6 +88,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       if (!rep) throw new Error(`Rep not found: ${input.rep_id}`);
       const signal = await deps.store.getSignal(input.signal_id);
       if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
+      const exaInfluence = exaInfluenceFromSignal(signal);
       const person = await deps.store.getPerson(input.person_id);
       if (!person) throw new Error(`Person not found: ${input.person_id}`);
       const company = await deps.store.getCompany(input.company_id ?? signal.related_company_id);
@@ -197,6 +199,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             exemplar_ids: draft.exemplar_ids,
             play_id: input.play_id,
             play_run_id: input.play_run_id,
+            ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
           },
         });
         const row = await deps.store.projectMessageLifecycleEvent(event);
@@ -493,8 +496,12 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             properties: {
               pattern_key: research.pattern_key,
               exemplar_ids: draft.exemplar_ids,
+              ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
             },
-            provenance: { source: "signal-email-play" },
+            provenance: {
+              source: "signal-email-play",
+              ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
+            },
             occurred_at: new Date().toISOString(),
           });
           return outcomeId;

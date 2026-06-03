@@ -128,7 +128,16 @@ test("signal LinkedIn Play runs research, draft, judge, approval policy, and nat
   const memory = createInMemoryRepMemory();
   const store = createInMemoryVerticalSliceStore({
     reps: [s.rep],
-    signals: [s.signal],
+    signals: [{
+      ...s.signal,
+      source_id: randomUUID(),
+      provenance: {
+        adapter: "exa",
+        provider: "exa",
+        request_id: "req_exa_signal",
+        external_id: s.signal.url,
+      },
+    }],
     persons: [s.person],
     companies: [s.company],
   });
@@ -208,6 +217,17 @@ test("signal LinkedIn Play runs research, draft, judge, approval policy, and nat
   assert.equal(message?.channel, "linkedin_dm");
   assert.equal(message?.eval_passed, true);
   assert.match(message?.provenance.pattern_key as string, /channel:linkedin_dm/);
+  assert.equal((message?.provenance.exa_influence as { provider?: string } | undefined)?.provider, "exa");
+  assert.equal(
+    (message?.provenance.exa_influence as { request_id?: string } | undefined)?.request_id,
+    "req_exa_signal",
+  );
+  const outcome = bus.published.find((event) => event.event_type === "outcome.recorded");
+  assert.equal(
+    (outcome?.payload.properties as { exa_influence?: { provider?: string } } | undefined)
+      ?.exa_influence?.provider,
+    "exa",
+  );
   assert.equal(transport.sent.length, 1);
   assert.equal(transport.sent[0].target_profile_url, s.person.linkedin_url);
   assert.deepEqual(
