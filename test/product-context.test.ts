@@ -13,6 +13,10 @@ test("product context includes Exa-enriched profile intelligence", () => {
     exa_summary: "Acme appears in competitor and category conversations.",
     exa_source_domains: ["g2.com", "producthunt.com"],
     exa_market_terms: ["category", "competitor", "signals"],
+    exa_positioning_notes: ["Acme is discussed as an AI GTM workspace for lean teams."],
+    exa_competitor_mentions: ["Acme GTM alternatives"],
+    exa_audience_terms: ["gtm teams", "sales teams"],
+    exa_proof_points: ["Buyers compare Acme with outbound automation tools."],
     exa_evidence_cards: [{
       title: "Acme GTM alternatives",
       url: "https://g2.com/acme",
@@ -31,6 +35,10 @@ test("product context includes Exa-enriched profile intelligence", () => {
   assert.match(markdown, /Company: Acme GTM/);
   assert.match(markdown, /Public-web summary: Acme appears/);
   assert.match(markdown, /Market terms: category, competitor, signals/);
+  assert.match(markdown, /Positioning: Acme is discussed/);
+  assert.match(markdown, /Audience: gtm teams, sales teams/);
+  assert.match(markdown, /Competitors: Acme GTM alternatives/);
+  assert.match(markdown, /Proof points: Buyers compare Acme/);
   assert.match(markdown, /Source domains: g2.com, producthunt.com/);
   assert.match(markdown, /Evidence: 2 sources, 6 Exa results/);
 });

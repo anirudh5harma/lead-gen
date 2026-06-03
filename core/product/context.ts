@@ -237,6 +237,10 @@ export function formatProfileIntelligence(profile: ContextProfile): string {
     `- Description: ${line(profile.description)}`,
     `- Public-web summary: ${line(profile.exa_summary)}`,
     `- Market terms: ${profile.exa_market_terms.length > 0 ? profile.exa_market_terms.join(", ") : "-"}`,
+    `- Positioning: ${profile.exa_positioning_notes.length > 0 ? profile.exa_positioning_notes.join(" | ") : "-"}`,
+    `- Audience: ${profile.exa_audience_terms.length > 0 ? profile.exa_audience_terms.join(", ") : "-"}`,
+    `- Competitors: ${profile.exa_competitor_mentions.length > 0 ? profile.exa_competitor_mentions.join(" | ") : "-"}`,
+    `- Proof points: ${profile.exa_proof_points.length > 0 ? profile.exa_proof_points.join(" | ") : "-"}`,
     `- Source domains: ${profile.exa_source_domains.length > 0 ? profile.exa_source_domains.join(", ") : "-"}`,
     `- Evidence: ${profile.exa_evidence_source_ids.length} sources, ${profile.exa_result_count} Exa results, enriched=${profile.exa_enriched_at ?? "-"}`,
   ].join("\n");

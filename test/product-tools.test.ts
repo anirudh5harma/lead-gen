@@ -40,6 +40,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.company.profile.configure",
     "product.profile.enrich",
     "product.rep.research",
+    "product.exa.research_workflow.start",
     "product.draft.ground",
     "product.rep.configure",
     "product.icp.configure",
@@ -93,6 +94,19 @@ test("product tools: readiness read requires authenticated user context", async 
     invokeTool("product.readiness.get", {}, { workspace_id: crypto.randomUUID() }),
     /Authenticated user context/,
   );
+});
+
+test("product tools: Exa source discovery returns a source handle", () => {
+  registerProductTools();
+  const tool = listTools().find((registered) => registered.name === "product.signal.discover_open_web");
+  assert.ok(tool, "expected Exa open-web Signal tool");
+
+  const parsed = tool.output.parse({
+    workspace_id: "00000000-0000-4000-8000-000000000001",
+    source_id: "00000000-0000-4000-8000-000000000002",
+  });
+
+  assert.equal(parsed.source_id, "00000000-0000-4000-8000-000000000002");
 });
 
 test("agent-native capability map references registered tools", () => {

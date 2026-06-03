@@ -48,6 +48,17 @@ export function ProfileIntelligence({
           <ProfileMetric label="Results" value={profile.exa_result_count} />
         </div>
       </div>
+      {profile.exa_positioning_notes.length > 0 ||
+      profile.exa_audience_terms.length > 0 ||
+      profile.exa_competitor_mentions.length > 0 ||
+      profile.exa_proof_points.length > 0 ? (
+        <div className="mt-5 grid gap-2 lg:grid-cols-2">
+          <ProfileInsightGroup title="Positioning" items={profile.exa_positioning_notes} />
+          <ProfileInsightGroup title="Audience" items={profile.exa_audience_terms} compact />
+          <ProfileInsightGroup title="Competitors" items={profile.exa_competitor_mentions} />
+          <ProfileInsightGroup title="Proof" items={profile.exa_proof_points} />
+        </div>
+      ) : null}
       {profile.exa_evidence_cards.length > 0 ? (
         <div className="mt-5 grid gap-2 lg:grid-cols-2">
           {profile.exa_evidence_cards.slice(0, 4).map((card) => (
@@ -78,6 +89,32 @@ export function ProfileIntelligence({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function ProfileInsightGroup({
+  title,
+  items,
+  compact = false,
+}: {
+  title: string;
+  items: string[];
+  compact?: boolean;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.42)] p-3">
+      <span className="block text-xs font-medium uppercase tracking-[0.14em] text-[var(--color-text-3)]">{title}</span>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.slice(0, compact ? 6 : 3).map((item) => (
+          compact ? (
+            <span className="profile-chip" key={item}>{item}</span>
+          ) : (
+            <p className="text-xs leading-5 text-[var(--color-text-2)]" key={item}>{item}</p>
+          )
+        ))}
+      </div>
+    </div>
   );
 }
 

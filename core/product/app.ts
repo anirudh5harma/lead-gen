@@ -219,6 +219,7 @@ export interface BootstrapResult {
   rep_id: string;
   play_id: string;
   channel_account_id: string;
+  source_id?: string;
 }
 
 export interface SubmitSignalInput {
@@ -448,6 +449,10 @@ export interface AppState {
     exa_summary: string | null;
     exa_source_domains: string[];
     exa_market_terms: string[];
+    exa_positioning_notes: string[];
+    exa_competitor_mentions: string[];
+    exa_audience_terms: string[];
+    exa_proof_points: string[];
     exa_evidence_cards: Array<{
       title: string;
       url: string;
@@ -1649,6 +1654,12 @@ export async function enrichWorkspaceProfileWithExa(
     });
     if (response.requestId) requestIds.push(response.requestId);
     results.push(...response.results);
+    await publishExaContentsFetched(engine, session, {
+      entity_id: company_id,
+      intent: "profile_bootstrap",
+      request_id: response.requestId,
+      results: response.results,
+    });
   }
   const deduped = dedupeExaResults(results).slice(0, Math.max(3, Math.min(18, input.max_results ?? 12)));
   const projected = await projectExaEvidence(engine.pool, {
@@ -1771,6 +1782,65 @@ export async function startWorkspaceProfileEnrichmentWithExa(
   return { workspace_id: session.workspace_id, workflow_run_id: run.id };
 }
 
+export async function startWorkspaceExaResearchWorkflow(
+  input: ProductExaResearchInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; workflow_run_id: string; workflow_name: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const intent = input.intent ?? "rep_research";
+  const {
+    createExaAeoAuditWorkflow,
+    createExaContentOpportunityWorkflow,
+    createExaDraftGroundingWorkflow,
+    createExaRepResearchWorkflow,
+    EXA_AEO_AUDIT_WORKFLOW,
+    EXA_CONTENT_OPPORTUNITY_WORKFLOW,
+    EXA_DRAFT_GROUNDING_WORKFLOW,
+    EXA_REP_RESEARCH_WORKFLOW,
+  } = await import("../exa/workflows.ts");
+  const workflow =
+    intent === "draft_grounding"
+      ? createExaDraftGroundingWorkflow()
+      : intent === "content_research"
+        ? createExaContentOpportunityWorkflow()
+        : intent === "aeo_audit"
+          ? createExaAeoAuditWorkflow()
+          : createExaRepResearchWorkflow();
+  const workflow_name =
+    intent === "draft_grounding"
+      ? EXA_DRAFT_GROUNDING_WORKFLOW
+      : intent === "content_research"
+        ? EXA_CONTENT_OPPORTUNITY_WORKFLOW
+        : intent === "aeo_audit"
+          ? EXA_AEO_AUDIT_WORKFLOW
+          : EXA_REP_RESEARCH_WORKFLOW;
+  engine.runtime.register(workflow);
+  const workflowInput = {
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+    query: input.query,
+    num_results: input.num_results,
+    include_text: input.include_text,
+  };
+  const entityId = createHash("sha256")
+    .update(`${intent}:${input.query.trim()}`)
+    .digest("hex")
+    .slice(0, 20);
+  const run = await engine.runtime.start({
+    workspace_id: session.workspace_id,
+    workflow_name,
+    idempotency_key: configurationEventKey(
+      workflow_name,
+      session.workspace_id,
+      entityId,
+      workflowInput,
+    ),
+    input: workflowInput,
+  });
+  return { workspace_id: session.workspace_id, workflow_run_id: run.id, workflow_name };
+}
+
 export async function researchWorkspaceWithExa(
   input: ProductExaResearchInput,
   session: ProductWorkspaceSession,
@@ -1808,6 +1878,12 @@ export async function researchWorkspaceWithExa(
     textMaxCharacters: 1800,
     highlights: true,
     summary: true,
+  });
+  await publishExaContentsFetched(engine, session, {
+    entity_id: researchEntityId,
+    intent,
+    request_id: response.requestId,
+    results: response.results,
   });
   const projected = await projectExaEvidence(engine.pool, {
     workspace_id: session.workspace_id,
@@ -1888,11 +1964,49 @@ export async function researchWorkspaceWithExa(
   };
 }
 
+async function publishExaContentsFetched(
+  engine: ProductEngine,
+  session: ProductWorkspaceSession,
+  input: {
+    entity_id: string;
+    intent: string;
+    request_id: string | null;
+    results: readonly ExaResult[];
+  },
+): Promise<void> {
+  const ids = input.results.flatMap((result) => (result.id ? [result.id] : []));
+  const urls = input.results.flatMap((result) => (result.url ? [result.url] : []));
+  if (ids.length === 0 && urls.length === 0) return;
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "exa.contents.fetched",
+    source: "system",
+    producer_ref: `exa:${input.intent}:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "exa.contents.fetched",
+      session.workspace_id,
+      input.entity_id,
+      {
+        intent: input.intent,
+        request_id: input.request_id,
+        ids,
+        urls,
+      },
+    ),
+    payload: {
+      request_id: input.request_id,
+      ids,
+      urls,
+      result_count: input.results.length,
+    },
+  });
+}
+
 export async function configureExaOpenWebSignalSource(
   input: ProductExaSignalDiscoveryInput,
   session: ProductWorkspaceSession,
-): Promise<BootstrapResult> {
-  return configureWorkspaceSignalSource(
+): Promise<BootstrapResult & { source_id: string }> {
+  const result = await configureWorkspaceSignalSource(
     {
       adapter: "exa",
       name: input.source_name?.trim() || "Exa open-web intelligence",
@@ -1908,6 +2022,8 @@ export async function configureExaOpenWebSignalSource(
     },
     session,
   );
+  if (!result.source_id) throw new Error("Exa source configuration did not return a source id.");
+  return { ...result, source_id: result.source_id };
 }
 
 async function projectWorkspaceCompanyProfiled(
@@ -1966,6 +2082,10 @@ async function projectWorkspaceProfileEnriched(
     intelligence?: {
       source_domains?: string[];
       market_terms?: string[];
+      positioning_notes?: string[];
+      competitor_mentions?: string[];
+      audience_terms?: string[];
+      proof_points?: string[];
       evidence_cards?: Array<{
         title?: string;
         url?: string;
@@ -1994,6 +2114,10 @@ async function projectWorkspaceProfileEnriched(
           intelligence: payload.intelligence ?? {
             source_domains: [],
             market_terms: [],
+            positioning_notes: [],
+            competitor_mentions: [],
+            audience_terms: [],
+            proof_points: [],
             evidence_cards: [],
           },
           query_count: payload.query_count,
@@ -2422,6 +2546,10 @@ function dedupeExaResults(results: readonly ExaResult[]): ExaResult[] {
 function buildExaProfileIntelligence(results: readonly ExaResult[]): {
   source_domains: string[];
   market_terms: string[];
+  positioning_notes: string[];
+  competitor_mentions: string[];
+  audience_terms: string[];
+  proof_points: string[];
   evidence_cards: Array<{
     title: string;
     url: string;
@@ -2432,11 +2560,21 @@ function buildExaProfileIntelligence(results: readonly ExaResult[]): {
 } {
   const sourceDomains = new Set<string>();
   const termCounts = new Map<string, number>();
+  const positioningNotes: string[] = [];
+  const competitorMentions: string[] = [];
+  const audienceTerms = new Set<string>();
+  const proofPoints: string[] = [];
   const evidenceCards = results.flatMap((result) => {
     const url = canonicalUrl(result.url);
     for (const term of profileTermsFromResult(result)) {
       termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
     }
+    collectProfileSignals(result, {
+      positioningNotes,
+      competitorMentions,
+      audienceTerms,
+      proofPoints,
+    });
     if (!url) return [];
     const sourceDomain = domainFromWebsiteUrl(url);
     if (sourceDomain) sourceDomains.add(sourceDomain);
@@ -2455,8 +2593,74 @@ function buildExaProfileIntelligence(results: readonly ExaResult[]): {
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([term]) => term)
       .slice(0, 12),
+    positioning_notes: uniqueStrings(positioningNotes).slice(0, 4),
+    competitor_mentions: uniqueStrings(competitorMentions).slice(0, 4),
+    audience_terms: [...audienceTerms].slice(0, 8),
+    proof_points: uniqueStrings(proofPoints).slice(0, 4),
     evidence_cards: evidenceCards,
   };
+}
+
+function collectProfileSignals(
+  result: ExaResult,
+  out: {
+    positioningNotes: string[];
+    competitorMentions: string[];
+    audienceTerms: Set<string>;
+    proofPoints: string[];
+  },
+): void {
+  const title = cleanProfileLine(result.title, 140);
+  const snippet = profileSnippetFromResult(result);
+  const haystack = [result.title, result.summary, result.highlights.join(" "), result.text]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (snippet && out.positioningNotes.length < 6) out.positioningNotes.push(snippet);
+  if (/(alternative|competitor|versus|\bvs\.?\b|compare|comparison)/i.test(haystack)) {
+    const mention = title ?? snippet;
+    if (mention) out.competitorMentions.push(mention);
+  }
+  if (/(customer|case study|testimonial|review|launch|funding|raised|partner|integration)/i.test(haystack)) {
+    const proof = snippet ?? title;
+    if (proof) out.proofPoints.push(proof);
+  }
+  for (const term of profileAudienceTerms(haystack)) {
+    out.audienceTerms.add(term);
+  }
+}
+
+function profileAudienceTerms(text: string): string[] {
+  const terms = [
+    ["founders", /\bfounders?\b/],
+    ["gtm teams", /\bgtm\b|go[-\s]?to[-\s]?market/],
+    ["sales teams", /\bsales\b|sdr|outbound/],
+    ["marketers", /\bmarketing\b|demand generation|content/],
+    ["operators", /\boperators?\b|operations\b|revops/],
+    ["developers", /\bdevelopers?\b|engineering\b|api\b/],
+    ["buyers", /\bbuyers?\b|procurement|evaluation/],
+    ["revenue teams", /\brevenue\b|pipeline|crm/],
+  ] as const;
+  return terms.flatMap(([label, pattern]) => (pattern.test(text) ? [label] : []));
+}
+
+function cleanProfileLine(value: string | null | undefined, max: number): string | null {
+  const cleaned = value?.replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, max) : null;
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const cleaned = cleanProfileLine(value, 220);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(cleaned);
+  }
+  return out;
 }
 
 function profileTermsFromResult(result: ExaResult): string[] {
@@ -3121,7 +3325,7 @@ export async function configureWorkspaceSignalSource(
     payload,
   });
   await projectWorkspaceSourceConfigured(engine.pool, event);
-  return boot;
+  return { ...boot, source_id };
 }
 
 async function projectWorkspaceSourceConfigured(
@@ -5147,6 +5351,10 @@ function productProfileState(row: {
     exa_summary: stringStateValue(exaProfile?.summary),
     exa_source_domains: arrayStringStateValue(intelligence?.source_domains),
     exa_market_terms: arrayStringStateValue(intelligence?.market_terms),
+    exa_positioning_notes: arrayStringStateValue(intelligence?.positioning_notes),
+    exa_competitor_mentions: arrayStringStateValue(intelligence?.competitor_mentions),
+    exa_audience_terms: arrayStringStateValue(intelligence?.audience_terms),
+    exa_proof_points: arrayStringStateValue(intelligence?.proof_points),
     exa_evidence_cards: profileEvidenceCardsStateValue(intelligence?.evidence_cards),
     exa_evidence_source_ids: evidenceIds,
     exa_result_count: numericConfigValue(exaProfile?.result_count) ?? 0,

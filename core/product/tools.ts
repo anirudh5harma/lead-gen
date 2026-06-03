@@ -24,6 +24,7 @@ import {
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
   startSendingDomainOperation,
+  startWorkspaceExaResearchWorkflow,
   submitManualSignal,
   trackCompanyForWorkspace,
   type ProductWorkspaceSession,
@@ -53,6 +54,12 @@ const SignalKindSchema = z.enum([
 ]);
 
 const ApprovalSchema = z.enum(["none", "approve_first", "always", "research_only"]);
+const ExaResearchIntentSchema = z.enum([
+  "rep_research",
+  "draft_grounding",
+  "content_research",
+  "aeo_audit",
+]);
 const LinkedInActionSchema = z.enum([
   "linkedin_connection",
   "linkedin_dm",
@@ -278,6 +285,26 @@ export function registerProductTools(): void {
   });
 
   registerTool({
+    name: "product.exa.research_workflow.start",
+    description:
+      "Start a durable Exa research workflow for Rep research, draft grounding, content opportunities, or AEO audit when asynchronous checkpointed execution is preferred.",
+    kind: "write",
+    input: z.object({
+      query: z.string().min(1),
+      intent: ExaResearchIntentSchema.default("rep_research"),
+      num_results: z.number().int().positive().max(25).optional(),
+      include_text: z.boolean().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      workflow_run_id: z.string(),
+      workflow_name: z.string(),
+    }),
+    async handler(input, ctx) {
+      return startWorkspaceExaResearchWorkflow(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
     name: "product.draft.ground",
     description:
       "Use Exa to gather factual evidence for a draft before writer/judge steps use it.",
@@ -457,6 +484,7 @@ export function registerProductTools(): void {
       rep_id: z.string(),
       play_id: z.string(),
       channel_account_id: z.string(),
+      source_id: z.string().uuid().optional(),
     }),
     async handler(input, ctx) {
       return configureWorkspaceSignalSource(input, sessionFromContext(ctx));
@@ -568,9 +596,7 @@ export function registerProductTools(): void {
       enabled: z.boolean().optional(),
     }),
     output: WorkspaceResultSchema.extend({
-      rep_id: z.string(),
-      play_id: z.string(),
-      channel_account_id: z.string(),
+      source_id: z.string().uuid(),
     }),
     async handler(input, ctx) {
       return configureExaOpenWebSignalSource(input, sessionFromContext(ctx));

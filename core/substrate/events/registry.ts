@@ -97,6 +97,10 @@ const WorkspaceProfileEnriched = z.object({
   intelligence: z.object({
     source_domains: z.array(z.string()),
     market_terms: z.array(z.string()),
+    positioning_notes: z.array(z.string()).optional(),
+    competitor_mentions: z.array(z.string()).optional(),
+    audience_terms: z.array(z.string()).optional(),
+    proof_points: z.array(z.string()).optional(),
     evidence_cards: z.array(z.object({
       title: z.string(),
       url: z.string().url(),
