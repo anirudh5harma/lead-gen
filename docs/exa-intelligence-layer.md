@@ -300,6 +300,48 @@ Do not let route handlers write Exa results directly to profile, signal, or grap
 tables. Routes and UI actions start workflows or call tools; projectors own
 state.
 
+## Current Implementation Status
+
+Implemented and verified:
+
+- Exa client support for Search, Contents, People-style search, company-style
+  search, Websets create/list, and primitive tool registration.
+- Product tools for Profile enrichment, Rep research, durable Exa research
+  starts, draft grounding, content opportunities, AEO audit, and open-web Signal
+  source configuration.
+- Restate workflow services for `profile.bootstrap.exa`, `rep.research.exa`,
+  `draft.grounding.exa`, `content.opportunity.exa`, `aeo.audit.exa`, and
+  `signal.discover.open_web.exa`.
+- Graph evidence projection into `graph_sources` with provider, URL, Exa result
+  id, query, query intent, snippet, request id, and timestamps.
+- Workspace Profile enrichment that stores public-web summary, source domains,
+  market terms, positioning notes, competitor mentions, audience terms, proof
+  points, evidence cards, evidence source ids, and result counts.
+- Query cache in `workspace_exa_query_cache`, content cache in
+  `workspace_exa_content_cache`, and append-only usage ledger in
+  `workspace_exa_usage`.
+- Typed Exa event metadata for cache hits, query hashes, usage ids, content
+  fetches, and evidence projection.
+- Exa-sourced Signal influence on Signal-to-email and Signal-to-LinkedIn draft
+  provenance and simulated Outcome properties/provenance.
+- Production canary: `npm run verify:exa` starts `draft.grounding.exa`,
+  `content.opportunity.exa`, and `aeo.audit.exa`, waits for completion, and
+  verifies evidence sources, typed completion/projection events, query cache,
+  content cache, and usage ledger rows.
+
+Still incomplete:
+
+- `rep.brief.refresh.exa` has not been built as a separate durable wake.
+- `exa.costs.get` is still a recommended primitive, not a registered tool.
+- Monthly Exa spend cap, daily direct Exa query cap, daily contents cap, and
+  per-Play research cap are not yet enforced for direct research/profile calls.
+  Source-based Exa polling does have source-level call/item/budget controls.
+- Content opportunities and AEO audits currently store evidence and emit typed
+  events, but do not yet project rich opportunity/gap nodes or dedicated review
+  surfaces.
+- Draft grounding returns judge/writer-ready proof summaries, but Play writers
+  do not yet automatically call it when existing graph evidence is stale.
+
 ## Cost And Quality Controls
 
 Every Exa workflow must have:
@@ -319,6 +361,17 @@ Default rule:
 ```text
 Search broadly, fetch narrowly, act only after graph projection and eval.
 ```
+
+Current enforcement:
+
+- Implemented: query cache, content cache, usage ledger, source-level kill switch
+  and source-level call/item/spend controls for Exa open-web Signal polling,
+  graph projection, and provenance on stored Exa evidence.
+- Partial: judge/classifier protection exists in the downstream Play/send path,
+  but standalone Exa research events are evidence-gathering steps and do not
+  trigger channel action by themselves.
+- Remaining: workspace monthly spend cap and direct daily/per-Play Exa caps for
+  profile/research/draft/content/AEO workflows.
 
 ## UI Contract
 

@@ -41,6 +41,13 @@ projection, and visible UI feedback where applicable.
 
 ## Guardrails
 
+Production proof for Exa research variants lives in `npm run verify:exa`. The
+canary starts `draft.grounding.exa`, `content.opportunity.exa`, and
+`aeo.audit.exa` through the product workflow entrypoint, waits for Restate
+completion, and verifies graph evidence, typed events, query/content cache, and
+usage ledger rows. Keep it green when changing Exa runtime, cache, event, or
+workflow code.
+
 - Add/update this map in the same PR as any new user-visible action.
 - Add the corresponding tool in `core/product/tools.ts` or a primitive graph/channel
   tool before the UI ships.

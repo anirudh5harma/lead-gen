@@ -399,6 +399,7 @@ export interface ProductExaResearchInput {
     | "aeo_audit";
   num_results?: number;
   include_text?: boolean;
+  idempotency_nonce?: string;
 }
 
 export interface ProductExaResearchResult {
@@ -1843,6 +1844,7 @@ export async function startWorkspaceExaResearchWorkflow(
     query: input.query,
     num_results: input.num_results,
     include_text: input.include_text,
+    idempotency_nonce: input.idempotency_nonce,
   };
   const entityId = createHash("sha256")
     .update(`${intent}:${input.query.trim()}`)
