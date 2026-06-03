@@ -320,6 +320,11 @@ Implemented and verified:
 - Query cache in `workspace_exa_query_cache`, content cache in
   `workspace_exa_content_cache`, and append-only usage ledger in
   `workspace_exa_usage`.
+- Direct Exa search/contents primitive calls are routed through the workspace
+  cache/ledger with daily search, daily contents, monthly unit, and per-Play
+  research gates before live Exa calls.
+- `exa.costs.get` reports configured state, caps, 24-hour/monthly usage,
+  remaining budget, active cache entries, cache hits, and deferred calls.
 - Typed Exa event metadata for cache hits, query hashes, usage ids, content
   fetches, and evidence projection.
 - Exa-sourced Signal influence on Signal-to-email and Signal-to-LinkedIn draft
@@ -332,10 +337,9 @@ Implemented and verified:
 Still incomplete:
 
 - `rep.brief.refresh.exa` has not been built as a separate durable wake.
-- `exa.costs.get` is still a recommended primitive, not a registered tool.
-- Monthly Exa spend cap, daily direct Exa query cap, daily contents cap, and
-  per-Play research cap are not yet enforced for direct research/profile calls.
-  Source-based Exa polling does have source-level call/item/budget controls.
+- Exa Websets create/list remain registered primitive tools but are not yet
+  routed through the workspace cache/ledger. Use them only for constrained
+  operator-approved research until Webset lifecycle accounting is added.
 - Content opportunities and AEO audits currently store evidence and emit typed
   events, but do not yet project rich opportunity/gap nodes or dedicated review
   surfaces.
@@ -366,12 +370,13 @@ Current enforcement:
 
 - Implemented: query cache, content cache, usage ledger, source-level kill switch
   and source-level call/item/spend controls for Exa open-web Signal polling,
-  graph projection, and provenance on stored Exa evidence.
+  direct daily/monthly/per-Play gates for search and contents primitives,
+  `exa.costs.get`, graph projection, and provenance on stored Exa evidence.
 - Partial: judge/classifier protection exists in the downstream Play/send path,
   but standalone Exa research events are evidence-gathering steps and do not
   trigger channel action by themselves.
-- Remaining: workspace monthly spend cap and direct daily/per-Play Exa caps for
-  profile/research/draft/content/AEO workflows.
+- Remaining: Webset lifecycle accounting and richer content/AEO review
+  projections.
 
 ## UI Contract
 

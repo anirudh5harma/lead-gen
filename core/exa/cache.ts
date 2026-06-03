@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import type {
   ExaClient,
+  ExaContentsInput,
+  ExaContentsResponse,
   ExaResult,
   ExaSearchInput,
   ExaSearchResponse,
@@ -14,6 +16,7 @@ export interface ExaCachedSearchInput {
   client: Pick<ExaClient, "search">;
   search: ExaSearchInput;
   ttlMs?: number;
+  play_id?: string | null;
 }
 
 export interface ExaCachedSearchResult {
@@ -21,6 +24,78 @@ export interface ExaCachedSearchResult {
   cache_hit: boolean;
   query_hash: string;
   usage_id: string | null;
+}
+
+export interface ExaBudgetedContentsInput {
+  pool: Pool;
+  workspace_id: string;
+  intent: string;
+  client: Pick<ExaClient, "getContents">;
+  contents: ExaContentsInput;
+  play_id?: string | null;
+}
+
+export interface ExaBudgetedContentsResult {
+  response: ExaContentsResponse;
+  content_hash: string;
+  usage_id: string | null;
+}
+
+export interface ExaBudgetSummary {
+  configured: boolean;
+  caps: {
+    daily_query_cap: number;
+    daily_contents_cap: number;
+    monthly_unit_cap: number;
+    per_play_research_cap: number;
+  };
+  used: {
+    queries_24h: number;
+    contents_24h: number;
+    units_month: number;
+    play_research_24h: number;
+    deferred_24h: number;
+  };
+  remaining: {
+    daily_queries: number;
+    daily_contents: number;
+    monthly_units: number;
+    play_research: number;
+  };
+  cache: {
+    active_query_entries: number;
+    active_content_entries: number;
+    cache_hits_24h: number;
+  };
+}
+
+export class ExaBudgetExceededError extends Error {
+  readonly workspace_id: string;
+  readonly intent: string;
+  readonly reason: string;
+  readonly cap: number;
+  readonly used: number;
+  readonly requested: number;
+
+  constructor(input: {
+    workspace_id: string;
+    intent: string;
+    reason: string;
+    cap: number;
+    used: number;
+    requested: number;
+  }) {
+    super(
+      `Exa ${input.reason} exceeded for ${input.workspace_id}: ${input.used}/${input.cap} used, ${input.requested} requested`,
+    );
+    this.name = "ExaBudgetExceededError";
+    this.workspace_id = input.workspace_id;
+    this.intent = input.intent;
+    this.reason = input.reason;
+    this.cap = input.cap;
+    this.used = input.used;
+    this.requested = input.requested;
+  }
 }
 
 const DEFAULT_QUERY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +111,18 @@ export function exaQueryHash(input: {
       intent: input.intent.trim().toLowerCase(),
       query,
       options: normalizedSearchOptions(input.search),
+    }))
+    .digest("hex");
+}
+
+export function exaContentsHash(input: {
+  intent: string;
+  contents: ExaContentsInput;
+}): string {
+  return createHash("sha256")
+    .update(stableJson({
+      intent: input.intent.trim().toLowerCase(),
+      contents: normalizedContentsOptions(input.contents),
     }))
     .digest("hex");
 }
@@ -74,6 +161,14 @@ export async function searchExaWithWorkspaceCache(
     };
   }
 
+  await assertExaBudgetAvailable(input.pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    requested_results: requestedResultCount(search),
+    play_id: input.play_id ?? null,
+    query_hash: queryHash,
+    query,
+  });
   const response = await input.client.search(search);
   await writeQueryCache(input.pool, {
     workspace_id: input.workspace_id,
@@ -100,6 +195,7 @@ export async function searchExaWithWorkspaceCache(
     properties: {
       query,
       cache_hit: false,
+      play_id: input.play_id ?? null,
     },
   });
   return {
@@ -107,6 +203,169 @@ export async function searchExaWithWorkspaceCache(
     cache_hit: false,
     query_hash: queryHash,
     usage_id: usageId,
+  };
+}
+
+export async function getExaContentsWithWorkspaceBudget(
+  input: ExaBudgetedContentsInput,
+): Promise<ExaBudgetedContentsResult> {
+  const contentHash = exaContentsHash({
+    intent: input.intent,
+    contents: input.contents,
+  });
+  const requested = requestedContentCount(input.contents);
+  if (requested === 0) throw new Error("Exa contents fetch requires ids or urls");
+
+  await assertExaContentsBudgetAvailable(input.pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    requested_results: requested,
+    play_id: input.play_id ?? null,
+    content_hash: contentHash,
+    request: contentRequestLabel(input.contents),
+  });
+
+  const response = await input.client.getContents(input.contents);
+  await writeContentCache(input.pool, {
+    workspace_id: input.workspace_id,
+    request_id: response.requestId,
+    results: response.results,
+  });
+  const usageId = await recordExaUsage(input.pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    operation: "contents",
+    query_hash: contentHash,
+    request_id: response.requestId,
+    result_count: response.results.length,
+    estimated_units: 1,
+    properties: {
+      ids_count: input.contents.ids?.length ?? 0,
+      urls_count: input.contents.urls?.length ?? 0,
+      play_id: input.play_id ?? null,
+    },
+  });
+  return {
+    response,
+    content_hash: contentHash,
+    usage_id: usageId,
+  };
+}
+
+export async function getWorkspaceExaCostSummary(
+  pool: Pool,
+  workspace_id: string,
+  env: Record<string, string | undefined> = process.env,
+  play_id?: string | null,
+): Promise<ExaBudgetSummary> {
+  const { rows } = await pool.query<{
+    daily_query_cap: string | null;
+    daily_contents_cap: string | null;
+    monthly_unit_cap: string | null;
+    per_play_research_cap: string | null;
+    queries_24h: string;
+    contents_24h: string;
+    units_month: string;
+    play_research_24h: string;
+    deferred_24h: string;
+    active_query_entries: string;
+    active_content_entries: string;
+    cache_hits_24h: string;
+  }>(
+    `select
+        coalesce(settings #>> '{exa,daily_query_cap}', settings->>'exa_daily_query_cap') as daily_query_cap,
+        coalesce(settings #>> '{exa,daily_contents_cap}', settings->>'exa_daily_contents_cap') as daily_contents_cap,
+        coalesce(settings #>> '{exa,monthly_unit_cap}', settings->>'exa_monthly_unit_cap') as monthly_unit_cap,
+        coalesce(settings #>> '{exa,per_play_research_cap}', settings->>'exa_per_play_research_cap') as per_play_research_cap,
+        coalesce((
+          select count(*)::text
+            from workspace_exa_usage
+           where workspace_id = workspaces.id
+             and operation = 'search'
+             and created_at >= now() - interval '24 hours'
+        ), '0') as queries_24h,
+        coalesce((
+          select sum(result_count)::text
+            from workspace_exa_usage
+           where workspace_id = workspaces.id
+             and operation in ('search', 'contents')
+             and created_at >= now() - interval '24 hours'
+        ), '0') as contents_24h,
+        coalesce((
+          select sum(estimated_units)::text
+            from workspace_exa_usage
+           where workspace_id = workspaces.id
+             and operation in ('search', 'contents')
+             and created_at >= date_trunc('month', now())
+        ), '0') as units_month,
+        coalesce((
+          select count(*)::text
+            from workspace_exa_usage
+           where workspace_id = workspaces.id
+             and operation = 'search'
+             and properties->>'play_id' = $2
+             and created_at >= now() - interval '24 hours'
+        ), '0') as play_research_24h,
+        coalesce((
+          select count(*)::text
+            from workspace_exa_usage
+           where workspace_id = workspaces.id
+             and operation in ('search_deferred', 'contents_deferred')
+             and created_at >= now() - interval '24 hours'
+        ), '0') as deferred_24h,
+        coalesce((
+          select count(*)::text
+            from workspace_exa_query_cache
+           where workspace_id = workspaces.id
+             and expires_at > now()
+        ), '0') as active_query_entries,
+        coalesce((
+          select count(*)::text
+            from workspace_exa_content_cache
+           where workspace_id = workspaces.id
+             and expires_at > now()
+        ), '0') as active_content_entries,
+        coalesce((
+          select count(*)::text
+            from workspace_exa_usage
+           where workspace_id = workspaces.id
+             and operation = 'search_cache_hit'
+             and created_at >= now() - interval '24 hours'
+        ), '0') as cache_hits_24h
+       from workspaces
+      where id = $1`,
+    [workspace_id, play_id ?? ""],
+  );
+  const row = rows[0];
+  if (!row) throw new Error(`Workspace ${workspace_id} not found for Exa budget summary`);
+  const caps = {
+    daily_query_cap: capValue(row?.daily_query_cap, env.BOMBSELL_EXA_DAILY_QUERY_CAP, 50),
+    daily_contents_cap: capValue(row?.daily_contents_cap, env.BOMBSELL_EXA_DAILY_CONTENTS_CAP, 500),
+    monthly_unit_cap: capValue(row?.monthly_unit_cap, env.BOMBSELL_EXA_MONTHLY_UNIT_CAP, 1000),
+    per_play_research_cap: capValue(row?.per_play_research_cap, env.BOMBSELL_EXA_PLAY_RESEARCH_CAP, 25),
+  };
+  const used = {
+    queries_24h: numberValue(row?.queries_24h),
+    contents_24h: numberValue(row?.contents_24h),
+    units_month: numberValue(row?.units_month),
+    play_research_24h: numberValue(row?.play_research_24h),
+    deferred_24h: numberValue(row?.deferred_24h),
+  };
+  return {
+    configured: Boolean(env.EXA_API_KEY?.trim()),
+    caps,
+    used,
+    remaining: {
+      daily_queries: remaining(caps.daily_query_cap, used.queries_24h),
+      daily_contents: remaining(caps.daily_contents_cap, used.contents_24h),
+      monthly_units: remaining(caps.monthly_unit_cap, used.units_month),
+      play_research: remaining(caps.per_play_research_cap, used.play_research_24h),
+    },
+    cache: {
+      active_query_entries: numberValue(row?.active_query_entries),
+      active_content_entries: numberValue(row?.active_content_entries),
+      cache_hits_24h: numberValue(row?.cache_hits_24h),
+    },
   };
 }
 
@@ -167,6 +426,169 @@ function normalizedSearchOptions(input: ExaSearchInput): Record<string, unknown>
     highlights: input.highlights ?? false,
     summary: normalizeSummaryOption(input.summary),
   };
+}
+
+function normalizedContentsOptions(input: ExaContentsInput): Record<string, unknown> {
+  return {
+    ids: cleanStringArray(input.ids),
+    urls: cleanStringArray(input.urls),
+    includeText: input.includeText ?? false,
+    textMaxCharacters: input.textMaxCharacters ?? null,
+    highlights: input.highlights ?? false,
+    summary: normalizeSummaryOption(input.summary),
+  };
+}
+
+async function assertExaBudgetAvailable(
+  pool: Pool,
+  input: {
+    workspace_id: string;
+    intent: string;
+    requested_results: number;
+    play_id: string | null;
+    query_hash: string;
+    query: string;
+  },
+): Promise<void> {
+  const summary = await getWorkspaceExaCostSummary(pool, input.workspace_id, process.env, input.play_id);
+  const checks = [
+    {
+      reason: "daily_query_cap_exhausted",
+      cap: summary.caps.daily_query_cap,
+      used: summary.used.queries_24h,
+      requested: 1,
+    },
+    {
+      reason: "daily_contents_cap_exhausted",
+      cap: summary.caps.daily_contents_cap,
+      used: summary.used.contents_24h,
+      requested: input.requested_results,
+    },
+    {
+      reason: "monthly_unit_cap_exhausted",
+      cap: summary.caps.monthly_unit_cap,
+      used: summary.used.units_month,
+      requested: 1,
+    },
+    {
+      reason: "per_play_research_cap_exhausted",
+      cap: input.play_id ? summary.caps.per_play_research_cap : Number.MAX_SAFE_INTEGER,
+      used: input.play_id ? summary.used.play_research_24h : 0,
+      requested: 1,
+    },
+  ];
+  const failed = checks.find((check) => check.used + check.requested > check.cap);
+  if (!failed) return;
+  await recordExaUsage(pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    operation: "search_deferred",
+    query_hash: input.query_hash,
+    result_count: 0,
+    estimated_units: 0,
+    properties: {
+      query: input.query,
+      reason: failed.reason,
+      cap: failed.cap,
+      used: failed.used,
+      requested: failed.requested,
+      play_id: input.play_id,
+    },
+  });
+  throw new ExaBudgetExceededError({
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    reason: failed.reason,
+    cap: failed.cap,
+    used: failed.used,
+    requested: failed.requested,
+  });
+}
+
+async function assertExaContentsBudgetAvailable(
+  pool: Pool,
+  input: {
+    workspace_id: string;
+    intent: string;
+    requested_results: number;
+    play_id: string | null;
+    content_hash: string;
+    request: string;
+  },
+): Promise<void> {
+  const summary = await getWorkspaceExaCostSummary(pool, input.workspace_id, process.env, input.play_id);
+  const checks = [
+    {
+      reason: "daily_contents_cap_exhausted",
+      cap: summary.caps.daily_contents_cap,
+      used: summary.used.contents_24h,
+      requested: input.requested_results,
+    },
+    {
+      reason: "monthly_unit_cap_exhausted",
+      cap: summary.caps.monthly_unit_cap,
+      used: summary.used.units_month,
+      requested: 1,
+    },
+  ];
+  const failed = checks.find((check) => check.used + check.requested > check.cap);
+  if (!failed) return;
+  await recordExaUsage(pool, {
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    operation: "contents_deferred",
+    query_hash: input.content_hash,
+    result_count: 0,
+    estimated_units: 0,
+    properties: {
+      request: input.request,
+      reason: failed.reason,
+      cap: failed.cap,
+      used: failed.used,
+      requested: failed.requested,
+      play_id: input.play_id,
+    },
+  });
+  throw new ExaBudgetExceededError({
+    workspace_id: input.workspace_id,
+    intent: input.intent,
+    reason: failed.reason,
+    cap: failed.cap,
+    used: failed.used,
+    requested: failed.requested,
+  });
+}
+
+function requestedResultCount(input: ExaSearchInput): number {
+  const value = input.numResults ?? 10;
+  return Math.max(1, Math.min(100, Math.trunc(value)));
+}
+
+function requestedContentCount(input: ExaContentsInput): number {
+  const count = (input.ids?.length ?? 0) + (input.urls?.length ?? 0);
+  return Math.max(0, Math.min(100, Math.trunc(count)));
+}
+
+function contentRequestLabel(input: ExaContentsInput): string {
+  return stableJson({
+    ids: cleanStringArray(input.ids),
+    urls: cleanStringArray(input.urls),
+  });
+}
+
+function capValue(configured: string | null | undefined, fallback: string | undefined, defaultValue: number): number {
+  const raw = configured ?? fallback;
+  const value = raw == null ? NaN : Number(raw);
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : defaultValue;
+}
+
+function numberValue(value: string | number | null | undefined): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function remaining(cap: number, used: number): number {
+  return Math.max(0, cap - used);
 }
 
 function normalizeSummaryOption(summary: ExaSearchInput["summary"]): unknown {

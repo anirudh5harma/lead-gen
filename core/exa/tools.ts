@@ -1,8 +1,22 @@
 import { z } from "zod";
 import { registerTool } from "../agents/tools/registry.ts";
+import { getPool } from "../substrate/storage/index.ts";
+import {
+  getExaContentsWithWorkspaceBudget,
+  getWorkspaceExaCostSummary,
+  searchExaWithWorkspaceCache,
+} from "./cache.ts";
 import { createExaClientFromEnv } from "./client.ts";
 
 const SearchTypeSchema = z.enum(["auto", "neural", "keyword", "fast"]);
+const ExaIntentSchema = z.enum([
+  "profile_bootstrap",
+  "rep_research",
+  "draft_grounding",
+  "content_research",
+  "aeo_audit",
+  "signal_discovery",
+]);
 
 const ExaResultSchema = z.object({
   id: z.string().nullable(),
@@ -32,12 +46,17 @@ const SearchInputSchema = z.object({
   text_max_characters: z.number().int().positive().optional(),
   highlights: z.boolean().optional(),
   summary: z.boolean().optional(),
+  intent: ExaIntentSchema.optional(),
+  play_id: z.string().min(1).optional(),
 });
 
 const SearchOutputSchema = z.object({
   request_id: z.string().nullable(),
   autoprompt_string: z.string().nullable(),
   results: z.array(ExaResultSchema),
+  cache_hit: z.boolean(),
+  query_hash: z.string(),
+  usage_id: z.string().nullable(),
 });
 
 let registered = false;
@@ -53,25 +72,36 @@ export function registerExaTools(): void {
     kind: "external",
     input: SearchInputSchema,
     output: SearchOutputSchema,
-    async handler(input) {
-      const response = await createExaClientFromEnv().search({
-        query: input.query,
-        type: input.type,
-        category: input.category,
-        numResults: input.num_results,
-        includeDomains: input.include_domains,
-        excludeDomains: input.exclude_domains,
-        startPublishedDate: input.start_published_date,
-        startCrawlDate: input.start_crawl_date,
-        includeText: input.include_text,
-        textMaxCharacters: input.text_max_characters,
-        highlights: input.highlights,
-        summary: input.summary,
+    async handler(input, ctx) {
+      const result = await searchExaWithWorkspaceCache({
+        pool: getPool(),
+        workspace_id: ctx.workspace_id,
+        intent: input.intent ?? "rep_research",
+        client: createExaClientFromEnv(),
+        play_id: input.play_id ?? null,
+        search: {
+          query: input.query,
+          type: input.type,
+          category: input.category,
+          numResults: input.num_results,
+          includeDomains: input.include_domains,
+          excludeDomains: input.exclude_domains,
+          startPublishedDate: input.start_published_date,
+          startCrawlDate: input.start_crawl_date,
+          includeText: input.include_text,
+          textMaxCharacters: input.text_max_characters,
+          highlights: input.highlights,
+          summary: input.summary,
+        },
       });
+      const response = result.response;
       return {
         request_id: response.requestId,
         autoprompt_string: response.autopromptString,
         results: response.results,
+        cache_hit: result.cache_hit,
+        query_hash: result.query_hash,
+        usage_id: result.usage_id,
       };
     },
   });
@@ -88,23 +118,36 @@ export function registerExaTools(): void {
       text_max_characters: z.number().int().positive().optional(),
       highlights: z.boolean().optional(),
       summary: z.boolean().optional(),
+      intent: ExaIntentSchema.optional(),
+      play_id: z.string().min(1).optional(),
     }),
     output: z.object({
       request_id: z.string().nullable(),
       results: z.array(ExaResultSchema),
+      content_hash: z.string(),
+      usage_id: z.string().nullable(),
     }),
-    async handler(input) {
-      const response = await createExaClientFromEnv().getContents({
-        ids: input.ids,
-        urls: input.urls,
-        includeText: input.include_text ?? true,
-        textMaxCharacters: input.text_max_characters,
-        highlights: input.highlights,
-        summary: input.summary,
+    async handler(input, ctx) {
+      const result = await getExaContentsWithWorkspaceBudget({
+        pool: getPool(),
+        workspace_id: ctx.workspace_id,
+        intent: input.intent ?? "rep_research",
+        client: createExaClientFromEnv(),
+        play_id: input.play_id ?? null,
+        contents: {
+          ids: input.ids,
+          urls: input.urls,
+          includeText: input.include_text ?? true,
+          textMaxCharacters: input.text_max_characters,
+          highlights: input.highlights,
+          summary: input.summary,
+        },
       });
       return {
-        request_id: response.requestId,
-        results: response.results,
+        request_id: result.response.requestId,
+        results: result.response.results,
+        content_hash: result.content_hash,
+        usage_id: result.usage_id,
       };
     },
   });
@@ -118,21 +161,32 @@ export function registerExaTools(): void {
       num_results: z.number().int().positive().max(50).optional(),
     }),
     output: SearchOutputSchema,
-    async handler(input) {
-      const response = await createExaClientFromEnv().search({
-        query: input.query,
-        type: input.type ?? "auto",
-        category: input.category ?? "people",
-        numResults: input.num_results ?? 10,
-        includeText: input.include_text,
-        textMaxCharacters: input.text_max_characters,
-        highlights: input.highlights,
-        summary: input.summary,
+    async handler(input, ctx) {
+      const result = await searchExaWithWorkspaceCache({
+        pool: getPool(),
+        workspace_id: ctx.workspace_id,
+        intent: input.intent ?? "rep_research",
+        client: createExaClientFromEnv(),
+        play_id: input.play_id ?? null,
+        search: {
+          query: input.query,
+          type: input.type ?? "auto",
+          category: input.category ?? "people",
+          numResults: input.num_results ?? 10,
+          includeText: input.include_text,
+          textMaxCharacters: input.text_max_characters,
+          highlights: input.highlights,
+          summary: input.summary,
+        },
       });
+      const response = result.response;
       return {
         request_id: response.requestId,
         autoprompt_string: response.autopromptString,
         results: response.results,
+        cache_hit: result.cache_hit,
+        query_hash: result.query_hash,
+        usage_id: result.usage_id,
       };
     },
   });
@@ -146,23 +200,34 @@ export function registerExaTools(): void {
       num_results: z.number().int().positive().max(50).optional(),
     }),
     output: SearchOutputSchema,
-    async handler(input) {
-      const response = await createExaClientFromEnv().search({
-        query: input.query,
-        type: input.type ?? "auto",
-        category: input.category ?? "company",
-        numResults: input.num_results ?? 10,
-        includeDomains: input.include_domains,
-        excludeDomains: input.exclude_domains,
-        includeText: input.include_text,
-        textMaxCharacters: input.text_max_characters,
-        highlights: input.highlights,
-        summary: input.summary,
+    async handler(input, ctx) {
+      const result = await searchExaWithWorkspaceCache({
+        pool: getPool(),
+        workspace_id: ctx.workspace_id,
+        intent: input.intent ?? "rep_research",
+        client: createExaClientFromEnv(),
+        play_id: input.play_id ?? null,
+        search: {
+          query: input.query,
+          type: input.type ?? "auto",
+          category: input.category ?? "company",
+          numResults: input.num_results ?? 10,
+          includeDomains: input.include_domains,
+          excludeDomains: input.exclude_domains,
+          includeText: input.include_text,
+          textMaxCharacters: input.text_max_characters,
+          highlights: input.highlights,
+          summary: input.summary,
+        },
       });
+      const response = result.response;
       return {
         request_id: response.requestId,
         autoprompt_string: response.autopromptString,
         results: response.results,
+        cache_hit: result.cache_hit,
+        query_hash: result.query_hash,
+        usage_id: result.usage_id,
       };
     },
   });
@@ -206,21 +271,40 @@ export function registerExaTools(): void {
   registerTool({
     name: "exa.costs.get",
     description:
-      "Report whether Exa is configured. Workspace-level budget accounting is enforced by product source quotas.",
+      "Report workspace Exa usage, cache activity, direct-call caps, and remaining budget.",
     kind: "read",
-    input: z.object({}),
+    input: z.object({
+      play_id: z.string().min(1).optional(),
+    }),
     output: z.object({
       configured: z.boolean(),
-      env_key: z.literal("EXA_API_KEY"),
-      budget_note: z.string(),
+      caps: z.object({
+        daily_query_cap: z.number(),
+        daily_contents_cap: z.number(),
+        monthly_unit_cap: z.number(),
+        per_play_research_cap: z.number(),
+      }),
+      used: z.object({
+        queries_24h: z.number(),
+        contents_24h: z.number(),
+        units_month: z.number(),
+        play_research_24h: z.number(),
+        deferred_24h: z.number(),
+      }),
+      remaining: z.object({
+        daily_queries: z.number(),
+        daily_contents: z.number(),
+        monthly_units: z.number(),
+        play_research: z.number(),
+      }),
+      cache: z.object({
+        active_query_entries: z.number(),
+        active_content_entries: z.number(),
+        cache_hits_24h: z.number(),
+      }),
     }),
-    async handler() {
-      return {
-        configured: Boolean(process.env.EXA_API_KEY?.trim()),
-        env_key: "EXA_API_KEY" as const,
-        budget_note:
-          "Use product.source.configure quotas for daily calls/items and monthly spend caps.",
-      };
+    async handler(input, ctx) {
+      return getWorkspaceExaCostSummary(getPool(), ctx.workspace_id, process.env, input.play_id ?? null);
     },
   });
 }
