@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatProfileIntelligence } from "../core/product/context.ts";
+import {
+  formatProfileIntelligence,
+  formatRecommendationQuality,
+} from "../core/product/context.ts";
 
 test("product context includes Exa-enriched profile intelligence", () => {
   const markdown = formatProfileIntelligence({
@@ -41,4 +44,32 @@ test("product context includes Exa-enriched profile intelligence", () => {
   assert.match(markdown, /Proof points: Buyers compare Acme/);
   assert.match(markdown, /Source domains: g2.com, producthunt.com/);
   assert.match(markdown, /Evidence: 2 sources, 6 Exa results/);
+});
+
+test("product context summarizes Exa recommendation learning", () => {
+  const markdown = formatRecommendationQuality({
+    total_reviewed: 5,
+    accepted: 3,
+    ignored: 2,
+    acceptance_rate: 0.6,
+    last_reviewed_at: "2026-06-04T10:00:00.000Z",
+    content_opportunity: {
+      total_reviewed: 3,
+      accepted: 2,
+      ignored: 1,
+      acceptance_rate: 0.67,
+      last_reviewed_at: "2026-06-04T10:00:00.000Z",
+    },
+    aeo_gap: {
+      total_reviewed: 2,
+      accepted: 1,
+      ignored: 1,
+      acceptance_rate: 0.5,
+      last_reviewed_at: "2026-06-04T09:00:00.000Z",
+    },
+  });
+
+  assert.match(markdown, /All recommendations: reviewed=5 kept=3 skipped=2 keep_rate=60%/);
+  assert.match(markdown, /Content opportunities: reviewed=3 kept=2 skipped=1 keep_rate=67%/);
+  assert.match(markdown, /AEO gaps: reviewed=2 kept=1 skipped=1 keep_rate=50%/);
 });

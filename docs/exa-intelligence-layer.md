@@ -341,6 +341,11 @@ Implemented and verified:
   `product.recommendation.review` and emits `recommendation.reviewed`, letting
   accepted recommendations remain in prompt context while ignored items leave
   the review queue.
+- The latest `recommendation.reviewed` decisions are projected into lightweight
+  quality metrics: reviewed, kept, skipped, keep rate, and last-reviewed time
+  for all recommendations, Content opportunities, and AEO gaps. The same
+  summary appears in workspace agent context so future Rep and Exa planning can
+  bias toward operator-kept evidence.
 - Signal-to-email and Signal-to-LinkedIn Plays automatically call Exa draft
   grounding when the triggering Signal lacks Exa proof or carries stale proof;
   the grounding summary reaches the writer and hot-path judge, and the draft
@@ -359,8 +364,8 @@ Implemented and verified:
 
 Remaining hardening:
 
-- Add historical quality metrics for opportunity/gap acceptance after users
-  have accepted, edited, or ignored enough recommendations.
+- Promote repeated kept/skipped recommendation patterns into procedural memory
+  once enough feedback exists to avoid overfitting to one-off operator choices.
 
 ## Cost And Quality Controls
 
@@ -392,8 +397,10 @@ Current enforcement:
 - Partial: judge/classifier protection exists in the downstream Play/send path,
   but standalone Exa research events are evidence-gathering steps and do not
   trigger channel action by themselves.
-- Remaining: aggregate outcome-quality metrics for accepted Content/AEO
-  recommendations once enough `recommendation.reviewed` events exist.
+- Implemented: aggregate operator-quality metrics for accepted/ignored
+  Content/AEO recommendations from `recommendation.reviewed`.
+- Remaining: connect accepted recommendation patterns to downstream Outcomes
+  once Content/AEO execution produces attributable result events.
 
 ## UI Contract
 

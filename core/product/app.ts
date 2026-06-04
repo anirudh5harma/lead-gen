@@ -449,6 +449,19 @@ export interface ProductRecommendationReviewResult {
   decision: ProductRecommendationDecision;
 }
 
+export interface ProductRecommendationQualityBucket {
+  total_reviewed: number;
+  accepted: number;
+  ignored: number;
+  acceptance_rate: number | null;
+  last_reviewed_at: string | null;
+}
+
+export interface ProductRecommendationQuality extends ProductRecommendationQualityBucket {
+  content_opportunity: ProductRecommendationQualityBucket;
+  aeo_gap: ProductRecommendationQualityBucket;
+}
+
 export interface ProductExaBriefRefreshResult extends ProductExaResearchResult {
   notes: ProductBriefItem[];
   review_items: ProductBriefItem[];
@@ -630,6 +643,7 @@ export interface AppState {
   } | null;
   content_reviews: ProductBriefItem[];
   aeo_reviews: ProductBriefItem[];
+  recommendation_quality: ProductRecommendationQuality;
 }
 
 interface ProductEngine {
@@ -5519,6 +5533,7 @@ export async function getAppState(
       brief: null,
       content_reviews: [],
       aeo_reviews: [],
+      recommendation_quality: defaultRecommendationQuality(),
       llmUsage: { used_tokens_24h: 0, daily_token_cap: 0 },
       sources: [],
       eventTrace: {
@@ -5908,12 +5923,14 @@ export async function getAppState(
     ),
     pool.query<{
       review_id: string;
+      review_kind: ProductRecommendationKind | string | null;
       decision: ProductRecommendationDecision;
       note: string | null;
       occurred_at: Date;
     }>(
       `select distinct on (payload->>'review_id')
               payload->>'review_id' as review_id,
+              payload->>'review_kind' as review_kind,
               payload->>'decision' as decision,
               payload->>'note' as note,
               occurred_at
@@ -5926,6 +5943,7 @@ export async function getAppState(
     ),
   ]);
   const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
+  const recommendationQuality = productRecommendationQualityState(recommendationFeedback.rows);
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
   const eventTrace = latestWorkflowRunId
     ? await getEventTraceForCorrelation(pool, {
@@ -5976,6 +5994,7 @@ export async function getAppState(
       "aeo.audit.completed",
       recommendationFeedbackById,
     ),
+    recommendation_quality: recommendationQuality,
     sendTraces: sendTraces.rows.map((row) => ({
       message_id: row.message_id,
       status: row.status,
@@ -6144,8 +6163,64 @@ interface ProductRecommendationFeedbackState {
   occurred_at: string;
 }
 
+function defaultRecommendationQuality(): ProductRecommendationQuality {
+  const empty = (): ProductRecommendationQualityBucket => ({
+    total_reviewed: 0,
+    accepted: 0,
+    ignored: 0,
+    acceptance_rate: null,
+    last_reviewed_at: null,
+  });
+  return {
+    ...empty(),
+    content_opportunity: empty(),
+    aeo_gap: empty(),
+  };
+}
+
+function productRecommendationQualityState(rows: Array<{
+  review_kind: ProductRecommendationKind | string | null;
+  decision: ProductRecommendationDecision | string;
+  occurred_at: Date;
+}>): ProductRecommendationQuality {
+  const buckets = defaultRecommendationQuality();
+  for (const row of rows) {
+    if (row.decision !== "accepted" && row.decision !== "ignored") continue;
+    if (row.review_kind !== "content_opportunity" && row.review_kind !== "aeo_gap") continue;
+    applyRecommendationQualityDecision(buckets, row.decision, row.occurred_at);
+    applyRecommendationQualityDecision(buckets[row.review_kind], row.decision, row.occurred_at);
+  }
+  finalizeRecommendationQualityBucket(buckets);
+  finalizeRecommendationQualityBucket(buckets.content_opportunity);
+  finalizeRecommendationQualityBucket(buckets.aeo_gap);
+  return buckets;
+}
+
+function applyRecommendationQualityDecision(
+  bucket: ProductRecommendationQualityBucket,
+  decision: ProductRecommendationDecision,
+  occurred_at: Date,
+): void {
+  bucket.total_reviewed += 1;
+  if (decision === "accepted") bucket.accepted += 1;
+  if (decision === "ignored") bucket.ignored += 1;
+  const reviewedAt = occurred_at.toISOString();
+  if (!bucket.last_reviewed_at || reviewedAt > bucket.last_reviewed_at) {
+    bucket.last_reviewed_at = reviewedAt;
+  }
+}
+
+function finalizeRecommendationQualityBucket(
+  bucket: ProductRecommendationQualityBucket,
+): void {
+  bucket.acceptance_rate = bucket.total_reviewed > 0
+    ? Number((bucket.accepted / bucket.total_reviewed).toFixed(2))
+    : null;
+}
+
 function recommendationFeedbackState(rows: Array<{
   review_id: string;
+  review_kind?: ProductRecommendationKind | string | null;
   decision: ProductRecommendationDecision | string;
   note: string | null;
   occurred_at: Date;

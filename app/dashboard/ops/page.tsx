@@ -78,6 +78,7 @@ export default async function OpsPage() {
     }),
   ]);
   const aeoReviews = state.aeo_reviews;
+  const learning = state.recommendation_quality.aeo_gap;
 
   return (
     <>
@@ -115,11 +116,18 @@ export default async function OpsPage() {
       </section>
 
       <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="brief-note-icon">
-            <Icon name="travel_explore" size={18} />
-          </span>
-          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Visibility gaps</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="brief-note-icon">
+              <Icon name="travel_explore" size={18} />
+            </span>
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Visibility gaps</h2>
+          </div>
+          <ReviewLearningBadge
+            accepted={learning.accepted}
+            ignored={learning.ignored}
+            acceptanceRate={learning.acceptance_rate}
+          />
         </div>
         {aeoReviews.length === 0 ? (
           <EmptyState
@@ -252,6 +260,27 @@ function ReviewActions({ item }: { item: ProductBriefItem }) {
         </button>
       </form>
     </div>
+  );
+}
+
+function ReviewLearningBadge({
+  accepted,
+  ignored,
+  acceptanceRate,
+}: {
+  accepted: number;
+  ignored: number;
+  acceptanceRate: number | null;
+}) {
+  if (accepted + ignored === 0) return null;
+  const rate = acceptanceRate == null ? null : `${Math.round(acceptanceRate * 100)}% kept`;
+  return (
+    <p className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-3)]">
+      <Icon name="auto_awesome" size={14} />
+      <span>{accepted} kept</span>
+      <span>{ignored} skipped</span>
+      {rate ? <span>{rate}</span> : null}
+    </p>
   );
 }
 

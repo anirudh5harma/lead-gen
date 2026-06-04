@@ -51,6 +51,7 @@ export interface WorkspaceAgentContext {
     recent_signals: number;
     recent_conversations: number;
     recent_outcomes: number;
+    reviewed_recommendations: number;
   };
 }
 
@@ -130,6 +131,9 @@ export async function getWorkspaceAgentContext(
     `- Recent outcomes: ${state.outcomes.length}`,
     `- Content review items: ${state.content_reviews.length}`,
     `- AEO review items: ${state.aeo_reviews.length}`,
+    `- Recommendations reviewed: ${state.recommendation_quality.total_reviewed}`,
+    `- Recommendations kept: ${state.recommendation_quality.accepted}`,
+    `- Recommendations skipped: ${state.recommendation_quality.ignored}`,
     `- LLM tokens used in 24h: ${state.llmUsage.used_tokens_24h}/${state.llmUsage.daily_token_cap}`,
     "",
     "## Profile Intelligence",
@@ -188,6 +192,9 @@ export async function getWorkspaceAgentContext(
     "## AEO Review",
     formatBriefItems(state.aeo_reviews),
     "",
+    "## Recommendation Learning",
+    formatRecommendationQuality(state.recommendation_quality),
+    "",
     "## Recent Send Traces",
     listOrEmpty(
       state.sendTraces.slice(0, 8).map(
@@ -224,6 +231,7 @@ export async function getWorkspaceAgentContext(
       recent_signals: signals.rows.length,
       recent_conversations: state.conversations.length,
       recent_outcomes: state.outcomes.length,
+      reviewed_recommendations: state.recommendation_quality.total_reviewed,
     },
   };
 }
@@ -235,6 +243,7 @@ function listOrEmpty(items: string[]): string {
 type ContextChannelAccount = Awaited<ReturnType<typeof getAppState>>["channelAccounts"][number];
 type ContextProfile = Awaited<ReturnType<typeof getAppState>>["profile"];
 type ContextBriefItem = Awaited<ReturnType<typeof getAppState>>["content_reviews"][number];
+type ContextRecommendationQuality = Awaited<ReturnType<typeof getAppState>>["recommendation_quality"];
 
 export function formatProfileIntelligence(profile: ContextProfile): string {
   if (!profile) return "- none";
@@ -253,6 +262,33 @@ export function formatProfileIntelligence(profile: ContextProfile): string {
     `- Source domains: ${profile.exa_source_domains.length > 0 ? profile.exa_source_domains.join(", ") : "-"}`,
     `- Evidence: ${profile.exa_evidence_source_ids.length} sources, ${profile.exa_result_count} Exa results, enriched=${profile.exa_enriched_at ?? "-"}`,
   ].join("\n");
+}
+
+export function formatRecommendationQuality(quality: ContextRecommendationQuality): string {
+  if (quality.total_reviewed === 0) {
+    return "- none";
+  }
+  return [
+    formatRecommendationQualityLine("All recommendations", quality),
+    formatRecommendationQualityLine("Content opportunities", quality.content_opportunity),
+    formatRecommendationQualityLine("AEO gaps", quality.aeo_gap),
+  ].join("\n");
+}
+
+function formatRecommendationQualityLine(
+  label: string,
+  quality: {
+    total_reviewed: number;
+    accepted: number;
+    ignored: number;
+    acceptance_rate: number | null;
+    last_reviewed_at: string | null;
+  },
+): string {
+  const rate = quality.acceptance_rate == null
+    ? "-"
+    : `${Math.round(quality.acceptance_rate * 100)}%`;
+  return `- ${label}: reviewed=${quality.total_reviewed} kept=${quality.accepted} skipped=${quality.ignored} keep_rate=${rate} last=${quality.last_reviewed_at ?? "-"}`;
 }
 
 export function formatChannelReadiness(accounts: readonly ContextChannelAccount[]): string {
