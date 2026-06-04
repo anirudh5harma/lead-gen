@@ -155,7 +155,7 @@ export default async function SetupPage() {
 
       <ProfileIntelligence profile={profile} />
 
-      <SurfaceSection title="Outreach voice and limits">
+      <SurfaceSection title="Guidance and pace">
         <form
           action={configureActivationAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5"
@@ -187,17 +187,17 @@ export default async function SetupPage() {
             />
             <Field
               name="daily_cap"
-              label="Max outreach/day"
+              label="Daily ceiling"
               type="number"
               defaultValue={String(rep?.autonomy.channels?.email?.daily_cap ?? account?.daily_cap ?? 25)}
             />
             <Select
               name="approval"
-              label="Before sending"
+              label="Review mode"
               defaultValue={rep?.autonomy.channels?.email?.approval ?? "approve_first"}
               options={[
-                ["approve_first", "Approve first"],
-                ["none", "Send when ready"],
+                ["approve_first", "Review the first move"],
+                ["none", "Move when ready"],
               ]}
             />
           </div>
@@ -207,7 +207,7 @@ export default async function SetupPage() {
           <input type="hidden" name="rep_name" value={rep?.name ?? "Sampark"} />
           <button className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
             <Icon name="check" size={16} />
-            Save voice
+            Save guidance
           </button>
         </form>
       </SurfaceSection>

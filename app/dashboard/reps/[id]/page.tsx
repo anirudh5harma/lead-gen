@@ -114,7 +114,7 @@ export default async function RepDetailPage({
               {rep.name}
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              {rep.persona.story ?? "Tune this voice, review preference, and recent work."}
+              {rep.persona.story ?? "Give this voice a clear brief, then let outcomes shape the next move."}
             </p>
           </div>
           <div className="section-note">
@@ -132,59 +132,47 @@ export default async function RepDetailPage({
         <section className="section-canvas p-5">
           <div className="mb-4 flex items-center gap-3">
             <span className="brief-note-icon">
-              <Icon name="tune" size={18} />
+              <Icon name="edit_note" size={18} />
             </span>
-            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Voice and review</h2>
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Guidance</h2>
           </div>
           <form action={configureRepAction} className="grid gap-4">
             <input type="hidden" name="rep_id" value={rep.id} />
-            <Field name="rep_name" label="Name" defaultValue={rep.name} />
-            <Select
-              name="rep_role"
-              label="Role"
-              defaultValue={rep.role}
-              options={[
-                ["sdr", "Outreach"],
-                ["content", "Content"],
-                ["campaign", "Campaigns"],
-                ["researcher", "Research"],
-                ["replier", "Replies"],
-                ["custom", "Custom"],
-              ]}
-            />
+            <input type="hidden" name="rep_name" value={rep.name} />
+            <input type="hidden" name="rep_role" value={rep.role} />
             <TextArea
               name="rep_voice"
-              label="Voice"
+              label="How this should sound"
               rows={4}
               defaultValue={rep.persona.voice ?? ""}
             />
             <TextArea
               name="rep_story"
-              label="Story"
+              label="What this voice should protect"
               rows={3}
               defaultValue={rep.persona.story ?? ""}
             />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
                 name="daily_cap"
-                label="Max outreach/day"
+                label="Daily ceiling"
                 defaultValue={String(rep.autonomy.channels?.email?.daily_cap ?? 25)}
                 type="number"
               />
               <Select
                 name="approval"
-                label="Before sending"
+                label="Review mode"
                 defaultValue={rep.autonomy.channels?.email?.approval ?? "approve_first"}
                 options={[
-                  ["approve_first", "Approve first"],
-                  ["always", "Always review"],
-                  ["none", "Send when ready"],
+                  ["approve_first", "Review the first move"],
+                  ["always", "Review every move"],
+                  ["none", "Move when ready"],
                 ]}
               />
             </div>
             <button className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
               <Icon name="check" size={17} />
-              Save voice
+              Save guidance
             </button>
           </form>
         </section>
@@ -194,10 +182,10 @@ export default async function RepDetailPage({
             <span className="brief-note-icon">
               <Icon name={iconFor(rep.name)} size={18} />
             </span>
-            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Recent drafts</h2>
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Recent work</h2>
           </div>
           {messages.length === 0 ? (
-            <EmptyState title="No recent work" hint="Drafts and sends from this voice will appear here." />
+            <EmptyState title="No recent work" hint="Useful moves from this voice will appear here." />
           ) : (
             <div className="grid gap-2">
               {messages.map((message) => (
