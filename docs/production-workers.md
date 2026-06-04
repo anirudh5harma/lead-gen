@@ -63,18 +63,20 @@ forcing request-response mode breaks durable command checkpoints such as
 
 Current production note: ECS Express Gateway accepts the single-port HTTP/1
 health path when the handler keeps Restate bidirectional protocol enabled. ECS
-task definition revision `31` runs image
-`ecs-express-production-20260604-managed-email-6a38a3f-amd64` via
+task definition revision `32` runs image
+`ecs-express-production-20260605-outlook-gate-cdf81d2-amd64` via
 `worker:managed` with `WORKER_TARGET_COMMAND=worker:production`; Restate
 traffic remains on `9080` and the managed wrapper also exposes `9081`. It is
-steady at desired `1`, running `1`, pending `0`. On 2026-06-04, live
+steady at desired `1`, running `1`, pending `0`. On 2026-06-05, live
 `npm run verify:restate` confirmed deployment `dp_16RLtYXG3bAoyujNOKDPH57`
 advertises the full required service set, including the Exa workflows, and
 `npm run verify:restate-runtime` completed
 `system.restate_runtime_probe.v1` with run
-`inv_14lN6T2L7BAb5Zxvgk2CKkZzT2KMfwJOha`. The rev31 deployment also makes the
-Outlook-first/optional-managed-domain email behavior live in the production
-worker. `npm run verify:production-gate` now includes read-only Outlook account
+`inv_14KhxrxkkvX02cbawHGK4cHof7i7Khj5vw`. The rev32 deployment also makes the
+Outlook-first/explicit-managed-domain-opt-in email behavior live in the
+production worker; startup logs show the managed owned-domain transport is
+disabled unless `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1`.
+`npm run verify:production-gate` now includes read-only Outlook account
 readiness and skips the legacy SES probe unless `AWS_SES_REQUIRED=1`. The old App Runner deployment was
 drained by purging completed maintenance-only invocations and then
 force-removing the deployment registration; the unused App Runner service
