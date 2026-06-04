@@ -24,7 +24,7 @@ core/            # The new foundation — see core/README.md
   primitives/    #   Zod schemas for the five primitives
   mcp/           #   Layer 5: MCP server (external agents)
 db/              # Postgres schema and migrations — see db/README.md
-legacy/          # Archived previous implementation. Do not import.
+legacy/          # Archived previous implementation; import quarantine is tested.
 ```
 
 ## Foundation status

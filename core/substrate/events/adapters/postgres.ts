@@ -133,7 +133,7 @@ export async function appendPostgresEvent(
         : `Event append did not return an event row for ${input.event_type}`,
     );
   }
-  return toPublishedPostgresEvent(row, parsed);
+  return toPublishedPostgresEvent(row);
 }
 
 async function selectExistingIdempotentEvent(
@@ -166,10 +166,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function toPublishedPostgresEvent(
-  row: PostgresEventRow,
-  parsed: unknown,
-): PublishedEvent {
+function toPublishedPostgresEvent(row: PostgresEventRow): PublishedEvent {
   return {
     id: row.id,
     workspace_id: row.workspace_id,
@@ -180,7 +177,7 @@ function toPublishedPostgresEvent(
     source: row.source as PublishedEvent["source"],
     producer_ref: row.producer_ref,
     idempotency_key: row.idempotency_key,
-    payload: row.payload as typeof parsed,
+    payload: row.payload,
     occurred_at:
       row.occurred_at instanceof Date
         ? row.occurred_at.toISOString()

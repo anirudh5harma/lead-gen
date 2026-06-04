@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local agent/skill caches are not product source.
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
     // pivot-v2: legacy code is archived for reference, not built.
     "legacy/**",
   ]),
