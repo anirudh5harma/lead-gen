@@ -59,7 +59,7 @@ async function requireOnboardingSession(
 
 export async function createProfileAndAggregatorAction(formData: FormData) {
   await createProfileAndAggregator(formData);
-  redirect("/dashboard/campaigns");
+  redirect(PRODUCT_HOME_PATH);
 }
 
 export async function createProfileAndAggregatorFormAction(
@@ -77,7 +77,7 @@ export async function createProfileAndAggregatorFormAction(
           : "Could not create the workspace. Try again.",
     };
   }
-  redirect("/dashboard/campaigns");
+  redirect(PRODUCT_HOME_PATH);
 }
 
 function isNextRedirectError(error: unknown): boolean {
