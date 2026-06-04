@@ -37,11 +37,20 @@ function healthPayload(extraChecks: Array<{ name: string; status: string; detail
   };
 }
 
+function protectedAuthResponse(path: string): Response | null {
+  if (path === "/api/auth/outlook" || path === "/api/auth/linkedin") {
+    return new Response("authentication required", { status: 401 });
+  }
+  return null;
+}
+
 test("production app smoke passes for a fully ready production app", async () => {
   const result = await runProductionAppSmoke({
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
       if (path === "/api/health") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
@@ -61,6 +70,8 @@ test("production app smoke allows only the known LinkedIn provider readiness gap
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
       if (path === "/api/health") {
         return response(
           healthPayload([
@@ -91,6 +102,8 @@ test("production app smoke fails when dashboard does not go straight to Google O
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
       if (path === "/api/health") return response(healthPayload());
       if (path === "/dashboard") return redirect("/login?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
@@ -110,6 +123,8 @@ test("production app smoke fails on unexpected degraded health checks", async ()
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
       if (path === "/api/health") {
         return response(
           healthPayload([
@@ -139,6 +154,10 @@ test("production app smoke verifies a signed-in completed workspace session", as
       const path = new URL(String(url)).pathname;
       const requestCookie = new Headers(init?.headers).get("cookie");
       const signedIn = requestCookie === cookie;
+      if (!signedIn) {
+        const protectedResponse = protectedAuthResponse(path);
+        if (protectedResponse) return protectedResponse;
+      }
       if (path === "/api/health") return response(healthPayload());
       if (path === "/dashboard") {
         return signedIn
@@ -198,6 +217,8 @@ test("production app smoke fails when a completed session still sees onboarding"
     authCookieHeader: "sb-access-token=fake",
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
       if (path === "/api/health") return response(healthPayload());
       if (path === "/dashboard") return new Response("<main>Brief</main>", { status: 200 });
       if (path === "/onboarding") {
@@ -228,6 +249,8 @@ test("production app smoke can verify MCP readiness discovery with a bearer toke
     fetchImpl: async (url, init) => {
       const path = new URL(String(url)).pathname;
       const authorization = new Headers(init?.headers).get("authorization");
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
       if (path === "/api/health") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
@@ -249,5 +272,55 @@ test("production app smoke can verify MCP readiness discovery with a bearer toke
   assert.equal(
     result.checks.some((check) => check.name === "auth.session/dashboard"),
     false,
+  );
+});
+
+test("production app smoke fails when Outlook OAuth starts without a workspace session", async () => {
+  const result = await runProductionAppSmoke({
+    origin,
+    fetchImpl: async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
+      if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
+      if (path === "/api/auth/outlook") {
+        return redirect("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
+      }
+      if (path === "/api/auth/linkedin") {
+        return new Response("authentication required", { status: 401 });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.checks.find((check) => check.name === "auth.outlook.protected")?.status,
+    "fail",
+  );
+});
+
+test("production app smoke fails when LinkedIn OAuth exposes provider setup before auth", async () => {
+  const result = await runProductionAppSmoke({
+    origin,
+    fetchImpl: async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
+      if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
+      if (path === "/api/auth/outlook") {
+        return new Response("authentication required", { status: 401 });
+      }
+      if (path === "/api/auth/linkedin") {
+        return new Response("LINKEDIN_PROVIDER_AUTH_URL is not set", { status: 500 });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.checks.find((check) => check.name === "auth.linkedin.protected")?.status,
+    "fail",
   );
 });

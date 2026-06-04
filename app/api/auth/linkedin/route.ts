@@ -6,11 +6,11 @@ import { createLinkedInOAuthState } from "./state.ts";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<Response> {
-  const sessionSecret = process.env.SESSION_SECRET;
-  if (!sessionSecret) return new Response("SESSION_SECRET is not set", { status: 500 });
-
   const session = await getActiveWorkspaceSession();
   if (!session) return new Response("authentication required", { status: 401 });
+
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret) return new Response("SESSION_SECRET is not set", { status: 500 });
 
   const providerAuthUrl = resolveLinkedInProviderAuthUrl();
   if (!providerAuthUrl) {

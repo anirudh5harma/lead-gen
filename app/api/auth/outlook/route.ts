@@ -22,6 +22,9 @@ const DEFAULT_SCOPES = [
 ];
 
 export async function GET(req: NextRequest): Promise<Response> {
+  const session = await getActiveWorkspaceSession();
+  if (!session) return new Response("authentication required", { status: 401 });
+
   const clientId = process.env.MICROSOFT_CLIENT_ID;
   if (!clientId) return new Response("MICROSOFT_CLIENT_ID is not set", { status: 500 });
   const redirectUri =
@@ -29,9 +32,6 @@ export async function GET(req: NextRequest): Promise<Response> {
     `${appOrigin(req)}/api/auth/outlook/callback`;
   const sessionSecret = process.env.SESSION_SECRET;
   if (!sessionSecret) return new Response("SESSION_SECRET is not set", { status: 500 });
-
-  const session = await getActiveWorkspaceSession();
-  if (!session) return new Response("authentication required", { status: 401 });
 
   const state = signState(
     {

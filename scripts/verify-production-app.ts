@@ -67,6 +67,8 @@ export async function runProductionAppSmoke(
     fetchImpl,
     checks,
   );
+  await checkProtectedAuthRoute(origin, "/api/auth/outlook", fetchImpl, checks);
+  await checkProtectedAuthRoute(origin, "/api/auth/linkedin", fetchImpl, checks);
   if (authCookieHeader) {
     await checkAuthenticatedPage(
       origin,
@@ -366,6 +368,43 @@ async function checkRedirect(
     status: redirectOk && actualPath === expectedPath ? "ok" : "fail",
     detail: `HTTP ${response.status} -> ${location || "missing location"}`,
   });
+}
+
+async function checkProtectedAuthRoute(
+  origin: string,
+  path: string,
+  fetchImpl: typeof fetch,
+  checks: ProductionAppSmokeCheck[],
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchImpl(`${origin}${path}`, {
+      method: "GET",
+      redirect: "manual",
+      headers: { Accept: "text/plain" },
+    });
+  } catch (err) {
+    checks.push({
+      name: protectedAuthRouteCheckName(path),
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  const location = response.headers.get("location") ?? "";
+  const detail = location
+    ? `HTTP ${response.status} -> ${location}`
+    : `HTTP ${response.status}`;
+  checks.push({
+    name: protectedAuthRouteCheckName(path),
+    status: response.status === 401 ? "ok" : "fail",
+    detail,
+  });
+}
+
+function protectedAuthRouteCheckName(path: string): string {
+  return `auth.${path.replace(/^\/api\/auth\//, "")}.protected`;
 }
 
 function locationToPath(location: string, origin: string): string {
