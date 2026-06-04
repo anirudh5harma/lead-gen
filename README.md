@@ -42,11 +42,11 @@ legacy/          # Archived previous implementation; import quarantine is tested
 | Knowledge graph nodes + edges + registry-first graph Tools | ✅ landed |
 | Concrete memory adapters + outcome feedback bridge    | ✅ landed |
 | LLM client (DeepSeek V4 Pro) + LLM-backed judge       | ✅ landed |
-| Email channel (SES owned-domain + Outlook OAuth)      | ✅ landed |
+| Email channel (Outlook OAuth primary + optional managed domains) | ✅ landed |
 | Transactional email (Resend)                          | ✅ landed |
 | First Rep + Play end-to-end ("Sampark", Series A cold) | ✅ landed |
 | Reply intake + classification → procedural feedback   | ✅ landed |
-| SES SNS signature verification + trusted topic gating | ✅ landed |
+| Optional SES SNS signature verification + trusted topic gating | ✅ landed |
 | Dashboard membership auth + Outlook credential encryption | ✅ landed |
 | Email provider webhooks → typed ingress → projector worker | ✅ landed |
 | OAuth and ingestion writes through typed projections | ✅ landed |
@@ -260,9 +260,9 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
   produced.
 - `OPENAI_API_KEY` — embedding model for signal ingestion (DeepSeek does not
   yet ship embeddings).
-- `AWS_REGION`, `AWS_SNS_TOPIC_ARNS` — owned-domain sending via SES;
-  `AWS_SNS_TOPIC_ARNS` is the comma-separated list of trusted SNS topic ARNs
-  the webhook accepts.
+- `AWS_REGION`, `AWS_SNS_TOPIC_ARNS` — optional managed owned-domain sending
+  via SES; `AWS_SNS_TOPIC_ARNS` is the comma-separated list of trusted SNS topic
+  ARNs the webhook accepts when that path is enabled.
 - `SES_CONFIGURATION_SET` — SES configuration set attached to owned-domain
   outbound sends so delivery, bounce, and complaint events reach SNS. Defaults
   to `bombsell-outbound` in the worker.
@@ -350,6 +350,7 @@ DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-t
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate # registered workflows
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate-runtime # durable checkpoint canary
 npm run verify:restate-ecs-health # ECS service, target health, and recent Restate log scan
+npm run verify:production-gate # classifies ECS wait windows vs SES account-review blockers
 npm run verify:worker-release # static worker/release contract
 APP_ORIGIN=https://app.example.com npm run verify:production-app # public health + auth redirects
 # Optional signed-in checks: add PRODUCTION_APP_COOKIE_HEADER from a completed
@@ -357,6 +358,16 @@ APP_ORIGIN=https://app.example.com npm run verify:production-app # public health
 DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
 AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS config
 ```
+
+Use `npm run verify:production-gate` for release check-ins before deep-diving
+ECS/SES again. It still fails on current ECS/ALB/log failures or broken SES/SNS
+wiring when the optional SES path is configured, but it classifies two recurring
+non-engineering states: recent ECS replacement events in the verifier lookback
+(`wait`) and AWS SES production-access review/sandbox state (`external`). If SES
+topic/domain env is absent, the gate treats SES as intentionally skipped because
+customer-connected Outlook mailboxes are the primary outbound path. Set
+`AWS_SES_REQUIRED=1` to force SES checks, and `PRODUCTION_GATE_STRICT=1` when CI
+should fail on known wait/external states too.
 
 #### 6. Owner surfaces to bookmark
 
@@ -373,8 +384,13 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
   health churn, the target group now uses a 15-second timeout and 5 unhealthy
   checks before replacement. If target/log failures recur, move to a
   protocol-correct host/path or a dedicated health target group; custom-port
-  health checks on generated ECS Express target groups did not stabilize.
+  health checks on generated ECS Express target groups did not stabilize. Use
+  `npm run verify:production-gate` first so stale service-history noise is
+  classified before another ECS debug loop starts.
 - Resolve AWS SES production access before broad owned-domain outbound.
   `go.bombsell.com`, DKIM, SNS feedback, and the app bounce pipeline verify,
-  but the SES account production-access review is currently denied.
+  but the SES account production-access review is currently denied. Use
+  `npm run verify:production-gate` to separate that AWS account blocker from
+  app-side SES/SNS wiring regressions. This does not block the primary
+  customer-connected Outlook outbound path.
 - `npm audit` findings should be resolved before release.

@@ -32,8 +32,6 @@ test("product env: production readiness reports missing required keys", () => {
     "EXA_API_KEY",
     "RESEND_API_KEY",
     "RESEND_WEBHOOK_SECRET",
-    "AWS_REGION",
-    "AWS_SNS_TOPIC_ARNS",
     "MICROSOFT_CLIENT_ID",
     "MICROSOFT_CLIENT_SECRET",
     "MICROSOFT_REDIRECT_URI",

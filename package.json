@@ -28,6 +28,7 @@
     "verify:production-app": "node --experimental-strip-types scripts/verify-production-app.ts",
     "verify:worker-release": "node --experimental-strip-types scripts/verify-worker-release.ts",
     "verify:restate-ecs-health": "node --experimental-strip-types scripts/verify-restate-ecs-health.ts",
+    "verify:production-gate": "node --experimental-strip-types scripts/verify-production-gate.ts",
     "verify:exa": "node --experimental-strip-types scripts/verify-exa-intelligence.ts",
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
     "verify:ses": "node --experimental-strip-types scripts/verify-ses.ts",

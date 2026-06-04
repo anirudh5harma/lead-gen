@@ -2,11 +2,12 @@
  * Email channel — Layer 4.
  *
  * Two sub-channels, two reputation games:
- *   - owned_domain  : AWS SES, workspace-owned domains, warmup state machine
- *   - oauth_outlook : connected user inbox via Microsoft Graph
+ *   - oauth_outlook : primary customer-connected inbox via Microsoft Graph
+ *   - owned_domain  : optional managed customer-owned domains, warmup state machine
  *
- * Gmail is intentionally not supported. Transactional product email lives
- * in `./transactional.ts` and is NOT a Rep-callable channel — separate
+ * Gmail is deferred until the product accepts Google's restricted-scope
+ * verification burden. Transactional product email lives in `./transactional.ts`
+ * and is NOT a Rep-callable channel — separate
  * sender, separate reputation, separate API.
  *
  * See ARCHITECTURE.md "Channels" + db/migrations/011_channel_accounts.sql.

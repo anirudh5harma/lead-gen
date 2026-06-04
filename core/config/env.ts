@@ -42,6 +42,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "AWS_SECRET_ACCESS_KEY", tier: "optional", purpose: "Local AWS credentials" },
   { key: "AWS_SESSION_TOKEN", tier: "optional", purpose: "Temporary AWS credentials" },
   { key: "AWS_SNS_TOPIC_ARNS", tier: "feature", purpose: "Trusted SES SNS ingress topics" },
+  { key: "AWS_SES_REQUIRED", tier: "optional", purpose: "Force optional SES readiness checks in production gate" },
   { key: "SES_SENDING_DOMAIN", tier: "optional", purpose: "SES verification expected sending identity" },
   { key: "SES_CONFIGURATION_SET", tier: "optional", purpose: "SES event publishing configuration set" },
   { key: "SNS_VERIFY_SIGNATURES", tier: "optional", purpose: "Local SNS test override" },
@@ -91,6 +92,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "PRODUCTION_APP_COOKIE_HEADER", tier: "optional", purpose: "Signed-in browser Cookie header for authenticated production app smoke checks" },
   { key: "PRODUCTION_APP_COOKIE", tier: "optional", purpose: "Legacy alias for PRODUCTION_APP_COOKIE_HEADER" },
   { key: "PRODUCTION_APP_BEARER_TOKEN", tier: "optional", purpose: "Supabase access token for authenticated production MCP smoke checks" },
+  { key: "PRODUCTION_GATE_STRICT", tier: "optional", purpose: "Fail production gate on known wait/external states in CI" },
 ] as const;
 
 export const ENVIRONMENT_KEY_NAMES = new Set(ENVIRONMENT_KEYS.map(({ key }) => key));

@@ -12,46 +12,71 @@ import {
   GetEmailIdentityCommand,
   ListEmailIdentitiesCommand,
   SESv2Client,
+  type GetConfigurationSetEventDestinationsCommandOutput,
   type GetAccountCommandOutput,
+  type ListEmailIdentitiesCommandOutput,
 } from "@aws-sdk/client-sesv2";
 import { pathToFileURL } from "node:url";
 
-interface Step {
+export interface AwsSesReadinessStep {
   label: string;
   status: "ok" | "fail";
   detail?: string;
 }
 
-const steps: Step[] = [];
-const note = (label: string, ok: boolean, detail?: string): void => {
+export interface AwsSesReadinessResult {
+  ok: boolean;
+  region: string;
+  configurationSet: string;
+  steps: AwsSesReadinessStep[];
+}
+
+export interface AwsSesReadinessProbeOptions {
+  env?: Record<string, string | undefined>;
+  client?: { send(command: object): Promise<unknown> };
+}
+
+const note = (
+  steps: AwsSesReadinessStep[],
+  label: string,
+  ok: boolean,
+  detail?: string,
+): void => {
   steps.push({ label, status: ok ? "ok" : "fail", detail });
 };
 
-const region = process.env.AWS_REGION?.trim() || "us-east-1";
-const configurationSet = process.env.SES_CONFIGURATION_SET?.trim() || "bombsell-outbound";
-const expectedIdentity = process.env.SES_SENDING_DOMAIN?.trim();
-const trustedTopics = (process.env.AWS_SNS_TOPIC_ARNS ?? "")
-  .split(",")
-  .map((value) => value.trim())
-  .filter(Boolean);
+export async function runAwsSesReadinessProbe(
+  opts: AwsSesReadinessProbeOptions = {},
+): Promise<AwsSesReadinessResult> {
+  const env = opts.env ?? process.env;
+  const region = env.AWS_REGION?.trim() || "us-east-1";
+  const configurationSet = env.SES_CONFIGURATION_SET?.trim() || "bombsell-outbound";
+  const expectedIdentity = env.SES_SENDING_DOMAIN?.trim();
+  const trustedTopics = (env.AWS_SNS_TOPIC_ARNS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const client = opts.client ?? new SESv2Client({ region });
+  const steps: AwsSesReadinessStep[] = [];
 
-const client = new SESv2Client({ region });
-
-async function main(): Promise<void> {
   try {
-    const account = await client.send(new GetAccountCommand({}));
+    const account = await client.send(new GetAccountCommand({})) as GetAccountCommandOutput;
     note(
+      steps,
       "ses: production access enabled",
       account.ProductionAccessEnabled === true,
       describeProductionAccessFailure(account),
     );
     note(
+      steps,
       "ses: sending enabled",
       account.SendingEnabled === true,
       account.SendingEnabled === true ? undefined : "SES sending is disabled",
     );
 
-    const identities = await client.send(new ListEmailIdentitiesCommand({}));
+    const identities = await client.send(
+      new ListEmailIdentitiesCommand({}),
+    ) as ListEmailIdentitiesCommandOutput;
     const identityNames = (identities.EmailIdentities ?? [])
       .map((identity) => identity.IdentityName)
       .filter((name): name is string => Boolean(name));
@@ -72,6 +97,7 @@ async function main(): Promise<void> {
     );
     const verified = verificationResults.filter((identity) => identity.verified);
     note(
+      steps,
       "ses: at least one verified sending identity",
       verified.length > 0,
       verified.length > 0
@@ -95,7 +121,7 @@ async function main(): Promise<void> {
       new GetConfigurationSetEventDestinationsCommand({
         ConfigurationSetName: configurationSet,
       }),
-    );
+    ) as GetConfigurationSetEventDestinationsCommandOutput;
     const snsDestination = (destinations.EventDestinations ?? []).find((destination) => {
       const events = new Set(destination.MatchingEventTypes ?? []);
       const topic = destination.SnsDestination?.TopicArn;
@@ -110,6 +136,7 @@ async function main(): Promise<void> {
     });
 
     note(
+      steps,
       "ses: config set publishes delivery/bounce/complaint to trusted SNS",
       Boolean(snsDestination),
       snsDestination
@@ -117,9 +144,20 @@ async function main(): Promise<void> {
         : `${configurationSet} missing enabled SNS destination for BOUNCE, COMPLAINT, DELIVERY`,
     );
   } catch (err) {
-    note("uncaught", false, err instanceof Error ? err.message : String(err));
+    note(steps, "uncaught", false, err instanceof Error ? err.message : String(err));
   }
 
+  return {
+    ok: steps.every((step) => step.status !== "fail"),
+    region,
+    configurationSet,
+    steps,
+  };
+}
+
+async function main(): Promise<void> {
+  const result = await runAwsSesReadinessProbe();
+  const steps = result.steps;
   const failed = steps.filter((step) => step.status === "fail");
   for (const step of steps) {
     const prefix = step.status === "ok" ? "  ok  " : "  FAIL";

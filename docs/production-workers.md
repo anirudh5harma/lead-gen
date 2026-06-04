@@ -91,6 +91,17 @@ after the wider health window, move the Restate handler behind a
 protocol-correct host/path or a dedicated health target group, not another
 custom-port hot patch on the generated ECS Express target group.
 
+For release/check-in decisions, run `npm run verify:production-gate` before
+deep debugging ECS or SES again. The gate consumes the strict ECS probe and, only
+when SES topic/domain env is configured, the strict SES probe. It fails on
+current service/target/log or provider-wiring regressions and classifies known
+non-engineering blockers separately: stale ECS replacement events inside the
+lookback become `wait`, and SES account production-access review/sandbox state
+becomes `external`. If SES env is absent, the gate treats SES as intentionally
+skipped because customer-connected Outlook mailboxes are the primary outbound
+path. Use `AWS_SES_REQUIRED=1` to force SES checks, and
+`PRODUCTION_GATE_STRICT=1` only when CI should fail even on known wait states.
+
 ## Required Shared Environment
 
 All workers need:

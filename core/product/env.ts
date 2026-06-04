@@ -253,9 +253,9 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
   },
   {
     name: "AWS_REGION",
-    requirement: "production",
+    requirement: "optional",
     category: "channels",
-    description: "AWS region for SES owned-domain sending and SNS verification.",
+    description: "AWS region for the optional SES owned-domain sender and SNS verification path.",
     example: "us-east-1",
   },
   {
@@ -278,9 +278,16 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
   },
   {
     name: "AWS_SNS_TOPIC_ARNS",
-    requirement: "production",
+    requirement: "optional",
     category: "channels",
-    description: "Comma-separated trusted SES SNS topic ARNs accepted by the inbound webhook.",
+    description: "Comma-separated trusted SES SNS topic ARNs accepted by the optional SES inbound webhook.",
+  },
+  {
+    name: "AWS_SES_REQUIRED",
+    requirement: "optional",
+    category: "channels",
+    description: "Verifier-only flag. Set to 1 to force SES checks in the production gate even when SES topic/domain env is absent.",
+    example: "0",
   },
   {
     name: "SES_SENDING_DOMAIN",
@@ -302,6 +309,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "channels",
     description: "Local-only override. Set to 0 to skip SNS signature verification outside production.",
     example: "1",
+  },
+  {
+    name: "PRODUCTION_GATE_STRICT",
+    requirement: "optional",
+    category: "channels",
+    description: "Verifier-only flag. Set to 1 when CI should fail on known ECS wait or SES account-review states.",
+    example: "0",
   },
   {
     name: "MICROSOFT_CLIENT_ID",
