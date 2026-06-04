@@ -55,7 +55,7 @@ legacy/          # Archived previous implementation. Do not import.
 | Vercel-cron deployed control-plane scheduling         | ✅ landed |
 | Microsoft Graph lifecycle-token validation + legacy reconnect | ✅ landed |
 | Dead-letter queue + operator redrive surface          | ✅ landed |
-| Dashboard UI (brief, conversations, approvals, ingestion, deliverability, ops) | ✅ landed |
+| Dashboard UI (Brief, Outreach, Content, Campaigns, AEO, Profile, Review, health, ops) | ✅ landed |
 | Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
 | Restate workflow-handler host process                 | ⏳ deployment work |
 | Auto-trigger of Plays on `signal.matched`             | ✅ landed |
