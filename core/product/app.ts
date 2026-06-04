@@ -780,6 +780,17 @@ export interface AppState {
   recommendation_quality: ProductRecommendationQuality;
 }
 
+export interface ProductReviewPulse {
+  content: {
+    open: number;
+    last_activity_at: Date | null;
+  };
+  aeo: {
+    open: number;
+    last_activity_at: Date | null;
+  };
+}
+
 interface ProductEngine {
   pool: Pool;
   substrateMode: ProductSubstrateMode;
@@ -5772,6 +5783,123 @@ async function waitForApprovalDecision(pool: Pool, approval_id: string): Promise
   }
 }
 
+export async function getProductReviewPulse(
+  pool = getPool(),
+  session: ProductWorkspaceSession,
+): Promise<ProductReviewPulse> {
+  await assertProductWorkspaceAccess(session, pool);
+  const [reviewEvents, recommendationFeedback, recommendationOutcomes] = await Promise.all([
+    pool.query<{
+      event_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      occurred_at: Date;
+      evidence: Array<{
+        id: string;
+        url: string | null;
+        title: string | null;
+        snippet: string | null;
+      }>;
+    }>(
+      `select e.id::text as event_id,
+              e.event_type,
+              e.payload,
+              e.occurred_at,
+              coalesce(
+                jsonb_agg(
+                  distinct jsonb_build_object(
+                    'id', gs.id::text,
+                    'url', gs.config->>'url',
+                    'title', coalesce(gs.properties->>'title', gs.name),
+                    'snippet', gs.properties->>'snippet'
+                  )
+                ) filter (where gs.id is not null),
+                '[]'::jsonb
+              ) as evidence
+         from events e
+         left join lateral jsonb_array_elements_text(
+           coalesce(e.payload->'evidence_source_ids', '[]'::jsonb)
+         ) evidence_ids(id) on true
+         left join graph_sources gs
+           on gs.workspace_id = e.workspace_id
+          and gs.id::text = evidence_ids.id
+        where e.workspace_id = $1
+          and e.event_type in ('content.opportunity.discovered', 'aeo.audit.completed')
+        group by e.id
+        order by e.occurred_at desc
+        limit 100`,
+      [session.workspace_id],
+    ),
+    pool.query<{
+      review_id: string;
+      review_kind: ProductRecommendationKind | string | null;
+      decision: ProductRecommendationDecision;
+      note: string | null;
+      occurred_at: Date;
+    }>(
+      `select distinct on (payload->>'review_id')
+              payload->>'review_id' as review_id,
+              payload->>'review_kind' as review_kind,
+              payload->>'decision' as decision,
+              payload->>'note' as note,
+              occurred_at
+         from events
+        where workspace_id = $1
+          and event_type = 'recommendation.reviewed'
+          and payload->>'review_id' is not null
+        order by payload->>'review_id', occurred_at desc`,
+      [session.workspace_id],
+    ),
+    pool.query<{
+      review_id: string;
+      outcome_id: string;
+      kind: ProductRecommendationOutcomeKind | string;
+      external_ref: string | null;
+      occurred_at: Date;
+    }>(
+      `select distinct on (properties->>'recommendation_review_id')
+              properties->>'recommendation_review_id' as review_id,
+              id::text as outcome_id,
+              kind::text as kind,
+              properties->>'external_ref' as external_ref,
+              occurred_at
+         from outcomes
+        where workspace_id = $1
+          and properties ? 'recommendation_review_id'
+        order by properties->>'recommendation_review_id', occurred_at desc`,
+      [session.workspace_id],
+    ),
+  ]);
+  const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
+  const recommendationOutcomeById = recommendationOutcomeState(recommendationOutcomes.rows);
+  const content = applyRecommendationOutcomeState(
+    productExaReviewState(
+      reviewEvents.rows,
+      "content.opportunity.discovered",
+      recommendationFeedbackById,
+    ),
+    recommendationOutcomeById,
+  );
+  const aeo = applyRecommendationOutcomeState(
+    productExaReviewState(
+      reviewEvents.rows,
+      "aeo.audit.completed",
+      recommendationFeedbackById,
+    ),
+    recommendationOutcomeById,
+  );
+  return {
+    content: {
+      open: content.filter((item) => !item.outcome_id).length,
+      last_activity_at: productBriefItemsLatestActivity(content),
+    },
+    aeo: {
+      open: aeo.filter((item) => !item.outcome_id).length,
+      last_activity_at: productBriefItemsLatestActivity(aeo),
+    },
+  };
+}
+
 export async function getAppState(
   pool = getPool(),
   session?: ProductWorkspaceSession,
@@ -6500,6 +6628,16 @@ function applyRecommendationOutcomeState(
       outcome_external_ref: outcome.external_ref,
     };
   });
+}
+
+function productBriefItemsLatestActivity(items: ProductBriefItem[]): Date | null {
+  const times = items
+    .map((item) => item.outcome_recorded_at ?? item.reviewed_at)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+  if (times.length === 0) return null;
+  return new Date(Math.max(...times));
 }
 
 function defaultRecommendationQuality(): ProductRecommendationQuality {

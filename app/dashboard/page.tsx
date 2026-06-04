@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getAppState, type ProductBriefItem } from "@/core/product/app.ts";
+import { getProductReviewPulse } from "@/core/product/app.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 
@@ -203,23 +203,21 @@ export default async function BriefPage() {
     );
   }
   const pool = getPool();
-  const state = await getAppState(pool, {
-    workspace_id: session.workspace.id,
-    user_id: session.user_id,
-  });
-  const contentAngles = state.content_reviews.filter((r) => !r.outcome_id).length;
-  const aeoGaps = state.aeo_reviews.filter((r) => !r.outcome_id).length;
-  const [running, outcomes, pulse] = await Promise.all([
+  const [reviewPulse, running, outcomes] = await Promise.all([
+    getProductReviewPulse(pool, {
+      workspace_id: session.workspace.id,
+      user_id: session.user_id,
+    }),
     loadRunning(session.workspace.id),
     loadOutcomes(session.workspace.id),
-    loadRepPulse(
-      session.workspace.id,
-      contentAngles,
-      latestReviewDate(state.content_reviews),
-      aeoGaps,
-      latestReviewDate(state.aeo_reviews),
-    ),
   ]);
+  const pulse = await loadRepPulse(
+    session.workspace.id,
+    reviewPulse.content.open,
+    reviewPulse.content.last_activity_at,
+    reviewPulse.aeo.open,
+    reviewPulse.aeo.last_activity_at,
+  );
   return (
     <BriefView
       workspaceName={session.workspace.name}
@@ -369,16 +367,6 @@ function BriefView({
       </section>
     </div>
   );
-}
-
-function latestReviewDate(items: ProductBriefItem[]): Date | null {
-  const times = items
-    .map((item) => item.outcome_recorded_at ?? item.reviewed_at)
-    .filter((value): value is string => Boolean(value))
-    .map((value) => new Date(value).getTime())
-    .filter(Number.isFinite);
-  if (times.length === 0) return null;
-  return new Date(Math.max(...times));
 }
 
 function latestPulseDate(pulse: RepPulse): Date | null {
