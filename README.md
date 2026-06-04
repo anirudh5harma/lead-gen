@@ -349,6 +349,7 @@ DATABASE_URL=... npm run verify:recovery   # dispatch DLQ schema + redrive flip
 DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-trip
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate # registered workflows
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate-runtime # durable checkpoint canary
+npm run verify:restate-ecs-health # ECS service, target health, and recent Restate log scan
 npm run verify:worker-release # static worker/release contract
 APP_ORIGIN=https://app.example.com npm run verify:production-app # public health + auth redirects
 # Optional signed-in checks: add PRODUCTION_APP_COOKIE_HEADER from a completed
@@ -367,10 +368,11 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
 
 #### Known follow-ups (do not block launch)
 
-- Monitor ECS target health for the Restate handler. Live Restate registration
-  and runtime canary pass; after observed long-poll health churn, the target
-  group now uses a 15-second timeout and 5 unhealthy checks before replacement.
-  If timeouts recur, split health off the Restate traffic port.
+- Keep `npm run verify:restate-ecs-health` green for the Restate handler.
+  Live Restate registration and runtime canary pass; after observed long-poll
+  health churn, the target group now uses a 15-second timeout and 5 unhealthy
+  checks before replacement. If target/log failures recur, split health off
+  the Restate traffic port.
 - Resolve AWS SES production access before broad owned-domain outbound.
   `go.bombsell.com`, DKIM, SNS feedback, and the app bounce pipeline verify,
   but the SES account production-access review is currently denied.

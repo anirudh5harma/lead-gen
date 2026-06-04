@@ -77,10 +77,12 @@ ECS health replacement. Recent service history showed periodic `/health`
 timeouts and task replacements on port `9080` while long
 `ingest_workspace_poll` runs were active, so the target group was tuned on
 2026-06-04 from a 5-second timeout / 2 unhealthy threshold to a 15-second
-timeout / 5 unhealthy threshold. Keep monitoring the HTTP/1 path; if timeouts
-recur after the wider health window, move the Restate handler behind a
-protocol-correct host/path or split health checks onto a separate port through
-`worker:managed`.
+timeout / 5 unhealthy threshold. Keep `npm run verify:restate-ecs-health`
+green before raising autonomous ingestion volume; it checks ECS service
+steadiness, ALB target health, recent ECS service events, and recent CloudWatch
+Restate stream/health errors. If timeouts recur after the wider health window,
+move the Restate handler behind a protocol-correct host/path or split health
+checks onto a separate port through `worker:managed`.
 
 ## Required Shared Environment
 
