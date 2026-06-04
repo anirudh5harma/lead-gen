@@ -352,8 +352,8 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
 
 #### 6. Operator surfaces to bookmark
 
-- `/dashboard/ingestion` — per-source poll status, budget burn, recent
-  signals.
+- `/dashboard/campaigns` — qualified signals, campaign ideas, and recent
+  outcomes.
 - `/dashboard/deliverability` — sending-domain warmup, bounce + complaint
   rates, channel-account health.
 - `/dashboard/ops` — pending / delivered / dead-lettered NATS dispatches

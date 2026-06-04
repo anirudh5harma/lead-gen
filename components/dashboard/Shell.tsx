@@ -21,7 +21,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard", label: "Brief" },
   { href: "/dashboard/conversations", label: "Outreach" },
   { href: "/dashboard/content", label: "Content" },
-  { href: "/dashboard/ingestion", label: "Campaigns" },
+  { href: "/dashboard/campaigns", label: "Campaigns" },
   { href: "/dashboard/aeo", label: "AEO" },
   { href: "/dashboard/setup", label: "Profile" },
 ];

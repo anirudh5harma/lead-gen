@@ -171,7 +171,7 @@ const REP_TILES: Array<{
     key: "prayog_runs",
     name: "Prayog",
     role: "Campaigns",
-    href: "/dashboard/ingestion",
+    href: "/dashboard/campaigns",
     icon: "science",
     unit: (n) => `${n} ${n === 1 ? "campaign idea" : "campaign ideas"} today`,
   },

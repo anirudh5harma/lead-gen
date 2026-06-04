@@ -36,7 +36,7 @@ test("postAuthDestination keeps completed users out of onboarding", () => {
 
 test("postAuthDestination sends new users to onboarding before app surfaces", () => {
   assert.equal(postAuthDestination("/dashboard", false), "/onboarding");
-  assert.equal(postAuthDestination("/dashboard/ingestion", false), "/onboarding");
+  assert.equal(postAuthDestination("/dashboard/campaigns", false), "/onboarding");
   assert.equal(postAuthDestination("/brief", false), "/onboarding");
   assert.equal(
     postAuthDestination("/onboarding?url=https%3A%2F%2Facme.com", false),

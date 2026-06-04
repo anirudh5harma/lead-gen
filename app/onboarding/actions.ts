@@ -59,7 +59,7 @@ async function requireOnboardingSession(
 
 export async function createProfileAndAggregatorAction(formData: FormData) {
   await createProfileAndAggregator(formData);
-  redirect("/dashboard/ingestion");
+  redirect("/dashboard/campaigns");
 }
 
 export async function createProfileAndAggregatorFormAction(
@@ -77,7 +77,7 @@ export async function createProfileAndAggregatorFormAction(
           : "Could not create the workspace. Try again.",
     };
   }
-  redirect("/dashboard/ingestion");
+  redirect("/dashboard/campaigns");
 }
 
 function isNextRedirectError(error: unknown): boolean {
@@ -210,5 +210,5 @@ async function createProfileAndAggregator(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/setup");
-  revalidatePath("/dashboard/ingestion");
+  revalidatePath("/dashboard/campaigns");
 }

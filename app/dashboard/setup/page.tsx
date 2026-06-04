@@ -339,7 +339,7 @@ const REP_META: Record<
   Prayog: {
     role: "Campaigns",
     surface: "Finds campaign ideas",
-    href: "/dashboard/ingestion",
+    href: "/dashboard/campaigns",
     icon: "science",
   },
   Bodh: {

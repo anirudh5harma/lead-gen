@@ -241,7 +241,7 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard/content");
   revalidatePath("/dashboard/plays");
   revalidatePath("/dashboard/aeo");
-  revalidatePath("/dashboard/ingestion");
+  revalidatePath("/dashboard/campaigns");
   revalidatePath("/dashboard/approvals");
   revalidatePath("/dashboard/conversations");
   revalidatePath("/dashboard/deliverability");

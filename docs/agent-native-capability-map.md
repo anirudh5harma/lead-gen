@@ -18,16 +18,16 @@ projection, and visible UI feedback where applicable.
 | Run Rep public-web research | MCP/internal Rep execution | `product.rep.research` | `rep.research.exa`: Exa Search/Contents -> graph evidence sources -> `rep.research.completed` | Ready |
 | Start durable Exa research | MCP/internal Rep execution | `product.exa.research_workflow.start` | Starts one of `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, or `aeo.audit.exa` with a Restate/Postgres workflow runtime | Ready |
 | Configure Rep | `/dashboard/setup` | `product.rep.configure` | `rep.configured` -> Rep projection | Ready |
-| Configure ICP | `/dashboard/setup`, `/dashboard/ingestion` | `product.icp.configure` | `workspace.icp.configured` -> ICP projection | Ready |
+| Configure ICP | `/dashboard/setup`, `/dashboard/campaigns` | `product.icp.configure` | `workspace.icp.configured` -> ICP projection | Ready |
 | Configure Signal email Play | `/dashboard/setup` | `product.play.signal_email.configure` | `play.configured` -> Play projection | Ready |
 | Configure Signal LinkedIn Play | MCP/internal Rep execution | `product.play.signal_linkedin.configure` | `play.configured` -> durable Signal-to-LinkedIn workflow with hot-path judge and native channel send/defer | Ready |
 | Configure email account | `/dashboard/setup`, `/brief` | `product.email_account.configure` | `channel.account.configured` -> channel projection | Ready |
 | Connect LinkedIn account | `/dashboard/setup` | `product.linkedin_account.connect_url.get` | Provider auth URL -> `linkedin.account.authorization.received` -> channel account projection -> `channel.account.connected` | Ready |
-| Track company | `/dashboard/ingestion` | `product.company.track` | `workspace.company.tracked` -> graph/source projection | Ready |
-| Configure signal source | `/dashboard/ingestion`, `/brief` | `product.source.configure` | `workspace.source.configured` -> source config; push sources do not enter poll maintenance | Ready |
-| Configure Exa open-web Signals | `/dashboard/ingestion`, MCP/internal Rep execution | `product.signal.discover_open_web` | `signal.discover.open_web.exa` configures adapter `exa` -> durable workspace poll -> `signal.discovered` | Ready |
+| Track company | `/dashboard/campaigns` | `product.company.track` | `workspace.company.tracked` -> graph/source projection | Ready |
+| Configure signal source | `/dashboard/campaigns`, `/brief` | `product.source.configure` | `workspace.source.configured` -> source config; push sources do not enter poll maintenance | Ready |
+| Configure Exa open-web Signals | `/dashboard/campaigns`, MCP/internal Rep execution | `product.signal.discover_open_web` | `signal.discover.open_web.exa` configures adapter `exa` -> durable workspace poll -> `signal.discovered` | Ready |
 | Configure default aggregator | `/onboarding` | `product.sources.default_aggregator.configure` | Emits source configuration events per adapter | Ready |
-| Run signal aggregator | `/dashboard/ingestion`, `/brief` | `product.sources.aggregate.run` | Starts `ingest_workspace_poll` workflow | Ready |
+| Run signal aggregator | `/dashboard/campaigns`, `/brief` | `product.sources.aggregate.run` | Starts `ingest_workspace_poll` workflow | Ready |
 | Push source-backed Signal | `/api/webhooks/signals`, external source, agent tool | `product.signal.discover` | Authenticated webhook/tool emits `signal.discovered`; projector materializes `Signal` and emits `signal.ingested` | Ready |
 | Submit manual signal | `/dashboard`, `/brief` | `product.signal.submit` | Manual Signal ingestion event path | Ready |
 | Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email/LinkedIn Play workflows; weak or stale evidence triggers Exa draft grounding before writer/judge | Ready |
