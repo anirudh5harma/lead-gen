@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   moduleForTarget,
   resolveWorkerHealthPort,
@@ -37,3 +38,22 @@ test("managed worker config rejects health port collisions for Restate-capable w
     9090,
   );
 });
+
+test(".env.example keeps Restate-capable managed workers on the safe health default", () => {
+  const env = parseExampleEnv();
+  assert.equal(env.RESTATE_WORKFLOW_PORT, "9080");
+  assert.equal(env.WORKER_HEALTH_PORT, "");
+  assert.equal(resolveWorkerHealthPort("worker:production", env), 9081);
+});
+
+function parseExampleEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const rawLine of readFileSync(new URL("../.env.example", import.meta.url), "utf8").split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const separator = line.indexOf("=");
+    if (separator < 0) continue;
+    env[line.slice(0, separator)] = line.slice(separator + 1);
+  }
+  return env;
+}

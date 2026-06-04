@@ -474,8 +474,9 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "WORKER_HEALTH_PORT",
     requirement: "optional",
     category: "runtime",
-    description: "HTTP health port exposed by managed background workers.",
-    example: "9080",
+    description:
+      "HTTP health port exposed by managed background workers. Leave unset to use the managed-worker default; Restate-capable targets default to 9081 so health does not collide with RESTATE_WORKFLOW_PORT.",
+    example: "9081",
   },
   {
     name: "ACTIVATION_VERIFY_AGGREGATOR_LIMIT",
