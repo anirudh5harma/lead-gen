@@ -32,14 +32,14 @@ legacy/          # Archived previous implementation. Do not import.
 | Area                                                  | State     |
 |-------------------------------------------------------|-----------|
 | Directory structure                                   | ✅ landed |
-| Database schema (23 migrations) + migration runner    | ✅ landed |
+| Database schema (35 migrations) + migration runner    | ✅ landed |
 | Five primitives (Zod)                                 | ✅ landed |
 | Event bus (in-memory + Postgres + NATS JetStream)     | ✅ landed |
 | Durable workflow runtime (in-process + Postgres + Restate ingress client) | ✅ landed |
 | Storage layer (pg pool + workspace-scoped sessions)   | ✅ landed |
 | Agent fabric (tools, memory, eval, reps)              | ✅ landed |
 | MCP envelope                                          | ✅ landed |
-| Knowledge graph nodes + edges + first 13 Tools        | ✅ landed |
+| Knowledge graph nodes + edges + registry-first graph Tools | ✅ landed |
 | Concrete memory adapters + outcome feedback bridge    | ✅ landed |
 | LLM client (DeepSeek V4 Pro) + LLM-backed judge       | ✅ landed |
 | Email channel (SES owned-domain + Outlook OAuth)      | ✅ landed |
@@ -52,15 +52,17 @@ legacy/          # Archived previous implementation. Do not import.
 | OAuth and ingestion writes through typed projections | ✅ landed |
 | Catalog fanout via `signal.discovered` + projector    | ✅ landed |
 | TTL / upstream expiry via `signal.expiry.requested`   | ✅ landed |
-| Vercel-cron deployed control-plane scheduling         | ✅ landed |
+| Control-plane maintenance wake (scheduler → Restate)  | ✅ landed |
 | Microsoft Graph lifecycle-token validation + legacy reconnect | ✅ landed |
 | Dead-letter queue + owner recovery surface            | ✅ landed |
 | Dashboard UI (Brief, Outreach, Content, Campaigns, AEO, Profile, Review, Health) | ✅ landed |
 | Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
-| Restate workflow-handler host process                 | ⏳ deployment work |
+| Restate workflow-handler host process + release gate  | ✅ landed |
 | Auto-trigger of Plays on `signal.matched`             | ✅ landed |
-| LinkedIn / X / voice channels                         | ⏳ later  |
-| Second Play + NL → spec compiler                      | ⏳ later  |
+| LinkedIn channel path                                 | ⏳ provider rollout |
+| X / voice channels                                    | ⏳ later  |
+| Multiple durable Plays                                | ✅ landed |
+| NL → Play spec compiler                               | ⏳ later  |
 
 ## Local development
 
@@ -346,6 +348,9 @@ Run all three against the deployed environment:
 DATABASE_URL=... npm run verify:recovery   # dispatch DLQ schema + redrive flip
 DATABASE_URL=... NATS_URL=... npm run verify:nats   # publish + delivery round-trip
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate # registered workflows
+RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate-runtime # durable checkpoint canary
+npm run verify:worker-release # static worker/release contract
+APP_ORIGIN=https://app.example.com npm run verify:production-app # public health + auth redirects
 DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
 AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS config
 ```
@@ -360,6 +365,6 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
 
 #### Known follow-ups (do not block launch)
 
-- Deploy and register the `worker:restate-workflows` handler host outside
-  Vercel, then verify Restate lists the workflow services.
+- Redeploy/register the latest Exa-expanded Restate handler host, then verify
+  Restate lists every required workflow service and the runtime canary passes.
 - `npm audit` findings should be resolved before release.
