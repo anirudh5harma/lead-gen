@@ -242,7 +242,7 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard/plays");
   revalidatePath("/dashboard/aeo");
   revalidatePath("/dashboard/campaigns");
-  revalidatePath("/dashboard/approvals");
+  revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/conversations");
   revalidatePath("/dashboard/deliverability");
   revalidatePath("/dashboard/ops");

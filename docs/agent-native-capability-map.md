@@ -36,7 +36,7 @@ projection, and visible UI feedback where applicable.
 | Audit AEO coverage | `/dashboard/aeo`, MCP/internal Rep execution | `product.aeo.audit` | `aeo.audit.exa`: Exa Search/Contents -> graph evidence sources -> `aeo.audit.completed` with structured gaps/review items | Ready |
 | Review Exa recommendation | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.review` | Emits `recommendation.reviewed`; ignored items leave the review canvas, accepted items stay in context as kept operator signal | Ready |
 | Record recommendation Outcome | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.outcome.record` | Emits `outcome.recorded` for accepted Content/AEO recommendations with recommendation, pattern, and exemplar attribution so existing Outcome -> procedural memory learning applies | Ready |
-| Approve/reject draft | `/dashboard/approvals` | `product.approval.decide` | Resolves workflow approval gate | Ready |
+| Approve/reject draft | `/dashboard/review` | `product.approval.decide` | Resolves workflow approval gate | Ready |
 | Retry failed workflow | `/dashboard/ops`, MCP/internal Rep execution | `product.workflow.retry` | Durable workflow retry/resume | Ready |
 | Inspect/redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |
 | Provision/verify/refresh sending domain | `/dashboard/deliverability`, MCP/internal Rep execution | `product.sending_domain.operate` | Starts sending-domain workflow | Ready |
