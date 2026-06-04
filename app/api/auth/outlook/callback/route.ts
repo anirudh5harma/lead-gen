@@ -4,6 +4,7 @@ import { encryptCredentials } from "@/core/substrate/auth/index.ts";
 import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { verifyState } from "../route.ts";
+import { outlookConnectedRedirectPath } from "../destination.ts";
 import { getRequestUserId } from "@/lib/auth";
 import { hasWorkspaceAccess } from "@/lib/workspace";
 
@@ -15,10 +16,9 @@ import { hasWorkspaceAccess } from "@/lib/workspace";
  *
  *   GET /api/auth/outlook/callback?code=<x>&state=<signed>
  *
- * On success, redirects to /onboarding/outlook?status=connected with the
- * channel_account_id. Production should redirect to the in-app
- * integrations view; for foundation the path is a placeholder the UI
- * shell will hook up.
+ * On success, redirects to the in-app Deliverability surface with the
+ * channel_account_id so the user lands on an existing channel-health view while
+ * the durable subscription repair workflow finishes.
  */
 
 export const dynamic = "force-dynamic";
@@ -146,10 +146,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     await bus.close();
   }
 
-  const dest = new URL(
-    `/onboarding/outlook?status=connecting&channel_account_id=${channelAccountId}`,
-    appOrigin(req),
-  );
+  const dest = new URL(outlookConnectedRedirectPath(channelAccountId), appOrigin(req));
   return Response.redirect(dest.toString(), 302);
 }
 
