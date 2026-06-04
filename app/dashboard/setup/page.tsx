@@ -140,15 +140,6 @@ export default async function SetupPage() {
               <Icon name="check" size={16} />
               Save company
             </button>
-            <button
-              type="submit"
-              name="refresh"
-              value="1"
-              className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-[color:var(--color-line-2)] bg-transparent px-4 text-sm font-medium text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text-1)]"
-            >
-              <Icon name="refresh" size={16} />
-              Save and refresh company profile
-            </button>
           </div>
         </form>
       </SurfaceSection>

@@ -161,7 +161,8 @@ Recommended internal/MCP tools:
 - `exa.webset.results.list`: list monitored results.
 - `exa.costs.get`: read workspace/provider usage and remaining budget.
 
-Product-level tools can wrap these only when they mirror a real user action:
+Product-level tools can wrap these only when they map to a durable product
+capability:
 
 - `product.profile.enrich`
 - `product.rep.research`
@@ -177,8 +178,8 @@ system keeps action parity.
 
 ### `profile.bootstrap.exa`
 
-Trigger: operator explicitly enriches Profile after onboarding or an internal Rep
-needs deeper public-web context. Onboarding profile creation is Firecrawl-only.
+Trigger: an internal Rep or MCP client needs deeper public-web context. Visible
+onboarding and Profile setup stay Firecrawl-only.
 
 Steps:
 
@@ -556,8 +557,8 @@ Success:
 3. Add primitive Exa tools to the registry and MCP manifest.
 4. Add Exa evidence projection to the graph.
 5. Build `profile.bootstrap.exa`.
-6. Keep onboarding Profile creation Firecrawl-only; expose Exa Profile
-   enrichment as an explicit post-onboarding action/tool.
+6. Keep onboarding and visible Profile setup Firecrawl-only; keep Exa Profile
+   enrichment behind internal Rep/MCP action tools.
 7. Add cost caps and caches before broad ingestion.
 8. Add tests for tool registry, workflow events, graph projection, and Profile
    output.

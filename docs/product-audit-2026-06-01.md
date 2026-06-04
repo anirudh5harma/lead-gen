@@ -64,7 +64,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Added a LinkedIn connect action to the Profile setup surface and `product.linkedin_account.connect_url.get` to the tool registry so users and agents can discover the same provider authorization path.
 - Split prompt-ready workspace context into Channel Readiness and Email Deliverability so Reps see native LinkedIn account status as channel state instead of email-domain deliverability noise.
 - Added production health readiness checks for native LinkedIn provider URL, API key, webhook secret, and HTTPS callback/auth configuration so missing provider setup is visible before a Play tries to send.
-- Added `product.readiness.get` so agents can read the same runtime readiness contract shown in `/dashboard/ops` and `/api/health`, preserving action parity for operational trust state.
+- Added `product.readiness.get` so agents can read the same runtime readiness contract shown in `/dashboard/health` and `/api/health`, preserving action parity for operational trust state.
 - Extended Conversation trust traces to load channel account lifecycle errors by `channel_account_id`, so LinkedIn provider reauth, rate-limit, suspension, and disconnect telemetry appears as plain-English channel gate state instead of raw provider events.
 - Added `LINKEDIN_PROVIDER_HEALTH_URL` and a production readiness probe so the native LinkedIn provider must pass a live authenticated health check before the product reports ready for real sends.
 - Registered `play.signal_to_email.v1`, `play.signal_to_linkedin.v1`, `play.reply_to_email.v1`, `channel.email_domain_provision.v1`, and `channel.email_domain_warmup.v1` in the standalone production Restate worker scripts, and expanded Restate readiness/`verify-restate` to require those services.
@@ -74,13 +74,13 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
 - Hardened the managed worker health wrapper so Restate-capable targets default health checks to port `9081` and fail fast if `WORKER_HEALTH_PORT` collides with `RESTATE_WORKFLOW_PORT`.
 - Corrected the production worker docs for the current Restate CLI registration flow and listed every service required by `verify-restate`.
 - Improved `verify-restate` so failed checks print the registered deployment URI and advertised services, making stale worker-host registration visible during release verification.
-- Shared the Restate deployment summary between `verify-restate` and product readiness so `/api/health`, Ops, and `product.readiness.get` also name stale deployment URIs and advertised services when required workflows are missing.
+- Shared the Restate deployment summary between `verify-restate` and product readiness so `/api/health`, Health, and `product.readiness.get` also name stale deployment URIs and advertised services when required workflows are missing.
 - Added `npm run verify:worker-release`, a static worker release gate that checks both Restate-capable worker entrypoints register the workflow factories required by readiness and `verify-restate`.
-- Updated the Ops readiness surface so long deployment/readiness details are not clipped; stale worker URIs and missing service evidence remain available from the UI without overwhelming the normal state.
-- Added `product.event_dispatch.dead_letters.list` so agents can inspect the same Ops dead-letter recovery queue before using `product.event_dispatch.redrive`.
-- Added `event.dispatch.redriven` and routed both agent and Ops UI dead-letter recovery through the product layer, so redrive resets are auditable typed events rather than silent dispatch-row flips.
+- Updated the Health readiness surface so long deployment/readiness details are not clipped; stale worker URIs and missing service evidence remain available from the UI without overwhelming the normal state.
+- Added `product.event_dispatch.dead_letters.list` so agents can inspect the same Health dead-letter recovery queue before using `product.event_dispatch.redrive`.
+- Added `event.dispatch.redriven` and routed both agent and Health UI dead-letter recovery through the product layer, so redrive resets are auditable typed events rather than silent dispatch-row flips.
 - Deployed the Restate-capable production worker to ECS Express Mode with an amd64 ECR image, synced missing worker secrets (`RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `SES_CONFIGURATION_SET`), force-registered the ECS endpoint with Restate Cloud, and verified the ECS deployment advertises every required workflow service.
-- Tightened Restate readiness so `/api/health`, `/dashboard/ops`, `product.readiness.get`, and `npm run verify:restate` fail when any registered deployment advertises only a partial required workflow set, even if another deployment provides union coverage.
+- Tightened Restate readiness so `/api/health`, `/dashboard/health`, `product.readiness.get`, and `npm run verify:restate` fail when any registered deployment advertises only a partial required workflow set, even if another deployment provides union coverage.
 - Split `ingest_workspace_poll` into smaller durable steps (`prepare_poll`, per-item `discover:*`, `save_cursor`), added bounded workspace-poll batching/cursors, compacted prepared item content, and added RSS/Google News fetch timeouts so feed ingestion is deterministic and bounded before it reaches Restate.
 - Fixed the Postgres event append race where concurrent idempotent inserts could return no row after `ON CONFLICT DO NOTHING`, preserving typed event bus correctness under duplicate workflow starts.
 - Verified ECS revision `16` is the healthy deployable Restate-capable worker image, and documented that revision `17`'s h2-capable same-port experiment fails ECS Express health while revision `16` still hits Restate `ctx.run` connection closure.
@@ -103,7 +103,7 @@ Source of truth: `ARCHITECTURE.md`. Current branch: `main`, after `git fetch ori
    - Connect the real session/OAuth provider behind `LINKEDIN_PROVIDER_URL` / `LINKEDIN_PROVIDER_AUTH_URL`, set `LINKEDIN_PROVIDER_HEALTH_URL` and `LINKEDIN_PROVIDER_WEBHOOK_SECRET`, then verify provider callbacks in production before exposing real external sends broadly.
 
 3. Verify the production app with an authenticated workspace:
-   - Vercel production now serves the newer readiness details and `npm run verify:production-app` covers public health/auth redirect smoke checks. Next, sign in with Google on `https://www.bombsell.com`, confirm completed users land on Brief instead of the onboarding form, and inspect `/dashboard/ops` / `product.readiness.get` from an authenticated workspace.
+   - Vercel production now serves the newer readiness details and `npm run verify:production-app` covers public health/auth redirect smoke checks. Next, sign in with Google on `https://www.bombsell.com`, confirm completed users land on Brief instead of the onboarding form, and inspect `/dashboard/health` / `product.readiness.get` from an authenticated workspace.
 
 4. Improve user-facing trust depth:
    - Extend the same provider incident metadata pattern to X/voice/video once those native channels move beyond placeholders.

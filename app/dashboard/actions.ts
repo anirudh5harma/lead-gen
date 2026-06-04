@@ -10,7 +10,6 @@ import {
   createProductWorkspaceForUser,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
-  startWorkspaceProfileEnrichmentWithExa,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
 import { getRequestUserId } from "@/lib/auth";
@@ -200,17 +199,6 @@ export async function editCompanyProfileAction(formData: FormData) {
     },
     session,
   );
-  if (value(formData, "refresh") === "1") {
-    await startWorkspaceProfileEnrichmentWithExa(
-      {
-        company_name,
-        website_url,
-        industry: value(formData, "industry") || null,
-        description: value(formData, "description") || null,
-      },
-      session,
-    );
-  }
   revalidateProductPaths();
   redirect("/dashboard/setup");
 }
@@ -245,5 +233,5 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/conversations");
   revalidatePath("/dashboard/deliverability");
-  revalidatePath("/dashboard/ops");
+  revalidatePath("/dashboard/health");
 }

@@ -177,7 +177,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.readiness.get",
     description:
-      "Read the product runtime readiness shown in Ops: environment, provider configuration, durable substrate, database, schema tables, and migrations.",
+      "Read the product runtime readiness shown in Health: environment, provider configuration, durable substrate, database, schema tables, and migrations.",
     kind: "read",
     input: z.object({}),
     output: ProductReadinessSchema,
@@ -861,7 +861,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.event_dispatch.dead_letters.list",
     description:
-      "List dead-lettered event-bus deliveries for the active workspace so agents can inspect the same Ops recovery queue users see before redriving.",
+      "List dead-lettered event-bus deliveries for the active workspace so agents can inspect the same Health recovery queue users see before redriving.",
     kind: "read",
     input: z.object({
       limit: z.number().int().positive().max(500).optional(),

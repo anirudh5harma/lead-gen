@@ -10,11 +10,11 @@ projection, and visible UI feedback where applicable.
 | Read morning brief/state | `/dashboard` | `product.state.get` | Read derived views from primitives/events | Ready |
 | Refresh morning brief from public web | MCP/internal Rep execution | `product.brief.refresh` | `rep.brief.refresh.exa`: Exa Search/Contents -> graph evidence sources -> `rep.brief.refreshed` | Ready |
 | Read prompt-ready workspace context | MCP/internal Rep execution | `product.context.get` | Builds dynamic context from Reps, ICPs, Plays, Sources, Signals, approvals, send traces, deliverability, and recovery state | Ready |
-| Read product runtime readiness | `/dashboard/ops`, `/api/health` | `product.readiness.get` | Reads environment, provider, substrate, database, schema table, and migration readiness without mutating state | Ready |
+| Read product runtime readiness | `/dashboard/health`, `/api/health` | `product.readiness.get` | Reads environment, provider, substrate, database, schema table, and migration readiness without mutating state | Ready |
 | Read Conversation trust trace | `/dashboard/conversations/[id]` | `product.conversation.trust.get` | Reads Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes from the evented state | Ready |
 | Extract company profile from website | `/onboarding` | `product.company.website_profile.extract` | Firecrawl + LLM, no write | Ready |
 | Store company profile | `/onboarding` | `product.company.profile.configure` | `workspace.company.profiled` -> graph company | Ready |
-| Enrich Profile from public web | `/dashboard/setup`, MCP/internal Rep execution | `product.profile.enrich` | `profile.bootstrap.exa`: Exa Search/Contents -> graph evidence sources -> `workspace.profile.enriched`; onboarding profile creation stays Firecrawl-only | Ready |
+| Enrich Profile from public web | MCP/internal Rep execution | `product.profile.enrich` | `profile.bootstrap.exa`: Exa Search/Contents -> graph evidence sources -> `workspace.profile.enriched`; visible Profile setup and onboarding stay Firecrawl-only | Ready |
 | Run Rep public-web research | MCP/internal Rep execution | `product.rep.research` | `rep.research.exa`: Exa Search/Contents -> graph evidence sources -> `rep.research.completed` | Ready |
 | Start durable Exa research | MCP/internal Rep execution | `product.exa.research_workflow.start` | Starts one of `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, or `aeo.audit.exa` with a Restate/Postgres workflow runtime | Ready |
 | Configure Rep | `/dashboard/setup` | `product.rep.configure` | `rep.configured` -> Rep projection | Ready |
@@ -37,8 +37,8 @@ projection, and visible UI feedback where applicable.
 | Review Exa recommendation | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.review` | Emits `recommendation.reviewed`; ignored items leave the review canvas, accepted items stay in context as kept operator signal | Ready |
 | Record recommendation Outcome | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.outcome.record` | Emits `outcome.recorded` for accepted Content/AEO recommendations with recommendation, pattern, and exemplar attribution so existing Outcome -> procedural memory learning applies | Ready |
 | Approve/reject draft | `/dashboard/review` | `product.approval.decide` | Resolves workflow approval gate | Ready |
-| Retry failed workflow | `/dashboard/ops`, MCP/internal Rep execution | `product.workflow.retry` | Durable workflow retry/resume | Ready |
-| Inspect/redrive dead-lettered event delivery | `/dashboard/ops` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |
+| Retry failed workflow | `/dashboard/health`, MCP/internal Rep execution | `product.workflow.retry` | Durable workflow retry/resume | Ready |
+| Inspect/redrive dead-lettered event delivery | `/dashboard/health` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |
 | Provision/verify/refresh sending domain | `/dashboard/deliverability`, MCP/internal Rep execution | `product.sending_domain.operate` | Starts sending-domain workflow | Ready |
 | CRUD graph companies/persons/sources/edges | Derived graph surfaces | `graph.companies.*`, `graph.persons.*`, `graph.sources.*`, `graph.edges.*` | Shared workspace graph tables, including node delete primitives that clean graph edges | Ready |
 

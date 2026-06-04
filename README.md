@@ -54,8 +54,8 @@ legacy/          # Archived previous implementation. Do not import.
 | TTL / upstream expiry via `signal.expiry.requested`   | ✅ landed |
 | Vercel-cron deployed control-plane scheduling         | ✅ landed |
 | Microsoft Graph lifecycle-token validation + legacy reconnect | ✅ landed |
-| Dead-letter queue + operator redrive surface          | ✅ landed |
-| Dashboard UI (Brief, Outreach, Content, Campaigns, AEO, Profile, Review, health, ops) | ✅ landed |
+| Dead-letter queue + owner recovery surface            | ✅ landed |
+| Dashboard UI (Brief, Outreach, Content, Campaigns, AEO, Profile, Review, Health) | ✅ landed |
 | Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
 | Restate workflow-handler host process                 | ⏳ deployment work |
 | Auto-trigger of Plays on `signal.matched`             | ✅ landed |
@@ -350,14 +350,13 @@ DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipe
 AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS config
 ```
 
-#### 6. Operator surfaces to bookmark
+#### 6. Owner surfaces to bookmark
 
 - `/dashboard/campaigns` — qualified signals, campaign ideas, and recent
   outcomes.
 - `/dashboard/deliverability` — sending-domain warmup, bounce + complaint
   rates, channel-account health.
-- `/dashboard/ops` — pending / delivered / dead-lettered NATS dispatches
-  with one-click redrive on the DLQ rows.
+- `/dashboard/health` — runtime readiness and owner-only recovery moments.
 
 #### Known follow-ups (do not block launch)
 

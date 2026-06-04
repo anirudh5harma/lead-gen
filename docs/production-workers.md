@@ -143,7 +143,7 @@ npm run verify:restate-runtime
 ```
 
 When a stale worker is still registered, both `npm run verify:restate` and
-production readiness (`/api/health`, `/dashboard/ops`, and
+production readiness (`/api/health`, `/dashboard/health`, and
 `product.readiness.get`) report the registered deployment URI and advertised
 service list. Treat either of these as a failed deployment gate before enabling
 real sends:
