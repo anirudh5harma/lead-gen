@@ -1,6 +1,5 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
-import { getAppState, type ProductBriefItem } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
@@ -9,7 +8,6 @@ import {
   type ProductReadiness,
   type ProductReadinessStatus,
 } from "@/core/product/health";
-import { reviewRecommendationAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +57,7 @@ export default async function OpsPage() {
   if (!session) {
     return (
       <section className="section-canvas p-6">
-        <p className="brief-kicker">AEO</p>
+        <p className="brief-kicker">Ops</p>
         <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
           No workspace selected.
         </h1>
@@ -68,17 +66,11 @@ export default async function OpsPage() {
   }
 
   const pool = getPool();
-  const [counts, dead, readiness, state] = await Promise.all([
+  const [counts, dead, readiness] = await Promise.all([
     loadDispatchCounts(session.workspace.id),
     listDeadLetteredDispatches(pool, session.workspace.id, 100),
     checkProductReadiness(pool),
-    getAppState(pool, {
-      workspace_id: session.workspace.id,
-      user_id: session.user_id,
-    }),
   ]);
-  const aeoReviews = state.aeo_reviews;
-  const learning = state.recommendation_quality.aeo_gap;
 
   return (
     <>
@@ -86,12 +78,12 @@ export default async function OpsPage() {
         <div className="section-thread section-thread-a" />
         <div className="grid gap-8 lg:grid-cols-[1fr_340px] lg:items-end">
           <div>
-            <p className="brief-kicker">AEO</p>
+            <p className="brief-kicker">Ops</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              Visibility and background work, only when it needs attention.
+              The runtime stays quiet until it needs attention.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Keep this quiet by default. Bombsell should only surface blocked work, delivery problems, and visibility gaps worth fixing.
+              Dispatches, readiness checks, and blocked work. Outcome surfaces stay with the Reps.
             </p>
           </div>
           <div className="section-note">
@@ -116,34 +108,6 @@ export default async function OpsPage() {
       </section>
 
       <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="brief-note-icon">
-              <Icon name="travel_explore" size={18} />
-            </span>
-            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Visibility gaps</h2>
-          </div>
-          <ReviewLearningBadge
-            accepted={learning.accepted}
-            ignored={learning.ignored}
-            acceptanceRate={learning.acceptance_rate}
-          />
-        </div>
-        {aeoReviews.length === 0 ? (
-          <EmptyState
-            title="No fresh visibility gaps"
-            hint="When Exa finds missing answer coverage, it will appear here with proof."
-          />
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {aeoReviews.map((item, index) => (
-              <ReviewNote key={`${item.title}:${index}`} item={item} icon="find_in_page" />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="mt-6 section-canvas p-5">
         <div className="mb-4 flex items-center gap-3">
           <span className="brief-note-icon">
             <Icon name="report" size={18} />
@@ -153,7 +117,7 @@ export default async function OpsPage() {
         {dead.length === 0 ? (
           <EmptyState
             title="Nothing needs attention"
-            hint="Visibility and delivery work are moving normally."
+            hint="Dispatch and workflow health are normal."
           />
         ) : (
           <ul className="grid gap-2">
@@ -195,92 +159,6 @@ export default async function OpsPage() {
         )}
       </section>
     </>
-  );
-}
-
-function ReviewNote({ item, icon }: { item: ProductBriefItem; icon: string }) {
-  return (
-    <article className="section-note">
-      <div className="flex items-start gap-3">
-        <span className="brief-note-icon">
-          <Icon name={icon} size={18} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold leading-6 text-[var(--color-text-1)]">{item.title}</h3>
-          <p className="mt-2 line-clamp-4 text-sm leading-6 text-[var(--color-text-2)]">{item.detail}</p>
-          {item.url ? (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex text-xs font-semibold text-[var(--color-accent)]"
-            >
-              View proof
-            </a>
-          ) : null}
-          <ReviewActions item={item} />
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function ReviewActions({ item }: { item: ProductBriefItem }) {
-  if (!item.review_id) return null;
-  if (item.decision === "accepted") {
-    return (
-      <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)]">
-        <Icon name="check" size={14} />
-        Kept for the Rep
-      </p>
-    );
-  }
-  return (
-    <div className="mt-4 flex flex-wrap gap-2">
-      <form action={reviewRecommendationAction}>
-        <input type="hidden" name="review_id" value={item.review_id} />
-        <input type="hidden" name="decision" value="accepted" />
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
-        >
-          <Icon name="check" size={14} />
-          Keep
-        </button>
-      </form>
-      <form action={reviewRecommendationAction}>
-        <input type="hidden" name="review_id" value={item.review_id} />
-        <input type="hidden" name="decision" value="ignored" />
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
-        >
-          <Icon name="close" size={14} />
-          Skip
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function ReviewLearningBadge({
-  accepted,
-  ignored,
-  acceptanceRate,
-}: {
-  accepted: number;
-  ignored: number;
-  acceptanceRate: number | null;
-}) {
-  if (accepted + ignored === 0) return null;
-  const rate = acceptanceRate == null ? null : `${Math.round(acceptanceRate * 100)}% kept`;
-  return (
-    <p className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-3)]">
-      <Icon name="auto_awesome" size={14} />
-      <span>{accepted} kept</span>
-      <span>{ignored} skipped</span>
-      {rate ? <span>{rate}</span> : null}
-    </p>
   );
 }
 

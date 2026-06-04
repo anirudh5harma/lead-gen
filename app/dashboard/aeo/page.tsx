@@ -69,7 +69,7 @@ export default async function AeoPage() {
         {reviews.length === 0 ? (
           <EmptyState
             title="No answer gaps yet"
-            hint="When Exa finds missing category answers or visibility gaps, Bodh will place them here."
+            hint="When Bodh finds missing category answers or visibility gaps, they will land here."
           />
         ) : (
           <RecommendationReviewGrid

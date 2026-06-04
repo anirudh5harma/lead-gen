@@ -11,7 +11,7 @@ export function ProfileIntelligence({
         <p className="brief-kicker">Profile Intelligence</p>
         <p className="mt-3 text-lg font-semibold text-[var(--color-text-1)]">No company profile yet.</p>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-3)]">
-          Add the company URL once. Bombsell will turn the site and public web into reusable context for every Rep.
+          Add the company URL once. Bombsell will turn the site into reusable context for every Rep.
         </p>
       </section>
     );
@@ -32,7 +32,7 @@ export function ProfileIntelligence({
             <p className="mt-4 text-[15px] leading-7 text-[var(--color-text-1)]">{profile.exa_summary}</p>
           ) : (
             <p className="mt-4 text-sm leading-6 text-[var(--color-text-3)]">
-              Public-web enrichment has not run yet.
+              Site profile enrichment has not run yet.
             </p>
           )}
           {profile.exa_market_terms.length > 0 ? (

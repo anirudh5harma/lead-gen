@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getAppState } from "@/core/product/app.ts";
+import { getAppState, type ProductBriefItem } from "@/core/product/app.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 
@@ -24,10 +24,15 @@ interface OutcomeRow {
 }
 
 interface RepPulse {
-  sampark_active: number;
-  vaani_drafts: number;
-  prayog_runs: number;
-  bodh_gaps: number;
+  sampark_active: PulseMetric;
+  vaani_angles: PulseMetric;
+  prayog_runs: PulseMetric;
+  bodh_gaps: PulseMetric;
+}
+
+interface PulseMetric {
+  count: number;
+  last_activity_at: Date | null;
 }
 
 async function loadRunning(workspaceId: string): Promise<RunningRow[]> {
@@ -62,25 +67,56 @@ async function loadOutcomes(workspaceId: string): Promise<OutcomeRow[]> {
 
 async function loadRepPulse(
   workspaceId: string,
-  contentDrafts: number,
+  contentAngles: number,
+  contentLast: Date | null,
   aeoGaps: number,
+  aeoLast: Date | null,
 ): Promise<RepPulse> {
   const pool = getPool();
-  const { rows } = await pool.query<{ sampark_active: string; prayog_runs: string }>(
+  const { rows } = await pool.query<{
+    sampark_active: string;
+    sampark_last_activity_at: Date | null;
+    prayog_runs: string;
+    prayog_last_activity_at: Date | null;
+  }>(
     `select
        (select count(*)::text from conversations c
+          join reps r on r.id = c.rep_id
           where c.workspace_id = $1
+            and lower(r.name) = 'sampark'
             and c.status in ('open','awaiting_them','awaiting_us')) as sampark_active,
+       (select max(c.last_activity_at) from conversations c
+          join reps r on r.id = c.rep_id
+          where c.workspace_id = $1
+            and lower(r.name) = 'sampark'
+            and c.status in ('open','awaiting_them','awaiting_us')) as sampark_last_activity_at,
        (select count(*)::text from play_runs pr
+          join plays p on p.id = pr.play_id
+          left join reps run_rep on run_rep.id = pr.rep_id
+          left join reps default_rep on default_rep.id = p.default_rep_id
           where pr.workspace_id = $1
-            and pr.created_at >= now() - interval '24 hours') as prayog_runs`,
+            and lower(coalesce(run_rep.name, default_rep.name, '')) = 'prayog'
+            and pr.created_at >= now() - interval '24 hours') as prayog_runs,
+       (select max(pr.created_at) from play_runs pr
+          join plays p on p.id = pr.play_id
+          left join reps run_rep on run_rep.id = pr.rep_id
+          left join reps default_rep on default_rep.id = p.default_rep_id
+          where pr.workspace_id = $1
+            and lower(coalesce(run_rep.name, default_rep.name, '')) = 'prayog'
+            and pr.created_at >= now() - interval '24 hours') as prayog_last_activity_at`,
     [workspaceId],
   );
   return {
-    sampark_active: Number(rows[0]?.sampark_active ?? 0),
-    vaani_drafts: contentDrafts,
-    prayog_runs: Number(rows[0]?.prayog_runs ?? 0),
-    bodh_gaps: aeoGaps,
+    sampark_active: {
+      count: Number(rows[0]?.sampark_active ?? 0),
+      last_activity_at: rows[0]?.sampark_last_activity_at ?? null,
+    },
+    vaani_angles: { count: contentAngles, last_activity_at: contentLast },
+    prayog_runs: {
+      count: Number(rows[0]?.prayog_runs ?? 0),
+      last_activity_at: rows[0]?.prayog_last_activity_at ?? null,
+    },
+    bodh_gaps: { count: aeoGaps, last_activity_at: aeoLast },
   };
 }
 
@@ -98,8 +134,9 @@ const STATUS_TONE: Record<string, { label: string; tone: "pos" | "warn" | "neutr
   awaiting_us: { label: "Needs reply", tone: "warn" },
   awaiting_them: { label: "Sent", tone: "neutral" },
   open: { label: "Open", tone: "neutral" },
-  closed_won: { label: "Won", tone: "pos" },
-  closed_lost: { label: "Closed", tone: "neutral" },
+  closed_positive: { label: "Won", tone: "pos" },
+  closed_negative: { label: "Closed", tone: "neutral" },
+  closed_no_response: { label: "Quiet", tone: "neutral" },
   booked: { label: "Booked", tone: "pos" },
   replied: { label: "Replied", tone: "pos" },
 };
@@ -129,12 +166,12 @@ const REP_TILES: Array<{
     unit: (n) => `${n} ${n === 1 ? "conversation" : "conversations"} moving`,
   },
   {
-    key: "vaani_drafts",
+    key: "vaani_angles",
     name: "Vaani",
     role: "Content",
     href: "/dashboard/content",
     icon: "edit_note",
-    unit: (n) => `${n} ${n === 1 ? "draft" : "drafts"} to review`,
+    unit: (n) => `${n} ${n === 1 ? "angle" : "angles"} to review`,
   },
   {
     key: "prayog_runs",
@@ -162,7 +199,12 @@ export default async function BriefPage() {
         workspaceName={null}
         running={[]}
         outcomes={[]}
-        pulse={{ sampark_active: 0, vaani_drafts: 0, prayog_runs: 0, bodh_gaps: 0 }}
+        pulse={{
+          sampark_active: { count: 0, last_activity_at: null },
+          vaani_angles: { count: 0, last_activity_at: null },
+          prayog_runs: { count: 0, last_activity_at: null },
+          bodh_gaps: { count: 0, last_activity_at: null },
+        }}
       />
     );
   }
@@ -171,12 +213,18 @@ export default async function BriefPage() {
     workspace_id: session.workspace.id,
     user_id: session.user_id,
   });
-  const contentDrafts = state.content_reviews.filter((r) => !r.outcome_id).length;
+  const contentAngles = state.content_reviews.filter((r) => !r.outcome_id).length;
   const aeoGaps = state.aeo_reviews.filter((r) => !r.outcome_id).length;
   const [running, outcomes, pulse] = await Promise.all([
     loadRunning(session.workspace.id),
     loadOutcomes(session.workspace.id),
-    loadRepPulse(session.workspace.id, contentDrafts, aeoGaps),
+    loadRepPulse(
+      session.workspace.id,
+      contentAngles,
+      latestReviewDate(state.content_reviews),
+      aeoGaps,
+      latestReviewDate(state.aeo_reviews),
+    ),
   ]);
   return (
     <BriefView
@@ -205,7 +253,9 @@ function BriefView({
     day: "numeric",
   });
   const totalPulse =
-    pulse.sampark_active + pulse.vaani_drafts + pulse.prayog_runs + pulse.bodh_gaps;
+    pulse.sampark_active.count + pulse.vaani_angles.count + pulse.prayog_runs.count + pulse.bodh_gaps.count;
+  const heroVerb = heroWorkVerb(today);
+  const lastMovement = latestPulseDate(pulse);
 
   return (
     <div className="space-y-12">
@@ -221,7 +271,7 @@ function BriefView({
           {workspaceName ? (
             <>
               <span className="block">{workspaceName} is</span>
-              <em>working quietly.</em>
+              <em>{heroVerb}.</em>
             </>
           ) : (
             <>
@@ -233,37 +283,45 @@ function BriefView({
         <p className="mt-5 max-w-[64ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
           {totalPulse === 0
             ? "Nothing to surface yet. Once profile, channels and plays are in place, the work will appear here."
-            : `Sampark watching ${pulse.sampark_active}. Vaani drafting ${pulse.vaani_drafts}. Prayog running ${pulse.prayog_runs}. Bodh found ${pulse.bodh_gaps} gaps.`}
+            : `Sampark moving ${pulse.sampark_active.count}. Vaani shaping ${pulse.vaani_angles.count}. Prayog testing ${pulse.prayog_runs.count}. Bodh found ${pulse.bodh_gaps.count} gaps.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
         </p>
       </section>
 
       {/* Rep tiles */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {REP_TILES.map((tile) => (
-          <Link
-            key={tile.name}
-            href={tile.href}
-            className="group rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
-          >
-            <div className="flex items-center gap-2">
-              <span className="grid size-7 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                <Icon name={tile.icon} size={15} />
-              </span>
-              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-                {tile.role}
-              </p>
-            </div>
-            <p
-              className="mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]"
-              style={{ fontFamily: "var(--font-display)" }}
+        {REP_TILES.map((tile) => {
+          const metric = pulse[tile.key];
+          return (
+            <Link
+              key={tile.name}
+              href={tile.href}
+              className="group rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
             >
-              {tile.name}
-            </p>
-            <p className="mt-1 text-[13px] text-[var(--color-text-2)]">
-              {tile.unit(pulse[tile.key])}
-            </p>
-          </Link>
-        ))}
+              <div className="flex items-center gap-2">
+                <span className="grid size-7 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+                  <Icon name={tile.icon} size={15} />
+                </span>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
+                  {tile.role}
+                </p>
+              </div>
+              <p
+                className="mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {tile.name}
+              </p>
+              <p className="mt-1 text-[13px] text-[var(--color-text-2)]">
+                {tile.unit(metric.count)}
+              </p>
+              {metric.last_activity_at ? (
+                <p className="mt-3 text-[12px] text-[var(--color-text-3)]">
+                  Fresh {timeAgo(new Date(metric.last_activity_at))}
+                </p>
+              ) : null}
+            </Link>
+          );
+        })}
       </section>
 
       {/* Two feeds */}
@@ -275,6 +333,7 @@ function BriefView({
             <EmptyState
               title="No signals yet."
               hint="Bombsell will surface what it's tracking once sources are connected."
+              cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
             />
           }
         >
@@ -295,6 +354,7 @@ function BriefView({
             <EmptyState
               title="No outcomes yet."
               hint="Replies, bookings and won conversations will land here as they happen."
+              cta={{ href: "/dashboard/conversations", label: "Open outreach", icon: "forum" }}
             />
           }
         >
@@ -315,6 +375,30 @@ function BriefView({
       </section>
     </div>
   );
+}
+
+function latestReviewDate(items: ProductBriefItem[]): Date | null {
+  const times = items
+    .map((item) => item.outcome_recorded_at ?? item.reviewed_at)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+  if (times.length === 0) return null;
+  return new Date(Math.max(...times));
+}
+
+function latestPulseDate(pulse: RepPulse): Date | null {
+  const times = Object.values(pulse)
+    .map((metric) => metric.last_activity_at?.getTime() ?? null)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (times.length === 0) return null;
+  return new Date(Math.max(...times));
+}
+
+function heroWorkVerb(today: string): string {
+  const verbs = ["working quietly", "moving the day forward", "keeping the canvas warm", "finding the next useful move"];
+  const seed = today.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return verbs[seed % verbs.length];
 }
 
 function Feed({

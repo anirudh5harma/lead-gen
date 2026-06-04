@@ -9,10 +9,10 @@ const PLANETS: {
   label: string;
   title: string;
 }[] = [
-  { orbit: 1, icon: "send", label: "Outreach", title: "Outreach" },
-  { orbit: 2, icon: "article", label: "Content", title: "Content" },
-  { orbit: 3, icon: "campaign", label: "Campaigns", title: "Campaigns" },
-  { orbit: 4, icon: "travel_explore", label: "AEO", title: "Agentic Engine Optimization" },
+  { orbit: 1, icon: "send", label: "Sampark", title: "Outreach" },
+  { orbit: 2, icon: "article", label: "Vaani", title: "Content" },
+  { orbit: 3, icon: "campaign", label: "Prayog", title: "Campaigns" },
+  { orbit: 4, icon: "travel_explore", label: "Bodh", title: "Agentic Engine Optimization" },
 ];
 
 export default function Home() {

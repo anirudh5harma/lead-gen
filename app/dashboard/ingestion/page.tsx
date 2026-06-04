@@ -54,6 +54,19 @@ interface RecentSignalRow {
   ingested_at: Date;
 }
 
+interface PlayRunRow {
+  id: string;
+  play_name: string;
+  rep_name: string | null;
+  status: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown> | null;
+  outcome_count: string;
+  started_at: Date | null;
+  ended_at: Date | null;
+  created_at: Date;
+}
+
 async function loadCounts(workspaceId: string): Promise<IngestionCounts> {
   const pool = getPool();
   const { rows } = await pool.query<{
@@ -151,6 +164,33 @@ async function loadRecentSignals(workspaceId: string): Promise<RecentSignalRow[]
   return rows;
 }
 
+async function loadPlayRuns(workspaceId: string): Promise<PlayRunRow[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<PlayRunRow>(
+    `select pr.id,
+            p.name as play_name,
+            coalesce(run_rep.name, default_rep.name) as rep_name,
+            pr.status::text as status,
+            pr.input,
+            pr.output,
+            count(o.id)::text as outcome_count,
+            pr.started_at,
+            pr.ended_at,
+            pr.created_at
+       from play_runs pr
+       join plays p on p.id = pr.play_id
+       left join reps run_rep on run_rep.id = pr.rep_id
+       left join reps default_rep on default_rep.id = p.default_rep_id
+       left join outcomes o on o.attributed_play_run_id = pr.id
+      where pr.workspace_id = $1
+      group by pr.id, p.name, run_rep.name, default_rep.name
+      order by pr.created_at desc
+      limit 8`,
+    [workspaceId],
+  );
+  return rows;
+}
+
 function timeAgo(d: Date | null): string {
   if (!d) return "never";
   const diff = Date.now() - new Date(d).getTime();
@@ -178,12 +218,13 @@ export default async function IngestionPage() {
     );
   }
 
-  const [counts, icps, sources, companies, recent] = await Promise.all([
+  const [counts, icps, sources, companies, recent, playRuns] = await Promise.all([
     loadCounts(workspace.id),
     loadIcps(workspace.id),
     loadWorkspaceSources(workspace.id),
     loadCatalogPolls(workspace.id),
     loadRecentSignals(workspace.id),
+    loadPlayRuns(workspace.id),
   ]);
 
   return (
@@ -301,10 +342,36 @@ export default async function IngestionPage() {
         </div>
       </section>
 
+      <section className="mt-6 section-canvas p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="brief-note-icon">
+            <Icon name="science" size={18} />
+          </span>
+          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Recent experiments</h2>
+        </div>
+        {playRuns.length === 0 ? (
+          <EmptyState
+            title="No experiments yet"
+            hint="Prayog will show campaign runs here once a Play fires."
+            cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
+          />
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {playRuns.map((run) => (
+              <PlayRunNote key={run.id} run={run} />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="mt-6 grid gap-6 lg:grid-cols-2">
         <Panel title="Recent leads">
           {recent.length === 0 ? (
-            <EmptyState title="No leads yet" hint="Refresh sources to fill this page." />
+            <EmptyState
+              title="No leads yet"
+              hint="Refresh sources to fill this page."
+              cta={{ href: "/dashboard/setup", label: "Add source", icon: "rss_feed" }}
+            />
           ) : (
             <div className="grid gap-2">
               {recent.map((signal) => (
@@ -315,7 +382,11 @@ export default async function IngestionPage() {
         </Panel>
         <Panel title="Watched sources">
           {sources.length === 0 ? (
-            <EmptyState title="No sources yet" hint="Add a source to start watching." />
+            <EmptyState
+              title="No sources yet"
+              hint="Add a source to start watching."
+              cta={{ href: "/dashboard/setup", label: "Add source", icon: "rss_feed" }}
+            />
           ) : (
             <div className="grid gap-2">
               {sources.map((source) => (
@@ -332,6 +403,53 @@ export default async function IngestionPage() {
       </section>
     </>
   );
+}
+
+function PlayRunNote({ run }: { run: PlayRunRow }) {
+  const decision = stringOutput(run.output, "decision") ?? stringOutput(run.output, "status");
+  const lift = stringOutput(run.output, "lift") ?? stringOutput(run.output, "outcome_kind");
+  const arms = armsText(run.input) ?? armsText(run.output);
+  const ended = run.ended_at ? `ended ${timeAgo(run.ended_at)}` : `started ${timeAgo(run.started_at ?? run.created_at)}`;
+  return (
+    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs font-medium text-[var(--color-accent)]">
+          {run.rep_name ?? "Rep"}
+        </span>
+        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+          {run.status.replace(/_/g, " ")}
+        </span>
+        <span className="ml-auto text-xs text-[var(--color-text-3)]">{ended}</span>
+      </div>
+      <h3 className="mt-3 text-sm font-semibold leading-5 text-[var(--color-text-1)]">
+        {run.play_name}
+      </h3>
+      <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+        {Number(run.outcome_count)} outcomes
+        {arms ? `. ${arms}` : ""}
+        {decision ? `. Decision ${decision}` : ""}
+        {lift ? `. Lift ${lift}` : ""}
+      </p>
+    </article>
+  );
+}
+
+function armsText(record: Record<string, unknown> | null): string | null {
+  const arms = record?.arms ?? record?.variants ?? record?.experiments;
+  if (Array.isArray(arms) && arms.length > 0) {
+    return `${arms.length} ${arms.length === 1 ? "arm" : "arms"}`;
+  }
+  if (typeof arms === "number" && Number.isFinite(arms) && arms > 0) {
+    return `${arms} ${arms === 1 ? "arm" : "arms"}`;
+  }
+  return null;
+}
+
+function stringOutput(output: Record<string, unknown> | null, key: string): string | null {
+  const value = output?.[key];
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
 }
 
 function SourceCard({

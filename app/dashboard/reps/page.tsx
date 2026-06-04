@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { ProfileIntelligence } from "@/components/dashboard/ProfileIntelligence";
 import Icon from "@/components/Icon";
@@ -22,6 +23,7 @@ interface RepRow {
   outbound_24h: string;
   positive_24h: string;
   conversations_open: string;
+  last_activity_at: Date | null;
 }
 
 async function loadReps(workspaceId: string): Promise<RepRow[]> {
@@ -43,7 +45,14 @@ async function loadReps(workspaceId: string): Promise<RepRow[]> {
                 and o.recorded_at >= now() - interval '24 hours') as positive_24h,
             (select count(*)::text from conversations c
               where c.workspace_id = $1 and c.rep_id = r.id
-                and c.status in ('open','awaiting_them','awaiting_us')) as conversations_open
+                and c.status in ('open','awaiting_them','awaiting_us')) as conversations_open,
+            greatest(
+              r.updated_at,
+              coalesce((select max(c.last_activity_at) from conversations c
+                where c.workspace_id = $1 and c.rep_id = r.id), r.updated_at),
+              coalesce((select max(o.recorded_at) from outcomes o
+                where o.workspace_id = $1 and o.attributed_rep_id = r.id), r.updated_at)
+            ) as last_activity_at
        from reps r
       where r.workspace_id = $1
       order by r.created_at desc`,
@@ -97,7 +106,11 @@ export default async function RepsPage() {
 
       <section className="mt-6 grid gap-4 lg:grid-cols-2">
         {reps.length === 0 ? (
-          <EmptyState title="No voices yet" hint="Shape the profile to create the first sender." />
+          <EmptyState
+            title="No voices yet"
+            hint="Shape the profile to create the first sender."
+            cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
+          />
         ) : (
           reps.map((rep) => <RepNote key={rep.id} rep={rep} />)
         )}
@@ -108,10 +121,10 @@ export default async function RepsPage() {
 
 function RepNote({ rep }: { rep: RepRow }) {
   return (
-    <article className="section-note">
+    <Link href={`/dashboard/reps/${rep.id}`} className="section-note block transition hover:border-[var(--color-line-2)]">
       <div className="flex items-start gap-3">
         <span className="brief-note-icon">
-          <Icon name="person" size={18} />
+          <Icon name={repIcon(rep.name)} size={18} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -140,11 +153,30 @@ function RepNote({ rep }: { rep: RepRow }) {
           </div>
           <p className="mt-4 text-xs text-[var(--color-text-3)]">
             {rep.outbound_24h} sent today. {rep.positive_24h} positive. {rep.conversations_open} open.
+            {rep.last_activity_at ? ` Fresh ${timeAgo(rep.last_activity_at)}.` : ""}
           </p>
         </div>
       </div>
-    </article>
+    </Link>
   );
+}
+
+function repIcon(name: string): string {
+  if (name === "Sampark") return "forum";
+  if (name === "Vaani") return "edit_note";
+  if (name === "Prayog") return "science";
+  if (name === "Bodh") return "neurology";
+  return "person";
+}
+
+function timeAgo(value: Date): string {
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function SmallState({ label, value }: { label: string; value: number }) {

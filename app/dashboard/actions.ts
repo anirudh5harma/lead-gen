@@ -6,6 +6,7 @@ import {
   approveWorkflowApproval,
   configureActivationSetup,
   configureIcpSegment,
+  configureRep,
   configureRssSource,
   configureWorkspaceSignalSource,
   configureWorkspaceEmailAccount,
@@ -31,6 +32,15 @@ function value(formData: FormData, key: string): string {
 function numberValue(formData: FormData, key: string, fallback: number): number {
   const parsed = Number(value(formData, key));
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function repRoleValue(formData: FormData, key: string) {
+  const role = value(formData, key);
+  return (
+    ["sdr", "content", "replier", "researcher", "campaign", "custom"].includes(role)
+      ? role
+      : "sdr"
+  ) as "sdr" | "content" | "replier" | "researcher" | "campaign" | "custom";
 }
 
 async function requireDashboardSession(
@@ -59,6 +69,14 @@ export async function createWorkspaceAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/setup");
   redirect("/dashboard/setup");
+}
+
+export async function switchWorkspaceAction(formData: FormData) {
+  const workspaceId = value(formData, "workspace_id");
+  if (!workspaceId) return;
+  await setActiveWorkspaceCookie(workspaceId);
+  revalidateProductPaths();
+  redirect("/dashboard");
 }
 
 export async function configureActivationAction(formData: FormData) {
@@ -141,6 +159,34 @@ export async function configureIcpAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
+}
+
+export async function configureRepAction(formData: FormData) {
+  const session = await requireDashboardSession(formData);
+  const repId = value(formData, "rep_id");
+  const name = value(formData, "rep_name") || "Sampark";
+  await configureRep(
+    {
+      name,
+      role: repRoleValue(formData, "rep_role"),
+      voice:
+        value(formData, "rep_voice") ||
+        "Warm, precise, low-hype, founder-to-founder.",
+      story:
+        value(formData, "rep_story") ||
+        "Acts on fresh buying signals without spraying generic outreach.",
+      daily_cap: numberValue(formData, "daily_cap", 25),
+      approval:
+        value(formData, "approval") === "none"
+          ? "none"
+          : value(formData, "approval") === "always"
+            ? "always"
+            : "approve_first",
+    },
+    session,
+  );
+  revalidateProductPaths();
+  if (repId) revalidatePath(`/dashboard/reps/${repId}`);
 }
 
 export async function trackCompanyAction(formData: FormData) {
@@ -293,12 +339,14 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
   const approvalId = value(formData, "approval_id");
   if (!approvalId) return;
   const decision = value(formData, "decision") === "rejected" ? "rejected" : "approved";
+  const subject = value(formData, "subject");
+  const body = value(formData, "body");
   const note =
-    decision === "approved"
+    decision === "approved" && (subject || body)
       ? JSON.stringify({
           type: "draft_override",
-          subject: value(formData, "subject"),
-          body: value(formData, "body"),
+          subject,
+          body,
         })
       : value(formData, "decision_note") || undefined;
   await approveWorkflowApproval(approvalId, decision, session, note);

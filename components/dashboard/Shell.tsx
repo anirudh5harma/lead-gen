@@ -4,11 +4,24 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { LiveIndicator } from "@/app/brief/live-indicator";
+import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 
 interface NavItem {
   href: string;
   label: string;
+  badge?: keyof DashboardBadges;
+}
+
+export interface DashboardBadges {
+  approvals: number;
+  deliverability: number;
+}
+
+export interface ShellWorkspace {
+  id: string;
+  name: string;
 }
 
 const NAV: NavItem[] = [
@@ -16,6 +29,9 @@ const NAV: NavItem[] = [
   { href: "/dashboard/conversations", label: "Outreach" },
   { href: "/dashboard/content", label: "Content" },
   { href: "/dashboard/ingestion", label: "Campaigns" },
+  { href: "/dashboard/approvals", label: "Review", badge: "approvals" },
+  { href: "/dashboard/deliverability", label: "Domains", badge: "deliverability" },
+  { href: "/dashboard/reps", label: "Reps" },
   { href: "/dashboard/aeo", label: "AEO" },
   { href: "/dashboard/setup", label: "Profile" },
 ];
@@ -27,8 +43,21 @@ function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-export function DashboardShell({ children }: { children: ReactNode }) {
+export function DashboardShell({
+  children,
+  badges = { approvals: 0, deliverability: 0 },
+  liveEnabled = true,
+  workspaces = [],
+  activeWorkspaceId,
+}: {
+  children: ReactNode;
+  badges?: DashboardBadges;
+  liveEnabled?: boolean;
+  workspaces?: ShellWorkspace[];
+  activeWorkspaceId?: string;
+}) {
   const pathname = usePathname() ?? "/dashboard";
+  const settingsBadge = badges.approvals + badges.deliverability;
 
   return (
     <div className="canvas-bg relative isolate min-h-[100dvh] text-[var(--color-text-1)]">
@@ -67,19 +96,50 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                       : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                   }
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {item.badge && badges[item.badge] > 0 ? (
+                    <span className="ml-1.5 inline-flex min-w-4 justify-center rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-semibold leading-4 text-[var(--color-ink-0)]">
+                      {badges[item.badge]}
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
+            {workspaces.length > 1 ? (
+              <form action={switchWorkspaceAction} className="hidden sm:block">
+                <label className="sr-only" htmlFor="workspace-switcher">
+                  Workspace
+                </label>
+                <select
+                  id="workspace-switcher"
+                  name="workspace_id"
+                  defaultValue={activeWorkspaceId}
+                  onChange={(event) => event.currentTarget.form?.requestSubmit()}
+                  className="h-8 max-w-[180px] rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-2 text-[13px] font-medium text-[var(--color-text-2)] outline-none transition hover:text-[var(--color-text-1)]"
+                >
+                  {workspaces.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </select>
+              </form>
+            ) : null}
+            <div className="hidden lg:block">
+              <LiveIndicator enabled={liveEnabled} />
+            </div>
             <Link
               href="/dashboard/setup"
               aria-label="Workspace settings"
-              className="grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
+              className="relative grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
             >
               <Icon name="settings" size={17} />
+              {settingsBadge > 0 ? (
+                <span className="absolute right-1 top-1 size-2 rounded-full bg-[var(--color-accent)]" />
+              ) : null}
             </Link>
           </div>
         </div>
@@ -111,7 +171,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
               }
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.badge && badges[item.badge] > 0 ? (
+                <span className="ml-1.5 inline-flex min-w-4 justify-center rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-semibold leading-4 text-[var(--color-ink-0)]">
+                  {badges[item.badge]}
+                </span>
+              ) : null}
             </Link>
           );
         })}
@@ -127,9 +192,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 export function EmptyState({
   title,
   hint,
+  cta,
 }: {
   title: string;
   hint?: string;
+  cta?: { href: string; label: string; icon?: string };
 }) {
   return (
     <div className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
@@ -138,6 +205,15 @@ export function EmptyState({
         <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-6 text-[var(--color-text-3)]">
           {hint}
         </p>
+      ) : null}
+      {cta ? (
+        <Link
+          href={cta.href}
+          className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+        >
+          {cta.icon ? <Icon name={cta.icon} size={16} /> : null}
+          {cta.label}
+        </Link>
       ) : null}
     </div>
   );
