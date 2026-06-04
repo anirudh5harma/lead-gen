@@ -73,11 +73,14 @@ advertises the full required service set, including the Exa workflows, and
 drained by purging completed maintenance-only invocations and then
 force-removing the deployment registration; the unused App Runner service
 itself is paused. A same-port h2-capable handler was tested earlier and failed
-ECS health replacement. Keep monitoring the HTTP/1 path: ECS target health is
-currently healthy, but recent service history still shows periodic `/health`
-timeouts and task replacements on port `9080`. If those recur, move the
-Restate handler behind a protocol-correct host/path, tune the target group, or
-split health checks onto a separate port through `worker:managed`.
+ECS health replacement. Recent service history showed periodic `/health`
+timeouts and task replacements on port `9080` while long
+`ingest_workspace_poll` runs were active, so the target group was tuned on
+2026-06-04 from a 5-second timeout / 2 unhealthy threshold to a 15-second
+timeout / 5 unhealthy threshold. Keep monitoring the HTTP/1 path; if timeouts
+recur after the wider health window, move the Restate handler behind a
+protocol-correct host/path or split health checks onto a separate port through
+`worker:managed`.
 
 ## Required Shared Environment
 
