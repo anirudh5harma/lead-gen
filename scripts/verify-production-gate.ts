@@ -16,6 +16,10 @@ import {
   runRestateEcsHealthProbe,
   type RestateEcsHealthResult,
 } from "./verify-restate-ecs-health.ts";
+import {
+  runOutlookReadinessProbe,
+  type OutlookReadinessResult,
+} from "./verify-outlook-readiness.ts";
 
 export type ProductionGateStatus = "ok" | "wait" | "external" | "fail";
 
@@ -117,10 +121,12 @@ export function classifyAwsSesGate(
 
 export function summarizeProductionGate(input: {
   restate: RestateEcsHealthResult;
+  outlook: OutlookReadinessResult;
   ses: AwsSesReadinessResult;
 }): ProductionGateResult {
   const decisions = [
     classifyRestateEcsGate(input.restate),
+    classifyOutlookGate(input.outlook),
     classifyAwsSesGate(input.ses),
   ];
   return {
@@ -133,6 +139,7 @@ export function summarizeProductionGate(input: {
 async function main(): Promise<void> {
   const result = summarizeProductionGate({
     restate: await runRestateEcsHealthProbe(),
+    outlook: await runOutlookReadinessProbe(),
     ses: shouldRunAwsSesGate(process.env)
       ? await runAwsSesReadinessProbe()
       : skippedAwsSesReadiness(),
@@ -158,6 +165,49 @@ async function main(): Promise<void> {
 
   console.error("\nProduction gate found an unexpected current failure.");
   process.exit(1);
+}
+
+export function classifyOutlookGate(
+  result: OutlookReadinessResult,
+): ProductionGateDecision {
+  if (result.ok) {
+    return {
+      name: "Outlook outbound",
+      status: "ok",
+      detail: `${result.connectedAccounts} connected Outlook account(s), ${result.activeSubscriptions} active reply-sync subscription(s).`,
+      next: "Run a controlled durable Play send/reply test before broad customer traffic.",
+    };
+  }
+
+  const failed = result.steps.filter((step) => step.status === "fail");
+  const database = failed.find((step) => step.label === "outlook: database configured");
+  if (database) {
+    return {
+      name: "Outlook outbound",
+      status: "external",
+      detail: database.detail ?? "Production database was not available for the Outlook readiness probe.",
+      next: "Run verify:production-gate with DATABASE_URL loaded, or run npm run verify:outlook from an environment that can read production channel accounts.",
+    };
+  }
+
+  const connectedMailbox = failed.find((step) => step.label === "outlook: connected mailbox");
+  if (connectedMailbox) {
+    return {
+      name: "Outlook outbound",
+      status: "external",
+      detail: connectedMailbox.detail ?? "No connected Outlook mailbox is available.",
+      next: "Connect a Microsoft 365 mailbox from Profile or Deliverability, then rerun npm run verify:outlook and verify a controlled send/reply sync.",
+    };
+  }
+
+  return {
+    name: "Outlook outbound",
+    status: "fail",
+    detail: failed.map((step) =>
+      `${step.label}${step.detail ? `: ${step.detail}` : ""}`
+    ).join(" | "),
+    next: "Repair Outlook subscription/account state before sending customer outbound through Microsoft Graph.",
+  };
 }
 
 function shouldRunAwsSesGate(

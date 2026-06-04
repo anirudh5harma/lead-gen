@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyAwsSesGate,
+  classifyOutlookGate,
   classifyRestateEcsGate,
   summarizeProductionGate,
 } from "../scripts/verify-production-gate.ts";
 import type { AwsSesReadinessResult } from "../scripts/verify-aws-ses.ts";
+import type { OutlookReadinessResult } from "../scripts/verify-outlook-readiness.ts";
 import type { RestateEcsHealthResult } from "../scripts/verify-restate-ecs-health.ts";
 
 function healthyRestate(): RestateEcsHealthResult {
@@ -35,6 +37,21 @@ function healthySes(): AwsSesReadinessResult {
       { label: "ses: sending enabled", status: "ok" },
       { label: "ses: at least one verified sending identity", status: "ok", detail: "go.bombsell.com" },
       { label: "ses: config set publishes delivery/bounce/complaint to trusted SNS", status: "ok" },
+    ],
+  };
+}
+
+function healthyOutlook(): OutlookReadinessResult {
+  return {
+    ok: true,
+    connectedAccounts: 1,
+    activeSubscriptions: 1,
+    steps: [
+      { label: "outlook: database configured", status: "ok" },
+      { label: "outlook: connected mailbox", status: "ok", detail: "1 connected Outlook account(s)" },
+      { label: "outlook: reply sync subscription", status: "ok", detail: "1/1 connected Outlook account(s) have active Graph subscriptions" },
+      { label: "outlook: account errors", status: "ok", detail: "No connected Outlook account errors recorded" },
+      { label: "managed-domain fallback", status: "ok", detail: "Disabled unless MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1" },
     ],
   };
 }
@@ -129,6 +146,47 @@ test("production gate treats unconfigured SES as optional managed capacity", () 
   assert.match(decision.next, /Outlook\/Microsoft Graph send and reply sync/);
 });
 
+test("production gate classifies missing Outlook mailbox as external setup", () => {
+  const outlook = healthyOutlook();
+  outlook.ok = false;
+  outlook.connectedAccounts = 0;
+  outlook.activeSubscriptions = 0;
+  outlook.steps = outlook.steps.map((step) =>
+    step.label === "outlook: connected mailbox"
+      ? {
+          ...step,
+          status: "fail",
+          detail: "No connected Outlook accounts",
+        }
+      : step,
+  );
+
+  const decision = classifyOutlookGate(outlook);
+
+  assert.equal(decision.status, "external");
+  assert.match(decision.next, /Connect a Microsoft 365 mailbox/);
+});
+
+test("production gate classifies missing Outlook reply subscription as fail", () => {
+  const outlook = healthyOutlook();
+  outlook.ok = false;
+  outlook.activeSubscriptions = 0;
+  outlook.steps = outlook.steps.map((step) =>
+    step.label === "outlook: reply sync subscription"
+      ? {
+          ...step,
+          status: "fail",
+          detail: "0/1 connected Outlook account(s) have active Graph subscriptions",
+        }
+      : step,
+  );
+
+  const decision = classifyOutlookGate(outlook);
+
+  assert.equal(decision.status, "fail");
+  assert.match(decision.next, /Repair Outlook subscription/);
+});
+
 test("production gate is operator-ok but not launch-ready for known blockers", () => {
   const restate = healthyRestate();
   restate.ok = false;
@@ -145,12 +203,12 @@ test("production gate is operator-ok but not launch-ready for known blockers", (
       : step,
   );
 
-  const result = summarizeProductionGate({ restate, ses });
+  const result = summarizeProductionGate({ restate, outlook: healthyOutlook(), ses });
 
   assert.equal(result.ok, true);
   assert.equal(result.launchReady, false);
   assert.deepEqual(
     result.decisions.map((decision) => decision.status),
-    ["wait", "external"],
+    ["wait", "ok", "external"],
   );
 });

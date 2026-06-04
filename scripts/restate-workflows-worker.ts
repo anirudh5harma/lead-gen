@@ -50,6 +50,7 @@ import {
   createSendingDomainProvisioningWorkflow,
   createSendingDomainWarmupWorkflow,
 } from "../core/product/domain-provisioning.ts";
+import { resolveProductEmailTransportMode } from "../core/product/env.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
 import {
@@ -213,10 +214,16 @@ function createProductLinkedInTransport(): LinkedInTransport {
 }
 
 function createOptionalResendEmailTransport() {
+  if (resolveProductEmailTransportMode() !== "resend") {
+    console.warn(
+      "[restate-workflows] optional owned-domain email transport is disabled; set MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1 to enable it",
+    );
+    return undefined;
+  }
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
     console.warn(
-      "[restate-workflows] RESEND_API_KEY is not set; optional owned-domain email transport is disabled",
+      "[restate-workflows] RESEND_API_KEY is not set; optional owned-domain email transport cannot start",
     );
     return undefined;
   }

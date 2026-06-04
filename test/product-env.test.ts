@@ -62,6 +62,14 @@ test("product env: email transport can be dry-run only outside production", () =
       NODE_ENV: "production",
       RESEND_API_KEY: "re_live",
     }),
+    "unconfigured",
+  );
+  assert.equal(
+    resolveProductEmailTransportMode({
+      NODE_ENV: "production",
+      RESEND_API_KEY: "re_live",
+      MANAGED_OWNED_DOMAIN_EMAIL_ENABLED: "1",
+    }),
     "resend",
   );
 });

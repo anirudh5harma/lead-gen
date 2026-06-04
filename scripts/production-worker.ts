@@ -47,6 +47,7 @@ import {
   type DraftGroundingProviderInput,
 } from "../core/plays/index.ts";
 import { getWorkspaceAgentContext } from "../core/product/context.ts";
+import { resolveProductEmailTransportMode } from "../core/product/env.ts";
 import {
   createSendingDomainProvisioningWorkflow,
   createSendingDomainWarmupWorkflow,
@@ -337,10 +338,16 @@ function createProductLinkedInTransport(): LinkedInTransport {
 }
 
 function createOptionalResendEmailTransport() {
+  if (resolveProductEmailTransportMode() !== "resend") {
+    console.warn(
+      "[production-worker] optional owned-domain email transport is disabled; set MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1 to enable it",
+    );
+    return undefined;
+  }
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
     console.warn(
-      "[production-worker] RESEND_API_KEY is not set; optional owned-domain email transport is disabled",
+      "[production-worker] RESEND_API_KEY is not set; optional owned-domain email transport cannot start",
     );
     return undefined;
   }

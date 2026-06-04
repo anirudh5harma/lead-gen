@@ -241,8 +241,15 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "RESEND_API_KEY",
     requirement: "production",
     category: "channels",
-    description: "Resend API key for transactional product email and optional owned-domain transport. Outlook outbound does not require it.",
+    description: "Resend API key for transactional product email. Rep outbound does not use it unless MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1.",
     example: "re_...",
+  },
+  {
+    name: "MANAGED_OWNED_DOMAIN_EMAIL_ENABLED",
+    requirement: "optional",
+    category: "channels",
+    description: "Set to 1 only when intentionally enabling managed owned-domain outbound capacity. Customer-connected Outlook remains the default launch path.",
+    example: "0",
   },
   {
     name: "RESEND_WEBHOOK_SECRET",
@@ -621,7 +628,12 @@ export function requireProductionKeys(
 export function resolveProductEmailTransportMode(
   env: Record<string, string | undefined> = process.env,
 ): ProductEmailTransportMode {
-  if (hasEnvValue(env.RESEND_API_KEY)) return "resend";
+  if (
+    hasEnvValue(env.RESEND_API_KEY) &&
+    env.MANAGED_OWNED_DOMAIN_EMAIL_ENABLED?.trim() === "1"
+  ) {
+    return "resend";
+  }
   return isProductionProductRuntime(env) ? "unconfigured" : "dry-run";
 }
 

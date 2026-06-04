@@ -58,6 +58,7 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "LINKEDIN_PROVIDER_WEBHOOK_SECRET", tier: "feature", purpose: "Native LinkedIn provider lifecycle callback authentication" },
   { key: "LINKEDIN_REDIRECT_URI", tier: "optional", purpose: "Native LinkedIn provider callback override" },
   { key: "RESEND_API_KEY", tier: "feature", purpose: "Transactional email" },
+  { key: "MANAGED_OWNED_DOMAIN_EMAIL_ENABLED", tier: "optional", purpose: "Explicitly enable optional managed owned-domain outbound transport" },
   { key: "RESEND_WEBHOOK_SECRET", tier: "feature", purpose: "Authenticated Resend webhook ingress" },
   { key: "PRODUCT_HUNT_TOKEN", tier: "feature", purpose: "Product Hunt ingestion" },
   { key: "REDDIT_USER_AGENT", tier: "feature", purpose: "Reddit ingestion identity" },

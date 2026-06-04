@@ -74,8 +74,8 @@ advertises the full required service set, including the Exa workflows, and
 `system.restate_runtime_probe.v1` with run
 `inv_14lN6T2L7BAb5Zxvgk2CKkZzT2KMfwJOha`. The rev31 deployment also makes the
 Outlook-first/optional-managed-domain email behavior live in the production
-worker, and `npm run verify:production-gate` is launch-ready with the legacy SES
-probe skipped unless `AWS_SES_REQUIRED=1`. The old App Runner deployment was
+worker. `npm run verify:production-gate` now includes read-only Outlook account
+readiness and skips the legacy SES probe unless `AWS_SES_REQUIRED=1`. The old App Runner deployment was
 drained by purging completed maintenance-only invocations and then
 force-removing the deployment registration; the unused App Runner service
 itself is paused. A same-port h2-capable handler was tested earlier and failed
@@ -134,7 +134,10 @@ Workers that start or bridge Restate invocations also need:
 
 Optional managed owned-domain capacity needs:
 
-- `RESEND_API_KEY` for the current Resend-owned-domain transport
+- `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1` to explicitly opt in to managed
+  owned-domain outbound capacity
+- `RESEND_API_KEY` for the current Resend-owned-domain transport when that
+  opt-in flag is set
 - `AWS_REGION`, `SES_CONFIGURATION_SET`, `AWS_SNS_TOPIC_ARNS`, and
   `AWS_SES_REQUIRED=1` only when intentionally exercising the legacy SES/SNS
   path
