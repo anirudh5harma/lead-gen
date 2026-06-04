@@ -63,8 +63,8 @@ forcing request-response mode breaks durable command checkpoints such as
 
 Current production note: ECS Express Gateway accepts the single-port HTTP/1
 health path when the handler keeps Restate bidirectional protocol enabled. ECS
-task definition revision `29` runs image
-`ecs-express-production-20260603-exa-surfaces-16ea1d7-amd64` via
+task definition revision `31` runs image
+`ecs-express-production-20260604-managed-email-6a38a3f-amd64` via
 `worker:managed` with `WORKER_TARGET_COMMAND=worker:production`; Restate
 traffic remains on `9080` and the managed wrapper also exposes `9081`. It is
 steady at desired `1`, running `1`, pending `0`. On 2026-06-04, live
@@ -72,7 +72,10 @@ steady at desired `1`, running `1`, pending `0`. On 2026-06-04, live
 advertises the full required service set, including the Exa workflows, and
 `npm run verify:restate-runtime` completed
 `system.restate_runtime_probe.v1` with run
-`inv_1iuCtSFLlvxY7yGFptUghMafheeDj9z2KV`. The old App Runner deployment was
+`inv_14lN6T2L7BAb5Zxvgk2CKkZzT2KMfwJOha`. The rev31 deployment also makes the
+Outlook-first/optional-managed-domain email behavior live in the production
+worker, and `npm run verify:production-gate` is launch-ready with the legacy SES
+probe skipped unless `AWS_SES_REQUIRED=1`. The old App Runner deployment was
 drained by purging completed maintenance-only invocations and then
 force-removing the deployment registration; the unused App Runner service
 itself is paused. A same-port h2-capable handler was tested earlier and failed
@@ -88,8 +91,8 @@ gateway shape that explicitly supports a separate health target. Keep
 `npm run verify:restate-ecs-health` green before raising autonomous ingestion
 volume; it checks ECS service steadiness, ALB target health, recent ECS service
 events, and recent CloudWatch Restate stream/health errors. If timeouts recur
-after the wider health window, move the Restate handler behind a
-protocol-correct host/path or a dedicated health target group, not another
+after the wider health window, move the same worker contract to Railway/Render
+or put the Restate handler behind a protocol-correct host/path, not another
 custom-port hot patch on the generated ECS Express target group.
 
 For release/check-in decisions, run `npm run verify:production-gate` before
