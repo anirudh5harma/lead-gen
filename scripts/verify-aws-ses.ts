@@ -12,7 +12,9 @@ import {
   GetEmailIdentityCommand,
   ListEmailIdentitiesCommand,
   SESv2Client,
+  type GetAccountCommandOutput,
 } from "@aws-sdk/client-sesv2";
+import { pathToFileURL } from "node:url";
 
 interface Step {
   label: string;
@@ -41,9 +43,7 @@ async function main(): Promise<void> {
     note(
       "ses: production access enabled",
       account.ProductionAccessEnabled === true,
-      account.ProductionAccessEnabled === true
-        ? undefined
-        : "SES account is still in sandbox",
+      describeProductionAccessFailure(account),
     );
     note(
       "ses: sending enabled",
@@ -133,7 +133,26 @@ async function main(): Promise<void> {
   console.log("\nAWS SES outbound readiness verified.");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+export function describeProductionAccessFailure(
+  account: Pick<GetAccountCommandOutput, "ProductionAccessEnabled" | "Details">,
+): string | undefined {
+  if (account.ProductionAccessEnabled === true) return undefined;
+
+  const details = account.Details;
+  const review = details?.ReviewDetails;
+  const fields = [
+    "SES account is still in sandbox",
+    review?.Status ? `review=${review.Status}` : null,
+    review?.CaseId ? `case=${review.CaseId}` : null,
+    details?.MailType ? `mailType=${details.MailType}` : null,
+    details?.WebsiteURL ? `website=${details.WebsiteURL}` : null,
+  ].filter(Boolean);
+  return fields.join("; ");
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

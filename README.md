@@ -369,4 +369,7 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
   and runtime canary pass; after observed long-poll health churn, the target
   group now uses a 15-second timeout and 5 unhealthy checks before replacement.
   If timeouts recur, split health off the Restate traffic port.
+- Resolve AWS SES production access before broad owned-domain outbound.
+  `go.bombsell.com`, DKIM, SNS feedback, and the app bounce pipeline verify,
+  but the SES account production-access review is currently denied.
 - `npm audit` findings should be resolved before release.
