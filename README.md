@@ -365,6 +365,7 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
 
 #### Known follow-ups (do not block launch)
 
-- Redeploy/register the latest Exa-expanded Restate handler host, then verify
-  Restate lists every required workflow service and the runtime canary passes.
+- Monitor ECS target health for the Restate handler. Live Restate registration
+  and runtime canary pass, but recent service history still shows periodic
+  `/health` timeouts and task replacements on port `9080`.
 - `npm audit` findings should be resolved before release.

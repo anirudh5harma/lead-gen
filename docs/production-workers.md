@@ -62,18 +62,22 @@ forcing request-response mode breaks durable command checkpoints such as
 
 Current production note: ECS Express Gateway accepts the single-port HTTP/1
 health path when the handler keeps Restate bidirectional protocol enabled. ECS
-task definition revision `18` with image
-`ecs-express-production-202606022235-probe-amd64` is steady, advertises
-`system.restate_runtime_probe.v1`, passes `npm run verify:restate-runtime`, and
-has completed one fresh `ingest_workspace_poll` invocation plus an eight-source
-controlled batch. The old App Runner deployment was drained by purging completed
-maintenance-only invocations and then force-removing the deployment
-registration; `npm run verify:restate` now passes with the ECS deployment as the
-only registered worker. The unused App Runner service itself is paused. A
-same-port h2-capable handler was tested earlier and failed ECS health
-replacement. Keep monitoring the HTTP/1 path under higher ingestion load; if
-`Connection closed` warnings recur, move the Restate handler behind a
-protocol-correct host/path or split health checks onto a separate port.
+task definition revision `28` runs image
+`ecs-express-production-20260603-exa-surfaces-16ea1d7-amd64` and is steady at
+desired `1`, running `1`, pending `0`. On 2026-06-04, live
+`npm run verify:restate` confirmed deployment `dp_16RLtYXG3bAoyujNOKDPH57`
+advertises the full required service set, including the Exa workflows, and
+`npm run verify:restate-runtime` completed
+`system.restate_runtime_probe.v1` with run
+`inv_1iuCtSFLlvxY7yGFptUghMafheeDj9z2KV`. The old App Runner deployment was
+drained by purging completed maintenance-only invocations and then
+force-removing the deployment registration; the unused App Runner service
+itself is paused. A same-port h2-capable handler was tested earlier and failed
+ECS health replacement. Keep monitoring the HTTP/1 path: ECS target health is
+currently healthy, but recent service history still shows periodic `/health`
+timeouts and task replacements on port `9080`. If those recur, move the
+Restate handler behind a protocol-correct host/path, tune the target group, or
+split health checks onto a separate port through `worker:managed`.
 
 ## Required Shared Environment
 
