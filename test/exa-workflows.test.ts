@@ -141,3 +141,22 @@ test("Exa recommendation feedback is a typed review event", () => {
   assert.equal(parsed.decision, "accepted");
   assert.equal(parsed.item.title, "Pricing objection angle");
 });
+
+test("Exa query events carry typed procedural query plans", () => {
+  const parsed = eventRegistry["exa.query.requested"].parse({
+    query:
+      "AI GTM buyer questions operator kept evidence patterns: Buyer comparison angle",
+    original_query: "AI GTM buyer questions",
+    intent: "content_research",
+    query_plan: {
+      source: "procedural_memory",
+      pattern_key: "recommendation:content_opportunity|stage:exa_review",
+      exemplar_ids: ["00000000-0000-4000-8000-000000000101"],
+      kept_examples: ["Buyer comparison angle"],
+      skipped_examples: ["Generic launch recap"],
+    },
+  });
+
+  assert.equal(parsed.query_plan?.source, "procedural_memory");
+  assert.equal(parsed.original_query, "AI GTM buyer questions");
+});

@@ -352,6 +352,12 @@ Implemented and verified:
   and a keep rate above the quality threshold, then emits
   `rep.memory.procedural.seeded` with kept/skipped examples. This avoids
   overfitting to a single operator click while keeping the path replayable.
+- Content and AEO research now plan Exa queries with that procedural memory:
+  before search, the planner retrieves active Rep exemplars for
+  `recommendation:content_opportunity|stage:exa_review` or
+  `recommendation:aeo_gap|stage:exa_review`, appends compact kept/skipped
+  evidence hints to the Exa query, and records typed `query_plan` provenance on
+  Exa request/completion/projection events.
 - Signal-to-email and Signal-to-LinkedIn Plays automatically call Exa draft
   grounding when the triggering Signal lacks Exa proof or carries stale proof;
   the grounding summary reaches the writer and hot-path judge, and the draft
@@ -370,8 +376,8 @@ Implemented and verified:
 
 Remaining hardening:
 
-- Teach Exa query planning to retrieve the new recommendation procedural
-  patterns directly before Content and AEO research runs.
+- Add outcome attribution once accepted Content/AEO recommendations are turned
+  into published work or measurable answer-visibility changes.
 
 ## Cost And Quality Controls
 
@@ -407,6 +413,8 @@ Current enforcement:
   Content/AEO recommendations from `recommendation.reviewed`.
 - Implemented: repeated kept/skipped recommendation patterns can seed Rep
   procedural memory after the minimum-feedback threshold.
+- Implemented: Content/AEO Exa query planning retrieves those procedural
+  patterns and records typed `query_plan` provenance.
 - Remaining: connect accepted recommendation patterns to downstream Outcomes
   once Content/AEO execution produces attributable result events.
 

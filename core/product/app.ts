@@ -119,6 +119,7 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
+import { planExaResearchQuery } from "./exa-query-planning.ts";
 import { createRecommendationLearningProjection } from "./recommendation-learning.ts";
 import {
   createExaClientFromEnv,
@@ -2153,8 +2154,14 @@ export async function researchWorkspaceWithExa(
       session,
     );
   }
+  const planned = await planExaResearchQuery(engine.pool, {
+    workspace_id: session.workspace_id,
+    intent,
+    query,
+  });
+  const exaQuery = planned.query;
   const researchEntityId = createHash("sha256")
-    .update(`${intent}:${query}`)
+    .update(`${intent}:${exaQuery}`)
     .digest("hex")
     .slice(0, 20);
   await engine.bus.publish({
@@ -2166,11 +2173,13 @@ export async function researchWorkspaceWithExa(
       "exa.query.requested",
       session.workspace_id,
       researchEntityId,
-      { query, intent, num_results: input.num_results ?? 8 },
+      { query: exaQuery, intent, num_results: input.num_results ?? 8 },
     ),
     payload: {
-      query,
+      query: exaQuery,
       intent,
+      original_query: planned.query_plan ? planned.original_query : undefined,
+      query_plan: planned.query_plan,
     },
   });
   const search = await searchExaWithWorkspaceCache({
@@ -2179,7 +2188,7 @@ export async function researchWorkspaceWithExa(
     intent,
     client: createExaClientFromEnv(),
     search: {
-      query,
+      query: exaQuery,
       type: "auto",
       numResults: Math.max(1, Math.min(25, Math.trunc(input.num_results ?? 8))),
       includeText: input.include_text ?? true,
@@ -2198,11 +2207,15 @@ export async function researchWorkspaceWithExa(
   });
   const projected = await projectExaEvidence(engine.pool, {
     workspace_id: session.workspace_id,
-    query,
+    query: exaQuery,
     query_intent: intent,
     request_id: response.requestId,
     results: response.results,
-    properties: { phase: intent },
+    properties: {
+      phase: intent,
+      original_query: planned.query_plan ? planned.original_query : null,
+      query_plan: planned.query_plan ?? null,
+    },
   });
   const evidenceSourceIds = projected.sources.map((source) => source.id);
   const summary = summarizeExaEvidence(response.results, 8);
@@ -2216,11 +2229,13 @@ export async function researchWorkspaceWithExa(
       "exa.query.completed",
       session.workspace_id,
       researchEntityId,
-      { query, intent, request_id: response.requestId },
+      { query: exaQuery, intent, request_id: response.requestId },
     ),
     payload: {
-      query,
+      query: exaQuery,
       intent,
+      original_query: planned.query_plan ? planned.original_query : undefined,
+      query_plan: planned.query_plan,
       request_id: response.requestId,
       result_count: response.results.length,
       cache_hit: search.cache_hit,
@@ -2238,11 +2253,13 @@ export async function researchWorkspaceWithExa(
       "exa.evidence.projected",
       session.workspace_id,
       researchEntityId,
-      { query, intent, evidence_source_ids: evidenceSourceIds },
+      { query: exaQuery, intent, evidence_source_ids: evidenceSourceIds },
     ),
     payload: {
-      query,
+      query: exaQuery,
       intent,
+      original_query: planned.query_plan ? planned.original_query : undefined,
+      query_plan: planned.query_plan,
       evidence_source_ids: evidenceSourceIds,
       result_count: response.results.length,
     },
@@ -2254,7 +2271,7 @@ export async function researchWorkspaceWithExa(
         ? "aeo.audit.completed"
         : "rep.research.completed";
   const completionKeyPayload = {
-    query,
+    query: exaQuery,
     evidence_source_ids: evidenceSourceIds,
     request_id: response.requestId,
     ...(intent === "content_research" || intent === "aeo_audit"
@@ -2269,11 +2286,13 @@ export async function researchWorkspaceWithExa(
     idempotency_key: configurationEventKey(
       eventType,
       session.workspace_id,
-      createHash("sha256").update(query).digest("hex").slice(0, 20),
+      createHash("sha256").update(exaQuery).digest("hex").slice(0, 20),
       completionKeyPayload,
     ),
     payload: {
-      query,
+      query: exaQuery,
+      original_query: planned.query_plan ? planned.original_query : undefined,
+      query_plan: planned.query_plan,
       request_id: response.requestId,
       evidence_source_ids: evidenceSourceIds,
       summary,

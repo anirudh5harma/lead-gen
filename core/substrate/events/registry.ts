@@ -701,14 +701,26 @@ const LLMCallDeferred = z.object({
 // Public-web intelligence (Exa)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const ExaQueryPlan = z.object({
+  source: z.literal("procedural_memory"),
+  pattern_key: z.string().min(1),
+  exemplar_ids: z.array(z.string().uuid()),
+  kept_examples: z.array(z.string()),
+  skipped_examples: z.array(z.string()),
+});
+
 const ExaQueryRequested = z.object({
   query: z.string().min(1),
+  original_query: z.string().min(1).optional(),
+  query_plan: ExaQueryPlan.optional(),
   intent: z.string().min(1),
   source_id: z.string().uuid().nullable().optional(),
 });
 
 const ExaQueryCompleted = z.object({
   query: z.string().min(1),
+  original_query: z.string().min(1).optional(),
+  query_plan: ExaQueryPlan.optional(),
   intent: z.string().min(1),
   request_id: z.string().nullable(),
   result_count: z.number().int().nonnegative(),
@@ -728,6 +740,8 @@ const ExaContentsFetched = z.object({
 
 const ExaEvidenceProjected = z.object({
   query: z.string().min(1),
+  original_query: z.string().min(1).optional(),
+  query_plan: ExaQueryPlan.optional(),
   intent: z.string().min(1),
   evidence_source_ids: z.array(z.string().uuid()),
   result_count: z.number().int().nonnegative(),
@@ -735,6 +749,8 @@ const ExaEvidenceProjected = z.object({
 
 const RepResearchCompleted = z.object({
   query: z.string().min(1),
+  original_query: z.string().min(1).optional(),
+  query_plan: ExaQueryPlan.optional(),
   request_id: z.string().nullable(),
   evidence_source_ids: z.array(z.string().uuid()),
   summary: z.string(),
