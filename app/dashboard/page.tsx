@@ -1,7 +1,8 @@
 import Link from "next/link";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { getAppState } from "@/core/product/app.ts";
+import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,13 @@ interface OutcomeRow {
   last_activity_at: Date;
   counterparty_name: string | null;
   rep_name: string | null;
+}
+
+interface RepPulse {
+  sampark_active: number;
+  vaani_drafts: number;
+  prayog_runs: number;
+  bodh_gaps: number;
 }
 
 async function loadRunning(workspaceId: string): Promise<RunningRow[]> {
@@ -52,6 +60,30 @@ async function loadOutcomes(workspaceId: string): Promise<OutcomeRow[]> {
   return rows;
 }
 
+async function loadRepPulse(
+  workspaceId: string,
+  contentDrafts: number,
+  aeoGaps: number,
+): Promise<RepPulse> {
+  const pool = getPool();
+  const { rows } = await pool.query<{ sampark_active: string; prayog_runs: string }>(
+    `select
+       (select count(*)::text from conversations c
+          where c.workspace_id = $1
+            and c.status in ('open','awaiting_them','awaiting_us')) as sampark_active,
+       (select count(*)::text from play_runs pr
+          where pr.workspace_id = $1
+            and pr.created_at >= now() - interval '24 hours') as prayog_runs`,
+    [workspaceId],
+  );
+  return {
+    sampark_active: Number(rows[0]?.sampark_active ?? 0),
+    vaani_drafts: contentDrafts,
+    prayog_runs: Number(rows[0]?.prayog_runs ?? 0),
+    bodh_gaps: aeoGaps,
+  };
+}
+
 function timeAgo(d: Date): string {
   const diff = Date.now() - d.getTime();
   const minutes = Math.floor(diff / 60_000);
@@ -63,8 +95,8 @@ function timeAgo(d: Date): string {
 }
 
 const STATUS_TONE: Record<string, { label: string; tone: "pos" | "warn" | "neutral" }> = {
-  awaiting_us: { label: "Needs you", tone: "warn" },
-  awaiting_them: { label: "Awaiting them", tone: "neutral" },
+  awaiting_us: { label: "Needs reply", tone: "warn" },
+  awaiting_them: { label: "Sent", tone: "neutral" },
   open: { label: "Open", tone: "neutral" },
   closed_won: { label: "Won", tone: "pos" },
   closed_lost: { label: "Closed", tone: "neutral" },
@@ -80,26 +112,78 @@ const SIGNAL_ICONS: Record<string, string> = {
   news: "newspaper",
 };
 
+const REP_TILES: Array<{
+  key: keyof RepPulse;
+  name: string;
+  role: string;
+  href: string;
+  icon: string;
+  unit: (n: number) => string;
+}> = [
+  {
+    key: "sampark_active",
+    name: "Sampark",
+    role: "Outreach",
+    href: "/dashboard/conversations",
+    icon: "forum",
+    unit: (n) => `${n} ${n === 1 ? "conversation" : "conversations"} moving`,
+  },
+  {
+    key: "vaani_drafts",
+    name: "Vaani",
+    role: "Content",
+    href: "/dashboard/content",
+    icon: "edit_note",
+    unit: (n) => `${n} ${n === 1 ? "draft" : "drafts"} to review`,
+  },
+  {
+    key: "prayog_runs",
+    name: "Prayog",
+    role: "Campaigns",
+    href: "/dashboard/ingestion",
+    icon: "science",
+    unit: (n) => `${n} ${n === 1 ? "experiment" : "experiments"} today`,
+  },
+  {
+    key: "bodh_gaps",
+    name: "Bodh",
+    role: "AEO",
+    href: "/dashboard/aeo",
+    icon: "neurology",
+    unit: (n) => `${n} ${n === 1 ? "gap" : "gaps"} open`,
+  },
+];
+
 export default async function BriefPage() {
-  const workspace = await getActiveWorkspace();
-  if (!workspace) {
+  const session = await getActiveWorkspaceSession();
+  if (!session) {
     return (
       <BriefView
         workspaceName={null}
         running={[]}
         outcomes={[]}
+        pulse={{ sampark_active: 0, vaani_drafts: 0, prayog_runs: 0, bodh_gaps: 0 }}
       />
     );
   }
-  const [running, outcomes] = await Promise.all([
-    loadRunning(workspace.id),
-    loadOutcomes(workspace.id),
+  const pool = getPool();
+  const state = await getAppState(pool, {
+    workspace_id: session.workspace.id,
+    user_id: session.user_id,
+  });
+  const contentDrafts = state.content_reviews.filter((r) => !r.outcome_id).length;
+  const aeoGaps = state.aeo_reviews.filter((r) => !r.outcome_id).length;
+  const [running, outcomes, pulse] = await Promise.all([
+    loadRunning(session.workspace.id),
+    loadOutcomes(session.workspace.id),
+    loadRepPulse(session.workspace.id, contentDrafts, aeoGaps),
   ]);
   return (
     <BriefView
-      workspaceName={workspace.name}
+      workspaceName={session.workspace.name}
       running={running}
       outcomes={outcomes}
+      pulse={pulse}
     />
   );
 }
@@ -108,16 +192,20 @@ function BriefView({
   workspaceName,
   running,
   outcomes,
+  pulse,
 }: {
   workspaceName: string | null;
   running: RunningRow[];
   outcomes: OutcomeRow[];
+  pulse: RepPulse;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
+  const totalPulse =
+    pulse.sampark_active + pulse.vaani_drafts + pulse.prayog_runs + pulse.bodh_gaps;
 
   return (
     <div className="space-y-12">
@@ -143,10 +231,39 @@ function BriefView({
           )}
         </h1>
         <p className="mt-5 max-w-[64ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
-          {running.length + outcomes.length === 0
+          {totalPulse === 0
             ? "Nothing to surface yet. Once profile, channels and plays are in place, the work will appear here."
-            : `${running.length} ${running.length === 1 ? "thing" : "things"} running, ${outcomes.length} ${outcomes.length === 1 ? "trajectory" : "trajectories"} moving.`}
+            : `Sampark watching ${pulse.sampark_active}. Vaani drafting ${pulse.vaani_drafts}. Prayog running ${pulse.prayog_runs}. Bodh found ${pulse.bodh_gaps} gaps.`}
         </p>
+      </section>
+
+      {/* Rep tiles */}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {REP_TILES.map((tile) => (
+          <Link
+            key={tile.name}
+            href={tile.href}
+            className="group rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
+          >
+            <div className="flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+                <Icon name={tile.icon} size={15} />
+              </span>
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
+                {tile.role}
+              </p>
+            </div>
+            <p
+              className="mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              {tile.name}
+            </p>
+            <p className="mt-1 text-[13px] text-[var(--color-text-2)]">
+              {tile.unit(pulse[tile.key])}
+            </p>
+          </Link>
+        ))}
       </section>
 
       {/* Two feeds */}

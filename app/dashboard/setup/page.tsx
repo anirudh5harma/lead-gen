@@ -162,6 +162,7 @@ export default async function SetupPage() {
 
   return (
     <>
+      <RepRoster reps={state.reps} />
       <section className="section-canvas overflow-hidden">
         <div className="section-thread section-thread-a" />
         <div className="p-5 pb-0 sm:p-8 sm:pb-0">
@@ -546,4 +547,81 @@ function inferSignalKind(icp?: SetupIcpRow, play?: SetupPlayRow): string {
     (item) => item.field === "kind" && item.op === "eq" && typeof item.value === "string",
   );
   return typeof rule?.value === "string" ? rule.value : "hiring";
+}
+
+const REP_META: Record<
+  string,
+  { role: string; surface: string; href: string; icon: string }
+> = {
+  Sampark: {
+    role: "Outreach",
+    surface: "Talks to people",
+    href: "/dashboard/conversations",
+    icon: "forum",
+  },
+  Vaani: {
+    role: "Content",
+    surface: "Writes what's worth publishing",
+    href: "/dashboard/content",
+    icon: "edit_note",
+  },
+  Prayog: {
+    role: "Campaigns",
+    surface: "Tests what scales",
+    href: "/dashboard/ingestion",
+    icon: "science",
+  },
+  Bodh: {
+    role: "AEO",
+    surface: "Finds answer gaps",
+    href: "/dashboard/aeo",
+    icon: "neurology",
+  },
+};
+
+const REP_ORDER = ["Sampark", "Vaani", "Prayog", "Bodh"];
+
+function RepRoster({ reps }: { reps: SetupRepRow[] }) {
+  const byName = new Map(reps.map((r) => [r.name, r]));
+  return (
+    <section className="mb-6 section-canvas p-5 sm:p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="brief-kicker">The cast</p>
+        <p className="text-xs text-[var(--color-text-3)]">Four reps, one outcome each</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {REP_ORDER.map((name) => {
+          const meta = REP_META[name];
+          const r = byName.get(name);
+          const status = r?.status ?? "absent";
+          return (
+            <a
+              key={name}
+              href={meta.href}
+              className="group rounded-[12px] border border-[color:var(--color-line-1)] bg-[rgba(255,255,255,0.6)] p-4 transition-colors hover:bg-[rgba(255,255,255,0.9)]"
+            >
+              <div className="flex items-center gap-2">
+                <span className="grid size-7 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+                  <Icon name={meta.icon} size={15} />
+                </span>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
+                  {meta.role}
+                </p>
+              </div>
+              <p
+                className="mt-3 text-[20px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {name}
+              </p>
+              <p className="mt-1 text-[12.5px] text-[var(--color-text-2)]">{meta.surface}</p>
+              <p className="mt-3 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
+                {status === "active" ? "Active" : status === "absent" ? "Not set up" : status}
+              </p>
+            </a>
+          );
+        })}
+      </div>
+    </section>
+  );
 }

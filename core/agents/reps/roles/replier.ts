@@ -450,8 +450,10 @@ function formatFactValue(value: unknown): string {
 function deterministicReplyDraft(
   brief: ReplyDraftBrief,
   procedural_exemplars: ProceduralExemplar[],
+  repName: string,
 ): Pick<ReplyDraftResult, "subject" | "body" | "body_text"> {
   const firstName = brief.counterparty.given_name ?? brief.counterparty.name.split(" ")[0] ?? "there";
+  const signature = `-${repName}`;
   const exemplar = procedural_exemplars.map(exemplarText).find(Boolean);
   if (exemplar) {
     const body = [
@@ -459,7 +461,7 @@ function deterministicReplyDraft(
       "",
       exemplar.replace(/^hi\s+[^,\n]+,?\s*/iu, "").trim(),
       "",
-      "-Maya",
+      signature,
     ].join("\n");
     return {
       subject: replySubject(brief.inbound.subject),
@@ -478,7 +480,7 @@ function deterministicReplyDraft(
         "",
         "Would a short conversation this week make sense?",
         "",
-        "-Maya",
+        signature,
       ].join("\n")
     : [
         `Hi ${firstName},`,
@@ -489,7 +491,7 @@ function deterministicReplyDraft(
         "",
         "Worth a quick note either way?",
         "",
-        "-Maya",
+        signature,
       ].join("\n");
   return {
     subject: replySubject(brief.inbound.subject),
@@ -519,11 +521,9 @@ export function createReplyDraftRole(
         3,
       );
       if (!opts.llm) {
-        const draft = deterministicReplyDraft(brief, procedural_exemplars);
+        const draft = deterministicReplyDraft(brief, procedural_exemplars, ctx.rep.name);
         return {
           ...draft,
-          body: draft.body.replace(/-Maya$/u, `-${ctx.rep.name}`),
-          body_text: draft.body_text.replace(/-Maya$/u, `-${ctx.rep.name}`),
           pattern_key,
           seed_pattern_key: seedPatternKey(pattern_keys, pattern_key),
           exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),

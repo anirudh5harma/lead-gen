@@ -167,12 +167,12 @@ export default async function IngestionPage() {
   if (!workspace) {
     return (
       <section className="section-canvas p-6">
-        <p className="brief-kicker">Campaigns</p>
+        <p className="brief-kicker">Prayog · Campaigns</p>
         <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
           No workspace yet.
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--color-text-2)]">
-          Create a profile, then choose the signals and companies Bombsell should watch.
+          Create a profile, then Prayog will test what scales.
         </p>
       </section>
     );
@@ -194,12 +194,12 @@ export default async function IngestionPage() {
           <div className="p-5 sm:p-8">
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="brief-kicker">Campaigns</p>
+                <p className="brief-kicker">Prayog · Campaigns</p>
                 <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-                  Tell Bombsell what to watch.
+                  Prayog is testing what scales.
                 </h1>
                 <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-                  Campaigns start as a few high-signal notes: profile, companies, and sources. Everything else should stay quiet until there is useful work.
+                  Small experiments, clear review gates, only the ones with lift expand. The plumbing stays underneath.
                 </p>
               </div>
               <form action={runSignalAggregatorAction}>
@@ -250,7 +250,14 @@ export default async function IngestionPage() {
           </div>
 
           <aside className="border-t border-[var(--color-line-1)] bg-[rgba(255,255,255,0.42)] p-5 lg:border-l lg:border-t-0">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">Add notes</p>
+            <details className="group">
+              <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-[var(--color-text-1)]">
+                <span>Tuning</span>
+                <Icon name="tune" size={16} />
+              </summary>
+              <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+                Profile, companies, and sources Prayog draws from. Edit only when something stops fitting.
+              </p>
             <div className="mt-4 grid gap-4">
               <MiniForm title="Profile">
                 <form action={configureIcpAction} className="grid gap-3">
@@ -289,6 +296,7 @@ export default async function IngestionPage() {
                 </form>
               </MiniForm>
             </div>
+            </details>
           </aside>
         </div>
       </section>

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function AeoPage() {
   const session = await getActiveWorkspaceSession();
   if (!session) {
-    return <CanvasEmpty label="AEO" title="No workspace selected." />;
+    return <CanvasEmpty label="Bodh · AEO" title="No workspace selected." />;
   }
 
   const pool = getPool();
@@ -31,7 +31,7 @@ export default async function AeoPage() {
         <div className="section-thread section-thread-a" />
         <div className="grid gap-8 lg:grid-cols-[1fr_320px] lg:items-end">
           <div>
-            <p className="brief-kicker">AEO</p>
+            <p className="brief-kicker">Bodh · AEO</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
               Bodh finds the answers buyers expect.
             </h1>
@@ -42,8 +42,8 @@ export default async function AeoPage() {
           <div className="section-note">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">Visibility loop</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <MiniStatus label="Open gaps" value={reviews.length} />
-              <MiniStatus label="Recorded" value={recorded} />
+              <MiniStatus label="Gaps closing" value={reviews.length - recorded} />
+              <MiniStatus label="Lift recorded" value={recorded} />
             </div>
             <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
               Gaps stay lightweight here: proof, decision, Outcome. The machinery stays underneath.
