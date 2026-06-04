@@ -346,6 +346,12 @@ Implemented and verified:
   for all recommendations, Content opportunities, and AEO gaps. The same
   summary appears in workspace agent context so future Rep and Exa planning can
   bias toward operator-kept evidence.
+- Repeated kept recommendation feedback now compounds into Rep procedural
+  memory through `recommendation.learning_to_procedural_memory.v1`. The
+  projector waits for at least three accepted recommendations of the same kind
+  and a keep rate above the quality threshold, then emits
+  `rep.memory.procedural.seeded` with kept/skipped examples. This avoids
+  overfitting to a single operator click while keeping the path replayable.
 - Signal-to-email and Signal-to-LinkedIn Plays automatically call Exa draft
   grounding when the triggering Signal lacks Exa proof or carries stale proof;
   the grounding summary reaches the writer and hot-path judge, and the draft
@@ -364,8 +370,8 @@ Implemented and verified:
 
 Remaining hardening:
 
-- Promote repeated kept/skipped recommendation patterns into procedural memory
-  once enough feedback exists to avoid overfitting to one-off operator choices.
+- Teach Exa query planning to retrieve the new recommendation procedural
+  patterns directly before Content and AEO research runs.
 
 ## Cost And Quality Controls
 
@@ -399,6 +405,8 @@ Current enforcement:
   trigger channel action by themselves.
 - Implemented: aggregate operator-quality metrics for accepted/ignored
   Content/AEO recommendations from `recommendation.reviewed`.
+- Implemented: repeated kept/skipped recommendation patterns can seed Rep
+  procedural memory after the minimum-feedback threshold.
 - Remaining: connect accepted recommendation patterns to downstream Outcomes
   once Content/AEO execution produces attributable result events.
 

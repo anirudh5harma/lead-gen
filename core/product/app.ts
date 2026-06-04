@@ -119,6 +119,7 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
+import { createRecommendationLearningProjection } from "./recommendation-learning.ts";
 import {
   createExaClientFromEnv,
   projectExaEvidence,
@@ -3765,6 +3766,10 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
     createOutcomeMemoryUpdateProjection({
       bus: engine.bus,
       attribution: resolveProductOutcomeAttribution,
+    }),
+    createRecommendationLearningProjection({
+      pool: engine.pool,
+      bus: engine.bus,
     }),
     createProceduralMemorySeedProjection(engine.pool),
     createProceduralMemoryStateProjection(engine.pool),
