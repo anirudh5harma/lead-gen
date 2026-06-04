@@ -24,7 +24,7 @@ db/
 | 008 | `008_primitive_rep.sql`                 | Rep persona + three-tier memory (episodic/semantic/procedural)    |
 | 009 | `009_primitive_play.sql`                | Play definition (NL + compiled spec) + Play runs                  |
 | 010 | `010_primitive_outcome.sql`             | Outcome (scored, attributable result)                             |
-| 011 | `011_channel_accounts.sql`              | Channel accounts (Gmail/LinkedIn/X/...) + owned sending domains   |
+| 011 | `011_channel_accounts.sql`              | Channel accounts + optional owned sending domains                  |
 | 012 | `012_rls_policies.sql`                  | Row-level security: workspace is the boundary                     |
 | 013 | `013_event_notify_trigger.sql`          | Postgres event notification bridge                                |
 | 014 | `014_channel_kinds_outlook.sql`         | Explicit Outlook channel-account kind                             |

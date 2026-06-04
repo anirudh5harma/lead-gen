@@ -21,7 +21,8 @@ projection, and visible UI feedback where applicable.
 | Configure ICP | `/dashboard/setup`, `/dashboard/campaigns` | `product.icp.configure` | `workspace.icp.configured` -> ICP projection | Ready |
 | Configure Signal email Play | `/dashboard/setup` | `product.play.signal_email.configure` | `play.configured` -> Play projection | Ready |
 | Configure Signal LinkedIn Play | MCP/internal Rep execution | `product.play.signal_linkedin.configure` | `play.configured` -> durable Signal-to-LinkedIn workflow with hot-path judge and native channel send/defer | Ready |
-| Configure email account | `/dashboard/setup` | `product.email_account.configure` | `channel.account.configured` -> channel projection | Ready |
+| Connect Outlook inbox | `/dashboard/setup`, `/dashboard/deliverability` | `product.outlook_account.connect_url.get` | Microsoft OAuth URL -> `email.outlook.authorization.received` -> `oauth_outlook` channel account projection -> `channel.account.connected` | Ready |
+| Configure optional owned sender | `/dashboard/deliverability` | `product.email_account.configure` | `channel.account.configured` -> optional owned-domain channel projection | Ready |
 | Connect LinkedIn account | `/dashboard/setup` | `product.linkedin_account.connect_url.get` | Provider auth URL -> `linkedin.account.authorization.received` -> channel account projection -> `channel.account.connected` | Ready |
 | Track company | `/dashboard/campaigns` | `product.company.track` | `workspace.company.tracked` -> graph/source projection | Ready |
 | Configure signal source | `/dashboard/campaigns`, MCP/internal Rep execution | `product.source.configure` | `workspace.source.configured` -> source config; push sources do not enter poll maintenance | Ready |

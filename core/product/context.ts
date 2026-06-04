@@ -307,7 +307,7 @@ export function formatChannelReadiness(accounts: readonly ContextChannelAccount[
 export function formatEmailDeliverability(accounts: readonly ContextChannelAccount[]): string {
   return listOrEmpty(
     accounts
-      .filter((account) => account.kind === "email_domain" || account.kind === "email_oauth")
+      .filter((account) => account.kind === "email_domain" || account.kind === "oauth_outlook")
       .map(
         (account) =>
           `- ${line(account.display_name)} status=${account.status} domain=${account.domain ?? "-"} warmup=${account.warmup_state ?? "-"} cap=${account.daily_used}/${account.current_daily_cap ?? account.daily_cap ?? "-"} bounce24h=${account.bounce_rate_24h ?? "-"}`,

@@ -117,6 +117,7 @@ const verticalStore = createPostgresVerticalSliceStore(pool);
 const emailChannel = createPostgresOwnedDomainEmailChannel({
   pool,
   transport: createResendEmailTransport({ apiKey: requiredEnv("RESEND_API_KEY") }),
+  outlook,
 });
 const linkedinChannel = createPostgresLinkedInChannel({
   pool,

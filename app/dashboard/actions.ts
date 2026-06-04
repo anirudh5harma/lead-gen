@@ -104,11 +104,6 @@ export async function configureActivationAction(formData: FormData) {
         daily_cap: numberValue(formData, "daily_cap", 25),
         approval,
       },
-      email: {
-        display_name:
-          value(formData, "sender") || "sampark@go.bombsell.example",
-        daily_cap: numberValue(formData, "daily_cap", 25),
-      },
     },
     session,
   );

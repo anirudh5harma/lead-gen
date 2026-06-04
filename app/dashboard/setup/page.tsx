@@ -33,6 +33,7 @@ interface SetupIcpRow {
 interface SetupAccountRow {
   id: string;
   display_name: string;
+  kind: string;
   status: string;
   daily_cap: number | null;
 }
@@ -55,10 +56,11 @@ async function loadSetupState(workspaceId: string) {
       [workspaceId],
     ),
     pool.query<SetupAccountRow>(
-      `select id, display_name, status::text as status, daily_cap
+      `select id, display_name, kind::text as kind, status::text as status, daily_cap
          from channel_accounts
-        where workspace_id = $1 and kind in ('email_domain','email_oauth')
-        order by created_at asc`,
+        where workspace_id = $1 and kind in ('email_domain','oauth_outlook')
+        order by case when kind = 'oauth_outlook' then 0 else 1 end,
+                 created_at asc`,
       [workspaceId],
     ),
   ]);
@@ -169,13 +171,7 @@ export default async function SetupPage() {
               "Direct, warm, specific, and allergic to generic sales fluff."
             }
           />
-          <div className="grid gap-4 md:grid-cols-3">
-            <Field
-              name="sender"
-              label="Outreach email"
-              type="email"
-              defaultValue={account?.display_name ?? "sampark@go.bombsell.example"}
-            />
+          <div className="grid gap-4 md:grid-cols-2">
             <Field
               name="daily_cap"
               label="Daily ceiling"
@@ -202,8 +198,36 @@ export default async function SetupPage() {
           </button>
         </form>
       </SurfaceSection>
+
+      <SurfaceSection title="Outreach channel">
+        <div className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              {account ? account.display_name : "Connect Outlook"}
+            </p>
+            <p className="mt-1 text-sm text-[var(--color-text-3)]">
+              {account
+                ? `${accountKindLabel(account.kind)} - ${account.status} - ${account.daily_cap ?? "unlimited"} daily ceiling`
+                : "Use the customer's Microsoft 365 mailbox for founder-led outbound and reply sync."}
+            </p>
+          </div>
+          <Link
+            href="/api/auth/outlook"
+            className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+          >
+            <Icon name="mail" size={16} />
+            {account ? "Reconnect Outlook" : "Connect Outlook"}
+          </Link>
+        </div>
+      </SurfaceSection>
     </div>
   );
+}
+
+function accountKindLabel(kind: string): string {
+  if (kind === "oauth_outlook") return "Outlook inbox";
+  if (kind === "email_domain") return "Owned sender";
+  return kind.replace(/_/g, " ");
 }
 
 function NoWorkspaceSetup() {

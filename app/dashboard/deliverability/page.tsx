@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
 import type { ReactNode } from "react";
@@ -103,10 +104,12 @@ async function loadChannelAccounts(workspaceId: string): Promise<ChannelAccountR
   const { rows } = await pool.query<ChannelAccountRow>(
     `select id, kind::text as kind, display_name, status::text as status,
             daily_cap, daily_used, last_used_at, last_error
-       from channel_accounts
+      from channel_accounts
       where workspace_id = $1
-        and kind in ('email_oauth','email_domain')
-      order by status, kind, display_name`,
+        and kind in ('oauth_outlook','email_domain')
+      order by status,
+               case when kind = 'oauth_outlook' then 0 else 1 end,
+               display_name`,
     [workspaceId],
   );
   return rows;
@@ -201,10 +204,19 @@ export default async function DeliverabilityPage() {
         </HealthPanel>
 
         <HealthPanel title="Connected inboxes" icon="mail">
+          <div className="mb-3">
+            <Link
+              href="/api/auth/outlook"
+              className="inline-flex min-h-9 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+            >
+              <Icon name="mail" size={15} />
+              {accounts.length === 0 ? "Connect Outlook" : "Add Outlook"}
+            </Link>
+          </div>
           {accounts.length === 0 ? (
             <EmptyState
               title="No sending accounts connected"
-              hint="Connect Outlook or add an owned sender before sending."
+              hint="Connect Outlook to send from the user's own Microsoft 365 mailbox."
             />
           ) : (
             <div className="grid gap-2">
@@ -320,7 +332,7 @@ function sendingStateLabel(value: string): string {
 }
 
 function accountKindLabel(value: string): string {
-  if (value === "email_oauth") return "Connected inbox";
+  if (value === "oauth_outlook") return "Outlook inbox";
   if (value === "email_domain") return "Owned sender";
   return sendingStateLabel(value);
 }

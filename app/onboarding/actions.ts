@@ -147,10 +147,6 @@ async function createProfileAndAggregator(formData: FormData): Promise<void> {
         daily_cap: 15,
         approval: "approve_first",
       },
-      email: {
-        display_name: "sampark@go.bombsell.com",
-        daily_cap: 15,
-      },
     },
     session,
   );

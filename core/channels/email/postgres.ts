@@ -10,6 +10,7 @@ import type {
   EmailSendEnvelope,
   EmailTransport,
 } from "./types.ts";
+import type { OutlookSender } from "./adapters/outlook.ts";
 
 type DomainWarmupState =
   | "unverified"
@@ -22,7 +23,7 @@ type DomainWarmupState =
 interface AccountCandidate {
   id: string;
   display_name: string;
-  kind: "email_domain" | "email_oauth";
+  kind: "email_domain" | "oauth_outlook";
   status: string;
   daily_cap: number | null;
   daily_used: number;
@@ -36,6 +37,7 @@ interface AccountCandidate {
 
 interface Reservation {
   account_id: string;
+  kind: "email_domain" | "oauth_outlook";
   from: string;
 }
 
@@ -54,6 +56,7 @@ interface StoredMessageSendState {
   status: string;
   external_id: string | null;
   account_id: string | null;
+  account_kind: string | null;
   from_address: string | null;
   send_reserved_at: Date | null;
 }
@@ -62,7 +65,8 @@ const TRANSPORT_IDEMPOTENCY_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 
 export interface PostgresOwnedDomainEmailChannelOptions {
   pool: Pool;
-  transport: EmailTransport;
+  transport?: EmailTransport;
+  outlook?: OutlookSender;
   now?: () => Date;
   bounceRateLimit?: number;
   complaintRateLimit?: number;
@@ -145,6 +149,7 @@ async function loadMessageSendState(
     `select m.status,
             m.external_id,
             ca.id as account_id,
+            ca.kind::text as account_kind,
             ca.display_name as from_address,
             case
               when m.properties->>'send_reserved_at' is null then null
@@ -211,6 +216,7 @@ function evaluateAccount(
   return {
     account: {
       account_id: row.id,
+      kind: row.kind,
       from: row.display_name,
     },
   };
@@ -252,6 +258,8 @@ async function reserveAccount(
   workspace_id: string,
   now: Date,
   opts: {
+    includeOwnedDomain: boolean;
+    includeOutlook: boolean;
     bounceRateLimit: number;
     complaintRateLimit: number;
   },
@@ -273,10 +281,15 @@ async function reserveAccount(
        left join sending_domains sd
          on sd.channel_account_id = ca.id
       where ca.workspace_id = $1
-        and ca.kind in ('email_domain', 'email_oauth')
-      order by ca.last_used_at nulls first, ca.created_at asc
+        and (
+          ($2::boolean and ca.kind = 'oauth_outlook')
+          or ($3::boolean and ca.kind = 'email_domain')
+        )
+      order by case when ca.kind = 'oauth_outlook' then 0 else 1 end,
+               ca.last_used_at nulls first,
+               ca.created_at asc
       for update of ca`,
-    [workspace_id],
+    [workspace_id, opts.includeOutlook, opts.includeOwnedDomain],
   );
 
   let fallback: ReservationDecision = { defer_reason: "no_connected_email_account" };
@@ -356,6 +369,7 @@ export function createPostgresOwnedDomainEmailChannel(
             ? {
                 account: {
                   account_id: existing.account_id,
+                  kind: existing.account_kind === "oauth_outlook" ? "oauth_outlook" : "email_domain",
                   from: existing.from_address,
                 },
               }
@@ -375,6 +389,8 @@ export function createPostgresOwnedDomainEmailChannel(
             reservation = recipientFrequency;
           } else {
             reservation = await reserveAccount(client, conversation.workspace_id, nowDate, {
+              includeOwnedDomain: Boolean(opts.transport),
+              includeOutlook: Boolean(opts.outlook),
               bounceRateLimit,
               complaintRateLimit,
             });
@@ -412,6 +428,12 @@ export function createPostgresOwnedDomainEmailChannel(
           reservation.retry_after ?? null,
         );
       }
+      if (reservation.account.kind === "oauth_outlook" && !opts.outlook) {
+        return publishDeferred(opts.pool, draft, ctx, "outlook_transport_unconfigured", null);
+      }
+      if (reservation.account.kind === "email_domain" && !opts.transport) {
+        return publishDeferred(opts.pool, draft, ctx, "owned_domain_transport_unconfigured", null);
+      }
 
       const queuedEvent = await ctx.bus.publish({
         workspace_id: ctx.workspace_id,
@@ -430,17 +452,25 @@ export function createPostgresOwnedDomainEmailChannel(
       });
       await projectMessageLifecycleEvent(opts.pool, queuedEvent);
 
-      const envelope: EmailSendEnvelope = {
-        from: reservation.account.from,
-        to: conversation.counterparty_email,
-        subject: draft.subject ?? "",
-        body: draft.body,
-        account_id: reservation.account.account_id,
-        idempotency_key: `message/${draft.message_id}`,
-      };
-
       try {
-        const result = await opts.transport.send(envelope);
+        const result =
+          reservation.account.kind === "oauth_outlook"
+            ? await opts.outlook!.send({
+                channel_account_id: reservation.account.account_id,
+                draft: {
+                  to: { email: conversation.counterparty_email },
+                  subject: draft.subject ?? "",
+                  body_text: draft.body,
+                },
+              })
+            : await opts.transport!.send({
+                from: reservation.account.from,
+                to: conversation.counterparty_email,
+                subject: draft.subject ?? "",
+                body: draft.body,
+                account_id: reservation.account.account_id,
+                idempotency_key: `message/${draft.message_id}`,
+              } satisfies EmailSendEnvelope);
         const sentEvent = await ctx.bus.publish({
           workspace_id: ctx.workspace_id,
           event_type: "message.sent",

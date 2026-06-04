@@ -17,6 +17,7 @@ import {
   dispatchSignalPlaysOnce,
   enrichWorkspaceProfileWithExa,
   getLinkedInAccountConnectIntent,
+  getOutlookAccountConnectIntent,
   getAppState,
   listDeadLetteredEventDispatches,
   researchWorkspaceWithExa,
@@ -439,7 +440,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.email_account.configure",
     description:
-      "Configure the workspace owned-domain email account surface and emit channel.account.configured.",
+      "Configure the optional workspace owned-domain email account surface and emit channel.account.configured.",
     kind: "write",
     input: z.object({
       display_name: z.string().min(1),
@@ -448,6 +449,21 @@ export function registerProductTools(): void {
     output: WorkspaceResultSchema.extend({ channel_account_id: z.string().uuid() }),
     async handler(input, ctx) {
       return configureWorkspaceEmailAccount(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.outlook_account.connect_url.get",
+    description:
+      "Return the workspace-scoped Outlook OAuth URL. Opening this URL connects the customer's Microsoft 365 mailbox and projects it as an oauth_outlook channel account.",
+    kind: "read",
+    input: z.object({}),
+    output: WorkspaceResultSchema.extend({
+      connect_url: z.string().min(1),
+      provider_configured: z.boolean(),
+    }),
+    async handler(_input, ctx) {
+      return getOutlookAccountConnectIntent(sessionFromContext(ctx));
     },
   });
 

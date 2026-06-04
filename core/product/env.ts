@@ -25,8 +25,8 @@ export interface ProductEnvReport {
 
 export const OUTBOUND_EMAIL_PRODUCTION_KEYS = [
   "DEEPSEEK_API_KEY",
-  "RESEND_API_KEY",
-  "RESEND_WEBHOOK_SECRET",
+  "MICROSOFT_CLIENT_ID",
+  "MICROSOFT_CLIENT_SECRET",
 ] as const;
 
 export type ProductEmailTransportMode = "resend" | "dry-run" | "unconfigured";
@@ -241,7 +241,7 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "RESEND_API_KEY",
     requirement: "production",
     category: "channels",
-    description: "Resend API key for owned-domain email sends. Without it, local runs use dry-run transport.",
+    description: "Resend API key for transactional product email and optional owned-domain transport. Outlook outbound does not require it.",
     example: "re_...",
   },
   {

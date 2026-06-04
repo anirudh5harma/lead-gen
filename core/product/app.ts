@@ -32,10 +32,12 @@ import {
 } from "../agents/memory/index.ts";
 import {
   createDryRunEmailTransport,
+  createOutlookSender,
   createPostgresOwnedDomainEmailChannel,
   createResendEmailTransport,
   type EmailTransport,
   type EmailChannel,
+  type OutlookSender,
 } from "../channels/email/index.ts";
 import { createChannelAccountLifecycleProjection } from "../channels/account-lifecycle.ts";
 import {
@@ -136,7 +138,6 @@ import { createOutcomeLifecycleProjection } from "../primitives/outcome-lifecycl
 import {
   isProductionProductRuntime,
   ProductEnvironmentError,
-  requireOutboundEmailExecutionEnvironment,
   resolveProductEmailTransportMode,
   resolveProductLinkedInTransportMode,
 } from "./env.ts";
@@ -411,6 +412,12 @@ export interface ConfigureSignalLinkedInPlayInput {
 }
 
 export interface LinkedInAccountConnectIntent {
+  workspace_id: string;
+  connect_url: string;
+  provider_configured: boolean;
+}
+
+export interface OutlookAccountConnectIntent {
   workspace_id: string;
   connect_url: string;
   provider_configured: boolean;
@@ -3685,6 +3692,22 @@ export async function getLinkedInAccountConnectIntent(
   };
 }
 
+export async function getOutlookAccountConnectIntent(
+  session: ProductWorkspaceSession,
+): Promise<OutlookAccountConnectIntent> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return {
+    workspace_id: session.workspace_id,
+    connect_url: productRouteUrl("/api/auth/outlook"),
+    provider_configured: Boolean(
+      process.env.MICROSOFT_CLIENT_ID &&
+        process.env.MICROSOFT_CLIENT_SECRET &&
+        process.env.SESSION_SECRET,
+    ),
+  };
+}
+
 export async function configureEmailAccount(
   input: ConfigureEmailInput,
   session?: ProductWorkspaceSession,
@@ -4733,11 +4756,21 @@ function createLocalSignalClassifierLLM(): LLMClient {
   };
 }
 
-function createProductEmailTransport(): EmailTransport {
-  requireOutboundEmailExecutionEnvironment();
-  return resolveProductEmailTransportMode() === "resend"
-    ? createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY! })
-    : createDryRunEmailTransport();
+function createProductEmailTransport(): EmailTransport | undefined {
+  if (resolveProductEmailTransportMode() === "resend") {
+    return createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY! });
+  }
+  return isProductionProductRuntime() ? undefined : createDryRunEmailTransport();
+}
+
+function createProductOutlookSender(
+  pool: Pool,
+  bus: EventBus,
+): OutlookSender | undefined {
+  const clientId = process.env.MICROSOFT_CLIENT_ID?.trim();
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) return undefined;
+  return createOutlookSender({ pool, bus, clientId, clientSecret });
 }
 
 function createGovernedJudge(engine: ProductEngine, workspace_id: string) {
@@ -4767,7 +4800,7 @@ function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: strin
       memory: engine.memory,
       judge,
       writerLlm,
-      email: createDatabaseBackedEmailChannel(engine.pool, transport),
+      email: createDatabaseBackedEmailChannel(engine.pool, transport, engine.bus),
       bus: engine.bus,
       workspaceContextProvider: (input) =>
         getWorkflowWorkspaceContext(engine, input.workspace_id),
@@ -4793,7 +4826,7 @@ function registerReplyEmailWorkflow(engine: ProductEngine, workspace_id?: string
       memory: engine.memory,
       judge,
       writerLlm,
-      email: createDatabaseBackedEmailChannel(engine.pool, transport),
+      email: createDatabaseBackedEmailChannel(engine.pool, transport, engine.bus),
       bus: engine.bus,
       workspaceContextProvider: (input) =>
         getWorkflowWorkspaceContext(engine, input.workspace_id),
@@ -4892,9 +4925,14 @@ function registerSendingDomainWarmupWorkflow(engine: ProductEngine): void {
 
 function createDatabaseBackedEmailChannel(
   pool: Pool,
-  transport: EmailTransport,
+  transport: EmailTransport | undefined,
+  bus?: EventBus,
 ): EmailChannel {
-  return createPostgresOwnedDomainEmailChannel({ pool, transport });
+  return createPostgresOwnedDomainEmailChannel({
+    pool,
+    transport,
+    outlook: bus ? createProductOutlookSender(pool, bus) : undefined,
+  });
 }
 
 async function createDatabaseBackedLinkedInChannel(
@@ -4964,7 +5002,7 @@ async function startSignalEmailPlay(
   const person = await store.getPerson(input.person_id);
   if (!person) throw new Error(`Person not found: ${input.person_id}`);
   const transport = createProductEmailTransport();
-  const email = createDatabaseBackedEmailChannel(engine.pool, transport);
+  const email = createDatabaseBackedEmailChannel(engine.pool, transport, engine.bus);
   const writerLlm = createGovernedLLM(engine, input.workspace_id, "writer.email");
   const judge = createGovernedJudge(engine, input.workspace_id);
   engine.runtime.register(

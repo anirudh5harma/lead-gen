@@ -268,7 +268,8 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
   to `bombsell-outbound` in the worker.
 - `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` —
   Outlook OAuth.
-- `RESEND_API_KEY` — transactional product email (welcome, alerts).
+- `RESEND_API_KEY` — transactional product email and optional owned-domain
+  transport. Customer-connected Outlook outbound does not require it.
 - `PRODUCT_HUNT_TOKEN`, `REDDIT_USER_AGENT`, `SEC_EDGAR_USER_AGENT` — per-source
   ingestion adapters.
 

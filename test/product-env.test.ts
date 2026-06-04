@@ -90,13 +90,13 @@ test("product env: outbound email execution fails closed when production trust k
     () =>
       requireOutboundEmailExecutionEnvironment({
         NODE_ENV: "production",
-        RESEND_API_KEY: "re_live",
+        DEEPSEEK_API_KEY: "sk_live",
       }),
     (err) => {
       assert.ok(err instanceof ProductEnvironmentError);
       assert.deepEqual(err.missingKeys, [
-        "DEEPSEEK_API_KEY",
-        "RESEND_WEBHOOK_SECRET",
+        "MICROSOFT_CLIENT_ID",
+        "MICROSOFT_CLIENT_SECRET",
       ]);
       return true;
     },
