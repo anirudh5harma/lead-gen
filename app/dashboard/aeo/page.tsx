@@ -1,6 +1,6 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
-import { getAppState } from "@/core/product/app.ts";
+import { getProductRecommendationSurface } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
@@ -23,12 +23,16 @@ export default async function AeoPage() {
   }
 
   const pool = getPool();
-  const state = await getAppState(pool, {
-    workspace_id: session.workspace.id,
-    user_id: session.user_id,
-  });
-  const reviews = state.aeo_reviews;
-  const learning = state.recommendation_quality.aeo_gap;
+  const recommendations = await getProductRecommendationSurface(
+    pool,
+    {
+      workspace_id: session.workspace.id,
+      user_id: session.user_id,
+    },
+    "aeo_gap",
+  );
+  const reviews = recommendations.reviews;
+  const learning = recommendations.learning;
   const recorded = reviews.filter((item) => item.outcome_id).length;
   const open = reviews.length - recorded;
 

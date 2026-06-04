@@ -1,8 +1,9 @@
+import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
 import type { ReactNode } from "react";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspace } from "@/lib/workspace";
+import { canUseWorkspaceOps, getActiveWorkspaceSession } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -146,14 +147,15 @@ function pct(numerator: number, denominator: number): string {
 }
 
 export default async function DeliverabilityPage() {
-  const workspace = await getActiveWorkspace();
-  if (!workspace) return <CanvasEmpty label="Deliverability" title="No workspace selected." />;
+  const session = await getActiveWorkspaceSession();
+  if (!session) return <CanvasEmpty label="Sending health" title="No workspace selected." />;
+  if (!canUseWorkspaceOps(session)) redirect("/dashboard");
 
   const [volume, domains, accounts, bounces] = await Promise.all([
-    loadVolume(workspace.id),
-    loadSendingDomains(workspace.id),
-    loadChannelAccounts(workspace.id),
-    loadRecentBounces(workspace.id),
+    loadVolume(session.workspace.id),
+    loadSendingDomains(session.workspace.id),
+    loadChannelAccounts(session.workspace.id),
+    loadRecentBounces(session.workspace.id),
   ]);
 
   return (
@@ -162,12 +164,12 @@ export default async function DeliverabilityPage() {
         <div className="section-thread section-thread-a" />
         <div className="grid gap-8 lg:grid-cols-[1fr_360px] lg:items-end">
           <div>
-            <p className="brief-kicker">Deliverability</p>
+            <p className="brief-kicker">Sending health</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
               Sending health that stays calm.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Owned domains and connected inboxes should stay calm. Problems surface only when reputation, volume, or bounces need attention.
+              Outreach should stay quiet, steady, and protected. Problems surface only when volume, bounces, or sender health need attention.
             </p>
           </div>
           <div className="section-note">
@@ -183,11 +185,11 @@ export default async function DeliverabilityPage() {
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-2">
-        <HealthPanel title="Sending domains" icon="alternate_email">
+        <HealthPanel title="Owned senders" icon="alternate_email">
           {domains.length === 0 ? (
             <EmptyState
-              title="No owned domains yet"
-              hint="Add a domain when the workspace is ready for volume."
+              title="No owned senders yet"
+              hint="Add one when the workspace is ready for more outreach volume."
             />
           ) : (
             <div className="grid gap-2">
@@ -198,11 +200,11 @@ export default async function DeliverabilityPage() {
           )}
         </HealthPanel>
 
-        <HealthPanel title="Sending accounts" icon="mail">
+        <HealthPanel title="Connected inboxes" icon="mail">
           {accounts.length === 0 ? (
             <EmptyState
               title="No sending accounts connected"
-              hint="Connect Outlook or add an owned domain before sending."
+              hint="Connect Outlook or add an owned sender before sending."
             />
           ) : (
             <div className="grid gap-2">
@@ -274,14 +276,14 @@ function DomainRow({ domain }: { domain: SendingDomainRow }) {
           {domain.domain}
         </p>
         <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-          {domain.warmup_state}
+          {sendingStateLabel(domain.warmup_state)}
         </span>
       </div>
       <p className="mt-2 text-xs text-[var(--color-text-3)]">
         Day {domain.warmup_day}. {domain.current_daily_cap}/{domain.target_daily_cap} daily. Updated {timeAgo(domain.updated_at)}.
       </p>
       <p className="mt-2 text-xs text-[var(--color-text-3)]">
-        SPF {domain.spf_verified ? "ready" : "needed"}. DKIM {domain.dkim_verified ? "ready" : "needed"}. DMARC {domain.dmarc_verified ? "ready" : "needed"}.
+        Setup {verifiedCount(domain)}/3 ready.
       </p>
       <p className="mt-2 text-xs text-[var(--color-text-3)]">
         Bounce {(Number(domain.bounce_rate_24h) * 100).toFixed(2)}%. Complaints {(Number(domain.complaint_rate_24h) * 100).toFixed(2)}%.
@@ -298,17 +300,33 @@ function AccountRow({ account }: { account: ChannelAccountRow }) {
           {account.display_name}
         </p>
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs text-[var(--color-accent)]">
-          {account.status}
+          {sendingStateLabel(account.status)}
         </span>
       </div>
       <p className="mt-2 text-xs text-[var(--color-text-3)]">
-        {account.kind.replace(/_/g, " ")}. {account.daily_used}/{account.daily_cap ?? "unlimited"} today. Last used {timeAgo(account.last_used_at)}.
+        {accountKindLabel(account.kind)}. {account.daily_used}/{account.daily_cap ?? "unlimited"} today. Last used {timeAgo(account.last_used_at)}.
       </p>
       {account.last_error?.message ? (
         <p className="mt-2 text-xs text-[var(--color-neg)]">{account.last_error.message}</p>
       ) : null}
     </div>
   );
+}
+
+function sendingStateLabel(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function accountKindLabel(value: string): string {
+  if (value === "email_oauth") return "Connected inbox";
+  if (value === "email_domain") return "Owned sender";
+  return sendingStateLabel(value);
+}
+
+function verifiedCount(domain: SendingDomainRow): number {
+  return [domain.spf_verified, domain.dkim_verified, domain.dmarc_verified].filter(Boolean).length;
 }
 
 function HealthStat({ label, value }: { label: string; value: number | string }) {

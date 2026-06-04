@@ -632,34 +632,36 @@ export interface WorkflowLeaseOptions {
   leaseOwner: string;
 }
 
+export interface ProductCompanyProfile {
+  company_id: string;
+  company_name: string;
+  domain: string | null;
+  website_url: string | null;
+  industry: string | null;
+  description: string | null;
+  exa_summary: string | null;
+  exa_source_domains: string[];
+  exa_market_terms: string[];
+  exa_positioning_notes: string[];
+  exa_competitor_mentions: string[];
+  exa_audience_terms: string[];
+  exa_proof_points: string[];
+  exa_evidence_cards: Array<{
+    title: string;
+    url: string;
+    source_domain: string | null;
+    snippet: string | null;
+    published_at: string | null;
+  }>;
+  exa_evidence_source_ids: string[];
+  exa_result_count: number;
+  exa_enriched_at: string | null;
+}
+
 export interface AppState {
   configured: boolean;
   bootstrap?: BootstrapResult;
-  profile: {
-    company_id: string;
-    company_name: string;
-    domain: string | null;
-    website_url: string | null;
-    industry: string | null;
-    description: string | null;
-    exa_summary: string | null;
-    exa_source_domains: string[];
-    exa_market_terms: string[];
-    exa_positioning_notes: string[];
-    exa_competitor_mentions: string[];
-    exa_audience_terms: string[];
-    exa_proof_points: string[];
-    exa_evidence_cards: Array<{
-      title: string;
-      url: string;
-      source_domain: string | null;
-      snippet: string | null;
-      published_at: string | null;
-    }>;
-    exa_evidence_source_ids: string[];
-    exa_result_count: number;
-    exa_enriched_at: string | null;
-  } | null;
+  profile: ProductCompanyProfile | null;
   approvals: Array<{
     id: string;
     run_id: string;
@@ -789,6 +791,16 @@ export interface ProductReviewPulse {
     open: number;
     last_activity_at: Date | null;
   };
+}
+
+export interface ProductRecommendationSurfaceState {
+  reviews: ProductBriefItem[];
+  learning: ProductRecommendationQualityBucket;
+}
+
+interface ProductRecommendationState {
+  content: ProductRecommendationSurfaceState;
+  aeo: ProductRecommendationSurfaceState;
 }
 
 interface ProductEngine {
@@ -5787,6 +5799,32 @@ export async function getProductReviewPulse(
   pool = getPool(),
   session: ProductWorkspaceSession,
 ): Promise<ProductReviewPulse> {
+  const state = await getProductRecommendationState(pool, session);
+  return {
+    content: {
+      open: state.content.reviews.filter((item) => !item.outcome_id).length,
+      last_activity_at: productBriefItemsLatestActivity(state.content.reviews),
+    },
+    aeo: {
+      open: state.aeo.reviews.filter((item) => !item.outcome_id).length,
+      last_activity_at: productBriefItemsLatestActivity(state.aeo.reviews),
+    },
+  };
+}
+
+export async function getProductRecommendationSurface(
+  pool = getPool(),
+  session: ProductWorkspaceSession,
+  surface: ProductRecommendationKind,
+): Promise<ProductRecommendationSurfaceState> {
+  const state = await getProductRecommendationState(pool, session);
+  return surface === "content_opportunity" ? state.content : state.aeo;
+}
+
+async function getProductRecommendationState(
+  pool: Pool,
+  session: ProductWorkspaceSession,
+): Promise<ProductRecommendationState> {
   await assertProductWorkspaceAccess(session, pool);
   const [reviewEvents, recommendationFeedback, recommendationOutcomes] = await Promise.all([
     pool.query<{
@@ -5872,6 +5910,7 @@ export async function getProductReviewPulse(
   ]);
   const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
   const recommendationOutcomeById = recommendationOutcomeState(recommendationOutcomes.rows);
+  const recommendationQuality = productRecommendationQualityState(recommendationFeedback.rows);
   const content = applyRecommendationOutcomeState(
     productExaReviewState(
       reviewEvents.rows,
@@ -5890,14 +5929,38 @@ export async function getProductReviewPulse(
   );
   return {
     content: {
-      open: content.filter((item) => !item.outcome_id).length,
-      last_activity_at: productBriefItemsLatestActivity(content),
+      reviews: content,
+      learning: recommendationQuality.content_opportunity,
     },
     aeo: {
-      open: aeo.filter((item) => !item.outcome_id).length,
-      last_activity_at: productBriefItemsLatestActivity(aeo),
+      reviews: aeo,
+      learning: recommendationQuality.aeo_gap,
     },
   };
+}
+
+export async function getProductCompanyProfile(
+  pool = getPool(),
+  session: ProductWorkspaceSession,
+): Promise<ProductCompanyProfile | null> {
+  await assertProductWorkspaceAccess(session, pool);
+  const { rows } = await pool.query<{
+    id: string;
+    name: string;
+    domain: string | null;
+    industry: string | null;
+    description: string | null;
+    properties: Record<string, unknown>;
+  }>(
+    `select id, name, domain::text as domain, industry, description, properties
+       from graph_companies
+      where workspace_id = $1
+        and properties->>'profile_role' = 'workspace_company'
+      order by updated_at desc, created_at desc
+      limit 1`,
+    [session.workspace_id],
+  );
+  return productProfileState(rows[0] ?? null);
 }
 
 export async function getAppState(

@@ -1,6 +1,6 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
-import { getAppState } from "@/core/product/app.ts";
+import { getProductRecommendationSurface } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
@@ -104,18 +104,22 @@ export default async function ContentPage() {
   }
 
   const pool = getPool();
-  const [state, stats, contentDrafts, publishedContent] = await Promise.all([
-    getAppState(pool, {
-      workspace_id: session.workspace.id,
-      user_id: session.user_id,
-    }),
+  const [recommendations, stats, contentDrafts, publishedContent] = await Promise.all([
+    getProductRecommendationSurface(
+      pool,
+      {
+        workspace_id: session.workspace.id,
+        user_id: session.user_id,
+      },
+      "content_opportunity",
+    ),
     loadContentStats(session.workspace.id),
     loadContentDrafts(session.workspace.id),
     loadPublishedContent(session.workspace.id),
   ]);
-  const reviews = state.content_reviews;
+  const reviews = recommendations.reviews;
   const angles = reviews.filter((r) => !r.outcome_id);
-  const learning = state.recommendation_quality.content_opportunity;
+  const learning = recommendations.learning;
 
   return (
     <div className="space-y-2">

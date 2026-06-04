@@ -1,9 +1,9 @@
-import type { AppState } from "@/core/product/app.ts";
+import type { ProductCompanyProfile } from "@/core/product/app.ts";
 
 export function ProfileIntelligence({
   profile,
 }: {
-  profile: AppState["profile"];
+  profile: ProductCompanyProfile | null;
 }) {
   if (!profile) {
     return (
