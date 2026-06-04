@@ -5,13 +5,9 @@ import {
   getConversationTrustTrace,
   type ConversationTrustApproval,
   type ConversationTrustConversation,
-  type ConversationTrustEvent,
-  type ConversationTrustGateExplanation,
   type ConversationTrustMessage,
   type ConversationTrustOutcome,
   type ConversationTrustReplyProof,
-  type ConversationTrustStep,
-  type ConversationTrustWorkflowRun,
 } from "@/core/product/conversation-trust";
 import { getActiveWorkspace } from "@/lib/workspace";
 
@@ -25,24 +21,15 @@ function preview(body: string | null, max = 600): string {
 function TrustTracePanel({
   conversation,
   messages,
-  workflow,
   approvals,
   outcomes,
-  events,
   replyProofs,
-  gateExplanations,
 }: {
   conversation: ConversationTrustConversation;
   messages: ConversationTrustMessage[];
-  workflow: {
-    run: ConversationTrustWorkflowRun;
-    steps: ConversationTrustStep[];
-  } | null;
   approvals: ConversationTrustApproval[];
   outcomes: ConversationTrustOutcome[];
-  events: ConversationTrustEvent[];
   replyProofs: ConversationTrustReplyProof[];
-  gateExplanations: ConversationTrustGateExplanation[];
 }) {
   const outbound =
     [...messages].reverse().find((message) => message.direction === "outbound") ??
@@ -131,32 +118,6 @@ function textValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function roleEventSummary(event: ConversationTrustEvent): string {
-  const role = textValue(event.payload?.role) ?? "role";
-  const action = textValue(event.payload?.action)?.replace(/_/g, " ") ?? "completed";
-  const summary = textValue(event.payload?.summary);
-  return summary ? `${role}: ${action} (${summary})` : `${role}: ${action}`;
-}
-
-function roleOutputMeta(event: ConversationTrustEvent | undefined): string | null {
-  if (!event) return null;
-  const output = event.payload?.output;
-  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
-  const record = output as Record<string, unknown>;
-  const pieces = [
-    textValue(record.pattern_key),
-    textValue(record.status) ? `status ${textValue(record.status)}` : null,
-    typeof record.confidence === "number" ? `confidence ${record.confidence.toFixed(2)}` : null,
-    typeof record.procedural_exemplar_count === "number"
-      ? `${record.procedural_exemplar_count} procedural example${record.procedural_exemplar_count === 1 ? "" : "s"}`
-      : null,
-    typeof record.semantic_memory_count === "number"
-      ? `${record.semantic_memory_count} memory fact set${record.semantic_memory_count === 1 ? "" : "s"}`
-      : null,
-  ].filter((piece): piece is string => Boolean(piece));
-  return pieces.length ? pieces.join(" · ") : null;
-}
-
 function replyProofMeta(proof: ConversationTrustReplyProof): string | null {
   const pieces = [
     proof.exemplar_count
@@ -236,11 +197,8 @@ export default async function ConversationDetailPage({
   const {
     conversation: conv,
     messages,
-    events,
-    workflow,
     approvals,
     outcomes,
-    gate_explanations: gateExplanations,
     reply_proofs: replyProofs,
   } = trace;
 
@@ -324,12 +282,9 @@ export default async function ConversationDetailPage({
           <TrustTracePanel
             conversation={conv}
             messages={messages}
-            workflow={workflow}
             approvals={approvals}
             outcomes={outcomes}
-            events={events}
             replyProofs={replyProofs}
-            gateExplanations={gateExplanations}
           />
 
           <div className="section-note">

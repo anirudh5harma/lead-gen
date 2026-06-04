@@ -37,7 +37,9 @@ async function loadPending(workspaceId: string): Promise<PendingApprovalRow[]> {
             s.kind::text as signal_kind
        from workflow_approvals a
        join workflow_runs wr on wr.id = a.run_id
-       left join messages m on m.id = (a.payload->>'message_id')::uuid
+       left join messages m
+         on (a.payload->>'message_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and m.id = (a.payload->>'message_id')::uuid
        left join conversations c on c.id = m.conversation_id
        left join reps r on r.id = c.rep_id
        left join graph_persons p on p.id = c.counterparty_person_id
@@ -126,12 +128,11 @@ function ReviewNote({ approval }: { approval: PendingApprovalRow }) {
           <p className="text-sm font-semibold text-[var(--color-text-1)]">Why it stopped</p>
           <div className="mt-4 grid gap-2">
             <Evidence icon="person" label="Voice" value={approval.rep_name ?? "-"} />
-            <Evidence icon="sensors" label="Signal" value={approval.signal_title ?? "-"} />
-            <Evidence icon="category" label="Type" value={approval.signal_kind ?? "-"} />
+            <Evidence icon="sensors" label="Why now" value={approval.signal_title ?? "-"} />
             <Evidence
               icon={approval.eval_passed ? "verified" : "warning"}
-              label="Quality"
-              value={approval.eval_score ? Number(approval.eval_score).toFixed(2) : "-"}
+              label="Check"
+              value={approval.eval_passed === false ? "Needs review" : "Ready"}
             />
           </div>
 

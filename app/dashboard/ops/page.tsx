@@ -1,7 +1,8 @@
+import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { canUseWorkspaceOps, getActiveWorkspaceSession } from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
 import {
   checkProductReadiness,
@@ -64,6 +65,7 @@ export default async function OpsPage() {
       </section>
     );
   }
+  if (!canUseWorkspaceOps(session)) redirect("/dashboard");
 
   const pool = getPool();
   const [counts, dead, readiness] = await Promise.all([

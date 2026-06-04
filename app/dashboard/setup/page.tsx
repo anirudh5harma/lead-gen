@@ -148,7 +148,7 @@ export default async function SetupPage() {
               className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-[color:var(--color-line-2)] bg-transparent px-4 text-sm font-medium text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text-1)]"
             >
               <Icon name="refresh" size={16} />
-              Save and refresh research
+              Save and refresh company profile
             </button>
           </div>
         </form>
@@ -402,4 +402,3 @@ function RepRoster({ reps }: { reps: SetupRepRow[] }) {
     </SurfaceSection>
   );
 }
-

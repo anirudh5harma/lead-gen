@@ -5,20 +5,12 @@ import { redirect } from "next/navigation";
 import {
   approveWorkflowApproval,
   configureActivationSetup,
-  configureIcpSegment,
   configureRep,
-  configureRssSource,
   configureWorkspaceCompanyProfile,
-  configureWorkspaceSignalSource,
-  configureWorkspaceEmailAccount,
   createProductWorkspaceForUser,
-  dispatchSignalPlaysOnce,
-  runWorkspaceSignalAggregatorOnce,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
   startWorkspaceProfileEnrichmentWithExa,
-  submitManualSignal,
-  trackCompanyForWorkspace,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
 import { getRequestUserId } from "@/lib/auth";
@@ -118,49 +110,11 @@ export async function configureActivationAction(formData: FormData) {
           value(formData, "sender") || "sampark@go.bombsell.example",
         daily_cap: numberValue(formData, "daily_cap", 25),
       },
-      company: value(formData, "company_name")
-        ? {
-            name: value(formData, "company_name"),
-            domain: value(formData, "company_domain"),
-            industry: value(formData, "company_industry"),
-            size_bucket: value(formData, "company_size"),
-            greenhouse_id: value(formData, "greenhouse_id"),
-            lever_id: value(formData, "lever_id"),
-            ashby_id: value(formData, "ashby_id"),
-            workable_id: value(formData, "workable_id"),
-            career_rss_url: value(formData, "career_rss_url"),
-            reason: "activation",
-          }
-        : undefined,
-      source: value(formData, "source_url")
-        ? {
-            name: value(formData, "source_name") || "Hiring signal feed",
-            url: value(formData, "source_url"),
-            signal_kind: signalKind,
-            poll_interval_minutes: numberValue(formData, "poll_interval_minutes", 60),
-          }
-        : undefined,
     },
     session,
   );
   revalidateProductPaths();
   redirect("/dashboard/setup");
-}
-
-export async function configureIcpAction(formData: FormData) {
-  const session = await requireDashboardSession(formData);
-  await configureIcpSegment(
-    {
-      name: value(formData, "icp_name") || "Hiring signal ICP",
-      description:
-        value(formData, "icp_description") ||
-        "Companies showing fresh hiring intent.",
-      signal_kind: value(formData, "signal_kind") || "hiring",
-      match_threshold: numberValue(formData, "match_threshold", 0.6),
-    },
-    session,
-  );
-  revalidateProductPaths();
 }
 
 export async function configureRepAction(formData: FormData) {
@@ -189,69 +143,6 @@ export async function configureRepAction(formData: FormData) {
   );
   revalidateProductPaths();
   if (repId) revalidatePath(`/dashboard/reps/${repId}`);
-}
-
-export async function trackCompanyAction(formData: FormData) {
-  const session = await requireDashboardSession(formData);
-  const name = value(formData, "company_name");
-  if (!name) return;
-  await trackCompanyForWorkspace(
-    {
-      name,
-      domain: value(formData, "company_domain"),
-      industry: value(formData, "company_industry"),
-      size_bucket: value(formData, "company_size"),
-      greenhouse_id: value(formData, "greenhouse_id"),
-      lever_id: value(formData, "lever_id"),
-      ashby_id: value(formData, "ashby_id"),
-      workable_id: value(formData, "workable_id"),
-      career_rss_url: value(formData, "career_rss_url"),
-      reason: "control-room",
-    },
-    session,
-  );
-  revalidateProductPaths();
-}
-
-export async function configureSourceAction(formData: FormData) {
-  const session = await requireDashboardSession(formData);
-  const adapter = value(formData, "source_adapter") || "rss";
-  const provider = value(formData, "source_provider");
-  const url = value(formData, "source_url");
-  const query = value(formData, "source_query");
-  const subreddit = value(formData, "subreddit");
-  if (adapter === "rss" && !url) return;
-  if (adapter === "rss") {
-    await configureRssSource(
-      {
-        name: value(formData, "source_name") || "Signal feed",
-        url,
-        signal_kind: value(formData, "signal_kind") || "hiring",
-        poll_interval_minutes: numberValue(formData, "poll_interval_minutes", 60),
-      },
-      session,
-    );
-  } else {
-    await configureWorkspaceSignalSource(
-      {
-        adapter: adapter as never,
-        name: value(formData, "source_name") || "Signal source",
-        provider,
-        query,
-        subreddit,
-        signal_kind: value(formData, "signal_kind") || "press_mention",
-        poll_interval_minutes: numberValue(formData, "poll_interval_minutes", 60),
-      },
-      session,
-    );
-  }
-  revalidateProductPaths();
-}
-
-export async function runSignalAggregatorAction() {
-  const session = await requireDashboardSession();
-  await runWorkspaceSignalAggregatorOnce({ limit: 8 }, session);
-  revalidateProductPaths();
 }
 
 export async function reviewRecommendationAction(formData: FormData) {
@@ -322,47 +213,6 @@ export async function editCompanyProfileAction(formData: FormData) {
   }
   revalidateProductPaths();
   redirect("/dashboard/setup");
-}
-
-export async function configureEmailChannelAction(formData: FormData) {
-  const session = await requireDashboardSession(formData);
-  await configureWorkspaceEmailAccount(
-    {
-      display_name: value(formData, "sender") || "sampark@go.bombsell.example",
-      daily_cap: numberValue(formData, "daily_cap", 25),
-    },
-    session,
-  );
-  revalidateProductPaths();
-}
-
-export async function submitLaunchSignalAction(formData: FormData) {
-  const session = await requireDashboardSession(formData);
-  await submitManualSignal(
-    {
-      company_name: value(formData, "signal_company") || value(formData, "company_name") || "Acme Payroll",
-      company_domain: value(formData, "signal_domain") || value(formData, "company_domain"),
-      person_name: value(formData, "person_name") || "Nisha Rao",
-      person_email: value(formData, "person_email") || "nisha@example.com",
-      signal_title:
-        value(formData, "signal_title") ||
-        "Acme Payroll is hiring a revenue operations lead",
-      signal_content:
-        value(formData, "signal_content") ||
-        "Acme Payroll opened a revenue operations role, suggesting the GTM motion is being rebuilt.",
-      signal_url: value(formData, "signal_url"),
-      signal_kind: value(formData, "signal_kind") || "hiring",
-      icp_segment: value(formData, "icp_segment"),
-      approval: value(formData, "approval") === "none" ? "none" : "always",
-      match_score: numberValue(formData, "match_score", 0.84),
-      simulate_outcome_kind:
-        value(formData, "approval") === "none" ? "positive_reply" : null,
-    },
-    session,
-  );
-  await dispatchSignalPlaysOnce({ limit: 5 }, session);
-  revalidateProductPaths();
-  redirect("/dashboard/approvals");
 }
 
 export async function decideApprovalWithDraftAction(formData: FormData) {

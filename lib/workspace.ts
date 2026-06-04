@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getRequestUserId, validUuid } from "@/lib/auth";
+import type { WorkspaceRole } from "@/lib/workspace-access";
 
 export interface ActiveWorkspace {
   id: string;
@@ -11,6 +12,7 @@ export interface ActiveWorkspace {
 export interface ActiveWorkspaceSession {
   workspace: ActiveWorkspace;
   user_id: string;
+  role: WorkspaceRole;
 }
 
 export const ACTIVE_WORKSPACE_COOKIE_NAME = "bs_ws";
@@ -47,8 +49,8 @@ export async function getActiveWorkspaceSession(): Promise<ActiveWorkspaceSessio
   const selected = validUuid(jar.get(ACTIVE_WORKSPACE_COOKIE_NAME)?.value);
   const params: string[] = selected ? [userId, selected] : [userId];
   const selectedClause = selected ? "and w.id = $2" : "";
-  const { rows } = await getPool().query<ActiveWorkspace>(
-    `select w.id, w.slug::text as slug, w.name
+  const { rows } = await getPool().query<ActiveWorkspace & { role: WorkspaceRole }>(
+    `select w.id, w.slug::text as slug, w.name, wm.role::text as role
        from workspaces w
        join workspace_members wm on wm.workspace_id = w.id
       where wm.user_id = $1
@@ -60,7 +62,8 @@ export async function getActiveWorkspaceSession(): Promise<ActiveWorkspaceSessio
     params,
   );
   if (!rows[0]) return null;
-  return { workspace: rows[0], user_id: userId };
+  const { role, ...workspace } = rows[0];
+  return { workspace, user_id: userId, role };
 }
 
 export async function getActiveWorkspace(): Promise<ActiveWorkspace | null> {
@@ -92,3 +95,5 @@ export async function setActiveWorkspaceCookie(workspaceId: string): Promise<voi
   const jar = await cookies();
   jar.set(ACTIVE_WORKSPACE_COOKIE_NAME, id, activeWorkspaceCookieOptions());
 }
+
+export { canUseWorkspaceOps } from "@/lib/workspace-access";

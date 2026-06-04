@@ -69,6 +69,7 @@ async function loadConversations(workspaceId: string): Promise<ConversationRow[]
            from workflow_approvals a
           where a.workspace_id = c.workspace_id
             and a.decision = 'pending'
+            and (a.payload->>'message_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             and (a.payload->>'message_id')::uuid = lm.id
           order by a.created_at desc
           limit 1
@@ -287,4 +288,3 @@ function repIcon(name: string | null): string {
   if (name === "Bodh") return "neurology";
   return "person";
 }
-

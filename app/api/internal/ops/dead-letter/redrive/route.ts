@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { redriveDeadLetteredEventDispatch } from "@/core/product/app";
-import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { canUseWorkspaceOps, getActiveWorkspaceSession } from "@/lib/workspace";
 
 /**
  * Operator-triggered redrive of one dead-lettered NATS dispatch. Resets
@@ -22,6 +22,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   const session = await getActiveWorkspaceSession();
   if (!session) {
     return new Response("unauthorized", { status: 401 });
+  }
+  if (!canUseWorkspaceOps(session)) {
+    return new Response("forbidden", { status: 403 });
   }
   const redriven = await redriveDeadLetteredEventDispatch(eventId, {
     workspace_id: session.workspace.id,
