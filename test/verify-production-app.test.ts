@@ -129,3 +129,125 @@ test("production app smoke fails on unexpected degraded health checks", async ()
     "fail",
   );
 });
+
+test("production app smoke verifies a signed-in completed workspace session", async () => {
+  const cookie = "sb-access-token=fake; sb-refresh-token=fake";
+  const result = await runProductionAppSmoke({
+    origin,
+    authCookieHeader: cookie,
+    fetchImpl: async (url, init) => {
+      const path = new URL(String(url)).pathname;
+      const requestCookie = new Headers(init?.headers).get("cookie");
+      const signedIn = requestCookie === cookie;
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/dashboard") {
+        return signedIn
+          ? new Response("<main>Brief</main>", {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            })
+          : redirect("/auth/google?next=%2Fdashboard");
+      }
+      if (path === "/onboarding") {
+        return signedIn
+          ? redirect("/dashboard")
+          : redirect("/auth/google?next=%2Fonboarding");
+      }
+      if (path === "/dashboard/health") {
+        return signedIn
+          ? new Response("<main>Health</main>", {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            })
+          : redirect("/auth/google?next=%2Fdashboard%2Fhealth");
+      }
+      if (path === "/api/mcp") {
+        return signedIn
+          ? response({
+              workspace_id: "00000000-0000-4000-8000-000000000001",
+              tools: ["product.readiness.get"],
+            })
+          : response({ workspace_id: null, tools: [] }, { status: 401 });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.checks.find((check) => check.name === "auth.session/dashboard")?.status,
+    "ok",
+  );
+  assert.equal(
+    result.checks.find((check) => check.name === "auth.session/onboarding")?.status,
+    "ok",
+  );
+  assert.equal(
+    result.checks.find((check) => check.name === "auth.session/dashboard/health")?.status,
+    "ok",
+  );
+  assert.equal(
+    result.checks.find((check) => check.name === "auth.mcp.manifest")?.status,
+    "ok",
+  );
+});
+
+test("production app smoke fails when a completed session still sees onboarding", async () => {
+  const result = await runProductionAppSmoke({
+    origin,
+    authCookieHeader: "sb-access-token=fake",
+    fetchImpl: async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/dashboard") return new Response("<main>Brief</main>", { status: 200 });
+      if (path === "/onboarding") {
+        return new Response("<form>Company URL</form>", { status: 200 });
+      }
+      if (path === "/dashboard/health") return new Response("<main>Health</main>", { status: 200 });
+      if (path === "/api/mcp") {
+        return response({
+          workspace_id: "00000000-0000-4000-8000-000000000001",
+          tools: ["product.readiness.get"],
+        });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(
+    result.checks.find((check) => check.name === "auth.session/onboarding")?.detail ?? "",
+    /still sees onboarding/,
+  );
+});
+
+test("production app smoke can verify MCP readiness discovery with a bearer token", async () => {
+  const result = await runProductionAppSmoke({
+    origin,
+    bearerToken: "supabase-access-token",
+    fetchImpl: async (url, init) => {
+      const path = new URL(String(url)).pathname;
+      const authorization = new Headers(init?.headers).get("authorization");
+      if (path === "/api/health") return response(healthPayload());
+      if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
+      if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
+      if (path === "/api/mcp" && authorization === "Bearer supabase-access-token") {
+        return response({
+          workspace_id: "00000000-0000-4000-8000-000000000001",
+          tools: ["product.readiness.get"],
+        });
+      }
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.checks.find((check) => check.name === "auth.mcp.manifest")?.status,
+    "ok",
+  );
+  assert.equal(
+    result.checks.some((check) => check.name === "auth.session/dashboard"),
+    false,
+  );
+});

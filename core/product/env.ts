@@ -129,6 +129,24 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "demo",
   },
   {
+    name: "PRODUCTION_APP_COOKIE_HEADER",
+    requirement: "optional",
+    category: "runtime",
+    description: "Full signed-in browser Cookie header used only by verify:production-app authenticated page checks.",
+  },
+  {
+    name: "PRODUCTION_APP_COOKIE",
+    requirement: "optional",
+    category: "runtime",
+    description: "Legacy alias for PRODUCTION_APP_COOKIE_HEADER used only by verify:production-app.",
+  },
+  {
+    name: "PRODUCTION_APP_BEARER_TOKEN",
+    requirement: "optional",
+    category: "runtime",
+    description: "Supabase access token used only by verify:production-app to verify authenticated MCP readiness discovery.",
+  },
+  {
     name: "DEEPSEEK_API_KEY",
     requirement: "production",
     category: "llm",

@@ -28,6 +28,8 @@ interface ProductHealthPayload {
 interface ProductionAppSmokeOptions {
   origin?: string;
   fetchImpl?: typeof fetch;
+  authCookieHeader?: string | null;
+  bearerToken?: string | null;
 }
 
 const REQUIRED_HEALTH_CHECKS = [
@@ -45,6 +47,9 @@ export async function runProductionAppSmoke(
 ): Promise<ProductionAppSmokeResult> {
   const origin = normalizeOrigin(opts.origin ?? defaultOrigin());
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  const authCookieHeader =
+    normalizeOptional(opts.authCookieHeader) ?? defaultAuthCookieHeader();
+  const bearerToken = normalizeOptional(opts.bearerToken) ?? defaultBearerToken();
   const checks: ProductionAppSmokeCheck[] = [];
 
   await checkHealth(origin, fetchImpl, checks);
@@ -62,12 +67,188 @@ export async function runProductionAppSmoke(
     fetchImpl,
     checks,
   );
+  if (authCookieHeader) {
+    await checkAuthenticatedPage(
+      origin,
+      "/dashboard",
+      "Brief",
+      authCookieHeader,
+      fetchImpl,
+      checks,
+    );
+    await checkAuthenticatedOnboarding(
+      origin,
+      authCookieHeader,
+      fetchImpl,
+      checks,
+    );
+    await checkAuthenticatedPage(
+      origin,
+      "/dashboard/health",
+      "Health",
+      authCookieHeader,
+      fetchImpl,
+      checks,
+    );
+  }
+  if (authCookieHeader || bearerToken) {
+    await checkAuthenticatedMcpManifest(
+      origin,
+      { authCookieHeader, bearerToken },
+      fetchImpl,
+      checks,
+    );
+  }
 
   return {
     ok: checks.every((check) => check.status !== "fail"),
     origin,
     checks,
   };
+}
+
+async function checkAuthenticatedPage(
+  origin: string,
+  path: string,
+  label: string,
+  cookieHeader: string,
+  fetchImpl: typeof fetch,
+  checks: ProductionAppSmokeCheck[],
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchImpl(`${origin}${path}`, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        Accept: "text/html",
+        Cookie: cookieHeader,
+      },
+    });
+  } catch (err) {
+    checks.push({
+      name: `auth.session${path}`,
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  const location = response.headers.get("location") ?? "";
+  const actualPath = locationToPath(location, origin);
+  checks.push({
+    name: `auth.session${path}`,
+    status: response.status === 200 ? "ok" : "fail",
+    detail:
+      response.status === 200
+        ? `HTTP 200 ${label} reachable`
+        : `HTTP ${response.status} -> ${location || actualPath || "no redirect"}`,
+  });
+}
+
+async function checkAuthenticatedOnboarding(
+  origin: string,
+  cookieHeader: string,
+  fetchImpl: typeof fetch,
+  checks: ProductionAppSmokeCheck[],
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchImpl(`${origin}/onboarding`, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        Accept: "text/html",
+        Cookie: cookieHeader,
+      },
+    });
+  } catch (err) {
+    checks.push({
+      name: "auth.session/onboarding",
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  const location = response.headers.get("location") ?? "";
+  const actualPath = locationToPath(location, origin);
+  const redirectOk = [302, 303, 307, 308].includes(response.status);
+  checks.push({
+    name: "auth.session/onboarding",
+    status: redirectOk && actualPath === "/dashboard" ? "ok" : "fail",
+    detail:
+      response.status === 200
+        ? "HTTP 200; completed user still sees onboarding form"
+        : `HTTP ${response.status} -> ${location || "missing location"}`,
+  });
+}
+
+async function checkAuthenticatedMcpManifest(
+  origin: string,
+  auth: {
+    authCookieHeader: string | null;
+    bearerToken: string | null;
+  },
+  fetchImpl: typeof fetch,
+  checks: ProductionAppSmokeCheck[],
+): Promise<void> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (auth.bearerToken) {
+    headers.Authorization = `Bearer ${auth.bearerToken}`;
+  } else if (auth.authCookieHeader) {
+    headers.Cookie = auth.authCookieHeader;
+  }
+
+  let response: Response;
+  try {
+    response = await fetchImpl(`${origin}/api/mcp`, {
+      method: "GET",
+      redirect: "manual",
+      headers,
+    });
+  } catch (err) {
+    checks.push({
+      name: "auth.mcp.manifest",
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  if (!response.ok) {
+    checks.push({
+      name: "auth.mcp.manifest",
+      status: "fail",
+      detail: `HTTP ${response.status}`,
+    });
+    return;
+  }
+
+  let payload: { workspace_id?: unknown; tools?: unknown };
+  try {
+    payload = await response.json() as { workspace_id?: unknown; tools?: unknown };
+  } catch {
+    checks.push({
+      name: "auth.mcp.manifest",
+      status: "fail",
+      detail: "response was not valid JSON",
+    });
+    return;
+  }
+
+  const tools = Array.isArray(payload.tools)
+    ? payload.tools.filter((tool): tool is string => typeof tool === "string")
+    : [];
+  const hasWorkspace = typeof payload.workspace_id === "string" && payload.workspace_id.length > 0;
+  const hasReadinessTool = tools.includes("product.readiness.get");
+  checks.push({
+    name: "auth.mcp.manifest",
+    status: hasWorkspace && hasReadinessTool ? "ok" : "fail",
+    detail: `workspace=${hasWorkspace ? "present" : "missing"} product.readiness.get=${
+      hasReadinessTool ? "present" : "missing"
+    }`,
+  });
 }
 
 async function checkHealth(
@@ -201,8 +382,23 @@ function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/$/, "");
 }
 
+function normalizeOptional(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
 function defaultOrigin(): string {
   return process.env.APP_ORIGIN?.trim() || "https://www.bombsell.com";
+}
+
+function defaultAuthCookieHeader(): string | null {
+  return normalizeOptional(
+    process.env.PRODUCTION_APP_COOKIE_HEADER ?? process.env.PRODUCTION_APP_COOKIE,
+  );
+}
+
+function defaultBearerToken(): string | null {
+  return normalizeOptional(process.env.PRODUCTION_APP_BEARER_TOKEN);
 }
 
 async function main(): Promise<void> {
@@ -217,6 +413,11 @@ async function main(): Promise<void> {
   if (!result.ok) {
     console.error("\nProduction app smoke failed.");
     process.exit(1);
+  }
+  if (!defaultAuthCookieHeader() && !defaultBearerToken()) {
+    console.log(
+      "\nAuthenticated checks skipped. Set PRODUCTION_APP_COOKIE_HEADER from a signed-in browser session or PRODUCTION_APP_BEARER_TOKEN to verify workspace MCP readiness.",
+    );
   }
   console.log("\nProduction app smoke passed.");
 }

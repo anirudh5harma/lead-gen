@@ -351,6 +351,8 @@ RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate # regist
 RESTATE_INGRESS_URL=... RESTATE_BEARER_TOKEN=... npm run verify:restate-runtime # durable checkpoint canary
 npm run verify:worker-release # static worker/release contract
 APP_ORIGIN=https://app.example.com npm run verify:production-app # public health + auth redirects
+# Optional signed-in checks: add PRODUCTION_APP_COOKIE_HEADER from a completed
+# browser session to verify Brief, onboarding bypass, Health, and MCP readiness.
 DATABASE_URL=... npm run verify:ses        # bounce → message → outcome pipeline
 AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS config
 ```

@@ -81,6 +81,9 @@ export const ENVIRONMENT_KEYS: readonly EnvironmentKey[] = [
   { key: "WORKER_HEALTH_PORT", tier: "optional", purpose: "HTTP health port for managed background worker services" },
   { key: "ACTIVATION_VERIFY_AGGREGATOR_LIMIT", tier: "optional", purpose: "Activation verification signal aggregation limit" },
   { key: "KEEP_VERIFY_WORKSPACE", tier: "optional", purpose: "Keep activation verification workspace for inspection" },
+  { key: "PRODUCTION_APP_COOKIE_HEADER", tier: "optional", purpose: "Signed-in browser Cookie header for authenticated production app smoke checks" },
+  { key: "PRODUCTION_APP_COOKIE", tier: "optional", purpose: "Legacy alias for PRODUCTION_APP_COOKIE_HEADER" },
+  { key: "PRODUCTION_APP_BEARER_TOKEN", tier: "optional", purpose: "Supabase access token for authenticated production MCP smoke checks" },
 ] as const;
 
 export const ENVIRONMENT_KEY_NAMES = new Set(ENVIRONMENT_KEYS.map(({ key }) => key));
