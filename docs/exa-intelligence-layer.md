@@ -177,7 +177,8 @@ system keeps action parity.
 
 ### `profile.bootstrap.exa`
 
-Trigger: user submits company URL during onboarding or updates Profile.
+Trigger: operator explicitly enriches Profile after onboarding or an internal Rep
+needs deeper public-web context. Onboarding profile creation is Firecrawl-only.
 
 Steps:
 
@@ -555,7 +556,8 @@ Success:
 3. Add primitive Exa tools to the registry and MCP manifest.
 4. Add Exa evidence projection to the graph.
 5. Build `profile.bootstrap.exa`.
-6. Wire onboarding Profile enrichment through the workflow.
+6. Keep onboarding Profile creation Firecrawl-only; expose Exa Profile
+   enrichment as an explicit post-onboarding action/tool.
 7. Add cost caps and caches before broad ingestion.
 8. Add tests for tool registry, workflow events, graph projection, and Profile
    output.

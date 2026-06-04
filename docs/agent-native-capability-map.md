@@ -14,7 +14,7 @@ projection, and visible UI feedback where applicable.
 | Read Conversation trust trace | `/dashboard/conversations/[id]` | `product.conversation.trust.get` | Reads Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes from the evented state | Ready |
 | Extract company profile from website | `/onboarding` | `product.company.website_profile.extract` | Firecrawl + LLM, no write | Ready |
 | Store company profile | `/onboarding` | `product.company.profile.configure` | `workspace.company.profiled` -> graph company | Ready |
-| Enrich Profile from public web | `/onboarding`, `/dashboard/setup`, MCP/internal Rep execution | `product.profile.enrich` | `profile.bootstrap.exa`: Exa Search/Contents -> graph evidence sources -> `workspace.profile.enriched` | Ready |
+| Enrich Profile from public web | `/dashboard/setup`, MCP/internal Rep execution | `product.profile.enrich` | `profile.bootstrap.exa`: Exa Search/Contents -> graph evidence sources -> `workspace.profile.enriched`; onboarding profile creation stays Firecrawl-only | Ready |
 | Run Rep public-web research | MCP/internal Rep execution | `product.rep.research` | `rep.research.exa`: Exa Search/Contents -> graph evidence sources -> `rep.research.completed` | Ready |
 | Start durable Exa research | MCP/internal Rep execution | `product.exa.research_workflow.start` | Starts one of `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, or `aeo.audit.exa` with a Restate/Postgres workflow runtime | Ready |
 | Configure Rep | `/dashboard/setup` | `product.rep.configure` | `rep.configured` -> Rep projection | Ready |

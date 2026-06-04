@@ -10,7 +10,6 @@ import {
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
   runWorkspaceSignalAggregatorOnce,
-  startWorkspaceProfileEnrichmentWithExa,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
 import {
@@ -111,7 +110,7 @@ async function createProfileAndAggregator(formData: FormData): Promise<void> {
   const companyName =
     profile.company_name ?? (value(formData, "company_name") || "Bombsell Workspace");
   const session = await requireOnboardingSession(`${companyName} GTM`);
-  const configuredProfile = await configureWorkspaceCompanyProfile(
+  await configureWorkspaceCompanyProfile(
     {
       company_name: companyName,
       website_url: profile.website_url,
@@ -120,23 +119,6 @@ async function createProfileAndAggregator(formData: FormData): Promise<void> {
     },
     session,
   );
-  if (process.env.EXA_API_KEY?.trim()) {
-    try {
-      await startWorkspaceProfileEnrichmentWithExa(
-        {
-          company_id: configuredProfile.company_id,
-          company_name: companyName,
-          website_url: profile.website_url,
-          industry: profile.industry,
-          description: profile.description,
-          max_results: 10,
-        },
-        session,
-      );
-    } catch (error) {
-      console.error("[onboarding:exa-profile-workflow]", error);
-    }
-  }
 
   const activation = await configureActivationSetup(
     {
