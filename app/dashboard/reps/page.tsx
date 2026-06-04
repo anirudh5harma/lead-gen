@@ -85,16 +85,16 @@ export default async function RepsPage() {
           <div>
             <p className="brief-kicker">Profile</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              The context behind the work.
+              The people behind the work.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Bombsell uses this profile to brief Reps, ground outreach, find signal sources, and shape content.
+              Bombsell uses this profile to keep outreach, content, campaigns, and AEO aligned.
             </p>
           </div>
           <div className="section-note">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">Today</p>
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <SmallState label="Reps" value={reps.length} />
+              <SmallState label="Voices" value={reps.length} />
               <SmallState label="Sent" value={sent} />
               <SmallState label="Replies" value={positives} />
             </div>
@@ -130,10 +130,10 @@ function RepNote({ rep }: { rep: RepRow }) {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold text-[var(--color-text-1)]">{rep.name}</h2>
             <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-              {rep.role}
+              {roleLabel(rep)}
             </span>
             <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs text-[var(--color-accent)]">
-              {rep.status}
+              {rep.status === "active" ? "Active" : "Paused"}
             </span>
           </div>
           {rep.persona.voice ? (
@@ -144,13 +144,6 @@ function RepNote({ rep }: { rep: RepRow }) {
               Avoid {rep.persona.do_not.join(", ")}
             </p>
           ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {rep.channels.map((channel) => (
-              <span key={channel} className="rounded-full bg-[rgba(255,255,255,0.62)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-                {channel}
-              </span>
-            ))}
-          </div>
           <p className="mt-4 text-xs text-[var(--color-text-3)]">
             {rep.outbound_24h} sent today. {rep.positive_24h} positive. {rep.conversations_open} open.
             {rep.last_activity_at ? ` Fresh ${timeAgo(rep.last_activity_at)}.` : ""}
@@ -159,6 +152,14 @@ function RepNote({ rep }: { rep: RepRow }) {
       </div>
     </Link>
   );
+}
+
+function roleLabel(rep: RepRow): string {
+  if (rep.name === "Sampark") return "Outreach SDR";
+  if (rep.name === "Vaani") return "Content";
+  if (rep.name === "Prayog") return "Campaigns";
+  if (rep.name === "Bodh") return "AEO";
+  return rep.role.replace(/_/g, " ");
 }
 
 function repIcon(name: string): string {

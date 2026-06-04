@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getAppState, type ProductBriefItem } from "@/core/product/app.ts";
@@ -41,6 +42,7 @@ async function loadRunning(workspaceId: string): Promise<RunningRow[]> {
     `select id, kind::text as kind, title, freshness_at
        from signals
       where workspace_id = $1
+        and status = 'matched'
       order by freshness_at desc
       limit 7`,
     [workspaceId],
@@ -141,14 +143,6 @@ const STATUS_TONE: Record<string, { label: string; tone: "pos" | "warn" | "neutr
   replied: { label: "Replied", tone: "pos" },
 };
 
-const SIGNAL_ICONS: Record<string, string> = {
-  hiring: "work",
-  funding: "trending_up",
-  intent: "campaign",
-  social: "alternate_email",
-  news: "newspaper",
-};
-
 const REP_TILES: Array<{
   key: keyof RepPulse;
   name: string;
@@ -160,7 +154,7 @@ const REP_TILES: Array<{
   {
     key: "sampark_active",
     name: "Sampark",
-    role: "Outreach",
+    role: "Outreach SDR",
     href: "/dashboard/conversations",
     icon: "forum",
     unit: (n) => `${n} ${n === 1 ? "conversation" : "conversations"} moving`,
@@ -179,7 +173,7 @@ const REP_TILES: Array<{
     role: "Campaigns",
     href: "/dashboard/ingestion",
     icon: "science",
-    unit: (n) => `${n} ${n === 1 ? "experiment" : "experiments"} today`,
+    unit: (n) => `${n} ${n === 1 ? "campaign idea" : "campaign ideas"} today`,
   },
   {
     key: "bodh_gaps",
@@ -187,7 +181,7 @@ const REP_TILES: Array<{
     role: "AEO",
     href: "/dashboard/aeo",
     icon: "neurology",
-    unit: (n) => `${n} ${n === 1 ? "gap" : "gaps"} open`,
+    unit: (n) => `${n} ${n === 1 ? "suggestion" : "suggestions"} open`,
   },
 ];
 
@@ -282,8 +276,8 @@ function BriefView({
         </h1>
         <p className="mt-5 max-w-[64ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
           {totalPulse === 0
-            ? "Nothing to surface yet. Once profile, channels and plays are in place, the work will appear here."
-            : `Sampark moving ${pulse.sampark_active.count}. Vaani shaping ${pulse.vaani_angles.count}. Prayog testing ${pulse.prayog_runs.count}. Bodh found ${pulse.bodh_gaps.count} gaps.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
+            ? "Nothing to surface yet. Finish the profile once, then useful work will appear here."
+            : `Sampark conversations: ${pulse.sampark_active.count}. Content ideas: ${pulse.vaani_angles.count}. Campaign ideas: ${pulse.prayog_runs.count}. AEO suggestions: ${pulse.bodh_gaps.count}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
         </p>
       </section>
 
@@ -327,12 +321,12 @@ function BriefView({
       {/* Two feeds */}
       <section className="grid gap-12 lg:grid-cols-2 lg:gap-16">
         <Feed
-          eyebrow="Running"
-          title="What the system is watching"
+          eyebrow="Signals"
+          title="Qualified signals"
           empty={
             <EmptyState
               title="No signals yet."
-              hint="Bombsell will surface what it's tracking once sources are connected."
+              hint="Bombsell will surface good-fit opportunities after the profile is tuned."
               cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
             />
           }
@@ -340,16 +334,16 @@ function BriefView({
           {running.map((r) => (
             <FeedRow
               key={r.id}
-              icon={SIGNAL_ICONS[r.kind] ?? "sensors"}
+              icon="target"
               title={r.title}
-              meta={`${r.kind} · ${timeAgo(new Date(r.freshness_at))}`}
+              meta={`Qualified · ${timeAgo(new Date(r.freshness_at))}`}
             />
           ))}
         </Feed>
 
         <Feed
           eyebrow="Outcomes"
-          title="Trajectories moving"
+          title="Replies and outcomes"
           empty={
             <EmptyState
               title="No outcomes yet."
@@ -409,8 +403,8 @@ function Feed({
 }: {
   eyebrow: string;
   title: string;
-  empty: React.ReactNode;
-  children: React.ReactNode;
+  empty: ReactNode;
+  children: ReactNode;
 }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
   return (

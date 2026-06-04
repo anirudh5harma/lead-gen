@@ -36,17 +36,17 @@ export default async function AeoPage() {
               Bodh finds the answers buyers expect.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Keep only the gaps worth acting on. When visibility improves, record the Outcome so the next audit gets sharper.
+              Keep only the suggestions worth acting on. When visibility improves, record the result so the next pass gets sharper.
             </p>
           </div>
           <div className="section-note">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">Visibility loop</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <MiniStatus label="Gaps closing" value={reviews.length - recorded} />
-              <MiniStatus label="Lift recorded" value={recorded} />
+              <MiniStatus label="Suggestions" value={reviews.length - recorded} />
+              <MiniStatus label="Results" value={recorded} />
             </div>
             <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
-              Gaps stay lightweight here: proof, decision, Outcome. The machinery stays underneath.
+              Suggestions stay lightweight here: proof, decision, and result.
             </p>
           </div>
         </div>
@@ -77,8 +77,8 @@ export default async function AeoPage() {
             icon="travel_explore"
             surface="aeo"
             outcomeKind="engagement_lift"
-            outcomeLabel="Mark lift"
-            externalRefLabel="Proof URL"
+            outcomeLabel="Record result"
+            externalRefLabel="Proof link"
           />
         )}
       </section>

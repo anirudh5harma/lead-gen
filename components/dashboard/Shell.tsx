@@ -4,19 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { LiveIndicator } from "@/app/brief/live-indicator";
 import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 
 interface NavItem {
   href: string;
   label: string;
-  badge?: keyof DashboardBadges;
-}
-
-export interface DashboardBadges {
-  approvals: number;
-  deliverability: number;
 }
 
 export interface ShellWorkspace {
@@ -29,9 +22,6 @@ const NAV: NavItem[] = [
   { href: "/dashboard/conversations", label: "Outreach" },
   { href: "/dashboard/content", label: "Content" },
   { href: "/dashboard/ingestion", label: "Campaigns" },
-  { href: "/dashboard/approvals", label: "Review", badge: "approvals" },
-  { href: "/dashboard/deliverability", label: "Domains", badge: "deliverability" },
-  { href: "/dashboard/reps", label: "Reps" },
   { href: "/dashboard/aeo", label: "AEO" },
   { href: "/dashboard/setup", label: "Profile" },
 ];
@@ -45,19 +35,14 @@ function isActivePath(pathname: string, href: string): boolean {
 
 export function DashboardShell({
   children,
-  badges = { approvals: 0, deliverability: 0 },
-  liveEnabled = true,
   workspaces = [],
   activeWorkspaceId,
 }: {
   children: ReactNode;
-  badges?: DashboardBadges;
-  liveEnabled?: boolean;
   workspaces?: ShellWorkspace[];
   activeWorkspaceId?: string;
 }) {
   const pathname = usePathname() ?? "/dashboard";
-  const settingsBadge = badges.approvals + badges.deliverability;
 
   return (
     <div className="canvas-bg relative isolate min-h-[100dvh] text-[var(--color-text-1)]">
@@ -97,11 +82,6 @@ export function DashboardShell({
                   }
                 >
                   <span>{item.label}</span>
-                  {item.badge && badges[item.badge] > 0 ? (
-                    <span className="ml-1.5 inline-flex min-w-4 justify-center rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-semibold leading-4 text-[var(--color-ink-0)]">
-                      {badges[item.badge]}
-                    </span>
-                  ) : null}
                 </Link>
               );
             })}
@@ -128,18 +108,12 @@ export function DashboardShell({
                 </select>
               </form>
             ) : null}
-            <div className="hidden lg:block">
-              <LiveIndicator enabled={liveEnabled} />
-            </div>
             <Link
               href="/dashboard/setup"
               aria-label="Workspace settings"
               className="relative grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
             >
               <Icon name="settings" size={17} />
-              {settingsBadge > 0 ? (
-                <span className="absolute right-1 top-1 size-2 rounded-full bg-[var(--color-accent)]" />
-              ) : null}
             </Link>
           </div>
         </div>
@@ -172,11 +146,6 @@ export function DashboardShell({
               }
             >
               <span>{item.label}</span>
-              {item.badge && badges[item.badge] > 0 ? (
-                <span className="ml-1.5 inline-flex min-w-4 justify-center rounded-full bg-[var(--color-accent)] px-1 text-[10px] font-semibold leading-4 text-[var(--color-ink-0)]">
-                  {badges[item.badge]}
-                </span>
-              ) : null}
             </Link>
           );
         })}

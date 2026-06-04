@@ -161,7 +161,7 @@ export default async function ConversationsPage() {
           <div>
             <p className="brief-kicker">Sampark · Outreach</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              Sampark is keeping conversations moving.
+              Sampark is your outreach SDR.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
               Replies, next moves, and where Sampark wants you to step in. Everything else stays quiet.
@@ -233,20 +233,16 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
           {conversation.topic ?? conversation.signal_title ?? "No topic yet"}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {conversation.signal_kind ? (
-            <span className="rounded-full bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent)]">
-              {conversation.signal_kind}
-            </span>
-          ) : null}
           {conversation.signal_title ? (
             <span className="max-w-[320px] truncate rounded-full bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-              {conversation.signal_title}
+              Why now: {conversation.signal_title}
             </span>
           ) : null}
-          {conversation.eval_score ? (
+          {conversation.pending_approval_id || conversation.eval_passed != null ? (
             <span className="rounded-full bg-[rgba(255,255,255,0.62)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-              Quality {Number(conversation.eval_score).toFixed(2)}
-              {conversation.eval_passed === false ? " · review" : ""}
+              {conversation.pending_approval_id || conversation.eval_passed === false
+                ? "Needs review"
+                : "Ready"}
             </span>
           ) : null}
         </div>

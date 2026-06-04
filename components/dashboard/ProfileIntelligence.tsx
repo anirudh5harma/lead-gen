@@ -8,10 +8,10 @@ export function ProfileIntelligence({
   if (!profile) {
     return (
       <section className="mt-6 section-note">
-        <p className="brief-kicker">Profile Intelligence</p>
+        <p className="brief-kicker">Company profile</p>
         <p className="mt-3 text-lg font-semibold text-[var(--color-text-1)]">No company profile yet.</p>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-text-3)]">
-          Add the company URL once. Bombsell will turn the site into reusable context for every Rep.
+          Add the company URL once. Bombsell will turn the site into reusable context for every work area.
         </p>
       </section>
     );
@@ -21,7 +21,7 @@ export function ProfileIntelligence({
     <section className="mt-6 section-note">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
-          <p className="brief-kicker">Profile Intelligence</p>
+          <p className="brief-kicker">Company profile</p>
           <h2 className="mt-3 text-2xl font-semibold leading-tight text-[var(--color-text-1)]">
             {profile.company_name}
           </h2>
@@ -32,7 +32,7 @@ export function ProfileIntelligence({
             <p className="mt-4 text-[15px] leading-7 text-[var(--color-text-1)]">{profile.exa_summary}</p>
           ) : (
             <p className="mt-4 text-sm leading-6 text-[var(--color-text-3)]">
-              Site profile enrichment has not run yet.
+              Company profile has not been refreshed yet.
             </p>
           )}
           {profile.exa_market_terms.length > 0 ? (
@@ -44,8 +44,8 @@ export function ProfileIntelligence({
           ) : null}
         </div>
         <div className="grid min-w-[240px] grid-cols-2 gap-2">
-          <ProfileMetric label="Evidence" value={profile.exa_evidence_source_ids.length} />
-          <ProfileMetric label="Results" value={profile.exa_result_count} />
+          <ProfileMetric label="Proof" value={profile.exa_evidence_source_ids.length} />
+          <ProfileMetric label="Notes" value={profile.exa_result_count} />
         </div>
       </div>
       {profile.exa_positioning_notes.length > 0 ||
@@ -69,7 +69,7 @@ export function ProfileIntelligence({
               rel="noreferrer"
               target="_blank"
             >
-              <span className="block text-xs text-[var(--color-text-3)]">{card.source_domain ?? "source"}</span>
+              <span className="block text-xs text-[var(--color-text-3)]">{card.source_domain ?? "Proof"}</span>
               <strong className="mt-1 block text-sm font-medium leading-5 text-[var(--color-text-1)]">{card.title}</strong>
               {card.snippet ? (
                 <span className="mt-2 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">{card.snippet}</span>

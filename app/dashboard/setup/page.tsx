@@ -64,7 +64,7 @@ interface SetupSourceRow {
 
 async function loadSetupState(workspaceId: string) {
   const pool = getPool();
-  const [reps, icps, plays, accounts, linkedinAccounts, companies, sources] =
+  const [reps, icps, plays, accounts, companies, sources] =
     await Promise.all([
     pool.query<SetupRepRow>(
       `select id, name, role::text as role, status::text as status, persona, autonomy
@@ -94,13 +94,6 @@ async function loadSetupState(workspaceId: string) {
         order by created_at asc`,
       [workspaceId],
     ),
-    pool.query<SetupAccountRow>(
-      `select id, kind::text as kind, display_name, status::text as status, daily_cap
-         from channel_accounts
-        where workspace_id = $1 and kind in ('linkedin_session','linkedin_oauth')
-        order by created_at asc`,
-      [workspaceId],
-    ),
     pool.query<SetupCompanyRow>(
       `select tc.id, tc.name, tc.domain::text as domain, tc.industry
          from tracked_companies tc
@@ -125,7 +118,6 @@ async function loadSetupState(workspaceId: string) {
     icps: icps.rows,
     plays: plays.rows,
     accounts: accounts.rows,
-    linkedinAccounts: linkedinAccounts.rows,
     companies: companies.rows,
     sources: sources.rows,
   };
@@ -146,19 +138,14 @@ export default async function SetupPage() {
   const rep = state.reps[0];
   const icp = state.icps[0];
   const account = state.accounts[0];
-  const linkedinAccount = state.linkedinAccounts[0];
   const play = state.plays[0];
   const signalKind = inferSignalKind(icp, play);
-  const linkedinProviderConfigured = Boolean(
-    process.env.LINKEDIN_PROVIDER_AUTH_URL?.trim() ||
-      process.env.LINKEDIN_PROVIDER_URL?.trim(),
-  );
   const ready = [
     state.reps.length > 0,
     state.icps.length > 0,
     state.accounts.length > 0,
+    state.companies.length > 0,
     state.plays.length > 0,
-    state.sources.length > 0,
   ];
 
   return (
@@ -169,10 +156,10 @@ export default async function SetupPage() {
         <div className="p-5 pb-0 sm:p-8 sm:pb-0">
           <p className="brief-kicker">Profile</p>
           <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-            Tune the cast.
+            Shape the work once.
           </h1>
           <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-            A workspace starts as intent, voice, and review rules. Keep the machinery hidden unless you need to tune it.
+            Tell Bombsell who matters, how to sound, and when you want review. The rest stays underneath.
           </p>
         </div>
         <div className="grid lg:grid-cols-[1fr_320px]">
@@ -188,10 +175,10 @@ export default async function SetupPage() {
             />
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field name="rep_name" label="Sender name" defaultValue={rep?.name ?? "Sampark"} />
+              <Field name="rep_name" label="Outreach SDR" defaultValue={rep?.name ?? "Sampark"} />
               <Field
                 name="sender"
-                label="Sending email"
+                label="Outreach email"
                 defaultValue={account?.display_name ?? "sampark@go.bombsell.example"}
                 type="email"
               />
@@ -202,7 +189,7 @@ export default async function SetupPage() {
               />
               <Select
                 name="signal_kind"
-                label="Main signal"
+                label="Best buying moment"
                 defaultValue={signalKind}
                 options={[
                   ["hiring", "Hiring"],
@@ -226,31 +213,31 @@ export default async function SetupPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <Field
                 name="daily_cap"
-                label="Daily cap"
+                label="Max outreach/day"
                 defaultValue={String(rep?.autonomy.channels?.email?.daily_cap ?? account?.daily_cap ?? 25)}
                 type="number"
               />
               <Field
                 name="match_threshold"
-                label="Fit score"
+                label="How strict"
                 defaultValue={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
                 type="number"
                 step="0.01"
               />
               <Select
                 name="approval"
-                label="Review rule"
+                label="Before sending"
                 defaultValue={rep?.autonomy.channels?.email?.approval ?? "approve_first"}
                 options={[
                   ["approve_first", "Approve first"],
-                  ["none", "Send when quality passes"],
+                  ["none", "Send when ready"],
                 ]}
               />
             </div>
 
             <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.52)] p-4">
               <p className="mb-3 text-sm font-semibold text-[var(--color-text-1)]">
-                First source
+                Company to learn from
               </p>
               <div className="grid gap-4 md:grid-cols-2">
                 <Field
@@ -263,20 +250,11 @@ export default async function SetupPage() {
                   label="Website"
                   defaultValue={state.companies[0]?.domain ?? "acmepayroll.example"}
                 />
-                <Field name="greenhouse_id" label="Greenhouse board" defaultValue="" />
-                <Field name="lever_id" label="Lever board" defaultValue="" />
-                <Field
-                  name="source_name"
-                  label="Source name"
-                  defaultValue={state.sources[0]?.name ?? "Hiring feed"}
-                />
-                <Field
-                  name="source_url"
-                  label="Feed URL"
-                  defaultValue={state.sources[0]?.config.url ?? ""}
-                  type="url"
-                />
               </div>
+              <input type="hidden" name="greenhouse_id" value="" />
+              <input type="hidden" name="lever_id" value="" />
+              <input type="hidden" name="source_name" value={state.sources[0]?.name ?? "Company context"} />
+              <input type="hidden" name="source_url" value={state.sources[0]?.config.url ?? ""} />
             </div>
 
             <button className="inline-flex min-h-11 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-5 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
@@ -286,14 +264,13 @@ export default async function SetupPage() {
           </form>
 
           <aside className="border-t border-[var(--color-line-1)] bg-[rgba(255,255,255,0.42)] p-5 lg:border-l lg:border-t-0">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">Workspace map</p>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Readiness</p>
             <div className="mt-4 grid gap-2">
-              <MapStep label="Sender" ready={ready[0]} detail={rep?.name ?? "Needed"} />
-              <MapStep label="Profile" ready={ready[1]} detail={icp?.name ?? "Needed"} />
-              <MapStep label="Channel" ready={ready[2]} detail={account?.display_name ?? "Needed"} />
-              <MapStep label="LinkedIn" ready={Boolean(linkedinAccount)} detail={linkedinAccount?.display_name ?? "Optional"} />
-              <MapStep label="Play" ready={ready[3]} detail={play?.name ?? "Needed"} />
-              <MapStep label="Signals" ready={ready[4]} detail={`${state.sources.length} connected`} />
+              <MapStep label="Sampark" ready={ready[0]} detail={rep?.name ?? "Needed"} />
+              <MapStep label="Audience" ready={ready[1]} detail={icp?.name ?? "Needed"} />
+              <MapStep label="Outreach" ready={ready[2]} detail={account?.display_name ?? "Needed"} />
+              <MapStep label="Company" ready={ready[3]} detail={state.companies[0]?.name ?? "Needed"} />
+              <MapStep label="Review" ready={ready[4]} detail={play ? "Set" : "Needed"} />
             </div>
           </aside>
         </div>
@@ -343,17 +320,11 @@ export default async function SetupPage() {
           )}
         </Panel>
 
-        <Panel title="Connected notes">
+        <Panel title="Profile notes">
           <Note title="Company" value={state.companies[0]?.name ?? "Add a company"} />
-          <IntegrationNote
-            connected={Boolean(linkedinAccount)}
-            configured={linkedinProviderConfigured}
-            title="LinkedIn"
-            value={linkedinAccount?.display_name ?? "Connect account"}
-            href="/api/auth/linkedin"
-          />
-          <Note title="Source" value={state.sources[0]?.name ?? "Add a source"} />
-          <Note title="Play" value={play?.declaration ?? "The first play appears here."} />
+          <Note title="Audience" value={icp?.name ?? "Add audience"} />
+          <Note title="Voice" value={rep?.persona.voice ?? "Add voice"} />
+          <Note title="Review" value={play ? "Approve first" : "Set review rule"} />
         </Panel>
       </section>
     </>
@@ -400,43 +371,6 @@ function Note({ title, value }: { title: string; value: string }) {
     <div className="mb-3 rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] p-3 last:mb-0">
       <p className="text-xs text-[var(--color-text-3)]">{title}</p>
       <p className="mt-1 text-sm leading-6 text-[var(--color-text-1)]">{value}</p>
-    </div>
-  );
-}
-
-function IntegrationNote({
-  title,
-  value,
-  href,
-  connected,
-  configured,
-}: {
-  title: string;
-  value: string;
-  href: string;
-  connected: boolean;
-  configured: boolean;
-}) {
-  return (
-    <div className="mb-3 flex items-center gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] p-3 last:mb-0">
-      <span className={connected ? "dot dot-running" : "dot dot-idle"} />
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs text-[var(--color-text-3)]">{title}</span>
-        <span className="block truncate text-sm leading-6 text-[var(--color-text-1)]">{value}</span>
-      </span>
-      {connected ? (
-        <span className="text-xs font-semibold text-[var(--color-text-3)]">Connected</span>
-      ) : configured ? (
-        <a
-          href={href}
-          className="inline-flex min-h-9 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
-        >
-          <Icon name="link" size={16} />
-          Connect
-        </a>
-      ) : (
-        <span className="text-xs font-semibold text-[var(--color-text-3)]">Not ready</span>
-      )}
     </div>
   );
 }
@@ -555,8 +489,8 @@ const REP_META: Record<
   { role: string; surface: string; href: string; icon: string }
 > = {
   Sampark: {
-    role: "Outreach",
-    surface: "Talks to people",
+    role: "Outreach SDR",
+    surface: "Starts and moves conversations",
     href: "/dashboard/conversations",
     icon: "forum",
   },
@@ -568,7 +502,7 @@ const REP_META: Record<
   },
   Prayog: {
     role: "Campaigns",
-    surface: "Tests what scales",
+    surface: "Finds campaign ideas",
     href: "/dashboard/ingestion",
     icon: "science",
   },
@@ -592,7 +526,7 @@ function RepRoster({ reps }: { reps: SetupRepRow[] }) {
     <section className="mb-6 section-canvas p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
         <p className="brief-kicker">The cast</p>
-        <p className="text-xs text-[var(--color-text-3)]">Named reps, one outcome each</p>
+        <p className="text-xs text-[var(--color-text-3)]">One focus each</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {ordered.map((r, index) => {

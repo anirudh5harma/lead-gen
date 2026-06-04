@@ -98,7 +98,7 @@ export default async function RepDetailPage({
 }) {
   const { id } = await params;
   const active = await getActiveWorkspaceSession();
-  if (!active) return <CanvasEmpty label="Reps" title="No workspace selected." />;
+  if (!active) return <CanvasEmpty label="Profile" title="No workspace selected." />;
 
   const { rep, kpi, messages } = await loadRepDetail(active.workspace.id, id);
   if (!rep) return notFound();
@@ -114,7 +114,7 @@ export default async function RepDetailPage({
               {rep.name}
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              {rep.persona.story ?? "Tune this Rep's voice, review rule, and recent work."}
+              {rep.persona.story ?? "Tune this voice, review preference, and recent work."}
             </p>
           </div>
           <div className="section-note">
@@ -134,7 +134,7 @@ export default async function RepDetailPage({
             <span className="brief-note-icon">
               <Icon name="tune" size={18} />
             </span>
-            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Voice and autonomy</h2>
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Voice and review</h2>
           </div>
           <form action={configureRepAction} className="grid gap-4">
             <input type="hidden" name="rep_id" value={rep.id} />
@@ -167,24 +167,24 @@ export default async function RepDetailPage({
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
                 name="daily_cap"
-                label="Daily cap"
+                label="Max outreach/day"
                 defaultValue={String(rep.autonomy.channels?.email?.daily_cap ?? 25)}
                 type="number"
               />
               <Select
                 name="approval"
-                label="Review rule"
+                label="Before sending"
                 defaultValue={rep.autonomy.channels?.email?.approval ?? "approve_first"}
                 options={[
                   ["approve_first", "Approve first"],
                   ["always", "Always review"],
-                  ["none", "Send when quality passes"],
+                  ["none", "Send when ready"],
                 ]}
               />
             </div>
             <button className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
               <Icon name="check" size={17} />
-              Save Rep
+              Save voice
             </button>
           </form>
         </section>
@@ -197,7 +197,7 @@ export default async function RepDetailPage({
             <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Recent drafts</h2>
           </div>
           {messages.length === 0 ? (
-            <EmptyState title="No recent work" hint="Drafts and sends from this Rep will appear here." />
+            <EmptyState title="No recent work" hint="Drafts and sends from this voice will appear here." />
           ) : (
             <div className="grid gap-2">
               {messages.map((message) => (
@@ -215,11 +215,8 @@ function MessageNote({ message }: { message: RecentMessageRow }) {
   return (
     <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4">
       <div className="flex items-center gap-2">
-        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-          {message.channel}
-        </span>
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs font-medium text-[var(--color-accent)]">
-          {message.status}
+          {messageStatusLabel(message.status)}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">
           {new Date(message.created_at).toLocaleDateString()}
@@ -326,7 +323,18 @@ function surfaceFor(name: string): string {
   if (name === "Vaani") return "Vaani · Content";
   if (name === "Prayog") return "Prayog · Campaigns";
   if (name === "Bodh") return "Bodh · AEO";
-  return "Rep";
+  return "Profile";
+}
+
+function messageStatusLabel(status: string): string {
+  if (status === "sent") return "Sent";
+  if (status === "delivered") return "Delivered";
+  if (status === "draft") return "Draft";
+  if (status === "queued") return "Ready";
+  if (status === "deferred") return "Held for review";
+  if (status === "failed") return "Failed";
+  if (status === "bounced") return "Bounced";
+  return status.replace(/_/g, " ");
 }
 
 function iconFor(name: string): string {

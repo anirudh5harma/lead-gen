@@ -50,12 +50,12 @@ export function RecommendationLearningBadge({
   acceptanceRate: number | null;
 }) {
   if (accepted + ignored === 0) return null;
-  const rate = acceptanceRate == null ? null : `${Math.round(acceptanceRate * 100)}% kept`;
+  const rate = acceptanceRate == null ? null : `${Math.round(acceptanceRate * 100)}% useful`;
   return (
     <p className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-3)]">
       <Icon name="auto_awesome" size={14} />
-      <span>{accepted} kept</span>
-      <span>{ignored} skipped</span>
+      <span>{accepted} useful</span>
+      <span>{ignored} dismissed</span>
       {rate ? <span>{rate}</span> : null}
     </p>
   );
@@ -92,7 +92,7 @@ function RecommendationReviewNote({
               rel="noreferrer"
               className="mt-3 inline-flex text-xs font-semibold text-[var(--color-accent)]"
             >
-              View proof
+              Open proof
             </a>
           ) : null}
           <RecommendationReviewActions
@@ -126,7 +126,7 @@ function RecommendationReviewActions({
     return (
       <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-pos-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--color-pos)]">
         <Icon name="task_alt" size={14} />
-        Outcome recorded
+        Result recorded
       </p>
     );
   }
@@ -135,7 +135,7 @@ function RecommendationReviewActions({
       <div className="mt-4 space-y-3">
         <p className="inline-flex items-center gap-1.5 rounded-full bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)]">
           <Icon name="check" size={14} />
-          Kept for the Rep
+          Saved
         </p>
         <form action={recordRecommendationOutcomeAction} className="flex flex-col gap-2 sm:flex-row">
           <input type="hidden" name="review_id" value={item.review_id} />
@@ -168,7 +168,7 @@ function RecommendationReviewActions({
           className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
         >
           <Icon name="check" size={14} />
-          Keep
+          Use idea
         </button>
       </form>
       <form action={reviewRecommendationAction}>
@@ -179,7 +179,7 @@ function RecommendationReviewActions({
           className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
         >
           <Icon name="close" size={14} />
-          Skip
+          Dismiss
         </button>
       </form>
     </div>

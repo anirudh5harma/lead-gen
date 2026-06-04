@@ -50,131 +50,53 @@ function TrustTracePanel({
     null;
   const latestApproval = approvals.at(-1) ?? null;
   const latestOutcome = outcomes.at(-1) ?? null;
-  const sendEvent = outbound
-    ? [...events]
-        .reverse()
-        .find(
-          (event) =>
-            ["message.sent", "message.deferred", "message.delivered", "message.bounced"].includes(
-              event.event_type,
-            ) && event.payload?.message_id === outbound.id,
-        )
-    : null;
-  const researchStep = workflow?.steps.find(
-    (step) => step.step_name === "research.signal_context",
-  );
-  const contextStep = workflow?.steps.find(
-    (step) => step.step_name === "context.workspace_agent",
-  );
-  const patternKey = textValue(outbound?.provenance?.pattern_key);
-  const exemplarCount = Array.isArray(outbound?.provenance?.exemplar_ids)
-    ? outbound.provenance.exemplar_ids.length
-    : 0;
   const critique =
     textValue(outbound?.eval_notes?.critique) ??
     textValue(outbound?.eval_notes?.draft_rejection_reason);
-  const deferReason =
-    textValue(outbound?.properties?.defer_reason) ??
-    textValue(outbound?.eval_notes?.defer_reason) ??
-    textValue(sendEvent?.payload?.defer_reason);
-  const roleEvents = events.filter((event) => event.event_type === "rep.role.completed");
   const latestReplyProof = replyProofs.at(-1) ?? null;
-  const trustGates = latestReplyProof?.gate_explanations.length
-    ? latestReplyProof.gate_explanations
-    : gateExplanations;
 
   return (
     <div className="section-note">
-      <p className="text-sm font-semibold text-[var(--color-text-1)]">Trust trace</p>
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">Proof</p>
       <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-        Why this happened, what checked it, and what came back.
+        Why Sampark moved, what was checked, and what came back.
       </p>
       <div className="mt-4 grid gap-3">
         <TraceRow
-          label="Signal"
+          label="Why now"
           value={conversation.signal_title ?? conversation.topic ?? "No signal anchor"}
-          meta={conversation.signal_kind ?? undefined}
         />
         <TraceRow
-          label="Context"
+          label="Message check"
           value={
-            patternKey
-              ? `${patternKey}${exemplarCount ? ` · ${exemplarCount} exemplar${exemplarCount === 1 ? "" : "s"}` : ""}`
-              : researchStep
-                ? `Research step ${researchStep.status}`
-                : "No retrieved context recorded"
-          }
-          meta={contextStep ? `workspace context ${contextStep.status}` : undefined}
-        />
-        <TraceRow
-          label="Reply"
-          value={latestReplyProof?.summary ?? "No inbound reply follow-up yet"}
-          meta={latestReplyProof ? replyProofMeta(latestReplyProof) ?? undefined : undefined}
-        />
-        <TraceRow
-          label="Rep work"
-          value={
-            roleEvents.length
-              ? roleEvents
-                  .slice(-4)
-                  .map(roleEventSummary)
-                  .join(" -> ")
-              : "No role activity recorded"
-          }
-          meta={roleEvents.length ? roleOutputMeta(roleEvents.at(-1)) ?? undefined : undefined}
-        />
-        <TraceRow
-          label="Judge"
-          value={
-            outbound?.eval_score
-              ? `${Number(outbound.eval_score).toFixed(2)} · ${
-                  outbound.eval_passed ? "passed" : "blocked"
-                }`
-              : "No judge result yet"
+            outbound?.eval_passed === false
+              ? "Needs review"
+              : outbound?.eval_passed === true
+                ? "Ready"
+                : "Waiting for review"
           }
           meta={critique ?? undefined}
         />
         <TraceRow
-          label="Trust gates"
-          value={
-            trustGates.length
-              ? trustGates.map((gate) => gate.summary).join(" -> ")
-              : "No gate explanation recorded yet"
-          }
-          meta={
-            trustGates.length
-              ? trustGates
-                  .map((gate) => gate.detail)
-                  .filter((detail): detail is string => Boolean(detail))
-                  .slice(0, 2)
-                  .join(" ")
-              : undefined
-          }
+          label="Reply"
+          value={latestReplyProof?.summary ?? "No reply yet"}
+          meta={latestReplyProof ? replyProofMeta(latestReplyProof) ?? undefined : undefined}
         />
         <TraceRow
           label="Approval"
           value={
             latestApproval
-              ? `${latestApproval.decision} · ${latestApproval.kind}`
-              : "No approval gate requested"
+              ? approvalLabel(latestApproval.decision)
+              : "No manual review requested"
           }
           meta={latestApproval?.reason ?? undefined}
         />
         <TraceRow
-          label="Channel"
-          value={
-            outbound
-              ? `${outbound.status}${deferReason ? ` · ${deferReason}` : ""}`
-              : "No channel attempt yet"
-          }
-          meta={sendEvent ? sendEvent.event_type : undefined}
-        />
-        <TraceRow
-          label="Outcome"
+          label="Result"
           value={
             latestOutcome
-              ? `${latestOutcome.kind.replace(/_/g, " ")} · ${Number(latestOutcome.score).toFixed(2)}`
-              : "No outcome recorded yet"
+              ? outcomeLabel(latestOutcome.kind)
+              : "No result recorded yet"
           }
           meta={latestOutcome ? formatWhen(latestOutcome.occurred_at) : undefined}
         />
@@ -237,19 +159,56 @@ function roleOutputMeta(event: ConversationTrustEvent | undefined): string | nul
 
 function replyProofMeta(proof: ConversationTrustReplyProof): string | null {
   const pieces = [
-    proof.pattern_key,
     proof.exemplar_count
-      ? `${proof.exemplar_count} example${proof.exemplar_count === 1 ? "" : "s"}`
+      ? `${proof.exemplar_count} useful ${proof.exemplar_count === 1 ? "example" : "examples"}`
       : null,
-    proof.approval_kind ? `gate ${proof.approval_kind}` : null,
-    proof.channel_event_type,
-    proof.outcome_score ? `outcome ${Number(proof.outcome_score).toFixed(2)}` : null,
+    proof.channel_event_type ? channelEventLabel(proof.channel_event_type) : null,
   ].filter((piece): piece is string => Boolean(piece));
   return pieces.length ? pieces.join(" · ") : null;
 }
 
+function approvalLabel(decision: string): string {
+  if (decision === "approved") return "Approved";
+  if (decision === "rejected") return "Rejected";
+  if (decision === "pending") return "Needs review";
+  return decision.replace(/_/g, " ");
+}
+
+function outcomeLabel(kind: string): string {
+  if (kind === "positive_reply") return "Positive reply";
+  if (kind === "meeting_booked") return "Meeting booked";
+  if (kind === "post_published") return "Post published";
+  if (kind === "engagement_lift") return "Lift";
+  return kind.replace(/_/g, " ");
+}
+
+function channelEventLabel(eventType: string): string {
+  if (eventType === "message.sent") return "Sent";
+  if (eventType === "message.delivered") return "Delivered";
+  if (eventType === "message.bounced") return "Bounced";
+  if (eventType === "message.deferred") return "Held for review";
+  return eventType.replace(/_/g, " ").replace(/\./g, " ");
+}
+
 function formatWhen(value: Date): string {
   return new Date(value).toLocaleString();
+}
+
+function messageDirectionLabel(direction: string): string {
+  if (direction === "outbound") return "Sampark";
+  if (direction === "inbound") return "Reply";
+  return direction.replace(/_/g, " ");
+}
+
+function messageStatusLabel(status: string): string {
+  if (status === "sent") return "Sent";
+  if (status === "delivered") return "Delivered";
+  if (status === "draft") return "Draft";
+  if (status === "queued") return "Ready";
+  if (status === "deferred") return "Held for review";
+  if (status === "failed") return "Failed";
+  if (status === "bounced") return "Bounced";
+  return status.replace(/_/g, " ");
 }
 
 export default async function ConversationDetailPage({
@@ -317,7 +276,7 @@ export default async function ConversationDetailPage({
                 >
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[rgba(255,255,255,0.64)] px-2 py-1 text-xs text-[var(--color-text-3)]">
-                      {m.direction}. {m.channel}
+                      {messageDirectionLabel(m.direction)}
                     </span>
                     <span
                       className={
@@ -331,20 +290,16 @@ export default async function ConversationDetailPage({
                               : "bg-[var(--color-ink-3)] text-[var(--color-text-2)]")
                       }
                     >
-                      {m.status}
+                      {messageStatusLabel(m.status)}
                     </span>
                     {m.intent_class ? (
                       <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-                        reply. {m.intent_class}
-                        {m.intent_confidence
-                          ? ` (${Number(m.intent_confidence).toFixed(2)})`
-                          : ""}
+                        Reply: {m.intent_class.replace(/_/g, " ")}
                       </span>
                     ) : null}
                     {m.eval_score ? (
                       <span className="rounded-full bg-[var(--color-ink-3)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-                        quality {Number(m.eval_score).toFixed(2)}
-                        {m.eval_passed === false ? ". needs review" : ""}
+                        {m.eval_passed === false ? "Needs review" : "Ready"}
                       </span>
                     ) : null}
                     <span className="ml-auto text-xs text-[var(--color-text-3)]">
@@ -402,70 +357,11 @@ export default async function ConversationDetailPage({
           {conv.signal_title ? (
             <div className="section-note">
               <p className="text-sm font-semibold text-[var(--color-text-1)]">Why now</p>
-              <p className="mt-1 text-xs text-[var(--color-text-3)]">
-                {conv.signal_kind}
-              </p>
               <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
                 {conv.signal_title}
               </p>
             </div>
           ) : null}
-
-          {workflow ? (
-            <div className="section-note">
-              <p className="text-sm font-semibold text-[var(--color-text-1)]">Work path</p>
-              <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
-                Outreach flow
-              </p>
-              <p className="mt-0.5 text-xs text-[var(--color-text-3)]">
-                {workflow.run.status}
-              </p>
-              <ol className="mt-3 space-y-1">
-                {workflow.steps.map((s) => (
-                  <li
-                    key={`${s.step_position}-${s.attempt}`}
-                    className="flex items-center gap-2 text-xs text-[var(--color-text-2)]"
-                  >
-                    <span
-                      className={
-                        "inline-block w-1.5 h-1.5 rounded-full " +
-                        (s.status === "completed"
-                          ? "bg-[var(--color-pos)]"
-                          : s.status === "failed"
-                            ? "bg-[var(--color-neg)]"
-                            : "bg-[var(--color-warn)]")
-                      }
-                    />
-                    <span className="flex-1">{s.step_name}</span>
-                    {s.attempt > 1 ? (
-                      <span className="text-[var(--color-text-3)]">
-                        attempt {s.attempt}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : null}
-
-          <div className="section-note">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">Proof trail</p>
-            <ol className="mt-2 space-y-1 max-h-80 overflow-auto">
-              {events.map((e) => (
-                <li key={e.id} className="text-xs text-[var(--color-text-2)]">
-                  <span className="text-[var(--color-text-3)]">
-                    {new Date(e.occurred_at).toLocaleTimeString()}
-                  </span>{" "}
-                  <span className="text-[var(--color-text-1)]">{e.event_type}</span>
-                </li>
-              ))}
-              {events.length === 0 ? (
-                <li className="text-xs text-[var(--color-text-3)]">
-                  (no events yet)
-                </li>
-              ) : null}
-            </ol>
-          </div>
 
           <p className="text-xs text-[var(--color-text-3)]">
             <Link

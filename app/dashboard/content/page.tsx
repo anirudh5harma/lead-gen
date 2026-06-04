@@ -118,10 +118,10 @@ export default async function ContentPage() {
           <div>
             <p className="brief-kicker">Vaani · Content</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              Vaani is writing what&apos;s worth publishing.
+              Vaani finds content worth posting.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Angles, drafts, and the lift that follows. Vaani only surfaces what passes review.
+              Ideas, drafts, and useful outcomes. Review one idea at a time; Vaani learns what to stop showing.
             </p>
           </div>
           <div className="section-note">
@@ -133,11 +133,65 @@ export default async function ContentPage() {
             </div>
             <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
               {published > 0
-                ? `${published} angles already turned into Outcomes.`
-                : `${angles.length} angles waiting. Accept an angle or mark a draft published to start the loop.`}
+                ? `${published} ideas became posts.`
+                : `${angles.length} ideas waiting for a yes or no.`}
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="mt-6 section-canvas p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="brief-note-icon">
+              <Icon name="edit_note" size={18} />
+            </span>
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Ideas to review</h2>
+          </div>
+          <RecommendationLearningBadge
+            accepted={learning.accepted}
+            ignored={learning.ignored}
+            acceptanceRate={learning.acceptance_rate}
+          />
+        </div>
+        {reviews.length === 0 ? (
+          <EmptyState
+            title="No ideas yet"
+            hint="When Vaani finds a question or proof worth turning into a post, it lands here."
+            cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
+          />
+        ) : (
+          <RecommendationReviewGrid
+            items={reviews}
+            icon="lightbulb"
+            surface="content"
+            outcomeKind="post_published"
+            outcomeLabel="Record result"
+            externalRefLabel="Published link"
+          />
+        )}
+      </section>
+
+      <section className="mt-6 section-canvas p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="brief-note-icon">
+            <Icon name="article" size={18} />
+          </span>
+          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Drafts</h2>
+        </div>
+        {contentDrafts.length === 0 ? (
+          <EmptyState
+            title="No drafts waiting"
+            hint="Vaani will place ready-to-edit drafts here after an idea is approved."
+            cta={{ href: "/dashboard/setup", label: "Tune Vaani", icon: "edit_note" }}
+          />
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {contentDrafts.map((draft) => (
+              <DraftNote key={draft.id} draft={draft} />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mt-6 section-canvas p-5">
@@ -160,74 +214,17 @@ export default async function ContentPage() {
           </div>
         )}
       </section>
-
-      <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="brief-note-icon">
-            <Icon name="article" size={18} />
-          </span>
-          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Draft queue</h2>
-        </div>
-        {contentDrafts.length === 0 ? (
-          <EmptyState
-            title="No drafts waiting"
-            hint="Vaani will place draft artifacts here when a content Play produces one."
-            cta={{ href: "/dashboard/setup", label: "Tune Vaani", icon: "edit_note" }}
-          />
-        ) : (
-          <div className="grid gap-2 lg:grid-cols-2">
-            {contentDrafts.map((draft) => (
-              <DraftNote key={draft.id} draft={draft} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="brief-note-icon">
-              <Icon name="edit_note" size={18} />
-            </span>
-            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Angles to review</h2>
-          </div>
-          <RecommendationLearningBadge
-            accepted={learning.accepted}
-            ignored={learning.ignored}
-            acceptanceRate={learning.acceptance_rate}
-          />
-        </div>
-        {reviews.length === 0 ? (
-          <EmptyState
-            title="No angles yet"
-            hint="When Vaani finds a question or proof worth turning into a post, it lands here."
-            cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
-          />
-        ) : (
-          <RecommendationReviewGrid
-            items={reviews}
-            icon="lightbulb"
-            surface="content"
-            outcomeKind="post_published"
-            outcomeLabel="Mark published"
-            externalRefLabel="Published URL"
-          />
-        )}
-      </section>
     </>
   );
 }
 
 function PublishedNote({ outcome }: { outcome: PublishedContentRow }) {
-  const title = outcome.title ?? outcome.kind.replace(/_/g, " ");
+  const title = outcome.title ?? outcomeLabel(outcome.kind);
   const inner = (
     <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4 transition hover:border-[var(--color-line-2)]">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-pos-bg)] px-2 py-1 text-xs font-medium text-[var(--color-pos)]">
-          {outcome.kind.replace(/_/g, " ")}
-        </span>
-        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-          Score {Number(outcome.score).toFixed(2)}
+          {outcomeLabel(outcome.kind)}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">
           {new Date(outcome.occurred_at).toLocaleDateString()}
@@ -252,7 +249,7 @@ function DraftNote({ draft }: { draft: ContentDraftRow }) {
     <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
-          {draft.status}
+          {draft.status === "queued" ? "Ready" : "Draft"}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">
           {new Date(draft.created_at).toLocaleDateString()}
@@ -266,6 +263,13 @@ function DraftNote({ draft }: { draft: ContentDraftRow }) {
       </p>
     </article>
   );
+}
+
+function outcomeLabel(kind: string): string {
+  if (kind === "post_published") return "Published";
+  if (kind === "engagement_lift") return "Lift";
+  if (kind === "follower_lift") return "Audience lift";
+  return kind.replace(/_/g, " ");
 }
 
 function MiniStatus({ label, value }: { label: string; value: number }) {
