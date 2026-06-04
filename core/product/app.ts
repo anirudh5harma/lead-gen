@@ -119,7 +119,10 @@ import {
   createProductSubstrate,
   type ProductSubstrateMode,
 } from "./substrate.ts";
-import { planExaResearchQuery } from "./exa-query-planning.ts";
+import {
+  planExaResearchQuery,
+  recommendationResearchPatternKey,
+} from "./exa-query-planning.ts";
 import { createRecommendationLearningProjection } from "./recommendation-learning.ts";
 import {
   createExaClientFromEnv,
@@ -449,6 +452,30 @@ export interface ProductRecommendationReviewResult {
   workspace_id: string;
   review_id: string;
   decision: ProductRecommendationDecision;
+}
+
+export type ProductRecommendationOutcomeKind =
+  | "post_published"
+  | "follower_lift"
+  | "engagement_lift";
+
+export interface ProductRecommendationOutcomeInput {
+  review_id: string;
+  kind: ProductRecommendationOutcomeKind;
+  score?: number;
+  occurred_at?: string;
+  external_ref?: string | null;
+  properties?: Record<string, unknown>;
+}
+
+export interface ProductRecommendationOutcomeResult {
+  workspace_id: string;
+  review_id: string;
+  outcome_id: string;
+  kind: ProductRecommendationOutcomeKind;
+  attributed_rep_id: string | null;
+  pattern_key: string;
+  exemplar_ids: string[];
 }
 
 export interface ProductRecommendationQualityBucket {
@@ -2362,6 +2389,93 @@ export async function reviewProductRecommendation(
     workspace_id: session.workspace_id,
     review_id: reviewId,
     decision: input.decision,
+  };
+}
+
+export async function recordProductRecommendationOutcome(
+  input: ProductRecommendationOutcomeInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductRecommendationOutcomeResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const reviewId = input.review_id.trim();
+  if (!reviewId) throw new Error("review_id is required");
+
+  const review = await findAcceptedRecommendationReview(
+    engine.pool,
+    session.workspace_id,
+    reviewId,
+  );
+  if (!review) {
+    throw new Error(`Accepted recommendation review not found: ${reviewId}`);
+  }
+
+  const pattern_key = recommendationResearchPatternKey(review.review_kind);
+  const attribution = await findRecommendationOutcomeAttribution(
+    engine.pool,
+    session.workspace_id,
+    pattern_key,
+  );
+  const occurredAtInput = input.occurred_at?.trim() || null;
+  const occurred_at = occurredAtInput
+    ? new Date(occurredAtInput).toISOString()
+    : new Date().toISOString();
+  const properties = {
+    ...(input.properties ?? {}),
+    recommendation_review_id: reviewId,
+    recommendation_review_kind: review.review_kind,
+    recommendation_source_event_id: review.source_event_id,
+    recommendation_item: review.item,
+    external_ref: input.external_ref ?? null,
+    pattern_key,
+    exemplar_ids: attribution.exemplar_ids,
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "outcome.recorded",
+    source: "user",
+    producer_ref: `user:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "outcome.recorded",
+      session.workspace_id,
+      reviewId,
+      {
+        kind: input.kind,
+        score: input.score ?? null,
+        occurred_at: occurredAtInput,
+        external_ref: input.external_ref ?? null,
+      },
+    ),
+    payload: {
+      outcome_id: randomUUID(),
+      kind: input.kind,
+      score: clamp01(input.score ?? defaultRecommendationOutcomeScore(input.kind)),
+      conversation_id: null,
+      attributed_play_id: null,
+      attributed_play_run_id: null,
+      attributed_message_id: null,
+      attributed_signal_id: null,
+      attributed_rep_id: attribution.rep_id,
+      properties,
+      provenance: {
+        source: "recommendation.outcome",
+        review_event_id: review.event_id,
+        recorded_by: session.user_id,
+      },
+      occurred_at,
+    },
+  });
+  if (engine.substrateMode === "postgres") {
+    await projectVisibleProductState(engine);
+  }
+  return {
+    workspace_id: session.workspace_id,
+    review_id: reviewId,
+    outcome_id: event.payload.outcome_id,
+    kind: input.kind,
+    attributed_rep_id: attribution.rep_id,
+    pattern_key,
+    exemplar_ids: attribution.exemplar_ids,
   };
 }
 
@@ -6259,6 +6373,109 @@ function recommendationFeedbackState(rows: Array<{
     });
   }
   return feedback;
+}
+
+async function findAcceptedRecommendationReview(
+  pool: Pool,
+  workspace_id: string,
+  review_id: string,
+): Promise<{
+  event_id: string;
+  review_kind: ProductRecommendationKind;
+  source_event_id: string;
+  item: {
+    title: string;
+    detail: string;
+    url: string | null;
+    evidence_source_ids: string[];
+  };
+} | null> {
+  const { rows } = await pool.query<{
+    event_id: string;
+    payload: {
+      review_kind?: string;
+      source_event_id?: string;
+      decision?: string;
+      item?: {
+        title?: string;
+        detail?: string;
+        url?: string | null;
+        evidence_source_ids?: string[];
+      };
+    };
+  }>(
+    `select id::text as event_id, payload
+       from events
+      where workspace_id = $1
+        and event_type = 'recommendation.reviewed'
+        and payload->>'review_id' = $2
+      order by occurred_at desc
+      limit 1`,
+    [workspace_id, review_id],
+  );
+  const row = rows[0];
+  const payload = row?.payload;
+  if (!row || payload?.decision !== "accepted") return null;
+  if (
+    payload.review_kind !== "content_opportunity" &&
+    payload.review_kind !== "aeo_gap"
+  ) {
+    return null;
+  }
+  if (!payload.source_event_id) return null;
+  return {
+    event_id: row.event_id,
+    review_kind: payload.review_kind,
+    source_event_id: payload.source_event_id,
+    item: {
+      title: payload.item?.title ?? "Accepted recommendation",
+      detail: payload.item?.detail ?? "",
+      url: payload.item?.url ?? null,
+      evidence_source_ids: Array.isArray(payload.item?.evidence_source_ids)
+        ? payload.item.evidence_source_ids.filter((id): id is string => typeof id === "string")
+        : [],
+    },
+  };
+}
+
+async function findRecommendationOutcomeAttribution(
+  pool: Pool,
+  workspace_id: string,
+  pattern_key: string,
+): Promise<{ rep_id: string | null; exemplar_ids: string[] }> {
+  const { rows } = await pool.query<{ rep_id: string; exemplar_id: string | null }>(
+    `select r.id::text as rep_id,
+            rpm.id::text as exemplar_id
+       from reps r
+       left join lateral (
+         select id
+           from rep_memory_procedural
+          where workspace_id = r.workspace_id
+            and rep_id = r.id
+            and pattern_key = $2
+          order by score desc, created_at desc
+          limit 3
+       ) rpm on true
+      where r.workspace_id = $1
+        and r.status = 'active'
+      order by case when rpm.id is null then 1 else 0 end, r.created_at asc`,
+    [workspace_id, pattern_key],
+  );
+  const rep_id = rows[0]?.rep_id ?? null;
+  if (!rep_id) return { rep_id: null, exemplar_ids: [] };
+  return {
+    rep_id,
+    exemplar_ids: rows
+      .filter((row) => row.rep_id === rep_id && row.exemplar_id)
+      .map((row) => row.exemplar_id!)
+      .slice(0, 3),
+  };
+}
+
+function defaultRecommendationOutcomeScore(kind: ProductRecommendationOutcomeKind): number {
+  if (kind === "post_published") return 0.55;
+  if (kind === "follower_lift") return 0.65;
+  return 0.6;
 }
 
 function decorateProductReviewItem(

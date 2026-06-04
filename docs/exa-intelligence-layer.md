@@ -358,6 +358,12 @@ Implemented and verified:
   `recommendation:aeo_gap|stage:exa_review`, appends compact kept/skipped
   evidence hints to the Exa query, and records typed `query_plan` provenance on
   Exa request/completion/projection events.
+- Accepted Content/AEO recommendations can now be closed into real Outcomes
+  through `product.recommendation.outcome.record`. The tool emits
+  `outcome.recorded` for published work or measurable lift and carries
+  recommendation review id, source event id, pattern key, and procedural
+  exemplar ids so the existing Outcome -> procedural memory bridge can reward
+  or learn from the result.
 - Signal-to-email and Signal-to-LinkedIn Plays automatically call Exa draft
   grounding when the triggering Signal lacks Exa proof or carries stale proof;
   the grounding summary reaches the writer and hot-path judge, and the draft
@@ -376,8 +382,8 @@ Implemented and verified:
 
 Remaining hardening:
 
-- Add outcome attribution once accepted Content/AEO recommendations are turned
-  into published work or measurable answer-visibility changes.
+- Add richer UI affordances for recording recommendation Outcomes after Content
+  publishing and answer-visibility tracking are first-class surfaces.
 
 ## Cost And Quality Controls
 
@@ -415,8 +421,10 @@ Current enforcement:
   procedural memory after the minimum-feedback threshold.
 - Implemented: Content/AEO Exa query planning retrieves those procedural
   patterns and records typed `query_plan` provenance.
-- Remaining: connect accepted recommendation patterns to downstream Outcomes
-  once Content/AEO execution produces attributable result events.
+- Implemented: accepted recommendation patterns can be connected to downstream
+  Outcomes through `product.recommendation.outcome.record`.
+- Remaining: make Content publishing and answer-visibility tracking produce
+  those Outcome records automatically when those surfaces become first-class.
 
 ## UI Contract
 

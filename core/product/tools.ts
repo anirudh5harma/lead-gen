@@ -21,6 +21,7 @@ import {
   listDeadLetteredEventDispatches,
   researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
+  recordProductRecommendationOutcome,
   reviewProductRecommendation,
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
@@ -64,6 +65,11 @@ const ExaResearchIntentSchema = z.enum([
   "aeo_audit",
 ]);
 const RecommendationDecisionSchema = z.enum(["accepted", "ignored"]);
+const RecommendationOutcomeKindSchema = z.enum([
+  "post_published",
+  "follower_lift",
+  "engagement_lift",
+]);
 const LinkedInActionSchema = z.enum([
   "linkedin_connection",
   "linkedin_dm",
@@ -686,6 +692,32 @@ export function registerProductTools(): void {
     }),
     async handler(input, ctx) {
       return reviewProductRecommendation(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.recommendation.outcome.record",
+    description:
+      "Record a real Outcome for an accepted Exa-backed Content/AEO recommendation, attributing published work or measurable lift back to Rep procedural memory.",
+    kind: "write",
+    input: z.object({
+      review_id: z.string().min(1),
+      kind: RecommendationOutcomeKindSchema,
+      score: z.number().min(0).max(1).optional(),
+      occurred_at: z.string().datetime().optional(),
+      external_ref: z.string().nullable().optional(),
+      properties: z.record(z.string(), z.unknown()).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      review_id: z.string().min(1),
+      outcome_id: z.string().uuid(),
+      kind: RecommendationOutcomeKindSchema,
+      attributed_rep_id: z.string().uuid().nullable(),
+      pattern_key: z.string().min(1),
+      exemplar_ids: z.array(z.string().uuid()),
+    }),
+    async handler(input, ctx) {
+      return recordProductRecommendationOutcome(input, sessionFromContext(ctx));
     },
   });
 

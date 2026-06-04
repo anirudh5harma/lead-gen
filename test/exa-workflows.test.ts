@@ -160,3 +160,31 @@ test("Exa query events carry typed procedural query plans", () => {
   assert.equal(parsed.query_plan?.source, "procedural_memory");
   assert.equal(parsed.original_query, "AI GTM buyer questions");
 });
+
+test("Recommendation outcomes carry attribution for procedural learning", () => {
+  const parsed = eventRegistry["outcome.recorded"].parse({
+    outcome_id: "00000000-0000-4000-8000-000000000201",
+    kind: "post_published",
+    score: 0.7,
+    conversation_id: null,
+    attributed_play_id: null,
+    attributed_play_run_id: null,
+    attributed_message_id: null,
+    attributed_signal_id: null,
+    attributed_rep_id: "00000000-0000-4000-8000-000000000202",
+    properties: {
+      recommendation_review_id:
+        "content_opportunity:00000000-0000-4000-8000-000000000010:abc123",
+      recommendation_review_kind: "content_opportunity",
+      recommendation_source_event_id: "00000000-0000-4000-8000-000000000010",
+      pattern_key: "recommendation:content_opportunity|stage:exa_review",
+      exemplar_ids: ["00000000-0000-4000-8000-000000000203"],
+    },
+    provenance: {
+      source: "recommendation.outcome",
+    },
+  });
+
+  assert.equal(parsed.kind, "post_published");
+  assert.equal(parsed.properties?.pattern_key, "recommendation:content_opportunity|stage:exa_review");
+});
