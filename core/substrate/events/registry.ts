@@ -767,6 +767,15 @@ const RepBriefRefreshed = RepResearchCompleted.extend({
   quiet_exceptions: z.array(BriefItem),
 });
 
+const RecommendationReviewed = z.object({
+  review_id: z.string().min(1),
+  review_kind: z.enum(["content_opportunity", "aeo_gap"]),
+  source_event_id: z.string().uuid(),
+  decision: z.enum(["accepted", "ignored"]),
+  note: z.string().nullable().optional(),
+  item: BriefItem,
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Memory updates (procedural memory grows from outcomes)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -877,6 +886,7 @@ export const eventRegistry = {
   "rep.brief.refreshed": RepBriefRefreshed,
   "aeo.audit.completed": AeoAuditCompleted,
   "content.opportunity.discovered": ContentOpportunityDiscovered,
+  "recommendation.reviewed": RecommendationReviewed,
 
   "rep.memory.procedural.updated": RepMemoryProceduralUpdated,
   "rep.memory.procedural.seeded": RepMemoryProceduralSeeded,

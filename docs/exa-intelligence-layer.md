@@ -336,6 +336,11 @@ Implemented and verified:
   AEO audits emit structured `gaps` / `review_items`; both are projected into
   the Content and AEO canvas surfaces and into prompt-ready workspace context
   with graph evidence source ids and proof URLs.
+- Operators can keep or skip Exa-backed Content/AEO recommendations from the
+  canvas surfaces. The same capability is exposed to agents as
+  `product.recommendation.review` and emits `recommendation.reviewed`, letting
+  accepted recommendations remain in prompt context while ignored items leave
+  the review queue.
 - Signal-to-email and Signal-to-LinkedIn Plays automatically call Exa draft
   grounding when the triggering Signal lacks Exa proof or carries stale proof;
   the grounding summary reaches the writer and hot-path judge, and the draft
@@ -354,8 +359,6 @@ Implemented and verified:
 
 Remaining hardening:
 
-- Expand authenticated product QA around the Content/AEO review canvases once
-  real operator feedback exists.
 - Add historical quality metrics for opportunity/gap acceptance after users
   have accepted, edited, or ignored enough recommendations.
 
@@ -389,7 +392,8 @@ Current enforcement:
 - Partial: judge/classifier protection exists in the downstream Play/send path,
   but standalone Exa research events are evidence-gathering steps and do not
   trigger channel action by themselves.
-- Remaining: outcome-quality metrics for accepted Content/AEO recommendations.
+- Remaining: aggregate outcome-quality metrics for accepted Content/AEO
+  recommendations once enough `recommendation.reviewed` events exist.
 
 ## UI Contract
 

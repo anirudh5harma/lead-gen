@@ -426,6 +426,27 @@ export interface ProductBriefItem {
   detail: string;
   url?: string | null;
   evidence_source_ids?: string[];
+  review_id?: string;
+  review_kind?: ProductRecommendationKind;
+  source_event_id?: string;
+  decision?: ProductRecommendationDecision;
+  reviewed_at?: string;
+  review_note?: string | null;
+}
+
+export type ProductRecommendationKind = "content_opportunity" | "aeo_gap";
+export type ProductRecommendationDecision = "accepted" | "ignored";
+
+export interface ProductRecommendationReviewInput {
+  review_id: string;
+  decision: ProductRecommendationDecision;
+  note?: string | null;
+}
+
+export interface ProductRecommendationReviewResult {
+  workspace_id: string;
+  review_id: string;
+  decision: ProductRecommendationDecision;
 }
 
 export interface ProductExaBriefRefreshResult extends ProductExaResearchResult {
@@ -2253,6 +2274,60 @@ export async function researchWorkspaceWithExa(
     evidence_source_ids: evidenceSourceIds,
     summary,
     ...reviewPayload,
+  };
+}
+
+export async function reviewProductRecommendation(
+  input: ProductRecommendationReviewInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductRecommendationReviewResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const reviewId = input.review_id.trim();
+  if (!reviewId) throw new Error("review_id is required");
+  const recommendation = await findProductRecommendationForReview(
+    engine.pool,
+    session.workspace_id,
+    reviewId,
+  );
+  if (!recommendation) {
+    throw new Error(`Recommendation not found: ${reviewId}`);
+  }
+  if (!recommendation.review_kind || !recommendation.source_event_id) {
+    throw new Error(`Recommendation is missing review metadata: ${reviewId}`);
+  }
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "recommendation.reviewed",
+    source: "user",
+    producer_ref: `user:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "recommendation.reviewed",
+      session.workspace_id,
+      reviewId,
+      {
+        decision: input.decision,
+        note: input.note?.trim() || null,
+      },
+    ),
+    payload: {
+      review_id: reviewId,
+      review_kind: recommendation.review_kind,
+      source_event_id: recommendation.source_event_id,
+      decision: input.decision,
+      note: input.note?.trim() || null,
+      item: {
+        title: recommendation.title,
+        detail: recommendation.detail,
+        url: recommendation.url ?? null,
+        evidence_source_ids: recommendation.evidence_source_ids ?? [],
+      },
+    },
+  });
+  return {
+    workspace_id: session.workspace_id,
+    review_id: reviewId,
+    decision: input.decision,
   };
 }
 
@@ -5490,6 +5565,7 @@ export async function getAppState(
     profile,
     brief,
     exaReviews,
+    recommendationFeedback,
   ] = await Promise.all([
     pool.query<{
       id: string;
@@ -5790,6 +5866,7 @@ export async function getAppState(
       [boot.workspace_id],
     ),
     pool.query<{
+      event_id: string;
       event_type: string;
       payload: Record<string, unknown>;
       occurred_at: Date;
@@ -5800,7 +5877,8 @@ export async function getAppState(
         snippet: string | null;
       }>;
     }>(
-      `select e.event_type,
+      `select e.id::text as event_id,
+              e.event_type,
               e.payload,
               e.occurred_at,
               coalesce(
@@ -5828,7 +5906,26 @@ export async function getAppState(
         limit 10`,
       [boot.workspace_id],
     ),
+    pool.query<{
+      review_id: string;
+      decision: ProductRecommendationDecision;
+      note: string | null;
+      occurred_at: Date;
+    }>(
+      `select distinct on (payload->>'review_id')
+              payload->>'review_id' as review_id,
+              payload->>'decision' as decision,
+              payload->>'note' as note,
+              occurred_at
+         from events
+        where workspace_id = $1
+          and event_type = 'recommendation.reviewed'
+          and payload->>'review_id' is not null
+        order by payload->>'review_id', occurred_at desc`,
+      [boot.workspace_id],
+    ),
   ]);
+  const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
   const eventTrace = latestWorkflowRunId
     ? await getEventTraceForCorrelation(pool, {
@@ -5869,8 +5966,16 @@ export async function getAppState(
     eventTrace,
     profile: productProfileState(profile.rows[0] ?? null),
     brief: productBriefState(brief.rows[0] ?? null),
-    content_reviews: productExaReviewState(exaReviews.rows, "content.opportunity.discovered"),
-    aeo_reviews: productExaReviewState(exaReviews.rows, "aeo.audit.completed"),
+    content_reviews: productExaReviewState(
+      exaReviews.rows,
+      "content.opportunity.discovered",
+      recommendationFeedbackById,
+    ),
+    aeo_reviews: productExaReviewState(
+      exaReviews.rows,
+      "aeo.audit.completed",
+      recommendationFeedbackById,
+    ),
     sendTraces: sendTraces.rows.map((row) => ({
       message_id: row.message_id,
       status: row.status,
@@ -5983,6 +6088,7 @@ function productBriefState(row: {
 
 function productExaReviewState(
   rows: Array<{
+    event_id: string;
     event_type: string;
     payload: Record<string, unknown>;
     occurred_at: Date;
@@ -5994,36 +6100,162 @@ function productExaReviewState(
     }>;
   }>,
   eventType: "content.opportunity.discovered" | "aeo.audit.completed",
+  feedbackById: Map<string, ProductRecommendationFeedbackState> = new Map(),
+  limit = 8,
 ): ProductBriefItem[] {
   return rows
     .filter((row) => row.event_type === eventType)
     .flatMap((row) => {
       const key = eventType === "content.opportunity.discovered" ? "opportunities" : "gaps";
       const payloadItems = briefItemsStateValue(row.payload[key] ?? row.payload.review_items);
-      if (payloadItems.length > 0) return payloadItems;
+      if (payloadItems.length > 0) {
+        return payloadItems.flatMap((item) =>
+          decorateProductReviewItem(row.event_id, eventType, item, feedbackById),
+        );
+      }
       const evidence = row.evidence[0];
       if (evidence) {
-        return [{
+        return decorateProductReviewItem(row.event_id, eventType, {
           title: evidence.title ?? (eventType === "content.opportunity.discovered"
             ? "Content angle to review"
             : "Answer gap to review"),
           detail: evidence.snippet ?? stringStateValue(row.payload.summary) ?? "",
           url: evidence.url,
           evidence_source_ids: [evidence.id],
-        }];
+        }, feedbackById);
       }
       const summary = stringStateValue(row.payload.summary);
       return summary
-        ? [{
+        ? decorateProductReviewItem(row.event_id, eventType, {
           title: eventType === "content.opportunity.discovered"
             ? "Content angle to review"
             : "Answer gap to review",
           detail: summary,
           evidence_source_ids: arrayStringStateValue(row.payload.evidence_source_ids),
-        }]
+        }, feedbackById)
         : [];
     })
-    .slice(0, 8);
+    .slice(0, limit);
+}
+
+interface ProductRecommendationFeedbackState {
+  decision: ProductRecommendationDecision;
+  note: string | null;
+  occurred_at: string;
+}
+
+function recommendationFeedbackState(rows: Array<{
+  review_id: string;
+  decision: ProductRecommendationDecision | string;
+  note: string | null;
+  occurred_at: Date;
+}>): Map<string, ProductRecommendationFeedbackState> {
+  const feedback = new Map<string, ProductRecommendationFeedbackState>();
+  for (const row of rows) {
+    if (row.decision !== "accepted" && row.decision !== "ignored") continue;
+    feedback.set(row.review_id, {
+      decision: row.decision,
+      note: row.note,
+      occurred_at: row.occurred_at.toISOString(),
+    });
+  }
+  return feedback;
+}
+
+function decorateProductReviewItem(
+  source_event_id: string,
+  eventType: "content.opportunity.discovered" | "aeo.audit.completed",
+  item: ProductBriefItem,
+  feedbackById: Map<string, ProductRecommendationFeedbackState>,
+): ProductBriefItem[] {
+  const review_kind = productRecommendationKindForEvent(eventType);
+  const review_id = productRecommendationReviewId(source_event_id, review_kind, item);
+  const feedback = feedbackById.get(review_id);
+  if (feedback?.decision === "ignored") return [];
+  return [{
+    ...item,
+    review_id,
+    review_kind,
+    source_event_id,
+    decision: feedback?.decision,
+    reviewed_at: feedback?.occurred_at,
+    review_note: feedback?.note ?? null,
+  }];
+}
+
+function productRecommendationKindForEvent(
+  eventType: "content.opportunity.discovered" | "aeo.audit.completed",
+): ProductRecommendationKind {
+  return eventType === "content.opportunity.discovered" ? "content_opportunity" : "aeo_gap";
+}
+
+function productRecommendationReviewId(
+  source_event_id: string,
+  review_kind: ProductRecommendationKind,
+  item: ProductBriefItem,
+): string {
+  const digest = createHash("sha256")
+    .update(stableJson({
+      title: item.title,
+      detail: item.detail,
+      url: item.url ?? null,
+      evidence_source_ids: item.evidence_source_ids ?? [],
+    }))
+    .digest("hex")
+    .slice(0, 16);
+  return `${review_kind}:${source_event_id}:${digest}`;
+}
+
+async function findProductRecommendationForReview(
+  pool: Pool,
+  workspace_id: string,
+  review_id: string,
+): Promise<ProductBriefItem | null> {
+  const { rows } = await pool.query<{
+    event_id: string;
+    event_type: string;
+    payload: Record<string, unknown>;
+    occurred_at: Date;
+    evidence: Array<{
+      id: string;
+      url: string | null;
+      title: string | null;
+      snippet: string | null;
+    }>;
+  }>(
+    `select e.id::text as event_id,
+            e.event_type,
+            e.payload,
+            e.occurred_at,
+            coalesce(
+              jsonb_agg(
+                distinct jsonb_build_object(
+                  'id', gs.id::text,
+                  'url', gs.config->>'url',
+                  'title', coalesce(gs.properties->>'title', gs.name),
+                  'snippet', gs.properties->>'snippet'
+                )
+              ) filter (where gs.id is not null),
+              '[]'::jsonb
+            ) as evidence
+       from events e
+       left join lateral jsonb_array_elements_text(
+         coalesce(e.payload->'evidence_source_ids', '[]'::jsonb)
+       ) evidence_ids(id) on true
+       left join graph_sources gs
+         on gs.workspace_id = e.workspace_id
+        and gs.id::text = evidence_ids.id
+      where e.workspace_id = $1
+        and e.event_type in ('content.opportunity.discovered', 'aeo.audit.completed')
+      group by e.id
+      order by e.occurred_at desc
+      limit 100`,
+    [workspace_id],
+  );
+  return [
+    ...productExaReviewState(rows, "content.opportunity.discovered", new Map(), 100),
+    ...productExaReviewState(rows, "aeo.audit.completed", new Map(), 100),
+  ].find((item) => item.review_id === review_id) ?? null;
 }
 
 function briefItemsStateValue(value: unknown): ProductBriefItem[] {

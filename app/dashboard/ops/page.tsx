@@ -9,6 +9,7 @@ import {
   type ProductReadiness,
   type ProductReadinessStatus,
 } from "@/core/product/health";
+import { reviewRecommendationAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -209,9 +210,48 @@ function ReviewNote({ item, icon }: { item: ProductBriefItem; icon: string }) {
               View proof
             </a>
           ) : null}
+          <ReviewActions item={item} />
         </div>
       </div>
     </article>
+  );
+}
+
+function ReviewActions({ item }: { item: ProductBriefItem }) {
+  if (!item.review_id) return null;
+  if (item.decision === "accepted") {
+    return (
+      <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)]">
+        <Icon name="check" size={14} />
+        Kept for the Rep
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      <form action={reviewRecommendationAction}>
+        <input type="hidden" name="review_id" value={item.review_id} />
+        <input type="hidden" name="decision" value="accepted" />
+        <button
+          type="submit"
+          className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+        >
+          <Icon name="check" size={14} />
+          Keep
+        </button>
+      </form>
+      <form action={reviewRecommendationAction}>
+        <input type="hidden" name="review_id" value={item.review_id} />
+        <input type="hidden" name="decision" value="ignored" />
+        <button
+          type="submit"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
+        >
+          <Icon name="close" size={14} />
+          Skip
+        </button>
+      </form>
+    </div>
   );
 }
 

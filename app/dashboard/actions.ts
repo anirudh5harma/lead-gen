@@ -12,6 +12,7 @@ import {
   createProductWorkspaceForUser,
   dispatchSignalPlaysOnce,
   runWorkspaceSignalAggregatorOnce,
+  reviewProductRecommendation,
   submitManualSignal,
   trackCompanyForWorkspace,
   type ProductWorkspaceSession,
@@ -204,6 +205,22 @@ export async function runSignalAggregatorAction() {
   revalidateProductPaths();
 }
 
+export async function reviewRecommendationAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const reviewId = value(formData, "review_id");
+  if (!reviewId) return;
+  const decision = value(formData, "decision") === "ignored" ? "ignored" : "accepted";
+  await reviewProductRecommendation(
+    {
+      review_id: reviewId,
+      decision,
+      note: value(formData, "note") || null,
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
 export async function configureEmailChannelAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
   await configureWorkspaceEmailAccount(
@@ -271,4 +288,5 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard/approvals");
   revalidatePath("/dashboard/conversations");
   revalidatePath("/dashboard/deliverability");
+  revalidatePath("/dashboard/ops");
 }

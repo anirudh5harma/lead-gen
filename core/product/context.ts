@@ -286,7 +286,8 @@ function formatBriefItems(items: readonly ContextBriefItem[]): string {
       const evidence = item.evidence_source_ids?.length
         ? ` evidence=${item.evidence_source_ids.length}`
         : "";
-      return `- ${line(item.title)}: ${line(item.detail)}${proof}${evidence}`;
+      const decision = item.decision ? ` decision=${item.decision}` : "";
+      return `- ${line(item.title)}: ${line(item.detail)}${proof}${evidence}${decision}`;
     }),
   );
 }

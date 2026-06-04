@@ -121,3 +121,23 @@ test("Exa event contract includes Content and AEO review projections", () => {
   assert.equal(content.opportunities?.[0]?.title, "Pricing objection angle");
   assert.equal(aeo.gaps?.[0]?.title, "Comparison answer gap");
 });
+
+test("Exa recommendation feedback is a typed review event", () => {
+  const parsed = eventRegistry["recommendation.reviewed"].parse({
+    review_id:
+      "content_opportunity:00000000-0000-4000-8000-000000000010:abc123",
+    review_kind: "content_opportunity",
+    source_event_id: "00000000-0000-4000-8000-000000000010",
+    decision: "accepted",
+    note: "Use this in the next content pass.",
+    item: {
+      title: "Pricing objection angle",
+      detail: "Market evidence suggests a buyer question.",
+      url: "https://example.com/pricing",
+      evidence_source_ids: ["00000000-0000-4000-8000-000000000001"],
+    },
+  });
+
+  assert.equal(parsed.decision, "accepted");
+  assert.equal(parsed.item.title, "Pricing objection angle");
+});

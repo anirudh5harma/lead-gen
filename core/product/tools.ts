@@ -21,6 +21,7 @@ import {
   listDeadLetteredEventDispatches,
   researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
+  reviewProductRecommendation,
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
   startSendingDomainOperation,
@@ -62,6 +63,7 @@ const ExaResearchIntentSchema = z.enum([
   "content_research",
   "aeo_audit",
 ]);
+const RecommendationDecisionSchema = z.enum(["accepted", "ignored"]);
 const LinkedInActionSchema = z.enum([
   "linkedin_connection",
   "linkedin_dm",
@@ -665,6 +667,25 @@ export function registerProductTools(): void {
         { ...input, intent: "aeo_audit", include_text: true },
         sessionFromContext(ctx),
       );
+    },
+  });
+
+  registerTool({
+    name: "product.recommendation.review",
+    description:
+      "Record operator feedback on an Exa-backed Content or AEO recommendation. This emits a typed recommendation.reviewed event and updates the same review canvas agents see.",
+    kind: "write",
+    input: z.object({
+      review_id: z.string().min(1),
+      decision: RecommendationDecisionSchema,
+      note: z.string().nullable().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      review_id: z.string().min(1),
+      decision: RecommendationDecisionSchema,
+    }),
+    async handler(input, ctx) {
+      return reviewProductRecommendation(input, sessionFromContext(ctx));
     },
   });
 
