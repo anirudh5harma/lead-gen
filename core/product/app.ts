@@ -2812,6 +2812,8 @@ export async function configureDefaultSignalAggregator(
   const industry = input.industry?.trim();
   const marketPhrase =
     industry || signalKeywordsFromDescription(input.description) || "B2B SaaS";
+  // Keep signup/profile bootstrap predictable and free-source-first. Paid Exa
+  // monitoring is configured explicitly through product.signal.discover_open_web.
   const sourceInputs: ConfigureWorkspaceSignalSourceInput[] = [
     {
       adapter: "google_news",
@@ -2839,18 +2841,6 @@ export async function configureDefaultSignalAggregator(
       poll_interval_minutes: 60,
     },
   ];
-  if (process.env.EXA_API_KEY?.trim()) {
-    sourceInputs.unshift({
-      adapter: "exa",
-      name: `${companyName} public-web intelligence`,
-      query: `${companyName} ${marketPhrase} customers competitors launch hiring funding alternatives`,
-      signal_kind: input.signal_kind ?? "other",
-      max_daily_calls: 12,
-      max_daily_items: 50,
-      monthly_spend_cap_usd: 20,
-      poll_interval_minutes: 120,
-    });
-  }
   let source_count = 0;
   for (const source of sourceInputs) {
     await configureWorkspaceSignalSource(source, session);

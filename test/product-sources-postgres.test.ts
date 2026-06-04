@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setupPg } from "./_pg.ts";
 import {
+  configureDefaultSignalAggregator,
   configureWorkspaceSignalSource,
   configureRssSource,
+  createProductWorkspaceForUser,
   findFirstProductWorkspaceForUser,
   getAppState,
   resetProductEngineForTests,
@@ -34,6 +36,53 @@ test("product surface: configured RSS sources appear in app state with operator 
     assert.equal(source.signal_count, 0);
     assert.equal(source.latest_run_status, null);
   } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product surface: default aggregator stays free-source-only even when Exa is configured", async (t) => {
+  const fx = await setupPg("product_default_sources");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const priorExaKey = process.env.EXA_API_KEY;
+  process.env.EXA_API_KEY = "exa-test-key";
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const workspace = await createProductWorkspaceForUser(
+      { name: "Default Source Workspace", slug: "default-source-workspace" },
+      userId,
+    );
+    const result = await configureDefaultSignalAggregator(
+      {
+        company_name: "Acme",
+        industry: "AI infrastructure",
+        description: "Infrastructure for AI teams.",
+      },
+      { workspace_id: workspace.id, user_id: userId },
+    );
+
+    const { rows } = await fx.pool.query<{ adapter: string }>(
+      `select config->>'adapter' as adapter
+         from graph_sources
+        where workspace_id = $1
+        order by name asc`,
+      [workspace.id],
+    );
+
+    const adapters = rows.map((row) => row.adapter).sort();
+    assert.equal(result.source_count, 4);
+    assert.deepEqual(adapters, [
+      "google_news",
+      "hn_front",
+      "hn_whos_hiring",
+      "product_hunt",
+    ]);
+  } finally {
+    if (priorExaKey === undefined) delete process.env.EXA_API_KEY;
+    else process.env.EXA_API_KEY = priorExaKey;
     await resetProductEngineForTests();
     await fx.close();
     await resetPool();

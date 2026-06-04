@@ -26,7 +26,7 @@ projection, and visible UI feedback where applicable.
 | Track company | `/dashboard/campaigns` | `product.company.track` | `workspace.company.tracked` -> graph/source projection | Ready |
 | Configure signal source | `/dashboard/campaigns`, MCP/internal Rep execution | `product.source.configure` | `workspace.source.configured` -> source config; push sources do not enter poll maintenance | Ready |
 | Configure Exa open-web Signals | `/dashboard/campaigns`, MCP/internal Rep execution | `product.signal.discover_open_web` | `signal.discover.open_web.exa` configures adapter `exa` -> durable workspace poll -> `signal.discovered` | Ready |
-| Configure default aggregator | `/onboarding` | `product.sources.default_aggregator.configure` | Emits source configuration events per adapter | Ready |
+| Configure default aggregator | `/onboarding` | `product.sources.default_aggregator.configure` | Emits Firecrawl-adjacent free/native source configuration events only: Google News, HN front, HN Who's Hiring, and Product Hunt | Ready |
 | Run signal aggregator | `/dashboard/campaigns`, MCP/internal Rep execution | `product.sources.aggregate.run` | Starts `ingest_workspace_poll` workflow | Ready |
 | Push source-backed Signal | `/api/webhooks/signals`, external source, agent tool | `product.signal.discover` | Authenticated webhook/tool emits `signal.discovered`; projector materializes `Signal` and emits `signal.ingested` | Ready |
 | Submit manual signal | MCP/internal Rep execution | `product.signal.submit` | Manual Signal ingestion event path | Ready |

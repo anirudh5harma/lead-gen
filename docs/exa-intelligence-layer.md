@@ -414,6 +414,9 @@ Current enforcement:
   direct daily/monthly/per-Play gates for search, contents, and Webset
   primitives, `exa.costs.get`, graph projection, and provenance on stored Exa
   evidence.
+- Implemented: Exa is excluded from visible onboarding/Profile setup and the
+  default signup aggregator; Reps or MCP clients must configure open-web Exa
+  monitoring explicitly.
 - Partial: judge/classifier protection exists in the downstream Play/send path,
   but standalone Exa research events are evidence-gathering steps and do not
   trigger channel action by themselves.

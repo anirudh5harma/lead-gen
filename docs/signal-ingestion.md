@@ -80,7 +80,8 @@ Recommended provider order:
    data deletion, and rate behavior are reviewed.
 4. **Exa intelligence layer before X/LinkedIn procurement**: use Exa for
    profile enrichment, Rep research, draft grounding, open-web Signals, content
-   opportunities, and AEO audits. Do not count it as a LinkedIn/X firehose.
+   opportunities, and AEO audits. Do not count it as a LinkedIn/X firehose,
+   and do not add it to the default signup aggregator automatically.
 5. **Crustdata or Octolens later** only after cheap sources prove that managed
    coverage would save enough engineering time or improve outcome volume.
 
