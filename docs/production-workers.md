@@ -5,12 +5,13 @@ long-running container host for the worker processes. Do not run these as
 Vercel Functions; they hold durable NATS subscriptions and the Restate handler
 host.
 
-AWS now recommends moving App Runner-style workloads to **Amazon ECS Express
-Mode** ([AWS App Runner availability change](https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html)).
-Treat ECS Express Mode (or an equivalent long-running container runtime) as the
-production target for these workers. The old `worker:app-runner` script remains
-as a compatibility alias, but new background services should use
-`worker:managed`.
+The worker host must be a normal long-running container runtime. ECS Express
+Mode is the current production host, but it is not architectural lock-in:
+Railway, Render Background Workers, Fly Machines, or another always-on
+container service are acceptable if they can expose the Restate handler, keep
+NATS subscriptions open, pass `/health`, and preserve the same env contract.
+The old `worker:app-runner` script remains as a compatibility alias, but new
+background services should use `worker:managed`.
 
 ## Processes
 
@@ -92,15 +93,12 @@ protocol-correct host/path or a dedicated health target group, not another
 custom-port hot patch on the generated ECS Express target group.
 
 For release/check-in decisions, run `npm run verify:production-gate` before
-deep debugging ECS or SES again. The gate consumes the strict ECS probe and, only
-when SES topic/domain env is configured, the strict SES probe. It fails on
-current service/target/log or provider-wiring regressions and classifies known
-non-engineering blockers separately: stale ECS replacement events inside the
-lookback become `wait`, and SES account production-access review/sandbox state
-becomes `external`. If SES env is absent, the gate treats SES as intentionally
-skipped because customer-connected Outlook mailboxes are the primary outbound
-path. Use `AWS_SES_REQUIRED=1` to force SES checks, and
-`PRODUCTION_GATE_STRICT=1` only when CI should fail even on known wait states.
+deep debugging worker hosting again. The gate consumes the strict ECS probe
+because ECS is the current host. It only runs the legacy SES probe when
+`AWS_SES_REQUIRED=1`; stale AWS/SES env values alone are not enough to make SES
+launch-critical. Customer-connected Outlook mailboxes are the primary outbound
+path. If ECS health timeouts keep recurring, move this same container contract
+to Railway or Render before spending more time on AWS gateway tuning.
 
 ## Required Shared Environment
 
@@ -127,11 +125,16 @@ Workers that start or bridge Restate invocations also need:
 - `OPENAI_API_KEY`
 - `MICROSOFT_CLIENT_ID`
 - `MICROSOFT_CLIENT_SECRET`
-- `AWS_REGION`
-- `SES_CONFIGURATION_SET`
 - `RESTATE_WORKFLOW_PORT`, default `9080`
 - `RESTATE_WORKFLOW_HTTP1=1` when the host is behind an HTTP/1.1 managed proxy
   and must accept `/health` checks on the Restate handler port
+
+Optional managed owned-domain capacity needs:
+
+- `RESEND_API_KEY` for the current Resend-owned-domain transport
+- `AWS_REGION`, `SES_CONFIGURATION_SET`, `AWS_SNS_TOPIC_ARNS`, and
+  `AWS_SES_REQUIRED=1` only when intentionally exercising the legacy SES/SNS
+  path
 
 ## Restate Registration
 

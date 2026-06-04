@@ -117,6 +117,22 @@ const stubOutlook: OutlookSender = {
   },
 };
 
+function mockOutlook(): OutlookSender & { sent: number } {
+  let sent = 0;
+  return {
+    get sent() {
+      return sent;
+    },
+    async getAccessToken() {
+      return "token";
+    },
+    async send() {
+      sent += 1;
+      return { external_id: `outlook-${sent}` };
+    },
+  };
+}
+
 async function seedWorkspace(pool: Pool): Promise<string> {
   const ws = randomUUID();
   await pool.query(
@@ -124,6 +140,17 @@ async function seedWorkspace(pool: Pool): Promise<string> {
     [ws, `ws-${ws.slice(0, 8)}`, "test ws"],
   );
   return ws;
+}
+
+async function seedOutlookChannelAccount(pool: Pool, workspace_id: string): Promise<string> {
+  const channel_account_id = randomUUID();
+  await pool.query(
+    `insert into channel_accounts (
+       id, workspace_id, kind, display_name, status, daily_cap
+     ) values ($1, $2, 'oauth_outlook', 'maya@example.com', 'connected', 25)`,
+    [channel_account_id, workspace_id],
+  );
+  return channel_account_id;
 }
 
 test("series-a cold open: end-to-end happy path sends through the spine", async (t) => {
@@ -262,10 +289,94 @@ test("series-a cold open: end-to-end happy path sends through the spine", async 
         "create_conversation_and_message",
         "eval_gate",
         "project_eval",
+        "select_email_sub_channel",
         "send",
       ],
     );
     assert.ok(steps.every((s) => s.status === "completed"));
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
+test("series-a cold open: Outlook account sends through Microsoft Graph path", async (t) => {
+  const fx = await setupPg("play_e2e_outlook");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const workspace_id = await seedWorkspace(fx.pool);
+    const { rep_id } = await seedMayaForDemo(fx.pool, workspace_id);
+    const channel_account_id = await seedOutlookChannelAccount(fx.pool, workspace_id);
+    const { signal_id, person_id } = await seedSignalGraph(fx.pool, workspace_id);
+
+    const llm = mockLlmReturning(
+      "saw your series a",
+      "Anne — saw Sequoia led your round. Curious whether infra is a near-term hire?",
+    );
+    const ses = mockSes();
+    const outlook = mockOutlook();
+    const judge = createNoopJudge(0.92, 0.6);
+    const memory = {
+      episodic: createPostgresEpisodicRepository({ pool: fx.pool }),
+      semantic: createPostgresSemanticRepository({ pool: fx.pool }),
+      procedural: createPostgresProceduralRepository({ pool: fx.pool }),
+    };
+
+    const runtime = createPostgresWorkflowRuntime({ pool: fx.pool, bus });
+    runtime.register(
+      createSeriesAColdOpenPlay({
+        pool: fx.pool,
+        bus,
+        llm,
+        judge,
+        memory,
+        emailChannelDeps: { ses, outlook },
+      }),
+    );
+
+    const run = await runtime.start({
+      workspace_id,
+      workflow_name: "series_a_cold_open",
+      input: { signal_id, rep_id, person_id, channel_account_id },
+    });
+
+    await until(
+      async () => {
+        const status = (await runtime.get(run.id))?.status;
+        return status === "completed" || status === "failed";
+      },
+      { timeout: 30_000 },
+    );
+    const final = await runtime.get<unknown, {
+      status: string;
+      external_id?: string;
+      message_id: string;
+    }>(run.id);
+
+    assert.equal(final?.status, "completed");
+    assert.equal(final?.output?.status, "sent");
+    assert.equal(final?.output?.external_id, "outlook-1");
+    assert.equal(outlook.sent, 1);
+    assert.equal(ses.sent, 0);
+
+    const { rows } = await fx.pool.query<{
+      status: string;
+      external_id: string | null;
+      channel_account_id: string | null;
+    }>(
+      `select status, external_id, channel_account_id
+         from messages
+        where id = $1`,
+      [final?.output?.message_id],
+    );
+    assert.equal(rows[0].status, "sent");
+    assert.equal(rows[0].external_id, "outlook-1");
+    assert.equal(rows[0].channel_account_id, channel_account_id);
   } finally {
     await bus.close();
     await fx.close();

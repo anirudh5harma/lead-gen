@@ -7,8 +7,8 @@ import type { EmailChannelDeps } from "./send.ts";
 /**
  * Register email Tools. Internal Reps and external agents call them the
  * same way. The Tool registry resolves the pool via `getPool()`; the
- * SES + Outlook adapter instances live behind a closure so we don't
- * recreate them on every invocation.
+ * Managed-domain + Outlook adapter instances live behind a closure so we
+ * don't recreate them on every invocation.
  *
  * Idempotent: registering twice no-ops (mirrors the pattern in
  * core/graph/tools.ts).
@@ -74,8 +74,8 @@ export function registerEmailTools(deps: EmailToolDeps): void {
   registerTool({
     name: "email.send",
     description:
-      "Send an email through the workspace's email channel. Picks owned-domain " +
-      "(AWS SES) or connected Outlook based on `sub_channel`. Refuses to send " +
+      "Send an email through the workspace's email channel. Picks optional " +
+      "managed owned-domain transport or connected Outlook based on `sub_channel`. Refuses to send " +
       "unless evalGate has emitted a passing draft.judged for the message_id. " +
       "Returns either a sent confirmation with the provider's external id, or a " +
       "deferred result naming the reason (cap, frequency, warmup, account).",

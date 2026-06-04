@@ -126,7 +126,7 @@ test("production gate treats unconfigured SES as optional managed capacity", () 
   const decision = classifyAwsSesGate(ses);
 
   assert.equal(decision.status, "ok");
-  assert.match(decision.next, /customer-connected Outlook outbound/);
+  assert.match(decision.next, /Outlook\/Microsoft Graph send and reply sync/);
 });
 
 test("production gate is operator-ok but not launch-ready for known blockers", () => {

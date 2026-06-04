@@ -255,7 +255,7 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "AWS_REGION",
     requirement: "optional",
     category: "channels",
-    description: "AWS region for the optional SES owned-domain sender and SNS verification path.",
+    description: "AWS region for optional SES owned-domain sending and AWS-backed Restate worker health checks.",
     example: "us-east-1",
   },
   {
@@ -286,7 +286,7 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "AWS_SES_REQUIRED",
     requirement: "optional",
     category: "channels",
-    description: "Verifier-only flag. Set to 1 to force SES checks in the production gate even when SES topic/domain env is absent.",
+    description: "Verifier-only flag. Set to 1 only when intentionally enabling the legacy SES managed-domain capacity path.",
     example: "0",
   },
   {
@@ -314,7 +314,7 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "PRODUCTION_GATE_STRICT",
     requirement: "optional",
     category: "channels",
-    description: "Verifier-only flag. Set to 1 when CI should fail on known ECS wait or SES account-review states.",
+    description: "Verifier-only flag. Set to 1 when CI should fail on known ECS wait or optional provider review states.",
     example: "0",
   },
   {

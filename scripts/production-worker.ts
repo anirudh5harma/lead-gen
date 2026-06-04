@@ -116,7 +116,7 @@ const outlook = createOutlookSender({
 const verticalStore = createPostgresVerticalSliceStore(pool);
 const emailChannel = createPostgresOwnedDomainEmailChannel({
   pool,
-  transport: createResendEmailTransport({ apiKey: requiredEnv("RESEND_API_KEY") }),
+  transport: createOptionalResendEmailTransport(),
   outlook,
 });
 const linkedinChannel = createPostgresLinkedInChannel({
@@ -334,6 +334,17 @@ function createProductLinkedInTransport(): LinkedInTransport {
   const apiKey = process.env.LINKEDIN_PROVIDER_API_KEY?.trim();
   if (endpoint && apiKey) return createHttpLinkedInTransport({ endpoint, apiKey });
   return createUnconfiguredLinkedInTransport();
+}
+
+function createOptionalResendEmailTransport() {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) {
+    console.warn(
+      "[production-worker] RESEND_API_KEY is not set; optional owned-domain email transport is disabled",
+    );
+    return undefined;
+  }
+  return createResendEmailTransport({ apiKey });
 }
 
 async function workflowWorkspaceContext(input: { workspace_id: string }): Promise<string | null> {

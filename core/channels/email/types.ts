@@ -7,9 +7,10 @@
  * The email channel has two sub-channels with VERY different reputation
  * games:
  *
- *   - owned_domain : workspace-owned domains via AWS SES. Bulk
- *                    prospecting. Warmup state machine, SPF/DKIM/DMARC,
- *                    per-domain volume curves, bounce/complaint feedback.
+ *   - owned_domain : optional workspace-owned managed domains. Warmup state
+ *                    machine, SPF/DKIM/DMARC, per-domain volume curves,
+ *                    bounce/complaint feedback. SES is only one possible
+ *                    adapter, not the launch-critical path.
  *
  *   - oauth_outlook : the user's Outlook / Microsoft 365 inbox via OAuth
  *                     + Microsoft Graph. High-touch / founder-led sends

@@ -17,7 +17,7 @@ import { createEmailSender } from "../agents/reps/roles/sender.ts";
 import { evalGate } from "../agents/eval/gate.ts";
 import { projectMessageLifecycleEvent } from "../channels/message-lifecycle.ts";
 import { projectConversationLifecycleEvent } from "../primitives/conversation-lifecycle.ts";
-import type { EmailChannelDeps } from "../channels/email/index.ts";
+import type { EmailChannelDeps, EmailSubChannel } from "../channels/email/index.ts";
 import type { Rep } from "../primitives/index.ts";
 
 /**
@@ -102,6 +102,24 @@ interface LoadedContext {
     url: string | null;
     status: string;
   };
+}
+
+async function loadEmailSubChannel(
+  pool: Pool,
+  workspace_id: string,
+  channel_account_id: string,
+): Promise<EmailSubChannel> {
+  const { rows } = await pool.query<{ kind: string }>(
+    `select kind::text as kind
+       from channel_accounts
+      where id = $1
+        and workspace_id = $2`,
+    [channel_account_id, workspace_id],
+  );
+  const kind = rows[0]?.kind;
+  if (kind === "oauth_outlook") return "oauth_outlook";
+  if (kind === "email_domain") return "owned_domain";
+  throw new Error(`channel_account ${channel_account_id} is not a supported email account`);
 }
 
 /** Statuses that mean the signal is no longer actionable by a Play. */
@@ -386,17 +404,21 @@ export function createSeriesAColdOpenPlay(
         };
       }
 
+      const subChannel = await ctx.step("select_email_sub_channel", () =>
+        loadEmailSubChannel(deps.pool, workspace_id, input.channel_account_id),
+      );
+
       // 8. Send via the email channel. The channel re-verifies the eval gate
-      //    from the events table — defence in depth — and enforces caps +
-      //    warmup before calling SES.
+      //    from the events table — defence in depth — and enforces caps,
+      //    warmup, and connected-inbox state before calling the provider.
       const sendResult = await ctx.step("send", () =>
         rep.role("sender").invoke(
           {
             conversation_id,
             message_id,
             channel_account_id: input.channel_account_id,
-            sub_channel: "owned_domain",
-            sending_domain_id: input.sending_domain_id,
+            sub_channel: subChannel,
+            sending_domain_id: subChannel === "owned_domain" ? input.sending_domain_id : undefined,
             draft: {
               to: {
                 email: loaded.person.emails[0],

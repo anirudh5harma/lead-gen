@@ -2,10 +2,9 @@
 /**
  * Operator gate for recurring production blockers.
  *
- * Strict verifiers intentionally fail on recent ECS health events and SES
- * sandbox state. This gate classifies those known states so operators can see
- * whether there is a current engineering failure, a wait window, or an
- * external AWS review blocker.
+ * Strict verifiers intentionally fail on recent ECS health events. The
+ * optional legacy SES check only runs when AWS_SES_REQUIRED=1 because customer-
+ * connected Outlook mailboxes are the launch-critical outbound path.
  */
 
 import { pathToFileURL } from "node:url";
@@ -76,20 +75,20 @@ export function classifyAwsSesGate(
   );
   if (skipped) {
     return {
-      name: "AWS SES",
+      name: "Managed owned-domain email",
       status: "ok",
-      detail: skipped.detail ?? "SES managed owned-domain provider is not configured.",
-      next: "No AWS action needed for customer-connected Outlook outbound. Run verify:aws-ses only when enabling the optional SES managed-domain path.",
+      detail: skipped.detail ?? "Managed owned-domain provider is not required.",
+      next: "No AWS action needed. Verify Outlook/Microsoft Graph send and reply sync for launch outbound.",
     };
   }
 
   const failed = result.steps.filter((step) => step.status === "fail");
   if (failed.length === 0) {
     return {
-      name: "AWS SES",
+      name: "Managed owned-domain email",
       status: "ok",
       detail: "Production access, sending, verified identity, and SNS feedback destination are ready.",
-      next: "Owned-domain outbound can use SES subject to app-side volume gates.",
+      next: "Owned-domain outbound can use the legacy SES adapter subject to app-side volume gates.",
     };
   }
 
@@ -99,20 +98,20 @@ export function classifyAwsSesGate(
   const otherFailures = failed.filter((step) => step !== productionAccessFailure);
   if (productionAccessFailure && otherFailures.length === 0) {
     return {
-      name: "AWS SES",
+      name: "Managed owned-domain email",
       status: "external",
       detail: productionAccessFailure.detail ?? "SES production access is not enabled.",
-      next: "Do not re-debug app SES/SNS wiring. The remaining action is AWS account production-access approval or appeal.",
+      next: "Do not re-debug app SES/SNS wiring. Leave SES disabled for launch, or replace this optional capacity adapter with a non-AWS provider behind the same channel contract.",
     };
   }
 
   return {
-    name: "AWS SES",
+    name: "Managed owned-domain email",
     status: "fail",
     detail: failed.map((step) =>
       `${step.label}${step.detail ? `: ${step.detail}` : ""}`
     ).join(" | "),
-    next: "Fix the app/provider SES wiring before requesting broad owned-domain sends.",
+    next: "Fix this intentionally enabled SES adapter, or disable AWS_SES_REQUIRED and use Outlook/non-AWS managed capacity instead.",
   };
 }
 
@@ -134,7 +133,7 @@ export function summarizeProductionGate(input: {
 async function main(): Promise<void> {
   const result = summarizeProductionGate({
     restate: await runRestateEcsHealthProbe(),
-    ses: isSesManagedOutboundConfigured(process.env)
+    ses: shouldRunAwsSesGate(process.env)
       ? await runAwsSesReadinessProbe()
       : skippedAwsSesReadiness(),
   });
@@ -161,14 +160,10 @@ async function main(): Promise<void> {
   process.exit(1);
 }
 
-function isSesManagedOutboundConfigured(
+function shouldRunAwsSesGate(
   env: Record<string, string | undefined>,
 ): boolean {
-  return Boolean(
-    env.AWS_SNS_TOPIC_ARNS?.trim() ||
-      env.SES_SENDING_DOMAIN?.trim() ||
-      env.AWS_SES_REQUIRED?.trim() === "1",
-  );
+  return env.AWS_SES_REQUIRED?.trim() === "1";
 }
 
 function skippedAwsSesReadiness(): AwsSesReadinessResult {
@@ -180,7 +175,7 @@ function skippedAwsSesReadiness(): AwsSesReadinessResult {
       {
         label: "ses: optional managed owned-domain provider",
         status: "ok",
-        detail: "Not configured; customer-connected Outlook mailboxes are the primary outbound path.",
+        detail: "Not required; customer-connected Outlook mailboxes are the primary outbound path.",
       },
     ],
   };
