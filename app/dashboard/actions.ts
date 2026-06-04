@@ -12,6 +12,7 @@ import {
   createProductWorkspaceForUser,
   dispatchSignalPlaysOnce,
   runWorkspaceSignalAggregatorOnce,
+  recordProductRecommendationOutcome,
   reviewProductRecommendation,
   submitManualSignal,
   trackCompanyForWorkspace,
@@ -68,7 +69,7 @@ export async function configureActivationAction(formData: FormData) {
   await configureActivationSetup(
     {
       rep: {
-        name: value(formData, "rep_name") || "Maya",
+        name: value(formData, "rep_name") || "Sampark",
         role: "sdr",
         voice:
           value(formData, "rep_voice") ||
@@ -94,7 +95,7 @@ export async function configureActivationAction(formData: FormData) {
       },
       email: {
         display_name:
-          value(formData, "sender") || "maya@go.bombsell.example",
+          value(formData, "sender") || "sampark@go.bombsell.example",
         daily_cap: numberValue(formData, "daily_cap", 25),
       },
       company: value(formData, "company_name")
@@ -221,11 +222,36 @@ export async function reviewRecommendationAction(formData: FormData) {
   revalidateProductPaths();
 }
 
+export async function recordRecommendationOutcomeAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const reviewId = value(formData, "review_id");
+  if (!reviewId) return;
+  const kindValue = value(formData, "outcome_kind");
+  const kind =
+    kindValue === "follower_lift" || kindValue === "engagement_lift"
+      ? kindValue
+      : "post_published";
+  const externalRef = value(formData, "external_ref");
+  await recordProductRecommendationOutcome(
+    {
+      review_id: reviewId,
+      kind,
+      external_ref: externalRef || null,
+      properties: {
+        recorded_from: "dashboard",
+        surface: value(formData, "surface") || "recommendation_review",
+      },
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
 export async function configureEmailChannelAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
   await configureWorkspaceEmailAccount(
     {
-      display_name: value(formData, "sender") || "maya@go.bombsell.example",
+      display_name: value(formData, "sender") || "sampark@go.bombsell.example",
       daily_cap: numberValue(formData, "daily_cap", 25),
     },
     session,
@@ -283,7 +309,9 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/setup");
   revalidatePath("/dashboard/reps");
+  revalidatePath("/dashboard/content");
   revalidatePath("/dashboard/plays");
+  revalidatePath("/dashboard/aeo");
   revalidatePath("/dashboard/ingestion");
   revalidatePath("/dashboard/approvals");
   revalidatePath("/dashboard/conversations");

@@ -25,7 +25,7 @@ export async function configureEmailAction(formData: FormData) {
   const session = await getBriefWorkspaceSession({ create: true });
   if (!session) return;
   await configureEmailAccount({
-    display_name: value(formData, "display_name") || "maya@go.bombsell.example",
+    display_name: value(formData, "display_name") || "sampark@go.bombsell.example",
     daily_cap: Number(value(formData, "daily_cap") || 25),
   }, session);
   revalidatePath("/brief");

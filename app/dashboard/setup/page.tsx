@@ -186,11 +186,11 @@ export default async function SetupPage() {
             />
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field name="rep_name" label="Sender name" defaultValue={rep?.name ?? "Maya"} />
+              <Field name="rep_name" label="Sender name" defaultValue={rep?.name ?? "Sampark"} />
               <Field
                 name="sender"
                 label="Sending email"
-                defaultValue={account?.display_name ?? "maya@go.bombsell.example"}
+                defaultValue={account?.display_name ?? "sampark@go.bombsell.example"}
                 type="email"
               />
               <Field

@@ -71,12 +71,12 @@ export async function runFirstVerticalSlice(
   const rep: Rep = {
     id: rep_id,
     workspace_id,
-    name: "Maya",
+    name: "Sampark",
     role: "sdr",
     status: "active",
     persona: {
       voice: "Warm, precise, low-hype, founder-to-founder.",
-      story: "Maya helps teams act on fresh buying signals without spraying generic outreach.",
+      story: "Sampark helps teams act on fresh buying signals without spraying generic outreach.",
       kpis: ["positive replies", "meetings booked"],
       do_not: ["Do not mention being an AI.", "Do not overpromise."],
       samples: ["Saw the launch. The timing feels worth a quick compare-notes conversation."],
@@ -200,7 +200,7 @@ export async function runFirstVerticalSlice(
     accounts: [
       {
         id: randomUUID(),
-        display_name: "maya@go.bombsell.example",
+        display_name: "sampark@go.bombsell.example",
         kind: "email_domain",
         status: "connected",
         daily_cap: opts.emailDailyCap ?? 10,

@@ -14,9 +14,9 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Brief" },
   { href: "/dashboard/conversations", label: "Outreach" },
-  { href: "/dashboard/plays", label: "Content" },
+  { href: "/dashboard/content", label: "Content" },
   { href: "/dashboard/ingestion", label: "Campaigns" },
-  { href: "/dashboard/ops", label: "AEO" },
+  { href: "/dashboard/aeo", label: "AEO" },
   { href: "/dashboard/setup", label: "Profile" },
 ];
 

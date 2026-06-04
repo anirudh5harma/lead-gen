@@ -173,6 +173,107 @@ const RUNNABLE_WORKFLOW_NAMES = [
 type WorkspaceRoleValue = "owner" | "admin" | "member";
 type ProductEmailTransport = "resend" | "dry-run" | "unconfigured";
 
+interface DefaultRepProfile {
+  key: string;
+  name: string;
+  role: RepRoleValue;
+  channels: string[];
+  persona: {
+    voice: string;
+    story: string;
+    kpis: string[];
+    do_not: string[];
+    samples: string[];
+  };
+  autonomy: {
+    channels: Record<string, { daily_cap: number; approval: string }>;
+    global: Record<string, unknown>;
+  };
+}
+
+const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
+  {
+    key: "sampark",
+    name: "Sampark",
+    role: "sdr",
+    channels: ["email"],
+    persona: {
+      voice: "Warm, precise, low-hype, founder-to-founder.",
+      story: "Owns outreach from fresh market signals to useful conversations.",
+      kpis: ["positive replies", "meetings booked"],
+      do_not: ["Do not mention being an AI.", "Do not overpromise."],
+      samples: ["Saw the launch. The timing feels worth a quick compare-notes conversation."],
+    },
+    autonomy: {
+      channels: { email: { daily_cap: 25, approval: "approve_first" } },
+      global: {},
+    },
+  },
+  {
+    key: "vaani",
+    name: "Vaani",
+    role: "content",
+    channels: ["content"],
+    persona: {
+      voice: "Clear, observant, evidence-led, and useful without sounding like a brand deck.",
+      story: "Turns market movement, buyer questions, and proof into content worth publishing.",
+      kpis: ["post_published", "engagement_lift"],
+      do_not: ["Do not manufacture authority.", "Do not use generic AI phrasing."],
+      samples: [
+        "The useful angle is not that teams need more pipeline. It is that timing signals change what is worth saying.",
+      ],
+    },
+    autonomy: {
+      channels: { content: { daily_cap: 3, approval: "approve_first" } },
+      global: {},
+    },
+  },
+  {
+    key: "prayog",
+    name: "Prayog",
+    role: "campaign",
+    channels: ["email", "content"],
+    persona: {
+      voice: "Structured, experimental, and calm about tradeoffs.",
+      story: "Turns proven plays into small campaigns with clear review gates and measurable Outcomes.",
+      kpis: ["positive replies", "meeting_booked", "engagement_lift"],
+      do_not: ["Do not scale a weak signal.", "Do not bypass channel caps."],
+      samples: [
+        "Run the smallest version first, keep the signal clean, then expand only where the Outcome improves.",
+      ],
+    },
+    autonomy: {
+      channels: {
+        email: { daily_cap: 15, approval: "approve_first" },
+        content: { daily_cap: 2, approval: "approve_first" },
+      },
+      global: {},
+    },
+  },
+  {
+    key: "bodh",
+    name: "Bodh",
+    role: "researcher",
+    channels: ["aeo", "web"],
+    persona: {
+      voice: "Precise, diagnostic, and grounded in cited evidence.",
+      story: "Finds answer gaps, category narratives, and visibility opportunities before buyers ask.",
+      kpis: ["engagement_lift", "follower_lift"],
+      do_not: [
+        "Do not treat search visibility as a vanity metric.",
+        "Do not recommend pages without proof.",
+      ],
+      samples: [
+        "The gap is not a missing keyword. It is a missing answer buyers expect before they trust the category.",
+      ],
+    },
+    autonomy: {
+      channels: { aeo: { daily_cap: 3, approval: "approve_first" } },
+      global: {},
+    },
+  },
+];
+
 interface EmailDomainAccount {
   id: string;
   display_name: string;
@@ -437,6 +538,10 @@ export interface ProductBriefItem {
   decision?: ProductRecommendationDecision;
   reviewed_at?: string;
   review_note?: string | null;
+  outcome_id?: string;
+  outcome_kind?: ProductRecommendationOutcomeKind;
+  outcome_recorded_at?: string;
+  outcome_external_ref?: string | null;
 }
 
 export type ProductRecommendationKind = "content_opportunity" | "aeo_gap";
@@ -1042,39 +1147,62 @@ async function ensureRep(
   workspace_id: string,
   user_id: string,
 ): Promise<{ id: string }> {
+  const team = await ensureDefaultRepTeam(engine, workspace_id, user_id);
+  return { id: team.sampark };
+}
+
+async function ensureDefaultRepTeam(
+  engine: ProductEngine,
+  workspace_id: string,
+  user_id: string,
+): Promise<Record<"sampark" | "vaani" | "prayog" | "bodh", string>> {
+  const ids: Partial<Record<"sampark" | "vaani" | "prayog" | "bodh", string>> = {};
+  for (const profile of DEFAULT_REP_TEAM) {
+    ids[profile.key as keyof typeof ids] = await ensureDefaultRep(
+      engine,
+      workspace_id,
+      user_id,
+      profile,
+    );
+  }
+  return {
+    sampark: ids.sampark!,
+    vaani: ids.vaani!,
+    prayog: ids.prayog!,
+    bodh: ids.bodh!,
+  };
+}
+
+async function ensureDefaultRep(
+  engine: ProductEngine,
+  workspace_id: string,
+  user_id: string,
+  profile: DefaultRepProfile,
+): Promise<string> {
   const existing = await engine.pool.query<{ id: string }>(
     `select id from reps where workspace_id = $1 and lower(name) = lower($2)`,
-    [workspace_id, "Maya"],
+    [workspace_id, profile.name],
   );
-  if (existing.rows[0]) return existing.rows[0];
+  if (existing.rows[0]) return existing.rows[0].id;
   const rep_id = randomUUID();
   const event = await engine.bus.publish({
     workspace_id,
     event_type: "rep.configured",
     source: "system",
     producer_ref: user_id,
-    idempotency_key: `bootstrap:rep.configured:${workspace_id}:maya`,
+    idempotency_key: `bootstrap:rep.configured:${workspace_id}:${profile.key}`,
     payload: {
       rep_id,
-      name: "Maya",
-      role: "sdr",
+      name: profile.name,
+      role: profile.role,
       status: "active",
-      persona: {
-        voice: "Warm, precise, low-hype, founder-to-founder.",
-        story: "Maya helps teams act on fresh buying signals without spraying generic outreach.",
-        kpis: ["positive replies", "meetings booked"],
-        do_not: ["Do not mention being an AI.", "Do not overpromise."],
-        samples: ["Saw the launch. The timing feels worth a quick compare-notes conversation."],
-      },
-      channels: ["email"],
-      autonomy: {
-        channels: { email: { daily_cap: 25, approval: "approve_first" } },
-        global: {},
-      },
+      persona: profile.persona,
+      channels: profile.channels,
+      autonomy: profile.autonomy,
     },
   });
   await projectRepConfigured(engine.pool, event);
-  return { id: rep_id };
+  return rep_id;
 }
 
 async function ensurePlay(
@@ -1154,7 +1282,7 @@ async function ensureChannelAccount(
   }
   const id = randomUUID();
   const display_name = trustedDemoState
-    ? "maya@go.bombsell.example"
+    ? "sampark@go.bombsell.example"
     : "Email channel not configured";
   const payload = {
     channel_account_id: id,
@@ -1342,7 +1470,7 @@ export async function configureRep(
 ): Promise<{ workspace_id: string; rep_id: string }> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const name = input.name.trim() || "Maya";
+  const name = input.name.trim() || "Sampark";
   const role = parseRepRole(input.role);
   const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 25));
   const approval = parseApprovalPolicy(input.approval);
@@ -2888,6 +3016,7 @@ export async function configureActivationSetup(
 ): Promise<ActivationSetupResult> {
   const engine = await getProductEngine();
   const rep = await configureRep(input.rep, session);
+  await ensureDefaultRepTeam(engine, session.workspace_id, session.user_id);
   const icp = await configureIcpSegment(input.icp, session);
   const signalKind = parseSignalKind(input.icp.signal_kind);
   const play = await configureSignalEmailPlay(
@@ -5719,6 +5848,7 @@ export async function getAppState(
     brief,
     exaReviews,
     recommendationFeedback,
+    recommendationOutcomes,
   ] = await Promise.all([
     pool.query<{
       id: string;
@@ -6079,8 +6209,28 @@ export async function getAppState(
         order by payload->>'review_id', occurred_at desc`,
       [boot.workspace_id],
     ),
+    pool.query<{
+      review_id: string;
+      outcome_id: string;
+      kind: ProductRecommendationOutcomeKind | string;
+      external_ref: string | null;
+      occurred_at: Date;
+    }>(
+      `select distinct on (properties->>'recommendation_review_id')
+              properties->>'recommendation_review_id' as review_id,
+              id::text as outcome_id,
+              kind::text as kind,
+              properties->>'external_ref' as external_ref,
+              occurred_at
+         from outcomes
+        where workspace_id = $1
+          and properties ? 'recommendation_review_id'
+        order by properties->>'recommendation_review_id', occurred_at desc`,
+      [boot.workspace_id],
+    ),
   ]);
   const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
+  const recommendationOutcomeById = recommendationOutcomeState(recommendationOutcomes.rows);
   const recommendationQuality = productRecommendationQualityState(recommendationFeedback.rows);
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
   const eventTrace = latestWorkflowRunId
@@ -6122,16 +6272,16 @@ export async function getAppState(
     eventTrace,
     profile: productProfileState(profile.rows[0] ?? null),
     brief: productBriefState(brief.rows[0] ?? null),
-    content_reviews: productExaReviewState(
+    content_reviews: applyRecommendationOutcomeState(productExaReviewState(
       exaReviews.rows,
       "content.opportunity.discovered",
       recommendationFeedbackById,
-    ),
-    aeo_reviews: productExaReviewState(
+    ), recommendationOutcomeById),
+    aeo_reviews: applyRecommendationOutcomeState(productExaReviewState(
       exaReviews.rows,
       "aeo.audit.completed",
       recommendationFeedbackById,
-    ),
+    ), recommendationOutcomeById),
     recommendation_quality: recommendationQuality,
     sendTraces: sendTraces.rows.map((row) => ({
       message_id: row.message_id,
@@ -6299,6 +6449,57 @@ interface ProductRecommendationFeedbackState {
   decision: ProductRecommendationDecision;
   note: string | null;
   occurred_at: string;
+}
+
+interface ProductRecommendationOutcomeState {
+  outcome_id: string;
+  kind: ProductRecommendationOutcomeKind;
+  external_ref: string | null;
+  occurred_at: string;
+}
+
+function recommendationOutcomeState(rows: Array<{
+  review_id: string | null;
+  outcome_id: string;
+  kind: ProductRecommendationOutcomeKind | string;
+  external_ref: string | null;
+  occurred_at: Date;
+}>): Map<string, ProductRecommendationOutcomeState> {
+  const outcomes = new Map<string, ProductRecommendationOutcomeState>();
+  for (const row of rows) {
+    if (!row.review_id) continue;
+    if (
+      row.kind !== "post_published" &&
+      row.kind !== "follower_lift" &&
+      row.kind !== "engagement_lift"
+    ) {
+      continue;
+    }
+    outcomes.set(row.review_id, {
+      outcome_id: row.outcome_id,
+      kind: row.kind,
+      external_ref: row.external_ref,
+      occurred_at: row.occurred_at.toISOString(),
+    });
+  }
+  return outcomes;
+}
+
+function applyRecommendationOutcomeState(
+  items: ProductBriefItem[],
+  outcomesByReviewId: Map<string, ProductRecommendationOutcomeState>,
+): ProductBriefItem[] {
+  return items.map((item) => {
+    const outcome = item.review_id ? outcomesByReviewId.get(item.review_id) : null;
+    if (!outcome) return item;
+    return {
+      ...item,
+      outcome_id: outcome.outcome_id,
+      outcome_kind: outcome.kind,
+      outcome_recorded_at: outcome.occurred_at,
+      outcome_external_ref: outcome.external_ref,
+    };
+  });
 }
 
 function defaultRecommendationQuality(): ProductRecommendationQuality {

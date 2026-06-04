@@ -1,9 +1,12 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
-import { getAppState, type ProductBriefItem } from "@/core/product/app.ts";
+import { getAppState } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
-import { reviewRecommendationAction } from "../actions";
+import {
+  RecommendationLearningBadge,
+  RecommendationReviewGrid,
+} from "../recommendation-review";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +94,7 @@ export default async function PlaysPage() {
             </span>
             <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Angles to review</h2>
           </div>
-          <ReviewLearningBadge
+          <RecommendationLearningBadge
             accepted={learning.accepted}
             ignored={learning.ignored}
             acceptanceRate={learning.acceptance_rate}
@@ -103,11 +106,14 @@ export default async function PlaysPage() {
             hint="When Exa finds market questions or competitor narratives, they will appear here."
           />
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {reviews.map((item, index) => (
-              <ReviewNote key={`${item.title}:${index}`} item={item} icon="lightbulb" />
-            ))}
-          </div>
+          <RecommendationReviewGrid
+            items={reviews}
+            icon="lightbulb"
+            surface="content"
+            outcomeKind="post_published"
+            outcomeLabel="Mark published"
+            externalRefLabel="Published URL"
+          />
         )}
       </section>
 
@@ -122,92 +128,6 @@ export default async function PlaysPage() {
         )}
       </section>
     </>
-  );
-}
-
-function ReviewNote({ item, icon }: { item: ProductBriefItem; icon: string }) {
-  return (
-    <article className="section-note">
-      <div className="flex items-start gap-3">
-        <span className="brief-note-icon">
-          <Icon name={icon} size={18} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold leading-6 text-[var(--color-text-1)]">{item.title}</h3>
-          <p className="mt-2 line-clamp-4 text-sm leading-6 text-[var(--color-text-2)]">{item.detail}</p>
-          {item.url ? (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex text-xs font-semibold text-[var(--color-accent)]"
-            >
-              View proof
-            </a>
-          ) : null}
-          <ReviewActions item={item} />
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function ReviewActions({ item }: { item: ProductBriefItem }) {
-  if (!item.review_id) return null;
-  if (item.decision === "accepted") {
-    return (
-      <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)]">
-        <Icon name="check" size={14} />
-        Kept for the Rep
-      </p>
-    );
-  }
-  return (
-    <div className="mt-4 flex flex-wrap gap-2">
-      <form action={reviewRecommendationAction}>
-        <input type="hidden" name="review_id" value={item.review_id} />
-        <input type="hidden" name="decision" value="accepted" />
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
-        >
-          <Icon name="check" size={14} />
-          Keep
-        </button>
-      </form>
-      <form action={reviewRecommendationAction}>
-        <input type="hidden" name="review_id" value={item.review_id} />
-        <input type="hidden" name="decision" value="ignored" />
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
-        >
-          <Icon name="close" size={14} />
-          Skip
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function ReviewLearningBadge({
-  accepted,
-  ignored,
-  acceptanceRate,
-}: {
-  accepted: number;
-  ignored: number;
-  acceptanceRate: number | null;
-}) {
-  if (accepted + ignored === 0) return null;
-  const rate = acceptanceRate == null ? null : `${Math.round(acceptanceRate * 100)}% kept`;
-  return (
-    <p className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-3)]">
-      <Icon name="auto_awesome" size={14} />
-      <span>{accepted} kept</span>
-      <span>{ignored} skipped</span>
-      {rate ? <span>{rate}</span> : null}
-    </p>
   );
 }
 
