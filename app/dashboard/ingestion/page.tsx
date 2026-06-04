@@ -1,8 +1,7 @@
 import { EmptyState } from "@/components/dashboard/Shell";
-import Icon from "@/components/Icon";
+import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
-import type { ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -121,15 +120,11 @@ export default async function IngestionPage() {
   const workspace = await getActiveWorkspace();
   if (!workspace) {
     return (
-      <section className="section-canvas p-6">
-        <p className="brief-kicker">Prayog · Campaigns</p>
-        <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
-          No workspace yet.
-        </h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--color-text-2)]">
-          Create a profile, then Prayog will turn good signals into campaign ideas.
-        </p>
-      </section>
+      <SurfaceHero
+        kicker="Prayog · Campaigns"
+        title="No workspace yet."
+        description="Create a profile, then Prayog will turn good signals into campaign ideas."
+      />
     );
   }
 
@@ -140,152 +135,51 @@ export default async function IngestionPage() {
   ]);
 
   return (
-    <>
-      <section className="section-canvas overflow-hidden">
-        <div className="section-thread section-thread-a" />
-        <div className="grid gap-8 p-5 sm:p-8 lg:grid-cols-[1fr_360px]">
-          <div>
-            <p className="brief-kicker">Prayog · Campaigns</p>
-            <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              Prayog is finding campaigns worth trying.
-            </h1>
-            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Qualified signals become campaign ideas, then the winners earn more room.
-            </p>
-
-            <div className="relative mt-10 min-h-[340px]">
-              <div className="graph-link left-[16%] top-[32%] w-[34%] rotate-[7deg]" />
-              <div className="graph-link left-[48%] top-[50%] w-[30%] -rotate-[10deg]" />
-              <CanvasNote
-                className="left-[4%] top-[8%]"
-                title="Today"
-                value={`${counts.qualified_today} qualified`}
-                detail="Fresh opportunities that fit the profile"
-              />
-              <CanvasNote
-                className="right-[6%] top-[16%]"
-                title="Next"
-                value={`${counts.ideas_week} ideas`}
-                detail="Small campaigns shaped this week"
-              />
-              <div className="brief-node section-note left-1/2 top-1/2 w-[min(64vw,300px)] -translate-x-1/2 -translate-y-1/2">
-                <p className="text-sm text-[var(--color-text-3)]">Prayog</p>
-                <h3 className="mt-2 text-3xl font-semibold text-[var(--color-text-1)]">
-                  {signals[0]?.title ?? "Waiting for the next strong signal"}
-                </h3>
-                <p className="mt-3 text-sm leading-6 text-[var(--color-text-2)]">
-                  The page stays quiet until there is something worth acting on.
-                </p>
-              </div>
-              <CanvasNote
-                className="bottom-[10%] left-[10%]"
-                title="Learning"
-                value={`${counts.outcomes_week} outcomes`}
-                detail="Replies, conversions, and useful movement"
-              />
-              <CanvasNote
-                className="bottom-[15%] right-[8%]"
-                title="Guardrail"
-                value="Review first"
-                detail="Nothing expands without useful evidence"
-              />
-            </div>
+    <div className="space-y-2">
+      <SurfaceHero
+        kicker="Prayog · Campaigns"
+        title={<>Run small bets. <em>Scale the winners.</em></>}
+        description="Prayog turns qualified signals into small campaign ideas. Approve one, watch the outcome, and the next idea is sharper."
+        meta={
+          <div className="flex flex-wrap gap-2">
+            <HeroStat label="Qualified today" value={counts.qualified_today} />
+            <HeroStat label="Ideas this week" value={counts.ideas_week} />
+            <HeroStat label="Outcomes this week" value={counts.outcomes_week} />
           </div>
+        }
+      />
 
-          <aside className="section-note h-fit">
-            <div className="flex items-center gap-3">
-              <span className="brief-note-icon">
-                <Icon name="target" size={18} />
-              </span>
-              <div>
-                <h2 className="text-lg font-semibold text-[var(--color-text-1)]">
-                  Campaign rhythm
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-                  Prayog keeps the work small until a real response proves it deserves more.
-                </p>
-              </div>
-            </div>
-            <dl className="mt-6 grid gap-3">
-              <Metric label="Qualified today" value={counts.qualified_today} />
-              <Metric label="Ideas this week" value={counts.ideas_week} />
-              <Metric label="Outcomes this week" value={counts.outcomes_week} />
-            </dl>
-          </aside>
-        </div>
-      </section>
+      <SurfaceSection title="Qualified signals worth a campaign">
+        {signals.length === 0 ? (
+          <EmptyState
+            title="No qualified signals yet"
+            hint="Tune the profile once, then good-fit opportunities will appear here."
+            cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
+          />
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {signals.map((signal) => (
+              <SignalRow key={signal.id} signal={signal} />
+            ))}
+          </div>
+        )}
+      </SurfaceSection>
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Panel title="Qualified signals">
-          {signals.length === 0 ? (
-            <EmptyState
-              title="No qualified signals yet"
-              hint="Tune the profile once, then good-fit opportunities will appear here."
-              cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
-            />
-          ) : (
-            <div className="grid gap-2">
-              {signals.map((signal) => (
-                <SignalRow key={signal.id} signal={signal} />
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Campaign ideas">
-          {ideas.length === 0 ? (
-            <EmptyState
-              title="No campaign ideas yet"
-              hint="Prayog will suggest the first small campaign once a signal looks useful."
-            />
-          ) : (
-            <div className="grid gap-2">
-              {ideas.map((idea) => (
-                <CampaignIdeaNote key={idea.id} idea={idea} />
-              ))}
-            </div>
-          )}
-        </Panel>
-      </section>
-    </>
-  );
-}
-
-function CanvasNote({
-  className,
-  title,
-  value,
-  detail,
-}: {
-  className: string;
-  title: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className={`brief-node section-note ${className} w-[min(56vw,248px)]`}>
-      <p className="text-xs text-[var(--color-text-3)]">{title}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-1)]">{value}</p>
-      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">{detail}</p>
+      <SurfaceSection title="Campaign ideas in flight">
+        {ideas.length === 0 ? (
+          <EmptyState
+            title="No campaign ideas yet"
+            hint="Prayog will suggest the first small campaign once a signal looks useful."
+          />
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {ideas.map((idea) => (
+              <CampaignIdeaNote key={idea.id} idea={idea} />
+            ))}
+          </div>
+        )}
+      </SurfaceSection>
     </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.58)] px-4 py-3">
-      <dt className="text-xs text-[var(--color-text-3)]">{label}</dt>
-      <dd className="mt-1 text-2xl font-semibold text-[var(--color-text-1)]">{value}</dd>
-    </div>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="section-canvas p-5">
-      <h2 className="mb-4 text-lg font-semibold text-[var(--color-text-1)]">{title}</h2>
-      {children}
-    </section>
   );
 }
 
@@ -296,14 +190,14 @@ function CampaignIdeaNote({ idea }: { idea: CampaignIdeaRow }) {
     : `started ${timeAgo(idea.started_at ?? idea.created_at)}`;
   const outcomes = Number(idea.outcome_count);
   return (
-    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4">
+    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
-        <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs font-medium text-[var(--color-accent)]">
+        <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
           {idea.rep_name ?? "Prayog"}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">{ended}</span>
       </div>
-      <h3 className="mt-3 text-sm font-semibold leading-5 text-[var(--color-text-1)]">
+      <h3 className="mt-3 text-[14px] font-semibold leading-5 text-[var(--color-text-1)]">
         {idea.play_name}
       </h3>
       <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
@@ -326,16 +220,16 @@ function stringOutput(output: Record<string, unknown> | null, key: string): stri
 function SignalRow({ signal }: { signal: QualifiedSignalRow }) {
   const score = signal.match_score ? Math.round(Number(signal.match_score) * 100) : null;
   return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-3">
+    <div className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
-        <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs font-medium text-[var(--color-accent)]">
+        <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
           Qualified
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">
           {timeAgo(signal.freshness_at ?? signal.ingested_at)}
         </span>
       </div>
-      <p className="mt-2 line-clamp-2 text-sm leading-5 text-[var(--color-text-1)]">
+      <p className="mt-2 line-clamp-2 text-[14px] leading-5 text-[var(--color-text-1)]">
         {signal.title}
       </p>
       {score ? <p className="mt-2 text-xs text-[var(--color-text-3)]">{score}% fit</p> : null}

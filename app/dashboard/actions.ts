@@ -8,6 +8,7 @@ import {
   configureIcpSegment,
   configureRep,
   configureRssSource,
+  configureWorkspaceCompanyProfile,
   configureWorkspaceSignalSource,
   configureWorkspaceEmailAccount,
   createProductWorkspaceForUser,
@@ -15,6 +16,7 @@ import {
   runWorkspaceSignalAggregatorOnce,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
+  startWorkspaceProfileEnrichmentWithExa,
   submitManualSignal,
   trackCompanyForWorkspace,
   type ProductWorkspaceSession,
@@ -291,6 +293,35 @@ export async function recordRecommendationOutcomeAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
+}
+
+export async function editCompanyProfileAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const company_name = value(formData, "company_name");
+  const website_url = value(formData, "website_url");
+  if (!company_name || !website_url) return;
+  await configureWorkspaceCompanyProfile(
+    {
+      company_name,
+      website_url,
+      industry: value(formData, "industry") || null,
+      description: value(formData, "description") || null,
+    },
+    session,
+  );
+  if (value(formData, "refresh") === "1") {
+    await startWorkspaceProfileEnrichmentWithExa(
+      {
+        company_name,
+        website_url,
+        industry: value(formData, "industry") || null,
+        description: value(formData, "description") || null,
+      },
+      session,
+    );
+  }
+  revalidateProductPaths();
+  redirect("/dashboard/setup");
 }
 
 export async function configureEmailChannelAction(formData: FormData) {

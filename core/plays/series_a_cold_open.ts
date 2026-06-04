@@ -246,7 +246,7 @@ export function createSeriesAColdOpenPlay(
 
       // 2. Compose the Rep with its role agents. Pure, no side effects;
       //    keep outside ctx.step.
-      const maya = composeRep(loaded.rep, {
+      const rep = composeRep(loaded.rep, {
         writer: createDeepSeekWriter({ llm: deps.llm }),
         sender: createEmailSender({
           emailChannelDeps: {
@@ -272,7 +272,7 @@ export function createSeriesAColdOpenPlay(
 
       // 4. Draft via the writer role agent.
       const draft: WriterDraft = await ctx.step("draft", () =>
-        maya.role("writer").invoke(
+        rep.role("writer").invoke(
           {
             signal: loaded.signal,
             person: {
@@ -390,7 +390,7 @@ export function createSeriesAColdOpenPlay(
       //    from the events table — defence in depth — and enforces caps +
       //    warmup before calling SES.
       const sendResult = await ctx.step("send", () =>
-        maya.role("sender").invoke(
+        rep.role("sender").invoke(
           {
             conversation_id,
             message_id,

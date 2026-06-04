@@ -44,7 +44,7 @@ legacy/          # Archived previous implementation. Do not import.
 | LLM client (DeepSeek V4 Pro) + LLM-backed judge       | ✅ landed |
 | Email channel (SES owned-domain + Outlook OAuth)      | ✅ landed |
 | Transactional email (Resend)                          | ✅ landed |
-| First Rep + Play end-to-end ("Maya", Series A cold)   | ✅ landed |
+| First Rep + Play end-to-end ("Sampark", Series A cold) | ✅ landed |
 | Reply intake + classification → procedural feedback   | ✅ landed |
 | SES SNS signature verification + trusted topic gating | ✅ landed |
 | Dashboard membership auth + Outlook credential encryption | ✅ landed |
@@ -112,7 +112,7 @@ The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` inte
 ### Try the dashboard end-to-end
 
 ```bash
-# Apply migrations, then seed Maya + a Series A signal, run the cold-open
+# Apply migrations, then seed Sampark + a Series A signal, run the cold-open
 # Play with mocked LLM + SES, and simulate an inbound positive reply so
 # the dashboard has real data.
 npm run migrate

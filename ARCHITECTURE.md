@@ -34,7 +34,7 @@ Everything the user touches and everything the system schedules is one of five p
 
 | Primitive | What it is | Examples |
 |---|---|---|
-| **Rep** | A persona-bound agent with voice, memory, KPIs, and channels it owns. The user-facing identity. | "Maya — outbound SDR for fintech founders," "Devon — LinkedIn voice for our CTO" |
+| **Rep** | A persona-bound agent with voice, memory, KPIs, and channels it owns. The user-facing identity. | "Sampark — outbound SDR," "Vaani — content," "Prayog — campaigns," "Bodh — AEO" |
 | **Signal** | A typed event that may justify action. Has source, freshness, audience hint, novelty score. | Series A close, job posting, podcast mention, churn risk, competitor launch |
 | **Play** | A reusable, parameterized workflow. Composed of agent steps + tool calls + approval gates. | "Founder-to-founder cold email on funding," "Series B → LinkedIn carousel" |
 | **Conversation** | A durable thread across one or many channels with one counterparty. The atom of CRM. | An email thread + LinkedIn DM + a meeting, all about the same person |
@@ -87,7 +87,7 @@ This is where the redesign departs most sharply from Bombsell today.
 - **Memory in three tiers.** Episodic (every interaction, raw), semantic (extracted facts about people/companies, deduped), procedural (winning plays per ICP, stored as few-shot examples). Curated by retrieval into a context budget — never crammed.
 - **Tools are MCP servers, always.** Outlook, LinkedIn, Apollo, HubSpot, Stripe — every integration is an MCP server (mostly hosted by us, some BYO). Agents discover tools dynamically. This makes the same agent runnable from our UI, Claude desktop, ChatGPT, or a customer's own agent framework.
 - **Plays compile to durable workflows.** A Play is declarative ("when *signal*, run *steps*, gate on *approval*"). The compiler emits a Restate/Temporal workflow. Users author Plays in natural language; the system writes the YAML.
-- **Autonomy is per-Play, per-channel, per-amount.** Not "agent autopilot on/off" but "Maya can send up to 30 cold emails/day to non-customers without approval; LinkedIn DMs need a thumb-up; voice calls always need approval." Approval rails are first-class config.
+- **Autonomy is per-Play, per-channel, per-amount.** Not "agent autopilot on/off" but "Sampark can send up to 30 cold emails/day to non-customers without approval; LinkedIn DMs need a thumb-up; voice calls always need approval." Approval rails are first-class config.
 - **Eval is in the hot path.** Every generation has a judge call (cheap, fast — Haiku-class). Generations below a threshold never reach the channel layer. Production traffic continuously trains the few-shot library: winning emails (those that got positive replies) become procedural memory examples for the same ICP+signal combo.
 
 ### Layer 4 — Channels

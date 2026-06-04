@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/dashboard/Shell";
+import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
@@ -137,67 +138,48 @@ export default async function ConversationsPage() {
   const workspace = await getActiveWorkspace();
   if (!workspace) {
     return (
-      <section className="section-canvas p-6">
-        <p className="brief-kicker">Sampark · Outreach</p>
-        <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
-          No workspace selected.
-        </h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--color-text-2)]">
-          Create a profile first, then Sampark&apos;s replies will collect here.
-        </p>
-      </section>
+      <SurfaceHero
+        kicker="Sampark · Outreach"
+        title="No workspace selected."
+        description="Create a profile first, then Sampark's replies will collect here."
+      />
     );
   }
   const conversations = await loadConversations(workspace.id);
   const awaitingReply = conversations.filter((c) => c.status === "awaiting_us").length;
   const stats = await loadOutreachStats(workspace.id, awaitingReply);
-  const latest = conversations[0];
 
   return (
-    <>
-      <section className="section-canvas overflow-hidden p-5 sm:p-8">
-        <div className="section-thread section-thread-a" />
-        <div className="grid gap-8 lg:grid-cols-[1fr_340px] lg:items-end">
-          <div>
-            <p className="brief-kicker">Sampark · Outreach</p>
-            <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              Sampark is your outreach SDR.
-            </h1>
-            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Replies, next moves, and where Sampark wants you to step in. Everything else stays quiet.
-            </p>
+    <div className="space-y-2">
+      <SurfaceHero
+        kicker="Sampark · Outreach"
+        title={<>Move the <em>useful</em> conversations.</>}
+        description="Replies, next moves, and review moments. Everything else stays quiet."
+        meta={
+          <div className="flex flex-wrap gap-2">
+            <HeroStat label="Awaiting reply" value={stats.awaiting_reply} />
+            <HeroStat label="Replies 7d" value={stats.positive_replies_7d} />
+            <HeroStat label="Booked 7d" value={stats.meetings_booked_7d} />
           </div>
-          <div className="section-note">
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <OutreachStat label="Awaiting reply" value={stats.awaiting_reply} />
-              <OutreachStat label="Replies (7d)" value={stats.positive_replies_7d} />
-              <OutreachStat label="Booked (7d)" value={stats.meetings_booked_7d} />
-            </div>
-            <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
-              {latest
-                ? `${latest.counterparty_name ?? "A contact"} was last active ${new Date(latest.last_activity_at).toLocaleDateString()}.`
-                : "New replies will surface here once Sampark starts."}
-            </p>
-          </div>
-        </div>
-      </section>
+        }
+      />
 
-      {conversations.length === 0 ? (
-        <EmptyState
-          title="No outreach replies yet"
-          hint="Once Sampark begins, replies and review moments will appear here."
-          cta={{ href: "/dashboard/setup", label: "Tune Sampark", icon: "forum" }}
-        />
-      ) : (
-        <section className="mt-6 section-canvas overflow-hidden p-3">
+      <SurfaceSection title="Conversations">
+        {conversations.length === 0 ? (
+          <EmptyState
+            title="No outreach replies yet"
+            hint="Once Sampark begins, replies and review moments will appear here."
+            cta={{ href: "/dashboard/setup", label: "Tune Sampark", icon: "forum" }}
+          />
+        ) : (
           <div className="grid gap-2">
             {conversations.map((conversation) => (
               <ConversationLink key={conversation.id} conversation={conversation} />
             ))}
           </div>
-        </section>
-      )}
-    </>
+        )}
+      </SurfaceSection>
+    </div>
   );
 }
 
@@ -306,13 +288,3 @@ function repIcon(name: string | null): string {
   return "person";
 }
 
-function OutreachStat({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.6)] p-3">
-      <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
-        {value}
-      </strong>
-      <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
-    </span>
-  );
-}

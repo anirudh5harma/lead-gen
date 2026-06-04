@@ -3385,15 +3385,15 @@ function buildExaResearchReviewPayload(
 function contentOpportunityDetail(detail: string): string {
   const cleaned = cleanProfileLine(detail, 220);
   return cleaned
-    ? `Market evidence suggests an angle to review: ${cleaned}`
-    : "Market evidence suggests a content angle worth reviewing.";
+    ? `Angle worth posting: ${cleaned}`
+    : "An angle worth posting based on recent market evidence.";
 }
 
 function aeoGapDetail(detail: string): string {
   const cleaned = cleanProfileLine(detail, 220);
   return cleaned
-    ? `Answer visibility gap to review: ${cleaned}`
-    : "Answer visibility evidence suggests a gap worth reviewing.";
+    ? `AI engines (ChatGPT, Perplexity, Google AI Overviews) miss or mis-cite this. Publish a structured answer to earn the citation: ${cleaned}`
+    : "AI engines are not citing the brand on this question. Publish a structured answer (schema-marked, sourced) so ChatGPT, Perplexity, and Google AI Overviews can reference it.";
 }
 
 function dedupeExaResults(results: readonly ExaResult[]): ExaResult[] {

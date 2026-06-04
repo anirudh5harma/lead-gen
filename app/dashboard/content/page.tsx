@@ -1,5 +1,5 @@
 import { EmptyState } from "@/components/dashboard/Shell";
-import Icon from "@/components/Icon";
+import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import { getAppState } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
@@ -93,7 +93,15 @@ async function loadPublishedContent(workspaceId: string): Promise<PublishedConte
 
 export default async function ContentPage() {
   const session = await getActiveWorkspaceSession();
-  if (!session) return <CanvasEmpty label="Vaani · Content" title="No workspace selected." />;
+  if (!session) {
+    return (
+      <SurfaceHero
+        kicker="Vaani · Content"
+        title="No workspace selected."
+        description="Create a workspace, then Vaani starts shaping content ideas worth posting."
+      />
+    );
+  }
 
   const pool = getPool();
   const [state, stats, contentDrafts, publishedContent] = await Promise.all([
@@ -107,53 +115,34 @@ export default async function ContentPage() {
   ]);
   const reviews = state.content_reviews;
   const angles = reviews.filter((r) => !r.outcome_id);
-  const published = reviews.filter((r) => r.outcome_id).length;
   const learning = state.recommendation_quality.content_opportunity;
 
   return (
-    <>
-      <section className="section-canvas min-h-[420px] p-5 sm:p-8">
-        <div className="section-thread section-thread-a" />
-        <div className="grid gap-8 lg:grid-cols-[1fr_320px] lg:items-end">
-          <div>
-            <p className="brief-kicker">Vaani · Content</p>
-            <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              Vaani finds content worth posting.
-            </h1>
-            <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Ideas, drafts, and useful outcomes. Review one idea at a time; Vaani learns what to stop showing.
-            </p>
+    <div className="space-y-2">
+      <SurfaceHero
+        kicker="Vaani · Content"
+        title={<>Post what is <em>worth posting</em>.</>}
+        description="Vaani turns proof, questions, and recent moves into one-liner angles. Approve the ones worth writing; Vaani drafts them and learns from the result."
+        meta={
+          <div className="flex flex-wrap gap-2">
+            <HeroStat label="Ideas open" value={angles.length} />
+            <HeroStat label="Drafts" value={contentDrafts.length} />
+            <HeroStat label="Published 7d" value={stats.posts_published_7d} />
+            <HeroStat label="Lift 7d" value={stats.engagement_lift_7d} />
           </div>
-          <div className="section-note">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">Last seven days</p>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-              <MiniStatus label="Drafts" value={contentDrafts.length} />
-              <MiniStatus label="Published" value={stats.posts_published_7d} />
-              <MiniStatus label="Lift" value={stats.engagement_lift_7d} />
-            </div>
-            <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
-              {published > 0
-                ? `${published} ideas became posts.`
-                : `${angles.length} ideas waiting for a yes or no.`}
-            </p>
-          </div>
-        </div>
-      </section>
+        }
+      />
 
-      <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="brief-note-icon">
-              <Icon name="edit_note" size={18} />
-            </span>
-            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Ideas to review</h2>
-          </div>
+      <SurfaceSection
+        title="Ideas to review"
+        action={
           <RecommendationLearningBadge
             accepted={learning.accepted}
             ignored={learning.ignored}
             acceptanceRate={learning.acceptance_rate}
           />
-        </div>
+        }
+      >
         {reviews.length === 0 ? (
           <EmptyState
             title="No ideas yet"
@@ -166,24 +155,17 @@ export default async function ContentPage() {
             icon="lightbulb"
             surface="content"
             outcomeKind="post_published"
-            outcomeLabel="Record result"
+            outcomeLabel="Mark published"
             externalRefLabel="Published link"
           />
         )}
-      </section>
+      </SurfaceSection>
 
-      <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="brief-note-icon">
-            <Icon name="article" size={18} />
-          </span>
-          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Drafts</h2>
-        </div>
+      <SurfaceSection title="Drafts ready to edit">
         {contentDrafts.length === 0 ? (
           <EmptyState
             title="No drafts waiting"
-            hint="Vaani will place ready-to-edit drafts here after an idea is approved."
-            cta={{ href: "/dashboard/setup", label: "Tune Vaani", icon: "edit_note" }}
+            hint="Approve an idea above and Vaani drops a draft here."
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">
@@ -192,19 +174,13 @@ export default async function ContentPage() {
             ))}
           </div>
         )}
-      </section>
+      </SurfaceSection>
 
-      <section className="mt-6 section-canvas p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="brief-note-icon">
-            <Icon name="publish" size={18} />
-          </span>
-          <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Published outcomes</h2>
-        </div>
+      <SurfaceSection title="Published outcomes">
         {publishedContent.length === 0 ? (
           <EmptyState
             title="Nothing published yet"
-            hint="Published posts and lift outcomes will appear here once recorded."
+            hint="Once posts go live and lift is recorded, results land here."
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">
@@ -213,24 +189,24 @@ export default async function ContentPage() {
             ))}
           </div>
         )}
-      </section>
-    </>
+      </SurfaceSection>
+    </div>
   );
 }
 
 function PublishedNote({ outcome }: { outcome: PublishedContentRow }) {
   const title = outcome.title ?? outcomeLabel(outcome.kind);
   const inner = (
-    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4 transition hover:border-[var(--color-line-2)]">
+    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:bg-[var(--color-ink-2)]/40">
       <div className="flex items-center gap-2">
-        <span className="rounded-full bg-[var(--color-pos-bg)] px-2 py-1 text-xs font-medium text-[var(--color-pos)]">
+        <span className="rounded-full bg-[var(--color-pos-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-pos)]">
           {outcomeLabel(outcome.kind)}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">
           {new Date(outcome.occurred_at).toLocaleDateString()}
         </span>
       </div>
-      <h3 className="mt-3 line-clamp-2 text-sm font-semibold leading-5 text-[var(--color-text-1)]">
+      <h3 className="mt-3 line-clamp-2 text-[14px] font-semibold leading-5 text-[var(--color-text-1)]">
         {title}
       </h3>
     </article>
@@ -246,9 +222,9 @@ function PublishedNote({ outcome }: { outcome: PublishedContentRow }) {
 function DraftNote({ draft }: { draft: ContentDraftRow }) {
   const body = draft.body ?? "(empty draft)";
   return (
-    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4">
+    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
-        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-2)]">
+        <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-text-2)]">
           {draft.status === "queued" ? "Ready" : "Draft"}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">
@@ -256,9 +232,9 @@ function DraftNote({ draft }: { draft: ContentDraftRow }) {
         </span>
       </div>
       {draft.subject ? (
-        <h3 className="mt-3 text-sm font-semibold text-[var(--color-text-1)]">{draft.subject}</h3>
+        <h3 className="mt-3 text-[14px] font-semibold text-[var(--color-text-1)]">{draft.subject}</h3>
       ) : null}
-      <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-2)]">
+      <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-[13px] leading-6 text-[var(--color-text-2)]">
         {body}
       </p>
     </article>
@@ -270,22 +246,4 @@ function outcomeLabel(kind: string): string {
   if (kind === "engagement_lift") return "Lift";
   if (kind === "follower_lift") return "Audience lift";
   return kind.replace(/_/g, " ");
-}
-
-function MiniStatus({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.56)] p-3">
-      <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
-      <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
-    </span>
-  );
-}
-
-function CanvasEmpty({ label, title }: { label: string; title: string }) {
-  return (
-    <section className="section-canvas p-6">
-      <p className="brief-kicker">{label}</p>
-      <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">{title}</h1>
-    </section>
-  );
 }

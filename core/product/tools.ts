@@ -657,7 +657,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.aeo.audit",
     description:
-      "Audit category visibility and answer gaps with Exa, store evidence in the graph, and emit aeo.audit.completed.",
+      "Answer Engine Optimization audit: check how AI engines (ChatGPT, Perplexity, Google AI Overviews) answer category questions, identify where the brand is absent, mis-described, or out-cited, and propose structured content that earns a citation. Stores evidence in the graph and emits aeo.audit.completed.",
     kind: "write",
     input: z.object({
       query: z.string().min(1),

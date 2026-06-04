@@ -108,13 +108,16 @@ export function DashboardShell({
                 </select>
               </form>
             ) : null}
-            <Link
-              href="/dashboard/setup"
-              aria-label="Workspace settings"
-              className="relative grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
-            >
-              <Icon name="settings" size={17} />
-            </Link>
+            <form action="/auth/sign-out" method="post">
+              <button
+                type="submit"
+                aria-label="Sign out"
+                title="Sign out"
+                className="relative grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
+              >
+                <Icon name="logout" size={17} />
+              </button>
+            </form>
           </div>
         </div>
       </header>
