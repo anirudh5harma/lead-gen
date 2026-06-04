@@ -371,8 +371,9 @@ AWS_REGION=... AWS_SNS_TOPIC_ARNS=... npm run verify:aws-ses # SES account + SNS
 - Keep `npm run verify:restate-ecs-health` green for the Restate handler.
   Live Restate registration and runtime canary pass; after observed long-poll
   health churn, the target group now uses a 15-second timeout and 5 unhealthy
-  checks before replacement. If target/log failures recur, split health off
-  the Restate traffic port.
+  checks before replacement. If target/log failures recur, move to a
+  protocol-correct host/path or a dedicated health target group; custom-port
+  health checks on generated ECS Express target groups did not stabilize.
 - Resolve AWS SES production access before broad owned-domain outbound.
   `go.bombsell.com`, DKIM, SNS feedback, and the app bounce pipeline verify,
   but the SES account production-access review is currently denied.

@@ -62,9 +62,11 @@ forcing request-response mode breaks durable command checkpoints such as
 
 Current production note: ECS Express Gateway accepts the single-port HTTP/1
 health path when the handler keeps Restate bidirectional protocol enabled. ECS
-task definition revision `28` runs image
-`ecs-express-production-20260603-exa-surfaces-16ea1d7-amd64` and is steady at
-desired `1`, running `1`, pending `0`. On 2026-06-04, live
+task definition revision `29` runs image
+`ecs-express-production-20260603-exa-surfaces-16ea1d7-amd64` via
+`worker:managed` with `WORKER_TARGET_COMMAND=worker:production`; Restate
+traffic remains on `9080` and the managed wrapper also exposes `9081`. It is
+steady at desired `1`, running `1`, pending `0`. On 2026-06-04, live
 `npm run verify:restate` confirmed deployment `dp_16RLtYXG3bAoyujNOKDPH57`
 advertises the full required service set, including the Exa workflows, and
 `npm run verify:restate-runtime` completed
@@ -75,14 +77,19 @@ force-removing the deployment registration; the unused App Runner service
 itself is paused. A same-port h2-capable handler was tested earlier and failed
 ECS health replacement. Recent service history showed periodic `/health`
 timeouts and task replacements on port `9080` while long
-`ingest_workspace_poll` runs were active, so the target group was tuned on
-2026-06-04 from a 5-second timeout / 2 unhealthy threshold to a 15-second
-timeout / 5 unhealthy threshold. Keep `npm run verify:restate-ecs-health`
-green before raising autonomous ingestion volume; it checks ECS service
-steadiness, ALB target health, recent ECS service events, and recent CloudWatch
-Restate stream/health errors. If timeouts recur after the wider health window,
-move the Restate handler behind a protocol-correct host/path or split health
-checks onto a separate port through `worker:managed`.
+`ingest_workspace_poll` runs were active, so the generated target groups are
+tuned on 2026-06-04 from a 5-second timeout / 2 unhealthy threshold to a
+15-second timeout / 5 unhealthy threshold. A live attempt to move the generated
+ECS Express target-group health checks to custom port `9081` did not become
+healthy, even though the public `/health` route and Restate invocations worked;
+keep generated gateway health checks on `9080` unless the service is moved to a
+gateway shape that explicitly supports a separate health target. Keep
+`npm run verify:restate-ecs-health` green before raising autonomous ingestion
+volume; it checks ECS service steadiness, ALB target health, recent ECS service
+events, and recent CloudWatch Restate stream/health errors. If timeouts recur
+after the wider health window, move the Restate handler behind a
+protocol-correct host/path or a dedicated health target group, not another
+custom-port hot patch on the generated ECS Express target group.
 
 ## Required Shared Environment
 

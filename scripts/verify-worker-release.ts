@@ -12,6 +12,14 @@ const RESTATE_CAPABLE_ENTRYPOINTS = [
   "scripts/restate-workflows-worker.ts",
 ] as const;
 
+const WORKER_COMMANDS = [
+  "worker:managed",
+  "worker:production",
+  "worker:email-projectors",
+  "worker:signal-projectors",
+  "worker:restate-workflows",
+] as const;
+
 const WORKFLOW_FACTORIES: WorkerServiceContract[] = [
   { service: "system.restate_runtime_probe.v1", factory: "createRestateRuntimeProbeWorkflow" },
   { service: "series_a_cold_open", factory: "createSeriesAColdOpenPlay" },
@@ -68,6 +76,15 @@ export function checkWorkerReleaseContract(
           : `missing ${contract.factory}`,
       });
     }
+  }
+
+  const dockerfile = readFile("Dockerfile.worker");
+  for (const command of WORKER_COMMANDS) {
+    checks.push({
+      name: `Dockerfile.worker command hint includes ${command}`,
+      ok: dockerfile.includes(command),
+      detail: dockerfile.includes(command) ? "documented" : "missing from WORKER_COMMAND hint",
+    });
   }
 
   for (const doc of ["docs/production-workers.md", "docs/product-audit-2026-06-01.md"]) {

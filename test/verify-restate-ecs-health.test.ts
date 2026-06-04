@@ -113,6 +113,73 @@ test("Restate ECS health fails when no target is healthy", () => {
   );
 });
 
+test("Restate ECS health ignores drained target groups when another group is live", () => {
+  const checks = assessRestateEcsHealth({
+    service: healthyService(),
+    targetHealthCandidates: [
+      {
+        targetGroupArn: "arn:aws:elasticloadbalancing:old",
+        response: {
+          TargetHealthDescriptions: [
+            {
+              Target: { Id: "10.0.0.9", Port: 9080 },
+              TargetHealth: { State: "draining" },
+            },
+          ],
+        },
+      },
+      {
+        targetGroupArn: "arn:aws:elasticloadbalancing:new",
+        response: healthyTargets(),
+      },
+    ],
+    logEvents: { events: [] },
+    now: () => now,
+  });
+
+  assert.equal(
+    checks.find((check) => check.name === "elb.target_health")?.status,
+    "ok",
+  );
+});
+
+test("Restate ECS health fails when the only active target group is unhealthy", () => {
+  const checks = assessRestateEcsHealth({
+    service: healthyService(),
+    targetHealthCandidates: [
+      {
+        targetGroupArn: "arn:aws:elasticloadbalancing:old",
+        response: {
+          TargetHealthDescriptions: [
+            {
+              Target: { Id: "10.0.0.9", Port: 9080 },
+              TargetHealth: { State: "draining" },
+            },
+          ],
+        },
+      },
+      {
+        targetGroupArn: "arn:aws:elasticloadbalancing:new",
+        response: {
+          TargetHealthDescriptions: [
+            {
+              Target: { Id: "10.0.0.10", Port: 9080 },
+              TargetHealth: { State: "unhealthy", Reason: "Target.FailedHealthChecks" },
+            },
+          ],
+        },
+      },
+    ],
+    logEvents: { events: [] },
+    now: () => now,
+  });
+
+  assert.equal(
+    checks.find((check) => check.name === "elb.target_health")?.status,
+    "fail",
+  );
+});
+
 test("Restate ECS health fails on recent service or stream errors", () => {
   const checks = assessRestateEcsHealth({
     service: {
@@ -140,6 +207,48 @@ test("Restate ECS health fails on recent service or stream errors", () => {
     checks.find((check) => check.name === "ecs.service.events")?.status,
     "fail",
   );
+  assert.equal(
+    checks.find((check) => check.name === "logs.restate_errors")?.status,
+    "fail",
+  );
+});
+
+test("Restate ECS health does not treat generic worker Error stacks as Restate stream errors", () => {
+  const checks = assessRestateEcsHealth({
+    service: healthyService(),
+    targetHealth: healthyTargets(),
+    logEvents: {
+      events: [
+        {
+          timestamp: now - 30_000,
+          message: "[production-worker] NATS dispatch redrive failed: Error: Connection terminated due to connection timeout",
+        },
+      ],
+    },
+    now: () => now,
+  });
+
+  assert.equal(
+    checks.find((check) => check.name === "logs.restate_errors")?.status,
+    "ok",
+  );
+});
+
+test("Restate ECS health still fails on uppercase system error logs", () => {
+  const checks = assessRestateEcsHealth({
+    service: healthyService(),
+    targetHealth: healthyTargets(),
+    logEvents: {
+      events: [
+        {
+          timestamp: now - 30_000,
+          message: "ERROR Restate handler failed health check",
+        },
+      ],
+    },
+    now: () => now,
+  });
+
   assert.equal(
     checks.find((check) => check.name === "logs.restate_errors")?.status,
     "fail",
@@ -240,5 +349,79 @@ test("Restate ECS probe supports ECS Express service shape", async () => {
   );
   assert.ok(
     calls.some((args) => args.includes("--target-group-arn") && args.includes("arn:aws:elasticloadbalancing:us-east-1:767828728931:targetgroup/ecs-gateway-tg-449d1a4537a65b91d/5497a31e262dbba1")),
+  );
+});
+
+test("Restate ECS probe checks every target group discovered from ECS Express events", async () => {
+  const calls: string[][] = [];
+  const result = await runRestateEcsHealthProbe({
+    env: {
+      AWS_REGION: "us-east-1",
+      RESTATE_ECS_CLUSTER: "cluster",
+      RESTATE_ECS_SERVICE: "service",
+    },
+    now: () => now,
+    awsJson: async (args) => {
+      calls.push(args);
+      const command = args.slice(0, 2).join(" ");
+      if (command === "ecs describe-services") {
+        return {
+          services: [
+            {
+              ...ecsExpressService(),
+              events: [
+                {
+                  createdAt: "2026-06-04T11:40:00.000Z",
+                  message: "(service bombsell-restate-workflows) deregistered 1 targets in (target-group arn:aws:elasticloadbalancing:old)",
+                },
+                {
+                  createdAt: "2026-06-04T11:39:00.000Z",
+                  message: "(service bombsell-restate-workflows) registered 1 targets in (target-group arn:aws:elasticloadbalancing:new)",
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (command === "ecs describe-task-definition") {
+        return {
+          taskDefinition: {
+            containerDefinitions: [
+              {
+                name: "Main",
+                logConfiguration: {
+                  options: { "awslogs-group": "/ecs/bombsell/restate-workflows" },
+                },
+              },
+            ],
+          },
+        };
+      }
+      if (command === "elbv2 describe-target-health") {
+        const arn = args[args.indexOf("--target-group-arn") + 1];
+        return arn === "arn:aws:elasticloadbalancing:old"
+          ? {
+              TargetHealthDescriptions: [
+                {
+                  Target: { Id: "10.0.0.9", Port: 9080 },
+                  TargetHealth: { State: "draining" },
+                },
+              ],
+            }
+          : healthyTargets();
+      }
+      if (command === "logs filter-log-events") {
+        return { events: [] };
+      }
+      throw new Error(`unexpected aws command: ${args.join(" ")}`);
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(
+    calls.some((args) => args.includes("--target-group-arn") && args.includes("arn:aws:elasticloadbalancing:old")),
+  );
+  assert.ok(
+    calls.some((args) => args.includes("--target-group-arn") && args.includes("arn:aws:elasticloadbalancing:new")),
   );
 });

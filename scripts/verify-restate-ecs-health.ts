@@ -69,6 +69,11 @@ interface ElbTargetHealthResponse {
   }>;
 }
 
+interface ElbTargetHealthCandidate {
+  targetGroupArn: string;
+  response: ElbTargetHealthResponse;
+}
+
 interface CloudWatchFilterLogEventsResponse {
   events?: Array<{ timestamp?: number; message?: string; logStreamName?: string }>;
 }
@@ -78,8 +83,11 @@ const DEFAULT_SERVICE = "bombsell-restate-workflows";
 const DEFAULT_REGION = "us-east-1";
 const DEFAULT_LOOKBACK_MINUTES = 60;
 const DEFAULT_LOG_SCAN_LIMIT = 200;
-const TROUBLE_RE =
-  /(Connection closed|RestateError|WARN: Error|ERROR|Error when processing|ERR_STREAM_DESTROYED|health check failed|target health checks failed|unhealthy)/i;
+const RESTATE_TROUBLE_RE =
+  /(Connection closed|RestateError|WARN: Error|Error when processing|ERR_STREAM_DESTROYED)/;
+const HEALTH_TROUBLE_RE =
+  /(health check failed|target health checks failed|unhealthy)/i;
+const UPPERCASE_ERROR_RE = /\bERROR\b/;
 
 export async function runRestateEcsHealthProbe(
   opts: RestateEcsHealthProbeOptions = {},
@@ -125,14 +133,10 @@ export async function runRestateEcsHealthProbe(
     ]) as EcsTaskDefinitionResponse;
   }
 
-  const targetGroupArn =
-    env.RESTATE_ECS_TARGET_GROUP_ARN?.trim() ||
-    service?.loadBalancers?.find((item) => item.targetGroupArn)?.targetGroupArn ||
-    targetGroupArnFromEvents(service?.events ?? []) ||
-    "";
-  let targetHealth: ElbTargetHealthResponse | null = null;
-  if (targetGroupArn) {
-    targetHealth = await awsJson([
+  const targetGroupArns = targetGroupArnsFromService(service, env.RESTATE_ECS_TARGET_GROUP_ARN);
+  const targetHealthCandidates: ElbTargetHealthCandidate[] = [];
+  for (const targetGroupArn of targetGroupArns) {
+    const response = await awsJson([
       "elbv2",
       "describe-target-health",
       "--target-group-arn",
@@ -140,6 +144,7 @@ export async function runRestateEcsHealthProbe(
       "--region",
       region,
     ]) as ElbTargetHealthResponse;
+    targetHealthCandidates.push({ targetGroupArn, response });
   }
 
   const logGroup =
@@ -177,7 +182,7 @@ export async function runRestateEcsHealthProbe(
   checks.push(
     ...assessRestateEcsHealth({
       service,
-      targetHealth,
+      targetHealthCandidates: targetHealthCandidates.length > 0 ? targetHealthCandidates : null,
       logEvents,
       logGroup,
       now,
@@ -202,6 +207,8 @@ export async function runRestateEcsHealthProbe(
 export function assessRestateEcsHealth(input: {
   service: EcsService | null;
   targetHealth?: ElbTargetHealthResponse | null;
+  targetGroupArn?: string;
+  targetHealthCandidates?: ElbTargetHealthCandidate[] | null;
   logEvents?: CloudWatchFilterLogEventsResponse | null;
   logGroup?: string;
   now?: () => number;
@@ -258,21 +265,33 @@ export function assessRestateEcsHealth(input: {
       : `no target-health or replacement events in ${lookbackMinutes}m`,
   });
 
-  const targetDescriptions = input.targetHealth?.TargetHealthDescriptions;
-  if (!targetDescriptions) {
+  const targetHealthCandidates = input.targetHealthCandidates
+    ?? (input.targetHealth
+      ? [{ targetGroupArn: input.targetGroupArn ?? "target-group", response: input.targetHealth }]
+      : null);
+  if (!targetHealthCandidates || targetHealthCandidates.length === 0) {
     checks.push({
       name: "elb.target_health",
       status: "warn",
       detail: "target group not discovered; set RESTATE_ECS_TARGET_GROUP_ARN to include it",
     });
   } else {
-    const states = targetDescriptions.map((item) => item.TargetHealth?.State ?? "unknown");
-    const healthy = states.filter((state) => state === "healthy").length;
-    const unhealthy = targetDescriptions.filter((item) => item.TargetHealth?.State !== "healthy");
+    const candidates = targetHealthCandidates.map((candidate) =>
+      summarizeTargetHealth(candidate),
+    );
+    const liveCandidates = candidates.filter((candidate) => candidate.active > 0);
+    const okCandidate = liveCandidates.find((candidate) =>
+      candidate.healthy > 0 && candidate.unhealthy === 0,
+    );
+    const partiallyHealthyCandidate = liveCandidates.find((candidate) =>
+      candidate.healthy > 0,
+    );
     checks.push({
       name: "elb.target_health",
-      status: healthy > 0 ? unhealthy.length > 0 ? "warn" : "ok" : "fail",
-      detail: `healthy=${healthy}/${states.length} states=${states.join(",") || "none"}`,
+      status: okCandidate ? "ok" : partiallyHealthyCandidate ? "warn" : liveCandidates.length > 0 ? "fail" : "warn",
+      detail: candidates.map((candidate) =>
+        `${targetGroupLabel(candidate.targetGroupArn)} healthy=${candidate.healthy}/${candidate.active} states=${candidate.states.join(",") || "none"}`,
+      ).join(" | "),
     });
   }
 
@@ -287,7 +306,7 @@ export function assessRestateEcsHealth(input: {
   } else {
     const matches = (input.logEvents.events ?? [])
       .map((event) => event.message?.trim() ?? "")
-      .filter((message) => TROUBLE_RE.test(message));
+      .filter(isTroublingMessage);
     checks.push({
       name: "logs.restate_errors",
       status: matches.length > 0 ? "fail" : "ok",
@@ -326,13 +345,67 @@ function taskDefinitionFromService(service: EcsService | null): string | null {
     ?? null;
 }
 
-function targetGroupArnFromEvents(events: Array<{ message?: string }>): string | null {
+function targetGroupArnsFromService(
+  service: EcsService | null,
+  explicitArn?: string,
+): string[] {
+  const explicit = explicitArn?.trim();
+  if (explicit) return [explicit];
+  const loadBalancerArns = service?.loadBalancers
+    ?.map((item) => item.targetGroupArn?.trim())
+    .filter((item): item is string => Boolean(item)) ?? [];
+  return uniqueStrings([
+    ...loadBalancerArns,
+    ...targetGroupArnsFromEvents(service?.events ?? []),
+  ]);
+}
+
+function targetGroupArnsFromEvents(events: Array<{ message?: string }>): string[] {
   const targetGroupRe = /(arn:aws:elasticloadbalancing:[^\s)]+)/;
+  const registered: string[] = [];
+  const other: string[] = [];
   for (const event of events) {
     const match = event.message?.match(targetGroupRe);
-    if (match?.[1]) return match[1];
+    if (!match?.[1]) continue;
+    if (event.message?.includes("registered")) registered.push(match[1]);
+    else other.push(match[1]);
   }
-  return null;
+  return uniqueStrings([...registered, ...other]);
+}
+
+function summarizeTargetHealth(candidate: ElbTargetHealthCandidate): {
+  targetGroupArn: string;
+  states: string[];
+  active: number;
+  healthy: number;
+  unhealthy: number;
+} {
+  const descriptions = candidate.response.TargetHealthDescriptions ?? [];
+  const activeDescriptions = descriptions.filter((item) => {
+    const state = item.TargetHealth?.State;
+    return state !== "draining" && state !== "unused";
+  });
+  const states = activeDescriptions.map((item) => item.TargetHealth?.State ?? "unknown");
+  const healthy = states.filter((state) => state === "healthy").length;
+  return {
+    targetGroupArn: candidate.targetGroupArn,
+    states,
+    active: activeDescriptions.length,
+    healthy,
+    unhealthy: activeDescriptions.length - healthy,
+  };
+}
+
+function targetGroupLabel(targetGroupArn: string): string {
+  return targetGroupArn.split(":targetgroup/")[1] ?? targetGroupArn;
+}
+
+function uniqueStrings(items: string[]): string[] {
+  const unique: string[] = [];
+  for (const item of items) {
+    if (!unique.includes(item)) unique.push(item);
+  }
+  return unique;
 }
 
 function recentTroubleMessages(
@@ -347,7 +420,13 @@ function recentTroubleMessages(
       return Number.isFinite(created) && created >= cutoff;
     })
     .map((event) => event.message?.trim() ?? "")
-    .filter((message) => TROUBLE_RE.test(message));
+    .filter(isTroublingMessage);
+}
+
+function isTroublingMessage(message: string): boolean {
+  return RESTATE_TROUBLE_RE.test(message) ||
+    HEALTH_TROUBLE_RE.test(message) ||
+    UPPERCASE_ERROR_RE.test(message);
 }
 
 function boundedNumber(
