@@ -17,46 +17,65 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = safeNextPath(searchParams.get("next"));
-  if (!code) {
-    return NextResponse.redirect(new URL(`/login?error=missing_code&next=${encodeURIComponent(next)}`, origin));
-  }
-
-  const supabase = await createServerSupabaseClient();
-  const { data: exchangeData, error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error) {
-    return NextResponse.redirect(new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin));
-  }
-
-  let authUser: PostAuthUser | null | undefined = exchangeData.user;
-  const userId = await resolvePostAuthUserId(exchangeData.user, async () => {
-    const { data } = await supabase.auth.getUser();
-    authUser = data.user;
-    return data.user;
-  });
-  if (userId && authUser?.id !== userId) {
-    const { data } = await supabase.auth.getUser();
-    authUser = data.user;
-  }
-  const completed = userId
-    ? await findCompletedOnboardingAfterIdentityReconciliation(userId, authUser)
-    : null;
-  const destinationPath = postAuthDestination(next, Boolean(completed));
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
-  const destination =
-    process.env.NODE_ENV === "development" || !forwardedHost
-      ? new URL(destinationPath, origin)
-      : new URL(destinationPath, `${forwardedProto}://${forwardedHost}`);
-  const response = NextResponse.redirect(destination);
-  if (completed) {
-    response.cookies.set(
-      ACTIVE_WORKSPACE_COOKIE_NAME,
-      completed.workspace_id,
-      activeWorkspaceCookieOptions(),
+  const errParam = searchParams.get("error") ?? searchParams.get("error_description");
+  if (errParam) {
+    console.error("[auth/callback] provider error", errParam);
+    return NextResponse.redirect(
+      new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin),
     );
   }
-  response.headers.set("Cache-Control", "private, no-store");
-  return response;
+  if (!code) {
+    return NextResponse.redirect(
+      new URL(`/login?error=missing_code&next=${encodeURIComponent(next)}`, origin),
+    );
+  }
+
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: exchangeData, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      console.error("[auth/callback] exchangeCodeForSession error", error);
+      return NextResponse.redirect(
+        new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin),
+      );
+    }
+
+    let authUser: PostAuthUser | null | undefined = exchangeData.user;
+    const userId = await resolvePostAuthUserId(exchangeData.user, async () => {
+      const { data } = await supabase.auth.getUser();
+      authUser = data.user;
+      return data.user;
+    });
+    if (userId && authUser?.id !== userId) {
+      const { data } = await supabase.auth.getUser();
+      authUser = data.user;
+    }
+    const completed = userId
+      ? await findCompletedOnboardingAfterIdentityReconciliation(userId, authUser)
+      : null;
+    const destinationPath = postAuthDestination(next, Boolean(completed));
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+    const destination =
+      process.env.NODE_ENV === "development" || !forwardedHost
+        ? new URL(destinationPath, origin)
+        : new URL(destinationPath, `${forwardedProto}://${forwardedHost}`);
+    const response = NextResponse.redirect(destination);
+    if (completed) {
+      response.cookies.set(
+        ACTIVE_WORKSPACE_COOKIE_NAME,
+        completed.workspace_id,
+        activeWorkspaceCookieOptions(),
+      );
+    }
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  } catch (err) {
+    console.error("[auth/callback] unexpected error", err);
+    return NextResponse.redirect(
+      new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin),
+    );
+  }
 }
 
 async function findCompletedOnboardingAfterIdentityReconciliation(
