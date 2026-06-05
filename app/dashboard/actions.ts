@@ -9,6 +9,7 @@ import {
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
   deleteProductRecommendation,
+  draftProductRecommendation,
   recordProductCampaignOutcome,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
@@ -210,6 +211,28 @@ export async function recordRecommendationOutcomeAction(formData: FormData) {
         recorded_from: "dashboard",
         surface: value(formData, "surface") || "recommendation_review",
       },
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
+export async function createRecommendationDraftAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const reviewId = value(formData, "review_id");
+  if (!reviewId) return;
+  const channelValue = value(formData, "channel");
+  const channel =
+    channelValue === "linkedin_comment" ||
+    channelValue === "web" ||
+    channelValue === "other" ||
+    channelValue === "x_post"
+      ? channelValue
+      : undefined;
+  await draftProductRecommendation(
+    {
+      review_id: reviewId,
+      channel,
     },
     session,
   );

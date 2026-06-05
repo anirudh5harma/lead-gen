@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { GraphCompany, GraphPerson, SourceKind } from "../graph/types.ts";
+import { upsertPerson } from "../graph/nodes/persons.ts";
 import {
   addCompanyExplicit,
   upsertTrackedCompany,
@@ -619,6 +620,26 @@ export interface ProductRecommendationOutcomeResult {
   attributed_rep_id: string | null;
   pattern_key: string;
   exemplar_ids: string[];
+}
+
+export type ProductRecommendationDraftChannel =
+  | "x_post"
+  | "linkedin_comment"
+  | "web"
+  | "other";
+
+export interface ProductRecommendationDraftInput {
+  review_id: string;
+  channel?: ProductRecommendationDraftChannel;
+}
+
+export interface ProductRecommendationDraftResult {
+  workspace_id: string;
+  review_id: string;
+  conversation_id: string;
+  message_id: string;
+  channel: ProductRecommendationDraftChannel;
+  attributed_rep_id: string;
 }
 
 export type ProductCampaignOutcomeKind =
@@ -2807,6 +2828,113 @@ export async function recordProductRecommendationOutcome(
     attributed_rep_id: attribution.rep_id,
     pattern_key,
     exemplar_ids: attribution.exemplar_ids,
+  };
+}
+
+export async function draftProductRecommendation(
+  input: ProductRecommendationDraftInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductRecommendationDraftResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const reviewId = input.review_id.trim();
+  if (!reviewId) throw new Error("review_id is required");
+
+  const review = await findAcceptedRecommendationReview(
+    engine.pool,
+    session.workspace_id,
+    reviewId,
+  );
+  if (!review) {
+    throw new Error(`Accepted recommendation review not found: ${reviewId}`);
+  }
+  const repId = await findRecommendationRepForKind(
+    engine.pool,
+    session.workspace_id,
+    review.review_kind,
+  );
+  if (!repId) throw new Error("No active Rep is available to draft this recommendation.");
+
+  const channel = input.channel ?? defaultRecommendationDraftChannel(review.review_kind);
+  const target = await ensureRecommendationDraftTarget(engine.pool, session.workspace_id);
+  const openedAt = new Date().toISOString();
+  const conversationEvent = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "conversation.opened",
+    source: "user",
+    producer_ref: `user:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "conversation.opened",
+      session.workspace_id,
+      reviewId,
+      { channel, purpose: "recommendation_draft" },
+    ),
+    payload: {
+      conversation_id: randomUUID(),
+      rep_id: repId,
+      counterparty_person_id: target.person_id,
+      counterparty_company_id: target.company_id,
+      origin_signal_id: null,
+      topic: review.item.title,
+      properties: {
+        source: "recommendation.draft",
+        review_id: reviewId,
+        review_kind: review.review_kind,
+        source_event_id: review.source_event_id,
+        channel,
+      },
+      opened_at: openedAt,
+    },
+  });
+  if (engine.substrateMode === "postgres") {
+    await createConversationLifecycleProjection(engine.pool).apply(conversationEvent);
+  }
+
+  const draftEvent = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "draft.proposed",
+    source: "user",
+    producer_ref: `user:${session.user_id}`,
+    correlation_id: conversationEvent.correlation_id ?? conversationEvent.id,
+    causation_id: conversationEvent.id,
+    idempotency_key: configurationEventKey(
+      "draft.proposed",
+      session.workspace_id,
+      reviewId,
+      { channel, purpose: "recommendation_draft" },
+    ),
+    payload: {
+      conversation_id: conversationEvent.payload.conversation_id,
+      message_id: randomUUID(),
+      channel,
+      rep_id: repId,
+      subject: recommendationDraftSubject(review.review_kind, review.item.title),
+      body: recommendationDraftBody(review.review_kind, review.item),
+      provenance: {
+        source: "recommendation.draft",
+        review_id: reviewId,
+        review_kind: review.review_kind,
+        source_event_id: review.source_event_id,
+        pattern_key: recommendationResearchPatternKey(review.review_kind),
+      },
+      properties: {
+        recommendation_item: review.item,
+        draft_contract: "recommendation_draft_v1",
+      },
+      proposed_at: openedAt,
+    },
+  });
+  if (engine.substrateMode === "postgres") {
+    await createMessageLifecycleProjection(engine.pool).apply(draftEvent);
+  }
+
+  return {
+    workspace_id: session.workspace_id,
+    review_id: reviewId,
+    conversation_id: draftEvent.payload.conversation_id,
+    message_id: draftEvent.payload.message_id,
+    channel,
+    attributed_rep_id: repId,
   };
 }
 
@@ -7471,6 +7599,101 @@ async function findAcceptedRecommendationReview(
         : [],
     },
   };
+}
+
+async function findRecommendationRepForKind(
+  pool: Pool,
+  workspace_id: string,
+  review_kind: ProductRecommendationKind,
+): Promise<string | null> {
+  const { rows } = await pool.query<{ id: string }>(
+    `select id::text as id
+       from reps
+      where workspace_id = $1
+        and status = 'active'
+      order by case
+                 when $2 = 'content_opportunity' and role = 'content' then 0
+                 when $2 = 'aeo_gap' and role = 'researcher' then 0
+                 else 1
+               end,
+               created_at asc
+      limit 1`,
+    [workspace_id, review_kind],
+  );
+  return rows[0]?.id ?? null;
+}
+
+async function ensureRecommendationDraftTarget(
+  pool: Pool,
+  workspace_id: string,
+): Promise<{ person_id: string; company_id: string | null }> {
+  const email = `editorial-review+${workspace_id}@bombsell.invalid`;
+  const person = await upsertPerson(pool, workspace_id, {
+    full_name: "Editorial Review",
+    given_name: "Editorial",
+    family_name: "Review",
+    title: "Workspace content review",
+    emails: [email],
+    properties: {
+      profile_role: "workspace_editorial_review",
+      system_contact: true,
+    },
+    provenance: {
+      source: "product.recommendation.draft",
+    },
+  });
+  return {
+    person_id: person.id,
+    company_id: person.company_id,
+  };
+}
+
+function defaultRecommendationDraftChannel(
+  review_kind: ProductRecommendationKind,
+): ProductRecommendationDraftChannel {
+  return review_kind === "content_opportunity" ? "x_post" : "web";
+}
+
+function recommendationDraftSubject(
+  review_kind: ProductRecommendationKind,
+  title: string,
+): string {
+  return review_kind === "content_opportunity"
+    ? `Draft post: ${title}`.slice(0, 180)
+    : `Draft answer: ${title}`.slice(0, 180);
+}
+
+function recommendationDraftBody(
+  review_kind: ProductRecommendationKind,
+  item: {
+    title: string;
+    detail: string;
+    url: string | null;
+    evidence_source_ids: string[];
+  },
+): string {
+  if (review_kind === "content_opportunity") {
+    return [
+      item.title,
+      "",
+      item.detail,
+      "",
+      item.url ? `Proof: ${item.url}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return [
+    `Question to answer: ${item.title}`,
+    "",
+    item.detail,
+    "",
+    item.url ? `Source/proof: ${item.url}` : null,
+    "",
+    "Draft the clearest answer first, then add supporting proof and schema/page updates.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 async function findOrSeedRecommendationOutcomeAttribution(

@@ -16,6 +16,7 @@ import {
   deleteProductRecommendation,
   discoverSignalFromSource,
   dispatchSignalPlaysOnce,
+  draftProductRecommendation,
   enrichWorkspaceProfileWithExa,
   getLinkedInAccountConnectIntent,
   getOutlookAccountConnectIntent,
@@ -73,6 +74,12 @@ const RecommendationOutcomeKindSchema = z.enum([
   "post_published",
   "follower_lift",
   "engagement_lift",
+]);
+const RecommendationDraftChannelSchema = z.enum([
+  "x_post",
+  "linkedin_comment",
+  "web",
+  "other",
 ]);
 const CampaignOutcomeKindSchema = z.enum([
   "positive_reply",
@@ -785,6 +792,27 @@ export function registerProductTools(): void {
     }),
     async handler(input, ctx) {
       return recordProductRecommendationOutcome(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.recommendation.draft.create",
+    description:
+      "Create a reviewable draft from an accepted Content/AEO recommendation by emitting conversation.opened and draft.proposed events. It does not publish or send.",
+    kind: "write",
+    input: z.object({
+      review_id: z.string().min(1),
+      channel: RecommendationDraftChannelSchema.optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      review_id: z.string().min(1),
+      conversation_id: z.string().uuid(),
+      message_id: z.string().uuid(),
+      channel: RecommendationDraftChannelSchema,
+      attributed_rep_id: z.string().uuid(),
+    }),
+    async handler(input, ctx) {
+      return draftProductRecommendation(input, sessionFromContext(ctx));
     },
   });
 

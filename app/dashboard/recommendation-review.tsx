@@ -9,6 +9,7 @@ import type {
 import { useRef, useTransition, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
+  createRecommendationDraftAction,
   deleteRecommendationAction,
   recordRecommendationOutcomeAction,
   reviewRecommendationAction,
@@ -145,6 +146,24 @@ function RecommendationReviewActions({
           Saved
         </p>
         <RecommendationEditDeleteControls item={item} surface={surface} />
+        <ToastActionForm
+          action={createRecommendationDraftAction}
+          successTitle="Draft created"
+        >
+          <input type="hidden" name="review_id" value={item.review_id} />
+          <input
+            type="hidden"
+            name="channel"
+            value={surface === "aeo" ? "web" : "x_post"}
+          />
+          <button
+            type="submit"
+            className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[color:var(--color-line-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)] active:translate-y-px"
+          >
+            <Icon name={surface === "aeo" ? "article" : "edit_note"} size={14} />
+            {surface === "aeo" ? "Draft answer" : "Draft post"}
+          </button>
+        </ToastActionForm>
         <ToastActionForm
           action={recordRecommendationOutcomeAction}
           successTitle="Result recorded"

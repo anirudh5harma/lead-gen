@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   bootstrapWorkspace,
   DEFAULT_PRODUCT_USER_ID,
+  draftProductRecommendation,
   getProductRecommendationSurface,
   getProductEngine,
   projectPendingProductEventsOnce,
@@ -334,6 +335,140 @@ test("product projections: first Content recommendation Outcome seeds Vaani memo
     });
     assert.equal(Number(memory.rows[0]?.score), 0.58);
     assert.equal(memory.rows[0]?.win_count, 1);
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product projections: accepted Content recommendation creates a Vaani draft", async (t) => {
+  const fx = await setupPg("product_projection_reco_draft");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const session = {
+      workspace_id: boot.workspace_id,
+      user_id: DEFAULT_PRODUCT_USER_ID,
+    };
+    const contentEventId = randomUUID();
+    await fx.pool.query(
+      `insert into events (
+         id, workspace_id, event_type, source, producer_ref, payload, occurred_at
+       ) values (
+         $1, $2, 'content.opportunity.discovered', 'agent', 'vaani:test',
+         $3::jsonb, '2026-06-05T09:10:00Z'
+       )`,
+      [
+        contentEventId,
+        boot.workspace_id,
+        JSON.stringify({
+          request_id: "req_content_draft",
+          query: "category objections",
+          summary: "Content angle",
+          opportunities: [
+            {
+              title: "Category objection angle",
+              detail: "Turn the strongest category objection into a short proof post.",
+              url: "https://example.com/category-proof",
+              evidence_source_ids: [],
+            },
+          ],
+        }),
+      ],
+    );
+
+    const surface = await getProductRecommendationSurface(
+      fx.pool,
+      session,
+      "content_opportunity",
+    );
+    const reviewId = surface.reviews[0]?.review_id;
+    assert.ok(reviewId);
+    await reviewProductRecommendation(
+      {
+        review_id: reviewId,
+        decision: "accepted",
+      },
+      session,
+    );
+
+    const result = await draftProductRecommendation(
+      {
+        review_id: reviewId,
+        channel: "x_post",
+      },
+      session,
+    );
+    const draft = await fx.pool.query<{
+      channel: string;
+      status: string;
+      subject: string | null;
+      body: string | null;
+      rep_name: string;
+      person_name: string;
+      provenance: Record<string, unknown>;
+      properties: Record<string, unknown>;
+    }>(
+      `select m.channel::text as channel,
+              m.status::text as status,
+              m.subject,
+              m.body,
+              r.name as rep_name,
+              p.full_name as person_name,
+              m.provenance,
+              m.properties
+         from messages m
+         join conversations c
+           on c.id = m.conversation_id
+          and c.workspace_id = m.workspace_id
+         join reps r
+           on r.id = c.rep_id
+          and r.workspace_id = c.workspace_id
+         join graph_persons p
+           on p.id = c.counterparty_person_id
+          and p.workspace_id = c.workspace_id
+        where m.workspace_id = $1
+          and m.id = $2`,
+      [boot.workspace_id, result.message_id],
+    );
+
+    assert.equal(result.channel, "x_post");
+    assert.equal(draft.rows[0]?.channel, "x_post");
+    assert.equal(draft.rows[0]?.status, "draft");
+    assert.equal(draft.rows[0]?.rep_name, "Vaani");
+    assert.equal(draft.rows[0]?.person_name, "Editorial Review");
+    assert.equal(draft.rows[0]?.subject, "Draft post: Category objection angle");
+    assert.match(draft.rows[0]?.body ?? "", /strongest category objection/);
+    assert.equal(draft.rows[0]?.provenance.source, "recommendation.draft");
+    assert.equal(draft.rows[0]?.provenance.review_id, reviewId);
+    assert.equal(
+      draft.rows[0]?.provenance.pattern_key,
+      "recommendation:content_opportunity|stage:exa_review",
+    );
+    assert.equal(
+      (draft.rows[0]?.properties.recommendation_item as { title?: string } | undefined)?.title,
+      "Category objection angle",
+    );
+
+    const repeated = await draftProductRecommendation(
+      {
+        review_id: reviewId,
+        channel: "x_post",
+      },
+      session,
+    );
+    assert.equal(repeated.message_id, result.message_id);
+    const draftCount = await fx.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from messages
+        where workspace_id = $1
+          and provenance->>'review_id' = $2`,
+      [boot.workspace_id, reviewId],
+    );
+    assert.equal(draftCount.rows[0]?.count, "1");
   } finally {
     await resetProductEngineForTests();
     await fx.close();
