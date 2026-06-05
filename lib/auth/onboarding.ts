@@ -90,14 +90,20 @@ export async function findCompletedOnboardingForAuthIdentity(
   pool: Pool = getPool(),
   deps: AuthOnboardingDeps = {},
 ): Promise<CompletedOnboarding | null> {
+  const completed = await findCompletedOnboardingForUser(identity.id, pool);
+  if (completed) return completed;
+
   if (identity.email && identity.email_verified) {
     const reconcile =
       deps.reconcileWorkspaceMemberships ?? reconcileWorkspaceMembershipsForAuthIdentity;
-    await reconcile({
+    const reconciled = await reconcile({
       user_id: identity.id,
       email: identity.email,
       email_verified: true,
     }, { pool });
+    if (reconciled.length > 0) {
+      return findCompletedOnboardingForUser(identity.id, pool);
+    }
   }
-  return findCompletedOnboardingForUser(identity.id, pool);
+  return null;
 }

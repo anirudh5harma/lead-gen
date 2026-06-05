@@ -69,9 +69,8 @@ test("completed onboarding falls back to an accepted workspace for returning use
   });
 });
 
-test("completed onboarding repairs verified auth identity memberships before deciding", async () => {
-  let reconciled: unknown = null;
-  let reconcileDeps: unknown = null;
+test("completed onboarding skips identity repair for already-onboarded users", async () => {
+  let reconciled = false;
   const pool = {
     async query(_sql: string, params: unknown[]) {
       assert.deepEqual(params, [USER_ID]);
@@ -94,10 +93,52 @@ test("completed onboarding repairs verified auth identity memberships before dec
     },
     pool,
     {
+      async reconcileWorkspaceMemberships() {
+        reconciled = true;
+        return [];
+      },
+    },
+  );
+
+  assert.equal(reconciled, false);
+  assert.deepEqual(completed, {
+    workspace_id: "44444444-4444-4444-8444-444444444444",
+    completion_source: "workspace_company_profile",
+  });
+});
+
+test("completed onboarding repairs verified auth identity when no workspace is visible", async () => {
+  let queryCount = 0;
+  let reconciled: unknown = null;
+  let reconcileDeps: unknown = null;
+  const pool = {
+    async query(_sql: string, params: unknown[]) {
+      queryCount += 1;
+      assert.deepEqual(params, [USER_ID]);
+      if (queryCount === 1) return { rows: [] };
+      return {
+        rows: [
+          {
+            workspace_id: "44444444-4444-4444-8444-444444444444",
+            completion_source: "accepted_workspace",
+          },
+        ],
+      };
+    },
+  } as unknown as Pool;
+
+  const completed = await findCompletedOnboardingForAuthIdentity(
+    {
+      id: USER_ID,
+      email: "Founder@Example.com",
+      email_verified: true,
+    },
+    pool,
+    {
       async reconcileWorkspaceMemberships(input, deps) {
         reconciled = input;
         reconcileDeps = deps;
-        return [];
+        return [{ workspace_id: "44444444-4444-4444-8444-444444444444", role: "owner" }];
       },
     },
   );
@@ -108,9 +149,10 @@ test("completed onboarding repairs verified auth identity memberships before dec
     email_verified: true,
   });
   assert.deepEqual(reconcileDeps, { pool });
+  assert.equal(queryCount, 2);
   assert.deepEqual(completed, {
     workspace_id: "44444444-4444-4444-8444-444444444444",
-    completion_source: "workspace_company_profile",
+    completion_source: "accepted_workspace",
   });
 });
 
