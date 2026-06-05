@@ -10,6 +10,9 @@ import type { PublishedEvent } from "../core/substrate/events/index.ts";
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const repId = "00000000-0000-4000-8000-000000000002";
+const sdrRepId = "00000000-0000-4000-8000-000000000003";
+const campaignRepId = "00000000-0000-4000-8000-000000000004";
+const researcherRepId = "00000000-0000-4000-8000-000000000005";
 
 test("recommendation learning exemplar captures kept and skipped patterns", () => {
   const exemplar = buildRecommendationLearningExemplar({
@@ -74,7 +77,7 @@ test("recommendation learning projection waits for repeated accepted feedback", 
         reviewRow("accepted", "One kept angle"),
         reviewRow("ignored", "One skipped angle"),
       ],
-      reps: [{ id: repId }],
+      reps: [{ id: repId, role: "content" }],
     }),
     bus: {
       async publish(event) {
@@ -108,7 +111,7 @@ test("recommendation learning projection emits procedural seed after threshold",
         reviewRow("accepted", "Competitor narrative angle"),
         reviewRow("ignored", "Generic launch recap"),
       ],
-      reps: [{ id: repId }],
+      reps: [{ id: repId, role: "content" }],
     }),
     bus: {
       async publish(event) {
@@ -132,7 +135,49 @@ test("recommendation learning projection emits procedural seed after threshold",
   assert.equal(published[0]!.payload.exemplar.accepted, 3);
 });
 
-function reviewedEvent(): PublishedEvent {
+test("recommendation learning projection targets only the owning Rep role", async () => {
+  const published: Array<{
+    payload: {
+      rep_id: string;
+      pattern_key: string;
+      exemplar: Record<string, unknown>;
+    };
+  }> = [];
+  const projection = createRecommendationLearningProjection({
+    pool: fakePool({
+      reviews: [
+        reviewRow("accepted", "Answer gap"),
+        reviewRow("accepted", "Citation gap"),
+        reviewRow("accepted", "Comparison gap"),
+        reviewRow("ignored", "Vanity keyword"),
+      ],
+      reps: [
+        { id: sdrRepId, role: "sdr" },
+        { id: repId, role: "content" },
+        { id: campaignRepId, role: "campaign" },
+        { id: researcherRepId, role: "researcher" },
+      ],
+    }),
+    bus: {
+      async publish(event) {
+        published.push(event as never);
+        return event as never;
+      },
+    },
+  });
+
+  await projection.apply(reviewedEvent("aeo_gap"));
+
+  assert.equal(published.length, 1);
+  assert.equal(published[0]!.payload.rep_id, researcherRepId);
+  assert.equal(
+    published[0]!.payload.pattern_key,
+    "recommendation:aeo_gap|stage:exa_review",
+  );
+  assert.match(String(published[0]!.payload.exemplar.guidance), /future AEO audits/);
+});
+
+function reviewedEvent(reviewKind: "content_opportunity" | "aeo_gap" = "content_opportunity"): PublishedEvent {
   return {
     id: "00000000-0000-4000-8000-000000000010",
     workspace_id: workspaceId,
@@ -146,8 +191,8 @@ function reviewedEvent(): PublishedEvent {
     occurred_at: new Date("2026-06-04T10:00:00.000Z").toISOString(),
     payload: {
       review_id:
-        "content_opportunity:00000000-0000-4000-8000-000000000020:abc123",
-      review_kind: "content_opportunity",
+        `${reviewKind}:00000000-0000-4000-8000-000000000020:abc123`,
+      review_kind: reviewKind,
       source_event_id: "00000000-0000-4000-8000-000000000020",
       decision: "accepted",
       item: {
@@ -175,12 +220,15 @@ function reviewRow(decision: "accepted" | "ignored", title: string) {
 
 function fakePool(input: {
   reviews: ReturnType<typeof reviewRow>[];
-  reps: Array<{ id: string }>;
+  reps: Array<{ id: string; role: string }>;
 }): Pool {
   return {
-    async query(sql: string) {
+    async query(sql: string, params?: unknown[]) {
       if (sql.includes("from events")) return { rows: input.reviews };
-      if (sql.includes("from reps")) return { rows: input.reps };
+      if (sql.includes("from reps")) {
+        const role = typeof params?.[1] === "string" ? params[1] : null;
+        return { rows: role ? input.reps.filter((rep) => rep.role === role) : input.reps };
+      }
       throw new Error(`Unexpected query: ${sql}`);
     },
   } as unknown as Pool;

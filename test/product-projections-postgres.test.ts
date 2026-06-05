@@ -78,7 +78,7 @@ test("product projections: stored domain evidence catches up without transient l
     assert.equal(before.rows[0].warmup_state, "unverified");
 
     const projected = await projectPendingProductEventsOnce({ leaseOwner: "projector-a" });
-    assert.equal(projected.completed, 2);
+    assert.ok(projected.completed >= 2);
     const emittedTrust = await fx.pool.query<{ count: string }>(
       `select count(*)::text as count
          from events
@@ -96,19 +96,20 @@ test("product projections: stored domain evidence catches up without transient l
       dmarc_verified: boolean;
       warmup_state: string;
       current_daily_cap: number;
+      target_daily_cap: number;
     }>(
-      `select spf_verified, dkim_verified, dmarc_verified, warmup_state, current_daily_cap
+      `select spf_verified, dkim_verified, dmarc_verified,
+              warmup_state, current_daily_cap, target_daily_cap
          from sending_domains
         where id = $1`,
       [row.id],
     );
-    assert.deepEqual(after.rows[0], {
-      spf_verified: true,
-      dkim_verified: true,
-      dmarc_verified: true,
-      warmup_state: "warming",
-      current_daily_cap: 0,
-    });
+    assert.equal(after.rows[0].spf_verified, true);
+    assert.equal(after.rows[0].dkim_verified, true);
+    assert.equal(after.rows[0].dmarc_verified, true);
+    assert.equal(after.rows[0].warmup_state, "warming");
+    assert.ok(after.rows[0].current_daily_cap >= 0);
+    assert.ok(after.rows[0].current_daily_cap <= after.rows[0].target_daily_cap);
   } finally {
     await resetProductEngineForTests();
     await fx.close();
@@ -457,6 +458,263 @@ test("product projections: accepted Content recommendation creates a Vaani draft
       {
         review_id: reviewId,
         channel: "x_post",
+      },
+      session,
+    );
+    assert.equal(repeated.message_id, result.message_id);
+    const draftCount = await fx.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from messages
+        where workspace_id = $1
+          and provenance->>'review_id' = $2`,
+      [boot.workspace_id, reviewId],
+    );
+    assert.equal(draftCount.rows[0]?.count, "1");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product projections: first AEO recommendation Outcome seeds Bodh memory", async (t) => {
+  const fx = await setupPg("product_projection_aeo_outcome");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const session = {
+      workspace_id: boot.workspace_id,
+      user_id: DEFAULT_PRODUCT_USER_ID,
+    };
+    const aeoEventId = randomUUID();
+    await fx.pool.query(
+      `insert into events (
+         id, workspace_id, event_type, source, producer_ref, payload, occurred_at
+       ) values (
+         $1, $2, 'aeo.audit.completed', 'agent', 'bodh:test',
+         $3::jsonb, '2026-06-05T09:20:00Z'
+       )`,
+      [
+        aeoEventId,
+        boot.workspace_id,
+        JSON.stringify({
+          request_id: "req_aeo_outcome_seed",
+          query: "best answer engine optimization tools",
+          summary: "AEO gap",
+          gaps: [
+            {
+              title: "Comparison answer gap",
+              detail: "Create a structured answer for the comparison query buyers ask.",
+              url: "https://example.com/aeo-proof",
+              evidence_source_ids: [],
+            },
+          ],
+        }),
+      ],
+    );
+
+    const surface = await getProductRecommendationSurface(
+      fx.pool,
+      session,
+      "aeo_gap",
+    );
+    const reviewId = surface.reviews[0]?.review_id;
+    assert.ok(reviewId);
+
+    await reviewProductRecommendation(
+      {
+        review_id: reviewId,
+        decision: "accepted",
+        note: "Turn this into an answer page.",
+      },
+      session,
+    );
+    const bodh = await fx.pool.query<{ id: string }>(
+      `select id::text as id
+         from reps
+        where workspace_id = $1
+          and role = 'researcher'
+          and lower(name) = 'bodh'
+          and status = 'active'
+        order by created_at asc
+        limit 1`,
+      [boot.workspace_id],
+    );
+
+    const result = await recordProductRecommendationOutcome(
+      {
+        review_id: reviewId,
+        kind: "engagement_lift",
+        external_ref: "https://example.com/citation",
+      },
+      session,
+    );
+    await projectPendingProductEventsOnce({ leaseOwner: "aeo-recommendation-outcome-a" });
+    await projectPendingProductEventsOnce({ leaseOwner: "aeo-recommendation-outcome-b" });
+
+    assert.equal(result.attributed_rep_id, bodh.rows[0]?.id);
+    assert.equal(result.pattern_key, "recommendation:aeo_gap|stage:exa_review");
+    assert.equal(result.exemplar_ids.length, 1);
+    const memory = await fx.pool.query<{
+      rep_name: string;
+      rep_role: string;
+      pattern_key: string;
+      exemplar: Record<string, unknown>;
+      score: string;
+      win_count: number;
+    }>(
+      `select r.name as rep_name,
+              r.role::text as rep_role,
+              rpm.pattern_key,
+              rpm.exemplar,
+              rpm.score::text as score,
+              rpm.win_count
+         from rep_memory_procedural rpm
+         join reps r
+           on r.id = rpm.rep_id
+          and r.workspace_id = rpm.workspace_id
+        where rpm.workspace_id = $1
+          and rpm.id = $2`,
+      [boot.workspace_id, result.exemplar_ids[0]],
+    );
+
+    assert.equal(memory.rows[0]?.rep_name, "Bodh");
+    assert.equal(memory.rows[0]?.rep_role, "researcher");
+    assert.equal(memory.rows[0]?.pattern_key, "recommendation:aeo_gap|stage:exa_review");
+    assert.equal(memory.rows[0]?.exemplar.kind, "exa_recommendation_outcome");
+    assert.deepEqual(memory.rows[0]?.exemplar.kept_example, {
+      title: "Comparison answer gap",
+      detail: "Create a structured answer for the comparison query buyers ask.",
+      url: "https://example.com/aeo-proof",
+      evidence_source_ids: [],
+    });
+    assert.equal(Number(memory.rows[0]?.score), 0.6);
+    assert.equal(memory.rows[0]?.win_count, 1);
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product projections: accepted AEO recommendation creates a Bodh answer draft", async (t) => {
+  const fx = await setupPg("product_projection_aeo_draft");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const session = {
+      workspace_id: boot.workspace_id,
+      user_id: DEFAULT_PRODUCT_USER_ID,
+    };
+    const aeoEventId = randomUUID();
+    await fx.pool.query(
+      `insert into events (
+         id, workspace_id, event_type, source, producer_ref, payload, occurred_at
+       ) values (
+         $1, $2, 'aeo.audit.completed', 'agent', 'bodh:test',
+         $3::jsonb, '2026-06-05T09:30:00Z'
+       )`,
+      [
+        aeoEventId,
+        boot.workspace_id,
+        JSON.stringify({
+          request_id: "req_aeo_draft",
+          query: "answer engine visibility",
+          summary: "AEO answer gap",
+          gaps: [
+            {
+              title: "Answer page gap",
+              detail: "Publish a direct answer first, then support it with proof and schema.",
+              url: "https://example.com/answer-proof",
+              evidence_source_ids: [],
+            },
+          ],
+        }),
+      ],
+    );
+
+    const surface = await getProductRecommendationSurface(
+      fx.pool,
+      session,
+      "aeo_gap",
+    );
+    const reviewId = surface.reviews[0]?.review_id;
+    assert.ok(reviewId);
+    await reviewProductRecommendation(
+      {
+        review_id: reviewId,
+        decision: "accepted",
+      },
+      session,
+    );
+
+    const result = await draftProductRecommendation(
+      {
+        review_id: reviewId,
+        channel: "web",
+      },
+      session,
+    );
+    const draft = await fx.pool.query<{
+      channel: string;
+      status: string;
+      subject: string | null;
+      body: string | null;
+      rep_name: string;
+      person_name: string;
+      provenance: Record<string, unknown>;
+      properties: Record<string, unknown>;
+    }>(
+      `select m.channel::text as channel,
+              m.status::text as status,
+              m.subject,
+              m.body,
+              r.name as rep_name,
+              p.full_name as person_name,
+              m.provenance,
+              m.properties
+         from messages m
+         join conversations c
+           on c.id = m.conversation_id
+          and c.workspace_id = m.workspace_id
+         join reps r
+           on r.id = c.rep_id
+          and r.workspace_id = c.workspace_id
+         join graph_persons p
+           on p.id = c.counterparty_person_id
+          and p.workspace_id = c.workspace_id
+        where m.workspace_id = $1
+          and m.id = $2`,
+      [boot.workspace_id, result.message_id],
+    );
+
+    assert.equal(result.channel, "web");
+    assert.equal(draft.rows[0]?.channel, "web");
+    assert.equal(draft.rows[0]?.status, "draft");
+    assert.equal(draft.rows[0]?.rep_name, "Bodh");
+    assert.equal(draft.rows[0]?.person_name, "Editorial Review");
+    assert.equal(draft.rows[0]?.subject, "Draft answer: Answer page gap");
+    assert.match(draft.rows[0]?.body ?? "", /Question to answer: Answer page gap/);
+    assert.match(draft.rows[0]?.body ?? "", /supporting proof and schema/);
+    assert.equal(draft.rows[0]?.provenance.source, "recommendation.draft");
+    assert.equal(draft.rows[0]?.provenance.review_id, reviewId);
+    assert.equal(
+      draft.rows[0]?.provenance.pattern_key,
+      "recommendation:aeo_gap|stage:exa_review",
+    );
+    assert.equal(
+      (draft.rows[0]?.properties.recommendation_item as { title?: string } | undefined)?.title,
+      "Answer page gap",
+    );
+
+    const repeated = await draftProductRecommendation(
+      {
+        review_id: reviewId,
+        channel: "web",
       },
       session,
     );

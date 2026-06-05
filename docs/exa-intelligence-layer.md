@@ -352,8 +352,11 @@ Implemented and verified:
   memory through `recommendation.learning_to_procedural_memory.v1`. The
   projector waits for at least three accepted recommendations of the same kind
   and a keep rate above the quality threshold, then emits
-  `rep.memory.procedural.seeded` with kept/skipped examples. This avoids
-  overfitting to a single operator click while keeping the path replayable.
+  `rep.memory.procedural.seeded` with kept/skipped examples for the owning Rep
+  role: Vaani/content for Content opportunities and Bodh/researcher for AEO
+  gaps. This avoids overfitting to a single operator click while keeping the
+  path replayable and preventing unrelated Reps from inheriting the wrong
+  procedural examples.
 - Content and AEO research now plan Exa queries with that procedural memory:
   before search, the planner retrieves active Rep exemplars for
   `recommendation:content_opportunity|stage:exa_review` or

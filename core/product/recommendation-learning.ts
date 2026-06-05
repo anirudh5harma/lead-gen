@@ -34,6 +34,7 @@ export interface RecommendationReviewRow {
 
 interface RecommendationRepRow {
   id: string;
+  role: string;
 }
 
 export interface RecommendationLearningSummary {
@@ -85,7 +86,11 @@ export function createRecommendationLearningProjection(
         return;
       }
 
-      const reps = await getActiveRecommendationLearningReps(opts.pool, event.workspace_id);
+      const reps = await getActiveRecommendationLearningReps(
+        opts.pool,
+        event.workspace_id,
+        summary.review_kind,
+      );
       for (const rep of reps) {
         await publishRecommendationLearningSeed(opts.bus, event, rep.id, summary);
       }
@@ -135,17 +140,23 @@ async function getRecommendationLearningSummary(
 async function getActiveRecommendationLearningReps(
   pool: Pool,
   workspace_id: string,
+  review_kind: RecommendationKind,
 ): Promise<RecommendationRepRow[]> {
   const { rows } = await pool.query<RecommendationRepRow>(
-    `select id
+    `select id, role::text as role
        from reps
       where workspace_id = $1
         and status = 'active'
+        and role::text = $2
       order by created_at asc
       limit 8`,
-    [workspace_id],
+    [workspace_id, recommendationLearningRepRole(review_kind)],
   );
   return rows;
+}
+
+function recommendationLearningRepRole(review_kind: RecommendationKind): "content" | "researcher" {
+  return review_kind === "content_opportunity" ? "content" : "researcher";
 }
 
 async function publishRecommendationLearningSeed(
