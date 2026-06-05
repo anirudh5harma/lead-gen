@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAuthConfigFromEnv } from "@/core/product/auth";
 import { googleAuthPath } from "@/lib/auth/next";
 import { authSessionCookieOptions } from "@/lib/auth/session-cookie";
+import { normalizeSupabaseCookieWrite } from "@/lib/supabase/cookies";
 
 export async function proxy(request: NextRequest) {
   let response = nextWithPathname(request);
@@ -21,11 +22,12 @@ export async function proxy(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet, headers) {
-        cookiesToSet.forEach(({ name, value }) => {
+        const normalizedCookies = cookiesToSet.map(normalizeSupabaseCookieWrite);
+        normalizedCookies.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
         response = nextWithPathname(request);
-        cookiesToSet.forEach(({ name, value, options }) => {
+        normalizedCookies.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);
         });
         Object.entries(headers).forEach(([name, value]) => {

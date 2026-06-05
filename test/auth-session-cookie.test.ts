@@ -9,6 +9,7 @@ import {
 import {
   applySupabaseCookieCapture,
   createSupabaseCookieCapture,
+  normalizeSupabaseCookieWrite,
 } from "../lib/supabase/cookies.ts";
 
 test("auth cookies expire after three days", () => {
@@ -35,6 +36,26 @@ test("Supabase cookie capture applies auth cookies and cache headers to redirect
   assert.match(response.headers.get("set-cookie") ?? "", /sb-test-auth-token=session/);
   assert.match(response.headers.get("set-cookie") ?? "", /Max-Age=259200/);
   assert.equal(response.headers.get("cache-control"), "private, no-cache, no-store");
+});
+
+test("Supabase auth cookie writes are capped to three days", () => {
+  const normalized = normalizeSupabaseCookieWrite({
+    name: "sb-test-auth-token",
+    value: "session",
+    options: { path: "/", maxAge: 60 * 60 * 24 * 30 },
+  });
+
+  assert.equal(normalized.options.maxAge, AUTH_SESSION_MAX_AGE_SECONDS);
+});
+
+test("Supabase auth cookie deletion keeps its zero max-age", () => {
+  const normalized = normalizeSupabaseCookieWrite({
+    name: "sb-test-auth-token",
+    value: "",
+    options: { path: "/", maxAge: 0 },
+  });
+
+  assert.equal(normalized.options.maxAge, 0);
 });
 
 test("auth route redirects replay Supabase cookie writes", () => {

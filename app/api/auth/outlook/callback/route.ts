@@ -18,6 +18,7 @@ import { verifyState } from "../route.ts";
 import { outlookConnectedRedirectPath } from "../destination.ts";
 import { getRequestUserId } from "@/lib/auth";
 import { hasWorkspaceAccess } from "@/lib/workspace";
+import { callbackRedirectUri } from "./redirect-uri.ts";
 
 /**
  * Microsoft OAuth callback. Exchanges the auth code for tokens, encrypts the
@@ -258,27 +259,15 @@ async function startOutlookSubscriptionRepair(
   }
 }
 
-function appOrigin(req: NextRequest): string {
-  if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, "");
-  const url = new URL(req.url);
-  return `${url.protocol}//${url.host}`;
-}
-
-function callbackRedirectUri(
-  req: NextRequest,
-  state: { redirect_uri?: string },
-): string {
-  const stateRedirectUri = state.redirect_uri?.trim();
-  return (
-    stateRedirectUri ||
-    process.env.MICROSOFT_REDIRECT_URI ||
-    `${appOrigin(req)}/api/auth/outlook/callback`
-  );
-}
-
 function outlookErrorRedirect(req: NextRequest): Response {
   const dest = new URL("/dashboard/deliverability", appOrigin(req));
   dest.searchParams.set("outlook", "error");
   dest.searchParams.set("reason", "callback");
   return Response.redirect(dest.toString(), 302);
+}
+
+function appOrigin(req: NextRequest): string {
+  if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, "");
+  const url = new URL(req.url);
+  return `${url.protocol}//${url.host}`;
 }

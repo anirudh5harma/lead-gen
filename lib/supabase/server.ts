@@ -5,6 +5,7 @@ import type {
   SupabaseCookieCapture,
   SupabaseCookieWrite,
 } from "@/lib/supabase/cookies";
+import { normalizeSupabaseCookieWrite } from "@/lib/supabase/cookies";
 export {
   applySupabaseCookieCapture,
   createSupabaseCookieCapture,
@@ -28,8 +29,9 @@ export async function createServerSupabaseClient(
         return cookieStore.getAll().map(({ name, value }) => ({ name, value }));
       },
       setAll(cookiesToSet: SupabaseCookieWrite[], headers: Record<string, string> = {}) {
+        const normalizedCookies = cookiesToSet.map(normalizeSupabaseCookieWrite);
         try {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          normalizedCookies.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
           });
         } catch {
@@ -38,7 +40,7 @@ export async function createServerSupabaseClient(
           // contexts.
         }
         if (capture) {
-          capture.cookies.push(...cookiesToSet);
+          capture.cookies.push(...normalizedCookies);
           Object.assign(capture.headers, headers);
         }
       },
