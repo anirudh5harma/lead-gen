@@ -1,0 +1,12 @@
+import type { CookieOptions } from "@supabase/ssr";
+
+export const AUTH_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 3;
+
+export function authSessionCookieOptions(): CookieOptions {
+  return {
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: AUTH_SESSION_MAX_AGE_SECONDS,
+  };
+}

@@ -38,7 +38,11 @@ function healthPayload(extraChecks: Array<{ name: string; status: string; detail
 }
 
 function protectedAuthResponse(path: string): Response | null {
-  if (path === "/api/auth/outlook" || path === "/api/auth/linkedin") {
+  if (
+    path === "/api/auth/outlook" ||
+    path === "/api/auth/microsoft-mail/callback" ||
+    path === "/api/auth/linkedin"
+  ) {
     return new Response("authentication required", { status: 401 });
   }
   return null;

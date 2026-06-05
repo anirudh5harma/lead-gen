@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
+import { authSessionCookieOptions } from "@/lib/auth/session-cookie";
 export { validUuid } from "@/lib/auth/uuid";
 import { validUuid } from "@/lib/auth/uuid";
 
@@ -34,6 +35,7 @@ export async function getRequestAuthIdentity(): Promise<RequestAuthIdentity | nu
 
   const cookieStore = await cookies();
   const supabase = createServerClient(url, anonKey, {
+    cookieOptions: authSessionCookieOptions(),
     cookies: {
       getAll() {
         return cookieStore.getAll().map(({ name, value }) => ({ name, value }));

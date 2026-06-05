@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAuthConfigFromEnv } from "@/core/product/auth";
 import { googleAuthPath } from "@/lib/auth/next";
+import { authSessionCookieOptions } from "@/lib/auth/session-cookie";
 
 export async function proxy(request: NextRequest) {
   let response = nextWithPathname(request);
@@ -14,6 +15,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const supabase = createServerClient(config.url, config.anonKey, {
+    cookieOptions: authSessionCookieOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -58,6 +60,7 @@ function isProtectedRoute(request: NextRequest): boolean {
     pathname === "/brief" ||
     pathname.startsWith("/brief/") ||
     pathname.startsWith("/api/auth/outlook") ||
+    pathname.startsWith("/api/auth/microsoft-mail") ||
     pathname.startsWith("/api/internal/ops/dead-letter")
   );
 }
@@ -83,6 +86,7 @@ export const config = {
     "/dashboard/:path*",
     "/onboarding",
     "/api/auth/outlook/:path*",
+    "/api/auth/microsoft-mail/:path*",
     "/api/internal/ops/dead-letter/:path*",
     "/brief",
     "/brief/:path*",

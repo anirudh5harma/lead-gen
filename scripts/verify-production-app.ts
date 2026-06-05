@@ -68,6 +68,12 @@ export async function runProductionAppSmoke(
     checks,
   );
   await checkProtectedAuthRoute(origin, "/api/auth/outlook", fetchImpl, checks);
+  await checkProtectedAuthRoute(
+    origin,
+    "/api/auth/microsoft-mail/callback",
+    fetchImpl,
+    checks,
+  );
   await checkProtectedAuthRoute(origin, "/api/auth/linkedin", fetchImpl, checks);
   if (authCookieHeader) {
     await checkAuthenticatedPage(

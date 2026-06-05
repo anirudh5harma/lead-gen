@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import { AUTH_SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session-cookie";
 import { getRequestUserId, validUuid } from "@/lib/auth";
 import type { WorkspaceRole } from "@/lib/workspace-access";
 
@@ -23,7 +24,7 @@ export function activeWorkspaceCookieOptions() {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: AUTH_SESSION_MAX_AGE_SECONDS,
   };
 }
 

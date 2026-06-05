@@ -1,8 +1,19 @@
 import { randomUUID } from "node:crypto";
+import type { Pool, PoolClient } from "pg";
 import type { NextRequest } from "next/server";
+import { projectOutlookAuthorization } from "@/core/channels/email/index.ts";
 import { encryptCredentials } from "@/core/substrate/auth/index.ts";
-import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
+import {
+  appendPostgresEvent,
+  type EventInput,
+  type EventPayload,
+  type PublishedEvent,
+} from "@/core/substrate/events/index.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import {
+  createRestateWorkflowRuntime,
+  restateBearerFromEnv,
+} from "@/core/substrate/workflows/index.ts";
 import { verifyState } from "../route.ts";
 import { outlookConnectedRedirectPath } from "../destination.ts";
 import { getRequestUserId } from "@/lib/auth";
@@ -127,28 +138,97 @@ export async function GET(req: NextRequest): Promise<Response> {
     },
   );
 
-  const bus = await createRuntimeEventBus({ pool });
-  try {
-    await bus.publish({
-      workspace_id: state.workspace_id,
-      event_type: "email.outlook.authorization.received",
-      source: "user",
-      producer_ref: `user:${userId}`,
-      idempotency_key: `outlook-authorization:${channelAccountId}`,
-      payload: {
-        channel_account_id: channelAccountId,
-        display_name: email,
-        daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
-        encrypted_credentials: credentials,
-        ms_user_id: me.id,
-      },
-    });
-  } finally {
-    await bus.close();
-  }
+  const authorizationEvent = await appendIngressEvent(pool, {
+    workspace_id: state.workspace_id,
+    event_type: "email.outlook.authorization.received",
+    source: "user",
+    producer_ref: `user:${userId}`,
+    idempotency_key: `outlook-authorization:${channelAccountId}`,
+    payload: {
+      channel_account_id: channelAccountId,
+      display_name: email,
+      daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
+      encrypted_credentials: credentials,
+      ms_user_id: me.id,
+    },
+  });
+  await projectOutlookAuthorization(
+    pool,
+    state.workspace_id,
+    authorizationEvent.payload as EventPayload<"email.outlook.authorization.received">,
+  );
+  await appendIngressEvent(pool, {
+    workspace_id: state.workspace_id,
+    event_type: "channel.account.connected",
+    source: "system",
+    producer_ref: "projection:email.outlook.authorization.received",
+    causation_id: authorizationEvent.id,
+    correlation_id: authorizationEvent.correlation_id ?? authorizationEvent.id,
+    idempotency_key: `projection:${authorizationEvent.id}:channel.account.connected`,
+    payload: {
+      channel_account_id: channelAccountId,
+      kind: "oauth_outlook",
+      account_display_name: email,
+      provider_account_id: me.id,
+    },
+  });
+  await startOutlookSubscriptionRepair(state.workspace_id, channelAccountId);
 
   const dest = new URL(outlookConnectedRedirectPath(channelAccountId), appOrigin(req));
   return Response.redirect(dest.toString(), 302);
+}
+
+async function appendIngressEvent(
+  pool: Pool,
+  input: EventInput,
+): Promise<PublishedEvent> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const event = await appendPostgresEvent(client, input);
+    await enqueueNatsDispatch(client, event);
+    await client.query("commit");
+    return event;
+  } catch (err) {
+    await client.query("rollback").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function enqueueNatsDispatch(
+  client: PoolClient,
+  event: PublishedEvent,
+): Promise<void> {
+  await client.query(
+    `insert into event_nats_dispatches (event_id, workspace_id)
+     values ($1, $2)
+     on conflict (event_id) do nothing`,
+    [event.id, event.workspace_id],
+  );
+}
+
+async function startOutlookSubscriptionRepair(
+  workspace_id: string,
+  channel_account_id: string,
+): Promise<void> {
+  const ingressUrl = process.env.RESTATE_INGRESS_URL?.trim();
+  if (!ingressUrl) return;
+  try {
+    const runtime = createRestateWorkflowRuntime({
+      ingressUrl,
+      bearer: restateBearerFromEnv(),
+    });
+    await runtime.start({
+      workspace_id,
+      workflow_name: "email_outlook_subscription_repair",
+      idempotency_key: `outlook-subscription-bootstrap:${channel_account_id}`,
+      input: { workspace_id, channel_account_id },
+    });
+  } catch (err) {
+    console.error("[auth/outlook/callback] subscription repair start failed", err);
+  }
 }
 
 function appOrigin(req: NextRequest): string {
