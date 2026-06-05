@@ -10,6 +10,7 @@ import {
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
   runWorkspaceSignalAggregatorOnce,
+  verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
 import {
@@ -37,7 +38,10 @@ async function requireOnboardingSession(
 ): Promise<ProductWorkspaceSession> {
   const existing = await getActiveWorkspaceSession();
   if (existing) {
-    return { workspace_id: existing.workspace.id, user_id: existing.user_id };
+    return verifiedProductWorkspaceSession({
+      workspace_id: existing.workspace.id,
+      user_id: existing.user_id,
+    });
   }
   const identity = await getRequestAuthIdentity();
   if (!identity) redirect(googleAuthPath("/onboarding"));
@@ -54,7 +58,10 @@ async function requireOnboardingSession(
     identity.id,
   );
   await setActiveWorkspaceCookie(workspace.id);
-  return { workspace_id: workspace.id, user_id: identity.id };
+  return verifiedProductWorkspaceSession({
+    workspace_id: workspace.id,
+    user_id: identity.id,
+  });
 }
 
 export async function createProfileAndAggregatorAction(formData: FormData) {

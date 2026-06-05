@@ -1,7 +1,10 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import Icon from "@/components/Icon";
-import { getProductRecommendationSurface } from "@/core/product/app.ts";
+import {
+  getProductRecommendationSurface,
+  verifiedProductWorkspaceSession,
+} from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { auditAeoAction } from "../actions";
@@ -25,12 +28,13 @@ export default async function AeoPage() {
   }
 
   const pool = getPool();
+  const productSession = verifiedProductWorkspaceSession({
+    workspace_id: session.workspace.id,
+    user_id: session.user_id,
+  });
   const recommendations = await getProductRecommendationSurface(
     pool,
-    {
-      workspace_id: session.workspace.id,
-      user_id: session.user_id,
-    },
+    productSession,
     "aeo_gap",
   );
   const reviews = recommendations.reviews;

@@ -16,6 +16,7 @@ import {
   researchWorkspaceWithExa,
   runWorkspaceSignalAggregatorOnce,
   updateProductRecommendation,
+  verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
 import { getRequestUserId } from "@/lib/auth";
@@ -47,7 +48,10 @@ async function requireDashboardSession(
 ): Promise<ProductWorkspaceSession> {
   const existing = await getActiveWorkspaceSession();
   if (existing) {
-    return { workspace_id: existing.workspace.id, user_id: existing.user_id };
+    return verifiedProductWorkspaceSession({
+      workspace_id: existing.workspace.id,
+      user_id: existing.user_id,
+    });
   }
 
   const userId = await getRequestUserId();
@@ -60,7 +64,10 @@ async function requireDashboardSession(
     userId,
   );
   await setActiveWorkspaceCookie(workspace.id);
-  return { workspace_id: workspace.id, user_id: userId };
+  return verifiedProductWorkspaceSession({
+    workspace_id: workspace.id,
+    user_id: userId,
+  });
 }
 
 export async function createWorkspaceAction(formData: FormData) {

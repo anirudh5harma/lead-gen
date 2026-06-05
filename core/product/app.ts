@@ -326,9 +326,22 @@ export type WorkspaceSignalSourceAdapter =
   | "x_search"
   | "webhook";
 
+const verifiedProductWorkspaceAccess: unique symbol = Symbol("verifiedProductWorkspaceAccess");
+
 export interface ProductWorkspaceSession {
   workspace_id: string;
   user_id: string;
+  readonly [verifiedProductWorkspaceAccess]?: true;
+}
+
+export function verifiedProductWorkspaceSession(
+  session: Pick<ProductWorkspaceSession, "workspace_id" | "user_id">,
+): ProductWorkspaceSession {
+  return {
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+    [verifiedProductWorkspaceAccess]: true,
+  };
 }
 
 export interface BootstrapResult {
@@ -1017,6 +1030,7 @@ export async function assertProductWorkspaceAccess(
   session: ProductWorkspaceSession,
   pool = getPool(),
 ): Promise<void> {
+  if (session[verifiedProductWorkspaceAccess]) return;
   await withWorkspace(pool, session, async () => undefined);
 }
 

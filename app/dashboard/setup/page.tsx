@@ -2,7 +2,10 @@ import Link from "next/link";
 import Icon from "@/components/Icon";
 import { ProfileIntelligence } from "@/components/dashboard/ProfileIntelligence";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
-import { getProductCompanyProfile } from "@/core/product/app.ts";
+import {
+  getProductCompanyProfile,
+  verifiedProductWorkspaceSession,
+} from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
@@ -73,12 +76,13 @@ export default async function SetupPage() {
   if (!active) return <NoWorkspaceSetup />;
 
   const pool = getPool();
+  const productSession = verifiedProductWorkspaceSession({
+    workspace_id: active.workspace.id,
+    user_id: active.user_id,
+  });
   const [state, profile] = await Promise.all([
     loadSetupState(active.workspace.id),
-    getProductCompanyProfile(pool, {
-      workspace_id: active.workspace.id,
-      user_id: active.user_id,
-    }),
+    getProductCompanyProfile(pool, productSession),
   ]);
   const rep = state.reps[0];
   const icp = state.icps[0];

@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getProductReviewPulse } from "@/core/product/app.ts";
+import {
+  getProductReviewPulse,
+  verifiedProductWorkspaceSession,
+} from "@/core/product/app.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 
@@ -197,11 +200,12 @@ export default async function BriefPage() {
     );
   }
   const pool = getPool();
+  const productSession = verifiedProductWorkspaceSession({
+    workspace_id: session.workspace.id,
+    user_id: session.user_id,
+  });
   const [reviewPulse, running, outcomes, repActivity] = await Promise.all([
-    getProductReviewPulse(pool, {
-      workspace_id: session.workspace.id,
-      user_id: session.user_id,
-    }),
+    getProductReviewPulse(pool, productSession),
     loadRunning(session.workspace.id),
     loadOutcomes(session.workspace.id),
     loadRepActivityPulse(session.workspace.id),
