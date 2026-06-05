@@ -43,7 +43,7 @@ export function ProfileIntelligence({
             </div>
           ) : null}
         </div>
-        <div className="grid min-w-[240px] grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2 lg:min-w-[240px]">
           <ProfileMetric label="Proof" value={profile.exa_evidence_source_ids.length} />
           <ProfileMetric label="Notes" value={profile.exa_result_count} />
         </div>

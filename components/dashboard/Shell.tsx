@@ -154,7 +154,7 @@ export function DashboardShell({
         })}
       </nav>
 
-      <main className="relative z-20 mx-auto w-full max-w-[1320px] px-6 pb-16 pt-[88px] md:px-10 md:pt-[80px] lg:px-16">
+      <main className="relative z-20 mx-auto w-full max-w-[1320px] px-6 pb-16 pt-[108px] md:px-10 md:pt-[80px] lg:px-16">
         {children}
       </main>
     </div>

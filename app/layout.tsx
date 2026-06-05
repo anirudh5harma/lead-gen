@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { ToastProvider } from "@/components/Toast";
@@ -30,6 +30,12 @@ export const metadata: Metadata = {
   title: "Bombsell | Autonomous GTM",
   description:
     "Autonomous GTM workspace for founders and lean teams. Tell it the outcome, connect the essentials, and review what matters.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

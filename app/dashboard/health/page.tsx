@@ -125,17 +125,17 @@ export default async function HealthPage() {
           <ul className="grid gap-2">
             {dead.map((d) => (
               <li key={d.event_id} className="rounded-[12px] bg-[rgba(255,255,255,0.68)] px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="w-44 truncate text-xs text-[var(--color-text-3)]">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:flex-nowrap">
+                  <span className="min-w-0 max-w-full truncate text-xs text-[var(--color-text-3)] sm:w-44 sm:shrink-0">
                     {d.event_type}
                   </span>
-                  <p className="font-sans text-sm text-[var(--color-text-1)] flex-1 truncate">
+                  <p className="min-w-0 flex-1 truncate font-sans text-sm text-[var(--color-text-1)]">
                     {d.last_error ?? "(no error message)"}
                   </p>
-                  <span className="w-20 text-right text-xs tabular-nums text-[var(--color-text-3)]">
+                  <span className="text-xs tabular-nums text-[var(--color-text-3)] sm:w-20 sm:text-right">
                     {d.attempts} tries
                   </span>
-                  <span className="w-20 text-right text-xs tabular-nums text-[var(--color-text-3)]">
+                  <span className="text-xs tabular-nums text-[var(--color-text-3)] sm:w-20 sm:text-right">
                     {timeAgo(d.dead_lettered_at)}
                   </span>
                 </div>
