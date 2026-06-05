@@ -85,7 +85,7 @@ test("product auth: invalid UUIDs are ignored", () => {
   );
 });
 
-test("product auth: Supabase config requires both public env values", () => {
+test("product auth: Supabase config accepts anon or publishable public key", () => {
   assert.equal(supabaseAuthConfigFromEnv({}), null);
   assert.equal(
     supabaseAuthConfigFromEnv({
@@ -97,6 +97,21 @@ test("product auth: Supabase config requires both public env values", () => {
     supabaseAuthConfigFromEnv({
       NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
+    }),
+    { url: "https://example.supabase.co", anonKey: "anon" },
+  );
+  assert.deepEqual(
+    supabaseAuthConfigFromEnv({
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable",
+    }),
+    { url: "https://example.supabase.co", anonKey: "publishable" },
+  );
+  assert.deepEqual(
+    supabaseAuthConfigFromEnv({
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable",
     }),
     { url: "https://example.supabase.co", anonKey: "anon" },
   );

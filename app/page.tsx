@@ -37,7 +37,7 @@ export default function Home() {
             Bombsell
           </span>
           <Link
-            href="/auth/google?next=%2Fdashboard"
+            href="/dashboard"
             className="text-sm font-medium text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text-1)]"
           >
             Sign in

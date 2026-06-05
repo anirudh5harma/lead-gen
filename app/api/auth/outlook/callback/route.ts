@@ -90,9 +90,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!clientId || !clientSecret) {
     return new Response("MICROSOFT_CLIENT_{ID,SECRET} not set", { status: 500 });
   }
-  const redirectUri =
-    process.env.MICROSOFT_REDIRECT_URI ??
-    `${appOrigin(req)}/api/auth/outlook/callback`;
+  const redirectUri = callbackRedirectUri(req, state);
 
   const tokenBody = new URLSearchParams({
     client_id: clientId,
@@ -102,80 +100,109 @@ export async function GET(req: NextRequest): Promise<Response> {
     redirect_uri: redirectUri,
     scope: DEFAULT_SCOPES,
   });
-  const tokenResp = await fetch(TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: tokenBody.toString(),
-  });
+  let tokenResp: Response;
+  try {
+    tokenResp = await fetch(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: tokenBody.toString(),
+    });
+  } catch (err) {
+    console.error("[auth/outlook/callback] token request failed", err);
+    return outlookErrorRedirect(req);
+  }
   if (!tokenResp.ok) {
     const text = await tokenResp.text();
     return new Response(`token exchange failed: ${text.slice(0, 300)}`, {
       status: 502,
     });
   }
-  const tokens = (await tokenResp.json()) as TokenResponse;
+  let tokens: TokenResponse;
+  try {
+    tokens = (await tokenResp.json()) as TokenResponse;
+  } catch (err) {
+    console.error("[auth/outlook/callback] token response parse failed", err);
+    return outlookErrorRedirect(req);
+  }
 
-  const meResp = await fetch(ME_ENDPOINT, {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
+  let meResp: Response;
+  try {
+    meResp = await fetch(ME_ENDPOINT, {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+  } catch (err) {
+    console.error("[auth/outlook/callback] profile request failed", err);
+    return outlookErrorRedirect(req);
+  }
   if (!meResp.ok) {
     return new Response("failed to load /me", { status: 502 });
   }
-  const me = (await meResp.json()) as GraphMe;
-  const email = me.mail ?? me.userPrincipalName ?? me.displayName ?? "outlook";
+  let me: GraphMe;
+  try {
+    me = (await meResp.json()) as GraphMe;
+  } catch (err) {
+    console.error("[auth/outlook/callback] profile response parse failed", err);
+    return outlookErrorRedirect(req);
+  }
 
-  const pool = getPool();
-  const channelAccountId = randomUUID();
-  const credentials = encryptCredentials(
-    {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-    },
-    {
+  try {
+    const email = me.mail ?? me.userPrincipalName ?? me.displayName ?? "outlook";
+    const pool = getPool();
+    const channelAccountId = randomUUID();
+    const credentials = encryptCredentials(
+      {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+      },
+      {
+        workspace_id: state.workspace_id,
+        channel_account_id: channelAccountId,
+      },
+    );
+
+    const authorizationEvent = await appendIngressEvent(pool, {
       workspace_id: state.workspace_id,
-      channel_account_id: channelAccountId,
-    },
-  );
+      event_type: "email.outlook.authorization.received",
+      source: "user",
+      producer_ref: `user:${userId}`,
+      idempotency_key: `outlook-authorization:${channelAccountId}`,
+      payload: {
+        channel_account_id: channelAccountId,
+        display_name: email,
+        daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
+        encrypted_credentials: credentials,
+        ms_user_id: me.id,
+      },
+    });
+    await projectOutlookAuthorization(
+      pool,
+      state.workspace_id,
+      authorizationEvent.payload as EventPayload<"email.outlook.authorization.received">,
+    );
+    await appendIngressEvent(pool, {
+      workspace_id: state.workspace_id,
+      event_type: "channel.account.connected",
+      source: "system",
+      producer_ref: "projection:email.outlook.authorization.received",
+      causation_id: authorizationEvent.id,
+      correlation_id: authorizationEvent.correlation_id ?? authorizationEvent.id,
+      idempotency_key: `projection:${authorizationEvent.id}:channel.account.connected`,
+      payload: {
+        channel_account_id: channelAccountId,
+        kind: "oauth_outlook",
+        account_display_name: email,
+        provider_account_id: me.id,
+      },
+    });
+    await startOutlookSubscriptionRepair(state.workspace_id, channelAccountId);
 
-  const authorizationEvent = await appendIngressEvent(pool, {
-    workspace_id: state.workspace_id,
-    event_type: "email.outlook.authorization.received",
-    source: "user",
-    producer_ref: `user:${userId}`,
-    idempotency_key: `outlook-authorization:${channelAccountId}`,
-    payload: {
-      channel_account_id: channelAccountId,
-      display_name: email,
-      daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
-      encrypted_credentials: credentials,
-      ms_user_id: me.id,
-    },
-  });
-  await projectOutlookAuthorization(
-    pool,
-    state.workspace_id,
-    authorizationEvent.payload as EventPayload<"email.outlook.authorization.received">,
-  );
-  await appendIngressEvent(pool, {
-    workspace_id: state.workspace_id,
-    event_type: "channel.account.connected",
-    source: "system",
-    producer_ref: "projection:email.outlook.authorization.received",
-    causation_id: authorizationEvent.id,
-    correlation_id: authorizationEvent.correlation_id ?? authorizationEvent.id,
-    idempotency_key: `projection:${authorizationEvent.id}:channel.account.connected`,
-    payload: {
-      channel_account_id: channelAccountId,
-      kind: "oauth_outlook",
-      account_display_name: email,
-      provider_account_id: me.id,
-    },
-  });
-  await startOutlookSubscriptionRepair(state.workspace_id, channelAccountId);
-
-  const dest = new URL(outlookConnectedRedirectPath(channelAccountId), appOrigin(req));
-  return Response.redirect(dest.toString(), 302);
+    const dest = new URL(outlookConnectedRedirectPath(channelAccountId), appOrigin(req));
+    return Response.redirect(dest.toString(), 302);
+  } catch (err) {
+    console.error("[auth/outlook/callback] completion failed", err);
+    return outlookErrorRedirect(req);
+  }
 }
 
 async function appendIngressEvent(
@@ -235,4 +262,23 @@ function appOrigin(req: NextRequest): string {
   if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, "");
   const url = new URL(req.url);
   return `${url.protocol}//${url.host}`;
+}
+
+function callbackRedirectUri(
+  req: NextRequest,
+  state: { redirect_uri?: string },
+): string {
+  const stateRedirectUri = state.redirect_uri?.trim();
+  return (
+    stateRedirectUri ||
+    process.env.MICROSOFT_REDIRECT_URI ||
+    `${appOrigin(req)}/api/auth/outlook/callback`
+  );
+}
+
+function outlookErrorRedirect(req: NextRequest): Response {
+  const dest = new URL("/dashboard/deliverability", appOrigin(req));
+  dest.searchParams.set("outlook", "error");
+  dest.searchParams.set("reason", "callback");
+  return Response.redirect(dest.toString(), 302);
 }

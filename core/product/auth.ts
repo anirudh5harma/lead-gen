@@ -87,6 +87,8 @@ export function supabaseAuthConfigFromEnv(
   env: Record<string, string | undefined> = process.env,
 ): SupabaseAuthConfig | null {
   const url = env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const anonKey =
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   return url && anonKey ? { url, anonKey } : null;
 }

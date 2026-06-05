@@ -21,3 +21,13 @@ test("legacy Microsoft mail callback route uses the Outlook callback handler", (
   assert.match(route, /export const dynamic = "force-dynamic"/);
   assert.match(route, /export \{ GET \} from "\.\.\/\.\.\/outlook\/callback\/route"/);
 });
+
+test("Outlook OAuth state carries the exact callback redirect URI", () => {
+  const startRoute = readFileSync("app/api/auth/outlook/route.ts", "utf8");
+  const callbackRoute = readFileSync("app/api/auth/outlook/callback/route.ts", "utf8");
+
+  assert.match(startRoute, /redirect_uri: redirectUri/);
+  assert.match(startRoute, /redirect_uri\?: string/);
+  assert.match(callbackRoute, /const redirectUri = callbackRedirectUri\(req, state\)/);
+  assert.match(callbackRoute, /stateRedirectUri \|\|/);
+});

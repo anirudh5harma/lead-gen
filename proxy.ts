@@ -35,8 +35,8 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const { data } = await supabase.auth.getUser();
-  if (protectedRoute && !data.user) {
+  const { data } = await supabase.auth.getClaims();
+  if (protectedRoute && !data?.claims) {
     return unauthenticatedResponse(request);
   }
   return response;

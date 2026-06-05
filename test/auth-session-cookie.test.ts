@@ -49,3 +49,15 @@ test("auth route redirects replay Supabase cookie writes", () => {
     assert.match(body, /applySupabaseCookieCapture\(response, supabaseCookies\)/);
   }
 });
+
+test("public entry opens the protected app so existing sessions are reused", () => {
+  const body = readFileSync("app/page.tsx", "utf8");
+  assert.match(body, /href="\/dashboard"/);
+  assert.doesNotMatch(body, /href="\/auth\/google\?next=%2Fdashboard"/);
+});
+
+test("proxy refreshes auth cookies with claims and accepts publishable keys", () => {
+  const body = readFileSync("proxy.ts", "utf8");
+  assert.match(body, /supabase\.auth\.getClaims\(\)/);
+  assert.match(body, /supabaseAuthConfigFromEnv\(\)/);
+});

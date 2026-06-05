@@ -37,6 +37,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     {
       workspace_id: session.workspace.id,
       user_id: session.user_id,
+      redirect_uri: redirectUri,
       nonce: randomBytes(12).toString("base64url"),
       iat: Date.now(),
     },
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 interface OAuthState {
   workspace_id: string;
   user_id: string;
+  redirect_uri?: string;
   nonce: string;
   iat: number;
 }
