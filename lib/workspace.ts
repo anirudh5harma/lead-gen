@@ -3,6 +3,7 @@ import { cache } from "react";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { AUTH_SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session-cookie";
 import { getRequestUserId, validUuid } from "@/lib/auth";
+import { activeWorkspaceLookup } from "@/lib/workspace-selection";
 import type { WorkspaceRole } from "@/lib/workspace-access";
 
 export interface ActiveWorkspace {
@@ -49,19 +50,10 @@ export const getActiveWorkspaceSession = cache(async (): Promise<ActiveWorkspace
 
   const jar = await cookies();
   const selected = validUuid(jar.get(ACTIVE_WORKSPACE_COOKIE_NAME)?.value);
-  const params: string[] = selected ? [userId, selected] : [userId];
-  const selectedClause = selected ? "and w.id = $2" : "";
+  const lookup = activeWorkspaceLookup(userId, selected);
   const { rows } = await getPool().query<ActiveWorkspace & { role: WorkspaceRole }>(
-    `select w.id, w.slug::text as slug, w.name, wm.role::text as role
-       from workspaces w
-       join workspace_members wm on wm.workspace_id = w.id
-      where wm.user_id = $1
-        and wm.accepted_at is not null
-        and w.archived_at is null
-        ${selectedClause}
-      order by w.created_at desc
-      limit 1`,
-    params,
+    lookup.sql,
+    lookup.params,
   );
   if (!rows[0]) return null;
   const { role, ...workspace } = rows[0];
