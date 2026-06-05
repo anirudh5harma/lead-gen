@@ -1,7 +1,9 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
+import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
+import { runSignalAggregatorAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -141,10 +143,20 @@ export default async function CampaignsPage() {
         title={<>Run small bets. <em>Scale the winners.</em></>}
         description="Prayog turns qualified signals into small campaign ideas. Approve one, watch the outcome, and the next idea is sharper."
         meta={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <HeroStat label="Qualified today" value={counts.qualified_today} />
             <HeroStat label="Ideas this week" value={counts.ideas_week} />
             <HeroStat label="Outcomes this week" value={counts.outcomes_week} />
+            <form action={runSignalAggregatorAction}>
+              <input type="hidden" name="limit" value="8" />
+              <button
+                type="submit"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+              >
+                <Icon name="refresh" size={16} />
+                Run signals
+              </button>
+            </form>
           </div>
         }
       />

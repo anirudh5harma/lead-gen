@@ -1,8 +1,10 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
+import Icon from "@/components/Icon";
 import { getProductRecommendationSurface } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { auditAeoAction } from "../actions";
 import {
   RecommendationLearningBadge,
   RecommendationReviewGrid,
@@ -43,9 +45,31 @@ export default async function AeoPage() {
         title={<>Make AI engines <em>cite you</em>.</>}
         description="Bodh watches how ChatGPT, Perplexity, and Google AI Overviews answer your category questions, then suggests the structured content that earns a citation."
         meta={
-          <div className="flex flex-wrap gap-2">
-            <HeroStat label="Open suggestions" value={open} />
-            <HeroStat label="Acted on" value={recorded} />
+          <div className="grid gap-4">
+            <div className="flex flex-wrap gap-2">
+              <HeroStat label="Open suggestions" value={open} />
+              <HeroStat label="Acted on" value={recorded} />
+            </div>
+            <form action={auditAeoAction} className="flex max-w-2xl flex-col gap-2 sm:flex-row">
+              <input type="hidden" name="num_results" value="8" />
+              <label className="sr-only" htmlFor="aeo-query">
+                AEO audit query
+              </label>
+              <input
+                id="aeo-query"
+                name="query"
+                required
+                placeholder="best tools, alternatives, category questions"
+                className="min-h-10 min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 text-sm text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
+              />
+              <button
+                type="submit"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+              >
+                <Icon name="neurology" size={16} />
+                Audit AEO
+              </button>
+            </form>
           </div>
         }
       />

@@ -1,8 +1,10 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
+import Icon from "@/components/Icon";
 import { getProductRecommendationSurface } from "@/core/product/app.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { discoverContentOpportunitiesAction } from "../actions";
 import {
   RecommendationLearningBadge,
   RecommendationReviewGrid,
@@ -128,11 +130,33 @@ export default async function ContentPage() {
         title={<>Post what is <em>worth posting</em>.</>}
         description="Vaani turns proof, questions, and recent moves into one-liner angles. Save the useful ones, shape them into posts, and Vaani learns from what actually gets published."
         meta={
-          <div className="flex flex-wrap gap-2">
-            <HeroStat label="Ideas open" value={angles.length} />
-            <HeroStat label="Drafts" value={contentDrafts.length} />
-            <HeroStat label="Published 7d" value={stats.posts_published_7d} />
-            <HeroStat label="Lift 7d" value={stats.engagement_lift_7d} />
+          <div className="grid gap-4">
+            <div className="flex flex-wrap gap-2">
+              <HeroStat label="Ideas open" value={angles.length} />
+              <HeroStat label="Drafts" value={contentDrafts.length} />
+              <HeroStat label="Published 7d" value={stats.posts_published_7d} />
+              <HeroStat label="Lift 7d" value={stats.engagement_lift_7d} />
+            </div>
+            <form action={discoverContentOpportunitiesAction} className="flex max-w-2xl flex-col gap-2 sm:flex-row">
+              <input type="hidden" name="num_results" value="8" />
+              <label className="sr-only" htmlFor="content-query">
+                Content research query
+              </label>
+              <input
+                id="content-query"
+                name="query"
+                required
+                placeholder="pricing objections, buyer questions, competitor proof"
+                className="min-h-10 min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 text-sm text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
+              />
+              <button
+                type="submit"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+              >
+                <Icon name="travel_explore" size={16} />
+                Find ideas
+              </button>
+            </form>
           </div>
         }
       />

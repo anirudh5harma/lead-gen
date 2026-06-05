@@ -11,6 +11,8 @@ import {
   deleteProductRecommendation,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
+  researchWorkspaceWithExa,
+  runWorkspaceSignalAggregatorOnce,
   updateProductRecommendation,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
@@ -208,6 +210,47 @@ export async function recordRecommendationOutcomeAction(formData: FormData) {
         surface: value(formData, "surface") || "recommendation_review",
       },
     },
+    session,
+  );
+  revalidateProductPaths();
+}
+
+export async function discoverContentOpportunitiesAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const query = value(formData, "query");
+  if (!query) throw new Error("Enter a content research query.");
+  await researchWorkspaceWithExa(
+    {
+      query,
+      intent: "content_research",
+      include_text: true,
+      num_results: numberValue(formData, "num_results", 8),
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
+export async function auditAeoAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const query = value(formData, "query");
+  if (!query) throw new Error("Enter an AEO audit query.");
+  await researchWorkspaceWithExa(
+    {
+      query,
+      intent: "aeo_audit",
+      include_text: true,
+      num_results: numberValue(formData, "num_results", 8),
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
+export async function runSignalAggregatorAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  await runWorkspaceSignalAggregatorOnce(
+    { limit: numberValue(formData, "limit", 8) },
     session,
   );
   revalidateProductPaths();
