@@ -122,6 +122,10 @@ import {
   type ProductSubstrateMode,
 } from "./substrate.ts";
 import {
+  buildCampaignOutcomeLearningExemplar,
+  campaignOutcomePatternKey,
+} from "./campaign-learning.ts";
+import {
   planExaResearchQuery,
   recommendationResearchPatternKey,
 } from "./exa-query-planning.ts";
@@ -609,6 +613,36 @@ export interface ProductRecommendationOutcomeResult {
   review_id: string;
   outcome_id: string;
   kind: ProductRecommendationOutcomeKind;
+  attributed_rep_id: string | null;
+  pattern_key: string;
+  exemplar_ids: string[];
+}
+
+export type ProductCampaignOutcomeKind =
+  | "positive_reply"
+  | "meeting_booked"
+  | "opportunity_created"
+  | "deal_won"
+  | "engagement_lift"
+  | "unsubscribe"
+  | "bounce"
+  | "do_not_contact";
+
+export interface ProductCampaignOutcomeInput {
+  play_run_id: string;
+  kind: ProductCampaignOutcomeKind;
+  score?: number;
+  occurred_at?: string;
+  external_ref?: string | null;
+  note?: string | null;
+  properties?: Record<string, unknown>;
+}
+
+export interface ProductCampaignOutcomeResult {
+  workspace_id: string;
+  play_run_id: string;
+  outcome_id: string;
+  kind: ProductCampaignOutcomeKind;
   attributed_rep_id: string | null;
   pattern_key: string;
   exemplar_ids: string[];
@@ -2761,6 +2795,95 @@ export async function recordProductRecommendationOutcome(
   return {
     workspace_id: session.workspace_id,
     review_id: reviewId,
+    outcome_id: event.payload.outcome_id,
+    kind: input.kind,
+    attributed_rep_id: attribution.rep_id,
+    pattern_key,
+    exemplar_ids: attribution.exemplar_ids,
+  };
+}
+
+export async function recordProductCampaignOutcome(
+  input: ProductCampaignOutcomeInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductCampaignOutcomeResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const playRunId = input.play_run_id.trim();
+  if (!playRunId) throw new Error("play_run_id is required");
+
+  const playRun = await findCampaignOutcomePlayRun(
+    engine.pool,
+    session.workspace_id,
+    playRunId,
+  );
+  if (!playRun) throw new Error(`Play run not found: ${playRunId}`);
+
+  const pattern_key = campaignOutcomePatternKey(playRun.play_id);
+  const attribution = await findOrSeedCampaignOutcomeAttribution(
+    engine,
+    session,
+    playRun,
+    pattern_key,
+    input.kind,
+    input.note ?? null,
+  );
+  const occurredAtInput = input.occurred_at?.trim() || null;
+  const occurred_at = occurredAtInput
+    ? new Date(occurredAtInput).toISOString()
+    : new Date().toISOString();
+  const properties = {
+    ...(input.properties ?? {}),
+    campaign_play_run_id: playRunId,
+    campaign_play_id: playRun.play_id,
+    campaign_play_name: playRun.play_name,
+    external_ref: input.external_ref ?? null,
+    note: input.note?.trim() || null,
+    pattern_key,
+    exemplar_ids: attribution.exemplar_ids,
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "outcome.recorded",
+    source: "user",
+    producer_ref: `user:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "outcome.recorded",
+      session.workspace_id,
+      playRunId,
+      {
+        kind: input.kind,
+        score: input.score ?? null,
+        occurred_at: occurredAtInput,
+        external_ref: input.external_ref ?? null,
+        note: input.note?.trim() || null,
+      },
+    ),
+    payload: {
+      outcome_id: randomUUID(),
+      kind: input.kind,
+      score: clamp01(input.score ?? defaultCampaignOutcomeScore(input.kind)),
+      conversation_id: null,
+      attributed_play_id: playRun.play_id,
+      attributed_play_run_id: playRunId,
+      attributed_message_id: null,
+      attributed_signal_id: playRun.trigger_event_signal_id,
+      attributed_rep_id: attribution.rep_id,
+      properties,
+      provenance: {
+        source: "campaign.outcome",
+        play_run_id: playRunId,
+        recorded_by: session.user_id,
+      },
+      occurred_at,
+    },
+  });
+  if (engine.substrateMode === "postgres") {
+    await projectVisibleProductState(engine);
+  }
+  return {
+    workspace_id: session.workspace_id,
+    play_run_id: playRunId,
     outcome_id: event.payload.outcome_id,
     kind: input.kind,
     attributed_rep_id: attribution.rep_id,
@@ -7036,6 +7159,144 @@ function recommendationMutationState(rows: Array<{
   return mutations;
 }
 
+interface CampaignOutcomePlayRun {
+  play_run_id: string;
+  play_id: string;
+  play_name: string;
+  rep_id: string | null;
+  rep_name: string | null;
+  output: Record<string, unknown> | null;
+  trigger_event_signal_id: string | null;
+}
+
+async function findCampaignOutcomePlayRun(
+  pool: Pool,
+  workspace_id: string,
+  play_run_id: string,
+): Promise<CampaignOutcomePlayRun | null> {
+  const { rows } = await pool.query<CampaignOutcomePlayRun>(
+    `select pr.id::text as play_run_id,
+            pr.play_id::text as play_id,
+            p.name as play_name,
+            coalesce(
+              run_rep.id,
+              default_rep.id,
+              campaign_rep.id,
+              active_rep.id
+            )::text as rep_id,
+            coalesce(
+              run_rep.name,
+              default_rep.name,
+              campaign_rep.name,
+              active_rep.name
+            ) as rep_name,
+            pr.output,
+            case
+              when e.payload->>'signal_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+                then e.payload->>'signal_id'
+              else null
+            end as trigger_event_signal_id
+       from play_runs pr
+       join plays p on p.id = pr.play_id
+       left join reps run_rep
+         on run_rep.id = pr.rep_id
+        and run_rep.workspace_id = pr.workspace_id
+       left join reps default_rep
+         on default_rep.id = p.default_rep_id
+        and default_rep.workspace_id = pr.workspace_id
+       left join events e
+         on e.id = pr.trigger_event_id
+        and e.workspace_id = pr.workspace_id
+       left join lateral (
+         select id, name
+           from reps
+          where workspace_id = pr.workspace_id
+            and role = 'campaign'
+            and status = 'active'
+          order by created_at asc
+          limit 1
+       ) campaign_rep on true
+       left join lateral (
+         select id, name
+           from reps
+          where workspace_id = pr.workspace_id
+            and status = 'active'
+          order by created_at asc
+          limit 1
+       ) active_rep on true
+      where pr.workspace_id = $1
+        and pr.id = $2
+      limit 1`,
+    [workspace_id, play_run_id],
+  );
+  return rows[0] ?? null;
+}
+
+async function findOrSeedCampaignOutcomeAttribution(
+  engine: ProductEngine,
+  session: ProductWorkspaceSession,
+  playRun: CampaignOutcomePlayRun,
+  pattern_key: string,
+  outcome_kind: ProductCampaignOutcomeKind,
+  note: string | null,
+): Promise<{ rep_id: string | null; exemplar_ids: string[] }> {
+  if (!playRun.rep_id) return { rep_id: null, exemplar_ids: [] };
+  const existing = await engine.pool.query<{ id: string }>(
+    `select id::text
+       from rep_memory_procedural
+      where workspace_id = $1
+        and rep_id = $2
+        and pattern_key = $3
+      order by score desc, created_at desc
+      limit 3`,
+    [session.workspace_id, playRun.rep_id, pattern_key],
+  );
+  if (existing.rows.length > 0) {
+    return {
+      rep_id: playRun.rep_id,
+      exemplar_ids: existing.rows.map((row) => row.id),
+    };
+  }
+
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "rep.memory.procedural.seeded",
+    source: "system",
+    producer_ref: `user:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "rep.memory.procedural.seeded",
+      session.workspace_id,
+      playRun.play_run_id,
+      {
+        rep_id: playRun.rep_id,
+        pattern_key,
+      },
+    ),
+    payload: {
+      exemplar_id: randomUUID(),
+      rep_id: playRun.rep_id,
+      pattern_key,
+      exemplar: buildCampaignOutcomeLearningExemplar({
+        play_id: playRun.play_id,
+        play_run_id: playRun.play_run_id,
+        play_name: playRun.play_name,
+        rep_name: playRun.rep_name,
+        outcome_kind,
+        output: playRun.output,
+        note,
+      }),
+      initial_score: 0.55,
+    },
+  });
+  if (engine.substrateMode === "postgres") {
+    await createProceduralMemorySeedProjection(engine.pool).apply(event);
+  }
+  return {
+    rep_id: playRun.rep_id,
+    exemplar_ids: [event.payload.exemplar_id],
+  };
+}
+
 async function findAcceptedRecommendationReview(
   pool: Pool,
   workspace_id: string,
@@ -7137,6 +7398,15 @@ function defaultRecommendationOutcomeScore(kind: ProductRecommendationOutcomeKin
   if (kind === "post_published") return 0.55;
   if (kind === "follower_lift") return 0.65;
   return 0.6;
+}
+
+function defaultCampaignOutcomeScore(kind: ProductCampaignOutcomeKind): number {
+  if (kind === "deal_won") return 1;
+  if (kind === "meeting_booked") return 0.85;
+  if (kind === "opportunity_created") return 0.75;
+  if (kind === "positive_reply") return 0.65;
+  if (kind === "engagement_lift") return 0.6;
+  return 0.1;
 }
 
 function decorateProductReviewItem(

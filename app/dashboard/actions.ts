@@ -9,6 +9,7 @@ import {
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
   deleteProductRecommendation,
+  recordProductCampaignOutcome,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
   researchWorkspaceWithExa,
@@ -208,6 +209,35 @@ export async function recordRecommendationOutcomeAction(formData: FormData) {
       properties: {
         recorded_from: "dashboard",
         surface: value(formData, "surface") || "recommendation_review",
+      },
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
+export async function recordCampaignOutcomeAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const playRunId = value(formData, "play_run_id");
+  if (!playRunId) return;
+  const kindValue = value(formData, "outcome_kind");
+  const kind =
+    kindValue === "meeting_booked"
+      ? "meeting_booked"
+      : kindValue === "deal_won"
+        ? "deal_won"
+        : kindValue === "positive_reply"
+          ? "positive_reply"
+          : "opportunity_created";
+  await recordProductCampaignOutcome(
+    {
+      play_run_id: playRunId,
+      kind,
+      note: value(formData, "note") || null,
+      external_ref: value(formData, "external_ref") || null,
+      properties: {
+        recorded_from: "dashboard",
+        surface: "campaigns",
       },
     },
     session,

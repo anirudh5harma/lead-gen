@@ -24,6 +24,7 @@ import {
   researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
   recordProductRecommendationOutcome,
+  recordProductCampaignOutcome,
   reviewProductRecommendation,
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
@@ -72,6 +73,16 @@ const RecommendationOutcomeKindSchema = z.enum([
   "post_published",
   "follower_lift",
   "engagement_lift",
+]);
+const CampaignOutcomeKindSchema = z.enum([
+  "positive_reply",
+  "meeting_booked",
+  "opportunity_created",
+  "deal_won",
+  "engagement_lift",
+  "unsubscribe",
+  "bounce",
+  "do_not_contact",
 ]);
 const LinkedInActionSchema = z.enum([
   "linkedin_connection",
@@ -774,6 +785,33 @@ export function registerProductTools(): void {
     }),
     async handler(input, ctx) {
       return recordProductRecommendationOutcome(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.campaign.outcome.record",
+    description:
+      "Record a real Outcome for a Prayog campaign Play run, attributing the result back to campaign procedural memory.",
+    kind: "write",
+    input: z.object({
+      play_run_id: z.string().uuid(),
+      kind: CampaignOutcomeKindSchema,
+      score: z.number().min(0).max(1).optional(),
+      occurred_at: z.string().datetime().optional(),
+      external_ref: z.string().nullable().optional(),
+      note: z.string().nullable().optional(),
+      properties: z.record(z.string(), z.unknown()).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      play_run_id: z.string().uuid(),
+      outcome_id: z.string().uuid(),
+      kind: CampaignOutcomeKindSchema,
+      attributed_rep_id: z.string().uuid().nullable(),
+      pattern_key: z.string().min(1),
+      exemplar_ids: z.array(z.string().uuid()),
+    }),
+    async handler(input, ctx) {
+      return recordProductCampaignOutcome(input, sessionFromContext(ctx));
     },
   });
 

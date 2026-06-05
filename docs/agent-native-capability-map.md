@@ -29,6 +29,7 @@ projection, and visible UI feedback where applicable.
 | Configure Exa open-web Signals | `/dashboard/campaigns`, MCP/internal Rep execution | `product.signal.discover_open_web` | `signal.discover.open_web.exa` configures adapter `exa` -> durable workspace poll -> `signal.discovered` | Ready |
 | Configure default aggregator | `/onboarding` | `product.sources.default_aggregator.configure` | Emits Firecrawl-adjacent free/native source configuration events only: Google News, HN front, HN Who's Hiring, and Product Hunt | Ready |
 | Run signal aggregator | `/dashboard/campaigns`, MCP/internal Rep execution | `product.sources.aggregate.run` | Starts `ingest_workspace_poll` workflow | Ready |
+| Record campaign Outcome | `/dashboard/campaigns`, MCP/internal Rep execution | `product.campaign.outcome.record` | Emits `outcome.recorded` for a Prayog Play run with Play, Rep, pattern, and exemplar attribution so existing Outcome -> procedural memory learning applies | Ready |
 | Push source-backed Signal | `/api/webhooks/signals`, external source, agent tool | `product.signal.discover` | Authenticated webhook/tool emits `signal.discovered`; projector materializes `Signal` and emits `signal.ingested` | Ready |
 | Submit manual signal | MCP/internal Rep execution | `product.signal.submit` | Manual Signal ingestion event path | Ready |
 | Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email/LinkedIn Play workflows; weak or stale evidence triggers Exa draft grounding before writer/judge | Ready |

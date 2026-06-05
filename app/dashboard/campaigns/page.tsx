@@ -3,7 +3,10 @@ import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/Su
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
-import { runSignalAggregatorAction } from "../actions";
+import {
+  recordCampaignOutcomeAction,
+  runSignalAggregatorAction,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -218,7 +221,47 @@ function CampaignIdeaNote({ idea }: { idea: CampaignIdeaRow }) {
           : "Waiting for the first useful response"}
         {learning ? `. Learning: ${learning}` : ""}
       </p>
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--color-line-2)] pt-3">
+        <CampaignOutcomeButton
+          playRunId={idea.id}
+          kind="opportunity_created"
+          label={outcomes > 0 ? "Add useful" : "Useful"}
+          icon="check_circle"
+        />
+        <CampaignOutcomeButton
+          playRunId={idea.id}
+          kind="meeting_booked"
+          label="Meeting"
+          icon="event_available"
+        />
+      </div>
     </article>
+  );
+}
+
+function CampaignOutcomeButton({
+  playRunId,
+  kind,
+  label,
+  icon,
+}: {
+  playRunId: string;
+  kind: "opportunity_created" | "meeting_booked";
+  label: string;
+  icon: string;
+}) {
+  return (
+    <form action={recordCampaignOutcomeAction}>
+      <input type="hidden" name="play_run_id" value={playRunId} />
+      <input type="hidden" name="outcome_kind" value={kind} />
+      <button
+        type="submit"
+        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[8px] border border-[color:var(--color-line-2)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)] active:translate-y-px"
+      >
+        <Icon name={icon} size={15} />
+        {label}
+      </button>
+    </form>
   );
 }
 
