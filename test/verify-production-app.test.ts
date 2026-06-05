@@ -55,7 +55,7 @@ test("production app smoke passes for a fully ready production app", async () =>
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
-      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       return new Response(null, { status: 404 });
@@ -76,7 +76,7 @@ test("production app smoke allows only the known LinkedIn provider readiness gap
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
-      if (path === "/api/health") {
+      if (path === "/api/health/readiness") {
         return response(
           healthPayload([
             {
@@ -108,7 +108,7 @@ test("production app smoke fails when dashboard does not go straight to Google O
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
-      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/login?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       return new Response(null, { status: 404 });
@@ -129,7 +129,7 @@ test("production app smoke fails on unexpected degraded health checks", async ()
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
-      if (path === "/api/health") {
+      if (path === "/api/health/readiness") {
         return response(
           healthPayload([
             { name: "database", status: "degraded", detail: "connection failed" },
@@ -162,7 +162,7 @@ test("production app smoke verifies a signed-in completed workspace session", as
         const protectedResponse = protectedAuthResponse(path);
         if (protectedResponse) return protectedResponse;
       }
-      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") {
         return signedIn
           ? new Response("<main>Brief</main>", {
@@ -223,7 +223,7 @@ test("production app smoke fails when a completed session still sees onboarding"
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
-      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return new Response("<main>Brief</main>", { status: 200 });
       if (path === "/onboarding") {
         return new Response("<form>Company URL</form>", { status: 200 });
@@ -255,7 +255,7 @@ test("production app smoke can verify MCP readiness discovery with a bearer toke
       const authorization = new Headers(init?.headers).get("authorization");
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
-      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       if (path === "/api/mcp" && authorization === "Bearer supabase-access-token") {
@@ -284,7 +284,7 @@ test("production app smoke fails when Outlook OAuth starts without a workspace s
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
-      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       if (path === "/api/auth/outlook") {
@@ -309,7 +309,7 @@ test("production app smoke fails when LinkedIn OAuth exposes provider setup befo
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
-      if (path === "/api/health") return response(healthPayload());
+      if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
       if (path === "/api/auth/outlook") {
