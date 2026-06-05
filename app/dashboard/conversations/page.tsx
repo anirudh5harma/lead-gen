@@ -192,7 +192,11 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
     };
   return (
     <article className="grid gap-3 rounded-[12px] bg-[rgba(255,255,255,0.68)] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.92)] md:grid-cols-[1fr_auto] md:items-center">
-      <Link href={`/dashboard/conversations/${conversation.id}`} className="min-w-0">
+      <Link
+        href={`/dashboard/conversations/${conversation.id}`}
+        prefetch={false}
+        className="min-w-0"
+      >
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-8 shrink-0 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
             <Icon name={repIcon(conversation.rep_name)} size={16} />

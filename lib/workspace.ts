@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { AUTH_SESSION_MAX_AGE_SECONDS } from "@/lib/auth/session-cookie";
 import { getRequestUserId, validUuid } from "@/lib/auth";
@@ -42,7 +43,7 @@ export async function hasWorkspaceAccess(
   return Boolean(rows[0]?.ok);
 }
 
-export async function getActiveWorkspaceSession(): Promise<ActiveWorkspaceSession | null> {
+export const getActiveWorkspaceSession = cache(async (): Promise<ActiveWorkspaceSession | null> => {
   const userId = await getRequestUserId();
   if (!userId) return null;
 
@@ -65,13 +66,13 @@ export async function getActiveWorkspaceSession(): Promise<ActiveWorkspaceSessio
   if (!rows[0]) return null;
   const { role, ...workspace } = rows[0];
   return { workspace, user_id: userId, role };
-}
+});
 
 export async function getActiveWorkspace(): Promise<ActiveWorkspace | null> {
   return (await getActiveWorkspaceSession())?.workspace ?? null;
 }
 
-export async function listWorkspaces(): Promise<ActiveWorkspace[]> {
+export const listWorkspaces = cache(async (): Promise<ActiveWorkspace[]> => {
   const userId = await getRequestUserId();
   if (!userId) return [];
   const { rows } = await getPool().query<ActiveWorkspace>(
@@ -85,7 +86,7 @@ export async function listWorkspaces(): Promise<ActiveWorkspace[]> {
     [userId],
   );
   return rows;
-}
+});
 
 export async function setActiveWorkspaceCookie(workspaceId: string): Promise<void> {
   const userId = await getRequestUserId();

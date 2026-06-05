@@ -51,6 +51,7 @@ export function DashboardShell({
         <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
             href="/dashboard"
+            prefetch={false}
             className="flex items-center gap-2 text-[1.0625rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
@@ -73,6 +74,7 @@ export function DashboardShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={false}
                   aria-current={active ? "page" : undefined}
                   className={
                     "rounded-md px-2.5 py-1.5 text-[13.5px] transition-colors " +
@@ -140,6 +142,7 @@ export function DashboardShell({
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               aria-current={active ? "page" : undefined}
               className={
                 "shrink-0 rounded-md px-2.5 py-1 text-[13px] transition-colors " +
@@ -181,6 +184,7 @@ export function EmptyState({
       {cta ? (
         <Link
           href={cta.href}
+          prefetch={false}
           className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
         >
           {cta.icon ? <Icon name={cta.icon} size={16} /> : null}

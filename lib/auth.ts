@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
 import { authSessionCookieOptions } from "@/lib/auth/session-cookie";
 export { validUuid } from "@/lib/auth/uuid";
@@ -26,7 +27,7 @@ function demoIdentity(): RequestAuthIdentity | null {
   return id ? { id, email: null, email_verified: false } : null;
 }
 
-export async function getRequestAuthIdentity(): Promise<RequestAuthIdentity | null> {
+export const getRequestAuthIdentity = cache(async (): Promise<RequestAuthIdentity | null> => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
@@ -66,7 +67,7 @@ export async function getRequestAuthIdentity(): Promise<RequestAuthIdentity | nu
     email: data.user.email ?? null,
     email_verified: hasVerifiedEmail(data.user as AuthVerifiedEmailUser | null),
   };
-}
+});
 
 export async function getRequestUserId(): Promise<string | null> {
   return (await getRequestAuthIdentity())?.id ?? null;

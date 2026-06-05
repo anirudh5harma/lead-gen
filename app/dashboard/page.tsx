@@ -287,6 +287,7 @@ function BriefView({
             <Link
               key={tile.name}
               href={tile.href}
+              prefetch={false}
               className="group rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
             >
               <div className="flex items-center gap-2">
@@ -458,7 +459,11 @@ function FeedRow({
   if (href) {
     return (
       <li>
-        <Link href={href} className="block transition-colors hover:bg-[var(--color-ink-2)]/40">
+        <Link
+          href={href}
+          prefetch={false}
+          className="block transition-colors hover:bg-[var(--color-ink-2)]/40"
+        >
           {inner}
         </Link>
       </li>

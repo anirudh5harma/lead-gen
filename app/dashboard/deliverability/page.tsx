@@ -207,6 +207,7 @@ export default async function DeliverabilityPage() {
           <div className="mb-3">
             <Link
               href="/api/auth/outlook"
+              prefetch={false}
               className="inline-flex min-h-9 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
             >
               <Icon name="mail" size={15} />

@@ -214,6 +214,7 @@ export default async function SetupPage() {
           </div>
           <Link
             href="/api/auth/outlook"
+            prefetch={false}
             className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
           >
             <Icon name="mail" size={16} />
@@ -390,6 +391,7 @@ function RepRoster({ reps }: { reps: SetupRepRow[] }) {
             <Link
               key={name}
               href={r ? `/dashboard/reps/${r.id}` : meta.href}
+              prefetch={false}
               className="group rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
             >
               <div className="flex items-center gap-2">

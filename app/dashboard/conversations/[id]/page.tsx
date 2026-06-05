@@ -321,6 +321,7 @@ export default async function ConversationDetailPage({
           <p className="text-xs text-[var(--color-text-3)]">
             <Link
               href="/dashboard/conversations"
+              prefetch={false}
               className="hover:text-[var(--color-text-1)]"
             >
               Back to outreach
