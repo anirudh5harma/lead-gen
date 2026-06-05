@@ -3,6 +3,7 @@ import test from "node:test";
 import type { Pool } from "pg";
 import {
   REQUIRED_RESTATE_SERVICES,
+  checkProductLiveness,
   checkProductReadiness,
   checkProductReadinessCached,
   resetProductReadinessCacheForTests,
@@ -48,6 +49,16 @@ test("product health: Restate readiness covers critical Play and channel workflo
       `expected readiness to require ${workflow}`,
     );
   }
+});
+
+test("product health: liveness stays on the cheap environment boundary", () => {
+  const liveness = checkProductLiveness(productionEnv());
+
+  assert.equal(liveness.ready, true);
+  assert.deepEqual(
+    liveness.checks.map((check) => check.name),
+    ["environment"],
+  );
 });
 
 test("product health: cached readiness reuses recent expensive probes", async () => {

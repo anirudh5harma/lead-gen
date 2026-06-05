@@ -138,6 +138,12 @@ export const REQUIRED_RESTATE_SERVICES = [
   "signal.discover.open_web.exa",
 ] as const;
 
+export function checkProductLiveness(
+  env: Record<string, string | undefined> = process.env,
+): ProductReadiness {
+  return formatReadiness([formatEnvironmentCheck(env)]);
+}
+
 export async function checkProductReadinessCached(
   opts: CachedProductReadinessOptions = {},
 ): Promise<ProductReadiness> {

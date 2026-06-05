@@ -266,7 +266,7 @@ async function checkHealth(
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetchImpl(`${origin}/api/health`, {
+    response = await fetchImpl(`${origin}/api/health?readiness=1`, {
       headers: { Accept: "application/json" },
     });
   } catch (err) {

@@ -1,4 +1,4 @@
-import { checkProductReadinessCached } from "@/core/product/health";
+import { checkProductLiveness, checkProductReadinessCached } from "@/core/product/health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -6,10 +6,13 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const fresh = url.searchParams.get("fresh") === "1";
-  const readiness = await checkProductReadinessCached({
-    forceRefresh: fresh,
-    liveProbes: fresh,
-  });
+  const readiness =
+    fresh || url.searchParams.get("readiness") === "1"
+      ? await checkProductReadinessCached({
+          forceRefresh: fresh,
+          liveProbes: fresh,
+        })
+      : checkProductLiveness();
   return Response.json(readiness, {
     status: readiness.ready ? 200 : 503,
     headers: {
