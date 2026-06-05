@@ -7,7 +7,7 @@ import {
   providerStatus,
   verifyLinkedInProviderSignature,
 } from "@/core/channels/linkedin/index.ts";
-import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
+import { createJournaledDispatchEventBus } from "@/core/substrate/events/index.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const account = await locateLinkedInChannelAccount(pool, payload);
   if (!account) return new Response(null, { status: 202 });
 
-  const bus = await createRuntimeEventBus({ pool });
+  const bus = await createJournaledDispatchEventBus({ pool });
   try {
     if (payload.event === "connected" || payload.event === "credentials_refreshed") {
       await bus.publish({

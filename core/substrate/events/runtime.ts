@@ -15,9 +15,11 @@ export interface RuntimeEventBusOptions {
 }
 
 /**
- * Event-bus composition for app ingress. Production writes the canonical
- * event journal before NATS delivery, and is never permitted to fall back to
- * Postgres LISTEN/NOTIFY as its cross-process delivery bus.
+ * Event-bus composition for long-running runtimes and workers. Production
+ * writes the canonical event journal before NATS delivery, and is never
+ * permitted to fall back to Postgres LISTEN/NOTIFY as its cross-process
+ * delivery bus. Web routes use createJournaledDispatchEventBus() so external
+ * callbacks can enqueue durable dispatches without synchronously dialing NATS.
  */
 export async function createRuntimeEventBus(
   opts: RuntimeEventBusOptions = {},

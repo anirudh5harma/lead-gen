@@ -28,6 +28,11 @@ export {
   listDeadLetteredDispatches,
   redriveDeadLetteredDispatch,
 } from "./adapters/journaled-nats.ts";
+export { createJournaledDispatchEventBus } from "./adapters/journaled-dispatch.ts";
+export type {
+  JournaledDispatchEventBus,
+  JournaledDispatchEventBusOptions,
+} from "./adapters/journaled-dispatch.ts";
 export type {
   DeadLetteredDispatch,
   DispatchRedriveResult,

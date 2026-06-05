@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
+import { createJournaledDispatchEventBus } from "@/core/substrate/events/index.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getRequestUserId, validUuid } from "@/lib/auth";
 import { hasWorkspaceAccess } from "@/lib/workspace";
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const profileUrl = normalizeUrl(url.searchParams.get("profile_url"));
   const dailyCap = parseDailyCap(url.searchParams.get("daily_cap"));
 
-  const bus = await createRuntimeEventBus({ pool: getPool() });
+  const bus = await createJournaledDispatchEventBus({ pool: getPool() });
   try {
     await bus.publish({
       workspace_id: state.workspace_id,

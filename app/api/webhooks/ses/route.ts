@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
-import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
+import { createJournaledDispatchEventBus } from "@/core/substrate/events/index.ts";
+import { getPool } from "@/core/substrate/storage/index.ts";
 import {
   allowedSnsTopicArns,
   SnsConfigurationError,
@@ -147,9 +148,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
-  let bus: Awaited<ReturnType<typeof createRuntimeEventBus>>;
+  let bus: Awaited<ReturnType<typeof createJournaledDispatchEventBus>>;
   try {
-    bus = await createRuntimeEventBus();
+    bus = await createJournaledDispatchEventBus({ pool: getPool() });
   } catch (err) {
     logSnsWebhook("error", "event bus unavailable for SNS notification", {
       type: envelope.Type,

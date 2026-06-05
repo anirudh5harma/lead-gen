@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { createRuntimeEventBus } from "@/core/substrate/events/index.ts";
+import { createJournaledDispatchEventBus } from "@/core/substrate/events/index.ts";
 import {
   type OutlookNotificationBatch,
 } from "@/core/channels/email/outlook-subscription.ts";
@@ -108,9 +108,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const pool = getPool();
-  let bus: Awaited<ReturnType<typeof createRuntimeEventBus>>;
+  let bus: Awaited<ReturnType<typeof createJournaledDispatchEventBus>>;
   try {
-    bus = await createRuntimeEventBus({ pool });
+    bus = await createJournaledDispatchEventBus({ pool });
   } catch (err) {
     return new Response(err instanceof Error ? err.message : "event bus unavailable", {
       status: 503,

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveProductSubstrateMode } from "../core/product/substrate.ts";
+import type { Pool } from "pg";
+import {
+  createProductSubstrate,
+  resolveProductSubstrateMode,
+} from "../core/product/substrate.ts";
 
 test("product substrate: defaults to the supported durable postgres substrate", () => {
   assert.deepEqual(resolveProductSubstrateMode(undefined), {
@@ -26,3 +30,28 @@ test("product substrate: rejects aspirational adapter modes explicitly", () => {
   assert.match(resolution.detail, /Unsupported BOMBSELL_SUBSTRATE=nats/);
   assert.match(resolution.detail, /Supported: postgres, nats_restate/);
 });
+
+test("product substrate: nats_restate web ingress does not require a NATS dial", async () => {
+  const previousSubstrate = process.env.BOMBSELL_SUBSTRATE;
+  const previousRestate = process.env.RESTATE_INGRESS_URL;
+  const previousNats = process.env.NATS_URL;
+  try {
+    process.env.BOMBSELL_SUBSTRATE = "nats_restate";
+    process.env.RESTATE_INGRESS_URL = "http://127.0.0.1:9080";
+    delete process.env.NATS_URL;
+
+    const substrate = await createProductSubstrate({} as Pool);
+
+    assert.equal(substrate.mode, "nats_restate");
+    await substrate.bus.close();
+  } finally {
+    restoreEnv("BOMBSELL_SUBSTRATE", previousSubstrate);
+    restoreEnv("RESTATE_INGRESS_URL", previousRestate);
+    restoreEnv("NATS_URL", previousNats);
+  }
+});
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}

@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import {
-  createRuntimeEventBus,
-  type RuntimeEventBus,
+  createJournaledDispatchEventBus,
+  type JournaledDispatchEventBus,
 } from "../substrate/events/index.ts";
 import {
   createPostgresEventBus,
@@ -18,7 +18,7 @@ export type ProductSubstrateMode = "postgres" | "nats_restate";
 
 export interface ProductSubstrate {
   mode: ProductSubstrateMode;
-  bus: PostgresEventBus | RuntimeEventBus;
+  bus: PostgresEventBus | JournaledDispatchEventBus;
   runtime: WorkflowRuntime;
 }
 
@@ -68,7 +68,7 @@ export async function createProductSubstrate(
     if (!ingressUrl) {
       throw new Error("RESTATE_INGRESS_URL is required for BOMBSELL_SUBSTRATE=nats_restate");
     }
-    const bus = await createRuntimeEventBus({ pool });
+    const bus = await createJournaledDispatchEventBus({ pool });
     const runtime = createRestateWorkflowRuntime({
       ingressUrl,
       bearer: restateBearerFromEnv(),
