@@ -126,7 +126,7 @@ export default async function ContentPage() {
       <SurfaceHero
         kicker="Vaani · Content"
         title={<>Post what is <em>worth posting</em>.</>}
-        description="Vaani turns proof, questions, and recent moves into one-liner angles. Approve the ones worth writing; Vaani drafts them and learns from the result."
+        description="Vaani turns proof, questions, and recent moves into one-liner angles. Save the useful ones, shape them into posts, and Vaani learns from what actually gets published."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Ideas open" value={angles.length} />
@@ -169,7 +169,7 @@ export default async function ContentPage() {
         {contentDrafts.length === 0 ? (
           <EmptyState
             title="No drafts waiting"
-            hint="Approve an idea above and Vaani drops a draft here."
+            hint="Native content drafting will use the same saved ideas and outcome learning once the publishing channel is connected."
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">

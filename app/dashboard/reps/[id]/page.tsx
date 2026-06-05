@@ -36,9 +36,20 @@ interface RecentMessageRow {
   created_at: Date;
 }
 
+interface RepLearningRow {
+  id: string;
+  pattern_key: string;
+  label: string | null;
+  score: string;
+  win_count: number;
+  loss_count: number;
+  last_used_at: Date | null;
+  created_at: Date;
+}
+
 async function loadRepDetail(workspaceId: string, repId: string) {
   const pool = getPool();
-  const [rep, kpi, messages] = await Promise.all([
+  const [rep, kpi, messages, learning] = await Promise.all([
     pool.query<RepDetailRow>(
       `select id, name, role::text as role, status::text as status, persona, autonomy
          from reps
@@ -78,6 +89,27 @@ async function loadRepDetail(workspaceId: string, repId: string) {
         limit 8`,
       [workspaceId, repId],
     ),
+    pool.query<RepLearningRow>(
+      `select id,
+              pattern_key,
+              coalesce(
+                exemplar->>'title',
+                exemplar->>'subject',
+                exemplar->>'summary',
+                exemplar->>'body'
+              ) as label,
+              score::text as score,
+              win_count,
+              loss_count,
+              last_used_at,
+              created_at
+         from rep_memory_procedural
+        where workspace_id = $1
+          and rep_id = $2
+        order by score desc, last_used_at desc nulls last, created_at desc
+        limit 6`,
+      [workspaceId, repId],
+    ),
   ]);
 
   return {
@@ -88,6 +120,7 @@ async function loadRepDetail(workspaceId: string, repId: string) {
       open_conversations: "0",
     },
     messages: messages.rows,
+    learning: learning.rows,
   };
 }
 
@@ -100,7 +133,7 @@ export default async function RepDetailPage({
   const active = await getActiveWorkspaceSession();
   if (!active) return <CanvasEmpty label="Profile" title="No workspace selected." />;
 
-  const { rep, kpi, messages } = await loadRepDetail(active.workspace.id, id);
+  const { rep, kpi, messages, learning } = await loadRepDetail(active.workspace.id, id);
   if (!rep) return notFound();
 
   return (
@@ -195,7 +228,58 @@ export default async function RepDetailPage({
           )}
         </section>
       </section>
+
+      <section className="section-canvas mt-6 p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="brief-note-icon">
+            <Icon name="auto_awesome" size={18} />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Learning</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-3)]">
+              Patterns this Rep reuses in drafts, judges, and next moves.
+            </p>
+          </div>
+        </div>
+        {learning.length === 0 ? (
+          <EmptyState
+            title="No learned patterns yet"
+            hint="Accepted work and real outcomes will turn into reusable patterns here."
+          />
+        ) : (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {learning.map((item) => (
+              <LearningNote key={item.id} item={item} />
+            ))}
+          </div>
+        )}
+      </section>
     </>
+  );
+}
+
+function LearningNote({ item }: { item: RepLearningRow }) {
+  const score = Math.round(Number(item.score) * 100);
+  const label = item.label?.trim() || humanPattern(item.pattern_key);
+  return (
+    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] p-4">
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-[var(--color-pos-bg)] px-2 py-1 text-xs font-medium text-[var(--color-pos)]">
+          {score}% useful
+        </span>
+        <span className="ml-auto text-xs text-[var(--color-text-3)]">
+          {item.last_used_at
+            ? `Used ${new Date(item.last_used_at).toLocaleDateString()}`
+            : `Seeded ${new Date(item.created_at).toLocaleDateString()}`}
+        </span>
+      </div>
+      <h3 className="mt-3 line-clamp-2 text-sm font-semibold text-[var(--color-text-1)]">
+        {label}
+      </h3>
+      <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+        {item.win_count} wins · {item.loss_count} misses · {humanPattern(item.pattern_key)}
+      </p>
+    </article>
   );
 }
 
@@ -323,6 +407,17 @@ function messageStatusLabel(status: string): string {
   if (status === "failed") return "Failed";
   if (status === "bounced") return "Bounced";
   return status.replace(/_/g, " ");
+}
+
+function humanPattern(patternKey: string): string {
+  return patternKey
+    .split("|")
+    .map((part) => {
+      const [key, ...rest] = part.split(":");
+      const value = rest.join(":") || key;
+      return value.replace(/[_-]/g, " ");
+    })
+    .join(" · ");
 }
 
 function iconFor(name: string): string {
