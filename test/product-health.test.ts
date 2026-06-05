@@ -98,6 +98,35 @@ test("product health: cached readiness reuses recent expensive probes", async ()
   }
 });
 
+test("product health: default cached readiness avoids live provider probes", async () => {
+  resetProductReadinessCacheForTests();
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error("default cached readiness should not fetch");
+  }) as typeof fetch;
+
+  try {
+    const readiness = await checkProductReadinessCached({
+      pool: readyPool(),
+      env: {
+        ...productionEnv(),
+        BOMBSELL_SUBSTRATE: "nats_restate",
+        RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+        RESTATE_AUTH_TOKEN: "valid-token",
+      },
+      ttlMs: 0,
+    });
+
+    assert.equal(readiness.ready, true);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    resetProductReadinessCacheForTests();
+  }
+});
+
 test("product health: NGS NATS requires complete creds in production", async () => {
   const readiness = await checkProductReadiness(readyPool(), {
     NODE_ENV: "production",

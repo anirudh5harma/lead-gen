@@ -71,7 +71,7 @@ export default async function HealthPage() {
   const [counts, dead, readiness] = await Promise.all([
     loadDispatchCounts(session.workspace.id),
     listDeadLetteredDispatches(pool, session.workspace.id, 100),
-    checkProductReadinessCached({ pool }),
+    checkProductReadinessCached({ pool, liveProbes: true }),
   ]);
 
   return (

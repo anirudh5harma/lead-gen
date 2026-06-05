@@ -32,6 +32,7 @@ export interface CachedProductReadinessOptions {
   env?: Record<string, string | undefined>;
   deps?: ProductReadinessDeps;
   forceRefresh?: boolean;
+  liveProbes?: boolean;
   ttlMs?: number;
   nowMs?: () => number;
 }
@@ -108,6 +109,12 @@ interface ProductReadinessCacheEntry {
 }
 
 const productReadinessCache = new Map<string, ProductReadinessCacheEntry>();
+const CONFIG_ONLY_READINESS_DEPS: ProductReadinessDeps = {
+  probeNatsConnection: async () => undefined,
+  probeRestateIngress: async () => undefined,
+  probeRestateServices: async () => undefined,
+  probeLinkedInProvider: async () => undefined,
+};
 
 export const REQUIRED_RESTATE_SERVICES = [
   "system.restate_runtime_probe.v1",
@@ -136,7 +143,11 @@ export async function checkProductReadinessCached(
 ): Promise<ProductReadiness> {
   const pool = opts.pool === undefined ? tryGetPool() : opts.pool;
   const env = opts.env ?? process.env;
-  const key = productReadinessCacheKey(pool, env);
+  const deps = opts.deps ?? (opts.liveProbes ? {} : CONFIG_ONLY_READINESS_DEPS);
+  const key = productReadinessCacheKey(pool, env, {
+    liveProbes: opts.liveProbes === true,
+    customDeps: Boolean(opts.deps),
+  });
   const now = opts.nowMs?.() ?? Date.now();
   const ttlMs = opts.ttlMs ?? READINESS_CACHE_TTL_MS;
   const cached = productReadinessCache.get(key);
@@ -148,7 +159,7 @@ export async function checkProductReadinessCached(
     return cached.inFlight;
   }
 
-  const inFlight = checkProductReadiness(pool, env, opts.deps)
+  const inFlight = checkProductReadiness(pool, env, deps)
     .then((value) => {
       const current = productReadinessCache.get(key);
       if (ttlMs > 0 && current?.inFlight === inFlight) {
@@ -741,9 +752,12 @@ function formatReadiness(checks: ProductReadinessCheck[]): ProductReadiness {
 function productReadinessCacheKey(
   pool: Pool | null,
   env: Record<string, string | undefined>,
+  opts: { liveProbes: boolean; customDeps: boolean },
 ): string {
   return [
     pool ? "db" : "no-db",
+    opts.liveProbes ? "live" : "config",
+    opts.customDeps ? "custom-deps" : "default-deps",
     env.NODE_ENV ?? "",
     env.BOMBSELL_SUBSTRATE ?? "",
     env.NATS_URL?.trim() ? "nats" : "no-nats",
