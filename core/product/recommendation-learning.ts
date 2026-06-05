@@ -16,6 +16,15 @@ interface RecommendationItem {
   evidence_source_ids?: string[];
 }
 
+export interface RecommendationOutcomeLearningExemplarInput {
+  review_kind: RecommendationKind;
+  review_id: string;
+  source_event_id: string;
+  outcome_kind: string;
+  item: RecommendationItem;
+  external_ref?: string | null;
+}
+
 export interface RecommendationReviewRow {
   review_id: string;
   decision: RecommendationDecision | string;
@@ -195,6 +204,29 @@ export function buildRecommendationLearningExemplar(
       detail: sample.item?.detail ?? "",
       url: sample.item?.url ?? null,
     })),
+  };
+}
+
+export function buildRecommendationOutcomeLearningExemplar(
+  input: RecommendationOutcomeLearningExemplarInput,
+): Record<string, unknown> {
+  return {
+    kind: "exa_recommendation_outcome",
+    review_kind: input.review_kind,
+    review_id: input.review_id,
+    source_event_id: input.source_event_id,
+    outcome_kind: input.outcome_kind,
+    external_ref: input.external_ref ?? null,
+    kept_example: {
+      title: input.item.title ?? "Accepted recommendation",
+      detail: input.item.detail ?? "",
+      url: input.item.url ?? null,
+      evidence_source_ids: input.item.evidence_source_ids ?? [],
+    },
+    guidance:
+      input.review_kind === "content_opportunity"
+        ? "Use this published Vaani recommendation as a concrete example of content evidence that turned into a real Outcome."
+        : "Use this Bodh recommendation as a concrete example of an AEO gap that turned into a real visibility Outcome.",
   };
 }
 

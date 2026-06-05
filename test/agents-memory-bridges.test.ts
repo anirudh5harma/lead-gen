@@ -6,6 +6,7 @@ import { setupPg, until } from "./_pg.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import {
   createPostgresProceduralRepository,
+  resolveOutcomeFeedbackDelta,
   wireOutcomeFeedback,
 } from "../core/agents/memory/index.ts";
 import type { MemoryScope } from "../core/agents/memory/types.ts";
@@ -24,6 +25,13 @@ async function seedRep(pool: Pool): Promise<MemoryScope> {
   );
   return { workspace_id, rep_id };
 }
+
+test("outcome → procedural: post_published is a light Content learning win", () => {
+  assert.deepEqual(resolveOutcomeFeedbackDelta("post_published"), {
+    delta_score: 0.03,
+    win: true,
+  });
+});
 
 test("outcome → procedural: positive_reply bumps score and emits update event", async (t) => {
   const fx = await setupPg("br_pos");
@@ -230,7 +238,7 @@ test("outcome → procedural: ignores outcome kinds with no procedural signal", 
       source: "system",
       payload: {
         outcome_id: randomUUID(),
-        kind: "post_published", // not in wins or losses
+        kind: "unclassified_signal",
         score: 0,
         conversation_id: null,
         attributed_play_id: null,

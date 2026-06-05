@@ -45,6 +45,7 @@ export const DEFAULT_SCORE_DELTAS: ScoreDeltas = {
     meeting_booked: 0.25,
     opportunity_created: 0.15,
     deal_won: 0.4,
+    post_published: 0.03,
     follower_lift: 0.05,
     engagement_lift: 0.05,
   },

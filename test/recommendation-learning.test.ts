@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { Pool } from "pg";
 import {
   buildRecommendationLearningExemplar,
+  buildRecommendationOutcomeLearningExemplar,
   createRecommendationLearningProjection,
 } from "../core/product/recommendation-learning.ts";
 import type { PublishedEvent } from "../core/substrate/events/index.ts";
@@ -35,6 +36,34 @@ test("recommendation learning exemplar captures kept and skipped patterns", () =
     (exemplar.skipped_examples as Array<{ title: string }>).map((item) => item.title),
     ["Generic launch recap"],
   );
+});
+
+test("recommendation outcome exemplar captures the kept item that produced a win", () => {
+  const exemplar = buildRecommendationOutcomeLearningExemplar({
+    review_kind: "aeo_gap",
+    review_id: "aeo_gap:00000000-0000-4000-8000-000000000020:abc123",
+    source_event_id: "00000000-0000-4000-8000-000000000020",
+    outcome_kind: "engagement_lift",
+    external_ref: "https://example.com/citation",
+    item: {
+      title: "Comparison page gap",
+      detail: "Create a structured answer for the category question.",
+      url: "https://example.com/proof",
+      evidence_source_ids: ["00000000-0000-4000-8000-000000000030"],
+    },
+  });
+
+  assert.equal(exemplar.kind, "exa_recommendation_outcome");
+  assert.equal(exemplar.review_kind, "aeo_gap");
+  assert.equal(exemplar.outcome_kind, "engagement_lift");
+  assert.equal(exemplar.external_ref, "https://example.com/citation");
+  assert.deepEqual(exemplar.kept_example, {
+    title: "Comparison page gap",
+    detail: "Create a structured answer for the category question.",
+    url: "https://example.com/proof",
+    evidence_source_ids: ["00000000-0000-4000-8000-000000000030"],
+  });
+  assert.match(String(exemplar.guidance), /Bodh recommendation/);
 });
 
 test("recommendation learning projection waits for repeated accepted feedback", async () => {

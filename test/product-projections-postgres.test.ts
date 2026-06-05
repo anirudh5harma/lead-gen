@@ -3,8 +3,12 @@ import test from "node:test";
 import { randomUUID } from "node:crypto";
 import {
   bootstrapWorkspace,
+  DEFAULT_PRODUCT_USER_ID,
+  getProductRecommendationSurface,
   getProductEngine,
   projectPendingProductEventsOnce,
+  recordProductRecommendationOutcome,
+  reviewProductRecommendation,
   resetProductEngineForTests,
 } from "../core/product/app.ts";
 import { PROCEDURAL_MEMORY_STATE_PROJECTION } from "../core/agents/memory/index.ts";
@@ -206,6 +210,130 @@ test("product projections: replayed Outcome learning applies to procedural memor
     assert.equal(afterReplay.rows[0].score, applied.rows[0].score);
     assert.equal(afterReplay.rows[0].win_count, 1);
     assert.equal(afterReplay.rows[0].ledger_count, "1");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product projections: first Content recommendation Outcome seeds Vaani memory", async (t) => {
+  const fx = await setupPg("product_projection_reco_outcome");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const session = {
+      workspace_id: boot.workspace_id,
+      user_id: DEFAULT_PRODUCT_USER_ID,
+    };
+    const contentEventId = randomUUID();
+    await fx.pool.query(
+      `insert into events (
+         id, workspace_id, event_type, source, producer_ref, payload, occurred_at
+       ) values (
+         $1, $2, 'content.opportunity.discovered', 'agent', 'vaani:test',
+         $3::jsonb, '2026-06-05T09:00:00Z'
+       )`,
+      [
+        contentEventId,
+        boot.workspace_id,
+        JSON.stringify({
+          request_id: "req_content_outcome_seed",
+          query: "pricing objections",
+          summary: "Content angle",
+          opportunities: [
+            {
+              title: "Pricing objection angle",
+              detail: "Turn the most common pricing objection into a proof post.",
+              url: "https://example.com/proof",
+              evidence_source_ids: [],
+            },
+          ],
+        }),
+      ],
+    );
+
+    const surface = await getProductRecommendationSurface(
+      fx.pool,
+      session,
+      "content_opportunity",
+    );
+    const reviewId = surface.reviews[0]?.review_id;
+    assert.ok(reviewId);
+
+    await reviewProductRecommendation(
+      {
+        review_id: reviewId,
+        decision: "accepted",
+        note: "Ship this as a post.",
+      },
+      session,
+    );
+    const vaani = await fx.pool.query<{ id: string }>(
+      `select id::text as id
+         from reps
+        where workspace_id = $1
+          and role = 'content'
+          and status = 'active'
+        order by created_at asc
+        limit 1`,
+      [boot.workspace_id],
+    );
+
+    const result = await recordProductRecommendationOutcome(
+      {
+        review_id: reviewId,
+        kind: "post_published",
+        external_ref: "https://example.com/post",
+      },
+      session,
+    );
+    await projectPendingProductEventsOnce({ leaseOwner: "recommendation-outcome-a" });
+    await projectPendingProductEventsOnce({ leaseOwner: "recommendation-outcome-b" });
+
+    assert.equal(result.attributed_rep_id, vaani.rows[0]?.id);
+    assert.equal(result.pattern_key, "recommendation:content_opportunity|stage:exa_review");
+    assert.equal(result.exemplar_ids.length, 1);
+    const memory = await fx.pool.query<{
+      rep_name: string;
+      rep_role: string;
+      pattern_key: string;
+      exemplar: Record<string, unknown>;
+      score: string;
+      win_count: number;
+    }>(
+      `select r.name as rep_name,
+              r.role::text as rep_role,
+              rpm.pattern_key,
+              rpm.exemplar,
+              rpm.score::text as score,
+              rpm.win_count
+         from rep_memory_procedural rpm
+         join reps r
+           on r.id = rpm.rep_id
+          and r.workspace_id = rpm.workspace_id
+        where rpm.workspace_id = $1
+          and rpm.id = $2`,
+      [boot.workspace_id, result.exemplar_ids[0]],
+    );
+
+    assert.equal(memory.rows[0]?.rep_name, "Vaani");
+    assert.equal(memory.rows[0]?.rep_role, "content");
+    assert.equal(
+      memory.rows[0]?.pattern_key,
+      "recommendation:content_opportunity|stage:exa_review",
+    );
+    assert.equal(memory.rows[0]?.exemplar.kind, "exa_recommendation_outcome");
+    assert.deepEqual(memory.rows[0]?.exemplar.kept_example, {
+      title: "Pricing objection angle",
+      detail: "Turn the most common pricing objection into a proof post.",
+      url: "https://example.com/proof",
+      evidence_source_ids: [],
+    });
+    assert.equal(Number(memory.rows[0]?.score), 0.58);
+    assert.equal(memory.rows[0]?.win_count, 1);
   } finally {
     await resetProductEngineForTests();
     await fx.close();

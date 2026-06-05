@@ -129,7 +129,10 @@ import {
   planExaResearchQuery,
   recommendationResearchPatternKey,
 } from "./exa-query-planning.ts";
-import { createRecommendationLearningProjection } from "./recommendation-learning.ts";
+import {
+  buildRecommendationOutcomeLearningExemplar,
+  createRecommendationLearningProjection,
+} from "./recommendation-learning.ts";
 import {
   createExaClientFromEnv,
   projectExaEvidence,
@@ -2735,10 +2738,14 @@ export async function recordProductRecommendationOutcome(
   }
 
   const pattern_key = recommendationResearchPatternKey(review.review_kind);
-  const attribution = await findRecommendationOutcomeAttribution(
-    engine.pool,
-    session.workspace_id,
+  const attribution = await findOrSeedRecommendationOutcomeAttribution(
+    engine,
+    session,
+    reviewId,
+    review,
     pattern_key,
+    input.kind,
+    input.external_ref ?? null,
   );
   const occurredAtInput = input.occurred_at?.trim() || null;
   const occurred_at = occurredAtInput
@@ -7466,12 +7473,25 @@ async function findAcceptedRecommendationReview(
   };
 }
 
-async function findRecommendationOutcomeAttribution(
-  pool: Pool,
-  workspace_id: string,
+async function findOrSeedRecommendationOutcomeAttribution(
+  engine: ProductEngine,
+  session: ProductWorkspaceSession,
+  review_id: string,
+  review: {
+    review_kind: ProductRecommendationKind;
+    source_event_id: string;
+    item: {
+      title: string;
+      detail: string;
+      url: string | null;
+      evidence_source_ids: string[];
+    };
+  },
   pattern_key: string,
+  outcome_kind: ProductRecommendationOutcomeKind,
+  external_ref: string | null,
 ): Promise<{ rep_id: string | null; exemplar_ids: string[] }> {
-  const { rows } = await pool.query<{ rep_id: string; exemplar_id: string | null }>(
+  const { rows } = await engine.pool.query<{ rep_id: string; exemplar_id: string | null }>(
     `select r.id::text as rep_id,
             rpm.id::text as exemplar_id
        from reps r
@@ -7486,17 +7506,64 @@ async function findRecommendationOutcomeAttribution(
        ) rpm on true
       where r.workspace_id = $1
         and r.status = 'active'
-      order by case when rpm.id is null then 1 else 0 end, r.created_at asc`,
-    [workspace_id, pattern_key],
+      order by case
+                 when $3 = 'content_opportunity' and r.role = 'content' then 0
+                 when $3 = 'aeo_gap' and r.role = 'researcher' then 0
+                 else 1
+               end,
+               case when rpm.id is null then 1 else 0 end,
+               r.created_at asc`,
+    [session.workspace_id, pattern_key, review.review_kind],
   );
   const rep_id = rows[0]?.rep_id ?? null;
   if (!rep_id) return { rep_id: null, exemplar_ids: [] };
+  const exemplar_ids = rows
+    .filter((row) => row.rep_id === rep_id && row.exemplar_id)
+    .map((row) => row.exemplar_id!)
+    .slice(0, 3);
+  if (exemplar_ids.length > 0) {
+    return {
+      rep_id,
+      exemplar_ids,
+    };
+  }
+
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "rep.memory.procedural.seeded",
+    source: "system",
+    producer_ref: `user:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "rep.memory.procedural.seeded",
+      session.workspace_id,
+      review_id,
+      {
+        rep_id,
+        pattern_key,
+        outcome_kind,
+      },
+    ),
+    payload: {
+      exemplar_id: randomUUID(),
+      rep_id,
+      pattern_key,
+      exemplar: buildRecommendationOutcomeLearningExemplar({
+        review_kind: review.review_kind,
+        review_id,
+        source_event_id: review.source_event_id,
+        outcome_kind,
+        item: review.item,
+        external_ref,
+      }),
+      initial_score: 0.55,
+    },
+  });
+  if (engine.substrateMode === "postgres") {
+    await createProceduralMemorySeedProjection(engine.pool).apply(event);
+  }
   return {
     rep_id,
-    exemplar_ids: rows
-      .filter((row) => row.rep_id === rep_id && row.exemplar_id)
-      .map((row) => row.exemplar_id!)
-      .slice(0, 3),
+    exemplar_ids: [event.payload.exemplar_id],
   };
 }
 
