@@ -1,16 +1,14 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
+import {
+  requestIdentityFromClaims,
+  type RequestAuthIdentity,
+} from "@/lib/auth/claims";
 import { authSessionCookieOptions } from "@/lib/auth/session-cookie";
 export { validUuid } from "@/lib/auth/uuid";
+export type { RequestAuthIdentity } from "@/lib/auth/claims";
 import { validUuid } from "@/lib/auth/uuid";
-
-export interface RequestAuthIdentity {
-  id: string;
-  email: string | null;
-  email_verified: boolean;
-}
 
 function localDemoUserId(): string | null {
   if (
@@ -58,15 +56,9 @@ export const getRequestAuthIdentity = cache(async (): Promise<RequestAuthIdentit
       },
     },
   });
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getClaims();
   if (error) return demoIdentity();
-  const id = validUuid(data.user?.id);
-  if (!id) return demoIdentity();
-  return {
-    id,
-    email: data.user.email ?? null,
-    email_verified: hasVerifiedEmail(data.user as AuthVerifiedEmailUser | null),
-  };
+  return requestIdentityFromClaims(data?.claims) ?? demoIdentity();
 });
 
 export async function getRequestUserId(): Promise<string | null> {
