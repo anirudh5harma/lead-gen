@@ -6082,15 +6082,121 @@ export async function getProductReviewPulse(
   pool = getPool(),
   session: ProductWorkspaceSession,
 ): Promise<ProductReviewPulse> {
-  const state = await getProductRecommendationState(pool, session);
+  await assertProductWorkspaceAccess(session, pool);
+  const [reviewEvents, recommendationFeedback, recommendationMutations, recommendationOutcomes] = await Promise.all([
+    pool.query<{
+      event_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      occurred_at: Date;
+      evidence: Array<{
+        id: string;
+        url: string | null;
+        title: string | null;
+        snippet: string | null;
+      }>;
+    }>(
+      `select id::text as event_id,
+              event_type,
+              payload,
+              occurred_at,
+              '[]'::jsonb as evidence
+         from events
+        where workspace_id = $1
+          and event_type in ('content.opportunity.discovered', 'aeo.audit.completed')
+        order by occurred_at desc
+        limit 100`,
+      [session.workspace_id],
+    ),
+    pool.query<{
+      review_id: string;
+      review_kind: ProductRecommendationKind | string | null;
+      decision: ProductRecommendationDecision;
+      note: string | null;
+      occurred_at: Date;
+    }>(
+      `select distinct on (payload->>'review_id')
+              payload->>'review_id' as review_id,
+              payload->>'review_kind' as review_kind,
+              payload->>'decision' as decision,
+              payload->>'note' as note,
+              occurred_at
+         from events
+        where workspace_id = $1
+          and event_type = 'recommendation.reviewed'
+          and payload->>'review_id' is not null
+        order by payload->>'review_id', occurred_at desc`,
+      [session.workspace_id],
+    ),
+    pool.query<{
+      review_id: string;
+      event_type: "recommendation.updated" | "recommendation.deleted";
+      payload: Record<string, unknown>;
+      occurred_at: Date;
+    }>(
+      `select distinct on (payload->>'review_id')
+              payload->>'review_id' as review_id,
+              event_type,
+              payload,
+              occurred_at
+         from events
+        where workspace_id = $1
+          and event_type in ('recommendation.updated', 'recommendation.deleted')
+          and payload->>'review_id' is not null
+        order by payload->>'review_id', occurred_at desc`,
+      [session.workspace_id],
+    ),
+    pool.query<{
+      review_id: string;
+      outcome_id: string;
+      kind: ProductRecommendationOutcomeKind | string;
+      external_ref: string | null;
+      occurred_at: Date;
+    }>(
+      `select distinct on (properties->>'recommendation_review_id')
+              properties->>'recommendation_review_id' as review_id,
+              id::text as outcome_id,
+              kind::text as kind,
+              properties->>'external_ref' as external_ref,
+              occurred_at
+         from outcomes
+        where workspace_id = $1
+          and properties ? 'recommendation_review_id'
+        order by properties->>'recommendation_review_id', occurred_at desc`,
+      [session.workspace_id],
+    ),
+  ]);
+  const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
+  const recommendationMutationById = recommendationMutationState(recommendationMutations.rows);
+  const recommendationOutcomeById = recommendationOutcomeState(recommendationOutcomes.rows);
+  const contentReviews = applyRecommendationOutcomeState(
+    productExaReviewState(
+      reviewEvents.rows,
+      "content.opportunity.discovered",
+      recommendationFeedbackById,
+      recommendationMutationById,
+      24,
+    ),
+    recommendationOutcomeById,
+  );
+  const aeoReviews = applyRecommendationOutcomeState(
+    productExaReviewState(
+      reviewEvents.rows,
+      "aeo.audit.completed",
+      recommendationFeedbackById,
+      recommendationMutationById,
+      24,
+    ),
+    recommendationOutcomeById,
+  );
   return {
     content: {
-      open: state.content.reviews.filter((item) => !item.outcome_id).length,
-      last_activity_at: productBriefItemsLatestActivity(state.content.reviews),
+      open: contentReviews.filter((item) => !item.outcome_id).length,
+      last_activity_at: productBriefItemsLatestActivity(contentReviews),
     },
     aeo: {
-      open: state.aeo.reviews.filter((item) => !item.outcome_id).length,
-      last_activity_at: productBriefItemsLatestActivity(state.aeo.reviews),
+      open: aeoReviews.filter((item) => !item.outcome_id).length,
+      last_activity_at: productBriefItemsLatestActivity(aeoReviews),
     },
   };
 }

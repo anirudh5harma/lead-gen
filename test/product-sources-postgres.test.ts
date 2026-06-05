@@ -9,6 +9,8 @@ import {
   createProductWorkspaceForUser,
   findFirstProductWorkspaceForUser,
   getAppState,
+  getProductRecommendationSurface,
+  getProductReviewPulse,
   resetProductEngineForTests,
 } from "../core/product/app.ts";
 import { RSS_SIGNAL_INGESTION_WORKFLOW } from "../core/signals/index.ts";
@@ -249,6 +251,109 @@ test("product surface: failed workflows appear in the recovery queue", async (t)
     assert.equal(recovery.error, "RSS fetch failed");
     assert.equal(recovery.failed_step_name, "rss.fetch");
     assert.equal(recovery.failed_step_attempt, 3);
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product surface: Brief review pulse uses recommendation state without loading full surfaces", async (t) => {
+  const fx = await setupPg("product_review_pulse");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const user_id = randomUUID();
+    const workspace = await createProductWorkspaceForUser(
+      { name: "Pulse Workspace", slug: "pulse-workspace" },
+      user_id,
+    );
+    const session = { workspace_id: workspace.id, user_id };
+    const contentEventId = randomUUID();
+    const aeoEventId = randomUUID();
+    await fx.pool.query(
+      `insert into events (
+         id, workspace_id, event_type, source, producer_ref, payload, occurred_at
+       ) values
+         ($1, $3, 'content.opportunity.discovered', 'agent', 'vaani:test', $4::jsonb, '2026-05-26T01:00:00Z'),
+         ($2, $3, 'aeo.audit.completed', 'agent', 'bodh:test', $5::jsonb, '2026-05-26T01:01:00Z')`,
+      [
+        contentEventId,
+        aeoEventId,
+        workspace.id,
+        JSON.stringify({
+          request_id: "req_content",
+          query: "pricing objections",
+          summary: "Content angle",
+          opportunities: [
+            {
+              title: "Pricing objection angle",
+              detail: "Turn the most common pricing objection into a proof post.",
+              evidence_source_ids: [],
+            },
+          ],
+        }),
+        JSON.stringify({
+          request_id: "req_aeo",
+          query: "best ai gtm tools",
+          summary: "AEO gap",
+          gaps: [
+            {
+              title: "Comparison page gap",
+              detail: "Create a comparison answer for best AI GTM tools.",
+              evidence_source_ids: [],
+            },
+          ],
+        }),
+      ],
+    );
+
+    const initial = await getProductReviewPulse(fx.pool, session);
+    assert.equal(initial.content.open, 1);
+    assert.equal(initial.aeo.open, 1);
+
+    const contentReview = (await getProductRecommendationSurface(
+      fx.pool,
+      session,
+      "content_opportunity",
+    )).reviews[0];
+    const aeoReview = (await getProductRecommendationSurface(
+      fx.pool,
+      session,
+      "aeo_gap",
+    )).reviews[0];
+    assert.ok(contentReview?.review_id);
+    assert.ok(aeoReview?.review_id);
+
+    await fx.pool.query(
+      `insert into events (
+         workspace_id, event_type, source, producer_ref, payload, occurred_at
+       ) values
+         ($1, 'recommendation.reviewed', 'user', $2, $3::jsonb, '2026-05-26T01:02:00Z'),
+         ($1, 'recommendation.reviewed', 'user', $2, $4::jsonb, '2026-05-26T01:03:00Z')`,
+      [
+        workspace.id,
+        `user:${user_id}`,
+        JSON.stringify({
+          review_id: contentReview.review_id,
+          review_kind: "content_opportunity",
+          source_event_id: contentReview.source_event_id,
+          decision: "ignored",
+        }),
+        JSON.stringify({
+          review_id: aeoReview.review_id,
+          review_kind: "aeo_gap",
+          source_event_id: aeoReview.source_event_id,
+          decision: "accepted",
+        }),
+      ],
+    );
+
+    const updated = await getProductReviewPulse(fx.pool, session);
+    assert.equal(updated.content.open, 0);
+    assert.equal(updated.aeo.open, 1);
+    assert.equal(updated.aeo.last_activity_at?.toISOString(), "2026-05-26T01:03:00.000Z");
   } finally {
     await resetProductEngineForTests();
     await fx.close();
