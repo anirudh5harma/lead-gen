@@ -4,6 +4,8 @@ import type { Pool } from "pg";
 import {
   REQUIRED_RESTATE_SERVICES,
   checkProductReadiness,
+  checkProductReadinessCached,
+  resetProductReadinessCacheForTests,
 } from "../core/product/health.ts";
 import { setupPg } from "./_pg.ts";
 
@@ -45,6 +47,54 @@ test("product health: Restate readiness covers critical Play and channel workflo
       REQUIRED_RESTATE_SERVICES.includes(workflow),
       `expected readiness to require ${workflow}`,
     );
+  }
+});
+
+test("product health: cached readiness reuses recent expensive probes", async () => {
+  resetProductReadinessCacheForTests();
+  let natsProbeCalls = 0;
+  let restateIngressProbeCalls = 0;
+  let restateServiceProbeCalls = 0;
+  let linkedInProbeCalls = 0;
+  const options = {
+    pool: readyPool(),
+    env: {
+      ...productionEnv(),
+      BOMBSELL_SUBSTRATE: "nats_restate",
+      RESTATE_INGRESS_URL: "https://tenant.env.us.restate.cloud:8080",
+      RESTATE_AUTH_TOKEN: "valid-token",
+    },
+    deps: {
+      probeNatsConnection: async () => {
+        natsProbeCalls += 1;
+      },
+      probeRestateIngress: async () => {
+        restateIngressProbeCalls += 1;
+      },
+      probeRestateServices: async () => {
+        restateServiceProbeCalls += 1;
+      },
+      probeLinkedInProvider: async () => {
+        linkedInProbeCalls += 1;
+      },
+    },
+    ttlMs: 1_000,
+  };
+
+  try {
+    const first = await checkProductReadinessCached(options);
+    const second = await checkProductReadinessCached(options);
+    const fresh = await checkProductReadinessCached({ ...options, forceRefresh: true });
+
+    assert.equal(first.ready, true);
+    assert.equal(second, first);
+    assert.equal(fresh.ready, true);
+    assert.equal(natsProbeCalls, 2);
+    assert.equal(restateIngressProbeCalls, 2);
+    assert.equal(restateServiceProbeCalls, 2);
+    assert.equal(linkedInProbeCalls, 2);
+  } finally {
+    resetProductReadinessCacheForTests();
   }
 });
 

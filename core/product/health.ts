@@ -27,6 +27,15 @@ interface ProductReadinessDeps {
   probeLinkedInProvider?: (env: Record<string, string | undefined>) => Promise<void>;
 }
 
+export interface CachedProductReadinessOptions {
+  pool?: Pool | null;
+  env?: Record<string, string | undefined>;
+  deps?: ProductReadinessDeps;
+  forceRefresh?: boolean;
+  ttlMs?: number;
+  nowMs?: () => number;
+}
+
 interface RestateDeployment {
   id?: string;
   uri?: string;
@@ -89,6 +98,17 @@ const REQUIRED_MIGRATIONS = [
   "031_procedural_memory_applications.sql",
 ];
 
+const READINESS_CACHE_TTL_MS = 15_000;
+const READINESS_EXTERNAL_PROBE_TIMEOUT_MS = 2_500;
+
+interface ProductReadinessCacheEntry {
+  value?: ProductReadiness;
+  expiresAt: number;
+  inFlight?: Promise<ProductReadiness>;
+}
+
+const productReadinessCache = new Map<string, ProductReadinessCacheEntry>();
+
 export const REQUIRED_RESTATE_SERVICES = [
   "system.restate_runtime_probe.v1",
   "series_a_cold_open",
@@ -111,6 +131,53 @@ export const REQUIRED_RESTATE_SERVICES = [
   "signal.discover.open_web.exa",
 ] as const;
 
+export async function checkProductReadinessCached(
+  opts: CachedProductReadinessOptions = {},
+): Promise<ProductReadiness> {
+  const pool = opts.pool === undefined ? tryGetPool() : opts.pool;
+  const env = opts.env ?? process.env;
+  const key = productReadinessCacheKey(pool, env);
+  const now = opts.nowMs?.() ?? Date.now();
+  const ttlMs = opts.ttlMs ?? READINESS_CACHE_TTL_MS;
+  const cached = productReadinessCache.get(key);
+
+  if (!opts.forceRefresh && cached?.value && now < cached.expiresAt) {
+    return cached.value;
+  }
+  if (!opts.forceRefresh && cached?.inFlight) {
+    return cached.inFlight;
+  }
+
+  const inFlight = checkProductReadiness(pool, env, opts.deps)
+    .then((value) => {
+      const current = productReadinessCache.get(key);
+      if (ttlMs > 0 && current?.inFlight === inFlight) {
+        productReadinessCache.set(key, {
+          value,
+          expiresAt: Date.now() + ttlMs,
+        });
+      } else if (ttlMs <= 0 && current?.inFlight === inFlight) {
+        productReadinessCache.delete(key);
+      }
+      return value;
+    })
+    .finally(() => {
+      const current = productReadinessCache.get(key);
+      if (current?.inFlight === inFlight) productReadinessCache.delete(key);
+    });
+
+  productReadinessCache.set(key, {
+    value: cached?.value,
+    expiresAt: cached?.expiresAt ?? 0,
+    inFlight,
+  });
+  return inFlight;
+}
+
+export function resetProductReadinessCacheForTests(): void {
+  productReadinessCache.clear();
+}
+
 export async function checkProductReadiness(
   pool: Pool | null = tryGetPool(),
   env: Record<string, string | undefined> = process.env,
@@ -123,24 +190,43 @@ export async function checkProductReadiness(
       status: "unconfigured",
       detail: "DATABASE_URL is not configured",
     });
-    checks.push(formatEnvironmentCheck(env));
-    checks.push(await formatLinkedInProviderCheck(env, deps));
+    const [environment, linkedInProvider] = await Promise.all([
+      Promise.resolve(formatEnvironmentCheck(env)),
+      formatLinkedInProviderCheck(env, deps),
+    ]);
+    checks.push(environment);
+    checks.push(linkedInProvider);
     return formatReadiness(checks);
   }
 
   try {
-    checks.push(formatEnvironmentCheck(env));
-    checks.push(await formatLinkedInProviderCheck(env, deps));
-    checks.push(await formatNatsCredentialCheck(env, deps));
-    checks.push(await formatRestateIngressCheck(env, deps));
-
     const substrate = resolveProductSubstrateMode(env.BOMBSELL_SUBSTRATE);
-    checks.push(formatSubstrateCheck(substrate, env));
+    const [
+      environment,
+      linkedInProvider,
+      natsCredentials,
+      restateIngress,
+      substrateCheck,
+    ] = await Promise.all([
+      Promise.resolve(formatEnvironmentCheck(env)),
+      formatLinkedInProviderCheck(env, deps),
+      formatNatsCredentialCheck(env, deps),
+      formatRestateIngressCheck(env, deps),
+      Promise.resolve(formatSubstrateCheck(substrate, env)),
+    ]);
+    checks.push(environment);
+    checks.push(linkedInProvider);
+    checks.push(natsCredentials);
+    checks.push(restateIngress);
+    checks.push(substrateCheck);
 
     await pool.query("select 1");
     checks.push({ name: "database", status: "ok" });
 
-    const missingTables = await missingRequiredTables(pool);
+    const [missingTables, missingMigrations] = await Promise.all([
+      missingRequiredTables(pool),
+      missingRequiredMigrations(pool),
+    ]);
     checks.push(
       missingTables.length === 0
         ? { name: "schema.tables", status: "ok" }
@@ -151,7 +237,6 @@ export async function checkProductReadiness(
           },
     );
 
-    const missingMigrations = await missingRequiredMigrations(pool);
     checks.push(
       missingMigrations.length === 0
         ? { name: "schema.migrations", status: "ok" }
@@ -293,6 +378,7 @@ async function probeLinkedInProvider(
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
     },
+    signal: AbortSignal.timeout(READINESS_EXTERNAL_PROBE_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
@@ -360,9 +446,7 @@ async function formatNatsCredentialCheck(
       return {
         name: "nats.credentials",
         status: "degraded",
-        detail: `NATS auth/connectivity check failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        detail: `NATS auth/connectivity check failed: ${readinessErrorMessage(err)}`,
       };
     }
   }
@@ -387,7 +471,7 @@ async function probeNatsConnection(
   const nc = await connect({
     servers: rawUrl,
     name: "bombsell-health",
-    timeout: 2_500,
+    timeout: READINESS_EXTERNAL_PROBE_TIMEOUT_MS,
     reconnect: false,
     noRandomize: true,
     resolve: !new URL(rawUrl).hostname.endsWith("ngs.global"),
@@ -445,15 +529,15 @@ async function formatRestateIngressCheck(
 
   if (env.BOMBSELL_SUBSTRATE === "nats_restate") {
     try {
-      await (deps.probeRestateIngress ?? probeRestateIngress)(env);
-      await (deps.probeRestateServices ?? probeRestateServices)(env);
+      await Promise.all([
+        (deps.probeRestateIngress ?? probeRestateIngress)(env),
+        (deps.probeRestateServices ?? probeRestateServices)(env),
+      ]);
     } catch (err) {
       return {
         name: "restate.ingress",
         status: "degraded",
-        detail: `Restate ingress auth/connectivity check failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        detail: `Restate ingress auth/connectivity check failed: ${readinessErrorMessage(err)}`,
       };
     }
   }
@@ -477,7 +561,10 @@ async function probeRestateIngress(env: Record<string, string | undefined>): Pro
   const headers: Record<string, string> = {};
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
 
-  const res = await fetch(rawUrl, { headers });
+  const res = await fetch(rawUrl, {
+    headers,
+    signal: AbortSignal.timeout(READINESS_EXTERNAL_PROBE_TIMEOUT_MS),
+  });
   if (res.status === 401 || res.status === 403) {
     throw new Error(`HTTP ${res.status}`);
   }
@@ -491,7 +578,10 @@ async function probeRestateServices(env: Record<string, string | undefined>): Pr
   const headers: Record<string, string> = {};
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
 
-  const res = await fetch(`${adminUrl}/deployments`, { headers });
+  const res = await fetch(`${adminUrl}/deployments`, {
+    headers,
+    signal: AbortSignal.timeout(READINESS_EXTERNAL_PROBE_TIMEOUT_MS),
+  });
   if (!res.ok) {
     throw new Error(`admin HTTP ${res.status}`);
   }
@@ -646,4 +736,29 @@ function formatReadiness(checks: ProductReadinessCheck[]): ProductReadiness {
     checked_at: new Date().toISOString(),
     checks,
   };
+}
+
+function productReadinessCacheKey(
+  pool: Pool | null,
+  env: Record<string, string | undefined>,
+): string {
+  return [
+    pool ? "db" : "no-db",
+    env.NODE_ENV ?? "",
+    env.BOMBSELL_SUBSTRATE ?? "",
+    env.NATS_URL?.trim() ? "nats" : "no-nats",
+    env.RESTATE_INGRESS_URL?.trim() ? "restate" : "no-restate",
+    env.LINKEDIN_PROVIDER_HEALTH_URL?.trim() ? "linkedin" : "no-linkedin",
+    env.DATABASE_URL?.trim() ? "database-url" : "no-database-url",
+  ].join("|");
+}
+
+function readinessErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      return `timed out after ${READINESS_EXTERNAL_PROBE_TIMEOUT_MS}ms`;
+    }
+    return err.message;
+  }
+  return String(err);
 }

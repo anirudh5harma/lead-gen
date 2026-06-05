@@ -5,7 +5,7 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { canUseWorkspaceOps, getActiveWorkspaceSession } from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
 import {
-  checkProductReadiness,
+  checkProductReadinessCached,
   type ProductReadiness,
   type ProductReadinessStatus,
 } from "@/core/product/health";
@@ -71,7 +71,7 @@ export default async function HealthPage() {
   const [counts, dead, readiness] = await Promise.all([
     loadDispatchCounts(session.workspace.id),
     listDeadLetteredDispatches(pool, session.workspace.id, 100),
-    checkProductReadiness(pool),
+    checkProductReadinessCached({ pool }),
   ]);
 
   return (
