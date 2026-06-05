@@ -1,8 +1,18 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { authSessionCookieOptions } from "@/lib/auth/session-cookie";
+import type {
+  SupabaseCookieCapture,
+  SupabaseCookieWrite,
+} from "@/lib/supabase/cookies";
+export {
+  applySupabaseCookieCapture,
+  createSupabaseCookieCapture,
+} from "@/lib/supabase/cookies";
 
-export async function createServerSupabaseClient() {
+export async function createServerSupabaseClient(
+  capture?: SupabaseCookieCapture,
+) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
@@ -17,13 +27,7 @@ export async function createServerSupabaseClient() {
       getAll() {
         return cookieStore.getAll().map(({ name, value }) => ({ name, value }));
       },
-      setAll(
-        cookiesToSet: Array<{
-          name: string;
-          value: string;
-          options: CookieOptions;
-        }>,
-      ) {
+      setAll(cookiesToSet: SupabaseCookieWrite[], headers: Record<string, string> = {}) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
@@ -32,6 +36,10 @@ export async function createServerSupabaseClient() {
           // Server Components cannot write cookies; Route Handlers and
           // Server Actions can. Auth callbacks use this helper in writable
           // contexts.
+        }
+        if (capture) {
+          capture.cookies.push(...cookiesToSet);
+          Object.assign(capture.headers, headers);
         }
       },
     },

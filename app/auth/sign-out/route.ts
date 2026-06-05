@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  applySupabaseCookieCapture,
+  createServerSupabaseClient,
+  createSupabaseCookieCapture,
+} from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
-  const supabase = await createServerSupabaseClient();
+  const supabaseCookies = createSupabaseCookieCapture();
+  const supabase = await createServerSupabaseClient(supabaseCookies);
   await supabase.auth.signOut();
-  return NextResponse.redirect(new URL("/", request.url), 303);
+  const response = NextResponse.redirect(new URL("/", request.url), 303);
+  applySupabaseCookieCapture(response, supabaseCookies);
+  return response;
 }

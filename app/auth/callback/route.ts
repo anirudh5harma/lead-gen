@@ -3,7 +3,11 @@ import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
 import { postAuthDestination, safeNextPath } from "@/lib/auth/next";
 import { resolvePostAuthUserId } from "@/lib/auth/post-auth";
 import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  applySupabaseCookieCapture,
+  createServerSupabaseClient,
+  createSupabaseCookieCapture,
+} from "@/lib/supabase/server";
 import {
   ACTIVE_WORKSPACE_COOKIE_NAME,
   activeWorkspaceCookieOptions,
@@ -31,7 +35,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createServerSupabaseClient();
+    const supabaseCookies = createSupabaseCookieCapture();
+    const supabase = await createServerSupabaseClient(supabaseCookies);
     const { data: exchangeData, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       console.error("[auth/callback] exchangeCodeForSession error", error);
@@ -61,6 +66,7 @@ export async function GET(request: Request) {
         ? new URL(destinationPath, origin)
         : new URL(destinationPath, `${forwardedProto}://${forwardedHost}`);
     const response = NextResponse.redirect(destination);
+    applySupabaseCookieCapture(response, supabaseCookies);
     if (completed) {
       response.cookies.set(
         ACTIVE_WORKSPACE_COOKIE_NAME,

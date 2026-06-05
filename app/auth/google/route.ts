@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { safeNextPath } from "@/lib/auth/next";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  applySupabaseCookieCapture,
+  createServerSupabaseClient,
+  createSupabaseCookieCapture,
+} from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +27,9 @@ export async function GET(request: Request) {
   }
 
   let signInUrl: string | null = null;
+  const supabaseCookies = createSupabaseCookieCapture();
   try {
-    const supabase = await createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient(supabaseCookies);
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -49,5 +54,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(loginUrl("oauth"));
   }
 
-  return NextResponse.redirect(signInUrl);
+  const response = NextResponse.redirect(signInUrl);
+  applySupabaseCookieCapture(response, supabaseCookies);
+  return response;
 }
