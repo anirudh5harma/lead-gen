@@ -56,6 +56,24 @@ test("migration runner: applies all foundation migrations and creates expected t
     for (const name of expected) {
       assert.ok(present.has(name), `expected table ${name}`);
     }
+
+    const expectedIndexes = [
+      "events_workspace_type_occurred_idx",
+      "events_recommendation_review_latest_idx",
+      "events_recommendation_mutation_latest_idx",
+      "outcomes_recommendation_review_latest_idx",
+    ];
+    const indexes = await fx.pool.query<{ indexname: string }>(
+      `select indexname
+         from pg_indexes
+        where schemaname = $1
+          and indexname = any($2::text[])`,
+      [fx.schema, expectedIndexes],
+    );
+    const presentIndexes = new Set(indexes.rows.map((row) => row.indexname));
+    for (const name of expectedIndexes) {
+      assert.ok(presentIndexes.has(name), `expected index ${name}`);
+    }
   } finally {
     await fx.close();
   }

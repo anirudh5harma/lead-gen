@@ -36,6 +36,8 @@ interface PulseMetric {
   last_activity_at: Date | null;
 }
 
+type RepActivityPulse = Pick<RepPulse, "sampark_active" | "prayog_runs">;
+
 async function loadRunning(workspaceId: string): Promise<RunningRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<RunningRow>(
@@ -67,13 +69,7 @@ async function loadOutcomes(workspaceId: string): Promise<OutcomeRow[]> {
   return rows;
 }
 
-async function loadRepPulse(
-  workspaceId: string,
-  contentAngles: number,
-  contentLast: Date | null,
-  aeoGaps: number,
-  aeoLast: Date | null,
-): Promise<RepPulse> {
+async function loadRepActivityPulse(workspaceId: string): Promise<RepActivityPulse> {
   const pool = getPool();
   const { rows } = await pool.query<{
     sampark_active: string;
@@ -113,12 +109,10 @@ async function loadRepPulse(
       count: Number(rows[0]?.sampark_active ?? 0),
       last_activity_at: rows[0]?.sampark_last_activity_at ?? null,
     },
-    vaani_angles: { count: contentAngles, last_activity_at: contentLast },
     prayog_runs: {
       count: Number(rows[0]?.prayog_runs ?? 0),
       last_activity_at: rows[0]?.prayog_last_activity_at ?? null,
     },
-    bodh_gaps: { count: aeoGaps, last_activity_at: aeoLast },
   };
 }
 
@@ -203,21 +197,26 @@ export default async function BriefPage() {
     );
   }
   const pool = getPool();
-  const [reviewPulse, running, outcomes] = await Promise.all([
+  const [reviewPulse, running, outcomes, repActivity] = await Promise.all([
     getProductReviewPulse(pool, {
       workspace_id: session.workspace.id,
       user_id: session.user_id,
     }),
     loadRunning(session.workspace.id),
     loadOutcomes(session.workspace.id),
+    loadRepActivityPulse(session.workspace.id),
   ]);
-  const pulse = await loadRepPulse(
-    session.workspace.id,
-    reviewPulse.content.open,
-    reviewPulse.content.last_activity_at,
-    reviewPulse.aeo.open,
-    reviewPulse.aeo.last_activity_at,
-  );
+  const pulse: RepPulse = {
+    ...repActivity,
+    vaani_angles: {
+      count: reviewPulse.content.open,
+      last_activity_at: reviewPulse.content.last_activity_at,
+    },
+    bodh_gaps: {
+      count: reviewPulse.aeo.open,
+      last_activity_at: reviewPulse.aeo.last_activity_at,
+    },
+  };
   return (
     <BriefView
       workspaceName={session.workspace.name}
