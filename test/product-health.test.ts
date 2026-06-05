@@ -3,11 +3,11 @@ import test from "node:test";
 import type { Pool } from "pg";
 import {
   REQUIRED_RESTATE_SERVICES,
-  checkProductLiveness,
   checkProductReadiness,
   checkProductReadinessCached,
   resetProductReadinessCacheForTests,
 } from "../core/product/health.ts";
+import { checkProductLiveness } from "../core/product/liveness.ts";
 import { setupPg } from "./_pg.ts";
 
 test("product health: reports unconfigured when no pool is provided", async () => {
