@@ -34,6 +34,7 @@
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
     "verify:ses": "node --experimental-strip-types scripts/verify-ses.ts",
     "backfill:exa-profiles": "node --experimental-strip-types scripts/backfill-exa-profiles.ts",
+    "cleanup:generated-work": "node --experimental-strip-types scripts/cleanup-generated-work.ts",
     "test": "node --test --experimental-strip-types test/**/*.test.ts"
   },
   "dependencies": {

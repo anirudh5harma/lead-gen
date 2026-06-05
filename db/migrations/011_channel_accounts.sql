@@ -35,7 +35,7 @@ create table channel_accounts (
   workspace_id      uuid not null references workspaces(id) on delete cascade,
 
   kind              channel_account_kind not null,
-  display_name      text not null,            -- 'anirudh@bombsell.com', 'go.bombsell.com', 'Maya LinkedIn'
+  display_name      text not null,            -- 'anirudh@bombsell.com', 'go.bombsell.com', 'Sampark LinkedIn'
 
   -- Encrypted credentials (envelope-encrypted via the workspace KMS key, see
   -- core/substrate/auth/). Never returned by default queries.

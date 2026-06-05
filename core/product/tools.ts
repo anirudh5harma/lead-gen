@@ -13,6 +13,7 @@ import {
   configureWorkspaceCompanyProfile,
   configureWorkspaceEmailAccount,
   configureWorkspaceSignalSource,
+  deleteProductRecommendation,
   discoverSignalFromSource,
   dispatchSignalPlaysOnce,
   enrichWorkspaceProfileWithExa,
@@ -31,6 +32,7 @@ import {
   startWorkspaceExaResearchWorkflow,
   submitManualSignal,
   trackCompanyForWorkspace,
+  updateProductRecommendation,
   type ProductWorkspaceSession,
 } from "./app.ts";
 import {
@@ -708,6 +710,44 @@ export function registerProductTools(): void {
     }),
     async handler(input, ctx) {
       return reviewProductRecommendation(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.recommendation.update",
+    description:
+      "Edit the title, detail, or proof URL for an Exa-backed Content/AEO recommendation. This emits a replayable recommendation.updated event instead of mutating generated evidence in place.",
+    kind: "write",
+    input: z.object({
+      review_id: z.string().min(1),
+      title: z.string().min(1),
+      detail: z.string(),
+      url: z.string().url().nullable().optional(),
+      note: z.string().nullable().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      review_id: z.string().min(1),
+    }),
+    async handler(input, ctx) {
+      return updateProductRecommendation(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.recommendation.delete",
+    description:
+      "Remove a suggested Content/AEO recommendation from the review surface by emitting a replayable recommendation.deleted event.",
+    kind: "write",
+    input: z.object({
+      review_id: z.string().min(1),
+      reason: z.string().nullable().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      review_id: z.string().min(1),
+      deleted: z.literal(true),
+    }),
+    async handler(input, ctx) {
+      return deleteProductRecommendation(input, sessionFromContext(ctx));
     },
   });
 

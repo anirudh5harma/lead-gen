@@ -89,7 +89,7 @@ try {
   const activation = await configureActivationSetup(
     {
       rep: {
-        name: "Maya",
+        name: "Sampark",
         role: "sdr",
         voice: "Clear, specific, low-hype, and useful.",
         story: `Turns market movement around ${companyName} into careful founder-led conversations.`,
@@ -113,7 +113,7 @@ try {
         approval: "approve_first",
       },
       email: {
-        display_name: "maya@go.bombsell.com",
+        display_name: "sampark@go.bombsell.com",
         daily_cap: 15,
       },
     },

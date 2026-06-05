@@ -792,6 +792,22 @@ const RecommendationReviewed = z.object({
   item: BriefItem,
 });
 
+const RecommendationUpdated = z.object({
+  review_id: z.string().min(1),
+  review_kind: z.enum(["content_opportunity", "aeo_gap"]),
+  source_event_id: z.string().uuid(),
+  note: z.string().nullable().optional(),
+  item: BriefItem,
+});
+
+const RecommendationDeleted = z.object({
+  review_id: z.string().min(1),
+  review_kind: z.enum(["content_opportunity", "aeo_gap"]),
+  source_event_id: z.string().uuid(),
+  reason: z.string().nullable().optional(),
+  item: BriefItem,
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Memory updates (procedural memory grows from outcomes)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -903,6 +919,8 @@ export const eventRegistry = {
   "aeo.audit.completed": AeoAuditCompleted,
   "content.opportunity.discovered": ContentOpportunityDiscovered,
   "recommendation.reviewed": RecommendationReviewed,
+  "recommendation.updated": RecommendationUpdated,
+  "recommendation.deleted": RecommendationDeleted,
 
   "rep.memory.procedural.updated": RepMemoryProceduralUpdated,
   "rep.memory.procedural.seeded": RepMemoryProceduralSeeded,

@@ -21,7 +21,7 @@ create table reps (
   id                uuid primary key default gen_random_uuid(),
   workspace_id      uuid not null references workspaces(id) on delete cascade,
 
-  name              text not null,            -- e.g. 'Maya', 'Devon — LinkedIn voice for our CTO'
+  name              text not null,            -- e.g. 'Sampark', 'Devon — LinkedIn voice for our CTO'
   role              rep_role not null,
   status            rep_status not null default 'draft',
 

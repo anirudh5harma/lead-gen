@@ -1,11 +1,18 @@
+"use client";
+
 import Icon from "@/components/Icon";
+import { useToast } from "@/components/Toast";
 import type {
   ProductBriefItem,
   ProductRecommendationOutcomeKind,
 } from "@/core/product/app.ts";
+import { useRef, useTransition, type FormEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import {
+  deleteRecommendationAction,
   recordRecommendationOutcomeAction,
   reviewRecommendationAction,
+  updateRecommendationAction,
 } from "./actions";
 
 export function RecommendationReviewGrid({
@@ -137,7 +144,12 @@ function RecommendationReviewActions({
           <Icon name="check" size={14} />
           Saved
         </p>
-        <form action={recordRecommendationOutcomeAction} className="flex flex-col gap-2 sm:flex-row">
+        <RecommendationEditDeleteControls item={item} surface={surface} />
+        <ToastActionForm
+          action={recordRecommendationOutcomeAction}
+          successTitle="Result recorded"
+          className="flex flex-col gap-2 sm:flex-row"
+        >
           <input type="hidden" name="review_id" value={item.review_id} />
           <input type="hidden" name="outcome_kind" value={outcomeKind} />
           <input type="hidden" name="surface" value={surface} />
@@ -154,34 +166,180 @@ function RecommendationReviewActions({
             <Icon name="task_alt" size={14} />
             {outcomeLabel}
           </button>
-        </form>
+        </ToastActionForm>
       </div>
     );
   }
   return (
-    <div className="mt-4 flex flex-wrap gap-2">
-      <form action={reviewRecommendationAction}>
-        <input type="hidden" name="review_id" value={item.review_id} />
-        <input type="hidden" name="decision" value="accepted" />
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
-        >
-          <Icon name="check" size={14} />
-          Use idea
-        </button>
-      </form>
-      <form action={reviewRecommendationAction}>
-        <input type="hidden" name="review_id" value={item.review_id} />
-        <input type="hidden" name="decision" value="ignored" />
-        <button
-          type="submit"
-          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
-        >
-          <Icon name="close" size={14} />
-          Dismiss
-        </button>
-      </form>
+    <div className="mt-4 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <ToastActionForm action={reviewRecommendationAction} successTitle="Suggestion saved">
+          <input type="hidden" name="review_id" value={item.review_id} />
+          <input type="hidden" name="decision" value="accepted" />
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+          >
+            <Icon name="check" size={14} />
+            Use idea
+          </button>
+        </ToastActionForm>
+        <ToastActionForm action={reviewRecommendationAction} successTitle="Suggestion dismissed">
+          <input type="hidden" name="review_id" value={item.review_id} />
+          <input type="hidden" name="decision" value="ignored" />
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
+          >
+            <Icon name="close" size={14} />
+            Dismiss
+          </button>
+        </ToastActionForm>
+        <ToastActionForm action={deleteRecommendationAction} successTitle="Suggestion deleted">
+          <RecommendationDeleteFields reviewId={item.review_id} surface={surface} />
+        </ToastActionForm>
+      </div>
+      <RecommendationEditForm item={item} />
     </div>
+  );
+}
+
+function RecommendationEditDeleteControls({
+  item,
+  surface,
+}: {
+  item: ProductBriefItem;
+  surface: string;
+}) {
+  if (!item.review_id) return null;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <ToastActionForm action={deleteRecommendationAction} successTitle="Suggestion deleted">
+          <RecommendationDeleteFields reviewId={item.review_id} surface={surface} />
+        </ToastActionForm>
+      </div>
+      <RecommendationEditForm item={item} />
+    </div>
+  );
+}
+
+function RecommendationDeleteFields({
+  reviewId,
+  surface,
+}: {
+  reviewId: string;
+  surface: string;
+}) {
+  return (
+    <>
+      <input type="hidden" name="review_id" value={reviewId} />
+      <input type="hidden" name="reason" value={`Deleted from ${surface}`} />
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-neg)] transition active:translate-y-px"
+      >
+        <Icon name="delete" size={14} />
+        Delete
+      </button>
+    </>
+  );
+}
+
+function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
+  if (!item.review_id) return null;
+  return (
+    <details className="group">
+      <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.42)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition hover:bg-[var(--color-ink-2)]">
+        <Icon name="edit" size={14} />
+        Edit
+      </summary>
+      <ToastActionForm
+        action={updateRecommendationAction}
+        successTitle="Suggestion updated"
+        className="mt-3 grid gap-2 rounded-lg border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.5)] p-3"
+      >
+        <input type="hidden" name="review_id" value={item.review_id} />
+        <label className="grid gap-1">
+          <span className="text-[11px] font-semibold text-[var(--color-text-3)]">Title</span>
+          <input
+            name="title"
+            required
+            defaultValue={item.title}
+            className="min-h-9 rounded-md border border-[var(--color-line-1)] bg-white/70 px-3 text-xs text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-[11px] font-semibold text-[var(--color-text-3)]">Detail</span>
+          <textarea
+            name="detail"
+            rows={3}
+            defaultValue={item.detail}
+            className="rounded-md border border-[var(--color-line-1)] bg-white/70 px-3 py-2 text-xs leading-5 text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-[11px] font-semibold text-[var(--color-text-3)]">Proof URL</span>
+          <input
+            name="url"
+            type="url"
+            defaultValue={item.url ?? ""}
+            className="min-h-9 rounded-md border border-[var(--color-line-1)] bg-white/70 px-3 text-xs text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
+          />
+        </label>
+        <button
+          type="submit"
+          className="inline-flex min-h-9 w-fit items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+        >
+          <Icon name="save" size={14} />
+          Save edit
+        </button>
+      </ToastActionForm>
+    </details>
+  );
+}
+
+function ToastActionForm({
+  action,
+  successTitle,
+  className,
+  children,
+}: {
+  action: (formData: FormData) => Promise<void>;
+  successTitle: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
+  const { success, error } = useToast();
+  const [pending, startTransition] = useTransition();
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    startTransition(async () => {
+      try {
+        await action(formData);
+        router.refresh();
+        success(successTitle);
+      } catch (err) {
+        error(err instanceof Error ? err.message : "Action failed. Please try again.");
+      }
+    });
+  }
+
+  return (
+    <form
+      ref={formRef}
+      onSubmit={onSubmit}
+      aria-busy={pending}
+      className={className}
+    >
+      <fieldset disabled={pending} className="contents">
+        {children}
+      </fieldset>
+    </form>
   );
 }

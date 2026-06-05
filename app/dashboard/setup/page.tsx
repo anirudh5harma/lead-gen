@@ -43,8 +43,9 @@ async function loadSetupState(workspaceId: string) {
   const [reps, icps, accounts] = await Promise.all([
     pool.query<SetupRepRow>(
       `select id, name, role::text as role, status::text as status, persona, autonomy
-         from reps
+       from reps
         where workspace_id = $1
+          and status <> 'retired'
         order by created_at asc`,
       [workspaceId],
     ),

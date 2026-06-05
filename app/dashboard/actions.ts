@@ -8,8 +8,10 @@ import {
   configureRep,
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
+  deleteProductRecommendation,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
+  updateProductRecommendation,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
 import { getRequestUserId } from "@/lib/auth";
@@ -149,6 +151,37 @@ export async function reviewRecommendationAction(formData: FormData) {
       review_id: reviewId,
       decision,
       note: value(formData, "note") || null,
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
+export async function updateRecommendationAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const reviewId = value(formData, "review_id");
+  if (!reviewId) return;
+  await updateProductRecommendation(
+    {
+      review_id: reviewId,
+      title: value(formData, "title"),
+      detail: value(formData, "detail"),
+      url: value(formData, "url") || null,
+      note: value(formData, "note") || null,
+    },
+    session,
+  );
+  revalidateProductPaths();
+}
+
+export async function deleteRecommendationAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const reviewId = value(formData, "review_id");
+  if (!reviewId) return;
+  await deleteProductRecommendation(
+    {
+      review_id: reviewId,
+      reason: value(formData, "reason") || null,
     },
     session,
   );
