@@ -62,6 +62,7 @@ test("migration runner: applies all foundation migrations and creates expected t
       "events_recommendation_review_latest_idx",
       "events_recommendation_mutation_latest_idx",
       "outcomes_recommendation_review_latest_idx",
+      "workflow_approvals_pending_message_idx",
     ];
     const indexes = await fx.pool.query<{ indexname: string }>(
       `select indexname

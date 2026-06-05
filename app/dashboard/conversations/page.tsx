@@ -69,8 +69,8 @@ async function loadConversations(workspaceId: string): Promise<ConversationRow[]
            from workflow_approvals a
           where a.workspace_id = c.workspace_id
             and a.decision = 'pending'
-            and (a.payload->>'message_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-            and (a.payload->>'message_id')::uuid = lm.id
+            and a.payload ? 'message_id'
+            and a.payload->>'message_id' = lm.id::text
           order by a.created_at desc
           limit 1
        ) pending on true

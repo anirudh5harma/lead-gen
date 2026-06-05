@@ -39,6 +39,7 @@ async function loadPending(workspaceId: string): Promise<PendingApprovalRow[]> {
        join workflow_runs wr on wr.id = a.run_id
        left join messages m
          on (a.payload->>'message_id') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        and m.workspace_id = a.workspace_id
         and m.id = (a.payload->>'message_id')::uuid
        left join conversations c on c.id = m.conversation_id
        left join reps r on r.id = c.rep_id
