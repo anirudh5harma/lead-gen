@@ -123,6 +123,7 @@ async function createProfileAndAggregator(formData: FormData): Promise<void> {
       website_url: profile.website_url,
       industry: profile.industry,
       description: profile.description,
+      profile_source: profile.source,
     },
     session,
   );

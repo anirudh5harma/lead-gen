@@ -242,17 +242,38 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
           {freshWhen(conversation.latest_message_created_at ?? conversation.last_activity_at)}
         </span>
         {conversation.pending_approval_id ? (
-          <form action={decideApprovalWithDraftAction}>
-            <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
-            <input type="hidden" name="decision" value="approved" />
-            <button
-              type="submit"
-              className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+          <>
+            <Link
+              href="/dashboard/review"
+              prefetch={false}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
             >
-              <Icon name="check" size={14} />
-              Approve
-            </button>
-          </form>
+              <Icon name="rate_review" size={14} />
+              Review
+            </Link>
+            <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
+              <input type="hidden" name="decision" value="approved" />
+              <button
+                type="submit"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+              >
+                <Icon name="check" size={14} />
+                Approve
+              </button>
+            </form>
+            <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
+              <input type="hidden" name="decision" value="rejected" />
+              <button
+                type="submit"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+              >
+                <Icon name="close" size={14} />
+                Reject
+              </button>
+            </form>
+          </>
         ) : null}
       </div>
     </article>

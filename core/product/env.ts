@@ -189,6 +189,33 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "exa_...",
   },
   {
+    name: "HUNTER_API_KEY",
+    requirement: "optional",
+    category: "intelligence",
+    description: "Optional Hunter API key for contact discovery, email finding, and fallback email verification in contact resolution.",
+    example: "hunter_...",
+  },
+  {
+    name: "HUNTER_API_BASE_URL",
+    requirement: "optional",
+    category: "intelligence",
+    description: "Optional Hunter API base URL override for tests or regional routing.",
+    example: "https://api.hunter.io/v2",
+  },
+  {
+    name: "ZEROBOUNCE_API_KEY",
+    requirement: "optional",
+    category: "intelligence",
+    description: "Optional ZeroBounce API key for stricter email deliverability checks before outreach.",
+  },
+  {
+    name: "ZEROBOUNCE_API_BASE_URL",
+    requirement: "optional",
+    category: "intelligence",
+    description: "Optional ZeroBounce API base URL override. Defaults to the global v2 validation endpoint.",
+    example: "https://api.zerobounce.net/v2",
+  },
+  {
     name: "BOMBSELL_EXA_DAILY_QUERY_CAP",
     requirement: "optional",
     category: "intelligence",
@@ -355,6 +382,19 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "channels",
     description: "Default per-account Outlook send ceiling.",
     example: "25",
+  },
+  {
+    name: "OUTLOOK_REPAIR_WORKSPACE_ID",
+    requirement: "optional",
+    category: "channels",
+    description: "Verifier-only override to repair Outlook subscriptions for one workspace.",
+  },
+  {
+    name: "OUTLOOK_REPAIR_LIMIT",
+    requirement: "optional",
+    category: "channels",
+    description: "Verifier-only maximum Outlook accounts checked per subscription repair workflow run.",
+    example: "500",
   },
   {
     name: "LINKEDIN_PROVIDER_URL",

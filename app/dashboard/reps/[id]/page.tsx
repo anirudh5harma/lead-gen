@@ -199,7 +199,8 @@ export default async function RepDetailPage({
                 options={[
                   ["approve_first", "Review the first move"],
                   ["always", "Review every move"],
-                  ["none", "Move when ready"],
+                  ["none", "Autonomous after checks"],
+                  ["research_only", "Research only"],
                 ]}
               />
             </div>

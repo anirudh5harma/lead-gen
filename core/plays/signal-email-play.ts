@@ -5,6 +5,8 @@ import type { Judge } from "../agents/eval/types.ts";
 import type { LLMClient } from "../agents/llm/types.ts";
 import { evalGate } from "../agents/eval/gate.ts";
 import type { RepMemory } from "../agents/memory/types.ts";
+import type { GraphCompany, GraphPerson } from "../graph/types.ts";
+import type { Signal } from "../primitives/index.ts";
 import {
   createResearcherRole,
   createSenderRole,
@@ -67,6 +69,51 @@ export interface SignalToEmailPlayDeps {
 
 function playRunOutputPayload(output: SignalToEmailPlayOutput): Record<string, unknown> {
   return output as unknown as Record<string, unknown>;
+}
+
+function buildEmailPersonalizationContext(input: {
+  signal: Signal;
+  person: GraphPerson;
+  company: GraphCompany | null;
+  workspaceContextMarkdown?: string | null;
+  draftGrounding?: { summary: string } | null;
+}): string {
+  const signalDate = formatIsoDate(input.signal.freshness_at);
+  const workspaceContext = compactMarkdown(input.workspaceContextMarkdown, 700);
+  return [
+    "## Targeting Company",
+    workspaceContext
+      ? workspaceContext
+      : "- Workspace profile/context was not available for this run.",
+    "",
+    "## Targeted Company And Contact",
+    `- Company: ${input.company?.name ?? "unknown"}${input.company?.domain ? ` (${input.company.domain})` : ""}`,
+    input.company?.industry ? `- Industry: ${input.company.industry}` : null,
+    input.company?.size_bucket ? `- Size: ${input.company.size_bucket}` : null,
+    input.company?.description ? `- Description: ${input.company.description}` : null,
+    `- Contact: ${input.person.full_name}${input.person.title ? `, ${input.person.title}` : ""}`,
+    input.person.linkedin_url ? `- LinkedIn: ${input.person.linkedin_url}` : null,
+    input.person.emails.length ? `- Email evidence: ${emailEvidence(input.person.properties, input.person.emails[0]!)}` : null,
+    "",
+    "## Signal Timing And Why Now",
+    `- Signal kind: ${input.signal.kind}`,
+    `- Signal freshness: ${signalDate}`,
+    `- Signal title: ${input.signal.title}`,
+    input.signal.content ? `- Signal content: ${input.signal.content}` : null,
+    input.signal.url ? `- Signal source: ${input.signal.url}` : null,
+    input.signal.match_reason ? `- Match reason: ${input.signal.match_reason}` : null,
+    input.signal.match_score != null ? `- Match score: ${input.signal.match_score.toFixed(2)}` : null,
+    input.signal.novelty_score != null ? `- Novelty score: ${input.signal.novelty_score.toFixed(2)}` : null,
+    typeof input.signal.audience_hint.rationale === "string"
+      ? `- ICP rationale: ${input.signal.audience_hint.rationale}`
+      : null,
+    typeof input.signal.audience_hint.icp_segment === "string"
+      ? `- ICP segment: ${input.signal.audience_hint.icp_segment}`
+      : null,
+    "",
+    "## Fresh Evidence",
+    input.draftGrounding?.summary ? input.draftGrounding.summary : "- No extra Exa draft grounding was required.",
+  ].filter((line): line is string => line !== null).join("\n");
 }
 
 async function publishPlayDeferred(
@@ -190,6 +237,13 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             }) ?? null)
         : null;
       const groundedResearch = applyDraftGrounding(research, draftGrounding);
+      const personalizationContextMarkdown = buildEmailPersonalizationContext({
+        signal,
+        person,
+        company,
+        workspaceContextMarkdown: workspaceContextMarkdown ?? null,
+        draftGrounding,
+      });
 
       const draft = await ctx.step("writer.compose_email", async () => {
         const result = await writer.invoke(
@@ -197,6 +251,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             channel: "email",
             research: groundedResearch,
             recipient_name: person.given_name ?? person.full_name.split(" ")[0] ?? person.full_name,
+            personalization_context_markdown: personalizationContextMarkdown,
           },
           roleContext,
         );
@@ -227,11 +282,20 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           rep_id: rep.id,
           subject: draft.subject,
           body: draft.body,
+          properties: {
+            personalization_context_markdown: personalizationContextMarkdown,
+          },
           provenance: {
             pattern_key: research.pattern_key,
             exemplar_ids: draft.exemplar_ids,
             play_id: input.play_id,
             play_run_id: input.play_run_id,
+            personalization_context: {
+              signal_id: signal.id,
+              person_id: person.id,
+              company_id: company?.id ?? null,
+              generated_at: new Date().toISOString(),
+            },
             ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
             ...(draftGrounding ? { exa_grounding: draftGroundingProvenance(draftGrounding) } : {}),
           },
@@ -258,6 +322,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
               signal_summary: groundedResearch.signal_summary,
               counterparty_summary: research.counterparty_summary,
               procedural_exemplars: draft.procedural_exemplars,
+              personalization_context_markdown: personalizationContextMarkdown,
               workspace_context_markdown: workspaceContextMarkdown ?? null,
             },
           },
@@ -370,6 +435,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             policy: policy.approval,
             daily_cap: policy.daily_cap,
             sent_today: dailySendCount,
+            personalization_context_markdown: personalizationContextMarkdown,
           },
         });
         if (decision.decision !== "approved") {
@@ -413,7 +479,10 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
               subject: row.subject,
               body: row.body,
               provenance: row.provenance,
-              properties: { human_edited: true },
+              properties: {
+                human_edited: true,
+                personalization_context_markdown: personalizationContextMarkdown,
+              },
             });
             return row;
           });
@@ -431,9 +500,10 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
                   body: edited.body ?? "",
                 },
                 context: {
-                  signal_summary: research.signal_summary,
+                  signal_summary: groundedResearch.signal_summary,
                   counterparty_summary: research.counterparty_summary,
                   procedural_exemplars: draft.procedural_exemplars,
+                  personalization_context_markdown: personalizationContextMarkdown,
                   workspace_context_markdown: workspaceContextMarkdown ?? null,
                 },
               },
@@ -559,6 +629,31 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       return output;
     },
   });
+}
+
+function compactMarkdown(markdown: string | null | undefined, maxLength: number): string | null {
+  const cleaned = markdown?.trim();
+  if (!cleaned) return null;
+  return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, maxLength).trim()}...`;
+}
+
+function formatIsoDate(value: string): string {
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : value;
+}
+
+function emailEvidence(properties: Record<string, unknown>, email: string): string {
+  const verification = recordValue(properties.email_verification);
+  const byEmail = recordValue(verification?.[email.toLowerCase()]);
+  const status = typeof byEmail?.status === "string" ? byEmail.status : "unverified";
+  const provider = typeof byEmail?.provider === "string" ? ` via ${byEmail.provider}` : "";
+  return `${email} (${status}${provider})`;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function parseApprovalDraftOverride(

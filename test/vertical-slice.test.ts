@@ -147,8 +147,21 @@ test("first vertical slice: LLM-backed writer path is usable behind the same jud
   });
   assert.equal(result.output.decision, "sent");
   assert.match(result.state.messages[0].body ?? "", /distributed payroll/);
-  assert.match(calls[0] ?? "", /Bombsell Workspace Context/);
-  assert.match(calls[0] ?? "", /Pending Review/);
+  const writerPrompt = calls[0] ?? "";
+  assert.match(writerPrompt, /Personalization context/);
+  assert.match(writerPrompt, /Targeting Company/);
+  assert.match(writerPrompt, /Bombsell Workspace Context/);
+  assert.match(writerPrompt, /Pending Review/);
+  assert.match(writerPrompt, /Targeted Company And Contact/);
+  assert.match(writerPrompt, /Payroll infrastructure for globally distributed teams/);
+  assert.match(writerPrompt, /Signal Timing And Why Now/);
+  assert.match(writerPrompt, /Manual signal pre-matched/);
+  assert.match(writerPrompt, /Outcome learnings/);
+  assert.match(writerPrompt, /Congrats on the round/);
+  assert.match(
+    String(result.state.messages[0].properties.personalization_context_markdown ?? ""),
+    /Signal Timing And Why Now/,
+  );
 });
 
 test("email transport: Resend adapter posts the provider payload and returns provider id", async () => {

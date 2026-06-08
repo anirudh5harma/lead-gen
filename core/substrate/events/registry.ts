@@ -86,6 +86,7 @@ const WorkspaceCompanyProfiled = z.object({
   website_url: z.string().url(),
   industry: z.string().nullable(),
   description: z.string().nullable(),
+  profile_source: z.enum(["manual", "firecrawl", "fallback"]).optional(),
 });
 
 const WorkspaceProfileEnriched = z.object({
@@ -144,6 +145,43 @@ const WorkspaceSourceConfigured = z.object({
   enabled: z.boolean(),
   poll_cadence_sec: z.number().int().positive(),
   properties: z.record(z.string(), z.unknown()),
+});
+
+const ContactCandidate = z.object({
+  rank: z.number().int().positive(),
+  person_id: z.string().uuid(),
+  full_name: z.string().min(1),
+  title: z.string().nullable(),
+  score: z.number().min(0).max(1.2),
+  reasons: z.array(z.string()),
+  emails: z.array(z.string()),
+  linkedin_url: z.string().nullable(),
+  verification: z.record(z.string(), z.unknown()),
+  provenance: z.record(z.string(), z.unknown()),
+});
+
+const ContactResolved = z.object({
+  contact_resolution_id: z.string().uuid(),
+  signal_id: z.string().uuid(),
+  company_id: z.string().uuid(),
+  play_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  channel: z.enum(["email", "linkedin"]),
+  selected_person_id: z.string().uuid(),
+  candidates: z.array(ContactCandidate).min(1).max(3),
+  provider_order: z.array(z.string()),
+});
+
+const ContactResolutionDeferred = z.object({
+  contact_resolution_id: z.string().uuid(),
+  signal_id: z.string().uuid(),
+  company_id: z.string().uuid(),
+  play_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  channel: z.enum(["email", "linkedin"]),
+  defer_reason: z.string().min(1),
+  candidate_count: z.number().int().nonnegative(),
+  provider_order: z.array(z.string()),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -845,6 +883,8 @@ export const eventRegistry = {
   "workspace.company.profiled": WorkspaceCompanyProfiled,
   "workspace.profile.enriched": WorkspaceProfileEnriched,
   "workspace.source.configured": WorkspaceSourceConfigured,
+  "contact.resolved": ContactResolved,
+  "contact.resolution.deferred": ContactResolutionDeferred,
 
   "signal.discovered": SignalDiscovered,
   "signal.ingested": SignalIngested,

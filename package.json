@@ -29,10 +29,12 @@
     "verify:worker-release": "node --experimental-strip-types scripts/verify-worker-release.ts",
     "verify:restate-ecs-health": "node --experimental-strip-types scripts/verify-restate-ecs-health.ts",
     "verify:production-gate": "node --experimental-strip-types scripts/verify-production-gate.ts",
+    "verify:outreach-pipeline": "node --experimental-strip-types scripts/verify-outreach-pipeline.ts",
     "verify:outlook": "node --experimental-strip-types scripts/verify-outlook-readiness.ts",
     "verify:exa": "node --experimental-strip-types scripts/verify-exa-intelligence.ts",
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
     "verify:ses": "node --experimental-strip-types scripts/verify-ses.ts",
+    "repair:outlook-subscriptions": "node --experimental-strip-types scripts/repair-outlook-subscriptions.ts",
     "backfill:exa-profiles": "node --experimental-strip-types scripts/backfill-exa-profiles.ts",
     "cleanup:generated-work": "node --experimental-strip-types scripts/cleanup-generated-work.ts",
     "test": "node --test --experimental-strip-types test/**/*.test.ts"

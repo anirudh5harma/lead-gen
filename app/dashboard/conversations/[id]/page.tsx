@@ -10,6 +10,7 @@ import {
   type ConversationTrustReplyProof,
 } from "@/core/product/conversation-trust";
 import { getActiveWorkspace } from "@/lib/workspace";
+import { decideApprovalWithDraftAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +115,62 @@ function TraceRow({
   );
 }
 
+function PendingApprovalPanel({ approval }: { approval: ConversationTrustApproval }) {
+  const subject = stringPayload(approval.payload, "subject") ?? "(no subject)";
+  const body = stringPayload(approval.payload, "body") ?? "(empty)";
+
+  return (
+    <div className="section-note">
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">Review draft</p>
+      <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+        {approval.reason ?? "This outreach is waiting for a human decision."}
+      </p>
+      <form action={decideApprovalWithDraftAction} className="mt-4 grid gap-3">
+        <input type="hidden" name="approval_id" value={approval.id} />
+        <input type="hidden" name="decision" value="approved" />
+        <label className="grid gap-1.5">
+          <span className="text-xs font-medium text-[var(--color-text-3)]">Subject</span>
+          <input
+            name="subject"
+            defaultValue={subject}
+            className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)] px-3 text-sm text-[var(--color-text-1)]"
+          />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-xs font-medium text-[var(--color-text-3)]">Body</span>
+          <textarea
+            name="body"
+            rows={8}
+            defaultValue={body}
+            className="rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+          />
+        </label>
+        <button
+          type="submit"
+          className="inline-flex min-h-10 items-center justify-center rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+        >
+          Approve
+        </button>
+      </form>
+      <form action={decideApprovalWithDraftAction} className="mt-3">
+        <input type="hidden" name="approval_id" value={approval.id} />
+        <input type="hidden" name="decision" value="rejected" />
+        <button
+          type="submit"
+          className="inline-flex min-h-10 w-full items-center justify-center rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+        >
+          Reject
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function stringPayload(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function textValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -201,6 +258,8 @@ export default async function ConversationDetailPage({
     outcomes,
     reply_proofs: replyProofs,
   } = trace;
+  const pendingApproval =
+    approvals.filter((approval) => approval.decision === "pending").at(-1) ?? null;
 
   return (
     <>
@@ -279,6 +338,8 @@ export default async function ConversationDetailPage({
         </section>
 
         <aside className="grid gap-4">
+          {pendingApproval ? <PendingApprovalPanel approval={pendingApproval} /> : null}
+
           <TrustTracePanel
             conversation={conv}
             messages={messages}

@@ -34,6 +34,26 @@ function numberValue(formData: FormData, key: string, fallback: number): number 
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+type DashboardApprovalPolicy =
+  | "none"
+  | "approve_first"
+  | "always"
+  | "research_only";
+
+function approvalValue(
+  formData: FormData,
+  key: string,
+  fallback: DashboardApprovalPolicy = "approve_first",
+): DashboardApprovalPolicy {
+  const raw = value(formData, key);
+  return raw === "none" ||
+    raw === "approve_first" ||
+    raw === "always" ||
+    raw === "research_only"
+    ? raw
+    : fallback;
+}
+
 function repRoleValue(formData: FormData, key: string) {
   const role = value(formData, key);
   return (
@@ -88,8 +108,7 @@ export async function switchWorkspaceAction(formData: FormData) {
 export async function configureActivationAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
   const signalKind = value(formData, "signal_kind") || "hiring";
-  const approval =
-    value(formData, "approval") === "none" ? "none" : "approve_first";
+  const approval = approvalValue(formData, "approval");
   await configureActivationSetup(
     {
       rep: {
@@ -139,12 +158,7 @@ export async function configureRepAction(formData: FormData) {
         value(formData, "rep_story") ||
         "Acts on fresh buying signals without spraying generic outreach.",
       daily_cap: numberValue(formData, "daily_cap", 25),
-      approval:
-        value(formData, "approval") === "none"
-          ? "none"
-          : value(formData, "approval") === "always"
-            ? "always"
-            : "approve_first",
+      approval: approvalValue(formData, "approval"),
     },
     session,
   );

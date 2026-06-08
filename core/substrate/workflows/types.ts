@@ -200,4 +200,11 @@ export interface WorkflowRuntime {
     approval_id: string,
     decision: ApprovalDecision,
   ): Promise<void>;
+
+  /**
+   * Wait for workflows launched in this process to finish their final
+   * bookkeeping. Durable adapters may no-op; tests and operator scripts use
+   * this before tearing down shared resources.
+   */
+  drain?(): Promise<void>;
 }

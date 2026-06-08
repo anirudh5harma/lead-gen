@@ -55,6 +55,11 @@ export interface SignalEmailWriterBrief {
   channel: "email";
   research: ResearchResult;
   recipient_name: string;
+  /**
+   * Prompt-ready summary of the targeting company, targeted company/person,
+   * timing, and evidence the writer must use for personalization.
+   */
+  personalization_context_markdown?: string | null;
 }
 
 export interface SignalEmailWriterDraft {
@@ -63,6 +68,7 @@ export interface SignalEmailWriterDraft {
   body_text: string;
   exemplar_ids: string[];
   procedural_exemplars: ProceduralExemplar[];
+  personalization_context_markdown?: string | null;
 }
 
 export interface WriterRoleOptions {
@@ -80,14 +86,19 @@ function deterministicEmailDraft(
     "",
     `I noticed ${brief.research.signal_summary}. ${brief.research.counterparty_summary} stood out as a relevant context for this.`,
     "",
+    brief.personalization_context_markdown
+      ? `The timing looks relevant because ${firstPersonalizationLine(brief.personalization_context_markdown)}.`
+      : null,
+    brief.personalization_context_markdown ? "" : null,
     `${ctx.rep.name} can help if this is a priority right now. Worth a short conversation?`,
-  ].join("\n");
+  ].filter((line): line is string => line !== null).join("\n");
   return {
     subject,
     body,
     body_text: body,
     exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
     procedural_exemplars,
+    personalization_context_markdown: brief.personalization_context_markdown ?? null,
   };
 }
 
@@ -111,6 +122,17 @@ export function createWriterRole(
     async invoke(brief, ctx) {
       const procedural_exemplars = await topProceduralExemplars(brief, ctx);
       if (!opts.llm) return deterministicEmailDraft(brief, ctx, procedural_exemplars);
+      const outcomeExamples = procedural_exemplars.length
+        ? [
+          "Outcome learnings from prior successful/failed drafts for this pattern:",
+          ...procedural_exemplars.slice(0, 3).map((exemplar, index) =>
+            [
+              `Example ${index + 1}: score=${exemplar.score.toFixed(2)} wins=${exemplar.win_count} losses=${exemplar.loss_count}`,
+              JSON.stringify(exemplar.exemplar),
+            ].join("\n")
+          ),
+        ].join("\n")
+        : "Outcome learnings from prior successful/failed drafts for this pattern: none yet.";
 
       const response = await opts.llm.complete({
         temperature: 0.7,
@@ -134,9 +156,13 @@ export function createWriterRole(
               `Recipient first name: ${brief.recipient_name}`,
               `Signal: ${brief.research.signal_summary}`,
               `Counterparty: ${brief.research.counterparty_summary}`,
+              brief.personalization_context_markdown
+                ? `Personalization context:\n${brief.personalization_context_markdown}`
+                : null,
               ctx.workspace_context_markdown
                 ? `Workspace context:\n${ctx.workspace_context_markdown}`
                 : null,
+              outcomeExamples,
               "Constraints: 60-180 words, no generic opener, no clickbait subject, no long sign-off.",
             ]
               .filter(Boolean)
@@ -161,9 +187,17 @@ export function createWriterRole(
         body_text: body,
         exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
         procedural_exemplars,
+        personalization_context_markdown: brief.personalization_context_markdown ?? null,
       };
     },
   };
+}
+
+function firstPersonalizationLine(markdown: string): string {
+  return markdown
+    .split("\n")
+    .map((line) => line.replace(/^[-#\s]+/, "").trim())
+    .find(Boolean) ?? "the signal is fresh";
 }
 
 export interface SignalEmailSenderRequest {

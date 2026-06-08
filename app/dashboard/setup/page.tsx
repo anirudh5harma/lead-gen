@@ -134,11 +134,14 @@ export default async function SetupPage() {
             label="Industry"
             defaultValue={profile?.industry ?? ""}
           />
-          <Field
-            name="description"
-            label="One-line description"
-            defaultValue={profile?.description ?? ""}
-          />
+          <div className="md:col-span-2">
+            <TextArea
+              name="description"
+              label="Company description"
+              defaultValue={profile?.description ?? ""}
+              rows={4}
+            />
+          </div>
           <div className="md:col-span-2 flex flex-wrap items-center gap-3">
             <button
               type="submit"
@@ -189,7 +192,9 @@ export default async function SetupPage() {
               defaultValue={rep?.autonomy.channels?.email?.approval ?? "approve_first"}
               options={[
                 ["approve_first", "Review the first move"],
-                ["none", "Move when ready"],
+                ["always", "Review every move"],
+                ["none", "Autonomous after checks"],
+                ["research_only", "Research only"],
               ]}
             />
           </div>

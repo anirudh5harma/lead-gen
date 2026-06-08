@@ -262,6 +262,7 @@ export function registerProductTools(): void {
       website_url: z.string().min(1),
       industry: z.string().optional(),
       description: z.string().optional(),
+      profile_source: z.enum(["manual", "firecrawl", "fallback"]).optional(),
     }),
     output: WorkspaceResultSchema.extend({ company_id: z.string().uuid() }),
     async handler(input, ctx) {

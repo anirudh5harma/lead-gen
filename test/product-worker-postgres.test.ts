@@ -139,6 +139,170 @@ test("product worker: dispatches signal.matched events into durable play runs", 
   }
 });
 
+test("product worker: resolves top graph contacts before dispatching an email Play", async (t) => {
+  const fx = await setupPg("product_worker_contact_resolver");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const submitted = await submitManualSignal({
+      company_name: "Resolver Payroll",
+      company_domain: "resolverpayroll.example",
+      person_name: "Seed Person",
+      person_email: "seed@resolverpayroll.example",
+      signal_title: "Resolver Payroll announced a Series A",
+      signal_content:
+        "Resolver Payroll raised a Series A to expand finance workflows for distributed teams.",
+      signal_url: "https://example.com/resolver-series-a",
+      approval: "none",
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    const company = await fx.pool.query<{ company_id: string }>(
+      `select related_company_id::text as company_id
+         from signals
+        where id = $1
+          and workspace_id = $2`,
+      [submitted.signal_id, submitted.workspace_id],
+    );
+    const companyId = company.rows[0]?.company_id;
+    assert.ok(companyId);
+    const founderId = await seedVerifiedGraphContact(fx.pool, {
+      workspace_id: submitted.workspace_id,
+      company_id: companyId,
+      full_name: "Ava Founder",
+      title: "Founder and CEO",
+      email: "ava@resolverpayroll.example",
+    });
+    await seedVerifiedGraphContact(fx.pool, {
+      workspace_id: submitted.workspace_id,
+      company_id: companyId,
+      full_name: "Ben Revenue",
+      title: "VP Revenue",
+      email: "ben@resolverpayroll.example",
+    });
+    await seedVerifiedGraphContact(fx.pool, {
+      workspace_id: submitted.workspace_id,
+      company_id: companyId,
+      full_name: "Cara Growth",
+      title: "Head of Growth",
+      email: "cara@resolverpayroll.example",
+    });
+
+    assert.equal(await dispatchSignalPlaysOnce(), 0);
+
+    const resolved = await until(async () => {
+      const { rows } = await fx.pool.query<{
+        payload: {
+          selected_person_id: string;
+          provider_order: string[];
+          candidates: Array<{
+            full_name: string;
+            person_id: string;
+            verification: { email_verified?: boolean };
+          }>;
+        };
+      }>(
+        `select payload
+           from events
+          where workspace_id = $1
+            and event_type = 'contact.resolved'
+            and payload->>'signal_id' = $2
+          order by occurred_at desc
+          limit 1`,
+        [submitted.workspace_id, submitted.signal_id],
+      );
+      return rows[0] ?? null;
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
+    assert.equal(resolved.payload.selected_person_id, founderId);
+    assert.deepEqual(resolved.payload.provider_order, ["graph_cache"]);
+    assert.deepEqual(
+      resolved.payload.candidates.map((candidate) => candidate.full_name),
+      ["Ava Founder", "Ben Revenue", "Cara Growth"],
+    );
+    assert.equal(
+      resolved.payload.candidates.every((candidate) =>
+        candidate.verification.email_verified === true
+      ),
+      true,
+    );
+
+    assert.equal(await dispatchSignalPlaysOnce(), 1);
+
+    let emailRun: { status: string; error: { message?: string } | null };
+    try {
+      emailRun = await until(async () => {
+        const { rows } = await fx.pool.query<{
+          status: string;
+          error: { message?: string } | null;
+        }>(
+          `select status, error from workflow_runs where idempotency_key = $1`,
+          [`signal:${submitted.signal_id}:play:${boot.play_id}`],
+        );
+        return rows[0] && rows[0].status !== "running"
+          ? rows[0]
+          : null;
+      }, { timeout: WORKFLOW_TIMEOUT_MS });
+    } catch (error) {
+      const trace = await fx.pool.query<{
+        workflow_name: string;
+        run_status: string;
+        step_name: string | null;
+        step_status: string | null;
+        step_error: { message?: string } | null;
+      }>(
+        `select wr.workflow_name,
+                wr.status as run_status,
+                ws.step_name,
+                ws.status as step_status,
+                ws.error as step_error
+           from workflow_runs wr
+           left join workflow_steps ws on ws.run_id = wr.id
+          where wr.workspace_id = $1
+          order by wr.created_at asc, ws.step_position asc, ws.attempt asc`,
+        [submitted.workspace_id],
+      );
+      assert.fail(`${error instanceof Error ? error.message : String(error)}; workflow trace=${JSON.stringify(trace.rows)}`);
+    }
+    assert.equal(emailRun.status, "completed", emailRun.error?.message);
+
+    const conversation = await fx.pool.query<{ counterparty_person_id: string }>(
+      `select counterparty_person_id::text
+         from conversations
+        where workspace_id = $1
+          and origin_signal_id = $2
+          and counterparty_person_id = $3
+        order by last_activity_at desc
+        limit 1`,
+      [submitted.workspace_id, submitted.signal_id, founderId],
+    );
+    assert.equal(conversation.rows[0]?.counterparty_person_id, founderId);
+
+    const workflowRows = await fx.pool.query<{ workflow_name: string; status: string }>(
+      `select workflow_name, status
+         from workflow_runs
+        where workspace_id = $1
+          and idempotency_key in ($2, $3)
+        order by workflow_name asc`,
+      [
+        submitted.workspace_id,
+        `contact:${submitted.signal_id}:play:${boot.play_id}:channel:email`,
+        `signal:${submitted.signal_id}:play:${boot.play_id}`,
+      ],
+    );
+    assert.deepEqual(
+      workflowRows.rows.map((row) => [row.workflow_name, row.status]),
+      [
+        ["contact.resolve_for_signal.v1", "completed"],
+        ["play.signal_to_email.v1", "completed"],
+      ],
+    );
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
 test("product worker: deliverability cap defers sends without consuming volume", async (t) => {
   const fx = await setupPg("product_deliverability");
   if (!fx) return t.skip("DATABASE_URL not set");
@@ -195,6 +359,50 @@ test("product worker: deliverability cap defers sends without consuming volume",
     await resetPool();
   }
 });
+
+async function seedVerifiedGraphContact(
+  pool: {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ id: string }> }>;
+  },
+  input: {
+    workspace_id: string;
+    company_id: string;
+    full_name: string;
+    title: string;
+    email: string;
+  },
+): Promise<string> {
+  const id = randomUUID();
+  const verification = {
+    email_verification: {
+      [input.email.toLowerCase()]: {
+        provider: "test",
+        status: "valid",
+        verified: true,
+        checked_at: new Date().toISOString(),
+      },
+    },
+  };
+  const { rows } = await pool.query(
+    `insert into graph_persons (
+       id, workspace_id, full_name, title, company_id, emails, properties, provenance
+     ) values (
+       $1, $2, $3, $4, $5, array[$6]::citext[], $7::jsonb, $8::jsonb
+     )
+     returning id::text as id`,
+    [
+      id,
+      input.workspace_id,
+      input.full_name,
+      input.title,
+      input.company_id,
+      input.email,
+      JSON.stringify(verification),
+      JSON.stringify({ source: "test:verified-contact" }),
+    ],
+  );
+  return rows[0]!.id;
+}
 
 test("product worker: recipient frequency cap defers repeat outreach", async (t) => {
   const fx = await setupPg("product_frequency_cap");

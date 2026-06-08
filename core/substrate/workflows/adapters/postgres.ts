@@ -65,6 +65,7 @@ export function createPostgresWorkflowRuntime(
   const { pool, bus } = opts;
   const workflows = new Map<string, WorkflowDefinition>();
   const runs = new Map<string, RunRecord>();
+  const activeExecutions = new Set<Promise<void>>();
 
   async function wakeParkedApproval(
     approval_id: string,
@@ -341,7 +342,7 @@ export function createPostgresWorkflowRuntime(
     def: WorkflowDefinition<I, O>,
   ): void {
     const ctx = makeContext(rec);
-    void (async () => {
+    const execution = (async () => {
       try {
         const output = (await def.run(rec.run.input as I, ctx)) as O;
         const endedAt = new Date().toISOString();
@@ -391,6 +392,10 @@ export function createPostgresWorkflowRuntime(
         rec.run.ended_at = endedAt;
       }
     })();
+    activeExecutions.add(execution);
+    void execution.finally(() => {
+      activeExecutions.delete(execution);
+    });
   }
 
   return {
@@ -580,6 +585,12 @@ export function createPostgresWorkflowRuntime(
         },
       });
       await wakeParkedApproval(approval_id, decision);
+    },
+
+    async drain() {
+      while (activeExecutions.size > 0) {
+        await Promise.allSettled([...activeExecutions]);
+      }
     },
   };
 }

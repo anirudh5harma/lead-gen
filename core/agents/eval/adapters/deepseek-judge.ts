@@ -75,6 +75,9 @@ function buildUserPrompt(input: JudgeInput): string {
     "",
     `Signal context: ${input.context?.signal_summary ?? "(none provided)"}`,
     `Counterparty context: ${input.context?.counterparty_summary ?? "(none provided)"}`,
+    input.context?.personalization_context_markdown
+      ? `Personalization context the writer saw:\n${input.context.personalization_context_markdown}`
+      : null,
     input.context?.workspace_context_markdown
       ? `Workspace context the writer saw:\n${input.context.workspace_context_markdown}`
       : null,

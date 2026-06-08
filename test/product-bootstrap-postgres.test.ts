@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import {
   bootstrapWorkspace,
   configureRep,
+  configureWorkspaceCompanyProfile,
   configureWorkspaceEmailAccount,
+  getProductCompanyProfile,
   resetProductEngineForTests,
 } from "../core/product/app.ts";
 import { resetPool, setPool } from "../core/substrate/storage/index.ts";
@@ -258,6 +260,78 @@ test("product configuration events append changed user state but dedupe exact re
     );
     assert.equal(account.rows[0].display_name, "sampark@try.bombsell.example");
     assert.equal(account.rows[0].user_events, "2");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("workspace company profile edits replace scraped defaults", async (t) => {
+  const fx = await setupPg("product_profile_edit");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const boot = await bootstrapWorkspace(fx.pool, userId, {
+      workspace_slug: "profile-edit",
+      workspace_name: "Profile Edit",
+    });
+    const session = { workspace_id: boot.workspace_id, user_id: userId };
+
+    const created = await configureWorkspaceCompanyProfile(
+      {
+        company_name: "Acme AI",
+        website_url: "https://acme.ai",
+        industry: "AI",
+        description: "Scraped profile from the public website.",
+        profile_source: "firecrawl",
+      },
+      session,
+    );
+    await configureWorkspaceCompanyProfile(
+      {
+        company_name: "Acme Revenue",
+        website_url: "https://acme.ai",
+        industry: null,
+        description: "User-written profile for founder-led GTM.",
+        profile_source: "manual",
+      },
+      session,
+    );
+
+    const profile = await getProductCompanyProfile(fx.pool, session);
+    assert.equal(profile?.company_id, created.company_id);
+    assert.equal(profile?.company_name, "Acme Revenue");
+    assert.equal(profile?.industry, null);
+    assert.equal(profile?.description, "User-written profile for founder-led GTM.");
+
+    const row = await fx.pool.query<{
+      properties: Record<string, unknown>;
+      provenance: Record<string, unknown>;
+    }>(
+      `select properties, provenance
+         from graph_companies
+        where workspace_id = $1
+          and id = $2`,
+      [boot.workspace_id, created.company_id],
+    );
+    assert.equal(row.rows[0]?.properties.profile_source, "manual");
+    assert.equal(row.rows[0]?.provenance.source, "manual");
+
+    await configureWorkspaceCompanyProfile(
+      {
+        company_name: "Acme Revenue",
+        website_url: "https://acme.ai",
+        industry: null,
+        description: null,
+        profile_source: "manual",
+      },
+      session,
+    );
+    const cleared = await getProductCompanyProfile(fx.pool, session);
+    assert.equal(cleared?.description, null);
   } finally {
     await resetProductEngineForTests();
     await fx.close();

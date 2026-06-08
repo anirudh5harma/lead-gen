@@ -51,3 +51,33 @@ test("play autonomy: explicit run approval override can tighten or relax the cha
     approval: "none",
   });
 });
+
+test("play autonomy: review every move and research-only keep their policy semantics", () => {
+  const reviewEvery = resolvePlayChannelPolicy(
+    {
+      channels: {
+        email: {
+          daily_cap: 5,
+          approval: "always",
+        },
+      },
+    },
+    "email",
+  );
+  const researchOnly = resolvePlayChannelPolicy(
+    {
+      channels: {
+        email: {
+          daily_cap: 5,
+          approval: "research_only",
+        },
+      },
+    },
+    "email",
+  );
+
+  assert.equal(shouldRequestApproval(reviewEvery, 0), true);
+  assert.equal(shouldRequestApproval(reviewEvery, 7), true);
+  assert.equal(shouldRequestApproval(researchOnly, 0), false);
+  assert.equal(researchOnly.approval, "research_only");
+});

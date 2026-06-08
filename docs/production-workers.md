@@ -105,6 +105,26 @@ launch-critical. Customer-connected Outlook mailboxes are the primary outbound
 path. If ECS health timeouts keep recurring, move this same container contract
 to Railway or Render before spending more time on AWS gateway tuning.
 
+Before raising autonomous outbound volume, also run
+`OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline` from an
+environment with production or staging `DATABASE_URL`. The local form of the
+probe verifies the durable Signal -> graph/provider contact-resolution ->
+personalized draft -> eval -> dry-run send -> Outcome-learning path; strict
+mode additionally requires connected Outlook account and reply-subscription
+readiness. To exercise live Exa/Hunter/ZeroBounce contact discovery as part of
+the same check, opt in explicitly with
+`OUTREACH_PIPELINE_LIVE_PROVIDER_SMOKE=1` plus
+`OUTREACH_PIPELINE_VERIFY_COMPANY_NAME` and
+`OUTREACH_PIPELINE_VERIFY_COMPANY_DOMAIN`; this can spend provider credits but
+still does not send through Microsoft Graph.
+
+If strict outreach verification reports connected Outlook accounts without
+active Graph subscriptions, run `npm run repair:outlook-subscriptions`. That
+command invokes the existing `email_outlook_subscription_repair` workflow and
+does not send email. If Microsoft returns `invalid_client`, update
+`MICROSOFT_CLIENT_SECRET` to the app registration's secret value, not the
+secret ID, then rerun the repair and strict verifier.
+
 ## Required Shared Environment
 
 All workers need:
@@ -198,6 +218,7 @@ The verifier expects these services:
 - `play.signal_to_email.v1`
 - `play.signal_to_linkedin.v1`
 - `play.reply_to_email.v1`
+- `contact.resolve_for_signal.v1`
 - `ingest_catalog_poll`
 - `ingest_workspace_poll`
 - `ingest_expire_sweep`

@@ -33,6 +33,8 @@ export interface JudgeInput {
     counterparty_summary?: string;
     procedural_exemplars?: ProceduralExemplar[];
     semantic_memory?: SemanticEntry[];
+    /** Prompt-ready account/person/timing/evidence context the writer saw. */
+    personalization_context_markdown?: string | null;
     /** Prompt-ready workspace context the writer saw. */
     workspace_context_markdown?: string | null;
   };

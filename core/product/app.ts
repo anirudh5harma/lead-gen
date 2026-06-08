@@ -40,6 +40,14 @@ import {
   type EmailChannel,
   type OutlookSender,
 } from "../channels/email/index.ts";
+import {
+  CONTACT_RESOLUTION_WORKFLOW,
+  createContactResolutionProviders,
+  createContactResolutionWorkflow,
+  type ContactChannel,
+  type ContactResolutionInput,
+  type ContactResolutionOutput,
+} from "../contacts/index.ts";
 import { createChannelAccountLifecycleProjection } from "../channels/account-lifecycle.ts";
 import {
   createDryRunLinkedInTransport,
@@ -172,6 +180,7 @@ export const DEFAULT_PRODUCT_WORKSPACE_SLUG = DEFAULT_WORKSPACE_SLUG;
 const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
 const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configuration.v1";
 const RUNNABLE_WORKFLOW_NAMES = [
+  CONTACT_RESOLUTION_WORKFLOW,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   REPLY_TO_EMAIL_PLAY_WORKFLOW,
   RSS_SIGNAL_INGESTION_WORKFLOW,
@@ -514,6 +523,7 @@ export interface ConfigureWorkspaceProfileInput {
   website_url: string;
   industry?: string | null;
   description?: string | null;
+  profile_source?: "manual" | "firecrawl" | "fallback";
 }
 
 export interface ProductExaProfileInput {
@@ -952,6 +962,7 @@ export async function resetProductEngineForTests(): Promise<void> {
   if (!current) return;
   try {
     const engine = await current;
+    await engine.runtime.drain?.();
     await engine.bus.close();
   } catch {
     /* best-effort test cleanup */
@@ -1935,6 +1946,7 @@ export async function configureWorkspaceCompanyProfile(
     website_url: websiteUrl,
     industry: blankToNull(input.industry ?? undefined),
     description: blankToNull(input.description ?? undefined),
+    profile_source: input.profile_source ?? "manual",
   };
   const event = await engine.bus.publish({
     workspace_id: session.workspace_id,
@@ -3116,6 +3128,7 @@ async function projectWorkspaceCompanyProfiled(
     website_url: string;
     industry: string | null;
     description: string | null;
+    profile_source?: "manual" | "firecrawl" | "fallback";
   };
   await pool.query(
     `insert into graph_companies (
@@ -3126,8 +3139,8 @@ async function projectWorkspaceCompanyProfiled(
      on conflict (id) do update set
        name = excluded.name,
        domain = coalesce(excluded.domain, graph_companies.domain),
-       industry = coalesce(excluded.industry, graph_companies.industry),
-       description = coalesce(excluded.description, graph_companies.description),
+       industry = excluded.industry,
+       description = excluded.description,
        properties = graph_companies.properties || excluded.properties,
        provenance = graph_companies.provenance || excluded.provenance,
        updated_at = now()`,
@@ -3141,9 +3154,11 @@ async function projectWorkspaceCompanyProfiled(
       JSON.stringify({
         profile_role: "workspace_company",
         website_url: payload.website_url,
+        profile_source: payload.profile_source ?? event.source,
+        profile_updated_at: event.occurred_at,
       }),
       JSON.stringify({
-        source: "firecrawl",
+        source: payload.profile_source ?? event.source,
         event_id: event.id,
       }),
     ],
@@ -5238,6 +5253,15 @@ function registerReplyEmailWorkflow(engine: ProductEngine, workspace_id?: string
   );
 }
 
+function registerContactResolutionWorkflow(engine: ProductEngine): void {
+  engine.runtime.register(
+    createContactResolutionWorkflow({
+      pool: engine.pool,
+      ...createContactResolutionProviders({ pool: engine.pool }),
+    }),
+  );
+}
+
 async function getWorkflowWorkspaceContext(
   engine: ProductEngine,
   workspace_id: string,
@@ -5515,18 +5539,41 @@ async function startSignalLinkedInPlay(
   });
 }
 
+async function startContactResolution(
+  engine: ProductEngine,
+  input: ContactResolutionInput,
+) {
+  registerContactResolutionWorkflow(engine);
+  return engine.runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: input.workspace_id,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    idempotency_key:
+      `contact:${input.signal_id}:play:${input.play_id}:channel:${input.channel}`,
+    correlation_id: input.trigger_event_id ?? undefined,
+    causation_id: input.trigger_event_id ?? undefined,
+    input,
+  });
+}
+
+function contactChannelForTarget(targetChannel: string): ContactChannel {
+  return targetChannel === "email" ? "email" : "linkedin";
+}
+
 export async function dispatchSignalPlaysOnce(
   opts: DispatchOptions = {},
   session?: ProductWorkspaceSession,
 ): Promise<number> {
   const engine = await getProductEngine();
   registerSignalEmailWorkflow(engine);
+  registerContactResolutionWorkflow(engine);
   if (session) await assertProductWorkspaceAccess(session, engine.pool);
   const { rows } = await engine.pool.query<{
     event_id: string;
     workspace_id: string;
     signal_id: string;
-    person_id: string;
+    company_id: string | null;
+    resolved_person_id: string | null;
+    resolver_run_id: string | null;
     play_id: string;
     rep_id: string;
     workflow_name: string;
@@ -5537,7 +5584,9 @@ export async function dispatchSignalPlaysOnce(
     `select e.id as event_id,
             e.workspace_id,
             e.payload->>'signal_id' as signal_id,
-            target_person.id as person_id,
+            s.related_company_id::text as company_id,
+            resolved.payload->>'selected_person_id' as resolved_person_id,
+            resolver.id::text as resolver_run_id,
             p.id as play_id,
             p.default_rep_id as rep_id,
             coalesce(p.compiled->>'workflow', $1) as workflow_name,
@@ -5557,39 +5606,41 @@ export async function dispatchSignalPlaysOnce(
           p.compiled #>> '{trigger,filter,kind}' is null
           or p.compiled #>> '{trigger,filter,kind}' = s.kind::text
         )
-       join lateral (
-         select gp.id
-           from graph_persons gp
-          where gp.workspace_id = e.workspace_id
-            and (
-              (coalesce(p.compiled->>'channel', 'email') = 'email' and cardinality(gp.emails) > 0)
-              or (
-                coalesce(p.compiled->>'channel', 'email') in (
-                  'linkedin_dm',
-                  'linkedin_connection',
-                  'linkedin_comment'
-                )
-                and gp.linkedin_url is not null
-              )
-            )
-            and (
-              gp.id = s.related_person_id
-              or (
-                s.related_person_id is null
-                and s.related_company_id is not null
-                and gp.company_id = s.related_company_id
-              )
-            )
-          order by (gp.id = s.related_person_id) desc, gp.created_at asc
+       left join lateral (
+         select cr.payload
+           from events cr
+          where cr.workspace_id = e.workspace_id
+            and cr.event_type = 'contact.resolved'
+            and cr.payload->>'signal_id' = e.payload->>'signal_id'
+            and cr.payload->>'play_id' = p.id::text
+            and cr.payload->>'channel' =
+              case
+                when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
+                else 'linkedin'
+              end
+          order by cr.occurred_at desc
           limit 1
-       ) target_person on true
+       ) resolved on true
        left join workflow_runs wr
          on wr.workspace_id = e.workspace_id
         and wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
         and wr.idempotency_key = concat('signal:', e.payload->>'signal_id', ':play:', p.id::text)
+       left join workflow_runs resolver
+         on resolver.workspace_id = e.workspace_id
+        and resolver.workflow_name = $5
+        and resolver.idempotency_key = concat(
+          'contact:', e.payload->>'signal_id',
+          ':play:', p.id::text,
+          ':channel:',
+          case
+            when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
+            else 'linkedin'
+          end
+        )
       where e.event_type = 'signal.matched'
         and wr.id is null
         and coalesce(p.compiled->>'workflow', $1) = any($2::text[])
+        and s.related_company_id is not null
         and ($4::uuid is null or e.workspace_id = $4)
       order by e.occurred_at asc
       limit $3`,
@@ -5598,12 +5649,30 @@ export async function dispatchSignalPlaysOnce(
       [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW],
       opts.limit ?? 25,
       session?.workspace_id ?? null,
+      CONTACT_RESOLUTION_WORKFLOW,
     ],
   );
 
   let dispatched = 0;
   for (const row of rows) {
     const simulate = simulateOutcomeFromSignal(row.signal_properties);
+    const contactChannel = contactChannelForTarget(row.target_channel);
+    let personId = row.resolved_person_id;
+    if (!personId) {
+      if (row.resolver_run_id) continue;
+      if (!row.company_id) continue;
+      const resolver = await startContactResolution(engine, {
+        workspace_id: row.workspace_id,
+        signal_id: row.signal_id,
+        company_id: row.company_id,
+        play_id: row.play_id,
+        rep_id: row.rep_id,
+        channel: contactChannel,
+        trigger_event_id: row.event_id,
+      });
+      personId = resolver.output?.selected_person_id ?? null;
+      if (!personId) continue;
+    }
     if (row.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW) {
       const action = parseLinkedInAction(row.target_channel) ?? "linkedin_dm";
       const policy = resolvePlayChannelPolicy(row.play_autonomy, action, {
@@ -5614,7 +5683,7 @@ export async function dispatchSignalPlaysOnce(
         play_id: row.play_id,
         rep_id: row.rep_id,
         signal_id: row.signal_id,
-        person_id: row.person_id,
+        person_id: personId,
         trigger_event_id: row.event_id,
         action,
         approval: policy.approval,
@@ -5630,7 +5699,7 @@ export async function dispatchSignalPlaysOnce(
         play_id: row.play_id,
         rep_id: row.rep_id,
         signal_id: row.signal_id,
-        person_id: row.person_id,
+        person_id: personId,
         trigger_event_id: row.event_id,
         approval: policy.approval,
         policy,
@@ -5709,7 +5778,7 @@ export async function dispatchReplyEmailPlaysOnce(
   return dispatched;
 }
 
-type ProductDispatchEventType = "signal.matched" | "reply.classified";
+type ProductDispatchEventType = "signal.matched" | "contact.resolved" | "reply.classified";
 
 interface ProductEventDispatchSubscriptionAdapter {
   subscribe(
@@ -5741,6 +5810,13 @@ export async function registerProductEventDispatchers(
     },
     "product-signal-play-dispatcher-v1",
   );
+  const contactSubscription = await adapter.subscribe(
+    "contact.resolved",
+    async () => {
+      await dispatchSignalPlays({ limit });
+    },
+    "product-contact-play-dispatcher-v1",
+  );
   const replySubscription = await adapter.subscribe(
     "reply.classified",
     async () => {
@@ -5749,7 +5825,7 @@ export async function registerProductEventDispatchers(
     "product-reply-play-dispatcher-v1",
   );
 
-  return [signalSubscription, replySubscription];
+  return [signalSubscription, contactSubscription, replySubscription];
 }
 
 interface RssSourceRow {
@@ -6002,7 +6078,9 @@ export async function resumeRunnableWorkflowsOnce(
   });
   let resumed = 0;
   for (const row of rows) {
-    if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
+    if (row.workflow_name === CONTACT_RESOLUTION_WORKFLOW) {
+      registerContactResolutionWorkflow(engine);
+    } else if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
       registerSignalEmailWorkflow(engine, row.workspace_id);
     } else if (row.workflow_name === REPLY_TO_EMAIL_PLAY_WORKFLOW) {
       registerReplyEmailWorkflow(engine, row.workspace_id);

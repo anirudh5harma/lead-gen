@@ -7,6 +7,7 @@
  * controlled mailbox and recipient.
  */
 
+import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { Pool } from "pg";
 
@@ -34,6 +35,10 @@ interface OutlookAggregateRow {
   active_subscriptions: string | number;
   errored_connected: string | number;
   connected_managed_domains: string | number;
+}
+
+interface OutlookErrorSampleRow {
+  last_error: string | null;
 }
 
 export async function runOutlookReadinessProbe(
@@ -94,6 +99,9 @@ export async function runOutlookReadinessProbe(
     const activeSubscriptions = asNumber(aggregate.active_subscriptions);
     const errored = asNumber(aggregate.errored_connected);
     const managedDomains = asNumber(aggregate.connected_managed_domains);
+    const errorSample = errored > 0
+      ? await loadOutlookErrorSample(pool)
+      : null;
 
     steps.push({
       label: "outlook: connected mailbox",
@@ -114,7 +122,7 @@ export async function runOutlookReadinessProbe(
       status: errored === 0 ? "ok" : "fail",
       detail: errored === 0
         ? "No connected Outlook account errors recorded"
-        : `${errored} connected Outlook account(s) have last_error set`,
+        : `${errored} connected Outlook account(s) have last_error set${errorSample ? `; sample=${errorSample}` : ""}`,
     });
     steps.push({
       label: "managed-domain fallback",
@@ -136,6 +144,44 @@ export async function runOutlookReadinessProbe(
   }
 }
 
+async function loadOutlookErrorSample(
+  pool: Pick<Pool, "query">,
+): Promise<string | null> {
+  const { rows } = await pool.query<OutlookErrorSampleRow>(`
+    select last_error::text as last_error
+      from channel_accounts
+     where kind = 'oauth_outlook'
+       and status = 'connected'
+       and last_error is not null
+     order by updated_at desc nulls last
+     limit 1
+  `);
+  return summarizeOutlookError(rows[0]?.last_error ?? null);
+}
+
+export function summarizeOutlookError(error: string | null): string | null {
+  if (!error) return null;
+  const text = error.replaceAll(/\s+/g, " ").slice(0, 1_200);
+  if (/AADSTS7000215|invalid_client/i.test(text)) {
+    return "Microsoft invalid_client/AADSTS7000215: MICROSOFT_CLIENT_SECRET must be the current client secret value, not the secret id";
+  }
+  const message = extractJsonMessage(text) ?? text;
+  return message.length > 220 ? `${message.slice(0, 217)}...` : message;
+}
+
+function extractJsonMessage(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown; error_description?: unknown; error?: unknown };
+    for (const value of [parsed.message, parsed.error_description, parsed.error]) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  } catch {
+    // last_error may be plain text or a truncated provider payload.
+  }
+  const match = text.match(/"error_description"\s*:\s*"([^"]+)/);
+  return match?.[1] ? match[1].replaceAll("\\\"", "\"") : null;
+}
+
 function result(
   steps: OutlookReadinessStep[],
   connectedAccounts: number,
@@ -154,6 +200,7 @@ function asNumber(value: string | number): number {
 }
 
 async function main(): Promise<void> {
+  loadDotenvLocal();
   const readiness = await runOutlookReadinessProbe();
   console.log("Outlook readiness");
   for (const step of readiness.steps) {
@@ -169,4 +216,35 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
+}
+
+function loadDotenvLocal(): void {
+  const path = ".env.local";
+  if (!fs.existsSync(path)) return;
+  const parsed = parseEnvFile(fs.readFileSync(path, "utf8"));
+  for (const [key, value] of Object.entries(parsed)) {
+    process.env[key] ??= value;
+  }
+}
+
+function parseEnvFile(text: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const raw of text.split(/\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const idx = line.indexOf("=");
+    if (idx <= 0) continue;
+    env[line.slice(0, idx).trim()] = stripQuotes(line.slice(idx + 1).trim());
+  }
+  return env;
+}
+
+function stripQuotes(value: string): string {
+  if (
+    (value.startsWith("\"") && value.endsWith("\"")) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
 }

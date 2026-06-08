@@ -22,6 +22,10 @@ import {
   type LinkedInTransport,
 } from "../core/channels/linkedin/index.ts";
 import {
+  createContactResolutionProviders,
+  createContactResolutionWorkflow,
+} from "../core/contacts/index.ts";
+import {
   createExaAeoAuditWorkflow,
   createExaBriefRefreshWorkflow,
   createExaContentOpportunityWorkflow,
@@ -167,6 +171,10 @@ const workflows = [
     email: emailChannel,
     bus,
     workspaceContextProvider: workflowWorkspaceContext,
+  }),
+  createContactResolutionWorkflow({
+    pool,
+    ...createContactResolutionProviders({ pool }),
   }),
   createCatalogPollWorkflow({
     pool,

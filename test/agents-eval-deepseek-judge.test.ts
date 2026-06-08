@@ -104,10 +104,12 @@ test("deepseek judge: includes Rep persona + procedural exemplars in the prompt"
   const judge = createDeepSeekJudge({ llm });
   await judge.evaluate({
     ...inputFor("body"),
-    context: {
-      signal_summary: "Series A close at $20M",
-      counterparty_summary: "CTO, scaling infra",
-      procedural_exemplars: [
+      context: {
+        signal_summary: "Series A close at $20M",
+        counterparty_summary: "CTO, scaling infra",
+        personalization_context_markdown:
+          "## Signal Timing And Why Now\n- Match reason: fresh funding creates pipeline urgency",
+        procedural_exemplars: [
         {
           id: randomUUID(),
           rep_id: randomUUID(),
@@ -138,6 +140,8 @@ test("deepseek judge: includes Rep persona + procedural exemplars in the prompt"
   assert.match(userPrompt, /Voice: warm, direct/);
   assert.match(userPrompt, /Do NOT: use the word synergy/);
   assert.match(userPrompt, /Series A close at \$20M/);
+  assert.match(userPrompt, /Personalization context the writer saw/);
+  assert.match(userPrompt, /fresh funding creates pipeline urgency/);
   assert.match(userPrompt, /Winning examples/);
   assert.match(userPrompt, /score 0\.91/);
   assert.match(userPrompt, /Known semantic memory/);
