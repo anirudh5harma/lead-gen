@@ -110,6 +110,7 @@ import {
 } from "../agents/llm/index.ts";
 import { createDeepSeekJudge } from "../agents/eval/adapters/deepseek-judge.ts";
 import type { WorkflowRuntime } from "../substrate/workflows/index.ts";
+import { RestateClientError } from "../substrate/workflows/adapters/restate.ts";
 import {
   createEmailDeliveryFeedbackProjection,
 } from "./email-feedback.ts";
@@ -6277,20 +6278,107 @@ export async function approveWorkflowApproval(
   note?: string,
 ): Promise<void> {
   const engine = await getProductEngine();
+  let approvalWorkspaceId: string | null = null;
   if (session) {
     const { rows } = await engine.pool.query<{ workspace_id: string }>(
       `select workspace_id from workflow_approvals where id = $1`,
       [approval_id],
     );
     if (!rows[0] || rows[0].workspace_id !== session.workspace_id) return;
+    approvalWorkspaceId = rows[0].workspace_id;
     await assertProductWorkspaceAccess(session, engine.pool);
   }
-  await engine.runtime.resolveApproval(approval_id, {
-    decision,
-    decided_by: session?.user_id ?? DEFAULT_PRODUCT_USER_ID,
-    note,
-  });
+  const decidedBy = session?.user_id ?? DEFAULT_PRODUCT_USER_ID;
+  try {
+    await engine.runtime.resolveApproval(approval_id, {
+      decision,
+      decided_by: decidedBy,
+      note,
+    });
+  } catch (error) {
+    if (
+      decision === "rejected" &&
+      engine.substrateMode === "nats_restate" &&
+      isStaleRestateApprovalResolutionError(error)
+    ) {
+      const cleared = await rejectStaleWorkflowApproval(
+        engine.pool,
+        engine.bus,
+        {
+          approval_id,
+          workspace_id: approvalWorkspaceId ?? session?.workspace_id ?? null,
+          decided_by: decidedBy,
+          note,
+        },
+      );
+      if (cleared) return;
+    }
+    throw error;
+  }
   await waitForApprovalDecision(engine.pool, approval_id);
+}
+
+export function isStaleRestateApprovalResolutionError(error: unknown): boolean {
+  const status =
+    error instanceof RestateClientError
+      ? error.status
+      : typeof error === "object" && error !== null && "status" in error
+        ? Number((error as { status?: unknown }).status)
+        : NaN;
+  if (status !== 400 && status !== 404 && status !== 410) return false;
+  const body =
+    error instanceof RestateClientError
+      ? error.body
+      : typeof error === "object" && error !== null && "body" in error
+        ? String((error as { body?: unknown }).body ?? "")
+        : "";
+  return /bad awakeable id|awakeable.*not found|not.*awakeable|unknown awakeable/i.test(body);
+}
+
+async function rejectStaleWorkflowApproval(
+  pool: Pool,
+  bus: EventBus,
+  input: {
+    approval_id: string;
+    workspace_id: string | null;
+    decided_by: string;
+    note?: string;
+  },
+): Promise<boolean> {
+  const params: unknown[] = [
+    input.decided_by,
+    input.note ?? "Rejected from dashboard after the approval runtime no longer had an active gate.",
+    input.approval_id,
+  ];
+  const workspaceClause = input.workspace_id ? "and workspace_id = $4" : "";
+  if (input.workspace_id) params.push(input.workspace_id);
+  const result = await pool.query<{ workspace_id: string }>(
+    `update workflow_approvals
+        set decision = 'rejected',
+            decided_by = $1,
+            decided_at = now(),
+            decision_note = $2
+      where id = $3
+        and decision = 'pending'
+        ${workspaceClause}
+      returning workspace_id`,
+    params,
+  );
+  const row = result.rows[0];
+  if (!row) return false;
+  await bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "approval.decided",
+    source: "user",
+    producer_ref: input.decided_by,
+    idempotency_key: `approval.decided:${input.approval_id}:stale-rejected`,
+    payload: {
+      approval_id: input.approval_id,
+      decision: "rejected",
+      decided_by: input.decided_by,
+    },
+  });
+  return true;
 }
 
 async function waitForApprovalDecision(pool: Pool, approval_id: string): Promise<void> {
