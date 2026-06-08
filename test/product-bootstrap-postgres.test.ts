@@ -320,6 +320,44 @@ test("workspace company profile edits replace scraped defaults", async (t) => {
     assert.equal(row.rows[0]?.properties.profile_source, "manual");
     assert.equal(row.rows[0]?.provenance.source, "manual");
 
+    await fx.pool.query(
+      `update graph_companies
+          set properties = properties || $3::jsonb
+        where workspace_id = $1
+          and id = $2`,
+      [
+        boot.workspace_id,
+        created.company_id,
+        JSON.stringify({
+          exa_profile: {
+            summary: "Legacy Exa-generated positioning that should not survive a manual save.",
+            enriched_at: "2026-01-01T00:00:00.000Z",
+            result_count: 4,
+          },
+        }),
+      ],
+    );
+
+    await configureWorkspaceCompanyProfile(
+      {
+        company_name: "Acme Revenue",
+        website_url: "https://acme.ai",
+        industry: null,
+        description: "Clean manual profile.",
+        profile_source: "manual",
+      },
+      session,
+    );
+
+    const cleaned = await fx.pool.query<{ properties: Record<string, unknown> }>(
+      `select properties
+         from graph_companies
+        where workspace_id = $1
+          and id = $2`,
+      [boot.workspace_id, created.company_id],
+    );
+    assert.equal(cleaned.rows[0]?.properties.exa_profile, undefined);
+
     await configureWorkspaceCompanyProfile(
       {
         company_name: "Acme Revenue",

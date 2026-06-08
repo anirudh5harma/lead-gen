@@ -3142,7 +3142,11 @@ async function projectWorkspaceCompanyProfiled(
        domain = coalesce(excluded.domain, graph_companies.domain),
        industry = excluded.industry,
        description = excluded.description,
-       properties = graph_companies.properties || excluded.properties,
+       properties = case
+         when excluded.properties->>'profile_source' = 'manual'
+           then (graph_companies.properties - 'exa_profile') || excluded.properties
+         else graph_companies.properties || excluded.properties
+       end,
        provenance = graph_companies.provenance || excluded.provenance,
        updated_at = now()`,
     [
