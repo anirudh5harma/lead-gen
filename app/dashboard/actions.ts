@@ -29,6 +29,36 @@ function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
 }
 
+type ToastVariant = "success" | "error" | "info";
+
+function dashboardReturnPath(formData: FormData, fallback: string): string {
+  const raw = value(formData, "return_to");
+  if (!raw) return fallback;
+  try {
+    const parsed = new URL(raw, "https://bombsell.local");
+    if (
+      parsed.origin !== "https://bombsell.local" ||
+      !parsed.pathname.startsWith("/dashboard")
+    ) {
+      return fallback;
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
+function redirectWithToast(
+  target: string,
+  message: string,
+  variant: ToastVariant = "success",
+): never {
+  const parsed = new URL(target, "https://bombsell.local");
+  parsed.searchParams.set("toast", message);
+  parsed.searchParams.set("toast_variant", variant);
+  redirect(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+}
+
 function numberValue(formData: FormData, key: string, fallback: number): number {
   const parsed = Number(value(formData, key));
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -94,15 +124,17 @@ export async function createWorkspaceAction(formData: FormData) {
   await requireDashboardSession(formData);
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/setup");
-  redirect("/dashboard/setup");
+  redirectWithToast("/dashboard/setup", "Workspace created.");
 }
 
 export async function switchWorkspaceAction(formData: FormData) {
   const workspaceId = value(formData, "workspace_id");
-  if (!workspaceId) return;
+  if (!workspaceId) {
+    redirectWithToast("/dashboard", "Choose a workspace before switching.", "error");
+  }
   await setActiveWorkspaceCookie(workspaceId);
   revalidateProductPaths();
-  redirect("/dashboard");
+  redirectWithToast("/dashboard", "Workspace switched.");
 }
 
 export async function configureActivationAction(formData: FormData) {
@@ -140,12 +172,16 @@ export async function configureActivationAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirect("/dashboard/setup");
+  redirectWithToast("/dashboard/setup", "Guidance saved.");
 }
 
 export async function configureRepAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
   const repId = value(formData, "rep_id");
+  const returnTo = dashboardReturnPath(
+    formData,
+    repId ? `/dashboard/reps/${repId}` : "/dashboard/reps",
+  );
   const name = value(formData, "rep_name") || "Sampark";
   await configureRep(
     {
@@ -164,6 +200,7 @@ export async function configureRepAction(formData: FormData) {
   );
   revalidateProductPaths();
   if (repId) revalidatePath(`/dashboard/reps/${repId}`);
+  redirectWithToast(returnTo, "Rep guidance saved.");
 }
 
 export async function reviewRecommendationAction(formData: FormData) {
@@ -262,8 +299,11 @@ export async function createRecommendationDraftAction(formData: FormData) {
 
 export async function recordCampaignOutcomeAction(formData: FormData) {
   const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
   const playRunId = value(formData, "play_run_id");
-  if (!playRunId) return;
+  if (!playRunId) {
+    redirectWithToast(returnTo, "Choose a campaign before recording an outcome.", "error");
+  }
   const kindValue = value(formData, "outcome_kind");
   const kind =
     kindValue === "meeting_booked"
@@ -287,12 +327,16 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
+  redirectWithToast(returnTo, "Outcome recorded.");
 }
 
 export async function discoverContentOpportunitiesAction(formData: FormData) {
   const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/content");
   const query = value(formData, "query");
-  if (!query) throw new Error("Enter a content research query.");
+  if (!query) {
+    redirectWithToast(returnTo, "Enter a content research query.", "error");
+  }
   await researchWorkspaceWithExa(
     {
       query,
@@ -303,12 +347,16 @@ export async function discoverContentOpportunitiesAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
+  redirectWithToast(returnTo, "Content research queued.");
 }
 
 export async function auditAeoAction(formData: FormData) {
   const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/aeo");
   const query = value(formData, "query");
-  if (!query) throw new Error("Enter an AEO audit query.");
+  if (!query) {
+    redirectWithToast(returnTo, "Enter an AEO audit query.", "error");
+  }
   await researchWorkspaceWithExa(
     {
       query,
@@ -319,39 +367,56 @@ export async function auditAeoAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
+  redirectWithToast(returnTo, "AEO audit queued.");
 }
 
 export async function runSignalAggregatorAction(formData: FormData) {
   const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
   await runWorkspaceSignalAggregatorOnce(
     { limit: numberValue(formData, "limit", 8) },
     session,
   );
   revalidateProductPaths();
+  redirectWithToast(returnTo, "Signals refreshed.");
 }
 
 export async function editCompanyProfileAction(formData: FormData) {
   const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/setup");
   const company_name = value(formData, "company_name");
   const website_url = value(formData, "website_url");
-  if (!company_name || !website_url) return;
-  await configureWorkspaceCompanyProfile(
-    {
-      company_name,
-      website_url,
-      industry: value(formData, "industry") || null,
-      description: value(formData, "description") || null,
-    },
-    session,
-  );
+  if (!company_name || !website_url) {
+    redirectWithToast(returnTo, "Enter the company name and website before saving.", "error");
+  }
+  try {
+    await configureWorkspaceCompanyProfile(
+      {
+        company_name,
+        website_url,
+        industry: value(formData, "industry") || null,
+        description: value(formData, "description") || null,
+        profile_source: "manual",
+      },
+      session,
+    );
+  } catch (error) {
+    if (error instanceof Error && /valid website_url/i.test(error.message)) {
+      redirectWithToast(returnTo, "Enter a valid company website.", "error");
+    }
+    throw error;
+  }
   revalidateProductPaths();
-  redirect("/dashboard/setup");
+  redirectWithToast(returnTo, "Company profile saved.");
 }
 
 export async function decideApprovalWithDraftAction(formData: FormData) {
   const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/review");
   const approvalId = value(formData, "approval_id");
-  if (!approvalId) return;
+  if (!approvalId) {
+    redirectWithToast(returnTo, "Choose an outreach item before deciding.", "error");
+  }
   const decision = value(formData, "decision") === "rejected" ? "rejected" : "approved";
   const subject = value(formData, "subject");
   const body = value(formData, "body");
@@ -363,8 +428,31 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
           body,
         })
       : value(formData, "decision_note") || undefined;
-  await approveWorkflowApproval(approvalId, decision, session, note);
+  let decided = false;
+  try {
+    decided = await approveWorkflowApproval(approvalId, decision, session, note);
+  } catch (error) {
+    console.error("Approval decision failed", error);
+    redirectWithToast(
+      returnTo,
+      decision === "rejected"
+        ? "Could not reject this outreach yet. Refresh and try again."
+        : "Could not approve this outreach yet. Refresh and try again.",
+      "error",
+    );
+  }
   revalidateProductPaths();
+  if (!decided) {
+    redirectWithToast(
+      returnTo,
+      "That outreach decision could not be confirmed. Refresh and try again.",
+      "error",
+    );
+  }
+  redirectWithToast(
+    returnTo,
+    decision === "rejected" ? "Outreach rejected." : "Outreach approved.",
+  );
 }
 
 function revalidateProductPaths() {

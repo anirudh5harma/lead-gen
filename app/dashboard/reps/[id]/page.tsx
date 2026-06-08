@@ -170,6 +170,7 @@ export default async function RepDetailPage({
             <h2 className="text-lg font-semibold text-[var(--color-text-1)]">Guidance</h2>
           </div>
           <form action={configureRepAction} className="grid gap-4">
+            <input type="hidden" name="return_to" value={`/dashboard/reps/${rep.id}`} />
             <input type="hidden" name="rep_id" value={rep.id} />
             <input type="hidden" name="rep_name" value={rep.name} />
             <input type="hidden" name="rep_role" value={rep.role} />

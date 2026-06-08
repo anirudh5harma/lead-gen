@@ -138,6 +138,7 @@ function ReviewNote({ approval }: { approval: PendingApprovalRow }) {
           </div>
 
           <form action={decideApprovalWithDraftAction} className="mt-5 grid gap-3 border-t border-[var(--color-line-1)] pt-5">
+            <input type="hidden" name="return_to" value="/dashboard/review" />
             <input type="hidden" name="approval_id" value={approval.id} />
             <input type="hidden" name="decision" value="approved" />
             <Field name="subject" label="Subject" defaultValue={subject} />
@@ -159,6 +160,7 @@ function ReviewNote({ approval }: { approval: PendingApprovalRow }) {
             </button>
           </form>
           <form action={decideApprovalWithDraftAction} className="mt-3">
+            <input type="hidden" name="return_to" value="/dashboard/review" />
             <input type="hidden" name="approval_id" value={approval.id} />
             <input type="hidden" name="decision" value="rejected" />
             <button

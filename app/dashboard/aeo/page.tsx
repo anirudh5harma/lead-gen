@@ -55,6 +55,7 @@ export default async function AeoPage() {
               <HeroStat label="Acted on" value={recorded} />
             </div>
             <form action={auditAeoAction} className="flex max-w-2xl flex-col gap-2 sm:flex-row">
+              <input type="hidden" name="return_to" value="/dashboard/aeo" />
               <input type="hidden" name="num_results" value="8" />
               <label className="sr-only" htmlFor="aeo-query">
                 AEO audit query

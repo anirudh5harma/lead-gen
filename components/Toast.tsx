@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -9,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 
 type ToastVariant = 'error' | 'success' | 'info'
 
@@ -85,6 +87,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
+      <Suspense fallback={null}>
+        <ToastUrlBridge />
+      </Suspense>
       <div className="pointer-events-none fixed bottom-4 right-4 z-[9999] flex w-[min(92vw,22rem)] flex-col gap-2">
         {toasts.map(t => {
           const style = VARIANT_STYLE[t.variant]
@@ -115,6 +120,40 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       </div>
     </ToastContext.Provider>
   )
+}
+
+function ToastUrlBridge() {
+  const pathname = usePathname() ?? '/'
+  const searchParams = useSearchParams()
+  const { error, success, info } = useToast()
+  const lastShownRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const message = searchParams.get('toast')?.trim()
+    if (!message) return
+
+    const key = `${pathname}?${searchParams.toString()}`
+    if (lastShownRef.current === key) return
+    lastShownRef.current = key
+
+    const variant = searchParams.get('toast_variant')
+    if (variant === 'error') {
+      error(message)
+    } else if (variant === 'success') {
+      success(message)
+    } else {
+      info(message)
+    }
+
+    const cleanParams = new URLSearchParams(searchParams.toString())
+    cleanParams.delete('toast')
+    cleanParams.delete('toast_variant')
+    const cleanQuery = cleanParams.toString()
+    const cleanUrl = `${pathname}${cleanQuery ? `?${cleanQuery}` : ''}${window.location.hash}`
+    window.history.replaceState(null, '', cleanUrl)
+  }, [error, info, pathname, searchParams, success])
+
+  return null
 }
 
 export function useToast(): ToastApi {

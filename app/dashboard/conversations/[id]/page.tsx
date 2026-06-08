@@ -115,9 +115,16 @@ function TraceRow({
   );
 }
 
-function PendingApprovalPanel({ approval }: { approval: ConversationTrustApproval }) {
+function PendingApprovalPanel({
+  approval,
+  conversationId,
+}: {
+  approval: ConversationTrustApproval;
+  conversationId: string;
+}) {
   const subject = stringPayload(approval.payload, "subject") ?? "(no subject)";
   const body = stringPayload(approval.payload, "body") ?? "(empty)";
+  const returnTo = `/dashboard/conversations/${conversationId}`;
 
   return (
     <div className="section-note">
@@ -126,6 +133,7 @@ function PendingApprovalPanel({ approval }: { approval: ConversationTrustApprova
         {approval.reason ?? "This outreach is waiting for a human decision."}
       </p>
       <form action={decideApprovalWithDraftAction} className="mt-4 grid gap-3">
+        <input type="hidden" name="return_to" value={returnTo} />
         <input type="hidden" name="approval_id" value={approval.id} />
         <input type="hidden" name="decision" value="approved" />
         <label className="grid gap-1.5">
@@ -153,6 +161,7 @@ function PendingApprovalPanel({ approval }: { approval: ConversationTrustApprova
         </button>
       </form>
       <form action={decideApprovalWithDraftAction} className="mt-3">
+        <input type="hidden" name="return_to" value={returnTo} />
         <input type="hidden" name="approval_id" value={approval.id} />
         <input type="hidden" name="decision" value="rejected" />
         <button
@@ -338,7 +347,12 @@ export default async function ConversationDetailPage({
         </section>
 
         <aside className="grid gap-4">
-          {pendingApproval ? <PendingApprovalPanel approval={pendingApproval} /> : null}
+          {pendingApproval ? (
+            <PendingApprovalPanel
+              approval={pendingApproval}
+              conversationId={conv.id}
+            />
+          ) : null}
 
           <TrustTracePanel
             conversation={conv}

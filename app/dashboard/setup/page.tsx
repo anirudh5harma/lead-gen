@@ -116,6 +116,7 @@ export default async function SetupPage() {
           action={editCompanyProfileAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-2"
         >
+          <input type="hidden" name="return_to" value="/dashboard/setup" />
           <Field
             name="company_name"
             label="Company"
@@ -125,8 +126,7 @@ export default async function SetupPage() {
           <Field
             name="website_url"
             label="Website"
-            type="url"
-            defaultValue={profile?.domain ? `https://${profile.domain}` : ""}
+            defaultValue={profile?.website_url ?? (profile?.domain ? `https://${profile.domain}` : "")}
             required
           />
           <Field
@@ -161,6 +161,7 @@ export default async function SetupPage() {
           action={configureActivationAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5"
         >
+          <input type="hidden" name="return_to" value="/dashboard/setup" />
           <TextArea
             name="icp_description"
             label="Who matters (audience)"
@@ -254,6 +255,7 @@ function NoWorkspaceSetup() {
           action={createWorkspaceAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:max-w-xl"
         >
+          <input type="hidden" name="return_to" value="/dashboard/setup" />
           <Field name="workspace_name" label="Workspace name" defaultValue="Bombsell Workspace" />
           <Field name="workspace_slug" label="Workspace slug" defaultValue="bombsell-workspace" />
           <button className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">

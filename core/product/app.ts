@@ -6276,7 +6276,7 @@ export async function approveWorkflowApproval(
   decision: "approved" | "rejected",
   session?: ProductWorkspaceSession,
   note?: string,
-): Promise<void> {
+): Promise<boolean> {
   const engine = await getProductEngine();
   let approvalWorkspaceId: string | null = null;
   if (session) {
@@ -6284,7 +6284,7 @@ export async function approveWorkflowApproval(
       `select workspace_id from workflow_approvals where id = $1`,
       [approval_id],
     );
-    if (!rows[0] || rows[0].workspace_id !== session.workspace_id) return;
+    if (!rows[0] || rows[0].workspace_id !== session.workspace_id) return false;
     approvalWorkspaceId = rows[0].workspace_id;
     await assertProductWorkspaceAccess(session, engine.pool);
   }
@@ -6311,11 +6311,11 @@ export async function approveWorkflowApproval(
           note,
         },
       );
-      if (cleared) return;
+      if (cleared) return true;
     }
     throw error;
   }
-  await waitForApprovalDecision(engine.pool, approval_id);
+  return waitForApprovalDecision(engine.pool, approval_id);
 }
 
 export function isStaleRestateApprovalResolutionError(error: unknown): boolean {
@@ -6381,16 +6381,18 @@ async function rejectStaleWorkflowApproval(
   return true;
 }
 
-async function waitForApprovalDecision(pool: Pool, approval_id: string): Promise<void> {
+async function waitForApprovalDecision(pool: Pool, approval_id: string): Promise<boolean> {
   const deadline = Date.now() + 2000;
   while (Date.now() < deadline) {
     const { rows } = await pool.query<{ decision: string }>(
       `select decision from workflow_approvals where id = $1`,
       [approval_id],
     );
-    if (rows[0]?.decision !== "pending") return;
+    if (!rows[0]) return false;
+    if (rows[0].decision !== "pending") return true;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+  return false;
 }
 
 export async function getProductReviewPulse(

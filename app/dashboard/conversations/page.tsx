@@ -252,6 +252,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
               Review
             </Link>
             <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="return_to" value="/dashboard/conversations" />
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="approved" />
               <button
@@ -263,6 +264,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
               </button>
             </form>
             <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="return_to" value="/dashboard/conversations" />
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="rejected" />
               <button

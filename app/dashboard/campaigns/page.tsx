@@ -151,6 +151,7 @@ export default async function CampaignsPage() {
             <HeroStat label="Ideas this week" value={counts.ideas_week} />
             <HeroStat label="Outcomes this week" value={counts.outcomes_week} />
             <form action={runSignalAggregatorAction}>
+              <input type="hidden" name="return_to" value="/dashboard/campaigns" />
               <input type="hidden" name="limit" value="8" />
               <button
                 type="submit"
@@ -252,6 +253,7 @@ function CampaignOutcomeButton({
 }) {
   return (
     <form action={recordCampaignOutcomeAction}>
+      <input type="hidden" name="return_to" value="/dashboard/campaigns" />
       <input type="hidden" name="play_run_id" value={playRunId} />
       <input type="hidden" name="outcome_kind" value={kind} />
       <button
