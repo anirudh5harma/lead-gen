@@ -65,7 +65,7 @@ export function DashboardShell({
   }
 
   return (
-    <div className="canvas-bg relative isolate min-h-[100dvh] text-[var(--color-text-1)]">
+    <div className="canvas-bg relative isolate min-h-[100dvh] overflow-x-clip text-[var(--color-text-1)]">
       {routePending ? <div className="dashboard-route-pending" aria-hidden="true" /> : null}
       {/* Top frame — translucent full-viewport bar, top + bottom hairlines */}
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)] bg-[rgba(245,248,251,0.72)] backdrop-blur-md">
@@ -178,7 +178,7 @@ export function DashboardShell({
         })}
       </nav>
 
-      <main className="relative z-20 mx-auto w-full max-w-[1320px] px-6 pb-16 pt-[108px] md:px-10 md:pt-[80px] lg:px-16">
+      <main className="relative z-20 mx-auto w-full min-w-0 max-w-full overflow-x-clip px-6 pb-16 pt-[108px] md:max-w-[1320px] md:px-10 md:pt-[80px] lg:px-16">
         {children}
       </main>
     </div>

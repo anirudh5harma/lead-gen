@@ -255,13 +255,13 @@ function BriefView({
   return (
     <div className="space-y-12">
       {/* Hero */}
-      <section className="border-b border-[color:var(--color-line-2)] pb-10">
+      <section className="max-w-[calc(100vw-48px)] border-b border-[color:var(--color-line-2)] pb-10 sm:max-w-none">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
           {today}
         </p>
         <h1
-          className="display-serif mt-5 text-[clamp(2.5rem,5.4vw,4.5rem)] text-[var(--color-text-1)]"
-          style={{ fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 1.0 }}
+          className="display-serif mt-5 max-w-[calc(100vw-48px)] break-words text-[2.25rem] text-[var(--color-text-1)] sm:max-w-none sm:text-[clamp(2.5rem,5.4vw,4.5rem)]"
+          style={{ fontWeight: 500, letterSpacing: 0, lineHeight: 1.0 }}
         >
           {workspaceName ? (
             <>
@@ -275,7 +275,7 @@ function BriefView({
             </>
           )}
         </h1>
-        <p className="mt-5 max-w-[64ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
+        <p className="mt-5 max-w-[32ch] text-[15px] leading-[1.7] text-[var(--color-text-2)] sm:max-w-[64ch]">
           {totalPulse === 0
             ? "Nothing to surface yet. Finish the profile once, then useful work will appear here."
             : `Sampark conversations: ${pulse.sampark_active.count}. Content ideas: ${pulse.vaani_angles.count}. Campaign ideas: ${pulse.prayog_runs.count}. AEO suggestions: ${pulse.bodh_gaps.count}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
