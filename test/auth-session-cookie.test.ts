@@ -71,10 +71,11 @@ test("auth route redirects replay Supabase cookie writes", () => {
   }
 });
 
-test("public entry opens the protected app so existing sessions are reused", () => {
+test("public entry uses a lightweight auth handoff so existing sessions are reused", () => {
   const body = readFileSync("app/page.tsx", "utf8");
-  assert.match(body, /href="\/dashboard"/);
-  assert.doesNotMatch(body, /href="\/auth\/google\?next=%2Fdashboard"/);
+  assert.match(body, /authEntryPath\("\/dashboard"\)/);
+  assert.doesNotMatch(body, /href="\/dashboard"/);
+  assert.doesNotMatch(body, /googleAuthPath\("\/dashboard"\)/);
 });
 
 test("proxy refreshes auth cookies with claims and accepts publishable keys", () => {

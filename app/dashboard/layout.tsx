@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { ToastProvider } from "@/components/Toast";
 import { DashboardShell } from "@/components/dashboard/Shell";
 import { getRequestAuthIdentity } from "@/lib/auth";
 import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
@@ -23,14 +24,16 @@ export default async function DashboardLayout({
 
   // Active-nav highlighting is handled client-side via usePathname in the shell.
   return (
-    <DashboardShell
-      activeWorkspaceId={workspaceId}
-      workspaces={workspaces.map((workspace) => ({
-        id: workspace.id,
-        name: workspace.name,
-      }))}
-    >
-      {children}
-    </DashboardShell>
+    <ToastProvider>
+      <DashboardShell
+        activeWorkspaceId={workspaceId}
+        workspaces={workspaces.map((workspace) => ({
+          id: workspace.id,
+          name: workspace.name,
+        }))}
+      >
+        {children}
+      </DashboardShell>
+    </ToastProvider>
   );
 }

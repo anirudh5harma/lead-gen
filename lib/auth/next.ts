@@ -27,6 +27,30 @@ export function googleAuthPath(next: string): string {
   return `/auth/google?next=${encodeURIComponent(safeNextPath(next))}`;
 }
 
+export function authEntryPath(next: string): string {
+  return `/auth/entry?next=${encodeURIComponent(safeNextPath(next))}`;
+}
+
+export function onboardingPathForWebsite(value: string | null | undefined): string {
+  const normalized = normalizeWebsiteInput(value);
+  if (!normalized) return ONBOARDING_PATH;
+  return `${ONBOARDING_PATH}?url=${encodeURIComponent(normalized)}`;
+}
+
+function normalizeWebsiteInput(value: string | null | undefined): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!url.hostname) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function requiresOnboarding(value: string): boolean {
   const pathname = pathnameFor(value);
   return (

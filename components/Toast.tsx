@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
+import Icon from "@/components/Icon";
 
 type ToastVariant = 'error' | 'success' | 'info'
 
@@ -100,9 +101,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               className="pointer-events-auto flex items-start gap-2.5 overflow-hidden rounded-xl border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3.5 py-3 shadow-[0_8px_24px_-6px_rgba(26,20,17,0.18)]"
             >
               <span className={`mt-0.5 h-4 w-1 shrink-0 rounded-full ${style.bar}`} aria-hidden="true" />
-              <span className="material-symbols-outlined mt-0.5 shrink-0 text-[18px] text-[var(--color-text-2)]" aria-hidden="true">
-                {style.icon}
-              </span>
+              <Icon
+                name={style.icon}
+                size={18}
+                className="mt-0.5 shrink-0 text-[var(--color-text-2)]"
+              />
               <p className="min-w-0 flex-1 break-words text-[13px] leading-snug text-[var(--color-text-1)]">
                 {t.message}
               </p>
@@ -112,7 +115,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 aria-label="Dismiss notification"
                 className="-mr-1 -mt-0.5 shrink-0 rounded p-0.5 text-[var(--color-text-4)] transition-colors hover:text-[var(--color-text-1)]"
               >
-                <span className="material-symbols-outlined text-[18px]" aria-hidden="true">close</span>
+                <Icon name="close" size={18} />
               </button>
             </div>
           )

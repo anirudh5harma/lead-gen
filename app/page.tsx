@@ -1,7 +1,7 @@
 import Image from "next/image";
-import Link from "next/link";
 import Icon from "@/components/Icon";
 import UrlStart from "@/components/UrlStart";
+import { authEntryPath } from "@/lib/auth/next";
 
 const PLANETS: {
   orbit: 1 | 2 | 3 | 4;
@@ -16,6 +16,8 @@ const PLANETS: {
 ];
 
 export default function Home() {
+  const signInHref = authEntryPath("/dashboard");
+
   return (
     <main className="canvas-bg relative isolate min-h-[100dvh]">
       {/* fixed top navbar — full-viewport bar with top + bottom hairlines */}
@@ -36,12 +38,12 @@ export default function Home() {
             />
             Bombsell
           </span>
-          <Link
-            href="/dashboard"
+          <a
+            href={signInHref}
             className="text-sm font-medium text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text-1)]"
           >
             Sign in
-          </Link>
+          </a>
         </div>
       </header>
 

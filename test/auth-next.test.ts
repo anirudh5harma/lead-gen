@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  authEntryPath,
   googleAuthPath,
+  onboardingPathForWebsite,
   postAuthDestination,
   safeNextPath,
 } from "../lib/auth/next.ts";
@@ -23,6 +25,24 @@ test("googleAuthPath encodes sanitized next path", () => {
     "/auth/google?next=%2Fonboarding%3Furl%3Dhttps%253A%252F%252Facme.com",
   );
   assert.equal(googleAuthPath("https://evil.example"), "/auth/google?next=%2Fdashboard");
+});
+
+test("authEntryPath preserves app sessions before OAuth handoff", () => {
+  assert.equal(authEntryPath("/dashboard"), "/auth/entry?next=%2Fdashboard");
+  assert.equal(authEntryPath("https://evil.example"), "/auth/entry?next=%2Fdashboard");
+});
+
+test("onboardingPathForWebsite normalizes company URLs for auth handoff", () => {
+  assert.equal(
+    onboardingPathForWebsite("acme.com"),
+    "/onboarding?url=https%3A%2F%2Facme.com%2F",
+  );
+  assert.equal(
+    onboardingPathForWebsite("https://acme.com/pricing?utm=launch"),
+    "/onboarding?url=https%3A%2F%2Facme.com%2Fpricing%3Futm%3Dlaunch",
+  );
+  assert.equal(onboardingPathForWebsite(""), "/onboarding");
+  assert.equal(onboardingPathForWebsite("https://"), "/onboarding");
 });
 
 test("postAuthDestination keeps completed users out of onboarding", () => {
