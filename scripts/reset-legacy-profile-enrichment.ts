@@ -8,6 +8,8 @@
  * Usage:
  *   node --experimental-strip-types scripts/reset-legacy-profile-enrichment.ts --dry-run
  *   node --experimental-strip-types scripts/reset-legacy-profile-enrichment.ts --apply
+ *   node --experimental-strip-types scripts/reset-legacy-profile-enrichment.ts --dry-run --reset-descriptions
+ *   node --experimental-strip-types scripts/reset-legacy-profile-enrichment.ts --apply --reset-descriptions
  */
 
 import fs from "node:fs";
@@ -36,19 +38,19 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl, max: 2 });
   try {
     if (args.dryRun) {
-      const preview = await previewReset(pool);
+      const preview = await previewReset(pool, args.resetDescriptions);
       console.log(JSON.stringify({ ok: true, dry_run: true, ...preview }, null, 2));
       return;
     }
 
-    const result = await applyReset(pool);
+    const result = await applyReset(pool, args.resetDescriptions);
     console.log(JSON.stringify({ ok: true, dry_run: false, ...result }, null, 2));
   } finally {
     await pool.end();
   }
 }
 
-async function previewReset(pool: Pool) {
+async function previewReset(pool: Pool, resetDescriptions: boolean) {
   const { rows } = await pool.query<ResetPreviewRow>(
     `with workspace_profiles as (
        select description, properties, provenance
@@ -59,8 +61,7 @@ async function previewReset(pool: Pool) {
        count(*)::text as workspace_profiles,
        count(*) filter (where properties ? 'exa_profile')::text as with_exa_profile,
        count(*) filter (
-         where properties ? 'exa_profile'
-           and ${LEGACY_EXA_DESCRIPTION_CONDITION}
+         where ${descriptionResetCondition(resetDescriptions)}
        )::text as descriptions_to_clear
       from workspace_profiles`,
   );
@@ -71,7 +72,7 @@ async function previewReset(pool: Pool) {
   };
 }
 
-async function applyReset(pool: Pool) {
+async function applyReset(pool: Pool, resetDescriptions: boolean) {
   const { rows } = await pool.query<ResetResultRow>(
     `with candidates as (
        select id,
@@ -79,10 +80,13 @@ async function applyReset(pool: Pool) {
               properties,
               provenance,
               properties ? 'exa_profile' as had_exa_profile,
-              ${LEGACY_EXA_DESCRIPTION_CONDITION} as clear_description
+              ${descriptionResetCondition(resetDescriptions)} as clear_description
          from graph_companies
         where properties->>'profile_role' = 'workspace_company'
-          and properties ? 'exa_profile'
+          and (
+            properties ? 'exa_profile'
+            or ${descriptionResetCondition(resetDescriptions)}
+          )
      ),
      updated as (
        update graph_companies gc
@@ -113,6 +117,16 @@ async function applyReset(pool: Pool) {
   };
 }
 
+function descriptionResetCondition(resetDescriptions: boolean): string {
+  if (resetDescriptions) return DESCRIPTION_PRESENT_CONDITION;
+  return `properties ? 'exa_profile' and ${LEGACY_EXA_DESCRIPTION_CONDITION}`;
+}
+
+const DESCRIPTION_PRESENT_CONDITION = `
+  description is not null
+  and btrim(description) <> ''
+`;
+
 const LEGACY_EXA_DESCRIPTION_CONDITION = `
   description is not null
   and btrim(description) <> ''
@@ -123,11 +137,19 @@ const LEGACY_EXA_DESCRIPTION_CONDITION = `
   )
 `;
 
-function parseArgs(argv: string[]): { dryRun: boolean } {
-  if (argv.length !== 1 || (argv[0] !== "--dry-run" && argv[0] !== "--apply")) {
-    throw new Error("Usage: reset-legacy-profile-enrichment.ts --dry-run | --apply");
+function parseArgs(argv: string[]): { dryRun: boolean; resetDescriptions: boolean } {
+  const action = argv.find((arg) => arg === "--dry-run" || arg === "--apply");
+  const resetDescriptions = argv.includes("--reset-descriptions");
+  const valid =
+    Boolean(action) &&
+    argv.every((arg) => arg === "--dry-run" || arg === "--apply" || arg === "--reset-descriptions") &&
+    argv.filter((arg) => arg === "--dry-run" || arg === "--apply").length === 1;
+  if (!valid) {
+    throw new Error(
+      "Usage: reset-legacy-profile-enrichment.ts --dry-run|--apply [--reset-descriptions]",
+    );
   }
-  return { dryRun: argv[0] === "--dry-run" };
+  return { dryRun: action === "--dry-run", resetDescriptions };
 }
 
 function loadDotenvLocal(): void {

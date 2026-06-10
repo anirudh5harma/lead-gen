@@ -746,6 +746,141 @@ button:active, a:active {
   padding: 16px;
 }
 
+.dashboard-loader {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  min-height: min(54vh, 500px);
+  place-items: center;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-line-2);
+  padding: clamp(42px, 8vw, 88px) 0;
+}
+
+.dashboard-loader::before,
+.dashboard-loader::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.dashboard-loader::before {
+  inset: -18%;
+  z-index: 0;
+  background:
+    conic-gradient(from 36deg at 48% 52%, transparent 0deg, rgba(111, 91, 213, 0.11) 60deg, transparent 118deg, rgba(47, 143, 107, 0.1) 190deg, transparent 252deg, rgba(154, 106, 21, 0.08) 318deg, transparent 360deg);
+  filter: blur(8px);
+  opacity: 0.5;
+  animation: brief-drift 24s linear infinite;
+}
+
+.dashboard-loader::after {
+  inset: 16% 10%;
+  z-index: 0;
+  background:
+    linear-gradient(112deg, transparent 0 18%, rgba(255, 255, 255, 0.52) 42%, transparent 68%),
+    radial-gradient(circle at 74% 32%, rgba(255, 255, 255, 0.5), transparent 16%);
+  opacity: 0.44;
+}
+
+.dashboard-loader-orbit {
+  position: absolute;
+  inset: 10% 6%;
+  z-index: 1;
+}
+
+.dashboard-loader-stream,
+.dashboard-loader-node {
+  position: absolute;
+  pointer-events: none;
+}
+
+.dashboard-loader-stream {
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(to right, transparent, rgba(111, 91, 213, 0.42), rgba(47, 143, 107, 0.38), transparent);
+  opacity: 0.78;
+}
+
+.dashboard-loader-stream::after {
+  content: "";
+  position: absolute;
+  inset: -3px 0;
+  background: linear-gradient(to right, transparent 0 24%, rgba(154, 106, 21, 0.28) 48%, transparent 72%);
+  animation: brief-flow 4.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.dashboard-loader-stream-a { left: 10%; top: 42%; width: 78%; transform: rotate(7deg); }
+.dashboard-loader-stream-b { left: 18%; top: 66%; width: 58%; transform: rotate(-12deg); }
+.dashboard-loader-stream-c { left: 52%; top: 26%; width: 34%; transform: rotate(44deg); }
+
+.dashboard-loader-node {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-text-1);
+  opacity: 0.26;
+  animation: brief-signal 3.2s ease-in-out infinite;
+}
+
+.dashboard-loader-node-a { left: 28%; top: 34%; animation-delay: 0s; }
+.dashboard-loader-node-b { right: 28%; top: 48%; animation-delay: 0.7s; }
+.dashboard-loader-node-c { left: 46%; bottom: 24%; animation-delay: 1.4s; }
+
+.dashboard-loader-bar {
+  display: block;
+  height: 100%;
+  width: 46%;
+  border-radius: inherit;
+  background: linear-gradient(to right, rgba(111, 91, 213, 0.18), rgba(47, 143, 107, 0.62), rgba(154, 106, 21, 0.24));
+  animation: dashboard-loader-bar 1.45s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.dashboard-loader-skeleton {
+  border: 1px solid var(--color-line-2);
+  border-radius: 10px;
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.7), rgba(238, 238, 234, 0.58), rgba(255, 255, 255, 0.72));
+  background-size: 220% 100%;
+  animation: dashboard-loader-sheen 1.7s ease-in-out infinite;
+}
+
+.dashboard-route-pending {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 60;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(36, 36, 33, 0.06);
+}
+
+.dashboard-route-pending::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 42%;
+  background: linear-gradient(to right, transparent, var(--color-accent), var(--color-pos), transparent);
+  animation: dashboard-route-progress 0.95s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes dashboard-loader-bar {
+  0% { transform: translateX(-95%); opacity: 0.35; }
+  35% { opacity: 1; }
+  100% { transform: translateX(230%); opacity: 0.35; }
+}
+
+@keyframes dashboard-loader-sheen {
+  0%, 100% { background-position: 120% 0; opacity: 0.72; }
+  50% { background-position: -40% 0; opacity: 1; }
+}
+
+@keyframes dashboard-route-progress {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(260%); }
+}
+
 /* ── Onboarding panel ────────────────────────────────────────────
    Elevated glass sheet that reads as a deliberate surface, not a
    plain box. Layered wash + inset highlight + soft depth shadow,
@@ -1175,7 +1310,13 @@ select:focus, select:focus-visible {
   .float-orb, .drift-slow, .drift-slower { animation: none !important; }
   .brief-canvas::before,
   .brief-stream::after,
-  .brief-mark {
+  .brief-mark,
+  .dashboard-loader::before,
+  .dashboard-loader-stream::after,
+  .dashboard-loader-node,
+  .dashboard-loader-bar,
+  .dashboard-loader-skeleton,
+  .dashboard-route-pending::after {
     animation: none !important;
   }
 }

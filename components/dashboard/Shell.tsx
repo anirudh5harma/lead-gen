@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 
@@ -43,15 +43,36 @@ export function DashboardShell({
   activeWorkspaceId?: string;
 }) {
   const pathname = usePathname() ?? "/dashboard";
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const routePending = pendingHref ? !isActivePath(pathname, pendingHref) : false;
+
+  function handleNavClick(
+    event: MouseEvent<HTMLAnchorElement>,
+    href: string,
+  ) {
+    if (
+      event.defaultPrevented ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      event.button !== 0 ||
+      isActivePath(pathname, href)
+    ) {
+      return;
+    }
+    setPendingHref(href);
+  }
 
   return (
     <div className="canvas-bg relative isolate min-h-[100dvh] text-[var(--color-text-1)]">
+      {routePending ? <div className="dashboard-route-pending" aria-hidden="true" /> : null}
       {/* Top frame — translucent full-viewport bar, top + bottom hairlines */}
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)] bg-[rgba(245,248,251,0.72)] backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
             href="/dashboard"
-            prefetch={false}
+            onClick={(event) => handleNavClick(event, "/dashboard")}
             className="flex items-center gap-2 text-[1.0625rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
@@ -74,7 +95,7 @@ export function DashboardShell({
                 <Link
                   key={item.href}
                   href={item.href}
-                  prefetch={false}
+                  onClick={(event) => handleNavClick(event, item.href)}
                   aria-current={active ? "page" : undefined}
                   className={
                     "rounded-md px-2.5 py-1.5 text-[13.5px] transition-colors " +
@@ -142,7 +163,7 @@ export function DashboardShell({
             <Link
               key={item.href}
               href={item.href}
-              prefetch={false}
+              onClick={(event) => handleNavClick(event, item.href)}
               aria-current={active ? "page" : undefined}
               className={
                 "shrink-0 rounded-md px-2.5 py-1 text-[13px] transition-colors " +
@@ -184,7 +205,6 @@ export function EmptyState({
       {cta ? (
         <Link
           href={cta.href}
-          prefetch={false}
           className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
         >
           {cta.icon ? <Icon name={cta.icon} size={16} /> : null}
