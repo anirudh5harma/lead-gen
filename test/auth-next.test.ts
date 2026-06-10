@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  authEntryPath,
   googleAuthPath,
   onboardingPathForWebsite,
   postAuthDestination,
@@ -25,11 +24,6 @@ test("googleAuthPath encodes sanitized next path", () => {
     "/auth/google?next=%2Fonboarding%3Furl%3Dhttps%253A%252F%252Facme.com",
   );
   assert.equal(googleAuthPath("https://evil.example"), "/auth/google?next=%2Fdashboard");
-});
-
-test("authEntryPath preserves app sessions before OAuth handoff", () => {
-  assert.equal(authEntryPath("/dashboard"), "/auth/entry?next=%2Fdashboard");
-  assert.equal(authEntryPath("https://evil.example"), "/auth/entry?next=%2Fdashboard");
 });
 
 test("onboardingPathForWebsite normalizes company URLs for auth handoff", () => {
