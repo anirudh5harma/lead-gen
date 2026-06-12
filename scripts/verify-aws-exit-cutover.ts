@@ -69,8 +69,12 @@ interface RestateDeploymentsResponse {
 }
 
 interface CutoverOptions {
+  blueprintFile: string;
   serviceName: string;
   expectedPlan: string;
+  allowFreeWorker: boolean;
+  skipRestateCutover: boolean;
+  skipRuntimeGates: boolean;
   appOrigin: string;
 }
 
@@ -85,29 +89,47 @@ async function main(): Promise<void> {
   const options = cutoverOptions();
   console.log("AWS exit cutover checks");
 
-  await checkRenderBlueprint();
+  await checkRenderBlueprint(options);
   const worker = await checkRenderWorker(options);
   if (worker?.url) {
     await checkRenderHealth(worker.url);
-    await checkRestateCutover(worker.url);
+    if (options.skipRestateCutover) {
+      record(
+        "restate.worker_uri",
+        "warn",
+        "skipped because this is a Render smoke check, not the production Restate cutover",
+      );
+    } else {
+      await checkRestateCutover(worker.url);
+    }
   } else {
     record(
       "render.worker.health",
       "fail",
-      "Render worker URL is unavailable; create bombsell-production-worker first",
+      `Render worker URL is unavailable; create ${options.serviceName} first`,
     );
-    record(
-      "restate.worker_uri",
-      "fail",
-      "Render worker URL is unavailable; Restate cannot be verified against the replacement host",
-    );
+    if (options.skipRestateCutover) {
+      record(
+        "restate.worker_uri",
+        "warn",
+        "skipped because this is a Render smoke check, not the production Restate cutover",
+      );
+    } else {
+      record(
+        "restate.worker_uri",
+        "fail",
+        "Render worker URL is unavailable; Restate cannot be verified against the replacement host",
+      );
+    }
   }
 
-  if (hasFailures()) {
+  if (hasFailures() || options.skipRuntimeGates) {
     record(
       "cutover.runtime_gates",
-      "warn",
-      "skipped until Render worker and Restate URI checks pass",
+      options.skipRuntimeGates ? "warn" : "warn",
+      options.skipRuntimeGates
+        ? "skipped because this is a Render smoke check"
+        : "skipped until Render worker and Restate URI checks pass",
     );
     finish();
     return;
@@ -117,11 +139,11 @@ async function main(): Promise<void> {
   finish();
 }
 
-async function checkRenderBlueprint(): Promise<void> {
+async function checkRenderBlueprint(options: CutoverOptions): Promise<void> {
   const result = await command(renderCli(), [
     "blueprints",
     "validate",
-    "render.yaml",
+    options.blueprintFile,
     "--output",
     "json",
     "--confirm",
@@ -140,7 +162,7 @@ async function checkRenderBlueprint(): Promise<void> {
   }
 
   if (payload.valid === true) {
-    record("render.blueprint", "ok", "render.yaml validates for the active workspace");
+    record("render.blueprint", "ok", `${options.blueprintFile} validates for the active workspace`);
     return;
   }
 
@@ -150,7 +172,7 @@ async function checkRenderBlueprint(): Promise<void> {
     "render.blueprint",
     "fail",
     needPayment
-      ? "Render workspace needs payment information before the standard worker can be created"
+      ? `Render workspace needs payment information before ${options.blueprintFile} can be created`
       : formatRenderErrors(errors),
   );
 }
@@ -180,12 +202,18 @@ async function checkRenderWorker(options: CutoverOptions): Promise<RenderWorkerS
     return null;
   }
 
-  const issues = renderWorkerIssues(worker, { expectedPlan: options.expectedPlan });
+  const issues = renderWorkerIssues(worker, {
+    expectedPlan: options.expectedPlan,
+    allowFreeWorker: options.allowFreeWorker,
+  });
+  const allowedFree = options.allowFreeWorker && worker.plan === "free";
   record(
     "render.worker.service",
-    issues.length === 0 ? "ok" : "fail",
+    issues.length === 0 ? (allowedFree ? "warn" : "ok") : "fail",
     issues.length === 0
-      ? `${worker.name} ${worker.plan ?? "unknown plan"} ${worker.url ?? "unknown URL"}`
+      ? allowedFree
+        ? `${worker.name} is on Render Free for smoke only; do not scale ECS down from this signal`
+        : `${worker.name} ${worker.plan ?? "unknown plan"} ${worker.url ?? "unknown URL"}`
       : issues.join("; "),
   );
   return worker;
@@ -366,14 +394,16 @@ export function summarizeRenderService(entry: RenderServiceEntry): RenderWorkerS
 
 export function renderWorkerIssues(
   worker: RenderWorkerSummary,
-  opts: { expectedPlan: string },
+  opts: { expectedPlan: string; allowFreeWorker?: boolean },
 ): string[] {
   const issues: string[] = [];
   if (worker.type !== "web_service") issues.push(`type is ${worker.type ?? "missing"}, expected web_service`);
   if (worker.plan !== opts.expectedPlan) {
     issues.push(`plan is ${worker.plan ?? "missing"}, expected ${opts.expectedPlan}`);
   }
-  if (worker.plan === "free") issues.push("free Render services sleep and are not valid for this always-on worker");
+  if (worker.plan === "free" && !opts.allowFreeWorker) {
+    issues.push("free Render services sleep and are not valid for this always-on worker");
+  }
   if (worker.runtime !== "docker") issues.push(`runtime is ${worker.runtime ?? "missing"}, expected docker`);
   if ((worker.numInstances ?? 0) < 1) issues.push("numInstances must be at least 1");
   if (worker.healthCheckPath !== "/health") {
@@ -417,8 +447,12 @@ export function normalizeOrigin(value: string): string | null {
 
 function cutoverOptions(): CutoverOptions {
   return {
+    blueprintFile: process.env.RENDER_BLUEPRINT_FILE?.trim() || "render.yaml",
     serviceName: process.env.RENDER_WORKER_SERVICE_NAME?.trim() || "bombsell-production-worker",
     expectedPlan: process.env.RENDER_WORKER_EXPECTED_PLAN?.trim() || "standard",
+    allowFreeWorker: process.env.RENDER_ALLOW_FREE_WORKER?.trim() === "1",
+    skipRestateCutover: process.env.RENDER_SKIP_RESTATE_CUTOVER?.trim() === "1",
+    skipRuntimeGates: process.env.RENDER_SKIP_RUNTIME_GATES?.trim() === "1",
     appOrigin: process.env.APP_ORIGIN?.trim() || "https://www.bombsell.com",
   };
 }

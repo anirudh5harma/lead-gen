@@ -625,6 +625,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "/Users/example/.local/bin/render",
   },
   {
+    name: "RENDER_BLUEPRINT_FILE",
+    requirement: "optional",
+    category: "runtime",
+    description: "Render Blueprint file used by the worker cutover or free smoke verifier.",
+    example: "render.yaml",
+  },
+  {
     name: "RENDER_WORKER_SERVICE_NAME",
     requirement: "optional",
     category: "runtime",
@@ -637,6 +644,27 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "runtime",
     description: "Render always-on plan expected by the AWS exit cutover verifier.",
     example: "standard",
+  },
+  {
+    name: "RENDER_ALLOW_FREE_WORKER",
+    requirement: "optional",
+    category: "runtime",
+    description: "Set to 1 only for the explicit Render Free smoke verifier; production cutover rejects Free.",
+    example: "0",
+  },
+  {
+    name: "RENDER_SKIP_RESTATE_CUTOVER",
+    requirement: "optional",
+    category: "runtime",
+    description: "Set to 1 for Render smoke checks that should not prove or modify Restate production routing.",
+    example: "0",
+  },
+  {
+    name: "RENDER_SKIP_RUNTIME_GATES",
+    requirement: "optional",
+    category: "runtime",
+    description: "Set to 1 for Render smoke checks that should not run Restate runtime, outreach, or production app gates.",
+    example: "0",
   },
   {
     name: "RENDER_WORKER_HEALTH_TIMEOUT_MS",

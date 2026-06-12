@@ -177,6 +177,18 @@ dashboard-synced values. After the service is created and secrets are entered,
 register its public URL with Restate and run the verification gates in this
 document before scaling ECS down.
 
+`render.free.yaml` defines the same container contract as
+`bombsell-production-worker-free-smoke` on Render Free. Use it only to verify
+the container can build and answer `/health` on Render without payment:
+
+```bash
+npm run verify:render-free-smoke
+```
+
+This is not a production cutover gate. Free web services can sleep or restart,
+so a passing free smoke must not be used to scale ECS down or to register the
+Free URL as the production Restate worker.
+
 The blueprint is committed as infrastructure handoff, not an active deployment.
 As of 2026-06-12, the Render CLI is installed and authenticated to
 `Anirudh Sharma's Workspace`, but `render blueprints validate render.yaml`

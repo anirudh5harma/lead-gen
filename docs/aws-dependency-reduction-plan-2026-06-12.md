@@ -60,27 +60,29 @@ Avoid for the first migration:
 8. Done 2026-06-12: added an ECR lifecycle policy for `bombsell-worker` so stale image artifacts do not keep accumulating after the ECS exit.
 9. Done 2026-06-12: added `npm run verify:aws-reduction` as the repeatable readiness gate for this phase.
 10. Done 2026-06-12: added `npm run verify:aws-exit-cutover` as the final Render/Restate replacement-worker gate.
+11. Done 2026-06-12: added a Render Free smoke blueprint (`render.free.yaml`) and verifier (`npm run verify:render-free-smoke`) for cost-free container validation before buying the always-on service.
 
 ### Phase 1: Same-Contract Worker Migration, 2-7 Days
 
 1. Choose Render first if we want the least platform experimentation: Docker image, web service endpoint, health checks, logs, and predictable fixed instance tiers.
 2. Choose Railway first if we want faster iteration and are comfortable with usage-credit billing.
-3. Deploy one production web service using the existing contract:
+3. Optional smoke only: deploy `render.free.yaml` to prove the container starts on Render without payment. This is a known temporary deviation for provider validation and is not enough to retire ECS because Free web services can sleep or restart.
+4. Deploy one production web service using the existing contract:
    - `WORKER_COMMAND=worker:production`
    - `RESTATE_WORKFLOW_HTTP1=1`
    - `RESTATE_WORKFLOW_PORT` omitted unless the host allows a fixed exposed port; otherwise the worker uses provider `PORT`
    - shared env from `docs/production-workers.md`
-4. Expose a stable HTTPS endpoint and verify `/health`.
-5. Register the new endpoint with Restate Cloud.
-6. Run:
+5. Expose a stable HTTPS endpoint and verify `/health`.
+6. Register the new endpoint with Restate Cloud.
+7. Run:
    - `npm run verify:aws-exit-cutover`
    - `npm run verify:worker-release`
    - `npm run verify:restate`
    - `npm run verify:restate-runtime`
    - `OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline`
    - `APP_ORIGIN=https://www.bombsell.com npm run verify:production-app`
-7. Observe for 24 hours with autonomous volume capped.
-8. Scale ECS desired count to `0`, then unregister and delete AWS resources once the Restate deployment registry and logs show no traffic to the ECS URL.
+8. Observe for 24 hours with autonomous volume capped.
+9. Scale ECS desired count to `0`, then unregister and delete AWS resources once the Restate deployment registry and logs show no traffic to the ECS URL.
 
 Current blocker: the repo is ready for the provider-side worker create/register
 step and the Render CLI is authenticated, but Render rejects `render.yaml`
@@ -111,6 +113,7 @@ Do not scale down ECS until all are true:
 
 - Restate admin shows the new worker deployment advertises every required workflow service.
 - `npm run verify:aws-exit-cutover` passes, proving the Render worker exists on an always-on plan, `/health` responds, and every required Restate workflow deployment URI points at the replacement worker.
+- A Render Free smoke check is insufficient for this gate.
 - `verify:restate-runtime` completes a durable checkpoint through the new worker.
 - NATS projectors are consuming without dead-letter growth.
 - Strict outreach verification only fails for expected external readiness, such as no connected Outlook account.

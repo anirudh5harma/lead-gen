@@ -26,6 +26,7 @@ Date: 2026-06-12
 - Added an ECR lifecycle policy on `bombsell-worker` to expire untagged artifacts after 7 days and retain the 10 newest tagged rollback images.
 - Added `npm run verify:aws-reduction` as the reduction readiness gate for App Runner removal, AWS budgets, ECR lifecycle, Vercel AWS env removal, Restate contract readiness, and current ECS health.
 - Added `npm run verify:aws-exit-cutover` as the final replacement-worker gate for Render blueprint validity, Render service shape, `/health`, Restate deployment URI cutover, Restate runtime, strict outreach, and production app smoke.
+- Added `render.free.yaml` and `npm run verify:render-free-smoke` for a no-payment Render Free smoke worker. This is a temporary provider smoke path only; Free services are not acceptable evidence for scaling ECS to `0`.
 - Installed and authenticated the Render CLI to `Anirudh Sharma's Workspace`; `render.yaml` creation is blocked by Render returning `need_payment_info` for the `standard` worker plan.
 
 ## Current Cost Drivers
@@ -53,12 +54,14 @@ the ECS gateway stack is scaled down.
 - `npm run verify:restate` passed after ECS revision `33` was registered and Restate re-discovered the deployment.
 - `npm run verify:aws-reduction` passed after the AWS budgets, ECR lifecycle policy, Vercel env cleanup, Restate contract check, and ECS health check were in place.
 - `npm run verify:aws-exit-cutover` currently fails by design because Render still needs payment information, `bombsell-production-worker` has not been created, and Restate is not pointed at the replacement worker URL.
+- `render.free.yaml` validates for the active Render workspace. `npm run verify:render-free-smoke` fails until `bombsell-production-worker-free-smoke` exists and has its required env vars.
 - `OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline` failed only on Outlook readiness because there are no connected Outlook accounts; the local signal-to-contact-to-personalized-draft-to-eval-to-dry-run-send-to-outcome path passed.
 
 ## Still Required
 
 - Add payment information to the Render workspace so the `standard` worker plan can be created.
 - Create the Render service from `render.yaml` and enter the dashboard-synced secrets after explicit owner confirmation or through the Render dashboard.
+- Optional cost-free smoke before buying: create `bombsell-production-worker-free-smoke` from `render.free.yaml`, enter the same dashboard-synced secrets, then run `npm run verify:render-free-smoke`. Do not register this Free service as the production Restate worker.
 - Register the Render service URL with Restate Cloud.
 - Run the migration gate:
   - `npm run verify:aws-exit-cutover`

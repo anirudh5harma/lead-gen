@@ -80,6 +80,14 @@ export function checkWorkerReleaseContract(
   }
 
   const dockerfile = readFile("Dockerfile.worker");
+  const rootDockerfile = readFile("Dockerfile");
+  checks.push({
+    name: "Dockerfile mirrors Dockerfile.worker",
+    ok: rootDockerfile === dockerfile,
+    detail: rootDockerfile === dockerfile
+      ? "root Dockerfile matches worker image contract for Render direct creation"
+      : "root Dockerfile must stay aligned with Dockerfile.worker",
+  });
   for (const command of WORKER_COMMANDS) {
     checks.push({
       name: `Dockerfile.worker command hint includes ${command}`,

@@ -55,6 +55,10 @@ test("aws exit cutover rejects free sleeping Render services", () => {
     "plan is free, expected standard",
     "free Render services sleep and are not valid for this always-on worker",
   ]);
+  assert.deepEqual(
+    renderWorkerIssues(worker, { expectedPlan: "free", allowFreeWorker: true }),
+    [],
+  );
 });
 
 test("aws exit cutover requires workflow deployments to point at Render", () => {
