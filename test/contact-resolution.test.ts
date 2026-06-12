@@ -62,6 +62,29 @@ test("contact resolution ranks top three channel-ready graph contacts", () => {
   assert.ok(ranked[1]?.reasons.includes("provider_contact_fit"));
 });
 
+test("contact resolution prefers the verified alternate email on a person", () => {
+  const companyId = randomUUID();
+  const row = person({
+    full_name: "Founder One",
+    title: "Founder and CEO",
+    company_id: companyId,
+    emails: ["old@acme.example", "founder@acme.example"],
+  });
+  row.properties.email_verification = {
+    "old@acme.example": { status: "invalid", verified: false },
+    "founder@acme.example": { status: "valid", verified: true },
+  };
+
+  const ranked = rankContactRows([row], "email");
+
+  assert.equal(ranked[0]?.verification.email_verified, true);
+  assert.equal(ranked[0]?.verification.email_status, "valid");
+  assert.deepEqual(ranked[0]?.emails, [
+    "founder@acme.example",
+    "old@acme.example",
+  ]);
+});
+
 test("contact resolution events are typed bus events", async () => {
   const bus = createInMemoryEventBus();
   const workspaceId = randomUUID();
@@ -238,6 +261,66 @@ test("contact resolution workflow defers email outreach when contacts are not ve
   assert.equal(resolved, undefined);
   assert.equal(deferred?.payload.defer_reason, "no_email_ready_contact");
   assert.equal(deferred?.payload.candidate_count, 0);
+});
+
+test("contact resolution workflow verifies alternate emails and persists the verified one first", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const rows: ContactRows = [
+    person({
+      full_name: "Ava Founder",
+      title: "Founder and CEO",
+      company_id: companyId,
+      emails: ["ava.old@acme.example", "ava@acme.example"],
+    }),
+  ];
+  const verifierCalls: string[] = [];
+  const bus = createInMemoryEventBus();
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  runtime.register(
+    createContactResolutionWorkflow({
+      pool: mutableContactRowsPool(rows),
+      emailVerifier: {
+        name: "zerobounce.validate",
+        async verify(email) {
+          verifierCalls.push(email);
+          return email === "ava@acme.example"
+            ? { status: "valid", verified: true }
+            : { status: "invalid", verified: false };
+        },
+      },
+    }),
+  );
+
+  const run = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input: {
+      workspace_id: workspaceId,
+      signal_id: signalId,
+      company_id: companyId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+      limit: 1,
+    },
+  });
+  const completed = await waitForCompletedRun(runtime, run.id);
+  const resolved = bus.published.find((event) => event.event_type === "contact.resolved");
+
+  assert.equal(completed.output?.decision, "resolved");
+  assert.deepEqual(verifierCalls, ["ava.old@acme.example", "ava@acme.example"]);
+  assert.equal(completed.output?.candidates[0]?.emails[0], "ava@acme.example");
+  assert.equal(resolved?.payload.candidates[0]?.emails[0], "ava@acme.example");
+  assert.equal(rows[0]?.emails[0], "ava@acme.example");
+  assert.equal(
+    (rows[0]?.properties.email_verification as Record<string, { verified?: boolean }> | undefined)
+      ?.["ava@acme.example"]?.verified,
+    true,
+  );
 });
 
 test("Exa people search results map structured person entities into contacts", () => {
@@ -452,6 +535,42 @@ function mockContactRowsPool(rows: ContactRows): Pool {
   return {
     async query(sql: string) {
       if (sql.includes("from graph_persons")) return { rows };
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  } as unknown as Pool;
+}
+
+function mutableContactRowsPool(rows: ContactRows): Pool {
+  return {
+    async query(sql: string, params?: unknown[]) {
+      if (sql.includes("from graph_persons")) return { rows };
+      if (sql.includes("set properties = properties")) {
+        const personId = params?.[1];
+        const properties = typeof params?.[2] === "string"
+          ? JSON.parse(params[2]) as Record<string, unknown>
+          : {};
+        const row = rows.find((candidate) => candidate.id === personId);
+        if (row) {
+          row.properties = { ...row.properties, ...properties };
+          row.updated_at = new Date();
+        }
+        return { rows: [], rowCount: row ? 1 : 0 };
+      }
+      if (sql.includes("set emails = array_prepend")) {
+        const personId = params?.[1];
+        const email = typeof params?.[2] === "string" ? params[2] : null;
+        const row = rows.find((candidate) => candidate.id === personId);
+        if (row && email) {
+          row.emails = [
+            email,
+            ...row.emails.filter((candidateEmail) =>
+              candidateEmail.toLowerCase() !== email.toLowerCase()
+            ),
+          ];
+          row.updated_at = new Date();
+        }
+        return { rows: [], rowCount: row ? 1 : 0 };
+      }
       throw new Error(`Unexpected query: ${sql}`);
     },
   } as unknown as Pool;

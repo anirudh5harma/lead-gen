@@ -159,6 +159,7 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   assert.match(sql, /s\.related_company_id is not null/);
   assert.match(sql, /cardinality\(gp\.emails\) > 0/);
   assert.match(sql, /meta->>'verified' = 'true'/);
+  assert.match(sql, /array_prepend\(ev\.email::citext, array_remove\(gp\.emails, ev\.email::citext\)\)/);
 });
 
 test("normalizeContactCandidates tolerates malformed provider payloads", () => {

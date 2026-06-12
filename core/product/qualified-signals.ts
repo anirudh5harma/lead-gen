@@ -211,7 +211,12 @@ export async function loadQualifiedSignalWorkbench(
                     gp.id,
                     gp.full_name,
                     gp.title,
-                    gp.emails,
+                    coalesce((
+                      select array_prepend(ev.email::citext, array_remove(gp.emails, ev.email::citext))
+                        from jsonb_each(coalesce(gp.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                       where meta->>'verified' = 'true'
+                       limit 1
+                    ), gp.emails) as emails,
                     gp.linkedin_url,
                     gp.provenance,
                     case

@@ -73,6 +73,8 @@ export interface ContactResolutionDeps {
   emailVerifier?: EmailVerificationProvider;
 }
 
+const MAX_EMAILS_TO_VERIFY_PER_PERSON = 3;
+
 interface ContactRow {
   id: string;
   full_name: string;
@@ -132,22 +134,7 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
         await ctx.step("contact.email.verify", async () => {
           const rows = await loadCandidateRows(deps.pool, input);
           for (const row of rows) {
-            const email = row.emails[0];
-            if (!email || isVerifiedEmail(row.properties, email)) continue;
-            const result = await deps.emailVerifier!.verify(email, input);
-            await mergePersonProperties(deps.pool, input.workspace_id, row.id, {
-              email_verification: {
-                ...(recordValue(row.properties.email_verification) ?? {}),
-                [email.toLowerCase()]: {
-                  provider: deps.emailVerifier!.name,
-                  status: result.status,
-                  verified: result.verified,
-                  confidence: result.confidence ?? null,
-                  raw: result.raw ?? null,
-                  checked_at: new Date().toISOString(),
-                },
-              },
-            });
+            await verifyCandidateEmails(deps.pool, input, row, deps.emailVerifier!);
           }
           return true;
         });
@@ -265,7 +252,7 @@ function scoreContact(row: ContactRow, channel: ContactChannel): ContactCandidat
     reasons.push("signal_adjacent_role");
   }
 
-  const email = row.emails[0] ?? null;
+  const email = preferredEmail(row.properties, row.emails);
   const emailStatus = email ? emailVerificationStatus(row.properties, email) : null;
   const emailVerified = email ? isVerifiedEmail(row.properties, email) : false;
   const linkedinReady = Boolean(row.linkedin_url);
@@ -308,7 +295,7 @@ function scoreContact(row: ContactRow, channel: ContactChannel): ContactCandidat
     full_name: row.full_name,
     title: row.title,
     company_id: row.company_id,
-    emails: row.emails,
+    emails: email ? preferEmail(row.emails, email) : row.emails,
     linkedin_url: row.linkedin_url,
     score: Number(score.toFixed(4)),
     reasons,
@@ -319,6 +306,46 @@ function scoreContact(row: ContactRow, channel: ContactChannel): ContactCandidat
     },
     provenance: row.provenance ?? {},
   };
+}
+
+async function verifyCandidateEmails(
+  pool: Pool,
+  input: ContactResolutionInput,
+  row: ContactRow,
+  verifier: EmailVerificationProvider,
+): Promise<void> {
+  const existing = recordValue(row.properties.email_verification) ?? {};
+  const next: Record<string, unknown> = { ...existing };
+  let changed = false;
+  let verifiedEmail = row.emails.find((email) => isVerifiedEmail(row.properties, email)) ?? null;
+
+  for (const email of uniqueEmails(row.emails).slice(0, MAX_EMAILS_TO_VERIFY_PER_PERSON)) {
+    if (verifiedEmail) break;
+    const state = emailVerificationState(row.properties, email);
+    if (state.status || state.verified) continue;
+    const result = await verifier.verify(email, input);
+    next[email.toLowerCase()] = {
+      provider: verifier.name,
+      status: result.status,
+      verified: result.verified,
+      confidence: result.confidence ?? null,
+      raw: result.raw ?? null,
+      checked_at: new Date().toISOString(),
+    };
+    changed = true;
+    if (result.verified) {
+      verifiedEmail = email;
+    }
+  }
+
+  if (changed) {
+    await mergePersonProperties(pool, input.workspace_id, row.id, {
+      email_verification: next,
+    });
+  }
+  if (verifiedEmail && row.emails[0]?.toLowerCase() !== verifiedEmail.toLowerCase()) {
+    await preferPersonEmail(pool, input.workspace_id, row.id, verifiedEmail);
+  }
 }
 
 async function loadCandidateRows(
@@ -458,6 +485,22 @@ async function mergePersonProperties(
   );
 }
 
+async function preferPersonEmail(
+  pool: Pool,
+  workspace_id: string,
+  person_id: string,
+  email: string,
+): Promise<void> {
+  await pool.query(
+    `update graph_persons
+        set emails = array_prepend($3::citext, array_remove(emails, $3::citext)),
+            updated_at = now()
+      where workspace_id = $1
+        and id = $2`,
+    [workspace_id, person_id, email.toLowerCase()],
+  );
+}
+
 function providerOrder(deps: ContactResolutionDeps): string[] {
   return [
     "graph_cache",
@@ -467,18 +510,67 @@ function providerOrder(deps: ContactResolutionDeps): string[] {
 }
 
 function isVerifiedEmail(properties: Record<string, unknown>, email: string): boolean {
-  const status = emailVerificationStatus(properties, email);
-  return status === "valid" || status === "verified" || status === "deliverable";
+  const state = emailVerificationState(properties, email);
+  return state.verified === true ||
+    (state.verified !== false && isVerifiedEmailStatus(state.status));
 }
 
 function emailVerificationStatus(
   properties: Record<string, unknown>,
   email: string,
 ): string | null {
+  return emailVerificationState(properties, email).status;
+}
+
+function emailVerificationState(
+  properties: Record<string, unknown>,
+  email: string,
+): { status: string | null; verified: boolean | null } {
   const verification = recordValue(properties.email_verification);
   const byEmail = recordValue(verification?.[email.toLowerCase()]);
   const status = byEmail?.status;
-  return typeof status === "string" && status.trim() ? status.trim().toLowerCase() : null;
+  return {
+    status: typeof status === "string" && status.trim()
+      ? status.trim().toLowerCase()
+      : null,
+    verified: typeof byEmail?.verified === "boolean" ? byEmail.verified : null,
+  };
+}
+
+function isVerifiedEmailStatus(status: string | null): boolean {
+  return status === "valid" || status === "verified" || status === "deliverable";
+}
+
+function preferredEmail(
+  properties: Record<string, unknown>,
+  emails: string[],
+): string | null {
+  return (
+    emails.find((email) => isVerifiedEmail(properties, email)) ??
+    emails.find((email) => !emailVerificationStatus(properties, email)) ??
+    emails[0] ??
+    null
+  );
+}
+
+function preferEmail(emails: string[], preferred: string): string[] {
+  const lower = preferred.toLowerCase();
+  return [
+    preferred,
+    ...emails.filter((email) => email.toLowerCase() !== lower),
+  ];
+}
+
+function uniqueEmails(emails: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const email of emails) {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    unique.push(normalized);
+  }
+  return unique;
 }
 
 function numberFromPath(
