@@ -185,6 +185,15 @@ the container can build and answer `/health` on Render without payment:
 npm run verify:render-free-smoke
 ```
 
+Current smoke service:
+
+- Render service: `bombsell-production-worker-free-smoke`
+- Render service ID: `srv-d8m2j3mq1p3s73a0pm8g`
+- URL: `https://bombsell-production-worker-free-smoke.onrender.com`
+- Live deploy: `dep-d8m2m557vvec73fc4b40`
+- Status: `npm run verify:render-free-smoke` passed on 2026-06-12 with the
+  expected Free-plan warnings.
+
 This is not a production cutover gate. Free web services can sleep or restart,
 so a passing free smoke must not be used to scale ECS down or to register the
 Free URL as the production Restate worker.

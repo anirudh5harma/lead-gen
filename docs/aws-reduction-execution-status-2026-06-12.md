@@ -27,6 +27,8 @@ Date: 2026-06-12
 - Added `npm run verify:aws-reduction` as the reduction readiness gate for App Runner removal, AWS budgets, ECR lifecycle, Vercel AWS env removal, Restate contract readiness, and current ECS health.
 - Added `npm run verify:aws-exit-cutover` as the final replacement-worker gate for Render blueprint validity, Render service shape, `/health`, Restate deployment URI cutover, Restate runtime, strict outreach, and production app smoke.
 - Added `render.free.yaml` and `npm run verify:render-free-smoke` for a no-payment Render Free smoke worker. This is a temporary provider smoke path only; Free services are not acceptable evidence for scaling ECS to `0`.
+- Created the Render Free smoke service `bombsell-production-worker-free-smoke` (`srv-d8m2j3mq1p3s73a0pm8g`) from the GitHub repo at commit `13d40f69d60cc257a7d6faca5d6debaaafa8fc95`.
+- Loaded the required dashboard-synced worker env values into that Free smoke service and deployed `dep-d8m2m557vvec73fc4b40`, which is live at `https://bombsell-production-worker-free-smoke.onrender.com`.
 - Installed and authenticated the Render CLI to `Anirudh Sharma's Workspace`; `render.yaml` creation is blocked by Render returning `need_payment_info` for the `standard` worker plan.
 
 ## Current Cost Drivers
@@ -53,15 +55,15 @@ the ECS gateway stack is scaled down.
 - `npm run verify:restate-runtime` completed a durable checkpoint through the current ECS worker.
 - `npm run verify:restate` passed after ECS revision `33` was registered and Restate re-discovered the deployment.
 - `npm run verify:aws-reduction` passed after the AWS budgets, ECR lifecycle policy, Vercel env cleanup, Restate contract check, and ECS health check were in place.
-- `npm run verify:aws-exit-cutover` currently fails by design because Render still needs payment information, `bombsell-production-worker` has not been created, and Restate is not pointed at the replacement worker URL.
-- `render.free.yaml` validates for the active Render workspace. `npm run verify:render-free-smoke` fails until `bombsell-production-worker-free-smoke` exists and has its required env vars.
+- `npm run verify:aws-exit-cutover` currently fails by design because Render still needs payment information, `bombsell-production-worker` has not been created on an always-on plan, and Restate is not pointed at the replacement worker URL.
+- `npm run verify:render-free-smoke` passes with warnings: `render.free.yaml` validates, the Free smoke service is visible, and `/health` returns HTTP 200. The warnings are intentional because Free services must not be treated as the production cutover.
 - `OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline` failed only on Outlook readiness because there are no connected Outlook accounts; the local signal-to-contact-to-personalized-draft-to-eval-to-dry-run-send-to-outcome path passed.
 
 ## Still Required
 
 - Add payment information to the Render workspace so the `standard` worker plan can be created.
 - Create the Render service from `render.yaml` and enter the dashboard-synced secrets after explicit owner confirmation or through the Render dashboard.
-- Optional cost-free smoke before buying: create `bombsell-production-worker-free-smoke` from `render.free.yaml`, enter the same dashboard-synced secrets, then run `npm run verify:render-free-smoke`. Do not register this Free service as the production Restate worker.
+- Keep the already-created Free smoke service as provider proof only. Do not register this Free service as the production Restate worker.
 - Register the Render service URL with Restate Cloud.
 - Run the migration gate:
   - `npm run verify:aws-exit-cutover`
@@ -79,8 +81,8 @@ The actual non-AWS worker deployment cannot be completed from this machine yet
 because the authenticated Render workspace rejects the `standard` service
 creation with `need_payment_info`. The repo and current production worker
 contract are ready for the provider-side create-and-register step once billing
-is added. Do not copy `.env.local` secrets into Render from this machine
-without explicit owner confirmation; the blueprint keeps secrets
-dashboard-synced. Strict outreach also needs at least one customer-connected
-Outlook account with reply-sync readiness before real outbound can be called
-launch-ready.
+is added. The Free smoke service is live and proves the same Docker/runtime
+contract can boot on Render, but Free is still not launch-grade because the
+service can sleep or restart. Strict outreach also needs at least one
+customer-connected Outlook account with reply-sync readiness before real
+outbound can be called launch-ready.

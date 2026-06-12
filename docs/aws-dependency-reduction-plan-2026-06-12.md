@@ -61,12 +61,13 @@ Avoid for the first migration:
 9. Done 2026-06-12: added `npm run verify:aws-reduction` as the repeatable readiness gate for this phase.
 10. Done 2026-06-12: added `npm run verify:aws-exit-cutover` as the final Render/Restate replacement-worker gate.
 11. Done 2026-06-12: added a Render Free smoke blueprint (`render.free.yaml`) and verifier (`npm run verify:render-free-smoke`) for cost-free container validation before buying the always-on service.
+12. Done 2026-06-12: created and deployed the Render Free smoke service `bombsell-production-worker-free-smoke` (`srv-d8m2j3mq1p3s73a0pm8g`). Its live URL is `https://bombsell-production-worker-free-smoke.onrender.com`, and `npm run verify:render-free-smoke` passes with the expected Free-plan warnings.
 
 ### Phase 1: Same-Contract Worker Migration, 2-7 Days
 
 1. Choose Render first if we want the least platform experimentation: Docker image, web service endpoint, health checks, logs, and predictable fixed instance tiers.
 2. Choose Railway first if we want faster iteration and are comfortable with usage-credit billing.
-3. Optional smoke only: deploy `render.free.yaml` to prove the container starts on Render without payment. This is a known temporary deviation for provider validation and is not enough to retire ECS because Free web services can sleep or restart.
+3. Done 2026-06-12: deployed `render.free.yaml` to prove the container starts on Render without payment. This is a known temporary deviation for provider validation and is not enough to retire ECS because Free web services can sleep or restart.
 4. Deploy one production web service using the existing contract:
    - `WORKER_COMMAND=worker:production`
    - `RESTATE_WORKFLOW_HTTP1=1`
@@ -85,11 +86,12 @@ Avoid for the first migration:
 9. Scale ECS desired count to `0`, then unregister and delete AWS resources once the Restate deployment registry and logs show no traffic to the ECS URL.
 
 Current blocker: the repo is ready for the provider-side worker create/register
-step and the Render CLI is authenticated, but Render rejects `render.yaml`
-creation with `need_payment_info` for the `standard` worker plan. The existing
-ECS worker was refreshed to task definition revision `33` on 2026-06-12 and now
-passes the Restate readiness/runtime gates. It remains intentionally active
-until the replacement endpoint is live and passes the full migration gate.
+step and the Render Free smoke endpoint is live, but Render rejects
+`render.yaml` creation with `need_payment_info` for the `standard` worker plan.
+The existing ECS worker was refreshed to task definition revision `33` on
+2026-06-12 and now passes the Restate readiness/runtime gates. It remains
+intentionally active until an always-on replacement endpoint is live and passes
+the full migration gate.
 
 ### Phase 2: Remove Legacy AWS Email, 1-2 Weeks
 
