@@ -5,7 +5,10 @@ import type { Pool } from "pg";
 import { setupPg, until } from "./_pg.ts";
 import { createInMemoryEventBus } from "../core/substrate/events/adapters/in-memory.ts";
 import { createMockEmbeddingClient } from "../core/ingest/embeddings.ts";
-import { discoverWorkspaceSignalOnce } from "../core/ingest/workspace-discovery.ts";
+import {
+  discoverWorkspaceSignalOnce,
+  repairMatchedSignalCompanyLinksOnce,
+} from "../core/ingest/workspace-discovery.ts";
 import { registerSignalProjectors } from "../core/ingest/projectors.ts";
 import {
   projectPendingProductEventsOnce,
@@ -210,6 +213,113 @@ test("workspace discovery: product launch hints create company-backed signal gra
       [workspace_id, rows[0].related_company_id, result.signal_id],
     );
     assert.equal(edge.rows.length, 1);
+  } finally {
+    await fx.close();
+  }
+});
+
+test("workspace discovery: repair links existing matched HN hiring signals to company graph", async (t) => {
+  const fx = await setupPg("wsp_company_repair");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool: fx.pool, bus });
+  try {
+    const { workspace_id, source_id } = await seedPushSource(fx.pool, {
+      adapter: "hn_whos_hiring",
+      kind: "hiring",
+      provider: "hacker_news",
+    });
+    const signal_id = randomUUID();
+    await fx.pool.query(
+      `insert into signals (
+         id, workspace_id, source_id, kind, title, content, url,
+         freshness_at, status, properties, provenance, ingested_at
+       ) values (
+         $1, $2, $3, 'hiring', $4, $5, $6,
+         $7, 'matched', $8::jsonb, $9::jsonb, now()
+       )`,
+      [
+        signal_id,
+        workspace_id,
+        source_id,
+        "Wrenly | Founding Customer Success Manager | SF | https://www.wrenly.ai/hiring/csm",
+        "We are hiring a founding CSM to work with early design partners.",
+        "https://news.ycombinator.com/item?id=1",
+        "2026-06-12T00:00:00.000Z",
+        JSON.stringify({ structured: { thread_id: "1", author: "founder" } }),
+        JSON.stringify({ adapter: "hn_whos_hiring", external_id: "hn-hiring-1" }),
+      ],
+    );
+
+    assert.equal(
+      await repairMatchedSignalCompanyLinksOnce(
+        { pool: fx.pool, bus },
+        { workspace_id, limit: 5 },
+      ),
+      1,
+    );
+
+    const linked = await until(async () => {
+      const { rows } = await fx.pool.query<{
+        related_company_id: string | null;
+        company_name: string | null;
+        company_domain: string | null;
+        properties: {
+          related_company_hint?: {
+            name?: string;
+            domain?: string | null;
+            source?: string;
+            confidence?: string;
+            adapter?: string;
+          };
+        };
+      }>(
+        `select s.related_company_id::text as related_company_id,
+                s.properties,
+                gc.name as company_name,
+                gc.domain as company_domain
+           from signals s
+           left join graph_companies gc on gc.id = s.related_company_id
+          where s.workspace_id = $1
+            and s.id = $2`,
+        [workspace_id, signal_id],
+      );
+      return rows[0]?.related_company_id ? rows[0] : null;
+    });
+
+    assert.equal(linked.company_name, "Wrenly");
+    assert.equal(linked.company_domain, "wrenly.ai");
+    assert.deepEqual(linked.properties.related_company_hint, {
+      name: "Wrenly",
+      domain: "wrenly.ai",
+      source: "hn_whos_hiring",
+      confidence: "derived",
+      adapter: "hn_whos_hiring",
+      linked_event_id: bus.published.find((event) =>
+        event.event_type === "signal.company.linked"
+      )?.id,
+    });
+
+    const edge = await fx.pool.query<{ id: string }>(
+      `select id
+         from graph_edges
+        where workspace_id = $1
+          and from_node_type = 'company'
+          and from_node_id = $2
+          and to_node_type = 'signal'
+          and to_node_id = $3
+          and edge_type = 'mentioned_in'`,
+      [workspace_id, linked.related_company_id, signal_id],
+    );
+    assert.equal(edge.rows.length, 1);
+
+    assert.equal(
+      await repairMatchedSignalCompanyLinksOnce(
+        { pool: fx.pool, bus },
+        { workspace_id, limit: 5 },
+      ),
+      0,
+    );
   } finally {
     await fx.close();
   }

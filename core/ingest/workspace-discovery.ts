@@ -52,6 +52,11 @@ export interface SignalCompanyHint {
   confidence: "explicit" | "derived";
 }
 
+export interface MatchedSignalCompanyLinkRepairOptions {
+  workspace_id?: string | null;
+  limit?: number;
+}
+
 export type WorkspaceSignalDiscoveryResult =
   | {
       outcome: "created";
@@ -340,6 +345,21 @@ export function deriveSignalCompanyHint(input: {
     }
   }
 
+  if (
+    adapter === "hn_whos_hiring" ||
+    adapter === "hacker_news_hiring" ||
+    adapter === "hn_hiring"
+  ) {
+    const domain = firstDomainInText(input.item.title, input.item.content);
+    return makeSignalCompanyHint({
+      name: hiringCompanyNameFromText(input.item.title, input.item.content, domain),
+      domain,
+      description: stringValue(input.item.content),
+      source: "hn_whos_hiring",
+      confidence: "derived",
+    });
+  }
+
   if (adapter === "hn_front" || adapter === "hacker_news" || adapter === "reddit") {
     const domain = firstDomain(
       structured?.company_domain,
@@ -360,6 +380,101 @@ export function deriveSignalCompanyHint(input: {
   }
 
   return null;
+}
+
+export async function repairMatchedSignalCompanyLinksOnce(
+  deps: Pick<WorkspaceSignalDiscoveryDeps, "pool" | "bus">,
+  opts: MatchedSignalCompanyLinkRepairOptions = {},
+): Promise<number> {
+  const limit = Math.max(1, Math.trunc(opts.limit ?? 25));
+  const { rows } = await deps.pool.query<{
+    signal_id: string;
+    workspace_id: string;
+    source_id: string | null;
+    title: string;
+    content: string | null;
+    url: string | null;
+    properties: Record<string, unknown> | null;
+    provenance: Record<string, unknown> | null;
+    audience_hint: Record<string, unknown> | null;
+    source_kind: string | null;
+    source_name: string | null;
+    source_config: Record<string, unknown> | null;
+  }>(
+    `select s.id::text as signal_id,
+            s.workspace_id::text as workspace_id,
+            s.source_id::text as source_id,
+            s.title,
+            s.content,
+            s.url,
+            s.properties,
+            s.provenance,
+            s.audience_hint,
+            gs.kind::text as source_kind,
+            gs.name as source_name,
+            gs.config as source_config
+       from signals s
+       left join graph_sources gs
+         on gs.workspace_id = s.workspace_id
+        and gs.id = s.source_id
+      where s.status in ('matched', 'in_play')
+        and s.related_company_id is null
+        and ($2::uuid is null or s.workspace_id = $2)
+        and not exists (
+          select 1
+            from events e
+           where e.workspace_id = s.workspace_id
+             and e.event_type = 'signal.company.linked'
+             and e.payload->>'signal_id' = s.id::text
+        )
+      order by s.freshness_at desc nulls last, s.ingested_at desc
+      limit $1`,
+    [limit, opts.workspace_id ?? null],
+  );
+
+  let published = 0;
+  for (const row of rows) {
+    const sourceConfig = row.source_config ?? {};
+    const properties = row.properties ?? {};
+    const provenance = row.provenance ?? {};
+    const adapter = signalRepairAdapterId(row.source_kind, sourceConfig, provenance);
+    const hint = deriveSignalCompanyHint({
+      adapter_id: adapter,
+      source_name: row.source_name ?? adapter,
+      source_config: sourceConfig,
+      item: {
+        title: row.title,
+        content: row.content ?? undefined,
+        url: row.url ?? undefined,
+        structured: signalRepairStructured(properties, provenance),
+        novelty_hint: signalRepairNoveltyHint(properties, row.audience_hint),
+      },
+    });
+    if (!hint) continue;
+
+    await deps.bus.publish({
+      workspace_id: row.workspace_id,
+      event_type: "signal.company.linked",
+      source: "system",
+      producer_ref: "repair:signal-company-link",
+      idempotency_key:
+        `repair:signal-company-link:${row.signal_id}:${hint.domain ?? hint.name.toLowerCase()}`,
+      payload: {
+        signal_id: row.signal_id,
+        source_id: row.source_id,
+        adapter,
+        company: {
+          name: hint.name,
+          domain: hint.domain,
+          description: hint.description,
+        },
+        hint_source: hint.source,
+        confidence: hint.confidence,
+      },
+    });
+    published++;
+  }
+  return published;
 }
 
 export async function discoverWorkspaceSignalOnce(
@@ -487,6 +602,26 @@ function firstDomain(...values: unknown[]): string | null {
   return null;
 }
 
+function firstDomainInText(...values: unknown[]): string | null {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (!text) continue;
+    const urls = text.match(/https?:\/\/[^\s<>)\]]+/gi) ?? [];
+    for (const url of urls) {
+      const domain = normalizeCompanyDomain(url.replace(/[.,;:!?]+$/, ""));
+      if (domain) return domain;
+    }
+    const bareDomains = text.match(/\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\b/gi) ?? [];
+    for (const candidate of bareDomains) {
+      const index = text.toLowerCase().indexOf(candidate.toLowerCase());
+      if (index > 0 && text[index - 1] === "@") continue;
+      const domain = normalizeCompanyDomain(candidate.replace(/[.,;:!?]+$/, ""));
+      if (domain) return domain;
+    }
+  }
+  return null;
+}
+
 function normalizeCompanyDomain(value: unknown): string | null {
   const raw = stringValue(value)?.toLowerCase();
   if (!raw || raw.includes("@")) return null;
@@ -552,6 +687,62 @@ function nameFromDomain(domain: string): string {
     .filter(Boolean)
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+function hiringCompanyNameFromText(
+  title: unknown,
+  content: unknown,
+  domain: string | null,
+): string | null {
+  for (const value of [title, content]) {
+    const text = stringValue(value);
+    if (!text) continue;
+    const firstClause = text
+      .split(/\s+\|\s+|\s+-\s+|\s+—\s+/)[0]
+      ?.replace(/\b(?:is\s+)?hiring\b.*$/i, "")
+      .replace(/\s*\((?:yc|y\s*combinator)[^)]+\)\s*/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!firstClause) continue;
+    if (/^(ask|show)\s+hn\b/i.test(firstClause)) continue;
+    if (/who'?s hiring/i.test(firstClause)) continue;
+    const name = sanitizeCompanyName(firstClause);
+    if (name) return name;
+  }
+  return domain ? nameFromDomain(domain) : null;
+}
+
+function signalRepairAdapterId(
+  sourceKind: string | null,
+  sourceConfig: Record<string, unknown>,
+  provenance: Record<string, unknown>,
+): string {
+  return (
+    stringValue(provenance.adapter) ??
+    stringValue(sourceConfig.adapter) ??
+    sourceKind ??
+    "unknown"
+  );
+}
+
+function signalRepairStructured(
+  properties: Record<string, unknown>,
+  provenance: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  return (
+    recordValue(properties.structured) ??
+    recordValue(provenance.structured) ??
+    (Object.keys(properties).length > 0 ? properties : undefined)
+  );
+}
+
+function signalRepairNoveltyHint(
+  properties: Record<string, unknown>,
+  audienceHint: Record<string, unknown> | null,
+): { domain?: string } | undefined {
+  const noveltyHint = recordValue(properties.novelty_hint) ?? audienceHint;
+  const domain = firstDomain(noveltyHint?.domain);
+  return domain ? { domain } : undefined;
 }
 
 function sanitizeCompanyName(value: unknown): string | null {

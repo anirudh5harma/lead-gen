@@ -74,9 +74,11 @@ import {
   createOpenAIEmbeddingClient,
   createWorkspacePollWorkflow,
   discoverWorkspaceSignalOnce,
+  projectSignalCompanyLinked,
   projectSignalClassification,
   projectSignalDiscovered,
   projectSignalExpiry,
+  repairMatchedSignalCompanyLinksOnce,
   type WorkspaceSignalDiscoveryResult,
   WORKSPACE_POLL_WORKFLOW,
   type EmbeddingClient,
@@ -4336,6 +4338,24 @@ function productSeedFromMessage(
   };
 }
 
+const SIGNAL_COMPANY_LINKED_PROJECTION = "signal.company_linked.projector.v1";
+
+function createSignalCompanyLinkedProjection(
+  engine: ProductEngine,
+): DurableEventProjection {
+  return {
+    name: SIGNAL_COMPANY_LINKED_PROJECTION,
+    eventTypes: ["signal.company.linked"],
+    apply: (event) =>
+      projectSignalCompanyLinked(
+        engine.pool,
+        event.workspace_id,
+        event.payload as never,
+        event.id,
+      ),
+  };
+}
+
 function createProductEventProjections(engine: ProductEngine): DurableEventProjection[] {
   return [
     {
@@ -4401,6 +4421,7 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
         );
       },
     },
+    createSignalCompanyLinkedProjection(engine),
     {
       name: "signal.classification.projector.v1",
       eventTypes: ["signal.classification.completed"],
@@ -5587,6 +5608,24 @@ export async function dispatchSignalPlaysOnce(
   registerSignalEmailWorkflow(engine);
   registerContactResolutionWorkflow(engine);
   if (session) await assertProductWorkspaceAccess(session, engine.pool);
+  const repairLimit = opts.limit ?? 25;
+  const repaired = await repairMatchedSignalCompanyLinksOnce(
+    { pool: engine.pool, bus: engine.bus },
+    { workspace_id: session?.workspace_id ?? null, limit: repairLimit },
+  );
+  if (repaired > 0 && engine.substrateMode === "postgres") {
+    await runDurableEventProjectionsOnce(
+      engine.pool,
+      [createSignalCompanyLinkedProjection(engine)],
+      {
+        leaseOwner:
+          opts.leaseOwner ??
+          `signal-company-link:${process.pid}:${randomBytes(4).toString("hex")}`,
+        limit: Math.max(repaired, repairLimit),
+        leaseMs: opts.leaseMs,
+      },
+    );
+  }
   const { rows } = await engine.pool.query<{
     event_id: string;
     workspace_id: string;

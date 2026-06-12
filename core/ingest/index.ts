@@ -167,8 +167,11 @@ export {
   discoverWorkspaceSignalOnce,
   loadWorkspaceSignalSource,
   prepareWorkspaceSignalDiscoveryContext,
+  repairMatchedSignalCompanyLinksOnce,
 } from "./workspace-discovery.ts";
 export type {
+  MatchedSignalCompanyLinkRepairOptions,
+  SignalCompanyHint,
   WorkspaceSignalDiscoveryContext,
   WorkspaceSignalDiscoveryDeps,
   WorkspaceSignalDiscoveryItem,
@@ -200,6 +203,7 @@ export type {
 } from "./classify-workflow.ts";
 export {
   projectSignalDiscovered,
+  projectSignalCompanyLinked,
   projectSignalClassification,
   projectSignalExpiry,
   registerSignalProjectors,

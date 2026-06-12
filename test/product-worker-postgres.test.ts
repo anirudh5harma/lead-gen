@@ -323,6 +323,105 @@ test("product worker: resolves top graph contacts before dispatching an email Pl
   }
 });
 
+test("product worker: repairs company-less matched signals before contact dispatch", async (t) => {
+  const fx = await setupPg("product_worker_company_repair");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  await withoutExternalContactProviders(async () => {
+    try {
+      const boot = await bootstrapWorkspace(fx.pool);
+      const sourceId = randomUUID();
+      await fx.pool.query(
+        `insert into graph_sources (id, workspace_id, kind, name, config)
+         values ($1, $2, 'web_monitor', 'HN Who''s Hiring', $3::jsonb)`,
+        [
+          sourceId,
+          boot.workspace_id,
+          JSON.stringify({
+            adapter: "hn_whos_hiring",
+            kind: "funding",
+            provider: "hacker_news",
+          }),
+        ],
+      );
+      const signalId = randomUUID();
+      await fx.pool.query(
+        `insert into signals (
+           id, workspace_id, source_id, kind, title, content, url,
+           freshness_at, status, properties, provenance, ingested_at
+         ) values (
+           $1, $2, $3, 'funding', $4, $5, $6,
+           $7, 'matched', $8::jsonb, $9::jsonb, now()
+         )`,
+        [
+          signalId,
+          boot.workspace_id,
+          sourceId,
+          "Wrenly | Founding Customer Success Manager | SF | https://www.wrenly.ai/hiring/csm",
+          "We are hiring a founding CSM to work with early design partners.",
+          "https://news.ycombinator.com/item?id=1",
+          "2026-06-12T00:00:00.000Z",
+          JSON.stringify({ structured: { thread_id: "1", author: "founder" } }),
+          JSON.stringify({ adapter: "hn_whos_hiring", external_id: "hn-hiring-1" }),
+        ],
+      );
+
+      const engine = await getProductEngine();
+      await engine.bus.publish({
+        workspace_id: boot.workspace_id,
+        event_type: "signal.matched",
+        source: "system",
+        producer_ref: "test:company-repair",
+        idempotency_key: `test:company-repair:${signalId}`,
+        payload: {
+          signal_id: signalId,
+          match_score: 0.91,
+          icp_segment: "default",
+        },
+      });
+
+      assert.equal(await dispatchSignalPlaysOnce({ limit: 5 }), 0);
+
+      const linked = await fx.pool.query<{
+        related_company_id: string | null;
+        company_name: string | null;
+        company_domain: string | null;
+      }>(
+        `select s.related_company_id::text as related_company_id,
+                gc.name as company_name,
+                gc.domain as company_domain
+           from signals s
+           left join graph_companies gc on gc.id = s.related_company_id
+          where s.workspace_id = $1
+            and s.id = $2`,
+        [boot.workspace_id, signalId],
+      );
+      assert.ok(linked.rows[0]?.related_company_id);
+      assert.equal(linked.rows[0].company_name, "Wrenly");
+      assert.equal(linked.rows[0].company_domain, "wrenly.ai");
+
+      const resolver = await fx.pool.query<{ workflow_name: string; status: string }>(
+        `select workflow_name, status
+           from workflow_runs
+          where workspace_id = $1
+            and idempotency_key = $2`,
+        [
+          boot.workspace_id,
+          `contact:${signalId}:play:${boot.play_id}:channel:email`,
+        ],
+      );
+      assert.equal(resolver.rows.length, 1);
+      assert.equal(resolver.rows[0].workflow_name, "contact.resolve_for_signal.v1");
+      assert.match(resolver.rows[0].status, /^(running|completed)$/);
+    } finally {
+      await resetProductEngineForTests();
+      await fx.close();
+      await resetPool();
+    }
+  });
+});
+
 test("product worker: deliverability cap defers sends without consuming volume", async (t) => {
   const fx = await setupPg("product_deliverability");
   if (!fx) return t.skip("DATABASE_URL not set");
@@ -492,6 +591,31 @@ async function waitForContactResolved(
     );
     return rows[0] ?? null;
   }, { timeout: WORKFLOW_TIMEOUT_MS });
+}
+
+async function withoutExternalContactProviders<T>(fn: () => Promise<T>): Promise<T> {
+  const keys = [
+    "EXA_API_KEY",
+    "HUNTER_API_KEY",
+    "ZEROBOUNCE_API_KEY",
+  ] as const;
+  const previous = new Map<string, string | undefined>();
+  for (const key of keys) {
+    previous.set(key, process.env[key]);
+    process.env[key] = "";
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const key of keys) {
+      const value = previous.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
 }
 
 test("product worker: recipient frequency cap defers repeat outreach", async (t) => {

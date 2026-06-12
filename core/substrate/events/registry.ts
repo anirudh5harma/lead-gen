@@ -232,6 +232,19 @@ const SignalMatched = z.object({
   icp_segment: z.string().optional(),
 });
 
+const SignalCompanyLinked = z.object({
+  signal_id: z.string().uuid(),
+  source_id: z.string().uuid().nullable(),
+  adapter: z.string().min(1),
+  company: z.object({
+    name: z.string().min(1),
+    domain: z.string().nullable(),
+    description: z.string().nullable(),
+  }),
+  hint_source: z.string().min(1),
+  confidence: z.enum(["explicit", "derived"]),
+});
+
 const SignalDismissed = z.object({
   signal_id: z.string().uuid(),
   reason: z.string(),
@@ -889,6 +902,7 @@ export const eventRegistry = {
   "signal.discovered": SignalDiscovered,
   "signal.ingested": SignalIngested,
   "signal.matched": SignalMatched,
+  "signal.company.linked": SignalCompanyLinked,
   "signal.dismissed": SignalDismissed,
   "signal.classification.completed": SignalClassificationCompleted,
   "signal.expired": SignalExpired,

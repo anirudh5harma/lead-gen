@@ -6,10 +6,12 @@ import type {
   Subscription,
 } from "../substrate/events/index.ts";
 import { connect } from "../graph/edges/index.ts";
+import { upsertCompany } from "../graph/nodes/companies.ts";
 import { vectorToPgLiteral } from "./embeddings.ts";
 
 type SignalProjectionType =
   | "signal.discovered"
+  | "signal.company.linked"
   | "signal.classification.completed"
   | "signal.expiry.requested";
 
@@ -57,6 +59,18 @@ export async function registerSignalProjectors(
         });
       },
       "signal_discovered_projector",
+    ),
+    subscriber.subscribe(
+      "signal.company.linked",
+      async (event) => {
+        await projectSignalCompanyLinked(
+          deps.pool,
+          event.workspace_id,
+          event.payload,
+          event.id,
+        );
+      },
+      "signal_company_linked_projector",
     ),
     subscriber.subscribe(
       "signal.expiry.requested",
@@ -222,6 +236,92 @@ export async function projectSignalDiscovered(
       },
     });
   }
+}
+
+export async function projectSignalCompanyLinked(
+  pool: Pool,
+  workspaceId: string,
+  payload: EventPayload<"signal.company.linked">,
+  eventId?: string,
+): Promise<void> {
+  const company = await upsertCompany(pool, workspaceId, {
+    name: payload.company.name,
+    domain: payload.company.domain ?? undefined,
+    description: payload.company.description ?? undefined,
+    properties: {
+      signal_link: {
+        signal_id: payload.signal_id,
+        source_id: payload.source_id,
+        adapter: payload.adapter,
+        hint_source: payload.hint_source,
+        confidence: payload.confidence,
+        event_id: eventId ?? null,
+      },
+    },
+    provenance: {
+      source: "projection:signal.company.linked",
+      signal_id: payload.signal_id,
+      source_id: payload.source_id,
+      adapter: payload.adapter,
+      hint_source: payload.hint_source,
+      confidence: payload.confidence,
+      event_id: eventId ?? null,
+    },
+  });
+
+  const { rows } = await pool.query<{ related_company_id: string | null }>(
+    `update signals
+        set related_company_id = coalesce(related_company_id, $3::uuid),
+            properties = coalesce(properties, '{}'::jsonb) ||
+              jsonb_build_object(
+                'related_company_hint',
+                jsonb_build_object(
+                  'name', $4::text,
+                  'domain', $5::text,
+                  'source', $6::text,
+                  'confidence', $7::text,
+                  'adapter', $8::text,
+                  'linked_event_id', $9::text
+                )
+              )
+      where workspace_id = $1
+        and id = $2
+      returning related_company_id::text as related_company_id`,
+    [
+      workspaceId,
+      payload.signal_id,
+      company.id,
+      payload.company.name,
+      payload.company.domain,
+      payload.hint_source,
+      payload.confidence,
+      payload.adapter,
+      eventId ?? null,
+    ],
+  );
+  const linkedCompanyId = rows[0]?.related_company_id ?? null;
+  if (!linkedCompanyId) {
+    throw new Error(`Signal company link projection rejected signal ${payload.signal_id}`);
+  }
+  if (linkedCompanyId !== company.id) return;
+
+  await connect(pool, {
+    workspace_id: workspaceId,
+    from: { node_type: "company", node_id: company.id },
+    to: { node_type: "signal", node_id: payload.signal_id },
+    kind: "mentioned_in",
+    properties: {
+      source_id: payload.source_id,
+      adapter: payload.adapter,
+      hint_source: payload.hint_source,
+      confidence: payload.confidence,
+      event_id: eventId ?? null,
+    },
+    provenance: {
+      source: "projection:signal.company.linked",
+      event_id: eventId ?? null,
+    },
+  });
 }
 
 /**

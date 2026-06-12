@@ -29,6 +29,60 @@ test("workspace discovery company hints: derives Product Hunt company from struc
   });
 });
 
+test("workspace discovery company hints: keeps Product Hunt launch name when only redirect URL is present", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "product_hunt",
+    source_name: "Product Hunt",
+    source_config: {},
+    item: {
+      title: "LaunchCo - outbound copilot",
+      content: "Find qualified signals.",
+      url: "https://www.producthunt.com/posts/launchco",
+      freshness_at: "2026-06-12T00:00:00.000Z",
+      structured: {
+        name: "LaunchCo",
+        tagline: "Outbound copilot",
+        website: "https://www.producthunt.com/r/launchco",
+      },
+    },
+  });
+
+  assert.deepEqual(hint, {
+    name: "LaunchCo",
+    domain: null,
+    description: "Outbound copilot",
+    source: "product_hunt",
+    confidence: "derived",
+  });
+});
+
+test("workspace discovery company hints: derives HN Who's Hiring company from title and hiring URL", () => {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: "hn_whos_hiring",
+    source_name: "Hacker News Who's Hiring",
+    source_config: {},
+    item: {
+      title:
+        "Wrenly | Founding Customer Success Manager | San Francisco | https://www.wrenly.ai/hiring/csm",
+      content: "We are hiring a founding CSM to work with early design partners.",
+      url: "https://news.ycombinator.com/item?id=1",
+      freshness_at: "2026-06-12T00:00:00.000Z",
+      structured: {
+        author: "founder",
+        thread_id: "1",
+      },
+    },
+  });
+
+  assert.deepEqual(hint, {
+    name: "Wrenly",
+    domain: "wrenly.ai",
+    description: "We are hiring a founding CSM to work with early design partners.",
+    source: "hn_whos_hiring",
+    confidence: "derived",
+  });
+});
+
 test("workspace discovery company hints: source config target company wins over provider payload", () => {
   const hint = deriveSignalCompanyHint({
     adapter_id: "product_hunt",
