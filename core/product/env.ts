@@ -244,6 +244,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "25",
   },
   {
+    name: "BOMBSELL_RECOMMENDATION_RESEARCH_CADENCE_HOURS",
+    requirement: "optional",
+    category: "intelligence",
+    description: "Minimum age, in hours, before recommendation-backed research refreshes can run again.",
+    example: "24",
+  },
+  {
     name: "DEEPSEEK_PROMPT_USD_PER_MILLION",
     requirement: "optional",
     category: "llm",
@@ -505,6 +512,13 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     example: "http://localhost:9070",
   },
   {
+    name: "RESTATE_ADMIN_TIMEOUT_MS",
+    requirement: "optional",
+    category: "substrate",
+    description: "Timeout for Restate admin API checks used by the AWS exit cutover verifier.",
+    example: "10000",
+  },
+  {
     name: "RESTATE_BEARER_TOKEN",
     requirement: "optional",
     category: "substrate",
@@ -602,6 +616,34 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     description:
       "HTTP health port exposed by managed background workers. Leave unset to use the managed-worker default; Restate-capable targets default to 9081 so health does not collide with RESTATE_WORKFLOW_PORT.",
     example: "9081",
+  },
+  {
+    name: "RENDER_CLI",
+    requirement: "optional",
+    category: "runtime",
+    description: "Optional Render CLI path override for AWS exit cutover verification.",
+    example: "/Users/example/.local/bin/render",
+  },
+  {
+    name: "RENDER_WORKER_SERVICE_NAME",
+    requirement: "optional",
+    category: "runtime",
+    description: "Render service name expected by the AWS exit cutover verifier.",
+    example: "bombsell-production-worker",
+  },
+  {
+    name: "RENDER_WORKER_EXPECTED_PLAN",
+    requirement: "optional",
+    category: "runtime",
+    description: "Render always-on plan expected by the AWS exit cutover verifier.",
+    example: "standard",
+  },
+  {
+    name: "RENDER_WORKER_HEALTH_TIMEOUT_MS",
+    requirement: "optional",
+    category: "runtime",
+    description: "Timeout for the Render worker /health check in the AWS exit cutover verifier.",
+    example: "10000",
   },
   {
     name: "ACTIVATION_VERIFY_AGGREGATOR_LIMIT",

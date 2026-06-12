@@ -59,6 +59,7 @@ Avoid for the first migration:
 7. Done 2026-06-12: created AWS Budgets guardrails for total monthly AWS spend (`$75`) and worker infrastructure spend (`$45`) covering App Runner, ECS, ELB, VPC, ECR, and CloudWatch.
 8. Done 2026-06-12: added an ECR lifecycle policy for `bombsell-worker` so stale image artifacts do not keep accumulating after the ECS exit.
 9. Done 2026-06-12: added `npm run verify:aws-reduction` as the repeatable readiness gate for this phase.
+10. Done 2026-06-12: added `npm run verify:aws-exit-cutover` as the final Render/Restate replacement-worker gate.
 
 ### Phase 1: Same-Contract Worker Migration, 2-7 Days
 
@@ -72,6 +73,7 @@ Avoid for the first migration:
 4. Expose a stable HTTPS endpoint and verify `/health`.
 5. Register the new endpoint with Restate Cloud.
 6. Run:
+   - `npm run verify:aws-exit-cutover`
    - `npm run verify:worker-release`
    - `npm run verify:restate`
    - `npm run verify:restate-runtime`
@@ -108,6 +110,7 @@ until the replacement endpoint is live and passes the full migration gate.
 Do not scale down ECS until all are true:
 
 - Restate admin shows the new worker deployment advertises every required workflow service.
+- `npm run verify:aws-exit-cutover` passes, proving the Render worker exists on an always-on plan, `/health` responds, and every required Restate workflow deployment URI points at the replacement worker.
 - `verify:restate-runtime` completes a durable checkpoint through the new worker.
 - NATS projectors are consuming without dead-letter growth.
 - Strict outreach verification only fails for expected external readiness, such as no connected Outlook account.

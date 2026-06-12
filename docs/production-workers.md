@@ -188,6 +188,18 @@ blueprint keeps sensitive values as dashboard-synced env vars.
 Do not scale ECS to `0` until the Render/Railway/Fly service is created, the
 public URL is registered in Restate Cloud, and the migration gate below passes.
 
+The cutover gate is:
+
+```bash
+npm run verify:aws-exit-cutover
+```
+
+It intentionally fails before the provider-side cutover is complete. A passing
+run proves the Render worker exists on the expected always-on plan, `/health`
+responds, every required Restate workflow deployment points at the replacement
+worker URL, the durable runtime probe passes, strict outreach passes, and the
+production app smoke passes.
+
 Optional managed owned-domain capacity needs:
 
 - `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1` to explicitly opt in to managed

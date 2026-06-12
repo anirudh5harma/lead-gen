@@ -25,6 +25,7 @@ Date: 2026-06-12
   - `Bombsell AWS Worker Infrastructure Cap` at `$45`, filtered to App Runner, ECS, Elastic Load Balancing, VPC, ECR, and CloudWatch.
 - Added an ECR lifecycle policy on `bombsell-worker` to expire untagged artifacts after 7 days and retain the 10 newest tagged rollback images.
 - Added `npm run verify:aws-reduction` as the reduction readiness gate for App Runner removal, AWS budgets, ECR lifecycle, Vercel AWS env removal, Restate contract readiness, and current ECS health.
+- Added `npm run verify:aws-exit-cutover` as the final replacement-worker gate for Render blueprint validity, Render service shape, `/health`, Restate deployment URI cutover, Restate runtime, strict outreach, and production app smoke.
 - Installed and authenticated the Render CLI to `Anirudh Sharma's Workspace`; `render.yaml` creation is blocked by Render returning `need_payment_info` for the `standard` worker plan.
 
 ## Current Cost Drivers
@@ -51,6 +52,7 @@ the ECS gateway stack is scaled down.
 - `npm run verify:restate-runtime` completed a durable checkpoint through the current ECS worker.
 - `npm run verify:restate` passed after ECS revision `33` was registered and Restate re-discovered the deployment.
 - `npm run verify:aws-reduction` passed after the AWS budgets, ECR lifecycle policy, Vercel env cleanup, Restate contract check, and ECS health check were in place.
+- `npm run verify:aws-exit-cutover` currently fails by design because Render still needs payment information, `bombsell-production-worker` has not been created, and Restate is not pointed at the replacement worker URL.
 - `OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline` failed only on Outlook readiness because there are no connected Outlook accounts; the local signal-to-contact-to-personalized-draft-to-eval-to-dry-run-send-to-outcome path passed.
 
 ## Still Required
@@ -59,6 +61,7 @@ the ECS gateway stack is scaled down.
 - Create the Render service from `render.yaml` and enter the dashboard-synced secrets after explicit owner confirmation or through the Render dashboard.
 - Register the Render service URL with Restate Cloud.
 - Run the migration gate:
+  - `npm run verify:aws-exit-cutover`
   - `npm run verify:restate`
   - `npm run verify:restate-runtime`
   - `OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline`

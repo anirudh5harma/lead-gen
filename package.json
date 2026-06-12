@@ -30,6 +30,7 @@
     "verify:restate-ecs-health": "node --experimental-strip-types scripts/verify-restate-ecs-health.ts",
     "verify:production-gate": "node --experimental-strip-types scripts/verify-production-gate.ts",
     "verify:aws-reduction": "node --experimental-strip-types scripts/verify-aws-reduction.ts",
+    "verify:aws-exit-cutover": "node --experimental-strip-types scripts/verify-aws-exit-cutover.ts",
     "verify:outreach-pipeline": "node --experimental-strip-types scripts/verify-outreach-pipeline.ts",
     "verify:frontend-latency": "node scripts/measure-frontend-latency.mjs",
     "verify:outlook": "node --experimental-strip-types scripts/verify-outlook-readiness.ts",
