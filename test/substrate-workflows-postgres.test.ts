@@ -365,6 +365,79 @@ test("postgres workflow runtime: resume continues after a pre-checkpoint step ro
   }
 });
 
+test("postgres workflow runtime: concurrent resume reuses duplicate step and checkpoint rows", async (t) => {
+  const fx = await setupPg("pg_wf_resume_race");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const ws = await seedWorkspace(fx.pool);
+    const runtime = createPostgresWorkflowRuntime({ pool: fx.pool, bus });
+    let sideEffects = 0;
+    runtime.register(
+      defineWorkflow<unknown, string>({
+        name: "demo_resume_race",
+        version: "1",
+        async run(_input, ctx) {
+          return ctx.step("race", async () => {
+            sideEffects++;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            return "ok";
+          });
+        },
+      }),
+    );
+
+    const runId = randomUUID();
+    await fx.pool.query(
+      `insert into workflow_runs (
+         id, workspace_id, workflow_name, workflow_version, status, input,
+         started_at, created_at
+       ) values ($1, $2, 'demo_resume_race', '1', 'running', 'null'::jsonb, now(), now())`,
+      [runId, ws],
+    );
+
+    await Promise.all([
+      runtime.resume(runId),
+      runtime.resume(runId),
+    ]);
+    await runtime.drain?.();
+    await until(async () => (await runtime.get(runId))?.status === "completed");
+
+    const final = await runtime.get(runId);
+    assert.equal(final?.output, "ok");
+    assert.ok(sideEffects >= 1);
+
+    const steps = await fx.pool.query<{ status: string; output: unknown }>(
+      `select status, output
+         from workflow_steps
+        where run_id = $1
+          and step_position = 0
+          and attempt = 1`,
+      [runId],
+    );
+    assert.equal(steps.rows.length, 1);
+    assert.equal(steps.rows[0].status, "completed");
+    assert.equal(steps.rows[0].output, "ok");
+
+    const checkpoints = await fx.pool.query<{ data: unknown }>(
+      `select data
+         from workflow_checkpoints
+        where run_id = $1
+          and position = 0`,
+      [runId],
+    );
+    assert.equal(checkpoints.rows.length, 1);
+    assert.equal(checkpoints.rows[0].data, "ok");
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
 
 test("postgres workflow runtime: idempotency_key collapses duplicate starts", async (t) => {
   const fx = await setupPg("pg_wf_idem");

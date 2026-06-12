@@ -59,6 +59,24 @@ function backoffMs(policy: RetryPolicy, attempt: number): number {
   return policy.backoff === "exponential" ? base * 2 ** (attempt - 1) : base;
 }
 
+async function recordCheckpoint(
+  pool: Pool,
+  runId: string,
+  workspaceId: string,
+  position: number,
+  data: unknown,
+): Promise<unknown> {
+  const result = await pool.query<{ data: unknown }>(
+    `insert into workflow_checkpoints (run_id, workspace_id, position, data)
+     values ($1, $2, $3, $4::jsonb)
+     on conflict (run_id, position)
+     do update set data = workflow_checkpoints.data
+     returning data`,
+    [runId, workspaceId, position, JSON.stringify(data ?? null)],
+  );
+  return result.rows[0]?.data ?? null;
+}
+
 export function createPostgresWorkflowRuntime(
   opts: PostgresWorkflowRuntimeOptions,
 ): WorkflowRuntime {
@@ -167,20 +185,24 @@ export function createPostgresWorkflowRuntime(
         let lastError: unknown;
         for (let attempt = firstAttempt; attempt <= retry.max_attempts; attempt++) {
           const attemptStepId = attempt === 1 ? step_id : randomUUID();
-          await pool.query(
+          const insertedStep = await pool.query<{ id: string }>(
             `insert into workflow_steps (
                id, run_id, workspace_id, step_name, step_position, attempt,
                status, started_at, created_at
-             ) values ($1, $2, $3, $4, $5, $6, 'running', now(), now())`,
+             ) values ($1, $2, $3, $4, $5, $6, 'running', now(), now())
+             on conflict (run_id, step_position, attempt)
+             do update set step_name = excluded.step_name
+             returning id`,
             [attemptStepId, rec.run.id, rec.run.workspace_id, name, pos, attempt],
           );
+          const effectiveStepId = insertedStep.rows[0]?.id ?? attemptStepId;
           await bus.publish({
             workspace_id: rec.run.workspace_id!,
             event_type: "workflow.step.started",
             source: "system",
             producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
             correlation_id: rec.run.correlation_id ?? rec.run.id,
-            payload: { run_id: rec.run.id, step_id: attemptStepId, step_name: name, attempt },
+            payload: { run_id: rec.run.id, step_id: effectiveStepId, step_name: name, attempt },
           });
 
           try {
@@ -189,12 +211,14 @@ export function createPostgresWorkflowRuntime(
               `update workflow_steps
                   set status = 'completed', output = $1::jsonb, ended_at = now()
                 where id = $2`,
-              [JSON.stringify(result ?? null), attemptStepId],
+              [JSON.stringify(result ?? null), effectiveStepId],
             );
-            await pool.query(
-              `insert into workflow_checkpoints (run_id, workspace_id, position, data)
-               values ($1, $2, $3, $4::jsonb)`,
-              [rec.run.id, rec.run.workspace_id, pos, JSON.stringify(result ?? null)],
+            const checkpoint = await recordCheckpoint(
+              pool,
+              rec.run.id,
+              rec.run.workspace_id!,
+              pos,
+              result,
             );
             await pool.query(
               `update workflow_runs set last_checkpoint_at = now() where id = $1`,
@@ -207,9 +231,9 @@ export function createPostgresWorkflowRuntime(
               source: "system",
               producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
               correlation_id: rec.run.correlation_id ?? rec.run.id,
-              payload: { run_id: rec.run.id, step_id: attemptStepId, step_name: name, attempt },
+              payload: { run_id: rec.run.id, step_id: effectiveStepId, step_name: name, attempt },
             });
-            return result;
+            return checkpoint as O;
           } catch (err) {
             lastError = err;
             const message = err instanceof Error ? err.message : String(err);
@@ -217,7 +241,7 @@ export function createPostgresWorkflowRuntime(
               `update workflow_steps
                   set status = 'failed', error = $1::jsonb, ended_at = now()
                 where id = $2`,
-              [JSON.stringify({ message }), attemptStepId],
+              [JSON.stringify({ message }), effectiveStepId],
             );
             await bus.publish({
               workspace_id: rec.run.workspace_id!,
@@ -225,17 +249,19 @@ export function createPostgresWorkflowRuntime(
               source: "system",
               producer_ref: `workflow:${rec.run.workflow_name}:${rec.run.id}`,
               correlation_id: rec.run.correlation_id ?? rec.run.id,
-              payload: { run_id: rec.run.id, step_id: attemptStepId, step_name: name, attempt, error: message },
+              payload: { run_id: rec.run.id, step_id: effectiveStepId, step_name: name, attempt, error: message },
             });
             if (attempt < retry.max_attempts) {
               await delay(backoffMs(retry, attempt));
               continue;
             }
             if (stepOpts?.on_failure === "skip") {
-              await pool.query(
-                `insert into workflow_checkpoints (run_id, workspace_id, position, data)
-                 values ($1, $2, $3, $4::jsonb)`,
-                [rec.run.id, rec.run.workspace_id, pos, JSON.stringify(null)],
+              await recordCheckpoint(
+                pool,
+                rec.run.id,
+                rec.run.workspace_id!,
+                pos,
+                null,
               );
               return undefined as O;
             }
