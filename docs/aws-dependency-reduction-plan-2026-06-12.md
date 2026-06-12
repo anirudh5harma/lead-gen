@@ -80,8 +80,10 @@ Avoid for the first migration:
 
 Current blocker: the repo is ready for the provider-side worker create/register
 step, but this machine does not have authenticated Render/Fly/Railway access.
-The existing ECS worker remains intentionally active until the replacement
-endpoint is live and passes the migration gate.
+The existing ECS worker was refreshed to task definition revision `33` on
+2026-06-12 and now passes the Restate readiness/runtime gates. It remains
+intentionally active until the replacement endpoint is live and passes the full
+migration gate.
 
 ### Phase 2: Remove Legacy AWS Email, 1-2 Weeks
 

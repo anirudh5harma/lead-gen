@@ -69,16 +69,17 @@ platform-provided `PORT`, then `9080`, in that order.
 
 Current production note: ECS Express Gateway accepts the single-port HTTP/1
 health path when the handler keeps Restate bidirectional protocol enabled. ECS
-task definition revision `32` runs image
-`ecs-express-production-20260605-outlook-gate-cdf81d2-amd64` via
+task definition revision `33` runs image
+`ecs-refresh-20260612-7fc8029-amd64` via
 `worker:managed` with `WORKER_TARGET_COMMAND=worker:production`; Restate
 traffic remains on `9080` and the managed wrapper also exposes `9081`. It is
-steady at desired `1`, running `1`, pending `0`. On 2026-06-05, live
+steady at desired `1`, running `1`, pending `0`. On 2026-06-12, live
 `npm run verify:restate` confirmed deployment `dp_16RLtYXG3bAoyujNOKDPH57`
-advertises the full required service set, including the Exa workflows, and
+advertises the full required service set, including
+`contact.resolve_for_signal.v1` and the Exa workflows, and
 `npm run verify:restate-runtime` completed
 `system.restate_runtime_probe.v1` with run
-`inv_14KhxrxkkvX02cbawHGK4cHof7i7Khj5vw`. The rev32 deployment also makes the
+`inv_1aad8PkwVeZz4b6dIS7Wt89Db8DnNEeMi5`. The rev33 deployment also makes the
 Outlook-first/explicit-managed-domain-opt-in email behavior live in the
 production worker; startup logs show the managed owned-domain transport is
 disabled unless `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1`.

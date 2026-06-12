@@ -17,6 +17,9 @@ Date: 2026-06-12
 - Verified `aws apprunner list-services --region us-east-1` now returns no services.
 - Added provider-port support for direct Restate-capable workers.
 - Added `render.yaml` for the first non-AWS worker target.
+- Built and pushed interim ECS image `ecs-refresh-20260612-7fc8029-amd64`.
+- Rolled ECS service `bombsell-restate-workflows` to task definition revision `33`.
+- Re-discovered deployment `dp_16RLtYXG3bAoyujNOKDPH57` in Restate Cloud with `overwrite=true`; the deployment now advertises all required workflow services, including `contact.resolve_for_signal.v1`.
 
 ## Current Cost Drivers
 
@@ -40,7 +43,7 @@ the ECS gateway stack is scaled down.
 - `APP_ORIGIN=https://www.bombsell.com npm run verify:production-app` passed with the known LinkedIn provider env warning.
 - `RESTATE_ECS_LOG_LOOKBACK_MINUTES=3 npm run verify:restate-ecs-health` passed against the current ECS worker.
 - `npm run verify:restate-runtime` completed a durable checkpoint through the current ECS worker.
-- `npm run verify:restate` failed because the registered ECS deployment does not yet advertise `contact.resolve_for_signal.v1`; the current repo release contract includes it, so the worker host must be refreshed during the provider cutover or by an interim ECS deploy.
+- `npm run verify:restate` passed after ECS revision `33` was registered and Restate re-discovered the deployment.
 - `OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline` failed only on Outlook readiness because there are no connected Outlook accounts; the local signal-to-contact-to-personalized-draft-to-eval-to-dry-run-send-to-outcome path passed.
 
 ## Still Required
@@ -60,4 +63,7 @@ the ECS gateway stack is scaled down.
 
 The actual non-AWS worker deployment cannot be completed from this machine yet
 because no Render/Fly CLI is available and the Railway CLI is not authenticated.
-The repo is now ready for the provider-side create-and-register step.
+The repo and current production worker contract are now ready for the
+provider-side create-and-register step. Strict outreach also needs at least one
+customer-connected Outlook account with reply-sync readiness before real
+outbound can be called launch-ready.
