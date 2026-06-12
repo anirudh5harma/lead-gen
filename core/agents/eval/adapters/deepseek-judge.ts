@@ -22,6 +22,8 @@ export interface DeepSeekJudgeOptions {
   model?: string;
   /** Sampling temperature for the judge. Low by default — graders should be near-deterministic. */
   temperature?: number;
+  /** When true, malformed provider output throws so callers can route to a fallback judge. */
+  throwOnMalformed?: boolean;
 }
 
 interface RawVerdict {
@@ -48,6 +50,22 @@ Respond with a single JSON object and nothing else:
   "critique":   "string",
   "suggestions": ["string", ...]
 }`;
+
+export class MalformedJudgeResponseError extends Error {
+  readonly content: string;
+
+  constructor(content: string) {
+    super(`judge returned non-JSON response: ${content.slice(0, 200)}`);
+    this.content = content;
+    this.name = "MalformedJudgeResponseError";
+  }
+}
+
+export function isMalformedJudgeResponseError(
+  error: unknown,
+): error is MalformedJudgeResponseError {
+  return error instanceof MalformedJudgeResponseError;
+}
 
 function buildUserPrompt(input: JudgeInput): string {
   const exemplars = (input.context?.procedural_exemplars ?? [])
@@ -123,6 +141,9 @@ export function createDeepSeekJudge(opts: DeepSeekJudgeOptions): Judge {
       try {
         parsed = JSON.parse(response.content) as RawVerdict;
       } catch {
+        if (opts.throwOnMalformed) {
+          throw new MalformedJudgeResponseError(response.content);
+        }
         // The judge MUST return JSON. If it doesn't, fail closed (sub-threshold).
         return {
           score: 0,

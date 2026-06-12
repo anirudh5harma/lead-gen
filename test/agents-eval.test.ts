@@ -116,6 +116,65 @@ test("eval gate: brand voice guardrail rejects do-not violations", async () => {
   assert.equal(result.verdict.notes.axes.brand_voice, 0);
 });
 
+test("eval gate: AI do-not allows target-company AI context", async () => {
+  const bus = createInMemoryEventBus();
+  const judge = createNoopJudge(0.95, 0.6);
+
+  const result = await evalGate(
+    { judge, bus },
+    {
+      workspace_id: randomUUID(),
+      rep: {
+        ...fakeRep(),
+        persona: {
+          voice: "warm, precise, low-hype",
+          do_not: ["Do not mention being an AI."],
+          samples: [],
+        },
+      },
+      artifact: {
+        kind: "draft",
+        channel: "email",
+        body:
+          "Hi Anne, your new AI capabilities change how revenue teams can act on launch signals. Worth comparing notes?",
+      },
+      message_id: randomUUID(),
+    },
+  );
+
+  assert.equal(result.decision, "pass");
+  assert.equal(result.verdict.notes.axes.voice_do_not, 1);
+});
+
+test("eval gate: AI do-not still blocks assistant identity claims", async () => {
+  const bus = createInMemoryEventBus();
+  const judge = createNoopJudge(0.95, 0.6);
+
+  const result = await evalGate(
+    { judge, bus },
+    {
+      workspace_id: randomUUID(),
+      rep: {
+        ...fakeRep(),
+        persona: {
+          voice: "warm, precise, low-hype",
+          do_not: ["Do not mention being an AI."],
+          samples: [],
+        },
+      },
+      artifact: {
+        kind: "draft",
+        channel: "email",
+        body: "Hi Anne, as an AI assistant I noticed your launch signal.",
+      },
+      message_id: randomUUID(),
+    },
+  );
+
+  assert.equal(result.decision, "reject");
+  assert.ok(result.rejection_reason?.includes("do-not"));
+});
+
 test("eval gate: brand voice guardrail rejects sample drift", async () => {
   const bus = createInMemoryEventBus();
   const judge = createNoopJudge(0.95, 0.6);

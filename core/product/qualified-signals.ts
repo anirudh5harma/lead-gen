@@ -389,8 +389,12 @@ export async function loadQualifiedSignalWorkbench(
                 m.status,
                 m.subject,
                 m.body,
-                m.eval_score,
-                m.eval_passed,
+                coalesce(m.eval_score, (judged.payload->>'eval_score')::numeric) as eval_score,
+                case
+                  when rejected.payload is not null then false
+                  when judged.payload ? 'passed' then (judged.payload->>'passed')::boolean
+                  else m.eval_passed
+                end as eval_passed,
                 m.external_id,
                 m.scheduled_at,
                 m.sent_at,
@@ -401,12 +405,15 @@ export async function loadQualifiedSignalWorkbench(
                 coalesce(
                   channel_event.payload->>'defer_reason',
                   m.eval_notes->>'defer_reason',
-                  m.properties->>'defer_reason'
+                  m.properties->>'defer_reason',
+                  rejected.payload->>'reason'
                 ) as defer_reason,
                 coalesce(
                   channel_event.payload->>'detail',
                   m.eval_notes->>'defer_detail',
-                  m.properties->>'defer_detail'
+                  m.properties->>'defer_detail',
+                  rejected.payload->>'reason',
+                  judged.payload #>> '{notes,critique}'
                 ) as defer_detail,
                 approval.id as pending_approval_id
            from conversations c
@@ -429,9 +436,29 @@ export async function loadQualifiedSignalWorkbench(
                   'message.bounced'
                 )
                 and e.payload->>'message_id' = m.id::text
+             order by e.occurred_at desc
+             limit 1
+           ) channel_event on true
+           left join lateral (
+             select e.payload,
+                    e.occurred_at
+               from events e
+              where e.workspace_id = c.workspace_id
+                and e.event_type = 'draft.judged'
+                and e.payload->>'message_id' = m.id::text
               order by e.occurred_at desc
               limit 1
-           ) channel_event on true
+           ) judged on true
+           left join lateral (
+             select e.payload,
+                    e.occurred_at
+               from events e
+              where e.workspace_id = c.workspace_id
+                and e.event_type = 'draft.rejected'
+                and e.payload->>'message_id' = m.id::text
+              order by e.occurred_at desc
+              limit 1
+           ) rejected on true
            left join lateral (
              select a.id
                from workflow_approvals a
@@ -476,12 +503,20 @@ export async function loadQualifiedSignalWorkbench(
       ).length,
       with_email_draft: signals.filter((signal) => signal.email_draft).length,
       ready_for_review: signals.filter((signal) =>
-        Boolean(signal.email_draft?.pending_approval_id) ||
-        signal.email_draft?.status === "draft" ||
-        signal.email_draft?.status === "deferred"
+        isEmailDraftReadyForReview(signal.email_draft)
       ).length,
     },
   };
+}
+
+function isEmailDraftReadyForReview(
+  draft: QualifiedSignalEmailDraft | null,
+): boolean {
+  if (!draft) return false;
+  if (draft.eval_passed === false) return false;
+  return Boolean(draft.pending_approval_id) ||
+    draft.status === "draft" ||
+    draft.status === "deferred";
 }
 
 function numericCount(value: string | number | null | undefined): number {

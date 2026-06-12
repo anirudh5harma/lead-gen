@@ -96,6 +96,76 @@ test("qualified signals workbench maps verified contacts and email drafts", asyn
   assert.equal(workbench.signals[0]?.email_draft?.sent_at, now);
 });
 
+test("qualified signals workbench does not count judge-blocked drafts as review-ready", async () => {
+  const now = new Date("2026-06-12T10:00:00Z");
+  const pool = fakePool([
+    {
+      id: "00000000-0000-4000-8000-000000000111",
+      kind: "launch",
+      status: "matched",
+      title: "Acme launched an AI workflow product",
+      content: "Acme launched new AI capabilities for revenue teams.",
+      url: "https://example.com/acme-ai",
+      match_score: "0.8800",
+      match_reason: "Fresh launch signal for the revenue workflow ICP.",
+      freshness_at: now,
+      ingested_at: now,
+      matched_at: now,
+      company_id: "00000000-0000-4000-8000-000000000211",
+      company_name: "Acme AI",
+      company_domain: "acmeai.example",
+      company_industry: "Software",
+      company_description: "AI workflow automation for GTM teams.",
+      contact_candidates: [
+        {
+          rank: 1,
+          person_id: "00000000-0000-4000-8000-000000000311",
+          full_name: "Ira Shah",
+          title: "Founder",
+          score: 1,
+          reasons: ["executive_or_founder", "verified_email"],
+          emails: ["ira@acmeai.example"],
+          linkedin_url: null,
+          verification: { email_verified: true, email_status: "valid" },
+          provenance: { source: "hunter" },
+        },
+      ],
+      graph_candidates: [],
+      contact_channel: "email",
+      contact_defer_reason: null,
+      draft_conversation_id: "00000000-0000-4000-8000-000000000411",
+      draft_message_id: "00000000-0000-4000-8000-000000000511",
+      draft_channel: "email",
+      draft_status: "draft",
+      draft_subject: "Congrats on the launch",
+      draft_body: "Ira, saw the launch. Worth comparing notes?",
+      draft_eval_score: "0.0000",
+      draft_eval_passed: false,
+      draft_external_id: null,
+      draft_scheduled_at: null,
+      draft_sent_at: null,
+      draft_delivered_at: null,
+      draft_channel_event_type: "message.deferred",
+      draft_channel_event_at: now,
+      draft_defer_reason: "eval_rejected",
+      draft_defer_detail: "judge blocked this draft",
+      draft_created_at: now,
+      pending_approval_id: null,
+    },
+  ]);
+
+  const workbench = await loadQualifiedSignalWorkbench(
+    pool,
+    "00000000-0000-4000-8000-000000000001",
+  );
+
+  assert.equal(workbench.stats.with_verified_contacts, 1);
+  assert.equal(workbench.stats.with_email_draft, 1);
+  assert.equal(workbench.stats.ready_for_review, 0);
+  assert.equal(workbench.signals[0]?.email_draft?.eval_passed, false);
+  assert.equal(workbench.signals[0]?.email_draft?.defer_reason, "eval_rejected");
+});
+
 test("qualified signals workbench falls back to graph contacts when resolution has not run", async () => {
   const now = new Date("2026-06-12T10:00:00Z");
   const pool = fakePool([
@@ -185,6 +255,9 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   assert.match(sql, /array_prepend\(ev\.email::citext, array_remove\(gp\.emails, ev\.email::citext\)\)/);
   assert.match(sql, /limit greatest\(\$2::int \* 5, 250\)/);
   assert.match(sql, /when draft\.message_id is not null/);
+  assert.match(sql, /e\.event_type = 'draft\.judged'/);
+  assert.match(sql, /e\.event_type = 'draft\.rejected'/);
+  assert.match(sql, /coalesce\(m\.eval_score, \(judged\.payload->>'eval_score'\)::numeric\)/);
   assert.match(sql, /limit \$2/);
 });
 

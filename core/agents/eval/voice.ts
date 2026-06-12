@@ -67,12 +67,20 @@ function violatesDoNot(rule: string, body: string): boolean {
     .trim();
   if (!lowerRule) return false;
   if (/\bai\b|artificial intelligence|language model/.test(lowerRule)) {
-    return /\bai\b|artificial intelligence|language model/.test(lowerBody);
+    return mentionsBeingAi(lowerBody);
   }
   if (/overpromise|hype|hyperbole/.test(lowerRule)) {
     return HYPE_WORDS.some((word) => lowerBody.includes(word));
   }
   return lowerRule.length >= 8 && lowerBody.includes(lowerRule);
+}
+
+function mentionsBeingAi(body: string): boolean {
+  const identityClaim =
+    /\b(i am|i m|i'm|we are|we re|we're|as|being)\s+(an?\s+)?(ai|artificial intelligence|language model)\b/;
+  const assistantNoun =
+    /\b(ai|artificial intelligence|language model)\s+(assistant|agent|system)\b/;
+  return identityClaim.test(body) || assistantNoun.test(body);
 }
 
 export function evaluateBrandVoice(

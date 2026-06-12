@@ -110,7 +110,10 @@ import {
   isLLMBudgetExceededError,
   type LLMClient,
 } from "../agents/llm/index.ts";
-import { createDeepSeekJudge } from "../agents/eval/adapters/deepseek-judge.ts";
+import {
+  createDeepSeekJudge,
+  isMalformedJudgeResponseError,
+} from "../agents/eval/adapters/deepseek-judge.ts";
 import type { WorkflowRuntime } from "../substrate/workflows/index.ts";
 import { RestateClientError } from "../substrate/workflows/adapters/restate.ts";
 import {
@@ -184,6 +187,9 @@ const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
 const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configuration.v1";
 const CONTACT_RESOLUTION_REPAIR_KEY = "verified-contact-v2";
 const SIGNAL_PLAY_REPAIR_KEY = "draft-grounding-skip-v1";
+const SIGNAL_PLAY_REJUDGE_REPAIR_KEY = "judge-fallback-v1";
+const REPAIRABLE_DRAFT_REJECTION_PATTERN =
+  "(being an AI|as an AI|AI language model|language model|judge returned non-JSON response)";
 const RUNNABLE_WORKFLOW_NAMES = [
   CONTACT_RESOLUTION_WORKFLOW,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
@@ -5232,9 +5238,10 @@ function createGovernedJudge(engine: ProductEngine, workspace_id: string) {
   const llm = createGovernedLLM(engine, workspace_id, "judge.hot_path");
   if (!llm) return fallback;
   return createFallbackJudge({
-    primary: createDeepSeekJudge({ llm, threshold: 0.6 }),
+    primary: createDeepSeekJudge({ llm, threshold: 0.6, throwOnMalformed: true }),
     fallback,
-    shouldFallback: isLLMBudgetExceededError,
+    shouldFallback: (error) =>
+      isLLMBudgetExceededError(error) || isMalformedJudgeResponseError(error),
   });
 }
 
@@ -5647,6 +5654,30 @@ function contactResolverRepairKey(row: {
   return CONTACT_RESOLUTION_REPAIR_KEY;
 }
 
+function signalPlayRepairKey(row: {
+  existing_run_status: string | null;
+  existing_run_output: Record<string, unknown> | null;
+  existing_draft_message_id: string | null;
+  existing_rejection_reason: string | null;
+}): string | null {
+  if (row.existing_run_status === "failed" && !row.existing_draft_message_id) {
+    return SIGNAL_PLAY_REPAIR_KEY;
+  }
+  if (
+    row.existing_run_status === "completed" &&
+    row.existing_run_output?.decision === "rejected" &&
+    isRepairableDraftRejection(row.existing_rejection_reason)
+  ) {
+    return SIGNAL_PLAY_REJUDGE_REPAIR_KEY;
+  }
+  return null;
+}
+
+function isRepairableDraftRejection(reason: string | null | undefined): boolean {
+  return /being an ai|as an ai|ai language model|language model|judge returned non-json response/i
+    .test(reason ?? "");
+}
+
 export async function dispatchSignalPlaysOnce(
   opts: DispatchOptions = {},
   session?: ProductWorkspaceSession,
@@ -5684,7 +5715,9 @@ export async function dispatchSignalPlaysOnce(
     resolver_status: string | null;
     resolver_output: Record<string, unknown> | null;
     existing_run_status: string | null;
+    existing_run_output: Record<string, unknown> | null;
     existing_draft_message_id: string | null;
+    existing_rejection_reason: string | null;
     play_id: string;
     rep_id: string;
     workflow_name: string;
@@ -5701,8 +5734,10 @@ export async function dispatchSignalPlaysOnce(
             resolver.idempotency_key as resolver_idempotency_key,
             resolver.status as resolver_status,
             resolver.output as resolver_output,
-            wr.status::text as existing_run_status,
+            coalesce(repair_wr.status::text, wr.status::text) as existing_run_status,
+            coalesce(repair_wr.output, wr.output) as existing_run_output,
             existing_draft.message_id::text as existing_draft_message_id,
+            existing_rejection.payload->>'reason' as existing_rejection_reason,
             p.id as play_id,
             p.default_rep_id as rep_id,
             coalesce(p.compiled->>'workflow', $1) as workflow_name,
@@ -5750,6 +5785,15 @@ export async function dispatchSignalPlaysOnce(
           ':repair:',
           $9::text
        )
+       left join workflow_runs rejudge_wr
+         on rejudge_wr.workspace_id = e.workspace_id
+        and rejudge_wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
+        and rejudge_wr.idempotency_key = concat(
+          'signal:', e.payload->>'signal_id',
+          ':play:', p.id::text,
+          ':repair:',
+          $10::text
+       )
        left join lateral (
          select m.id as message_id
            from conversations c
@@ -5760,8 +5804,18 @@ export async function dispatchSignalPlaysOnce(
           where c.workspace_id = e.workspace_id
             and c.origin_signal_id = s.id
             and c.properties->>'play_id' = p.id::text
+          order by m.created_at desc
           limit 1
        ) existing_draft on true
+       left join lateral (
+         select e.payload
+           from events e
+          where e.workspace_id = s.workspace_id
+            and e.event_type = 'draft.rejected'
+            and e.payload->>'message_id' = existing_draft.message_id::text
+          order by e.occurred_at desc
+          limit 1
+       ) existing_rejection on true
        left join lateral (
          select wr.id,
                 wr.idempotency_key,
@@ -5818,6 +5872,12 @@ export async function dispatchSignalPlaysOnce(
             and repair_wr.id is null
             and existing_draft.message_id is null
           )
+          or (
+            coalesce(repair_wr.status::text, wr.status::text) = 'completed'
+            and coalesce(repair_wr.output, wr.output)->>'decision' = 'rejected'
+            and rejudge_wr.id is null
+            and (existing_rejection.payload->>'reason') ~* $11::text
+          )
         )
         and coalesce(p.compiled->>'workflow', $1) = any($2::text[])
         and s.related_company_id is not null
@@ -5836,6 +5896,8 @@ export async function dispatchSignalPlaysOnce(
       opts.signal_id ?? null,
       opts.play_id ?? null,
       SIGNAL_PLAY_REPAIR_KEY,
+      SIGNAL_PLAY_REJUDGE_REPAIR_KEY,
+      REPAIRABLE_DRAFT_REJECTION_PATTERN,
     ],
   );
 
@@ -5845,10 +5907,7 @@ export async function dispatchSignalPlaysOnce(
     const contactChannel = contactChannelForTarget(row.target_channel);
     let personId = row.resolved_person_id;
     const resolverRepairKey = contactResolverRepairKey(row);
-    const playRepairKey =
-      row.existing_run_status === "failed" && !row.existing_draft_message_id
-        ? SIGNAL_PLAY_REPAIR_KEY
-        : null;
+    const playRepairKey = signalPlayRepairKey(row);
     if (!personId) {
       if (row.resolver_run_id && !resolverRepairKey) continue;
       if (!row.company_id) continue;

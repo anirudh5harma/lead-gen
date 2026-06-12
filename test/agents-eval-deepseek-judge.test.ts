@@ -6,7 +6,10 @@ import type {
   CompletionResponse,
   LLMClient,
 } from "../core/agents/llm/types.ts";
-import { createDeepSeekJudge } from "../core/agents/eval/adapters/deepseek-judge.ts";
+import {
+  createDeepSeekJudge,
+  isMalformedJudgeResponseError,
+} from "../core/agents/eval/adapters/deepseek-judge.ts";
 import type { JudgeInput } from "../core/agents/eval/types.ts";
 
 function mockLLM(
@@ -95,6 +98,16 @@ test("deepseek judge: fails closed on non-JSON output", async () => {
   assert.equal(verdict.passed, false);
   assert.equal(verdict.score, 0);
   assert.match(verdict.notes.critique, /non-JSON/);
+});
+
+test("deepseek judge: can throw malformed output for caller fallback", async () => {
+  const llm = mockLLM(() => "this is not JSON, the model strayed");
+  const judge = createDeepSeekJudge({ llm, throwOnMalformed: true });
+
+  await assert.rejects(
+    () => judge.evaluate(inputFor("body")),
+    (error) => isMalformedJudgeResponseError(error),
+  );
 });
 
 test("deepseek judge: includes Rep persona + procedural exemplars in the prompt", async () => {
