@@ -26,6 +26,14 @@ export interface QualifiedSignalEmailDraft {
   body: string | null;
   eval_score: number | null;
   eval_passed: boolean | null;
+  external_id: string | null;
+  scheduled_at: Date | null;
+  sent_at: Date | null;
+  delivered_at: Date | null;
+  latest_channel_event_type: string | null;
+  latest_channel_event_at: Date | null;
+  defer_reason: string | null;
+  defer_detail: string | null;
   pending_approval_id: string | null;
   created_at: Date;
 }
@@ -105,6 +113,14 @@ interface QualifiedSignalRow {
   draft_body: string | null;
   draft_eval_score: string | null;
   draft_eval_passed: boolean | null;
+  draft_external_id: string | null;
+  draft_scheduled_at: Date | null;
+  draft_sent_at: Date | null;
+  draft_delivered_at: Date | null;
+  draft_channel_event_type: string | null;
+  draft_channel_event_at: Date | null;
+  draft_defer_reason: string | null;
+  draft_defer_detail: string | null;
   draft_created_at: Date | null;
   pending_approval_id: string | null;
 }
@@ -221,6 +237,14 @@ export async function loadQualifiedSignalWorkbench(
             draft.body as draft_body,
             draft.eval_score::text as draft_eval_score,
             draft.eval_passed as draft_eval_passed,
+            draft.external_id as draft_external_id,
+            draft.scheduled_at as draft_scheduled_at,
+            draft.sent_at as draft_sent_at,
+            draft.delivered_at as draft_delivered_at,
+            draft.channel_event_type as draft_channel_event_type,
+            draft.channel_event_at as draft_channel_event_at,
+            draft.defer_reason as draft_defer_reason,
+            draft.defer_detail as draft_defer_detail,
             draft.created_at as draft_created_at,
             draft.pending_approval_id::text as pending_approval_id
        from qualified_signals s
@@ -346,7 +370,23 @@ export async function loadQualifiedSignalWorkbench(
                 m.body,
                 m.eval_score,
                 m.eval_passed,
+                m.external_id,
+                m.scheduled_at,
+                m.sent_at,
+                m.delivered_at,
                 m.created_at,
+                channel_event.event_type as channel_event_type,
+                channel_event.occurred_at as channel_event_at,
+                coalesce(
+                  channel_event.payload->>'defer_reason',
+                  m.eval_notes->>'defer_reason',
+                  m.properties->>'defer_reason'
+                ) as defer_reason,
+                coalesce(
+                  channel_event.payload->>'detail',
+                  m.eval_notes->>'defer_detail',
+                  m.properties->>'defer_detail'
+                ) as defer_detail,
                 approval.id as pending_approval_id
            from conversations c
            join messages m
@@ -354,6 +394,23 @@ export async function loadQualifiedSignalWorkbench(
             and m.conversation_id = c.id
             and m.direction = 'outbound'
             and m.channel = 'email'
+           left join lateral (
+             select e.event_type,
+                    e.occurred_at,
+                    e.payload
+               from events e
+              where e.workspace_id = c.workspace_id
+                and e.event_type in (
+                  'message.queued',
+                  'message.sent',
+                  'message.deferred',
+                  'message.delivered',
+                  'message.bounced'
+                )
+                and e.payload->>'message_id' = m.id::text
+              order by e.occurred_at desc
+              limit 1
+           ) channel_event on true
            left join lateral (
              select a.id
                from workflow_approvals a
@@ -436,6 +493,14 @@ function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
           body: row.draft_body,
           eval_score: parseNumber(row.draft_eval_score),
           eval_passed: row.draft_eval_passed,
+          external_id: row.draft_external_id,
+          scheduled_at: row.draft_scheduled_at,
+          sent_at: row.draft_sent_at,
+          delivered_at: row.draft_delivered_at,
+          latest_channel_event_type: row.draft_channel_event_type,
+          latest_channel_event_at: row.draft_channel_event_at,
+          defer_reason: row.draft_defer_reason,
+          defer_detail: row.draft_defer_detail,
           pending_approval_id: row.pending_approval_id,
           created_at: row.draft_created_at,
         }

@@ -97,6 +97,12 @@ const icons: Record<string, IconNode> = {
       <path d="M8 10h7M8 13h5" />
     </>
   ),
+  health_and_safety: (
+    <>
+      <path d="M12 3l8 3v6c0 4.6-3.2 7.5-8 9-4.8-1.5-8-4.4-8-9V6z" />
+      <path d="M12 8v8M8 12h8" />
+    </>
+  ),
   info: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -182,6 +188,12 @@ const icons: Record<string, IconNode> = {
       <path d="M8 4v6h7V4M8 20v-6h8v6" />
     </>
   ),
+  schedule: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
   science: (
     <>
       <path d="M9 3h6M10 3v5l-5 9a3 3 0 0 0 2.6 4.5h8.8A3 3 0 0 0 19 17l-5-9V3" />
@@ -199,6 +211,15 @@ const icons: Record<string, IconNode> = {
     <>
       <path d="M7 7h12l-3-3M17 17H5l3 3" />
       <path d="M19 7l-3 3M5 17l3-3" />
+    </>
+  ),
+  sync_problem: (
+    <>
+      <path d="M19 8a7 7 0 0 0-11.8-3.1L5 7" />
+      <path d="M5 4v3h3" />
+      <path d="M5 16a7 7 0 0 0 11.8 3.1L19 17" />
+      <path d="M19 20v-3h-3" />
+      <path d="M12 8v4M12 16h.01" />
     </>
   ),
   task_alt: (

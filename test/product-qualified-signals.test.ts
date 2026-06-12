@@ -65,6 +65,14 @@ test("qualified signals workbench maps verified contacts and email drafts", asyn
       draft_body: "Nisha, saw the Series A. Worth comparing notes?",
       draft_eval_score: "0.8700",
       draft_eval_passed: true,
+      draft_external_id: "graph-message-1",
+      draft_scheduled_at: now,
+      draft_sent_at: now,
+      draft_delivered_at: null,
+      draft_channel_event_type: "message.sent",
+      draft_channel_event_at: now,
+      draft_defer_reason: null,
+      draft_defer_detail: null,
       draft_created_at: now,
       pending_approval_id: "00000000-0000-4000-8000-000000000601",
     },
@@ -83,6 +91,9 @@ test("qualified signals workbench maps verified contacts and email drafts", asyn
   assert.equal(workbench.signals[0]?.contacts[0]?.full_name, "Nisha Rao");
   assert.equal(workbench.signals[0]?.email_draft?.subject, "Congrats on the Series A");
   assert.equal(workbench.signals[0]?.email_draft?.eval_score, 0.87);
+  assert.equal(workbench.signals[0]?.email_draft?.external_id, "graph-message-1");
+  assert.equal(workbench.signals[0]?.email_draft?.latest_channel_event_type, "message.sent");
+  assert.equal(workbench.signals[0]?.email_draft?.sent_at, now);
 });
 
 test("qualified signals workbench falls back to graph contacts when resolution has not run", async () => {
@@ -130,6 +141,14 @@ test("qualified signals workbench falls back to graph contacts when resolution h
       draft_body: null,
       draft_eval_score: null,
       draft_eval_passed: null,
+      draft_external_id: null,
+      draft_scheduled_at: null,
+      draft_sent_at: null,
+      draft_delivered_at: null,
+      draft_channel_event_type: null,
+      draft_channel_event_at: null,
+      draft_defer_reason: null,
+      draft_defer_detail: null,
       draft_created_at: null,
       pending_approval_id: null,
     },
@@ -158,6 +177,9 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   await loadQualifiedSignalWorkbench(pool, "00000000-0000-4000-8000-000000000001");
 
   assert.match(sql, /s\.related_company_id is not null/);
+  assert.match(sql, /e\.event_type in \(/);
+  assert.match(sql, /'message\.deferred'/);
+  assert.match(sql, /e\.payload->>'message_id' = m\.id::text/);
   assert.match(sql, /cardinality\(gp\.emails\) > 0/);
   assert.match(sql, /meta->>'verified' = 'true'/);
   assert.match(sql, /array_prepend\(ev\.email::citext, array_remove\(gp\.emails, ev\.email::citext\)\)/);

@@ -303,6 +303,29 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
           <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] px-3 py-3 text-sm leading-6 text-[var(--color-text-2)]">
             {draft.body ?? "(no body)"}
           </p>
+          <div className="mt-3 grid gap-3 border-t border-[var(--color-line-1)] pt-3 sm:grid-cols-3">
+            <Evidence
+              label="Judge"
+              value={judgeSummary(draft)}
+              icon={draft.eval_passed === false ? "report" : "task_alt"}
+            />
+            <Evidence
+              label="Approval"
+              value={approvalSummary(draft)}
+              icon={draft.pending_approval_id ? "rate_review" : "check"}
+            />
+            <Evidence
+              label="Send"
+              value={sendSummary(draft)}
+              icon={sendIcon(draft)}
+            />
+          </div>
+          {draft.defer_reason ? (
+            <p className="mt-3 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-2 text-xs leading-5 text-[var(--color-text-3)]">
+              Send paused: {humanize(draft.defer_reason)}
+              {draft.defer_detail ? ` · ${draft.defer_detail}` : ""}
+            </p>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <SignalBadge
               label={draft.eval_passed === false ? "judge blocked" : draftStatus(draft.status)}
@@ -362,6 +385,55 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
   );
 }
 
+function judgeSummary(draft: NonNullable<QualifiedSignalItem["email_draft"]>): string {
+  if (draft.eval_passed === false) return "blocked";
+  if (draft.eval_passed === true) {
+    return draft.eval_score != null
+      ? `passed ${Math.round(draft.eval_score * 100)}%`
+      : "passed";
+  }
+  return "not judged";
+}
+
+function approvalSummary(draft: NonNullable<QualifiedSignalItem["email_draft"]>): string {
+  if (draft.pending_approval_id) return "needs review";
+  if (draft.status === "draft") return "no pending review";
+  if (draft.status === "deferred") return "cleared";
+  if (["queued", "sent", "delivered", "replied"].includes(draft.status)) return "cleared";
+  return humanize(draft.status);
+}
+
+function sendSummary(draft: NonNullable<QualifiedSignalItem["email_draft"]>): string {
+  if (draft.latest_channel_event_type === "message.bounced") return "bounced";
+  if (draft.delivered_at || draft.latest_channel_event_type === "message.delivered") {
+    return `delivered ${timeAgo(draft.delivered_at ?? draft.latest_channel_event_at)}`;
+  }
+  if (draft.sent_at || draft.latest_channel_event_type === "message.sent") {
+    return `sent ${timeAgo(draft.sent_at ?? draft.latest_channel_event_at)}`;
+  }
+  if (draft.latest_channel_event_type === "message.deferred" || draft.defer_reason) {
+    return `deferred: ${humanize(draft.defer_reason ?? "needs_attention")}`;
+  }
+  if (draft.scheduled_at || draft.latest_channel_event_type === "message.queued") {
+    return draft.scheduled_at ? `queued ${timeAgo(draft.scheduled_at)}` : "queued";
+  }
+  if (draft.pending_approval_id) return "waiting approval";
+  if (draft.eval_passed === false) return "blocked by judge";
+  return draftStatus(draft.status);
+}
+
+function sendIcon(draft: NonNullable<QualifiedSignalItem["email_draft"]>): string {
+  if (draft.latest_channel_event_type === "message.bounced") return "report";
+  if (draft.latest_channel_event_type === "message.deferred" || draft.defer_reason) {
+    return "sync_problem";
+  }
+  if (draft.sent_at || draft.delivered_at || draft.latest_channel_event_type === "message.sent") {
+    return "send";
+  }
+  if (draft.scheduled_at || draft.latest_channel_event_type === "message.queued") return "schedule";
+  return "mail";
+}
+
 function Evidence({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <div className="min-w-0">
@@ -401,7 +473,11 @@ function draftStatus(status: string): string {
   if (status === "queued") return "queued to send";
   if (status === "sent" || status === "delivered" || status === "replied") return status;
   if (status === "deferred") return "needs attention";
-  return status.replace(/_/g, " ");
+  return humanize(status);
+}
+
+function humanize(value: string): string {
+  return value.replace(/_/g, " ");
 }
 
 function timeAgo(d: Date | null): string {
