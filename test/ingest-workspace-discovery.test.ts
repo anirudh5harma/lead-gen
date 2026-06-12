@@ -124,6 +124,97 @@ test("workspace discovery: push item emits signal.discovered and materializes on
   }
 });
 
+test("workspace discovery: product launch hints create company-backed signal graph", async (t) => {
+  const fx = await setupPg("wsp_product_company");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = createInMemoryEventBus();
+  await registerSignalProjectors({ pool: fx.pool, bus });
+  try {
+    const { workspace_id, source_id } = await seedPushSource(fx.pool, {
+      adapter: "product_hunt",
+      kind: "product_launch",
+      provider: "product_hunt",
+    });
+    const deps = {
+      pool: fx.pool,
+      bus,
+      embedder: createMockEmbeddingClient(),
+    };
+    const result = await discoverWorkspaceSignalOnce(deps, {
+      workspace_id,
+      source_id,
+      external_id: "ph-launch-1",
+      title: "LaunchCo - turn signals into outreach",
+      content: "LaunchCo helps GTM teams act on open-web buying signals.",
+      url: "https://www.producthunt.com/posts/launchco",
+      freshness_at: "2026-06-12T00:00:00.000Z",
+      structured: {
+        name: "LaunchCo",
+        tagline: "Turn signals into outreach",
+        website: "https://www.launchco.ai/?ref=producthunt",
+      },
+      provenance: { provider: "product_hunt" },
+    });
+    assert.equal(result.outcome, "created");
+
+    await until(() =>
+      bus.published.some((event) => event.event_type === "signal.ingested"),
+    );
+    const { rows } = await fx.pool.query<{
+      signal_id: string;
+      kind: string;
+      related_company_id: string | null;
+      properties: {
+        related_company_hint?: {
+          name?: string;
+          domain?: string | null;
+          source?: string;
+          confidence?: string;
+        };
+      };
+      company_name: string | null;
+      company_domain: string | null;
+    }>(
+      `select s.id as signal_id,
+              s.kind::text as kind,
+              s.related_company_id,
+              s.properties,
+              gc.name as company_name,
+              gc.domain as company_domain
+         from signals s
+         left join graph_companies gc on gc.id = s.related_company_id
+        where s.workspace_id = $1 and s.id = $2`,
+      [workspace_id, result.signal_id],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, "product_launch");
+    assert.ok(rows[0].related_company_id);
+    assert.equal(rows[0].company_name, "LaunchCo");
+    assert.equal(rows[0].company_domain, "launchco.ai");
+    assert.deepEqual(rows[0].properties.related_company_hint, {
+      name: "LaunchCo",
+      domain: "launchco.ai",
+      source: "product_hunt",
+      confidence: "derived",
+    });
+
+    const edge = await fx.pool.query<{ id: string }>(
+      `select id
+         from graph_edges
+        where workspace_id = $1
+          and from_node_type = 'company'
+          and from_node_id = $2
+          and to_node_type = 'signal'
+          and to_node_id = $3
+          and edge_type = 'mentioned_in'`,
+      [workspace_id, rows[0].related_company_id, result.signal_id],
+    );
+    assert.equal(edge.rows.length, 1);
+  } finally {
+    await fx.close();
+  }
+});
+
 test("workspace discovery: source daily item cap records overflow before paid-source spend grows", async (t) => {
   const fx = await setupPg("wsp_src_cap");
   if (!fx) return t.skip("DATABASE_URL not set");

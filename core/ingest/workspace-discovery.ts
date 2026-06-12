@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
+import { upsertCompany } from "../graph/nodes/companies.ts";
 import type { EventBus } from "../substrate/events/index.ts";
 import type { SignalKind } from "../primitives/signal.ts";
 import type { EmbeddingClient } from "./embeddings.ts";
@@ -41,6 +42,14 @@ export interface WorkspaceSignalDiscoveryItem extends RawCandidate {
   properties?: Record<string, unknown>;
   producer_ref?: string;
   idempotency_key?: string;
+}
+
+export interface SignalCompanyHint {
+  name: string;
+  domain: string | null;
+  description: string | null;
+  source: string;
+  confidence: "explicit" | "derived";
 }
 
 export type WorkspaceSignalDiscoveryResult =
@@ -179,6 +188,11 @@ export async function discoverWorkspaceSignal(
 
   const leadText = `${item.title} ${(item.content ?? "").slice(0, 200)}`.trim();
   const [embedding] = await deps.embedder.embed([leadText]);
+  const relatedCompany =
+    item.related_company_id === undefined
+      ? await upsertSignalCompanyHint(deps, ctx, item)
+      : null;
+  const relatedCompanyHint = relatedCompany?.hint ?? null;
   const signal_id = randomUUID();
   const event = await deps.bus.publish({
     workspace_id: ctx.workspace_id,
@@ -195,12 +209,25 @@ export async function discoverWorkspaceSignal(
       content: item.content ?? null,
       url: item.url ?? null,
       freshness_at: item.freshness_at,
-      related_company_id: item.related_company_id ?? null,
+      related_company_id:
+        item.related_company_id === undefined
+          ? relatedCompany?.company_id ?? null
+          : item.related_company_id,
       related_person_id: item.related_person_id ?? null,
       origin_candidate_id: null,
       properties: {
         ...(item.properties ?? {}),
         structured: item.structured ?? item.properties?.structured ?? {},
+        ...(relatedCompanyHint
+          ? {
+              related_company_hint: {
+                name: relatedCompanyHint.name,
+                domain: relatedCompanyHint.domain,
+                source: relatedCompanyHint.source,
+                confidence: relatedCompanyHint.confidence,
+              },
+            }
+          : {}),
       },
       provenance: {
         adapter: ctx.adapter_id,
@@ -219,6 +246,122 @@ export async function discoverWorkspaceSignal(
   return { outcome: "created", signal_id: publishedSignalId, event_id: event.id };
 }
 
+async function upsertSignalCompanyHint(
+  deps: WorkspaceSignalDiscoveryDeps,
+  ctx: WorkspaceSignalDiscoveryContext,
+  item: WorkspaceSignalDiscoveryItem,
+): Promise<{ company_id: string; hint: SignalCompanyHint } | null> {
+  const hint = deriveSignalCompanyHint({
+    adapter_id: ctx.adapter_id,
+    source_name: ctx.source.name,
+    source_config: ctx.source.config,
+    item,
+  });
+  if (!hint) return null;
+  const company = await upsertCompany(deps.pool, ctx.workspace_id, {
+    name: hint.name,
+    domain: hint.domain ?? undefined,
+    description: hint.description ?? undefined,
+    properties: {
+      signal_discovery: {
+        adapter: ctx.adapter_id,
+        source_id: ctx.source.id,
+        external_id: item.external_id,
+        hint_source: hint.source,
+        confidence: hint.confidence,
+      },
+    },
+    provenance: {
+      source: "workspace_signal_discovery",
+      adapter: ctx.adapter_id,
+      source_id: ctx.source.id,
+      external_id: item.external_id,
+      hint_source: hint.source,
+      confidence: hint.confidence,
+    },
+  });
+  return { company_id: company.id, hint };
+}
+
+export function deriveSignalCompanyHint(input: {
+  adapter_id: string;
+  source_name: string;
+  source_config: Record<string, unknown>;
+  item: Pick<
+    WorkspaceSignalDiscoveryItem,
+    "title" | "content" | "url" | "structured" | "novelty_hint"
+  >;
+}): SignalCompanyHint | null {
+  const configHint = hintFromExplicitFields(
+    input.source_config,
+    "source_config",
+    "explicit",
+  );
+  if (configHint) return configHint;
+
+  const structured = recordValue(input.item.structured);
+  const structuredHint = hintFromStructured(structured);
+  if (structuredHint) return structuredHint;
+
+  const adapter = input.adapter_id.trim().toLowerCase();
+  if (adapter === "product_hunt") {
+    return makeSignalCompanyHint({
+      name: stringValue(structured?.name),
+      domain: firstDomain(
+        structured?.website,
+        structured?.company_website,
+        structured?.domain,
+      ),
+      description:
+        stringValue(structured?.description) ??
+        stringValue(structured?.tagline) ??
+        stringValue(input.item.content),
+      source: "product_hunt",
+      confidence: "derived",
+    });
+  }
+
+  if (adapter === "rss") {
+    const domain = firstDomain(
+      input.source_config.company_domain,
+      input.source_config.target_company_domain,
+      input.source_config.novelty_domain,
+      input.source_config.domain,
+      input.source_config.website,
+    );
+    if (domain) {
+      return makeSignalCompanyHint({
+        name: stringValue(input.source_config.company_name) ?? input.source_name,
+        domain,
+        description: stringValue(input.source_config.description),
+        source: "rss_source_config",
+        confidence: "derived",
+      });
+    }
+  }
+
+  if (adapter === "hn_front" || adapter === "hacker_news" || adapter === "reddit") {
+    const domain = firstDomain(
+      structured?.company_domain,
+      structured?.linked_domain,
+      structured?.domain,
+      input.item.novelty_hint?.domain,
+      domainFromUrl(input.item.url),
+    );
+    if (domain) {
+      return makeSignalCompanyHint({
+        name: nameFromDomain(domain),
+        domain,
+        description: null,
+        source: "linked_domain",
+        confidence: "derived",
+      });
+    }
+  }
+
+  return null;
+}
+
 export async function discoverWorkspaceSignalOnce(
   deps: WorkspaceSignalDiscoveryDeps,
   input: WorkspaceSignalDiscoveryItem & {
@@ -232,6 +375,202 @@ export async function discoverWorkspaceSignalOnce(
   });
   if (!ctx) return { outcome: "skipped:source_not_found" };
   return discoverWorkspaceSignal(deps, ctx, input);
+}
+
+function hintFromStructured(
+  structured: Record<string, unknown> | null,
+): SignalCompanyHint | null {
+  if (!structured) return null;
+  const nested = recordValue(structured.company);
+  if (nested) {
+    const nestedHint = hintFromCompanyObject(nested);
+    if (nestedHint) return nestedHint;
+  }
+  if (typeof structured.company === "string") {
+    const directCompany = makeSignalCompanyHint({
+      name: structured.company,
+      domain: firstDomain(
+        structured.company_domain,
+        structured.company_website,
+        structured.website,
+      ),
+      description: stringValue(structured.company_description),
+      source: "structured_company",
+      confidence: "explicit",
+    });
+    if (directCompany) return directCompany;
+  }
+  return hintFromExplicitFields(structured, "structured_company", "explicit");
+}
+
+function hintFromCompanyObject(record: Record<string, unknown>): SignalCompanyHint | null {
+  return makeSignalCompanyHint({
+    name:
+      stringValue(record.name) ??
+      stringValue(record.company_name) ??
+      stringValue(record.organization_name) ??
+      stringValue(record.account_name),
+    domain: firstDomain(
+      record.domain,
+      record.website,
+      record.url,
+      record.company_domain,
+      record.company_website,
+      record.organization_domain,
+      record.organization_website,
+    ),
+    description:
+      stringValue(record.description) ??
+      stringValue(record.company_description) ??
+      stringValue(record.organization_description),
+    source: "structured_company",
+    confidence: "explicit",
+  });
+}
+
+function hintFromExplicitFields(
+  record: Record<string, unknown>,
+  source: string,
+  confidence: "explicit" | "derived",
+): SignalCompanyHint | null {
+  const name =
+    stringValue(record.target_company_name) ??
+    stringValue(record.company_name) ??
+    stringValue(record.organization_name) ??
+    stringValue(record.account_name);
+  const domain = firstDomain(
+    record.target_company_domain,
+    record.target_company_website,
+    record.company_domain,
+    record.company_website,
+    record.organization_domain,
+    record.organization_website,
+    name ? record.domain : null,
+    name ? record.website : null,
+  );
+  return makeSignalCompanyHint({
+    name,
+    domain,
+    description:
+      stringValue(record.company_description) ??
+      stringValue(record.organization_description) ??
+      stringValue(record.description),
+    source,
+    confidence,
+  });
+}
+
+function makeSignalCompanyHint(input: {
+  name?: unknown;
+  domain?: string | null;
+  description?: string | null;
+  source: string;
+  confidence: "explicit" | "derived";
+}): SignalCompanyHint | null {
+  const domain = input.domain ?? null;
+  const name = sanitizeCompanyName(input.name) ?? (domain ? nameFromDomain(domain) : null);
+  if (!name) return null;
+  return {
+    name,
+    domain,
+    description: stringValue(input.description) ?? null,
+    source: input.source,
+    confidence: input.confidence,
+  };
+}
+
+function firstDomain(...values: unknown[]): string | null {
+  for (const value of values) {
+    const domain = normalizeCompanyDomain(value);
+    if (domain) return domain;
+  }
+  return null;
+}
+
+function normalizeCompanyDomain(value: unknown): string | null {
+  const raw = stringValue(value)?.toLowerCase();
+  if (!raw || raw.includes("@")) return null;
+  const withProtocol = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const hostname = new URL(withProtocol).hostname
+      .replace(/\.$/, "")
+      .replace(/^www\./, "")
+      .toLowerCase();
+    if (!hostname.includes(".")) return null;
+    if (isBlockedCompanyDomain(hostname)) return null;
+    return hostname;
+  } catch {
+    return null;
+  }
+}
+
+function domainFromUrl(value: unknown): string | null {
+  return normalizeCompanyDomain(value);
+}
+
+const BLOCKED_COMPANY_DOMAINS = new Set([
+  "businesswire.com",
+  "facebook.com",
+  "forbes.com",
+  "github.com",
+  "globenewswire.com",
+  "linkedin.com",
+  "medium.com",
+  "news.google.com",
+  "news.ycombinator.com",
+  "old.reddit.com",
+  "prnewswire.com",
+  "producthunt.com",
+  "reddit.com",
+  "substack.com",
+  "techcrunch.com",
+  "theverge.com",
+  "twitter.com",
+  "x.com",
+  "ycombinator.com",
+  "youtu.be",
+  "youtube.com",
+]);
+
+function isBlockedCompanyDomain(domain: string): boolean {
+  for (const blocked of BLOCKED_COMPANY_DOMAINS) {
+    if (domain === blocked || domain.endsWith(`.${blocked}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function nameFromDomain(domain: string): string {
+  const labels = domain.split(".").filter(Boolean);
+  let label = labels.length >= 2 ? labels[labels.length - 2] : labels[0] ?? domain;
+  if (labels.length >= 3 && ["co", "com", "net", "org"].includes(label)) {
+    label = labels[labels.length - 3] ?? label;
+  }
+  return label
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function sanitizeCompanyName(value: unknown): string | null {
+  const text = stringValue(value);
+  if (!text || text.includes("@")) return null;
+  if (/^https?:\/\//i.test(text)) return null;
+  if (text.length > 120) return null;
+  return text;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  return trimmed ? trimmed : null;
 }
 
 async function existingSignalId(

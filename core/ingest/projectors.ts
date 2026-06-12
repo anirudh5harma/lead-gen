@@ -190,6 +190,38 @@ export async function projectSignalDiscovered(
       },
     });
   }
+  if (payload.related_company_id) {
+    await connect(pool, {
+      workspace_id: workspaceId,
+      from: { node_type: "company", node_id: payload.related_company_id },
+      to: { node_type: "signal", node_id: payload.signal_id },
+      kind: "mentioned_in",
+      properties: {
+        external_id: payload.provenance.external_id,
+        source_id: payload.source_id,
+        origin_candidate_id: payload.origin_candidate_id,
+      },
+      provenance: {
+        source: "projection:signal.discovered",
+      },
+    });
+  }
+  if (payload.related_person_id) {
+    await connect(pool, {
+      workspace_id: workspaceId,
+      from: { node_type: "person", node_id: payload.related_person_id },
+      to: { node_type: "signal", node_id: payload.signal_id },
+      kind: "mentioned_in",
+      properties: {
+        external_id: payload.provenance.external_id,
+        source_id: payload.source_id,
+        origin_candidate_id: payload.origin_candidate_id,
+      },
+      provenance: {
+        source: "projection:signal.discovered",
+      },
+    });
+  }
 }
 
 /**
