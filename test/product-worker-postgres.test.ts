@@ -159,6 +159,116 @@ test("product worker: dispatches signal.matched events into durable play runs", 
   }
 });
 
+test("product worker: repairs stale deferred contact resolver before email dispatch", async (t) => {
+  const fx = await setupPg("product_worker_contact_repair");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  await withoutExternalContactProviders(async () => {
+    try {
+      const boot = await bootstrapWorkspace(fx.pool);
+      const submitted = await submitManualSignal({
+        company_name: "Repair Analytics",
+        company_domain: "repairanalytics.example",
+        person_name: "Ava Founder",
+        person_email: "ava@repairanalytics.example",
+        signal_title: "Repair Analytics is hiring a GTM lead",
+        signal_content: "Repair Analytics is hiring a GTM lead after a launch week spike.",
+        signal_url: "https://example.com/repair-gtm",
+        approval: "none",
+      }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+      const company = await fx.pool.query<{ company_id: string }>(
+        `select related_company_id::text as company_id
+           from signals
+          where workspace_id = $1
+            and id = $2`,
+        [submitted.workspace_id, submitted.signal_id],
+      );
+      const companyId = company.rows[0]?.company_id;
+      assert.ok(companyId);
+
+      const staleRunId = randomUUID();
+      const staleInput = {
+        workspace_id: submitted.workspace_id,
+        signal_id: submitted.signal_id,
+        company_id: companyId,
+        play_id: boot.play_id,
+        rep_id: boot.rep_id,
+        channel: "email",
+        trigger_event_id: null,
+      };
+      await fx.pool.query(
+        `insert into workflow_runs (
+           id, workspace_id, workflow_name, workflow_version, status, input, output,
+           idempotency_key, started_at, ended_at, created_at
+         ) values (
+           $1, $2, 'contact.resolve_for_signal.v1', '1', 'completed',
+           $3::jsonb, $4::jsonb, $5, now() - interval '1 hour',
+           now() - interval '59 minutes', now() - interval '1 hour'
+         )`,
+        [
+          staleRunId,
+          submitted.workspace_id,
+          JSON.stringify(staleInput),
+          JSON.stringify({
+            decision: "deferred",
+            contact_resolution_id: randomUUID(),
+            candidates: [],
+            selected_person_id: null,
+            defer_reason: "no_email_ready_contact",
+          }),
+          `contact:${submitted.signal_id}:play:${boot.play_id}:channel:email`,
+        ],
+      );
+
+      const repairedPersonId = await seedVerifiedGraphContact(fx.pool, {
+        workspace_id: submitted.workspace_id,
+        company_id: companyId,
+        full_name: "Ava Founder",
+        title: "Founder and CEO",
+        email: "ava@repairanalytics.example",
+      });
+
+      assert.equal(await dispatchSignalPlaysOnce({ signal_id: submitted.signal_id }), 0);
+      await waitForContactResolved(fx.pool, submitted);
+
+      const repairRun = await fx.pool.query<{
+        status: string;
+        output: { selected_person_id?: string | null; candidates?: unknown[] } | null;
+      }>(
+        `select status, output
+           from workflow_runs
+          where workspace_id = $1
+            and idempotency_key = $2`,
+        [
+          submitted.workspace_id,
+          `contact:${submitted.signal_id}:play:${boot.play_id}:channel:email:repair:verified-contact-v2`,
+        ],
+      );
+      assert.equal(repairRun.rows.length, 1);
+      assert.equal(repairRun.rows[0].status, "completed");
+      assert.equal(repairRun.rows[0].output?.selected_person_id, repairedPersonId);
+      assert.equal(repairRun.rows[0].output?.candidates?.length, 1);
+
+      assert.equal(await dispatchSignalPlaysOnce({ signal_id: submitted.signal_id }), 1);
+      await until(async () => {
+        const { rows } = await fx.pool.query<{ status: string }>(
+          `select status
+             from workflow_runs
+            where workspace_id = $1
+              and idempotency_key = $2`,
+          [submitted.workspace_id, `signal:${submitted.signal_id}:play:${boot.play_id}`],
+        );
+        return rows[0]?.status === "completed" ? rows[0] : null;
+      }, { timeout: WORKFLOW_TIMEOUT_MS });
+    } finally {
+      await resetProductEngineForTests();
+      await fx.close();
+      await resetPool();
+    }
+  });
+});
+
 test("product worker: resolves top graph contacts before dispatching an email Play", async (t) => {
   const fx = await setupPg("product_worker_contact_resolver");
   if (!fx) return t.skip("DATABASE_URL not set");

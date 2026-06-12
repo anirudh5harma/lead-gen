@@ -205,6 +205,62 @@ test("contact resolution workflow resolves from verified graph cache without pro
   assert.equal(resolved?.payload.candidates[0]?.full_name, "Ava Founder");
 });
 
+test("contact resolution workflow resolves with fewer than three verified contacts after waterfall", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const rows: ContactRows = [
+    person({
+      full_name: "Ava Founder",
+      title: "Founder and CEO",
+      company_id: companyId,
+      emails: ["ava@example.com"],
+      email_status: "valid",
+    }),
+  ];
+  let providerCalls = 0;
+  const bus = createInMemoryEventBus();
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  runtime.register(
+    createContactResolutionWorkflow({
+      pool: mockContactRowsPool(rows),
+      discoveryProviders: [{
+        name: "provider.no_extra_contacts",
+        async discover() {
+          providerCalls += 1;
+          return [];
+        },
+      }],
+    }),
+  );
+
+  const run = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input: {
+      workspace_id: workspaceId,
+      signal_id: signalId,
+      company_id: companyId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+    },
+  });
+  const completed = await waitForCompletedRun(runtime, run.id);
+  const resolved = bus.published.find((event) => event.event_type === "contact.resolved");
+  const deferred = bus.published.find((event) => event.event_type === "contact.resolution.deferred");
+
+  assert.equal(completed.output?.decision, "resolved");
+  assert.equal(completed.output?.candidates.length, 1);
+  assert.equal(completed.output?.selected_person_id, rows[0]?.id);
+  assert.equal(providerCalls, 1);
+  assert.equal(deferred, undefined);
+  assert.deepEqual(resolved?.payload.provider_order, ["graph_cache", "provider.no_extra_contacts"]);
+  assert.equal(resolved?.payload.candidates[0]?.full_name, "Ava Founder");
+});
+
 test("contact resolution workflow defers email outreach when contacts are not verified", async () => {
   const workspaceId = randomUUID();
   const signalId = randomUUID();

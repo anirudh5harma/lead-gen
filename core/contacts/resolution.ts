@@ -15,6 +15,7 @@ export interface ContactResolutionInput {
   channel: ContactChannel;
   trigger_event_id?: string | null;
   limit?: number;
+  repair_key?: string | null;
 }
 
 export interface ContactCandidate {
@@ -147,7 +148,7 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
           .slice(0, limit);
       });
 
-      if (candidates.length < limit) {
+      if (candidates.length === 0) {
         const output: ContactResolutionOutput = {
           decision: "deferred",
           contact_resolution_id,

@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { getPool } from "../substrate/storage/index.ts";
 import {
-  getAppState,
+  assertProductWorkspaceAccess,
   type ProductWorkspaceSession,
 } from "./app.ts";
 
@@ -38,6 +38,116 @@ interface ContextSignalRow {
   freshness_at: Date;
 }
 
+interface ContextSourceRow {
+  name: string;
+  kind: string;
+  enabled: boolean;
+  signal_count: number | string;
+  last_polled_at: Date | null;
+  latest_run_status: string | null;
+}
+
+interface ContextPendingApprovalRow {
+  id: string;
+  run_id: string;
+  kind: string;
+  reason: string | null;
+}
+
+interface ContextSendTraceRow {
+  subject: string | null;
+  person_name: string | null;
+  company_name: string | null;
+  status: string;
+  eval_score: string | null;
+  eval_passed: boolean | null;
+  approval_policy: string | null;
+}
+
+interface ContextRecoveryRow {
+  id: string;
+  workflow_name: string;
+  failed_step_name: string | null;
+  error: string | null;
+}
+
+interface ContextChannelAccount {
+  display_name: string;
+  kind: string;
+  status: string;
+  daily_cap: number | null;
+  daily_used: number;
+  provider_status: string | null;
+  domain: string | null;
+  warmup_state: string | null;
+  current_daily_cap: number | null;
+  bounce_rate_24h: string | null;
+}
+
+interface ContextProfile {
+  company_id: string;
+  company_name: string;
+  domain: string | null;
+  website_url: string | null;
+  industry: string | null;
+  description: string | null;
+  exa_summary: string | null;
+  exa_source_domains: string[];
+  exa_market_terms: string[];
+  exa_positioning_notes: string[];
+  exa_competitor_mentions: string[];
+  exa_audience_terms: string[];
+  exa_proof_points: string[];
+  exa_evidence_cards: Array<{
+    title: string | null;
+    url: string | null;
+    source_domain: string | null;
+    snippet: string | null;
+    published_at: string | null;
+  }>;
+  exa_evidence_source_ids: string[];
+  exa_result_count: number;
+  exa_enriched_at: string | null;
+}
+
+interface ContextProfileRow {
+  company_id: string;
+  company_name: string;
+  domain: string | null;
+  website_url: string | null;
+  industry: string | null;
+  description: string | null;
+  exa_summary: string | null;
+  exa_source_domains: unknown;
+  exa_market_terms: unknown;
+  exa_positioning_notes: unknown;
+  exa_competitor_mentions: unknown;
+  exa_audience_terms: unknown;
+  exa_proof_points: unknown;
+  exa_evidence_cards: unknown;
+  exa_evidence_source_ids: unknown;
+  exa_result_count: string | number | null;
+  exa_enriched_at: string | null;
+}
+
+interface ContextRecommendationQuality {
+  total_reviewed: number;
+  accepted: number;
+  ignored: number;
+  acceptance_rate: number | null;
+  last_reviewed_at: string | null;
+  content_opportunity: ContextRecommendationQualityLine;
+  aeo_gap: ContextRecommendationQualityLine;
+}
+
+interface ContextRecommendationQualityLine {
+  total_reviewed: number;
+  accepted: number;
+  ignored: number;
+  acceptance_rate: number | null;
+  last_reviewed_at: string | null;
+}
+
 export interface WorkspaceAgentContext {
   workspace_id: string;
   generated_at: string;
@@ -59,8 +169,21 @@ export async function getWorkspaceAgentContext(
   session: ProductWorkspaceSession,
   pool: Pool = getPool(),
 ): Promise<WorkspaceAgentContext> {
-  const state = await getAppState(pool, session);
-  const [reps, icps, plays, signals] = await Promise.all([
+  await assertProductWorkspaceAccess(session, pool);
+  const [
+    reps,
+    icps,
+    plays,
+    signals,
+    profile,
+    sources,
+    pendingApprovals,
+    conversationCount,
+    outcomeCount,
+    sendTraces,
+    channelAccounts,
+    recoveryQueue,
+  ] = await Promise.all([
     pool.query<ContextRepRow>(
       `select id, name, role::text as role, status::text as status, persona, autonomy
          from reps
@@ -94,12 +217,144 @@ export async function getWorkspaceAgentContext(
         limit 8`,
       [session.workspace_id],
     ),
+    pool.query<ContextProfileRow>(
+      `select id::text as company_id,
+              name as company_name,
+              domain::text as domain,
+              properties->>'website_url' as website_url,
+              industry,
+              description,
+              properties #>> '{exa_profile,summary}' as exa_summary,
+              coalesce(properties #> '{exa_profile,source_domains}', '[]'::jsonb) as exa_source_domains,
+              coalesce(properties #> '{exa_profile,market_terms}', '[]'::jsonb) as exa_market_terms,
+              coalesce(properties #> '{exa_profile,positioning_notes}', '[]'::jsonb) as exa_positioning_notes,
+              coalesce(properties #> '{exa_profile,competitor_mentions}', '[]'::jsonb) as exa_competitor_mentions,
+              coalesce(properties #> '{exa_profile,audience_terms}', '[]'::jsonb) as exa_audience_terms,
+              coalesce(properties #> '{exa_profile,proof_points}', '[]'::jsonb) as exa_proof_points,
+              coalesce(properties #> '{profile_intelligence,evidence_cards}', '[]'::jsonb) as exa_evidence_cards,
+              coalesce(properties #> '{profile_intelligence,evidence_source_ids}', '[]'::jsonb) as exa_evidence_source_ids,
+              coalesce(properties #>> '{exa_profile,result_count}', '0') as exa_result_count,
+              properties #>> '{exa_profile,enriched_at}' as exa_enriched_at
+         from graph_companies
+        where workspace_id = $1
+          and properties->>'profile_role' = 'workspace_company'
+        order by updated_at desc
+        limit 1`,
+      [session.workspace_id],
+    ),
+    pool.query<ContextSourceRow>(
+      `select gs.name,
+              gs.kind::text as kind,
+              gs.enabled,
+              count(s.id)::int as signal_count,
+              gs.last_polled_at,
+              null::text as latest_run_status
+         from graph_sources gs
+         left join signals s
+           on s.workspace_id = gs.workspace_id
+          and s.source_id = gs.id
+        where gs.workspace_id = $1
+        group by gs.id
+        order by gs.enabled desc, gs.created_at asc
+        limit 8`,
+      [session.workspace_id],
+    ),
+    pool.query<ContextPendingApprovalRow>(
+      `select id::text,
+              run_id::text,
+              kind,
+              reason
+         from workflow_approvals
+        where workspace_id = $1
+          and decision = 'pending'
+        order by created_at desc
+        limit 8`,
+      [session.workspace_id],
+    ),
+    pool.query<{ count: string }>(
+      `select count(*)::int as count
+         from conversations
+        where workspace_id = $1
+          and last_activity_at > now() - interval '30 days'`,
+      [session.workspace_id],
+    ),
+    pool.query<{ count: string }>(
+      `select count(*)::int as count
+         from outcomes
+        where workspace_id = $1
+          and occurred_at > now() - interval '30 days'`,
+      [session.workspace_id],
+    ),
+    pool.query<ContextSendTraceRow>(
+      `select m.subject,
+              gp.full_name as person_name,
+              gc.name as company_name,
+              m.status::text as status,
+              m.eval_score::text as eval_score,
+              m.eval_passed,
+              coalesce(m.properties->>'approval_policy', m.eval_notes->>'approval_policy') as approval_policy
+         from messages m
+         join conversations c
+           on c.workspace_id = m.workspace_id
+          and c.id = m.conversation_id
+         left join graph_persons gp
+           on gp.workspace_id = c.workspace_id
+          and gp.id = c.counterparty_person_id
+         left join graph_companies gc
+           on gc.workspace_id = c.workspace_id
+          and gc.id = c.counterparty_company_id
+        where m.workspace_id = $1
+          and m.direction = 'outbound'
+          and m.channel = 'email'
+        order by m.created_at desc
+        limit 8`,
+      [session.workspace_id],
+    ),
+    pool.query<ContextChannelAccount>(
+      `select ca.display_name,
+              ca.kind::text as kind,
+              ca.status::text as status,
+              ca.daily_cap,
+              ca.daily_used,
+              ca.properties->>'provider_status' as provider_status,
+              sd.domain::text as domain,
+              sd.warmup_state::text as warmup_state,
+              sd.current_daily_cap,
+              sd.bounce_rate_24h::text as bounce_rate_24h
+         from channel_accounts ca
+         left join sending_domains sd
+           on sd.workspace_id = ca.workspace_id
+          and sd.channel_account_id = ca.id
+        where ca.workspace_id = $1
+        order by ca.created_at asc
+        limit 8`,
+      [session.workspace_id],
+    ),
+    pool.query<ContextRecoveryRow>(
+      `select wr.id::text,
+              wr.workflow_name,
+              ws.step_name as failed_step_name,
+              coalesce(wr.error->>'message', ws.error->>'message') as error
+         from workflow_runs wr
+         left join lateral (
+           select step_name, error
+             from workflow_steps
+            where run_id = wr.id
+              and status = 'failed'
+            order by step_position desc, attempt desc
+            limit 1
+         ) ws on true
+        where wr.workspace_id = $1
+          and wr.status = 'failed'
+        order by wr.ended_at desc nulls last, wr.created_at desc
+        limit 8`,
+      [session.workspace_id],
+    ),
   ]);
 
-  const pendingApprovals = state.approvals.filter(
-    (approval) => approval.decision === "pending",
-  );
   const generatedAt = new Date().toISOString();
+  const profileState = mapContextProfile(profile.rows[0] ?? null);
+  const recommendationQuality = emptyRecommendationQuality();
   const markdown = [
     "# Bombsell Workspace Context",
     "",
@@ -124,20 +379,17 @@ export async function getWorkspaceAgentContext(
     `- Reps: ${reps.rows.length}`,
     `- ICPs: ${icps.rows.length}`,
     `- Plays: ${plays.rows.length}`,
-    `- Sources: ${state.sources.length}`,
-    `- Pending approvals: ${pendingApprovals.length}`,
+    `- Sources: ${sources.rows.length}`,
+    `- Pending approvals: ${pendingApprovals.rows.length}`,
     `- Recent signals: ${signals.rows.length}`,
-    `- Recent conversations: ${state.conversations.length}`,
-    `- Recent outcomes: ${state.outcomes.length}`,
-    `- Content review items: ${state.content_reviews.length}`,
-    `- AEO review items: ${state.aeo_reviews.length}`,
-    `- Recommendations reviewed: ${state.recommendation_quality.total_reviewed}`,
-    `- Recommendations kept: ${state.recommendation_quality.accepted}`,
-    `- Recommendations skipped: ${state.recommendation_quality.ignored}`,
-    `- LLM tokens used in 24h: ${state.llmUsage.used_tokens_24h}/${state.llmUsage.daily_token_cap}`,
+    `- Recent conversations: ${numericCount(conversationCount.rows[0]?.count)}`,
+    `- Recent outcomes: ${numericCount(outcomeCount.rows[0]?.count)}`,
+    `- Recommendations reviewed: ${recommendationQuality.total_reviewed}`,
+    `- Recommendations kept: ${recommendationQuality.accepted}`,
+    `- Recommendations skipped: ${recommendationQuality.ignored}`,
     "",
     "## Profile Intelligence",
-    formatProfileIntelligence(state.profile),
+    formatProfileIntelligence(profileState),
     "",
     "## Reps",
     listOrEmpty(
@@ -164,7 +416,7 @@ export async function getWorkspaceAgentContext(
     "",
     "## Sources",
     listOrEmpty(
-      state.sources.slice(0, 8).map(
+      sources.rows.slice(0, 8).map(
         (source) =>
           `- ${line(source.name)} kind=${source.kind} enabled=${source.enabled} signals=${source.signal_count} last_polled=${source.last_polled_at ?? "never"} latest_run=${source.latest_run_status ?? "-"}`,
       ),
@@ -180,38 +432,32 @@ export async function getWorkspaceAgentContext(
     "",
     "## Pending Review",
     listOrEmpty(
-      pendingApprovals.slice(0, 8).map(
+      pendingApprovals.rows.slice(0, 8).map(
         (approval) =>
           `- approval=${approval.id} run=${approval.run_id} kind=${approval.kind} reason=${line(approval.reason)}`,
       ),
     ),
     "",
-    "## Content Review",
-    formatBriefItems(state.content_reviews),
-    "",
-    "## AEO Review",
-    formatBriefItems(state.aeo_reviews),
-    "",
     "## Recommendation Learning",
-    formatRecommendationQuality(state.recommendation_quality),
+    formatRecommendationQuality(recommendationQuality),
     "",
     "## Recent Send Traces",
     listOrEmpty(
-      state.sendTraces.slice(0, 8).map(
+      sendTraces.rows.slice(0, 8).map(
         (trace) =>
           `- ${line(trace.subject)} to=${line(trace.person_name)} company=${line(trace.company_name)} status=${trace.status} judge=${trace.eval_score ?? "-"} passed=${trace.eval_passed ?? "-"} gate=${trace.approval_policy ?? "-"}`,
       ),
     ),
     "",
     "## Channel Readiness",
-    formatChannelReadiness(state.channelAccounts),
+    formatChannelReadiness(channelAccounts.rows),
     "",
     "## Email Deliverability",
-    formatEmailDeliverability(state.channelAccounts),
+    formatEmailDeliverability(channelAccounts.rows),
     "",
     "## Recovery",
     listOrEmpty(
-      state.recoveryQueue.slice(0, 8).map(
+      recoveryQueue.rows.slice(0, 8).map(
         (run) =>
           `- ${run.workflow_name} run=${run.id} failed_step=${run.failed_step_name ?? "-"} error=${line(run.error)}`,
       ),
@@ -226,12 +472,12 @@ export async function getWorkspaceAgentContext(
       reps: reps.rows.length,
       icps: icps.rows.length,
       plays: plays.rows.length,
-      sources: state.sources.length,
-      pending_approvals: pendingApprovals.length,
+      sources: sources.rows.length,
+      pending_approvals: pendingApprovals.rows.length,
       recent_signals: signals.rows.length,
-      recent_conversations: state.conversations.length,
-      recent_outcomes: state.outcomes.length,
-      reviewed_recommendations: state.recommendation_quality.total_reviewed,
+      recent_conversations: numericCount(conversationCount.rows[0]?.count),
+      recent_outcomes: numericCount(outcomeCount.rows[0]?.count),
+      reviewed_recommendations: recommendationQuality.total_reviewed,
     },
   };
 }
@@ -240,12 +486,7 @@ function listOrEmpty(items: string[]): string {
   return items.length > 0 ? items.join("\n") : "- none";
 }
 
-type ContextChannelAccount = Awaited<ReturnType<typeof getAppState>>["channelAccounts"][number];
-type ContextProfile = Awaited<ReturnType<typeof getAppState>>["profile"];
-type ContextBriefItem = Awaited<ReturnType<typeof getAppState>>["content_reviews"][number];
-type ContextRecommendationQuality = Awaited<ReturnType<typeof getAppState>>["recommendation_quality"];
-
-export function formatProfileIntelligence(profile: ContextProfile): string {
+export function formatProfileIntelligence(profile: ContextProfile | null): string {
   if (!profile) return "- none";
   return [
     `- Company: ${line(profile.company_name)}`,
@@ -315,21 +556,71 @@ export function formatEmailDeliverability(accounts: readonly ContextChannelAccou
   );
 }
 
-function formatBriefItems(items: readonly ContextBriefItem[]): string {
-  return listOrEmpty(
-    items.slice(0, 8).map((item) => {
-      const proof = item.url ? ` proof=${item.url}` : "";
-      const evidence = item.evidence_source_ids?.length
-        ? ` evidence=${item.evidence_source_ids.length}`
-        : "";
-      const decision = item.decision ? ` decision=${item.decision}` : "";
-      return `- ${line(item.title)}: ${line(item.detail)}${proof}${evidence}${decision}`;
-    }),
-  );
-}
-
 function line(value: unknown): string {
   if (typeof value !== "string") return "-";
   const compact = value.replace(/\s+/g, " ").trim();
   return compact.length > 180 ? `${compact.slice(0, 177)}...` : compact;
+}
+
+function mapContextProfile(row: ContextProfileRow | null): ContextProfile | null {
+  if (!row) return null;
+  return {
+    company_id: row.company_id,
+    company_name: row.company_name,
+    domain: row.domain,
+    website_url: row.website_url,
+    industry: row.industry,
+    description: row.description,
+    exa_summary: row.exa_summary,
+    exa_source_domains: stringArray(row.exa_source_domains),
+    exa_market_terms: stringArray(row.exa_market_terms),
+    exa_positioning_notes: stringArray(row.exa_positioning_notes),
+    exa_competitor_mentions: stringArray(row.exa_competitor_mentions),
+    exa_audience_terms: stringArray(row.exa_audience_terms),
+    exa_proof_points: stringArray(row.exa_proof_points),
+    exa_evidence_cards: evidenceCards(row.exa_evidence_cards),
+    exa_evidence_source_ids: stringArray(row.exa_evidence_source_ids),
+    exa_result_count: numericCount(row.exa_result_count),
+    exa_enriched_at: row.exa_enriched_at,
+  };
+}
+
+function emptyRecommendationQuality(): ContextRecommendationQuality {
+  const empty = {
+    total_reviewed: 0,
+    accepted: 0,
+    ignored: 0,
+    acceptance_rate: null,
+    last_reviewed_at: null,
+  };
+  return {
+    ...empty,
+    content_opportunity: { ...empty },
+    aeo_gap: { ...empty },
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function evidenceCards(value: unknown): ContextProfile["exa_evidence_cards"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    return [{
+      title: typeof record.title === "string" ? record.title : null,
+      url: typeof record.url === "string" ? record.url : null,
+      source_domain: typeof record.source_domain === "string" ? record.source_domain : null,
+      snippet: typeof record.snippet === "string" ? record.snippet : null,
+      published_at: typeof record.published_at === "string" ? record.published_at : null,
+    }];
+  });
+}
+
+function numericCount(value: string | number | null | undefined): number {
+  const parsed = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }

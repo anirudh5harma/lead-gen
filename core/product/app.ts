@@ -182,6 +182,7 @@ export const DEFAULT_PRODUCT_USER_ID = "00000000-0000-4000-8000-000000000001";
 export const DEFAULT_PRODUCT_WORKSPACE_SLUG = DEFAULT_WORKSPACE_SLUG;
 const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
 const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configuration.v1";
+const CONTACT_RESOLUTION_REPAIR_KEY = "verified-contact-v2";
 const RUNNABLE_WORKFLOW_NAMES = [
   CONTACT_RESOLUTION_WORKFLOW,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
@@ -743,6 +744,7 @@ export interface DispatchOptions {
   limit?: number;
   leaseMs?: number;
   leaseOwner?: string;
+  signal_id?: string;
 }
 
 export interface WorkflowLeaseOptions {
@@ -5588,16 +5590,47 @@ async function startContactResolution(
   return engine.runtime.start<ContactResolutionInput, ContactResolutionOutput>({
     workspace_id: input.workspace_id,
     workflow_name: CONTACT_RESOLUTION_WORKFLOW,
-    idempotency_key:
-      `contact:${input.signal_id}:play:${input.play_id}:channel:${input.channel}`,
+    idempotency_key: contactResolutionIdempotencyKey(input),
     correlation_id: input.trigger_event_id ?? undefined,
     causation_id: input.trigger_event_id ?? undefined,
     input,
   });
 }
 
+function contactResolutionIdempotencyKey(input: ContactResolutionInput): string {
+  const base =
+    `contact:${input.signal_id}:play:${input.play_id}:channel:${input.channel}`;
+  const repairKey = sanitizeContactResolutionRepairKey(input.repair_key);
+  return repairKey ? `${base}:repair:${repairKey}` : base;
+}
+
+function sanitizeContactResolutionRepairKey(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const safe = trimmed.replace(/[^a-zA-Z0-9._:-]/g, "_").slice(0, 64);
+  return safe || null;
+}
+
 function contactChannelForTarget(targetChannel: string): ContactChannel {
   return targetChannel === "email" ? "email" : "linkedin";
+}
+
+function contactResolverRepairKey(row: {
+  resolver_run_id: string | null;
+  resolver_idempotency_key: string | null;
+  resolver_status: string | null;
+  resolver_output: Record<string, unknown> | null;
+}): string | null {
+  if (!row.resolver_run_id) return null;
+  if (row.resolver_idempotency_key?.endsWith(`:repair:${CONTACT_RESOLUTION_REPAIR_KEY}`)) {
+    return null;
+  }
+  if (row.resolver_status === "failed") return CONTACT_RESOLUTION_REPAIR_KEY;
+  if (row.resolver_status !== "completed") return null;
+  if (row.resolver_output?.decision !== "deferred") return null;
+  if (typeof row.resolver_output?.selected_person_id === "string") return null;
+  return CONTACT_RESOLUTION_REPAIR_KEY;
 }
 
 export async function dispatchSignalPlaysOnce(
@@ -5633,6 +5666,9 @@ export async function dispatchSignalPlaysOnce(
     company_id: string | null;
     resolved_person_id: string | null;
     resolver_run_id: string | null;
+    resolver_idempotency_key: string | null;
+    resolver_status: string | null;
+    resolver_output: Record<string, unknown> | null;
     play_id: string;
     rep_id: string;
     workflow_name: string;
@@ -5646,6 +5682,9 @@ export async function dispatchSignalPlaysOnce(
             s.related_company_id::text as company_id,
             resolved.payload->>'selected_person_id' as resolved_person_id,
             resolver.id::text as resolver_run_id,
+            resolver.idempotency_key as resolver_idempotency_key,
+            resolver.status as resolver_status,
+            resolver.output as resolver_output,
             p.id as play_id,
             p.default_rep_id as rep_id,
             coalesce(p.compiled->>'workflow', $1) as workflow_name,
@@ -5684,23 +5723,60 @@ export async function dispatchSignalPlaysOnce(
          on wr.workspace_id = e.workspace_id
         and wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
         and wr.idempotency_key = concat('signal:', e.payload->>'signal_id', ':play:', p.id::text)
-       left join workflow_runs resolver
-         on resolver.workspace_id = e.workspace_id
-        and resolver.workflow_name = $5
-        and resolver.idempotency_key = concat(
-          'contact:', e.payload->>'signal_id',
-          ':play:', p.id::text,
-          ':channel:',
-          case
-            when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
-            else 'linkedin'
-          end
-        )
+       left join lateral (
+         select wr.id,
+                wr.idempotency_key,
+                wr.status::text as status,
+                wr.output
+           from workflow_runs wr
+          where wr.workspace_id = e.workspace_id
+            and wr.workflow_name = $5
+            and wr.idempotency_key in (
+              concat(
+                'contact:', e.payload->>'signal_id',
+                ':play:', p.id::text,
+                ':channel:',
+                case
+                  when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
+                  else 'linkedin'
+                end
+              ),
+              concat(
+                'contact:', e.payload->>'signal_id',
+                ':play:', p.id::text,
+                ':channel:',
+                case
+                  when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
+                  else 'linkedin'
+                end,
+                ':repair:',
+                $6::text
+              )
+            )
+          order by
+            case
+              when wr.idempotency_key = concat(
+                'contact:', e.payload->>'signal_id',
+                ':play:', p.id::text,
+                ':channel:',
+                case
+                  when coalesce(p.compiled->>'channel', 'email') = 'email' then 'email'
+                  else 'linkedin'
+                end,
+                ':repair:',
+                $6::text
+              ) then 0
+              else 1
+            end,
+            wr.created_at desc
+          limit 1
+       ) resolver on true
       where e.event_type = 'signal.matched'
         and wr.id is null
         and coalesce(p.compiled->>'workflow', $1) = any($2::text[])
         and s.related_company_id is not null
         and ($4::uuid is null or e.workspace_id = $4)
+        and ($7::uuid is null or s.id = $7)
       order by e.occurred_at asc
       limit $3`,
     [
@@ -5709,6 +5785,8 @@ export async function dispatchSignalPlaysOnce(
       opts.limit ?? 25,
       session?.workspace_id ?? null,
       CONTACT_RESOLUTION_WORKFLOW,
+      CONTACT_RESOLUTION_REPAIR_KEY,
+      opts.signal_id ?? null,
     ],
   );
 
@@ -5717,8 +5795,9 @@ export async function dispatchSignalPlaysOnce(
     const simulate = simulateOutcomeFromSignal(row.signal_properties);
     const contactChannel = contactChannelForTarget(row.target_channel);
     let personId = row.resolved_person_id;
+    const resolverRepairKey = contactResolverRepairKey(row);
     if (!personId) {
-      if (row.resolver_run_id) continue;
+      if (row.resolver_run_id && !resolverRepairKey) continue;
       if (!row.company_id) continue;
       const resolver = await startContactResolution(engine, {
         workspace_id: row.workspace_id,
@@ -5728,6 +5807,7 @@ export async function dispatchSignalPlaysOnce(
         rep_id: row.rep_id,
         channel: contactChannel,
         trigger_event_id: row.event_id,
+        repair_key: resolverRepairKey,
       });
       personId = resolver.output?.selected_person_id ?? null;
       if (!personId) continue;
