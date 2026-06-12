@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Pool } from "pg";
 import {
+  loadQualifiedSignalEmailReadiness,
   loadQualifiedSignalWorkbench,
   normalizeContactCandidates,
 } from "../core/product/qualified-signals.ts";
@@ -160,6 +161,40 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   assert.match(sql, /cardinality\(gp\.emails\) > 0/);
   assert.match(sql, /meta->>'verified' = 'true'/);
   assert.match(sql, /array_prepend\(ev\.email::citext, array_remove\(gp\.emails, ev\.email::citext\)\)/);
+});
+
+test("qualified signal email readiness requires connected Outlook reply sync", async () => {
+  const ready = await loadQualifiedSignalEmailReadiness(fakePool([{
+    connected_outlook: "1",
+    active_subscriptions: "1",
+    errored_connected: "0",
+    connected_managed_domains: "0",
+  }]), "00000000-0000-4000-8000-000000000001");
+
+  assert.equal(ready.ready, true);
+  assert.equal(ready.status_label, "Ready");
+
+  const missingInbox = await loadQualifiedSignalEmailReadiness(fakePool([{
+    connected_outlook: "0",
+    active_subscriptions: "0",
+    errored_connected: "0",
+    connected_managed_domains: "7",
+  }]), "00000000-0000-4000-8000-000000000001");
+
+  assert.equal(missingInbox.ready, false);
+  assert.equal(missingInbox.status_label, "Connect inbox");
+  assert.match(missingInbox.detail, /No connected Outlook inbox/);
+
+  const missingSync = await loadQualifiedSignalEmailReadiness(fakePool([{
+    connected_outlook: "2",
+    active_subscriptions: "0",
+    errored_connected: "0",
+    connected_managed_domains: "0",
+  }]), "00000000-0000-4000-8000-000000000001");
+
+  assert.equal(missingSync.ready, false);
+  assert.equal(missingSync.status_label, "Needs sync");
+  assert.match(missingSync.detail, /0\/2 Outlook inboxes/);
 });
 
 test("normalizeContactCandidates tolerates malformed provider payloads", () => {

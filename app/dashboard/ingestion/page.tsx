@@ -4,8 +4,10 @@ import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/Su
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
+  loadQualifiedSignalEmailReadiness,
   loadQualifiedSignalWorkbench,
   type QualifiedSignalContact,
+  type QualifiedSignalEmailReadiness,
   type QualifiedSignalItem,
 } from "@/core/product/qualified-signals.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
@@ -30,7 +32,11 @@ export default async function SignalsPage() {
     );
   }
 
-  const workbench = await loadQualifiedSignalWorkbench(getPool(), workspace.id);
+  const pool = getPool();
+  const [workbench, emailReadiness] = await Promise.all([
+    loadQualifiedSignalWorkbench(pool, workspace.id),
+    loadQualifiedSignalEmailReadiness(pool, workspace.id),
+  ]);
 
   return (
     <div className="space-y-2">
@@ -45,6 +51,7 @@ export default async function SignalsPage() {
               <HeroStat label="With contacts" value={workbench.stats.with_verified_contacts} />
               <HeroStat label="Drafted" value={workbench.stats.with_email_draft} />
               <HeroStat label="Review" value={workbench.stats.ready_for_review} />
+              <HeroStat label="Inbox" value={emailReadiness.status_label} />
             </div>
             <div className="flex flex-wrap gap-2">
               <form action={runSignalAggregatorAction}>
@@ -74,6 +81,8 @@ export default async function SignalsPage() {
         }
       />
 
+      {!emailReadiness.ready ? <EmailReadinessBanner readiness={emailReadiness} /> : null}
+
       <SurfaceSection title="Qualified list">
         {workbench.signals.length === 0 ? (
           <EmptyState
@@ -89,6 +98,39 @@ export default async function SignalsPage() {
           </div>
         )}
       </SurfaceSection>
+    </div>
+  );
+}
+
+function EmailReadinessBanner({
+  readiness,
+}: {
+  readiness: QualifiedSignalEmailReadiness;
+}) {
+  const hasOutlook = readiness.connected_outlook_accounts > 0;
+  return (
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-4 py-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name={hasOutlook ? "sync_problem" : "mail"} size={17} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            {hasOutlook ? "Outlook reply sync needs attention" : "Connect Outlook to send"}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+            {readiness.detail}
+          </p>
+        </div>
+      </div>
+      <Link
+        href={hasOutlook ? "/dashboard/deliverability" : "/api/auth/outlook"}
+        prefetch={false}
+        className="inline-flex min-h-9 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+      >
+        <Icon name={hasOutlook ? "health_and_safety" : "mail"} size={15} />
+        {hasOutlook ? "Open deliverability" : "Connect Outlook"}
+      </Link>
     </div>
   );
 }

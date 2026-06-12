@@ -66,6 +66,16 @@ export interface QualifiedSignalWorkbench {
   };
 }
 
+export interface QualifiedSignalEmailReadiness {
+  ready: boolean;
+  connected_outlook_accounts: number;
+  active_outlook_subscriptions: number;
+  errored_outlook_accounts: number;
+  connected_managed_domain_accounts: number;
+  status_label: string;
+  detail: string;
+}
+
 interface QualifiedSignalRow {
   id: string;
   kind: string;
@@ -97,6 +107,72 @@ interface QualifiedSignalRow {
   draft_eval_passed: boolean | null;
   draft_created_at: Date | null;
   pending_approval_id: string | null;
+}
+
+interface EmailReadinessRow {
+  connected_outlook: string | number;
+  active_subscriptions: string | number;
+  errored_connected: string | number;
+  connected_managed_domains: string | number;
+}
+
+export async function loadQualifiedSignalEmailReadiness(
+  pool: Pool,
+  workspaceId: string,
+): Promise<QualifiedSignalEmailReadiness> {
+  const { rows } = await pool.query<EmailReadinessRow>(
+    `select
+        count(*) filter (
+          where kind = 'oauth_outlook'
+            and status = 'connected'
+        ) as connected_outlook,
+        count(*) filter (
+          where kind = 'oauth_outlook'
+            and status = 'connected'
+            and properties -> 'outlook_subscription' is not null
+            and properties -> 'outlook_subscription' ->> 'clientState' is not null
+            and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
+            and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
+                  > now() + interval '15 minutes'
+        ) as active_subscriptions,
+        count(*) filter (
+          where kind = 'oauth_outlook'
+            and status = 'connected'
+            and last_error is not null
+        ) as errored_connected,
+        count(*) filter (
+          where kind = 'email_domain'
+            and status = 'connected'
+        ) as connected_managed_domains
+       from channel_accounts
+      where workspace_id = $1
+        and kind in ('oauth_outlook', 'email_domain')`,
+    [workspaceId],
+  );
+  const row = rows[0] ?? {
+    connected_outlook: 0,
+    active_subscriptions: 0,
+    errored_connected: 0,
+    connected_managed_domains: 0,
+  };
+  const connected = numericCount(row.connected_outlook);
+  const activeSubscriptions = numericCount(row.active_subscriptions);
+  const errored = numericCount(row.errored_connected);
+  const managedDomains = numericCount(row.connected_managed_domains);
+  const ready = connected > 0 && activeSubscriptions > 0 && errored === 0;
+  return {
+    ready,
+    connected_outlook_accounts: connected,
+    active_outlook_subscriptions: activeSubscriptions,
+    errored_outlook_accounts: errored,
+    connected_managed_domain_accounts: managedDomains,
+    status_label: ready ? "Ready" : connected > 0 ? "Needs sync" : "Connect inbox",
+    detail: ready
+      ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync.`
+      : connected > 0
+        ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync. Approved drafts wait until sync is healthy.`
+        : "No connected Outlook inbox. Approved drafts wait until a Microsoft 365 mailbox is connected.",
+  };
 }
 
 export async function loadQualifiedSignalWorkbench(
@@ -315,6 +391,11 @@ export async function loadQualifiedSignalWorkbench(
       ).length,
     },
   };
+}
+
+function numericCount(value: string | number | null | undefined): number {
+  const parsed = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
