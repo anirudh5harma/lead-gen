@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 
 interface NavItem {
   href: string;
@@ -132,14 +133,14 @@ export function DashboardShell({
               </form>
             ) : null}
             <form action="/auth/sign-out" method="post">
-              <button
-                type="submit"
+              <PendingSubmitButton
                 aria-label="Sign out"
                 title="Sign out"
                 className="relative grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
+                pendingLabel=""
               >
                 <Icon name="logout" size={17} />
-              </button>
+              </PendingSubmitButton>
             </form>
           </div>
         </div>

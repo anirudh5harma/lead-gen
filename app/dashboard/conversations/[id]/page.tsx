@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { EmptyState } from "@/components/dashboard/Shell";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   getConversationTrustTrace,
   type ConversationTrustApproval,
@@ -153,23 +154,23 @@ function PendingApprovalPanel({
             className="rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
           />
         </label>
-        <button
-          type="submit"
+        <PendingSubmitButton
           className="inline-flex min-h-10 items-center justify-center rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+          pendingLabel="Approving"
         >
           Approve
-        </button>
+        </PendingSubmitButton>
       </form>
       <form action={decideApprovalWithDraftAction} className="mt-3">
         <input type="hidden" name="return_to" value={returnTo} />
         <input type="hidden" name="approval_id" value={approval.id} />
         <input type="hidden" name="decision" value="rejected" />
-        <button
-          type="submit"
+        <PendingSubmitButton
           className="inline-flex min-h-10 w-full items-center justify-center rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+          pendingLabel="Rejecting"
         >
           Reject
-        </button>
+        </PendingSubmitButton>
       </form>
     </div>
   );

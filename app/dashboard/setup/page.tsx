@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { ProfileIntelligence } from "@/components/dashboard/ProfileIntelligence";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import {
@@ -143,13 +144,13 @@ export default async function SetupPage() {
             />
           </div>
           <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
+            <PendingSubmitButton
               className="inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+              icon="check"
+              pendingLabel="Saving company"
             >
-              <Icon name="check" size={16} />
               Save company
-            </button>
+            </PendingSubmitButton>
           </div>
         </form>
       </SurfaceSection>
@@ -203,10 +204,13 @@ export default async function SetupPage() {
           <input type="hidden" name="signal_kind" value="hiring" />
           <input type="hidden" name="match_threshold" value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"} />
           <input type="hidden" name="rep_name" value={rep?.name ?? "Sampark"} />
-          <button className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
-            <Icon name="check" size={16} />
+          <PendingSubmitButton
+            className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+            icon="check"
+            pendingLabel="Saving guidance"
+          >
             Save guidance
-          </button>
+          </PendingSubmitButton>
         </form>
       </SurfaceSection>
 
@@ -258,10 +262,13 @@ function NoWorkspaceSetup() {
           <input type="hidden" name="return_to" value="/dashboard/setup" />
           <Field name="workspace_name" label="Workspace name" defaultValue="Bombsell Workspace" />
           <Field name="workspace_slug" label="Workspace slug" defaultValue="bombsell-workspace" />
-          <button className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
-            <Icon name="add_business" size={16} />
+          <PendingSubmitButton
+            className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+            icon="add_business"
+            pendingLabel="Creating workspace"
+          >
             Create workspace
-          </button>
+          </PendingSubmitButton>
         </form>
       </SurfaceSection>
     </div>

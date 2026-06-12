@@ -262,6 +262,19 @@ html, body {
 .btn-solid:hover { background: var(--color-accent-hi); }
 .btn-solid:active { transform: translateY(0.5px); }
 
+.pending-submit-spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: pending-submit-spin 700ms linear infinite;
+}
+
+@keyframes pending-submit-spin {
+  to { transform: rotate(360deg); }
+}
+
 .btn-quiet {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   height: 46px; padding: 0 1.25rem;

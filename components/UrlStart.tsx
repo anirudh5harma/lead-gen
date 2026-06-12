@@ -1,4 +1,5 @@
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 
 export default function UrlStart() {
   return (
@@ -15,10 +16,14 @@ export default function UrlStart() {
           aria-label="Your company website"
           className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--color-text-1)] outline-none placeholder:text-[var(--color-text-4)]"
         />
-        <button type="submit" className="btn-solid h-11 shrink-0">
+        <PendingSubmitButton
+          className="btn-solid h-11 shrink-0"
+          icon="arrow_forward"
+          iconSize={17}
+          pendingLabel="Starting"
+        >
           Get started
-          <Icon name="arrow_forward" size={17} />
-        </button>
+        </PendingSubmitButton>
       </div>
       <p className="mt-2.5 pl-1 text-[12.5px] text-[var(--color-text-3)]">
         We read your site to draft your profile, audience, and voice.

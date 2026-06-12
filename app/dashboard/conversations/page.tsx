@@ -2,6 +2,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 import { decideApprovalWithDraftAction } from "../actions";
@@ -255,25 +256,27 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
               <input type="hidden" name="return_to" value="/dashboard/conversations" />
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="approved" />
-              <button
-                type="submit"
+              <PendingSubmitButton
                 className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+                icon="check"
+                iconSize={14}
+                pendingLabel="Approving"
               >
-                <Icon name="check" size={14} />
                 Approve
-              </button>
+              </PendingSubmitButton>
             </form>
             <form action={decideApprovalWithDraftAction}>
               <input type="hidden" name="return_to" value="/dashboard/conversations" />
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="rejected" />
-              <button
-                type="submit"
+              <PendingSubmitButton
                 className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                icon="close"
+                iconSize={14}
+                pendingLabel="Rejecting"
               >
-                <Icon name="close" size={14} />
                 Reject
-              </button>
+              </PendingSubmitButton>
             </form>
           </>
         ) : null}

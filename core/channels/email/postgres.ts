@@ -98,6 +98,7 @@ async function evaluateRecipientFrequency(
   conversation: {
     workspace_id: string;
     counterparty_person_id: string;
+    counterparty_email?: string | null;
   },
   draft: ChannelDraft,
   now: Date,
@@ -119,7 +120,20 @@ async function evaluateRecipientFrequency(
          on c.id = m.conversation_id
         and c.workspace_id = m.workspace_id
       where m.workspace_id = $1
-        and c.counterparty_person_id = $2
+        and (
+          c.counterparty_person_id = $2
+          or (
+            $5::text is not null
+            and exists (
+              select 1
+                from graph_persons gp,
+                     lateral unnest(gp.emails::text[]) as email(value)
+               where gp.workspace_id = m.workspace_id
+                 and gp.id = c.counterparty_person_id
+                 and lower(email.value) = lower($5::text)
+            )
+          )
+        )
         and m.id <> $3
         and m.channel = 'email'
         and m.direction = 'outbound'
@@ -130,6 +144,7 @@ async function evaluateRecipientFrequency(
       conversation.counterparty_person_id,
       draft.message_id,
       cutoff,
+      conversation.counterparty_email?.trim() || null,
     ],
   );
   const lastContactedAt = result.rows[0]?.last_contacted_at;

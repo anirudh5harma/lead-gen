@@ -1,6 +1,6 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
-import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   getProductRecommendationSurface,
   verifiedProductWorkspaceSession,
@@ -39,8 +39,9 @@ export default async function AeoPage() {
   );
   const reviews = recommendations.reviews;
   const learning = recommendations.learning;
+  const suggestionsToReview = reviews.filter((item) => !item.decision && !item.outcome_id);
+  const savedSuggestions = reviews.filter((item) => item.decision === "accepted");
   const recorded = reviews.filter((item) => item.outcome_id).length;
-  const open = reviews.length - recorded;
 
   return (
     <div className="space-y-2">
@@ -51,7 +52,8 @@ export default async function AeoPage() {
         meta={
           <div className="grid gap-4">
             <div className="flex flex-wrap gap-2">
-              <HeroStat label="Open suggestions" value={open} />
+              <HeroStat label="To review" value={suggestionsToReview.length} />
+              <HeroStat label="Saved" value={savedSuggestions.length} />
               <HeroStat label="Acted on" value={recorded} />
             </div>
             <form action={auditAeoAction} className="flex max-w-2xl flex-col gap-2 sm:flex-row">
@@ -67,20 +69,20 @@ export default async function AeoPage() {
                 placeholder="best tools, alternatives, category questions"
                 className="min-h-10 min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 text-sm text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
               />
-              <button
-                type="submit"
+              <PendingSubmitButton
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+                icon="neurology"
+                pendingLabel="Auditing"
               >
-                <Icon name="neurology" size={16} />
                 Audit AEO
-              </button>
+              </PendingSubmitButton>
             </form>
           </div>
         }
       />
 
       <SurfaceSection
-        title="Suggestions to earn a citation"
+        title="Suggestions to review"
         action={
           <RecommendationLearningBadge
             accepted={learning.accepted}
@@ -89,15 +91,15 @@ export default async function AeoPage() {
           />
         }
       >
-        {reviews.length === 0 ? (
+        {suggestionsToReview.length === 0 ? (
           <EmptyState
-            title="No suggestions yet"
-            hint="Bodh runs prompts against ChatGPT, Perplexity, and AI Overviews to find category questions where you are missing, mis-described, or out-cited. Tune the profile to start."
+            title="No new suggestions"
+            hint="Fresh answer gaps will land here after an audit. Saved suggestions stay in their own section."
             cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
           />
         ) : (
           <RecommendationReviewGrid
-            items={reviews}
+            items={suggestionsToReview}
             icon="travel_explore"
             surface="aeo"
             outcomeKind="engagement_lift"
@@ -107,37 +109,23 @@ export default async function AeoPage() {
         )}
       </SurfaceSection>
 
-      <SurfaceSection title="How Bodh works">
-        <ol className="grid gap-3 text-[14px] leading-6 text-[var(--color-text-2)] sm:grid-cols-3">
-          <Step
-            num="01"
-            title="Ask the engines"
-            body="Bodh prompts ChatGPT, Perplexity, and Google AI Overviews with the questions your buyers actually ask."
+      <SurfaceSection title="Saved suggestions">
+        {savedSuggestions.length === 0 ? (
+          <EmptyState
+            title="Nothing saved yet"
+            hint="Use a suggestion to keep it here while you draft the answer, update the page, or record citation lift."
           />
-          <Step
-            num="02"
-            title="Find the gap"
-            body="Where you are absent, mis-named, or out-cited, that becomes a suggestion: a page, a schema, an answer."
+        ) : (
+          <RecommendationReviewGrid
+            items={savedSuggestions}
+            icon="article"
+            surface="aeo"
+            outcomeKind="engagement_lift"
+            outcomeLabel="Mark cited"
+            externalRefLabel="Link to the citation"
           />
-          <Step
-            num="03"
-            title="Record the win"
-            body="When the engine starts citing you, mark it. Bodh learns which suggestions actually move visibility."
-          />
-        </ol>
+        )}
       </SurfaceSection>
     </div>
-  );
-}
-
-function Step({ num, title, body }: { num: string; title: string; body: string }) {
-  return (
-    <li className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
-      <p className="text-[10.5px] font-medium uppercase tracking-[0.2em] text-[var(--color-text-3)]">
-        {num}
-      </p>
-      <p className="mt-2 text-[14px] font-semibold text-[var(--color-text-1)]">{title}</p>
-      <p className="mt-1.5 text-[13px] leading-6 text-[var(--color-text-3)]">{body}</p>
-    </li>
   );
 }

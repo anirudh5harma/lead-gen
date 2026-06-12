@@ -188,7 +188,12 @@ const RUNNABLE_WORKFLOW_NAMES = [
   WORKSPACE_POLL_WORKFLOW,
   SENDING_DOMAIN_PROVISIONING_WORKFLOW,
   SENDING_DOMAIN_WARMUP_WORKFLOW,
+  "content.opportunity.exa",
+  "aeo.audit.exa",
 ] as const;
+const EXA_CONTENT_OPPORTUNITY_WORKFLOW_NAME = "content.opportunity.exa";
+const EXA_AEO_AUDIT_WORKFLOW_NAME = "aeo.audit.exa";
+const DEFAULT_RECOMMENDATION_RESEARCH_CADENCE_MS = 24 * 60 * 60 * 1000;
 type WorkspaceRoleValue = "owner" | "admin" | "member";
 type ProductEmailTransport = "resend" | "dry-run" | "unconfigured";
 
@@ -5300,6 +5305,7 @@ async function groundDraftWithExaForWorkflow(
   engine: ProductEngine,
   input: DraftGroundingProviderInput,
 ): Promise<ProductExaResearchResult | null> {
+  if (!process.env.EXA_API_KEY?.trim()) return null;
   const user_id = await getWorkflowUserId(engine.pool, input.workspace_id);
   if (!user_id) return null;
   return researchWorkspaceWithExa(
@@ -5354,6 +5360,15 @@ function registerSendingDomainWarmupWorkflow(engine: ProductEngine): void {
       bus: engine.bus,
     }),
   );
+}
+
+async function registerExaRecommendationWorkflows(engine: ProductEngine): Promise<void> {
+  const {
+    createExaAeoAuditWorkflow,
+    createExaContentOpportunityWorkflow,
+  } = await import("../exa/workflows.ts");
+  engine.runtime.register(createExaContentOpportunityWorkflow());
+  engine.runtime.register(createExaAeoAuditWorkflow());
 }
 
 function createDatabaseBackedEmailChannel(
@@ -5974,6 +5989,223 @@ export async function dispatchWorkspaceSourcePollsOnce(
   return dispatched;
 }
 
+interface RecommendationResearchWorkspaceRow {
+  workspace_id: string;
+  user_id: string;
+  workspace_name: string;
+  company_name: string | null;
+  domain: string | null;
+  website_url: string | null;
+  industry: string | null;
+  description: string | null;
+  last_content_event_at: Date | null;
+  last_content_run_at: Date | null;
+  last_aeo_event_at: Date | null;
+  last_aeo_run_at: Date | null;
+}
+
+type RecommendationResearchIntent = "content_research" | "aeo_audit";
+
+function recommendationResearchCadenceMs(): number {
+  const hours = Number(process.env.BOMBSELL_RECOMMENDATION_RESEARCH_CADENCE_HOURS);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return DEFAULT_RECOMMENDATION_RESEARCH_CADENCE_MS;
+  }
+  return Math.max(60 * 60 * 1000, Math.trunc(hours * 60 * 60 * 1000));
+}
+
+function latestRecommendationResearchAt(
+  first: Date | null,
+  second: Date | null,
+): Date | null {
+  if (!first) return second;
+  if (!second) return first;
+  return first.getTime() > second.getTime() ? first : second;
+}
+
+function isRecommendationResearchDue(
+  lastAt: Date | null,
+  now: Date,
+  cadenceMs: number,
+): boolean {
+  return !lastAt || now.getTime() - lastAt.getTime() >= cadenceMs;
+}
+
+function recommendationResearchQuery(
+  row: RecommendationResearchWorkspaceRow,
+  intent: RecommendationResearchIntent,
+): string {
+  const company = row.company_name ?? row.workspace_name;
+  const context = [
+    company,
+    row.domain ? `domain ${row.domain}` : null,
+    row.industry ? `industry ${row.industry}` : null,
+    row.description ? `profile ${row.description}` : null,
+  ]
+    .filter(Boolean)
+    .join("; ");
+
+  if (intent === "aeo_audit") {
+    return [
+      context,
+      "Find answer-engine visibility gaps, buyer questions, comparison pages, missing proof, and pages this company should create or improve.",
+    ].join(". ");
+  }
+
+  return [
+    context,
+    "Find fresh buyer questions, market narratives, objection patterns, proof gaps, and competitor angles worth turning into short founder-led posts.",
+  ].join(". ");
+}
+
+export async function dispatchWorkspaceRecommendationResearchOnce(
+  opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
+): Promise<number> {
+  if (!process.env.EXA_API_KEY?.trim()) return 0;
+
+  const engine = await getProductEngine();
+  if (session) await assertProductWorkspaceAccess(session, engine.pool);
+  const limit = Math.max(1, Math.trunc(opts.limit ?? 25));
+  const { rows } = await engine.pool.query<RecommendationResearchWorkspaceRow>(
+    `with primary_members as (
+       select distinct on (workspace_id)
+              workspace_id,
+              user_id
+         from workspace_members
+        where accepted_at is not null
+        order by workspace_id,
+                 case role when 'owner' then 0 when 'admin' then 1 else 2 end,
+                 invited_at asc
+     )
+     select w.id::text as workspace_id,
+            pm.user_id::text as user_id,
+            w.name as workspace_name,
+            profile.name as company_name,
+            profile.domain::text as domain,
+            profile.properties->>'website_url' as website_url,
+            profile.industry,
+            profile.description,
+            content_event.occurred_at as last_content_event_at,
+            content_run.created_at as last_content_run_at,
+            aeo_event.occurred_at as last_aeo_event_at,
+            aeo_run.created_at as last_aeo_run_at
+       from workspaces w
+       join primary_members pm on pm.workspace_id = w.id
+       left join lateral (
+         select name, domain, industry, description, properties
+           from graph_companies
+          where workspace_id = w.id
+            and properties->>'profile_role' = 'workspace_company'
+          order by updated_at desc, created_at desc
+          limit 1
+       ) profile on true
+       left join lateral (
+         select occurred_at
+           from events
+          where workspace_id = w.id
+            and event_type = 'content.opportunity.discovered'
+          order by occurred_at desc
+          limit 1
+       ) content_event on true
+       left join lateral (
+         select created_at
+           from workflow_runs
+          where workspace_id = w.id
+            and workflow_name = $3
+          order by created_at desc
+          limit 1
+       ) content_run on true
+       left join lateral (
+         select occurred_at
+           from events
+          where workspace_id = w.id
+            and event_type = 'aeo.audit.completed'
+          order by occurred_at desc
+          limit 1
+       ) aeo_event on true
+       left join lateral (
+         select created_at
+           from workflow_runs
+          where workspace_id = w.id
+            and workflow_name = $4
+          order by created_at desc
+          limit 1
+       ) aeo_run on true
+      where w.archived_at is null
+        and ($2::uuid is null or w.id = $2)
+      order by least(
+          greatest(
+            coalesce(content_event.occurred_at, '-infinity'::timestamptz),
+            coalesce(content_run.created_at, '-infinity'::timestamptz)
+          ),
+          greatest(
+            coalesce(aeo_event.occurred_at, '-infinity'::timestamptz),
+            coalesce(aeo_run.created_at, '-infinity'::timestamptz)
+          )
+        ) asc,
+        w.created_at asc
+      limit $1`,
+    [
+      limit,
+      session?.workspace_id ?? null,
+      EXA_CONTENT_OPPORTUNITY_WORKFLOW_NAME,
+      EXA_AEO_AUDIT_WORKFLOW_NAME,
+    ],
+  );
+
+  const now = new Date();
+  const cadenceMs = recommendationResearchCadenceMs();
+  const bucket = Math.floor(now.getTime() / cadenceMs);
+  let dispatched = 0;
+
+  for (const row of rows) {
+    if (dispatched >= limit) break;
+    const workspaceSession = {
+      workspace_id: row.workspace_id,
+      user_id: row.user_id,
+    };
+    const contentAt = latestRecommendationResearchAt(
+      row.last_content_event_at,
+      row.last_content_run_at,
+    );
+    if (isRecommendationResearchDue(contentAt, now, cadenceMs)) {
+      await startWorkspaceExaResearchWorkflow(
+        {
+          query: recommendationResearchQuery(row, "content_research"),
+          intent: "content_research",
+          include_text: true,
+          num_results: 8,
+          idempotency_nonce: `autonomy:content:${row.workspace_id}:bucket:${bucket}`,
+        },
+        workspaceSession,
+      );
+      dispatched++;
+    }
+
+    if (dispatched >= limit) break;
+    const aeoAt = latestRecommendationResearchAt(
+      row.last_aeo_event_at,
+      row.last_aeo_run_at,
+    );
+    if (isRecommendationResearchDue(aeoAt, now, cadenceMs)) {
+      await startWorkspaceExaResearchWorkflow(
+        {
+          query: recommendationResearchQuery(row, "aeo_audit"),
+          intent: "aeo_audit",
+          include_text: true,
+          num_results: 8,
+          idempotency_nonce: `autonomy:aeo:${row.workspace_id}:bucket:${bucket}`,
+        },
+        workspaceSession,
+      );
+      dispatched++;
+    }
+  }
+
+  return dispatched;
+}
+
 export async function runWorkspaceSignalAggregatorOnce(
   opts: DispatchOptions = {},
   session?: ProductWorkspaceSession,
@@ -6095,6 +6327,11 @@ export async function resumeRunnableWorkflowsOnce(
       registerSendingDomainProvisioningWorkflow(engine);
     } else if (row.workflow_name === SENDING_DOMAIN_WARMUP_WORKFLOW) {
       registerSendingDomainWarmupWorkflow(engine);
+    } else if (
+      row.workflow_name === EXA_CONTENT_OPPORTUNITY_WORKFLOW_NAME ||
+      row.workflow_name === EXA_AEO_AUDIT_WORKFLOW_NAME
+    ) {
+      await registerExaRecommendationWorkflows(engine);
     }
     try {
       const run = await engine.runtime.resume(row.id);
@@ -6200,6 +6437,11 @@ export async function retryFailedWorkflowRun(
     registerSendingDomainProvisioningWorkflow(engine);
   } else if (run.workflow_name === SENDING_DOMAIN_WARMUP_WORKFLOW) {
     registerSendingDomainWarmupWorkflow(engine);
+  } else if (
+    run.workflow_name === EXA_CONTENT_OPPORTUNITY_WORKFLOW_NAME ||
+    run.workflow_name === EXA_AEO_AUDIT_WORKFLOW_NAME
+  ) {
+    await registerExaRecommendationWorkflows(engine);
   }
 
   let retryRunId = run.id;

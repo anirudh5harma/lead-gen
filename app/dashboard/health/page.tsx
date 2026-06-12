@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { canUseWorkspaceOps, getActiveWorkspaceSession } from "@/lib/workspace";
 import { listDeadLetteredDispatches } from "@/core/substrate/events/index.ts";
@@ -148,12 +149,12 @@ export default async function HealthPage() {
                   method="POST"
                   className="mt-2"
                 >
-                  <button
-                    type="submit"
+                  <PendingSubmitButton
                     className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--color-accent)]"
+                    pendingLabel="Retrying"
                   >
                     Retry
-                  </button>
+                  </PendingSubmitButton>
                 </form>
               </li>
             ))}

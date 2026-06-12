@@ -5,10 +5,12 @@ import { setupPg, until } from "./_pg.ts";
 import {
   bootstrapWorkspace,
   claimRunnableWorkflowRuns,
+  configureWorkspaceEmailAccount,
   DEFAULT_PRODUCT_USER_ID,
   dispatchSignalPlaysOnce,
   getProductEngine,
   getAppState,
+  projectPendingProductEventsOnce,
   resetProductEngineForTests,
   renewWorkflowRunLeases,
   submitManualSignal,
@@ -42,10 +44,28 @@ test("product worker: dispatches signal.matched events into durable play runs", 
       signal_url: "https://example.com/acme-series-a",
       approval: "none",
     }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    await seedVerifiedTopContactsForSignal(fx.pool, submitted, [
+      {
+        full_name: "Nisha Rao",
+        title: "Founder and CEO",
+        email: "nisha@acmepayroll.example",
+      },
+      {
+        full_name: "Dev Mehta",
+        title: "VP Revenue",
+        email: "dev@acmepayroll.example",
+      },
+      {
+        full_name: "Tara Singh",
+        title: "Head of Growth",
+        email: "tara@acmepayroll.example",
+      },
+    ]);
 
     assert.ok(submitted.signal_id);
-    const dispatched = await dispatchSignalPlaysOnce();
-    assert.equal(dispatched, 1);
+    assert.equal(await dispatchSignalPlaysOnce(), 0);
+    await waitForContactResolved(fx.pool, submitted);
+    assert.equal(await dispatchSignalPlaysOnce(), 1);
 
     const run = await until(async () => {
       const { rows } = await fx.pool.query<{
@@ -129,7 +149,7 @@ test("product worker: dispatches signal.matched events into durable play runs", 
 
     const state = await getAppState(fx.pool);
     assert.equal(state.sendTraces[0].signal_title, "Acme Payroll announced a Series A");
-    assert.equal(state.sendTraces[0].rep_name, "Maya");
+    assert.equal(state.sendTraces[0].rep_name, "Sampark");
     assert.equal(state.sendTraces[0].eval_passed, true);
     assert.equal(state.sendTraces[0].workflow_status, "completed");
   } finally {
@@ -310,9 +330,13 @@ test("product worker: deliverability cap defers sends without consuming volume",
   setPool(fx.pool);
   try {
     const boot = await bootstrapWorkspace(fx.pool);
-    await fx.pool.query(
-      `update channel_accounts set daily_cap = 0, daily_used = 0 where id = $1`,
-      [boot.channel_account_id],
+    await projectPendingProductEventsOnce();
+    await configureWorkspaceEmailAccount(
+      {
+        display_name: "founder@bombsell.test",
+        daily_cap: 0,
+      },
+      { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID },
     );
     const submitted = await submitManualSignal({
       company_name: "Beta Finance",
@@ -324,7 +348,26 @@ test("product worker: deliverability cap defers sends without consuming volume",
       signal_url: "https://example.com/beta-seed",
       approval: "none",
     }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    await seedVerifiedTopContactsForSignal(fx.pool, submitted, [
+      {
+        full_name: "Mira Shah",
+        title: "Founder and CEO",
+        email: "mira@betafinance.example",
+      },
+      {
+        full_name: "Neel Rao",
+        title: "VP Revenue",
+        email: "neel@betafinance.example",
+      },
+      {
+        full_name: "Pia Iyer",
+        title: "Head of Growth",
+        email: "pia@betafinance.example",
+      },
+    ]);
 
+    assert.equal(await dispatchSignalPlaysOnce(), 0);
+    await waitForContactResolved(fx.pool, submitted);
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
       const { rows } = await fx.pool.query<{ status: string }>(
@@ -361,9 +404,7 @@ test("product worker: deliverability cap defers sends without consuming volume",
 });
 
 async function seedVerifiedGraphContact(
-  pool: {
-    query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ id: string }> }>;
-  },
+  pool: TestPool,
   input: {
     workspace_id: string;
     company_id: string;
@@ -383,7 +424,7 @@ async function seedVerifiedGraphContact(
       },
     },
   };
-  const { rows } = await pool.query(
+  const { rows } = await pool.query<{ id: string }>(
     `insert into graph_persons (
        id, workspace_id, full_name, title, company_id, emails, properties, provenance
      ) values (
@@ -404,6 +445,55 @@ async function seedVerifiedGraphContact(
   return rows[0]!.id;
 }
 
+interface TestPool {
+  query<T = unknown>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<{ rows: T[] }>;
+}
+
+async function seedVerifiedTopContactsForSignal(
+  pool: TestPool,
+  submitted: { workspace_id: string; signal_id: string },
+  contacts: Array<{ full_name: string; title: string; email: string }>,
+): Promise<void> {
+  const company = await pool.query<{ company_id: string }>(
+    `select related_company_id::text as company_id
+       from signals
+      where id = $1
+        and workspace_id = $2`,
+    [submitted.signal_id, submitted.workspace_id],
+  );
+  const companyId = company.rows[0]?.company_id;
+  assert.ok(companyId);
+  for (const contact of contacts) {
+    await seedVerifiedGraphContact(pool, {
+      workspace_id: submitted.workspace_id,
+      company_id: companyId,
+      ...contact,
+    });
+  }
+}
+
+async function waitForContactResolved(
+  pool: TestPool,
+  submitted: { workspace_id: string; signal_id: string },
+): Promise<void> {
+  await until(async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `select id::text as id
+         from events
+        where workspace_id = $1
+          and event_type = 'contact.resolved'
+          and payload->>'signal_id' = $2
+        order by occurred_at desc
+        limit 1`,
+      [submitted.workspace_id, submitted.signal_id],
+    );
+    return rows[0] ?? null;
+  }, { timeout: WORKFLOW_TIMEOUT_MS });
+}
+
 test("product worker: recipient frequency cap defers repeat outreach", async (t) => {
   const fx = await setupPg("product_frequency_cap");
   if (!fx) return t.skip("DATABASE_URL not set");
@@ -421,7 +511,26 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
       signal_url: "https://example.com/gamma-launch",
       approval: "none",
     }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    await seedVerifiedTopContactsForSignal(fx.pool, first, [
+      {
+        full_name: "Isha Mehta",
+        title: "Founder and CEO",
+        email: "isha@gammasecurity.example",
+      },
+      {
+        full_name: "Arjun Nair",
+        title: "VP Revenue",
+        email: "arjun@gammasecurity.example",
+      },
+      {
+        full_name: "Leela Jain",
+        title: "Head of Growth",
+        email: "leela@gammasecurity.example",
+      },
+    ]);
 
+    assert.equal(await dispatchSignalPlaysOnce(), 0);
+    await waitForContactResolved(fx.pool, first);
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
       const { rows } = await fx.pool.query<{ status: string }>(
@@ -442,6 +551,8 @@ test("product worker: recipient frequency cap defers repeat outreach", async (t)
       approval: "none",
     }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
 
+    assert.equal(await dispatchSignalPlaysOnce(), 0);
+    await waitForContactResolved(fx.pool, second);
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
       const { rows } = await fx.pool.query<{ status: string }>(
@@ -496,6 +607,25 @@ test("product email: queued send replay reuses reservation and transport idempot
       signal_url: "https://example.com/delta-funding",
       approval: "none",
     }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    await seedVerifiedTopContactsForSignal(fx.pool, submitted, [
+      {
+        full_name: "Riya Kapoor",
+        title: "Founder and CEO",
+        email: "riya@deltatreasury.example",
+      },
+      {
+        full_name: "Kabir Sethi",
+        title: "VP Revenue",
+        email: "kabir@deltatreasury.example",
+      },
+      {
+        full_name: "Nora Bose",
+        title: "Head of Growth",
+        email: "nora@deltatreasury.example",
+      },
+    ]);
+    assert.equal(await dispatchSignalPlaysOnce(), 0);
+    await waitForContactResolved(fx.pool, submitted);
     assert.equal(await dispatchSignalPlaysOnce(), 1);
     await until(async () => {
       const { rows } = await fx.pool.query<{ status: string }>(

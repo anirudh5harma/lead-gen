@@ -1,12 +1,20 @@
 "use client";
 
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { useToast } from "@/components/Toast";
 import type {
   ProductBriefItem,
   ProductRecommendationOutcomeKind,
 } from "@/core/product/app.ts";
-import { useRef, useTransition, type FormEvent, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useRef,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   createRecommendationDraftAction,
@@ -15,6 +23,8 @@ import {
   reviewRecommendationAction,
   updateRecommendationAction,
 } from "./actions";
+
+const ToastActionPendingContext = createContext(false);
 
 export function RecommendationReviewGrid({
   items,
@@ -156,13 +166,14 @@ function RecommendationReviewActions({
             name="channel"
             value={surface === "aeo" ? "web" : "x_post"}
           />
-          <button
-            type="submit"
+          <ToastSubmitButton
             className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[color:var(--color-line-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)] active:translate-y-px"
+            icon={surface === "aeo" ? "article" : "edit_note"}
+            iconSize={14}
+            pendingLabel="Drafting"
           >
-            <Icon name={surface === "aeo" ? "article" : "edit_note"} size={14} />
             {surface === "aeo" ? "Draft answer" : "Draft post"}
-          </button>
+          </ToastSubmitButton>
         </ToastActionForm>
         <ToastActionForm
           action={recordRecommendationOutcomeAction}
@@ -178,13 +189,14 @@ function RecommendationReviewActions({
             placeholder={externalRefLabel}
             className="min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
           />
-          <button
-            type="submit"
+          <ToastSubmitButton
             className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+            icon="task_alt"
+            iconSize={14}
+            pendingLabel="Recording"
           >
-            <Icon name="task_alt" size={14} />
             {outcomeLabel}
-          </button>
+          </ToastSubmitButton>
         </ToastActionForm>
       </div>
     );
@@ -195,24 +207,26 @@ function RecommendationReviewActions({
         <ToastActionForm action={reviewRecommendationAction} successTitle="Suggestion saved">
           <input type="hidden" name="review_id" value={item.review_id} />
           <input type="hidden" name="decision" value="accepted" />
-          <button
-            type="submit"
+          <ToastSubmitButton
             className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+            icon="check"
+            iconSize={14}
+            pendingLabel="Saving"
           >
-            <Icon name="check" size={14} />
             Use idea
-          </button>
+          </ToastSubmitButton>
         </ToastActionForm>
         <ToastActionForm action={reviewRecommendationAction} successTitle="Suggestion dismissed">
           <input type="hidden" name="review_id" value={item.review_id} />
           <input type="hidden" name="decision" value="ignored" />
-          <button
-            type="submit"
+          <ToastSubmitButton
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
+            icon="close"
+            iconSize={14}
+            pendingLabel="Dismissing"
           >
-            <Icon name="close" size={14} />
             Dismiss
-          </button>
+          </ToastSubmitButton>
         </ToastActionForm>
         <ToastActionForm action={deleteRecommendationAction} successTitle="Suggestion deleted">
           <RecommendationDeleteFields reviewId={item.review_id} surface={surface} />
@@ -254,13 +268,14 @@ function RecommendationDeleteFields({
     <>
       <input type="hidden" name="review_id" value={reviewId} />
       <input type="hidden" name="reason" value={`Deleted from ${surface}`} />
-      <button
-        type="submit"
+      <ToastSubmitButton
         className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 py-1.5 text-xs font-semibold text-[var(--color-neg)] transition active:translate-y-px"
+        icon="delete"
+        iconSize={14}
+        pendingLabel="Deleting"
       >
-        <Icon name="delete" size={14} />
         Delete
-      </button>
+      </ToastSubmitButton>
     </>
   );
 }
@@ -306,15 +321,28 @@ function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
             className="min-h-9 rounded-md border border-[var(--color-line-1)] bg-white/70 px-3 text-xs text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
           />
         </label>
-        <button
-          type="submit"
+        <ToastSubmitButton
           className="inline-flex min-h-9 w-fit items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+          icon="save"
+          iconSize={14}
+          pendingLabel="Saving"
         >
-          <Icon name="save" size={14} />
           Save edit
-        </button>
+        </ToastSubmitButton>
       </ToastActionForm>
     </details>
+  );
+}
+
+function ToastSubmitButton({
+  children,
+  ...props
+}: Omit<Parameters<typeof PendingSubmitButton>[0], "pending">) {
+  const pending = useContext(ToastActionPendingContext);
+  return (
+    <PendingSubmitButton {...props} pending={pending}>
+      {children}
+    </PendingSubmitButton>
   );
 }
 
@@ -350,15 +378,17 @@ function ToastActionForm({
   }
 
   return (
-    <form
-      ref={formRef}
-      onSubmit={onSubmit}
-      aria-busy={pending}
-      className={className}
-    >
-      <fieldset disabled={pending} className="contents">
-        {children}
-      </fieldset>
-    </form>
+    <ToastActionPendingContext.Provider value={pending}>
+      <form
+        ref={formRef}
+        onSubmit={onSubmit}
+        aria-busy={pending}
+        className={className}
+      >
+        <fieldset disabled={pending} className="contents">
+          {children}
+        </fieldset>
+      </form>
+    </ToastActionPendingContext.Provider>
   );
 }

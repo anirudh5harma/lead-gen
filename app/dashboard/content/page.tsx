@@ -1,6 +1,6 @@
 import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
-import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   getProductRecommendationSurface,
   verifiedProductWorkspaceSession,
@@ -154,13 +154,13 @@ export default async function ContentPage() {
                 placeholder="pricing objections, buyer questions, competitor proof"
                 className="min-h-10 min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-3 text-sm text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
               />
-              <button
-                type="submit"
+              <PendingSubmitButton
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+                icon="travel_explore"
+                pendingLabel="Finding ideas"
               >
-                <Icon name="travel_explore" size={16} />
                 Find ideas
-              </button>
+              </PendingSubmitButton>
             </form>
           </div>
         }

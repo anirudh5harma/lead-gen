@@ -17,8 +17,27 @@ await runProductWorker({
   pollMs: Number.isFinite(pollMs) ? pollMs : undefined,
   batchSize: Number.isFinite(batchSize) ? batchSize : undefined,
   signal: controller.signal,
-  onTick({ ingested, dispatched, resumed, warmed, projected, projectionFailed }) {
-    if (ingested || dispatched || resumed || warmed || projected || projectionFailed || once) {
+  onTick({
+    ingested,
+    dispatched,
+    resumed,
+    warmed,
+    projected,
+    projectionFailed,
+    replyDispatched,
+    recommendationDispatched,
+  }) {
+    if (
+      ingested ||
+      dispatched ||
+      resumed ||
+      warmed ||
+      projected ||
+      projectionFailed ||
+      replyDispatched ||
+      recommendationDispatched ||
+      once
+    ) {
       console.log(
         JSON.stringify({
           at: new Date().toISOString(),
@@ -28,6 +47,8 @@ await runProductWorker({
           warmed,
           projected,
           projectionFailed,
+          replyDispatched,
+          recommendationDispatched,
         }),
       );
     }

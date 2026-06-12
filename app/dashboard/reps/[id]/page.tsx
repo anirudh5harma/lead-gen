@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { configureRepAction } from "../../actions";
@@ -205,10 +206,14 @@ export default async function RepDetailPage({
                 ]}
               />
             </div>
-            <button className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]">
-              <Icon name="check" size={17} />
+            <PendingSubmitButton
+              className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+              icon="check"
+              iconSize={17}
+              pendingLabel="Saving guidance"
+            >
               Save guidance
-            </button>
+            </PendingSubmitButton>
           </form>
         </section>
 

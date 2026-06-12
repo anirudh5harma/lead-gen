@@ -4,6 +4,7 @@ import {
   dispatchReplyEmailPlaysOnce,
   dispatchSendingDomainWarmupsOnce,
   dispatchSignalPlaysOnce,
+  dispatchWorkspaceRecommendationResearchOnce,
   dispatchWorkspaceSourcePollsOnce,
   projectPendingProductEventsOnce,
   resumeRunnableWorkflowsOnce,
@@ -28,6 +29,7 @@ export interface ProductWorkerTick {
   projected: number;
   projectionFailed: number;
   replyDispatched: number;
+  recommendationDispatched: number;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -74,6 +76,8 @@ export async function runProductWorker(
       const warmed = await dispatchSendingDomainWarmupsOnce({ limit: batchSize });
       const dispatched = await dispatchSignalPlaysOnce({ limit: batchSize });
       const replyDispatched = await dispatchReplyEmailPlaysOnce({ limit: batchSize });
+      const recommendationDispatched =
+        await dispatchWorkspaceRecommendationResearchOnce({ limit: batchSize });
       opts.onTick?.({
         ingested: legacyRss + workspacePolls,
         dispatched,
@@ -82,6 +86,7 @@ export async function runProductWorker(
         projected: projections.completed,
         projectionFailed: projections.failed,
         replyDispatched,
+        recommendationDispatched,
       });
       if (opts.once) return;
     } catch (err) {

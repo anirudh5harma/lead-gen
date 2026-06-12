@@ -59,6 +59,7 @@ import {
 import {
   dispatchReplyEmailPlaysOnce,
   dispatchSignalPlaysOnce,
+  dispatchWorkspaceRecommendationResearchOnce,
   registerProductEventDispatchers,
   researchWorkspaceWithExa,
 } from "../core/product/app.ts";
@@ -269,6 +270,12 @@ const playDispatchSubscriptions = await registerProductEventDispatchers(
 console.log("[production-worker] projectors consuming events");
 
 await redriveProductPlayDispatches();
+const productRedriveTimer = setInterval(() => {
+  void redriveProductPlayDispatches().catch((err) => {
+    console.error("[production-worker] product play redrive failed:", err);
+  });
+}, 60_000);
+productRedriveTimer.unref();
 
 await redrivePendingDispatches();
 const relayTimer = setInterval(() => {
@@ -301,13 +308,14 @@ async function redrivePendingDispatches(): Promise<void> {
 }
 
 async function redriveProductPlayDispatches(): Promise<void> {
-  const [signalDispatched, replyDispatched] = await Promise.all([
+  const [signalDispatched, replyDispatched, recommendationDispatched] = await Promise.all([
     dispatchSignalPlaysOnce({ limit: 100 }),
     dispatchReplyEmailPlaysOnce({ limit: 100 }),
+    dispatchWorkspaceRecommendationResearchOnce({ limit: 25 }),
   ]);
-  if (signalDispatched > 0 || replyDispatched > 0) {
+  if (signalDispatched > 0 || replyDispatched > 0 || recommendationDispatched > 0) {
     console.log(
-      `[production-worker] product play redrive: ${signalDispatched} signal plays, ${replyDispatched} reply plays`,
+      `[production-worker] product play redrive: ${signalDispatched} signal plays, ${replyDispatched} reply plays, ${recommendationDispatched} recommendation workflows`,
     );
   }
 }
@@ -315,6 +323,7 @@ async function redriveProductPlayDispatches(): Promise<void> {
 async function shutdown(): Promise<void> {
   clearInterval(relayTimer);
   clearInterval(recoveryTimer);
+  clearInterval(productRedriveTimer);
   await Promise.all([
     classifier.subscription.unsubscribe(),
     ...emailSubscriptions.map((subscription) => subscription.unsubscribe()),
