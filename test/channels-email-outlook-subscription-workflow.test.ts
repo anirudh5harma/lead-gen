@@ -296,3 +296,56 @@ test("Outlook repair workflow emits an account error and records repair failure"
     await fx.close();
   }
 });
+
+test("Outlook repair workflow projects reauthorization failures as needs_reauth", async (t) => {
+  const fx = await setupPg("outlook_subscription_reauth");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const account = await seedOutlookAccount(fx.pool);
+    const bus = createInMemoryEventBus();
+    const workflow = createOutlookSubscriptionRepairWorkflow({
+      pool: fx.pool,
+      accessTokens: {
+        async getAccessToken() {
+          throw new Error(
+            `channel_account ${account.channel_account_id} requires Outlook reauthorization`,
+          );
+        },
+      },
+      notificationUrl: "https://app.example/api/webhooks/outlook",
+      fetchImpl: async () => new Response("not reached", { status: 500 }),
+    });
+
+    const result = await workflow.run(
+      {
+        workspace_id: account.workspace_id,
+        channel_account_id: account.channel_account_id,
+      },
+      context(account.workspace_id, bus),
+    );
+
+    assert.equal(result.failed, 1);
+    assert.equal(
+      bus.published[0].event_type,
+      "email.outlook.reauthorization.required",
+    );
+    assert.equal(
+      (bus.published[0].payload as { channel_account_id: string })
+        .channel_account_id,
+      account.channel_account_id,
+    );
+    const { rows } = await fx.pool.query<{
+      status: string;
+      last_error: { message: string };
+    }>(
+      `select status::text as status, last_error
+         from channel_accounts
+        where id = $1`,
+      [account.channel_account_id],
+    );
+    assert.equal(rows[0].status, "needs_reauth");
+    assert.match(rows[0].last_error.message, /requires Outlook reauthorization/);
+  } finally {
+    await fx.close();
+  }
+});

@@ -22,6 +22,7 @@ export interface OutlookReadinessResult {
   steps: OutlookReadinessStep[];
   connectedAccounts: number;
   activeSubscriptions: number;
+  needsReauthAccounts: number;
 }
 
 export interface OutlookReadinessProbeOptions {
@@ -33,6 +34,7 @@ interface OutlookAggregateRow {
   total_outlook: string | number;
   connected_outlook: string | number;
   active_subscriptions: string | number;
+  needs_reauth_outlook: string | number;
   errored_connected: string | number;
   connected_managed_domains: string | number;
 }
@@ -53,7 +55,7 @@ export async function runOutlookReadinessProbe(
       status: "fail",
       detail: "DATABASE_URL is required to inspect production Outlook channel accounts",
     });
-    return result(steps, 0, 0);
+    return result(steps, 0, 0, 0);
   }
 
   const pool = opts.pool ?? new Pool({ connectionString: databaseUrl });
@@ -78,6 +80,10 @@ export async function runOutlookReadinessProbe(
         ) as active_subscriptions,
         count(*) filter (
           where kind = 'oauth_outlook'
+            and status = 'needs_reauth'
+        ) as needs_reauth_outlook,
+        count(*) filter (
+          where kind = 'oauth_outlook'
             and status = 'connected'
             and last_error is not null
         ) as errored_connected,
@@ -92,14 +98,17 @@ export async function runOutlookReadinessProbe(
       total_outlook: 0,
       connected_outlook: 0,
       active_subscriptions: 0,
+      needs_reauth_outlook: 0,
       errored_connected: 0,
       connected_managed_domains: 0,
     };
     const connected = asNumber(aggregate.connected_outlook);
     const activeSubscriptions = asNumber(aggregate.active_subscriptions);
+    const needsReauth = asNumber(aggregate.needs_reauth_outlook);
     const errored = asNumber(aggregate.errored_connected);
     const managedDomains = asNumber(aggregate.connected_managed_domains);
-    const errorSample = errored > 0
+    const accountProblems = errored + needsReauth;
+    const errorSample = accountProblems > 0
       ? await loadOutlookErrorSample(pool)
       : null;
 
@@ -108,7 +117,9 @@ export async function runOutlookReadinessProbe(
       status: connected > 0 ? "ok" : "fail",
       detail: connected > 0
         ? `${connected} connected Outlook account(s)`
-        : "No connected Outlook accounts; customer-connected Outlook is the launch outbound path",
+        : needsReauth > 0
+          ? `${needsReauth} Outlook account(s) need Microsoft reauthorization before sends can resume`
+          : "No connected Outlook accounts; customer-connected Outlook is the launch outbound path",
     });
     steps.push({
       label: "outlook: reply sync subscription",
@@ -119,10 +130,10 @@ export async function runOutlookReadinessProbe(
     });
     steps.push({
       label: "outlook: account errors",
-      status: errored === 0 ? "ok" : "fail",
-      detail: errored === 0
+      status: accountProblems === 0 ? "ok" : "fail",
+      detail: accountProblems === 0
         ? "No connected Outlook account errors recorded"
-        : `${errored} connected Outlook account(s) have last_error set${errorSample ? `; sample=${errorSample}` : ""}`,
+        : `${errored} connected Outlook account(s) have last_error set; ${needsReauth} Outlook account(s) need reauthorization${errorSample ? `; sample=${errorSample}` : ""}`,
     });
     steps.push({
       label: "managed-domain fallback",
@@ -131,14 +142,14 @@ export async function runOutlookReadinessProbe(
         ? `Enabled intentionally; ${managedDomains} connected managed-domain account(s) exist`
         : `Disabled unless MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1; ${managedDomains} connected legacy managed-domain account(s) ignored by runtime transport selection`,
     });
-    return result(steps, connected, activeSubscriptions);
+    return result(steps, connected, activeSubscriptions, needsReauth);
   } catch (err) {
     steps.push({
       label: "outlook: readiness query",
       status: "fail",
       detail: err instanceof Error ? err.message : String(err),
     });
-    return result(steps, 0, 0);
+    return result(steps, 0, 0, 0);
   } finally {
     if (shouldClose) await pool.end();
   }
@@ -151,7 +162,7 @@ async function loadOutlookErrorSample(
     select last_error::text as last_error
       from channel_accounts
      where kind = 'oauth_outlook'
-       and status = 'connected'
+       and status in ('connected', 'needs_reauth')
        and last_error is not null
      order by updated_at desc nulls last
      limit 1
@@ -186,12 +197,14 @@ function result(
   steps: OutlookReadinessStep[],
   connectedAccounts: number,
   activeSubscriptions: number,
+  needsReauthAccounts: number,
 ): OutlookReadinessResult {
   return {
     ok: steps.every((step) => step.status === "ok"),
     steps,
     connectedAccounts,
     activeSubscriptions,
+    needsReauthAccounts,
   };
 }
 

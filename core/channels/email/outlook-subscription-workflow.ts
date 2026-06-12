@@ -142,13 +142,27 @@ export function createOutlookSubscriptionRepairWorkflow(
         } catch (err) {
           summary.failed += 1;
           const message = err instanceof Error ? err.message : String(err);
-          await ctx.publish("channel.account.errored", {
-            channel_account_id: target.id,
-            kind: "oauth_outlook",
-            error: message,
-          });
+          const requiresReauthorization =
+            isOutlookReauthorizationRequiredError(message);
+          if (requiresReauthorization) {
+            await ctx.publish("email.outlook.reauthorization.required", {
+              channel_account_id: target.id,
+              error: message,
+            });
+          } else {
+            await ctx.publish("channel.account.errored", {
+              channel_account_id: target.id,
+              kind: "oauth_outlook",
+              error: message,
+            });
+          }
           await ctx.step(`project_subscription_error:${target.id}`, () =>
-            recordSubscriptionError(deps.pool, target, message),
+            recordSubscriptionError(
+              deps.pool,
+              target,
+              message,
+              requiresReauthorization,
+            ),
           );
           continue;
         }
@@ -203,15 +217,30 @@ async function listSubscriptionTargets(
   return rows;
 }
 
+export function isOutlookReauthorizationRequiredError(message: string): boolean {
+  return /requires Outlook reauthorization|invalid_grant|AADSTS70000|AADSTS70008[24]/i
+    .test(message);
+}
+
 async function recordSubscriptionError(
   pool: Pool,
   target: OutlookAccountTarget,
   message: string,
+  requiresReauthorization: boolean,
 ): Promise<void> {
   await pool.query(
     `update channel_accounts
-        set last_error = $3::jsonb
+        set status = case
+              when $4::boolean then 'needs_reauth'::channel_account_status
+              else status
+            end,
+            last_error = $3::jsonb
       where workspace_id = $1 and id = $2`,
-    [target.workspace_id, target.id, JSON.stringify({ message })],
+    [
+      target.workspace_id,
+      target.id,
+      JSON.stringify({ message }),
+      requiresReauthorization,
+    ],
   );
 }

@@ -192,6 +192,7 @@ test("qualified signal email readiness requires connected Outlook reply sync", a
   const ready = await loadQualifiedSignalEmailReadiness(fakePool([{
     connected_outlook: "1",
     active_subscriptions: "1",
+    needs_reauth_outlook: "0",
     errored_connected: "0",
     connected_managed_domains: "0",
   }]), "00000000-0000-4000-8000-000000000001");
@@ -202,6 +203,7 @@ test("qualified signal email readiness requires connected Outlook reply sync", a
   const missingInbox = await loadQualifiedSignalEmailReadiness(fakePool([{
     connected_outlook: "0",
     active_subscriptions: "0",
+    needs_reauth_outlook: "0",
     errored_connected: "0",
     connected_managed_domains: "7",
   }]), "00000000-0000-4000-8000-000000000001");
@@ -213,6 +215,7 @@ test("qualified signal email readiness requires connected Outlook reply sync", a
   const missingSync = await loadQualifiedSignalEmailReadiness(fakePool([{
     connected_outlook: "2",
     active_subscriptions: "0",
+    needs_reauth_outlook: "0",
     errored_connected: "0",
     connected_managed_domains: "0",
   }]), "00000000-0000-4000-8000-000000000001");
@@ -220,6 +223,19 @@ test("qualified signal email readiness requires connected Outlook reply sync", a
   assert.equal(missingSync.ready, false);
   assert.equal(missingSync.status_label, "Needs sync");
   assert.match(missingSync.detail, /0\/2 Outlook inboxes/);
+
+  const needsReconnect = await loadQualifiedSignalEmailReadiness(fakePool([{
+    connected_outlook: "0",
+    active_subscriptions: "0",
+    needs_reauth_outlook: "2",
+    errored_connected: "0",
+    connected_managed_domains: "0",
+  }]), "00000000-0000-4000-8000-000000000001");
+
+  assert.equal(needsReconnect.ready, false);
+  assert.equal(needsReconnect.needs_reauth_outlook_accounts, 2);
+  assert.equal(needsReconnect.status_label, "Reconnect inbox");
+  assert.match(needsReconnect.detail, /2 Outlook inboxes need Microsoft reauthorization/);
 });
 
 test("normalizeContactCandidates tolerates malformed provider payloads", () => {

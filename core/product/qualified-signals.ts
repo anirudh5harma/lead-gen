@@ -78,6 +78,7 @@ export interface QualifiedSignalEmailReadiness {
   ready: boolean;
   connected_outlook_accounts: number;
   active_outlook_subscriptions: number;
+  needs_reauth_outlook_accounts: number;
   errored_outlook_accounts: number;
   connected_managed_domain_accounts: number;
   status_label: string;
@@ -128,6 +129,7 @@ interface QualifiedSignalRow {
 interface EmailReadinessRow {
   connected_outlook: string | number;
   active_subscriptions: string | number;
+  needs_reauth_outlook: string | number;
   errored_connected: string | number;
   connected_managed_domains: string | number;
 }
@@ -153,6 +155,10 @@ export async function loadQualifiedSignalEmailReadiness(
         ) as active_subscriptions,
         count(*) filter (
           where kind = 'oauth_outlook'
+            and status = 'needs_reauth'
+        ) as needs_reauth_outlook,
+        count(*) filter (
+          where kind = 'oauth_outlook'
             and status = 'connected'
             and last_error is not null
         ) as errored_connected,
@@ -168,26 +174,41 @@ export async function loadQualifiedSignalEmailReadiness(
   const row = rows[0] ?? {
     connected_outlook: 0,
     active_subscriptions: 0,
+    needs_reauth_outlook: 0,
     errored_connected: 0,
     connected_managed_domains: 0,
   };
   const connected = numericCount(row.connected_outlook);
   const activeSubscriptions = numericCount(row.active_subscriptions);
+  const needsReauth = numericCount(row.needs_reauth_outlook);
   const errored = numericCount(row.errored_connected);
   const managedDomains = numericCount(row.connected_managed_domains);
   const ready = connected > 0 && activeSubscriptions > 0 && errored === 0;
+  const statusLabel = ready
+    ? "Ready"
+    : needsReauth > 0
+      ? "Reconnect inbox"
+      : connected > 0
+        ? "Needs sync"
+        : "Connect inbox";
+  const detail = ready
+    ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync.`
+    : needsReauth > 0
+      ? `${needsReauth} Outlook ${
+          needsReauth === 1 ? "inbox needs" : "inboxes need"
+        } Microsoft reauthorization. Reconnect Outlook before approved drafts can send.`
+      : connected > 0
+        ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync. Approved drafts wait until sync is healthy.`
+        : "No connected Outlook inbox. Approved drafts wait until a Microsoft 365 mailbox is connected.";
   return {
     ready,
     connected_outlook_accounts: connected,
     active_outlook_subscriptions: activeSubscriptions,
+    needs_reauth_outlook_accounts: needsReauth,
     errored_outlook_accounts: errored,
     connected_managed_domain_accounts: managedDomains,
-    status_label: ready ? "Ready" : connected > 0 ? "Needs sync" : "Connect inbox",
-    detail: ready
-      ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync.`
-      : connected > 0
-        ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync. Approved drafts wait until sync is healthy.`
-        : "No connected Outlook inbox. Approved drafts wait until a Microsoft 365 mailbox is connected.",
+    status_label: statusLabel,
+    detail,
   };
 }
 

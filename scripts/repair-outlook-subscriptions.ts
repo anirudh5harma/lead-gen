@@ -128,7 +128,7 @@ async function loadRepairErrorSample(pool: Pool): Promise<string | null> {
     `select last_error::text as last_error
        from channel_accounts
       where kind = 'oauth_outlook'
-        and status = 'connected'
+        and status in ('connected', 'needs_reauth')
         and last_error is not null
       order by updated_at desc nulls last
       limit 1`,

@@ -26,6 +26,7 @@ test("outlook readiness: connected account with active subscription passes", asy
             total_outlook: "1",
             connected_outlook: "1",
             active_subscriptions: "1",
+            needs_reauth_outlook: "0",
             errored_connected: "0",
             connected_managed_domains: "7",
           },
@@ -54,6 +55,7 @@ test("outlook readiness: no connected account fails explicitly", async () => {
             total_outlook: "0",
             connected_outlook: "0",
             active_subscriptions: "0",
+            needs_reauth_outlook: "0",
             errored_connected: "0",
             connected_managed_domains: "7",
           },
@@ -83,6 +85,7 @@ test("outlook readiness: reports actionable Microsoft client secret errors", asy
                 total_outlook: "1",
                 connected_outlook: "1",
                 active_subscriptions: "0",
+                needs_reauth_outlook: "0",
                 errored_connected: "1",
                 connected_managed_domains: "0",
               },
@@ -105,6 +108,48 @@ test("outlook readiness: reports actionable Microsoft client secret errors", asy
   assert.equal(errors?.status, "fail");
   assert.match(errors?.detail ?? "", /MICROSOFT_CLIENT_SECRET/);
   assert.match(errors?.detail ?? "", /secret value/);
+});
+
+test("outlook readiness: reauthorization-needed accounts fail with reconnect guidance", async () => {
+  let queries = 0;
+  const result = await runOutlookReadinessProbe({
+    env: { DATABASE_URL: "postgresql://example" },
+    pool: {
+      query: async () => {
+        queries += 1;
+        if (queries === 1) {
+          return {
+            rows: [
+              {
+                total_outlook: "1",
+                connected_outlook: "0",
+                active_subscriptions: "0",
+                needs_reauth_outlook: "1",
+                errored_connected: "0",
+                connected_managed_domains: "0",
+              },
+            ],
+          };
+        }
+        return {
+          rows: [{
+            last_error:
+              "{\"message\":\"channel_account abc requires Outlook reauthorization\"}",
+          }],
+        };
+      },
+      end: async () => undefined,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.needsReauthAccounts, 1);
+  const connected = result.steps.find((step) => step.label === "outlook: connected mailbox");
+  assert.equal(connected?.status, "fail");
+  assert.match(connected?.detail ?? "", /need Microsoft reauthorization/);
+  const errors = result.steps.find((step) => step.label === "outlook: account errors");
+  assert.equal(errors?.status, "fail");
+  assert.match(errors?.detail ?? "", /need reauthorization/);
 });
 
 test("summarizeOutlookError recognizes Microsoft invalid_client secret-id mistakes", () => {
