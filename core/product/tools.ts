@@ -13,10 +13,8 @@ import {
   configureWorkspaceCompanyProfile,
   configureWorkspaceEmailAccount,
   configureWorkspaceSignalSource,
-  deleteProductRecommendation,
   discoverSignalFromSource,
   dispatchSignalPlaysOnce,
-  draftProductRecommendation,
   enrichWorkspaceProfileWithExa,
   getLinkedInAccountConnectIntent,
   getOutlookAccountConnectIntent,
@@ -24,9 +22,7 @@ import {
   listDeadLetteredEventDispatches,
   researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
-  recordProductRecommendationOutcome,
   recordProductCampaignOutcome,
-  reviewProductRecommendation,
   retryFailedWorkflowRun,
   runWorkspaceSignalAggregatorOnce,
   startSendingDomainOperation,
@@ -34,7 +30,6 @@ import {
   startWorkspaceExaResearchWorkflow,
   submitManualSignal,
   trackCompanyForWorkspace,
-  updateProductRecommendation,
   type ProductWorkspaceSession,
 } from "./app.ts";
 import {
@@ -66,20 +61,6 @@ const ExaResearchIntentSchema = z.enum([
   "rep_research",
   "brief_refresh",
   "draft_grounding",
-  "content_research",
-  "aeo_audit",
-]);
-const RecommendationDecisionSchema = z.enum(["accepted", "ignored"]);
-const RecommendationOutcomeKindSchema = z.enum([
-  "post_published",
-  "follower_lift",
-  "engagement_lift",
-]);
-const RecommendationDraftChannelSchema = z.enum([
-  "x_post",
-  "linkedin_comment",
-  "web",
-  "other",
 ]);
 const CampaignOutcomeKindSchema = z.enum([
   "positive_reply",
@@ -98,7 +79,6 @@ const LinkedInActionSchema = z.enum([
 ]);
 const RepRoleSchema = z.enum([
   "sdr",
-  "content",
   "replier",
   "researcher",
   "campaign",
@@ -338,7 +318,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.exa.research_workflow.start",
     description:
-      "Start a durable Exa research workflow for Rep research, draft grounding, content opportunities, or AEO audit when asynchronous checkpointed execution is preferred.",
+      "Start a durable Exa research workflow for Rep research, Brief refresh, or draft grounding when asynchronous checkpointed execution is preferred.",
     kind: "write",
     input: z.object({
       query: z.string().min(1),
@@ -666,154 +646,6 @@ export function registerProductTools(): void {
     }),
     async handler(input, ctx) {
       return configureExaOpenWebSignalSource(input, sessionFromContext(ctx));
-    },
-  });
-
-  registerTool({
-    name: "product.content.opportunities.discover",
-    description:
-      "Discover content opportunities with Exa, store evidence in the graph, and emit content.opportunity.discovered.",
-    kind: "write",
-    input: z.object({
-      query: z.string().min(1),
-      num_results: z.number().int().positive().max(25).optional(),
-    }),
-    output: WorkspaceResultSchema.extend({
-      request_id: z.string().nullable(),
-      evidence_source_ids: z.array(z.string().uuid()),
-      summary: z.string(),
-    }),
-    async handler(input, ctx) {
-      return researchWorkspaceWithExa(
-        { ...input, intent: "content_research", include_text: true },
-        sessionFromContext(ctx),
-      );
-    },
-  });
-
-  registerTool({
-    name: "product.aeo.audit",
-    description:
-      "Answer Engine Optimization audit: check how AI engines (ChatGPT, Perplexity, Google AI Overviews) answer category questions, identify where the brand is absent, mis-described, or out-cited, and propose structured content that earns a citation. Stores evidence in the graph and emits aeo.audit.completed.",
-    kind: "write",
-    input: z.object({
-      query: z.string().min(1),
-      num_results: z.number().int().positive().max(25).optional(),
-    }),
-    output: WorkspaceResultSchema.extend({
-      request_id: z.string().nullable(),
-      evidence_source_ids: z.array(z.string().uuid()),
-      summary: z.string(),
-    }),
-    async handler(input, ctx) {
-      return researchWorkspaceWithExa(
-        { ...input, intent: "aeo_audit", include_text: true },
-        sessionFromContext(ctx),
-      );
-    },
-  });
-
-  registerTool({
-    name: "product.recommendation.review",
-    description:
-      "Record operator feedback on an Exa-backed Content or AEO recommendation. This emits a typed recommendation.reviewed event and updates the same review canvas agents see.",
-    kind: "write",
-    input: z.object({
-      review_id: z.string().min(1),
-      decision: RecommendationDecisionSchema,
-      note: z.string().nullable().optional(),
-    }),
-    output: WorkspaceResultSchema.extend({
-      review_id: z.string().min(1),
-      decision: RecommendationDecisionSchema,
-    }),
-    async handler(input, ctx) {
-      return reviewProductRecommendation(input, sessionFromContext(ctx));
-    },
-  });
-
-  registerTool({
-    name: "product.recommendation.update",
-    description:
-      "Edit the title, detail, or proof URL for an Exa-backed Content/AEO recommendation. This emits a replayable recommendation.updated event instead of mutating generated evidence in place.",
-    kind: "write",
-    input: z.object({
-      review_id: z.string().min(1),
-      title: z.string().min(1),
-      detail: z.string(),
-      url: z.string().url().nullable().optional(),
-      note: z.string().nullable().optional(),
-    }),
-    output: WorkspaceResultSchema.extend({
-      review_id: z.string().min(1),
-    }),
-    async handler(input, ctx) {
-      return updateProductRecommendation(input, sessionFromContext(ctx));
-    },
-  });
-
-  registerTool({
-    name: "product.recommendation.delete",
-    description:
-      "Remove a suggested Content/AEO recommendation from the review surface by emitting a replayable recommendation.deleted event.",
-    kind: "write",
-    input: z.object({
-      review_id: z.string().min(1),
-      reason: z.string().nullable().optional(),
-    }),
-    output: WorkspaceResultSchema.extend({
-      review_id: z.string().min(1),
-      deleted: z.literal(true),
-    }),
-    async handler(input, ctx) {
-      return deleteProductRecommendation(input, sessionFromContext(ctx));
-    },
-  });
-
-  registerTool({
-    name: "product.recommendation.outcome.record",
-    description:
-      "Record a real Outcome for an accepted Exa-backed Content/AEO recommendation, attributing published work or measurable lift back to Rep procedural memory.",
-    kind: "write",
-    input: z.object({
-      review_id: z.string().min(1),
-      kind: RecommendationOutcomeKindSchema,
-      score: z.number().min(0).max(1).optional(),
-      occurred_at: z.string().datetime().optional(),
-      external_ref: z.string().nullable().optional(),
-      properties: z.record(z.string(), z.unknown()).optional(),
-    }),
-    output: WorkspaceResultSchema.extend({
-      review_id: z.string().min(1),
-      outcome_id: z.string().uuid(),
-      kind: RecommendationOutcomeKindSchema,
-      attributed_rep_id: z.string().uuid().nullable(),
-      pattern_key: z.string().min(1),
-      exemplar_ids: z.array(z.string().uuid()),
-    }),
-    async handler(input, ctx) {
-      return recordProductRecommendationOutcome(input, sessionFromContext(ctx));
-    },
-  });
-
-  registerTool({
-    name: "product.recommendation.draft.create",
-    description:
-      "Create a reviewable draft from an accepted Content/AEO recommendation by emitting conversation.opened and draft.proposed events. It does not publish or send.",
-    kind: "write",
-    input: z.object({
-      review_id: z.string().min(1),
-      channel: RecommendationDraftChannelSchema.optional(),
-    }),
-    output: WorkspaceResultSchema.extend({
-      review_id: z.string().min(1),
-      conversation_id: z.string().uuid(),
-      message_id: z.string().uuid(),
-      channel: RecommendationDraftChannelSchema,
-      attributed_rep_id: z.string().uuid(),
-    }),
-    async handler(input, ctx) {
-      return draftProductRecommendation(input, sessionFromContext(ctx));
     },
   });
 

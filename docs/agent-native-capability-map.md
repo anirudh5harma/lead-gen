@@ -16,7 +16,7 @@ projection, and visible UI feedback where applicable.
 | Store company profile | `/onboarding` | `product.company.profile.configure` | `workspace.company.profiled` -> graph company | Ready |
 | Enrich Profile from public web | MCP/internal Rep execution | `product.profile.enrich` | `profile.bootstrap.exa`: Exa Search/Contents -> graph evidence sources -> `workspace.profile.enriched`; visible Profile setup and onboarding stay Firecrawl-only | Ready |
 | Run Rep public-web research | MCP/internal Rep execution | `product.rep.research` | `rep.research.exa`: Exa Search/Contents -> graph evidence sources -> `rep.research.completed` | Ready |
-| Start durable Exa research | MCP/internal Rep execution | `product.exa.research_workflow.start` | Starts one of `rep.brief.refresh.exa`, `rep.research.exa`, `draft.grounding.exa`, `content.opportunity.exa`, or `aeo.audit.exa` with a Restate/Postgres workflow runtime | Ready |
+| Start durable Exa research | MCP/internal Rep execution | `product.exa.research_workflow.start` | Starts one of `rep.brief.refresh.exa`, `rep.research.exa`, or `draft.grounding.exa` with a Restate/Postgres workflow runtime | Ready |
 | Configure Rep | `/dashboard/setup` | `product.rep.configure` | `rep.configured` -> Rep projection | Ready |
 | Configure ICP | `/dashboard/setup`, `/dashboard/campaigns` | `product.icp.configure` | `workspace.icp.configured` -> ICP projection | Ready |
 | Configure Signal email Play | `/dashboard/setup` | `product.play.signal_email.configure` | `play.configured` -> Play projection | Ready |
@@ -34,12 +34,6 @@ projection, and visible UI feedback where applicable.
 | Submit manual signal | MCP/internal Rep execution | `product.signal.submit` | Manual Signal ingestion event path | Ready |
 | Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email/LinkedIn Play workflows; weak or stale evidence triggers Exa draft grounding before writer/judge | Ready |
 | Ground draft with public evidence | MCP/internal Rep execution, automatic Play step | `product.draft.ground` | `draft.grounding.exa`: Exa Search/Contents -> graph evidence sources -> judge/writer-ready proof summary -> draft `exa_grounding` provenance | Ready |
-| Discover content opportunities | `/dashboard/content`, MCP/internal Rep execution | `product.content.opportunities.discover` | `content.opportunity.exa`: Exa Search/Contents -> graph evidence sources -> `content.opportunity.discovered` with structured opportunities/review items | Ready |
-| Audit AEO coverage | `/dashboard/aeo`, MCP/internal Rep execution | `product.aeo.audit` | `aeo.audit.exa`: Exa Search/Contents -> graph evidence sources -> `aeo.audit.completed` with structured gaps/review items | Ready |
-| Review Exa recommendation | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.review` | Emits `recommendation.reviewed`; ignored items leave the review canvas, accepted items stay in context as kept operator signal | Ready |
-| Edit/delete Exa recommendation | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.update`, `product.recommendation.delete` | Emits `recommendation.updated` or `recommendation.deleted`; review surfaces replay overlays without mutating generated evidence payloads | Ready |
-| Draft from Exa recommendation | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.draft.create` | Emits `conversation.opened` + `draft.proposed` for an accepted recommendation so Vaani/Bodh work becomes a reviewable draft without publishing or sending | Ready |
-| Record recommendation Outcome | `/dashboard/content`, `/dashboard/aeo`, MCP/internal Rep execution | `product.recommendation.outcome.record` | Emits `outcome.recorded` for accepted Content/AEO recommendations with recommendation, pattern, and exemplar attribution so existing Outcome -> procedural memory learning applies | Ready |
 | Approve/reject draft | `/dashboard/review` | `product.approval.decide` | Resolves workflow approval gate | Ready |
 | Retry failed workflow | `/dashboard/health`, MCP/internal Rep execution | `product.workflow.retry` | Durable workflow retry/resume | Ready |
 | Inspect/redrive dead-lettered event delivery | `/dashboard/health` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |
@@ -48,13 +42,12 @@ projection, and visible UI feedback where applicable.
 
 ## Guardrails
 
-Production proof for Exa research variants lives in `npm run verify:exa`. The
-canary starts `draft.grounding.exa`, `rep.brief.refresh.exa`,
-`content.opportunity.exa`, and `aeo.audit.exa` through the product workflow
-entrypoint, waits for Restate completion, and verifies graph evidence, typed
-events, query/content cache, usage ledger rows, and Content/AEO review payloads.
-Keep it green when changing Exa runtime, cache, event, workflow, or review
-projection code.
+Production proof for active Exa research variants lives in `npm run verify:exa`.
+The active product surface should cover `draft.grounding.exa`,
+`rep.brief.refresh.exa`, `rep.research.exa`, and open-web signal discovery.
+Legacy Content/AEO workflow canaries remain in the script until the worker
+release contract is deliberately migrated, but those paths are not exposed as
+user or agent tools in the current prospecting/outbound wedge.
 
 - Add/update this map in the same PR as any new user-visible action.
 - Add the corresponding tool in `core/product/tools.ts` or a primitive graph/channel

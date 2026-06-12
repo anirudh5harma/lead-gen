@@ -55,13 +55,6 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.activation.configure",
     "product.sources.default_aggregator.configure",
     "product.signal.discover_open_web",
-    "product.content.opportunities.discover",
-    "product.aeo.audit",
-    "product.recommendation.review",
-    "product.recommendation.update",
-    "product.recommendation.delete",
-    "product.recommendation.draft.create",
-    "product.recommendation.outcome.record",
     "product.campaign.outcome.record",
     "product.sources.aggregate.run",
     "product.signal.discover",
@@ -74,6 +67,18 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.sending_domain.operate",
   ]) {
     assert.ok(names.has(expected), `expected product tool ${expected}`);
+  }
+
+  for (const retired of [
+    "product.content.opportunities.discover",
+    "product.aeo.audit",
+    "product.recommendation.review",
+    "product.recommendation.update",
+    "product.recommendation.delete",
+    "product.recommendation.draft.create",
+    "product.recommendation.outcome.record",
+  ]) {
+    assert.ok(!names.has(retired), `retired product tool should not be exposed: ${retired}`);
   }
 });
 

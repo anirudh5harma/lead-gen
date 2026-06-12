@@ -98,9 +98,9 @@ export default async function SetupPage() {
   return (
     <div className="space-y-2">
       <SurfaceHero
-        kicker="Profile"
-        title={<>Shape the work <em>once</em>.</>}
-        description="Tell Bombsell who matters, how you sound, and when you want review. The Reps work from this."
+        kicker="Prospecting"
+        title={<>Tell Bombsell <em>who to chase</em>.</>}
+        description="Define your company, ICP, voice, timing signals, and channel pace. Email, LinkedIn, and campaigns work from this profile."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Ready" value={`${readyCount}/4`} />
@@ -112,7 +112,7 @@ export default async function SetupPage() {
 
       <RepRoster reps={state.reps} />
 
-      <SurfaceSection title="Company profile">
+      <SurfaceSection title="Company context">
         <form
           action={editCompanyProfileAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-2"
@@ -138,7 +138,7 @@ export default async function SetupPage() {
           <div className="md:col-span-2">
             <TextArea
               name="description"
-              label="Company description"
+              label="Company description for personalization"
               defaultValue={profile?.description ?? ""}
               rows={4}
             />
@@ -157,7 +157,7 @@ export default async function SetupPage() {
 
       <ProfileIntelligence profile={profile} />
 
-      <SurfaceSection title="Guidance and pace">
+      <SurfaceSection title="Audience and pace">
         <form
           action={configureActivationAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5"
@@ -165,7 +165,7 @@ export default async function SetupPage() {
           <input type="hidden" name="return_to" value="/dashboard/setup" />
           <TextArea
             name="icp_description"
-            label="Who matters (audience)"
+            label="Target companies and people"
             rows={3}
             defaultValue={
               icp?.description ??
@@ -174,7 +174,7 @@ export default async function SetupPage() {
           />
           <TextArea
             name="rep_voice"
-            label="Voice"
+            label="Outbound voice"
             rows={3}
             defaultValue={
               rep?.persona.voice ??
@@ -214,7 +214,7 @@ export default async function SetupPage() {
         </form>
       </SurfaceSection>
 
-      <SurfaceSection title="Outreach channel">
+      <SurfaceSection title="Email and LinkedIn channels">
         <div className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             <p className="text-sm font-semibold text-[var(--color-text-1)]">
@@ -223,7 +223,7 @@ export default async function SetupPage() {
             <p className="mt-1 text-sm text-[var(--color-text-3)]">
               {account
                 ? `${accountKindLabel(account.kind)} - ${account.status} - ${account.daily_cap ?? "unlimited"} daily ceiling`
-                : "Use the customer's Microsoft 365 mailbox for founder-led outbound and reply sync."}
+                : "Use the customer's Microsoft 365 mailbox for founder-led outbound and reply sync. LinkedIn uses the native channel provider when connected."}
             </p>
           </div>
           <Link
@@ -250,9 +250,9 @@ function NoWorkspaceSetup() {
   return (
     <div className="space-y-2">
       <SurfaceHero
-        kicker="Profile"
+        kicker="Prospecting"
         title="Create a workspace."
-        description="Start with a named workspace. The canvas appears after this."
+        description="Start with a named workspace. Then define the prospecting profile and channels."
       />
       <SurfaceSection title="Workspace">
         <form
@@ -360,42 +360,31 @@ const REP_META: Record<
   { role: string; surface: string; href: string; icon: string }
 > = {
   Sampark: {
-    role: "Outreach SDR",
-    surface: "Starts and moves conversations",
+    role: "Email + LinkedIn",
+    surface: "Researches prospects and moves conversations",
     href: "/dashboard/conversations",
     icon: "forum",
   },
-  Vaani: {
-    role: "Content",
-    surface: "Writes what's worth publishing",
-    href: "/dashboard/content",
-    icon: "edit_note",
-  },
   Prayog: {
     role: "Campaigns",
-    surface: "Finds campaign ideas",
+    surface: "Turns Signals into small outbound Plays",
     href: "/dashboard/campaigns",
     icon: "science",
   },
-  Bodh: {
-    role: "AEO",
-    surface: "Wins citations on AI engines",
-    href: "/dashboard/aeo",
-    icon: "neurology",
-  },
 };
 
-const REP_ORDER = ["Sampark", "Vaani", "Prayog", "Bodh"];
+const REP_ORDER = ["Sampark", "Prayog"];
+const HIDDEN_REP_NAMES = new Set(["Vaani", "Bodh"]);
 
 function RepRoster({ reps }: { reps: SetupRepRow[] }) {
   const byName = new Map(reps.map((r) => [r.name, r]));
   const ordered = [
     ...REP_ORDER.map((name) => byName.get(name) ?? null),
-    ...reps.filter((rep) => !REP_ORDER.includes(rep.name)),
+    ...reps.filter((rep) => !REP_ORDER.includes(rep.name) && !HIDDEN_REP_NAMES.has(rep.name)),
   ];
   return (
-    <SurfaceSection title="The cast">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <SurfaceSection title="Outbound motion">
+      <div className="grid gap-3 sm:grid-cols-2">
         {ordered.map((r, index) => {
           const name = r?.name ?? REP_ORDER[index];
           const meta = REP_META[name] ?? {

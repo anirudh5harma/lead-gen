@@ -8,10 +8,10 @@ const PLANETS: {
   label: string;
   title: string;
 }[] = [
-  { orbit: 1, icon: "send", label: "Outbound", title: "Outbound" },
-  { orbit: 2, icon: "article", label: "Content", title: "Content" },
-  { orbit: 3, icon: "campaign", label: "Campaigns", title: "Campaigns" },
-  { orbit: 4, icon: "travel_explore", label: "AEO", title: "Agentic Engine Optimization" },
+  { orbit: 1, icon: "person", label: "Prospects", title: "Prospecting" },
+  { orbit: 2, icon: "sensors", label: "Signals", title: "Signal ingestion" },
+  { orbit: 3, icon: "forum", label: "Outreach", title: "Email and LinkedIn outreach" },
+  { orbit: 4, icon: "campaign", label: "Campaigns", title: "Campaigns" },
 ];
 
 export default function Home() {
@@ -59,9 +59,9 @@ export default function Home() {
         <section className="grid min-h-[calc(100dvh-72px)] items-center gap-10 py-10 sm:gap-12 sm:py-14 lg:grid-cols-[1fr_1fr] lg:gap-12 lg:py-0">
           <div className="max-w-xl">
             <h1 className="display-serif text-[clamp(3.25rem,7.5vw,6rem)] text-[var(--color-text-1)]">
-              Autonomous
+              Signal-led
               <br />
-              <em>GTM stack</em>.
+              <em>outbound</em>.
             </h1>
 
             <UrlStart />

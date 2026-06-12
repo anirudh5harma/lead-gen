@@ -20,11 +20,10 @@ export interface ShellWorkspace {
 
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Brief" },
+  { href: "/dashboard/setup", label: "Prospecting" },
+  { href: "/dashboard/ingestion", label: "Signals" },
   { href: "/dashboard/conversations", label: "Outreach" },
-  { href: "/dashboard/content", label: "Content" },
   { href: "/dashboard/campaigns", label: "Campaigns" },
-  { href: "/dashboard/aeo", label: "AEO" },
-  { href: "/dashboard/setup", label: "Profile" },
 ];
 
 // Brief ("/dashboard") matches only its own page; section links match the

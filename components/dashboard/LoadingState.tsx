@@ -3,10 +3,9 @@ import Icon from "@/components/Icon";
 type LoadingSurface =
   | "brief"
   | "outreach"
-  | "content"
   | "campaigns"
-  | "aeo"
-  | "profile"
+  | "prospecting"
+  | "signals"
   | "reps"
   | "plays"
   | "operations";
@@ -16,10 +15,9 @@ type LoadingLayout = "tiles" | "rows" | "split";
 const SURFACE_COPY: Record<LoadingSurface, { kicker: string; title: string; icon: string }> = {
   brief: { kicker: "Brief", title: "Gathering the morning view", icon: "dashboard" },
   outreach: { kicker: "Outreach", title: "Loading conversations", icon: "forum" },
-  content: { kicker: "Content", title: "Loading content work", icon: "edit_note" },
   campaigns: { kicker: "Campaigns", title: "Loading campaign signals", icon: "science" },
-  aeo: { kicker: "AEO", title: "Loading answer gaps", icon: "neurology" },
-  profile: { kicker: "Profile", title: "Loading workspace profile", icon: "tune" },
+  prospecting: { kicker: "Prospecting", title: "Loading prospecting profile", icon: "person" },
+  signals: { kicker: "Signals", title: "Loading signal queue", icon: "sensors" },
   reps: { kicker: "Reps", title: "Loading rep memory", icon: "badge" },
   plays: { kicker: "Plays", title: "Loading workflow map", icon: "account_tree" },
   operations: { kicker: "Operations", title: "Loading system state", icon: "monitor_heart" },

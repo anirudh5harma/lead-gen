@@ -2,10 +2,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import {
-  getProductReviewPulse,
-  verifiedProductWorkspaceSession,
-} from "@/core/product/app.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 
@@ -27,19 +23,17 @@ interface OutcomeRow {
   rep_name: string | null;
 }
 
-interface RepPulse {
-  sampark_active: PulseMetric;
-  vaani_angles: PulseMetric;
-  prayog_runs: PulseMetric;
-  bodh_gaps: PulseMetric;
+interface GtmPulse {
+  prospects: PulseMetric;
+  signals: PulseMetric;
+  outreach: PulseMetric;
+  campaigns: PulseMetric;
 }
 
 interface PulseMetric {
   count: number;
   last_activity_at: Date | null;
 }
-
-type RepActivityPulse = Pick<RepPulse, "sampark_active" | "prayog_runs">;
 
 async function loadRunning(workspaceId: string): Promise<RunningRow[]> {
   const pool = getPool();
@@ -72,49 +66,60 @@ async function loadOutcomes(workspaceId: string): Promise<OutcomeRow[]> {
   return rows;
 }
 
-async function loadRepActivityPulse(workspaceId: string): Promise<RepActivityPulse> {
+async function loadGtmPulse(workspaceId: string): Promise<GtmPulse> {
   const pool = getPool();
   const { rows } = await pool.query<{
-    sampark_active: string;
-    sampark_last_activity_at: Date | null;
-    prayog_runs: string;
-    prayog_last_activity_at: Date | null;
+    prospects: string;
+    prospects_last_activity_at: Date | null;
+    signals: string;
+    signals_last_activity_at: Date | null;
+    outreach: string;
+    outreach_last_activity_at: Date | null;
+    campaigns: string;
+    campaigns_last_activity_at: Date | null;
   }>(
     `select
+       (select count(*)::text from graph_persons p
+          where p.workspace_id = $1) as prospects,
+       (select max(p.updated_at) from graph_persons p
+          where p.workspace_id = $1) as prospects_last_activity_at,
+       (select count(*)::text from signals s
+          where s.workspace_id = $1
+            and s.status in ('ingested','matched','in_play')
+            and s.ingested_at >= now() - interval '24 hours') as signals,
+       (select max(s.ingested_at) from signals s
+          where s.workspace_id = $1
+            and s.status in ('ingested','matched','in_play')) as signals_last_activity_at,
        (select count(*)::text from conversations c
-          join reps r on r.id = c.rep_id
           where c.workspace_id = $1
-            and lower(r.name) = 'sampark'
-            and c.status in ('open','awaiting_them','awaiting_us')) as sampark_active,
+            and c.status in ('open','awaiting_them','awaiting_us')) as outreach,
        (select max(c.last_activity_at) from conversations c
-          join reps r on r.id = c.rep_id
           where c.workspace_id = $1
-            and lower(r.name) = 'sampark'
-            and c.status in ('open','awaiting_them','awaiting_us')) as sampark_last_activity_at,
+            and c.status in ('open','awaiting_them','awaiting_us')) as outreach_last_activity_at,
        (select count(*)::text from play_runs pr
-          join plays p on p.id = pr.play_id
-          left join reps run_rep on run_rep.id = pr.rep_id
-          left join reps default_rep on default_rep.id = p.default_rep_id
           where pr.workspace_id = $1
-            and lower(coalesce(run_rep.name, default_rep.name, '')) = 'prayog'
-            and pr.created_at >= now() - interval '24 hours') as prayog_runs,
+            and pr.created_at >= now() - interval '24 hours') as campaigns,
        (select max(pr.created_at) from play_runs pr
-          join plays p on p.id = pr.play_id
-          left join reps run_rep on run_rep.id = pr.rep_id
-          left join reps default_rep on default_rep.id = p.default_rep_id
           where pr.workspace_id = $1
-            and lower(coalesce(run_rep.name, default_rep.name, '')) = 'prayog'
-            and pr.created_at >= now() - interval '24 hours') as prayog_last_activity_at`,
+            and pr.created_at >= now() - interval '24 hours') as campaigns_last_activity_at`,
     [workspaceId],
   );
   return {
-    sampark_active: {
-      count: Number(rows[0]?.sampark_active ?? 0),
-      last_activity_at: rows[0]?.sampark_last_activity_at ?? null,
+    prospects: {
+      count: Number(rows[0]?.prospects ?? 0),
+      last_activity_at: rows[0]?.prospects_last_activity_at ?? null,
     },
-    prayog_runs: {
-      count: Number(rows[0]?.prayog_runs ?? 0),
-      last_activity_at: rows[0]?.prayog_last_activity_at ?? null,
+    signals: {
+      count: Number(rows[0]?.signals ?? 0),
+      last_activity_at: rows[0]?.signals_last_activity_at ?? null,
+    },
+    outreach: {
+      count: Number(rows[0]?.outreach ?? 0),
+      last_activity_at: rows[0]?.outreach_last_activity_at ?? null,
+    },
+    campaigns: {
+      count: Number(rows[0]?.campaigns ?? 0),
+      last_activity_at: rows[0]?.campaigns_last_activity_at ?? null,
     },
   };
 }
@@ -141,7 +146,7 @@ const STATUS_TONE: Record<string, { label: string; tone: "pos" | "warn" | "neutr
 };
 
 const REP_TILES: Array<{
-  key: keyof RepPulse;
+  key: keyof GtmPulse;
   name: string;
   role: string;
   href: string;
@@ -149,36 +154,36 @@ const REP_TILES: Array<{
   unit: (n: number) => string;
 }> = [
   {
-    key: "sampark_active",
-    name: "Sampark",
-    role: "Outreach SDR",
+    key: "prospects",
+    name: "Prospecting",
+    role: "People and accounts",
+    href: "/dashboard/setup",
+    icon: "person",
+    unit: (n) => `${n} ${n === 1 ? "profile" : "profiles"} in the graph`,
+  },
+  {
+    key: "signals",
+    name: "Signals",
+    role: "Timing",
+    href: "/dashboard/ingestion",
+    icon: "sensors",
+    unit: (n) => `${n} ${n === 1 ? "fresh signal" : "fresh signals"} today`,
+  },
+  {
+    key: "outreach",
+    name: "Outreach",
+    role: "Email and LinkedIn",
     href: "/dashboard/conversations",
     icon: "forum",
     unit: (n) => `${n} ${n === 1 ? "conversation" : "conversations"} moving`,
   },
   {
-    key: "vaani_angles",
-    name: "Vaani",
-    role: "Content",
-    href: "/dashboard/content",
-    icon: "edit_note",
-    unit: (n) => `${n} ${n === 1 ? "angle" : "angles"} to review`,
-  },
-  {
-    key: "prayog_runs",
-    name: "Prayog",
+    key: "campaigns",
+    name: "Campaigns",
     role: "Campaigns",
     href: "/dashboard/campaigns",
     icon: "science",
     unit: (n) => `${n} ${n === 1 ? "campaign idea" : "campaign ideas"} today`,
-  },
-  {
-    key: "bodh_gaps",
-    name: "Bodh",
-    role: "AEO",
-    href: "/dashboard/aeo",
-    icon: "neurology",
-    unit: (n) => `${n} ${n === 1 ? "suggestion" : "suggestions"} open`,
   },
 ];
 
@@ -191,36 +196,19 @@ export default async function BriefPage() {
         running={[]}
         outcomes={[]}
         pulse={{
-          sampark_active: { count: 0, last_activity_at: null },
-          vaani_angles: { count: 0, last_activity_at: null },
-          prayog_runs: { count: 0, last_activity_at: null },
-          bodh_gaps: { count: 0, last_activity_at: null },
+          prospects: { count: 0, last_activity_at: null },
+          signals: { count: 0, last_activity_at: null },
+          outreach: { count: 0, last_activity_at: null },
+          campaigns: { count: 0, last_activity_at: null },
         }}
       />
     );
   }
-  const pool = getPool();
-  const productSession = verifiedProductWorkspaceSession({
-    workspace_id: session.workspace.id,
-    user_id: session.user_id,
-  });
-  const [reviewPulse, running, outcomes, repActivity] = await Promise.all([
-    getProductReviewPulse(pool, productSession),
+  const [running, outcomes, pulse] = await Promise.all([
     loadRunning(session.workspace.id),
     loadOutcomes(session.workspace.id),
-    loadRepActivityPulse(session.workspace.id),
+    loadGtmPulse(session.workspace.id),
   ]);
-  const pulse: RepPulse = {
-    ...repActivity,
-    vaani_angles: {
-      count: reviewPulse.content.open,
-      last_activity_at: reviewPulse.content.last_activity_at,
-    },
-    bodh_gaps: {
-      count: reviewPulse.aeo.open,
-      last_activity_at: reviewPulse.aeo.last_activity_at,
-    },
-  };
   return (
     <BriefView
       workspaceName={session.workspace.name}
@@ -240,7 +228,7 @@ function BriefView({
   workspaceName: string | null;
   running: RunningRow[];
   outcomes: OutcomeRow[];
-  pulse: RepPulse;
+  pulse: GtmPulse;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
@@ -248,7 +236,7 @@ function BriefView({
     day: "numeric",
   });
   const totalPulse =
-    pulse.sampark_active.count + pulse.vaani_angles.count + pulse.prayog_runs.count + pulse.bodh_gaps.count;
+    pulse.prospects.count + pulse.signals.count + pulse.outreach.count + pulse.campaigns.count;
   const heroVerb = heroWorkVerb(today);
   const lastMovement = latestPulseDate(pulse);
 
@@ -270,15 +258,15 @@ function BriefView({
             </>
           ) : (
             <>
-              <span className="block">Set the profile.</span>
-              <em>Then walk away.</em>
+              <span className="block">Set prospecting.</span>
+              <em>Then watch Signals.</em>
             </>
           )}
         </h1>
         <p className="mt-5 max-w-[32ch] text-[15px] leading-[1.7] text-[var(--color-text-2)] sm:max-w-[64ch]">
           {totalPulse === 0
-            ? "Nothing to surface yet. Finish the profile once, then useful work will appear here."
-            : `Sampark conversations: ${pulse.sampark_active.count}. Content ideas: ${pulse.vaani_angles.count}. Campaign ideas: ${pulse.prayog_runs.count}. AEO suggestions: ${pulse.bodh_gaps.count}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
+            ? "Nothing to surface yet. Define the prospecting profile once, then signal-led outreach will appear here."
+            : `Prospects: ${pulse.prospects.count}. Fresh signals: ${pulse.signals.count}. Active outreach: ${pulse.outreach.count}. Campaign ideas: ${pulse.campaigns.count}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
         </p>
       </section>
 
@@ -327,15 +315,15 @@ function BriefView({
           empty={
             <EmptyState
               title="No signals yet."
-              hint="Bombsell will surface good-fit opportunities after the profile is tuned."
-              cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
+              hint="Bombsell will surface good-fit opportunities after prospecting is tuned."
+              cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
             />
           }
         >
           {running.map((r) => (
             <FeedRow
               key={r.id}
-              icon="target"
+              icon="sensors"
               title={r.title}
               meta={`Qualified · ${timeAgo(new Date(r.freshness_at))}`}
             />
@@ -372,7 +360,7 @@ function BriefView({
   );
 }
 
-function latestPulseDate(pulse: RepPulse): Date | null {
+function latestPulseDate(pulse: GtmPulse): Date | null {
   const times = Object.values(pulse)
     .map((metric) => metric.last_activity_at?.getTime() ?? null)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));

@@ -126,9 +126,9 @@ export default async function CampaignsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Prayog · Campaigns"
+        kicker="Campaigns"
         title="No workspace yet."
-        description="Create a profile, then Prayog will turn good signals into campaign ideas."
+        description="Create a prospecting profile, then Signals can become email and LinkedIn campaign Plays."
       />
     );
   }
@@ -142,9 +142,9 @@ export default async function CampaignsPage() {
   return (
     <div className="space-y-2">
       <SurfaceHero
-        kicker="Prayog · Campaigns"
+        kicker="Campaigns"
         title={<>Run small bets. <em>Scale the winners.</em></>}
-        description="Prayog turns qualified signals into small campaign ideas. Approve one, watch the outcome, and the next idea is sharper."
+        description="Qualified signals become email and LinkedIn Plays. Approve a small bet, watch replies and meetings, then let outcomes sharpen the next run."
         meta={
           <div className="flex flex-wrap items-center gap-2">
             <HeroStat label="Qualified today" value={counts.qualified_today} />
@@ -169,8 +169,8 @@ export default async function CampaignsPage() {
         {signals.length === 0 ? (
           <EmptyState
             title="No qualified signals yet"
-            hint="Tune the profile once, then good-fit opportunities will appear here."
-            cta={{ href: "/dashboard/setup", label: "Tune profile", icon: "tune" }}
+            hint="Tune prospecting once, then good-fit timing signals will appear here."
+            cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">
@@ -185,7 +185,7 @@ export default async function CampaignsPage() {
         {ideas.length === 0 ? (
           <EmptyState
             title="No campaign ideas yet"
-            hint="Prayog will suggest the first small campaign once a signal looks useful."
+            hint="A campaign Play will appear once a signal has enough fit, contact data, and channel confidence."
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">

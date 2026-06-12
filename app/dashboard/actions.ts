@@ -13,7 +13,6 @@ import {
   recordProductCampaignOutcome,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
-  researchWorkspaceWithExa,
   runWorkspaceSignalAggregatorOnce,
   updateProductRecommendation,
   verifiedProductWorkspaceSession,
@@ -87,10 +86,10 @@ function approvalValue(
 function repRoleValue(formData: FormData, key: string) {
   const role = value(formData, key);
   return (
-    ["sdr", "content", "replier", "researcher", "campaign", "custom"].includes(role)
+    ["sdr", "replier", "researcher", "campaign", "custom"].includes(role)
       ? role
       : "sdr"
-  ) as "sdr" | "content" | "replier" | "researcher" | "campaign" | "custom";
+  ) as "sdr" | "replier" | "researcher" | "campaign" | "custom";
 }
 
 async function requireDashboardSession(
@@ -330,46 +329,6 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
   redirectWithToast(returnTo, "Outcome recorded.");
 }
 
-export async function discoverContentOpportunitiesAction(formData: FormData) {
-  const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/content");
-  const query = value(formData, "query");
-  if (!query) {
-    redirectWithToast(returnTo, "Enter a content research query.", "error");
-  }
-  await researchWorkspaceWithExa(
-    {
-      query,
-      intent: "content_research",
-      include_text: true,
-      num_results: numberValue(formData, "num_results", 8),
-    },
-    session,
-  );
-  revalidateProductPaths();
-  redirectWithToast(returnTo, "Content research queued.");
-}
-
-export async function auditAeoAction(formData: FormData) {
-  const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/aeo");
-  const query = value(formData, "query");
-  if (!query) {
-    redirectWithToast(returnTo, "Enter an AEO audit query.", "error");
-  }
-  await researchWorkspaceWithExa(
-    {
-      query,
-      intent: "aeo_audit",
-      include_text: true,
-      num_results: numberValue(formData, "num_results", 8),
-    },
-    session,
-  );
-  revalidateProductPaths();
-  redirectWithToast(returnTo, "AEO audit queued.");
-}
-
 export async function runSignalAggregatorAction(formData: FormData) {
   const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
@@ -459,9 +418,8 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/setup");
   revalidatePath("/dashboard/reps");
-  revalidatePath("/dashboard/content");
+  revalidatePath("/dashboard/ingestion");
   revalidatePath("/dashboard/plays");
-  revalidatePath("/dashboard/aeo");
   revalidatePath("/dashboard/campaigns");
   revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/conversations");

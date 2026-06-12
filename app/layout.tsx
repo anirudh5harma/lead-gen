@@ -21,9 +21,9 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "Bombsell | Autonomous GTM",
+  title: "Bombsell | Signal-led outbound",
   description:
-    "Autonomous GTM workspace for founders and lean teams. Tell it the outcome, connect the essentials, and review what matters.",
+    "Prospecting, signal ingestion, email and LinkedIn outreach, and campaign learning for founders and lean teams.",
 };
 
 export const viewport: Viewport = {

@@ -399,10 +399,9 @@ function MiniStatus({ label, value }: { label: string; value: number }) {
 
 function surfaceFor(name: string): string {
   if (name === "Sampark") return "Sampark · Outreach";
-  if (name === "Vaani") return "Vaani · Content";
   if (name === "Prayog") return "Prayog · Campaigns";
-  if (name === "Bodh") return "Bodh · AEO";
-  return "Profile";
+  if (name === "Vaani" || name === "Bodh") return `${name} · Retired`;
+  return "Prospecting";
 }
 
 function messageStatusLabel(status: string): string {
@@ -429,9 +428,8 @@ function humanPattern(patternKey: string): string {
 
 function iconFor(name: string): string {
   if (name === "Sampark") return "forum";
-  if (name === "Vaani") return "edit_note";
   if (name === "Prayog") return "science";
-  if (name === "Bodh") return "neurology";
+  if (name === "Vaani" || name === "Bodh") return "lock";
   return "person";
 }
 

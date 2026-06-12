@@ -6,6 +6,14 @@ This is not an implementation plan. It is an opinionated architectural design fo
 
 The product must do three things well, in this order: (1) **decide who to talk to and what to say**, (2) **execute across channels without losing messages or burning sender reputation**, and (3) **learn from outcomes faster than a human SDR or content marketer could**. Everything in the design serves those three jobs.
 
+### Current Product Focus — 2026-06-12
+
+The active product wedge is narrower than the full architecture: prospecting,
+signal ingestion, outbound across email and LinkedIn, and campaigns. Content and
+AEO are retired from the user-facing surface for now. Keep backend compatibility
+until the Restate release contract is deliberately changed, but do not add new
+Content/AEO UX. See `docs/product-focus-prospecting-outbound-2026-06-12.md`.
+
 ---
 
 ## Current Bombsell — 60-Second Snapshot
@@ -34,7 +42,7 @@ Everything the user touches and everything the system schedules is one of five p
 
 | Primitive | What it is | Examples |
 |---|---|---|
-| **Rep** | A persona-bound agent with voice, memory, KPIs, and channels it owns. The user-facing identity. | "Sampark — outbound SDR," "Vaani — content," "Prayog — campaigns," "Bodh — AEO" |
+| **Rep** | A persona-bound agent with voice, memory, KPIs, and channels it owns. The user-facing identity. | "Sampark — outbound SDR," "Prayog — campaigns" |
 | **Signal** | A typed event that may justify action. Has source, freshness, audience hint, novelty score. | Series A close, job posting, podcast mention, churn risk, competitor launch |
 | **Play** | A reusable, parameterized workflow. Composed of agent steps + tool calls + approval gates. | "Founder-to-founder cold email on funding," "Series B → LinkedIn carousel" |
 | **Conversation** | A durable thread across one or many channels with one counterparty. The atom of CRM. | An email thread + LinkedIn DM + a meeting, all about the same person |

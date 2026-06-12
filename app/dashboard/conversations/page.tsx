@@ -141,9 +141,9 @@ export default async function ConversationsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Sampark · Outreach"
+        kicker="Outreach"
         title="No workspace selected."
-        description="Create a profile first, then Sampark's replies will collect here."
+        description="Create a prospecting profile first, then email and LinkedIn replies collect here."
       />
     );
   }
@@ -154,9 +154,9 @@ export default async function ConversationsPage() {
   return (
     <div className="space-y-2">
       <SurfaceHero
-        kicker="Sampark · Outreach"
+        kicker="Email + LinkedIn"
         title={<>Move the <em>useful</em> conversations.</>}
-        description="Replies, next moves, and review moments. Everything else stays quiet."
+        description="Drafts, approvals, replies, and next moves across connected inboxes and LinkedIn. Everything is tied back to the signal that made now worth reaching out."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Awaiting reply" value={stats.awaiting_reply} />
@@ -170,8 +170,8 @@ export default async function ConversationsPage() {
         {conversations.length === 0 ? (
           <EmptyState
             title="No outreach replies yet"
-            hint="Once Sampark begins, replies and review moments will appear here."
-            cta={{ href: "/dashboard/setup", label: "Tune Sampark", icon: "forum" }}
+            hint="Once a signal starts an email or LinkedIn Play, replies and review moments will appear here."
+            cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
           />
         ) : (
           <div className="grid gap-2">
@@ -313,8 +313,6 @@ function freshWhen(value: Date): string {
 
 function repIcon(name: string | null): string {
   if (name === "Sampark") return "forum";
-  if (name === "Vaani") return "edit_note";
   if (name === "Prayog") return "science";
-  if (name === "Bodh") return "neurology";
   return "person";
 }
