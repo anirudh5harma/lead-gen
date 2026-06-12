@@ -1,0 +1,65 @@
+services:
+  - type: web
+    name: bombsell-production-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile.worker
+    dockerContext: .
+    plan: standard
+    autoDeploy: false
+    numInstances: 1
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WORKER_COMMAND
+        value: worker:production
+      - key: RESTATE_WORKFLOW_HTTP1
+        value: "1"
+      - key: BOMBSELL_SUBSTRATE
+        value: nats_restate
+      - key: APP_ORIGIN
+        value: https://www.bombsell.com
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_POOL_MAX
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: NATS_CREDS
+        sync: false
+      - key: NATS_STREAM_MAX_BYTES
+        sync: false
+      - key: NATS_STREAM_MAX_AGE_MS
+        sync: false
+      - key: RESTATE_INGRESS_URL
+        sync: false
+      - key: RESTATE_BEARER_TOKEN
+        sync: false
+      - key: RESTATE_AUTH_TOKEN
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: EXA_API_KEY
+        sync: false
+      - key: FIRECRAWL_API_KEY
+        sync: false
+      - key: HUNTER_API_KEY
+        sync: false
+      - key: ZEROBOUNCE_API_KEY
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        sync: false
+      - key: OUTLOOK_DEFAULT_DAILY_CAP
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: MANAGED_OWNED_DOMAIN_EMAIL_ENABLED
+        value: "0"

@@ -64,6 +64,7 @@ import {
 import { serveRestateWorkflows } from "../core/substrate/workflows/adapters/restate-host.ts";
 import { restateBearerFromEnv } from "../core/substrate/workflows/adapters/restate.ts";
 import { createRestateRuntimeProbeWorkflow } from "../core/substrate/workflows/index.ts";
+import { resolveRestateWorkflowPort } from "./worker-port.ts";
 
 console.log("[restate-workflows] booting");
 const natsUrl = requiredEnv("NATS_URL");
@@ -186,7 +187,7 @@ const workflows = [
   createExaOpenWebSignalWorkflow(),
 ];
 
-const port = Number(process.env.RESTATE_WORKFLOW_PORT ?? 9080);
+const port = resolveRestateWorkflowPort();
 const bound = await serveRestateWorkflows({
   workflows,
   bus,

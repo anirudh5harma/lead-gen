@@ -8,12 +8,12 @@ Cut AWS spend and operational drag without bypassing the pivot-v2 architecture. 
 
 ## Current AWS Footprint
 
-- **ECS Express Mode worker host**: runs the production worker contract through `worker:managed` with `WORKER_TARGET_COMMAND=worker:production`. This hosts the Restate workflow handler, event-wait bridge, email projectors, signal projectors, and dispatch redrive.
-- **ECR image/build path**: stores and serves the worker container image used by ECS.
-- **ALB/target groups/public endpoint**: exposes the Restate handler and `/health`; this has already created tuning churn around port `9080` health checks.
-- **CloudWatch logs and health scanning**: `verify:restate-ecs-health` reads ECS service state, ALB target health, service events, and CloudWatch log events.
+- **ECS Express Mode worker host**: still runs the production worker contract through `worker:managed` with `WORKER_TARGET_COMMAND=worker:production`. This hosts the Restate workflow handler, event-wait bridge, email projectors, signal projectors, and dispatch redrive.
+- **ECR image/build path**: still stores and serves the worker container image used by ECS.
+- **ALB/target groups/public endpoint**: still exposes the Restate handler and `/health`; this is a top migration target because it has already created tuning churn around port `9080` health checks.
+- **CloudWatch logs and health scanning**: `verify:restate-ecs-health` reads ECS service state, ALB target health, service events, and CloudWatch log events. All known worker/App Runner log groups were moved to 7-day retention on 2026-06-12.
 - **Legacy SES/SNS adapter**: optional owned-domain capacity only. Customer-connected Outlook/Microsoft Graph is the launch outbound path. `AWS_SES_REQUIRED=1` should only be set when intentionally exercising this legacy path.
-- **App Runner**: documented as paused after the old Restate deployment was drained. It should be deleted once billing confirms no remaining dependency.
+- **App Runner**: removed from the active footprint on 2026-06-12. The four known App Runner services (`bombsell-projectors`, `bombsell-email-projectors`, `bombsell-signal-projectors`, and old `bombsell-restate-workflows`) were paused first, then deleted after the production app and ECS current-state smoke checks passed.
 
 ## Cost Signals From Current Providers
 
@@ -50,22 +50,22 @@ Avoid for the first migration:
 
 ### Phase 0: Stop The Bleeding, 0-48 Hours
 
-1. Confirm `AWS_SES_REQUIRED` is unset or `0` in Vercel and worker environments.
-2. Confirm `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED` is unset unless a paying customer explicitly needs managed owned-domain capacity.
-3. Confirm the old App Runner service is paused or deleted.
-4. Set CloudWatch log retention on worker log groups to 7 days while migration is in progress.
-5. Keep ECS desired count at `1`, with no preview/staging copies running unintentionally.
-6. Create AWS Budgets and Cost Explorer views split by ECS/Fargate, ELB, CloudWatch, ECR, Route53, SES/SNS, and public IPv4.
+1. Done 2026-06-12: confirmed `AWS_SES_REQUIRED` is not configured in Vercel production/preview.
+2. Done 2026-06-12: confirmed `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED` is not configured in Vercel production/preview; the Render blueprint sets it to `0`.
+3. Done 2026-06-12: paused and deleted every known App Runner service.
+4. Done 2026-06-12: set CloudWatch retention on all known worker/App Runner log groups to 7 days.
+5. Done 2026-06-12: kept ECS desired count at `1` because it remains the active worker until the replacement endpoint passes the migration gate.
+6. Done 2026-06-12: removed static `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from Vercel production and preview envs.
+7. Pending: create AWS Budgets and Cost Explorer views split by ECS/Fargate, ELB, CloudWatch, ECR, Route53, SES/SNS, and public IPv4.
 
 ### Phase 1: Same-Contract Worker Migration, 2-7 Days
 
-1. Choose Render first if we want the least platform experimentation: Docker image, web service endpoint, background worker support, health checks, logs, and predictable fixed instance tiers.
+1. Choose Render first if we want the least platform experimentation: Docker image, web service endpoint, health checks, logs, and predictable fixed instance tiers.
 2. Choose Railway first if we want faster iteration and are comfortable with usage-credit billing.
-3. Deploy one production worker using the existing contract:
-   - `WORKER_COMMAND=worker:managed`
-   - `WORKER_TARGET_COMMAND=worker:production`
+3. Deploy one production web service using the existing contract:
+   - `WORKER_COMMAND=worker:production`
    - `RESTATE_WORKFLOW_HTTP1=1`
-   - `RESTATE_WORKFLOW_PORT=9080`
+   - `RESTATE_WORKFLOW_PORT` omitted unless the host allows a fixed exposed port; otherwise the worker uses provider `PORT`
    - shared env from `docs/production-workers.md`
 4. Expose a stable HTTPS endpoint and verify `/health`.
 5. Register the new endpoint with Restate Cloud.
@@ -77,6 +77,11 @@ Avoid for the first migration:
    - `APP_ORIGIN=https://www.bombsell.com npm run verify:production-app`
 7. Observe for 24 hours with autonomous volume capped.
 8. Scale ECS desired count to `0`, then unregister and delete AWS resources once the Restate deployment registry and logs show no traffic to the ECS URL.
+
+Current blocker: the repo is ready for the provider-side worker create/register
+step, but this machine does not have authenticated Render/Fly/Railway access.
+The existing ECS worker remains intentionally active until the replacement
+endpoint is live and passes the migration gate.
 
 ### Phase 2: Remove Legacy AWS Email, 1-2 Weeks
 
@@ -105,9 +110,10 @@ Do not scale down ECS until all are true:
 - The production app smoke passes after the worker endpoint switch.
 - No Play can send through managed owned-domain email unless `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1`.
 
-## Unknowns Blocked By AWS Login
+## Remaining Live Checks
 
-The code/docs identify likely cost centers, but exact savings need live billing data. Once AWS auth is available, pull:
+AWS auth has been refreshed and the first billing/resource audit is complete.
+Before final retirement, keep checking:
 
 - Cost Explorer last 7 and 30 days by service and usage type.
 - ECS desired/running count and stale services.

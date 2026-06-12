@@ -61,6 +61,12 @@ port. The HTTP/1 handler must keep Restate bidirectional protocol enabled;
 forcing request-response mode breaks durable command checkpoints such as
 `ctx.run`.
 
+Single-port container hosts such as Render or Railway should run
+`WORKER_COMMAND=worker:production` directly, not `worker:managed`, unless the
+host can expose both the Restate handler port and a separate managed health
+port. Direct Restate-capable workers bind to `RESTATE_WORKFLOW_PORT`, then the
+platform-provided `PORT`, then `9080`, in that order.
+
 Current production note: ECS Express Gateway accepts the single-port HTTP/1
 health path when the handler keeps Restate bidirectional protocol enabled. ECS
 task definition revision `32` runs image
@@ -77,10 +83,15 @@ Outlook-first/explicit-managed-domain-opt-in email behavior live in the
 production worker; startup logs show the managed owned-domain transport is
 disabled unless `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1`.
 `npm run verify:production-gate` now includes read-only Outlook account
-readiness and skips the legacy SES probe unless `AWS_SES_REQUIRED=1`. The old App Runner deployment was
-drained by purging completed maintenance-only invocations and then
-force-removing the deployment registration; the unused App Runner service
-itself is paused. A same-port h2-capable handler was tested earlier and failed
+readiness and skips the legacy SES probe unless `AWS_SES_REQUIRED=1`. The old
+App Runner deployment was drained by purging completed maintenance-only
+invocations and then force-removing the deployment registration. On 2026-06-12,
+the remaining standalone App Runner projector services (`bombsell-projectors`,
+`bombsell-email-projectors`, `bombsell-signal-projectors`, and the old
+`bombsell-restate-workflows`) were paused and then deleted, so the consolidated
+ECS `worker:production` process is the only AWS-hosted worker path left
+running.
+A same-port h2-capable handler was tested earlier and failed
 ECS health replacement. Recent service history showed periodic `/health`
 timeouts and task replacements on port `9080` while long
 `ingest_workspace_poll` runs were active, so the generated target groups are
@@ -150,9 +161,25 @@ Workers that start or bridge Restate invocations also need:
 - `OPENAI_API_KEY`
 - `MICROSOFT_CLIENT_ID`
 - `MICROSOFT_CLIENT_SECRET`
-- `RESTATE_WORKFLOW_PORT`, default `9080`
+- `RESTATE_WORKFLOW_PORT`, default `9080`; single-port hosts may omit it and
+  let the worker bind to the platform `PORT`
 - `RESTATE_WORKFLOW_HTTP1=1` when the host is behind an HTTP/1.1 managed proxy
   and must accept `/health` checks on the Restate handler port
+
+## Render Blueprint
+
+`render.yaml` defines a same-contract `bombsell-production-worker` web service
+for the ECS exit path. It uses `Dockerfile.worker`, runs
+`WORKER_COMMAND=worker:production`, sets `RESTATE_WORKFLOW_HTTP1=1`, disables
+managed owned-domain outbound by default, and leaves all secrets as
+dashboard-synced values. After the service is created and secrets are entered,
+register its public URL with Restate and run the verification gates in this
+document before scaling ECS down.
+
+The blueprint is committed as infrastructure handoff, not an active deployment.
+Do not scale ECS to `0` until Render/Railway/Fly is authenticated, the service
+is created, the public URL is registered in Restate Cloud, and the migration
+gate below passes.
 
 Optional managed owned-domain capacity needs:
 

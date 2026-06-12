@@ -75,6 +75,7 @@ import {
   createRestateRuntimeProbeWorkflow,
   restateBearerFromEnv,
 } from "../core/substrate/workflows/index.ts";
+import { resolveRestateWorkflowPort } from "./worker-port.ts";
 
 console.log("[production-worker] booting");
 
@@ -205,7 +206,7 @@ const workflows = [
   createExaOpenWebSignalWorkflow(),
 ];
 
-const port = Number(process.env.RESTATE_WORKFLOW_PORT ?? 9080);
+const port = resolveRestateWorkflowPort();
 const bound = await serveRestateWorkflows({
   workflows,
   bus,
