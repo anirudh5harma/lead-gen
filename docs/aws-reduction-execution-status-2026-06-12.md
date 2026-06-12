@@ -20,6 +20,12 @@ Date: 2026-06-12
 - Built and pushed interim ECS image `ecs-refresh-20260612-7fc8029-amd64`.
 - Rolled ECS service `bombsell-restate-workflows` to task definition revision `33`.
 - Re-discovered deployment `dp_16RLtYXG3bAoyujNOKDPH57` in Restate Cloud with `overwrite=true`; the deployment now advertises all required workflow services, including `contact.resolve_for_signal.v1`.
+- Created AWS Budgets guardrails:
+  - `Bombsell AWS Monthly Cost Cap` at `$75`.
+  - `Bombsell AWS Worker Infrastructure Cap` at `$45`, filtered to App Runner, ECS, Elastic Load Balancing, VPC, ECR, and CloudWatch.
+- Added an ECR lifecycle policy on `bombsell-worker` to expire untagged artifacts after 7 days and retain the 10 newest tagged rollback images.
+- Added `npm run verify:aws-reduction` as the reduction readiness gate for App Runner removal, AWS budgets, ECR lifecycle, Vercel AWS env removal, Restate contract readiness, and current ECS health.
+- Installed and authenticated the Render CLI to `Anirudh Sharma's Workspace`; `render.yaml` creation is blocked by Render returning `need_payment_info` for the `standard` worker plan.
 
 ## Current Cost Drivers
 
@@ -44,11 +50,13 @@ the ECS gateway stack is scaled down.
 - `RESTATE_ECS_LOG_LOOKBACK_MINUTES=3 npm run verify:restate-ecs-health` passed against the current ECS worker.
 - `npm run verify:restate-runtime` completed a durable checkpoint through the current ECS worker.
 - `npm run verify:restate` passed after ECS revision `33` was registered and Restate re-discovered the deployment.
+- `npm run verify:aws-reduction` passed after the AWS budgets, ECR lifecycle policy, Vercel env cleanup, Restate contract check, and ECS health check were in place.
 - `OUTREACH_PIPELINE_STRICT=1 npm run verify:outreach-pipeline` failed only on Outlook readiness because there are no connected Outlook accounts; the local signal-to-contact-to-personalized-draft-to-eval-to-dry-run-send-to-outcome path passed.
 
 ## Still Required
 
-- Create the Render service from `render.yaml` and enter the dashboard-synced secrets.
+- Add payment information to the Render workspace so the `standard` worker plan can be created.
+- Create the Render service from `render.yaml` and enter the dashboard-synced secrets after explicit owner confirmation or through the Render dashboard.
 - Register the Render service URL with Restate Cloud.
 - Run the migration gate:
   - `npm run verify:restate`
@@ -62,8 +70,11 @@ the ECS gateway stack is scaled down.
 ## Blocker
 
 The actual non-AWS worker deployment cannot be completed from this machine yet
-because no Render/Fly CLI is available and the Railway CLI is not authenticated.
-The repo and current production worker contract are now ready for the
-provider-side create-and-register step. Strict outreach also needs at least one
-customer-connected Outlook account with reply-sync readiness before real
-outbound can be called launch-ready.
+because the authenticated Render workspace rejects the `standard` service
+creation with `need_payment_info`. The repo and current production worker
+contract are ready for the provider-side create-and-register step once billing
+is added. Do not copy `.env.local` secrets into Render from this machine
+without explicit owner confirmation; the blueprint keeps secrets
+dashboard-synced. Strict outreach also needs at least one customer-connected
+Outlook account with reply-sync readiness before real outbound can be called
+launch-ready.

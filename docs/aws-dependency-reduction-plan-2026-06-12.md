@@ -9,7 +9,7 @@ Cut AWS spend and operational drag without bypassing the pivot-v2 architecture. 
 ## Current AWS Footprint
 
 - **ECS Express Mode worker host**: still runs the production worker contract through `worker:managed` with `WORKER_TARGET_COMMAND=worker:production`. This hosts the Restate workflow handler, event-wait bridge, email projectors, signal projectors, and dispatch redrive.
-- **ECR image/build path**: still stores and serves the worker container image used by ECS.
+- **ECR image/build path**: still stores and serves the worker container image used by ECS. A lifecycle policy was added on 2026-06-12 to expire untagged artifacts after 7 days and keep only the 10 newest tagged rollback images.
 - **ALB/target groups/public endpoint**: still exposes the Restate handler and `/health`; this is a top migration target because it has already created tuning churn around port `9080` health checks.
 - **CloudWatch logs and health scanning**: `verify:restate-ecs-health` reads ECS service state, ALB target health, service events, and CloudWatch log events. All known worker/App Runner log groups were moved to 7-day retention on 2026-06-12.
 - **Legacy SES/SNS adapter**: optional owned-domain capacity only. Customer-connected Outlook/Microsoft Graph is the launch outbound path. `AWS_SES_REQUIRED=1` should only be set when intentionally exercising this legacy path.
@@ -56,7 +56,9 @@ Avoid for the first migration:
 4. Done 2026-06-12: set CloudWatch retention on all known worker/App Runner log groups to 7 days.
 5. Done 2026-06-12: kept ECS desired count at `1` because it remains the active worker until the replacement endpoint passes the migration gate.
 6. Done 2026-06-12: removed static `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from Vercel production and preview envs.
-7. Pending: create AWS Budgets and Cost Explorer views split by ECS/Fargate, ELB, CloudWatch, ECR, Route53, SES/SNS, and public IPv4.
+7. Done 2026-06-12: created AWS Budgets guardrails for total monthly AWS spend (`$75`) and worker infrastructure spend (`$45`) covering App Runner, ECS, ELB, VPC, ECR, and CloudWatch.
+8. Done 2026-06-12: added an ECR lifecycle policy for `bombsell-worker` so stale image artifacts do not keep accumulating after the ECS exit.
+9. Done 2026-06-12: added `npm run verify:aws-reduction` as the repeatable readiness gate for this phase.
 
 ### Phase 1: Same-Contract Worker Migration, 2-7 Days
 
@@ -79,11 +81,11 @@ Avoid for the first migration:
 8. Scale ECS desired count to `0`, then unregister and delete AWS resources once the Restate deployment registry and logs show no traffic to the ECS URL.
 
 Current blocker: the repo is ready for the provider-side worker create/register
-step, but this machine does not have authenticated Render/Fly/Railway access.
-The existing ECS worker was refreshed to task definition revision `33` on
-2026-06-12 and now passes the Restate readiness/runtime gates. It remains
-intentionally active until the replacement endpoint is live and passes the full
-migration gate.
+step and the Render CLI is authenticated, but Render rejects `render.yaml`
+creation with `need_payment_info` for the `standard` worker plan. The existing
+ECS worker was refreshed to task definition revision `33` on 2026-06-12 and now
+passes the Restate readiness/runtime gates. It remains intentionally active
+until the replacement endpoint is live and passes the full migration gate.
 
 ### Phase 2: Remove Legacy AWS Email, 1-2 Weeks
 
@@ -118,6 +120,7 @@ AWS auth has been refreshed and the first billing/resource audit is complete.
 Before final retirement, keep checking:
 
 - Cost Explorer last 7 and 30 days by service and usage type.
+- AWS Budgets actual and forecasted spend for the total and worker-infrastructure caps.
 - ECS desired/running count and stale services.
 - ALB count, LCU usage, and public IPv4 charges.
 - CloudWatch ingestion, storage, and Logs Insights scanned bytes.

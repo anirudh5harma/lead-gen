@@ -178,9 +178,15 @@ register its public URL with Restate and run the verification gates in this
 document before scaling ECS down.
 
 The blueprint is committed as infrastructure handoff, not an active deployment.
-Do not scale ECS to `0` until Render/Railway/Fly is authenticated, the service
-is created, the public URL is registered in Restate Cloud, and the migration
-gate below passes.
+As of 2026-06-12, the Render CLI is installed and authenticated to
+`Anirudh Sharma's Workspace`, but `render blueprints validate render.yaml`
+returns `need_payment_info` for the `standard` service. Add payment information
+to the workspace before creating the always-on worker. Do not copy `.env.local`
+secrets into Render from this machine without explicit owner confirmation; the
+blueprint keeps sensitive values as dashboard-synced env vars.
+
+Do not scale ECS to `0` until the Render/Railway/Fly service is created, the
+public URL is registered in Restate Cloud, and the migration gate below passes.
 
 Optional managed owned-domain capacity needs:
 
