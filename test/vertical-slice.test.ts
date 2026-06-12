@@ -164,6 +164,24 @@ test("first vertical slice: LLM-backed writer path is usable behind the same jud
   );
 });
 
+test("first vertical slice: Exa draft grounding failures skip without blocking the email Play", async () => {
+  let groundingCalls = 0;
+  const result = await runFirstVerticalSlice({
+    draftGroundingProvider: async () => {
+      groundingCalls += 1;
+      throw new Error("Exa daily_query_cap_exhausted exceeded");
+    },
+  });
+
+  assert.equal(result.output.decision, "sent");
+  assert.equal(result.sentEmailCount, 1);
+  assert.equal(groundingCalls, 1);
+  assert.ok(result.eventTypes.includes("draft.proposed"));
+  assert.ok(result.eventTypes.includes("draft.judged"));
+  assert.ok(result.eventTypes.includes("message.sent"));
+  assert.equal(result.state.messages[0].provenance.exa_grounding, undefined);
+});
+
 test("email transport: Resend adapter posts the provider payload and returns provider id", async () => {
   let body: unknown;
   let idempotencyHeader: string | null = null;

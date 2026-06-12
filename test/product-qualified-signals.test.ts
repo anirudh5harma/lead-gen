@@ -183,6 +183,9 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   assert.match(sql, /cardinality\(gp\.emails\) > 0/);
   assert.match(sql, /meta->>'verified' = 'true'/);
   assert.match(sql, /array_prepend\(ev\.email::citext, array_remove\(gp\.emails, ev\.email::citext\)\)/);
+  assert.match(sql, /limit greatest\(\$2::int \* 5, 250\)/);
+  assert.match(sql, /when draft\.message_id is not null/);
+  assert.match(sql, /limit \$2/);
 });
 
 test("qualified signal email readiness requires connected Outlook reply sync", async () => {

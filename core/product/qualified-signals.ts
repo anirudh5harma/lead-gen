@@ -207,7 +207,7 @@ export async function loadQualifiedSignalWorkbench(
         order by coalesce(s.match_score, 0) desc,
                  s.freshness_at desc,
                  s.ingested_at desc
-        limit $2
+        limit greatest($2::int * 5, 250)
      )
      select s.id::text,
             s.kind::text as kind,
@@ -426,9 +426,22 @@ export async function loadQualifiedSignalWorkbench(
           order by m.created_at desc
           limit 1
        ) draft on true
-      order by coalesce(s.match_score, 0) desc,
+      order by
+               case
+                 when draft.message_id is not null
+                   and (
+                     coalesce(jsonb_array_length(coalesce(resolved.payload->'candidates', '[]'::jsonb)), 0) > 0
+                     or coalesce(jsonb_array_length(coalesce(graph_contacts.candidates, '[]'::jsonb)), 0) > 0
+                   ) then 0
+                 when draft.message_id is not null then 1
+                 when coalesce(jsonb_array_length(coalesce(resolved.payload->'candidates', '[]'::jsonb)), 0) > 0
+                   or coalesce(jsonb_array_length(coalesce(graph_contacts.candidates, '[]'::jsonb)), 0) > 0 then 2
+                 else 3
+               end,
+               coalesce(s.match_score, 0) desc,
                s.freshness_at desc,
-               s.ingested_at desc`,
+               s.ingested_at desc
+      limit $2`,
     [workspaceId, limit],
   );
 

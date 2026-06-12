@@ -6,6 +6,7 @@ import {
   bootstrapWorkspace,
   claimRunnableWorkflowRuns,
   configureWorkspaceEmailAccount,
+  configureSignalEmailPlay,
   DEFAULT_PRODUCT_USER_ID,
   dispatchSignalPlaysOnce,
   getProductEngine,
@@ -152,6 +153,202 @@ test("product worker: dispatches signal.matched events into durable play runs", 
     assert.equal(state.sendTraces[0].rep_name, "Sampark");
     assert.equal(state.sendTraces[0].eval_passed, true);
     assert.equal(state.sendTraces[0].workflow_status, "completed");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product worker: dispatch can target one active Play for a matched signal", async (t) => {
+  const fx = await setupPg("product_worker_target_play");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const targeted = await configureSignalEmailPlay({
+      rep_id: boot.rep_id,
+      name: "Targeted Funding Signal Email",
+      signal_kind: "funding",
+      approval: "none",
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    const submitted = await submitManualSignal({
+      company_name: "Targeted Payroll",
+      company_domain: "targetedpayroll.example",
+      person_name: "Rhea Menon",
+      person_email: "rhea@targetedpayroll.example",
+      signal_title: "Targeted Payroll announced a Series A",
+      signal_content:
+        "Targeted Payroll raised a Series A to expand finance workflows for distributed teams.",
+      signal_url: "https://example.com/targeted-series-a",
+      approval: "none",
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    await seedVerifiedTopContactsForSignal(fx.pool, submitted, [
+      {
+        full_name: "Rhea Menon",
+        title: "Founder and CEO",
+        email: "rhea@targetedpayroll.example",
+      },
+      {
+        full_name: "Karan Bose",
+        title: "VP Revenue",
+        email: "karan@targetedpayroll.example",
+      },
+      {
+        full_name: "Ira Shah",
+        title: "Head of Growth",
+        email: "ira@targetedpayroll.example",
+      },
+    ]);
+
+    assert.equal(
+      await dispatchSignalPlaysOnce({
+        signal_id: submitted.signal_id,
+        play_id: targeted.play_id,
+      }),
+      0,
+    );
+    await waitForContactResolved(fx.pool, submitted, targeted.play_id);
+    assert.equal(
+      await dispatchSignalPlaysOnce({
+        signal_id: submitted.signal_id,
+        play_id: targeted.play_id,
+      }),
+      1,
+    );
+
+    await until(async () => {
+      const { rows } = await fx.pool.query<{ status: string }>(
+        `select status
+           from workflow_runs
+          where workspace_id = $1
+            and idempotency_key = $2`,
+        [submitted.workspace_id, `signal:${submitted.signal_id}:play:${targeted.play_id}`],
+      );
+      return rows[0]?.status === "completed" ? rows[0] : null;
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
+
+    const runs = await fx.pool.query<{ idempotency_key: string }>(
+      `select idempotency_key
+         from workflow_runs
+        where workspace_id = $1
+          and idempotency_key in ($2, $3, $4, $5)
+        order by idempotency_key asc`,
+      [
+        submitted.workspace_id,
+        `contact:${submitted.signal_id}:play:${boot.play_id}:channel:email`,
+        `signal:${submitted.signal_id}:play:${boot.play_id}`,
+        `contact:${submitted.signal_id}:play:${targeted.play_id}:channel:email`,
+        `signal:${submitted.signal_id}:play:${targeted.play_id}`,
+      ],
+    );
+    assert.deepEqual(
+      runs.rows.map((row) => row.idempotency_key),
+      [
+        `contact:${submitted.signal_id}:play:${targeted.play_id}:channel:email`,
+        `signal:${submitted.signal_id}:play:${targeted.play_id}`,
+      ],
+    );
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
+test("product worker: repairs failed no-draft Signal Play runs", async (t) => {
+  const fx = await setupPg("product_worker_signal_play_repair");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const boot = await bootstrapWorkspace(fx.pool);
+    const submitted = await submitManualSignal({
+      company_name: "Recoverable Payroll",
+      company_domain: "recoverablepayroll.example",
+      person_name: "Sana Iyer",
+      person_email: "sana@recoverablepayroll.example",
+      signal_title: "Recoverable Payroll announced a Series A",
+      signal_content:
+        "Recoverable Payroll raised a Series A to expand finance workflows for distributed teams.",
+      signal_url: "https://example.com/recoverable-series-a",
+      approval: "none",
+    }, { workspace_id: boot.workspace_id, user_id: DEFAULT_PRODUCT_USER_ID });
+    await seedVerifiedTopContactsForSignal(fx.pool, submitted, [
+      {
+        full_name: "Sana Iyer",
+        title: "Founder and CEO",
+        email: "sana@recoverablepayroll.example",
+      },
+      {
+        full_name: "Omar Kapur",
+        title: "VP Revenue",
+        email: "omar@recoverablepayroll.example",
+      },
+      {
+        full_name: "Lina Shah",
+        title: "Head of Growth",
+        email: "lina@recoverablepayroll.example",
+      },
+    ]);
+
+    assert.equal(await dispatchSignalPlaysOnce({ signal_id: submitted.signal_id }), 0);
+    await waitForContactResolved(fx.pool, submitted, boot.play_id);
+    await fx.pool.query(
+      `insert into workflow_runs (
+         id, workspace_id, workflow_name, workflow_version, status, input, error,
+         play_id, play_run_id, idempotency_key, started_at, ended_at, created_at
+       ) values (
+         $1, $2, 'play.signal_to_email.v1', '1', 'failed', $3::jsonb, $4::jsonb,
+         $5, $6, $7, now() - interval '10 minutes', now() - interval '9 minutes', now() - interval '10 minutes'
+       )`,
+      [
+        randomUUID(),
+        submitted.workspace_id,
+        JSON.stringify({
+          workspace_id: submitted.workspace_id,
+          play_id: boot.play_id,
+          play_run_id: randomUUID(),
+          rep_id: boot.rep_id,
+          signal_id: submitted.signal_id,
+        }),
+        JSON.stringify({ message: "Exa daily_query_cap_exhausted exceeded" }),
+        boot.play_id,
+        randomUUID(),
+        `signal:${submitted.signal_id}:play:${boot.play_id}`,
+      ],
+    );
+
+    assert.equal(await dispatchSignalPlaysOnce({ signal_id: submitted.signal_id }), 1);
+    const repairRun = await until(async () => {
+      const { rows } = await fx.pool.query<{ status: string; idempotency_key: string }>(
+        `select status, idempotency_key
+           from workflow_runs
+          where workspace_id = $1
+            and idempotency_key = $2`,
+        [
+          submitted.workspace_id,
+          `signal:${submitted.signal_id}:play:${boot.play_id}:repair:draft-grounding-skip-v1`,
+        ],
+      );
+      return rows[0]?.status === "completed" ? rows[0] : null;
+    }, { timeout: WORKFLOW_TIMEOUT_MS });
+    assert.equal(
+      repairRun.idempotency_key,
+      `signal:${submitted.signal_id}:play:${boot.play_id}:repair:draft-grounding-skip-v1`,
+    );
+
+    const messages = await fx.pool.query<{ count: string }>(
+      `select count(*)::text as count
+         from messages m
+         join conversations c on c.id = m.conversation_id
+        where m.workspace_id = $1
+          and c.origin_signal_id = $2
+          and c.properties->>'play_id' = $3`,
+      [submitted.workspace_id, submitted.signal_id, boot.play_id],
+    );
+    assert.equal(messages.rows[0]?.count, "1");
   } finally {
     await resetProductEngineForTests();
     await fx.close();
@@ -687,6 +884,7 @@ async function seedVerifiedTopContactsForSignal(
 async function waitForContactResolved(
   pool: TestPool,
   submitted: { workspace_id: string; signal_id: string },
+  play_id?: string,
 ): Promise<void> {
   await until(async () => {
     const { rows } = await pool.query<{ id: string }>(
@@ -695,9 +893,10 @@ async function waitForContactResolved(
         where workspace_id = $1
           and event_type = 'contact.resolved'
           and payload->>'signal_id' = $2
+          and ($3::text is null or payload->>'play_id' = $3)
         order by occurred_at desc
         limit 1`,
-      [submitted.workspace_id, submitted.signal_id],
+      [submitted.workspace_id, submitted.signal_id, play_id ?? null],
     );
     return rows[0] ?? null;
   }, { timeout: WORKFLOW_TIMEOUT_MS });

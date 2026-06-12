@@ -214,7 +214,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       });
       const draftGrounding = deps.draftGroundingProvider &&
         shouldGroundDraftWithExa(signal, exaInfluence)
-        ? await ctx.step("exa.draft_grounding", async () =>
+        ? (await ctx.step("exa.draft_grounding", async () =>
             deps.draftGroundingProvider!({
               workspace_id: input.workspace_id,
               play_id: input.play_id,
@@ -234,7 +234,10 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
                 company,
                 channel: "email",
               }),
-            }) ?? null)
+            }) ?? null, {
+              on_failure: "skip",
+              retry: { max_attempts: 1, backoff: "fixed" },
+            })) ?? null
         : null;
       const groundedResearch = applyDraftGrounding(research, draftGrounding);
       const personalizationContextMarkdown = buildEmailPersonalizationContext({

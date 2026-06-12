@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
   CONTACT_RESOLUTION_WORKFLOW,
+  contactDiscoveryDomain,
   contactPersonFromExaResult,
   createContactResolutionWorkflow,
   createHunterContactDiscoveryProvider,
@@ -477,6 +478,54 @@ test("Hunter discovery combines domain search and email finder for graph people"
   ]);
   assert.ok(requestedUrls.some((url) => url.includes("/domain-search")));
   assert.ok(requestedUrls.some((url) => url.includes("/email-finder")));
+});
+
+test("Hunter discovery uses a registrable contact domain", async () => {
+  const workspaceId = randomUUID();
+  const companyId = randomUUID();
+  const signalId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const requestedDomains: string[] = [];
+  const pool = mockContactProviderPool({
+    company_id: companyId,
+    company_name: "Anthropic",
+    domain: "www-cdn.anthropic.com",
+    signal_id: signalId,
+    missing_email_people: [{
+      full_name: "Jane Doe",
+      title: "VP Revenue",
+      linkedin_url: "https://www.linkedin.com/in/jane-doe",
+    }],
+  });
+  const provider = createHunterContactDiscoveryProvider({
+    pool,
+    apiKey: "hunter-key",
+    baseUrl: "https://hunter.test/v2",
+    fetchImpl: async (input) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      requestedDomains.push(url.searchParams.get("domain") ?? "");
+      return jsonResponse({ data: { emails: [] } });
+    },
+  });
+
+  await provider.discover({
+    workspace_id: workspaceId,
+    company_id: companyId,
+    signal_id: signalId,
+    play_id: playId,
+    rep_id: repId,
+    channel: "email",
+  });
+
+  assert.deepEqual([...new Set(requestedDomains)], ["anthropic.com"]);
+});
+
+test("contact discovery domain rejects junk and keeps registrable domains", () => {
+  assert.equal(contactDiscoveryDomain("www-cdn.anthropic.com"), "anthropic.com");
+  assert.equal(contactDiscoveryDomain("https://careers.example.co.uk/jobs"), "example.co.uk");
+  assert.equal(contactDiscoveryDomain("2.0.0.0"), null);
+  assert.equal(contactDiscoveryDomain("operator.i"), null);
 });
 
 test("ZeroBounce verifier maps valid response to verified email status", async () => {

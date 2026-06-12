@@ -51,6 +51,7 @@ export interface RunFirstVerticalSliceOptions {
   autoApprove?: boolean;
   approvalNote?: string;
   writerLlm?: SignalToEmailPlayDeps["writerLlm"];
+  draftGroundingProvider?: SignalToEmailPlayDeps["draftGroundingProvider"];
   emailDailyCap?: number;
   playChannelPolicy?: PlayChannelPolicy;
   workspaceContextMarkdown?: string;
@@ -221,6 +222,7 @@ export async function runFirstVerticalSlice(
       workspaceContextProvider: opts.workspaceContextMarkdown
         ? async () => opts.workspaceContextMarkdown
         : undefined,
+      draftGroundingProvider: opts.draftGroundingProvider,
     }),
   );
   if (opts.autoApprove) {

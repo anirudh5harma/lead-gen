@@ -188,7 +188,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       });
       const draftGrounding = deps.draftGroundingProvider &&
         shouldGroundDraftWithExa(signal, exaInfluence)
-        ? await ctx.step("exa.draft_grounding", async () =>
+        ? (await ctx.step("exa.draft_grounding", async () =>
             deps.draftGroundingProvider!({
               workspace_id: input.workspace_id,
               play_id: input.play_id,
@@ -208,7 +208,10 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
                 company,
                 channel: "linkedin",
               }),
-            }) ?? null)
+            }) ?? null, {
+              on_failure: "skip",
+              retry: { max_attempts: 1, backoff: "fixed" },
+            })) ?? null
         : null;
       const groundedResearch = applyDraftGrounding(research, draftGrounding);
       const patternKey = `${research.pattern_key}|channel:${action}`;

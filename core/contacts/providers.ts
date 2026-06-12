@@ -127,7 +127,7 @@ export function createHunterContactDiscoveryProvider(
     name: "hunter.contact_discovery",
     async discover(input) {
       const context = await loadContactResolutionContext(opts.pool, input);
-      const domain = context.company?.domain;
+      const domain = contactDiscoveryDomain(context.company?.domain);
       if (!domain) return [];
       const people: ContactResolutionProviderPerson[] = [];
       const domainSearch = await hunterGet(fetchImpl, baseUrl, "/domain-search", apiKey, {
@@ -151,6 +151,33 @@ export function createHunterContactDiscoveryProvider(
       return people;
     },
   };
+}
+
+export function contactDiscoveryDomain(value: string | null | undefined): string | null {
+  const raw = cleanString(value)?.toLowerCase();
+  if (!raw || raw.includes("@")) return null;
+  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let hostname: string;
+  try {
+    hostname = new URL(withProtocol).hostname
+      .replace(/\.$/, "")
+      .replace(/^www\./, "")
+      .toLowerCase();
+  } catch {
+    return null;
+  }
+  if (!isUsableContactDomain(hostname)) return null;
+  const parts = hostname.split(".").filter(Boolean);
+  if (parts.length <= 2) return hostname;
+  const suffix = parts.slice(-2).join(".");
+  const threePartSuffix = parts.slice(-3).join(".");
+  if (MULTI_PART_PUBLIC_SUFFIXES.has(suffix) && parts.length >= 3) {
+    return parts.slice(-3).join(".");
+  }
+  if (MULTI_PART_PUBLIC_SUFFIXES.has(threePartSuffix) && parts.length >= 4) {
+    return parts.slice(-4).join(".");
+  }
+  return parts.slice(-2).join(".");
 }
 
 export function createHunterEmailVerifier(
@@ -491,6 +518,34 @@ function normalizeHunterEmailStatus(status: string, score: number | null): strin
   if (lower === "valid") return "risky";
   return lower || "unknown";
 }
+
+function isUsableContactDomain(hostname: string): boolean {
+  if (!hostname.includes(".")) return false;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return false;
+  const labels = hostname.split(".");
+  if (labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) {
+    return false;
+  }
+  const tld = labels[labels.length - 1];
+  if (!tld || tld.length < 2 || /^\d+$/.test(tld)) return false;
+  return true;
+}
+
+const MULTI_PART_PUBLIC_SUFFIXES = new Set([
+  "ac.in",
+  "ac.uk",
+  "co.in",
+  "co.jp",
+  "co.uk",
+  "com.au",
+  "com.br",
+  "com.sg",
+  "com.mx",
+  "com.tr",
+  "net.au",
+  "org.au",
+  "org.uk",
+]);
 
 function scoreToConfidence(score: number | null | undefined): number | undefined {
   if (typeof score !== "number" || !Number.isFinite(score)) return undefined;

@@ -9,6 +9,7 @@ export {
   createHunterContactDiscoveryProvider,
   createHunterEmailVerifier,
   createZeroBounceEmailVerifier,
+  contactDiscoveryDomain,
   contactPeopleFromHunterDomainSearch,
   contactPersonFromExaResult,
   contactPersonFromHunterEmailFinder,
