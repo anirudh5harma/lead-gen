@@ -9,6 +9,7 @@ import {
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
   deleteProductRecommendation,
+  dispatchSignalPlaysOnce,
   draftProductRecommendation,
   recordProductCampaignOutcome,
   recordProductRecommendationOutcome,
@@ -338,6 +339,17 @@ export async function runSignalAggregatorAction(formData: FormData) {
   );
   revalidateProductPaths();
   redirectWithToast(returnTo, "Signals refreshed.");
+}
+
+export async function prepareQualifiedSignalsAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/ingestion");
+  await dispatchSignalPlaysOnce(
+    { limit: numberValue(formData, "limit", 25) },
+    session,
+  );
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Preparing verified contacts and email drafts.");
 }
 
 export async function editCompanyProfileAction(formData: FormData) {

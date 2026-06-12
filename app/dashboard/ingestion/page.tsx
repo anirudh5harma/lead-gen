@@ -3,105 +3,363 @@ import { EmptyState } from "@/components/dashboard/Shell";
 import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
+import {
+  loadQualifiedSignalWorkbench,
+  type QualifiedSignalContact,
+  type QualifiedSignalItem,
+} from "@/core/product/qualified-signals.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
-import { runSignalAggregatorAction } from "../actions";
+import {
+  prepareQualifiedSignalsAction,
+  runSignalAggregatorAction,
+  decideApprovalWithDraftAction,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
-interface SignalCounts {
-  ingested: number;
-  matched: number;
-  in_play: number;
-  spent: number;
-}
-
-interface SignalRow {
-  id: string;
-  kind: string;
-  status: string;
-  title: string;
-  url: string | null;
-  match_score: string | null;
-  match_reason: string | null;
-  company_name: string | null;
-  freshness_at: Date;
-  ingested_at: Date;
-}
-
-interface SourceRow {
-  id: string;
-  name: string;
-  kind: string;
-  enabled: boolean;
-  poll_cadence_sec: number;
-  last_polled_at: Date | null;
-  last_error: Record<string, unknown> | null;
-}
-
-async function loadSignalCounts(workspaceId: string): Promise<SignalCounts> {
-  const pool = getPool();
-  const { rows } = await pool.query<{ status: string; count: string }>(
-    `select status::text, count(*)::text
-       from signals
-      where workspace_id = $1
-      group by status`,
-    [workspaceId],
-  );
-  const counts: SignalCounts = { ingested: 0, matched: 0, in_play: 0, spent: 0 };
-  for (const row of rows) {
-    if (row.status in counts) {
-      counts[row.status as keyof SignalCounts] = Number(row.count);
-    }
+export default async function SignalsPage() {
+  const workspace = await getActiveWorkspace();
+  if (!workspace) {
+    return (
+      <SurfaceHero
+        kicker="Qualified signals"
+        title="No workspace selected."
+        description="Create a prospecting profile first. Qualified signals, verified contacts, and email drafts will appear here."
+      />
+    );
   }
-  return counts;
+
+  const workbench = await loadQualifiedSignalWorkbench(getPool(), workspace.id);
+
+  return (
+    <div className="space-y-2">
+      <SurfaceHero
+        kicker="Qualified signals"
+        title={<>Signals worth <em>emailing now</em>.</>}
+        description="The useful list: qualified timing signals, the top verified contacts at that company, and the personalized email draft tied to the evidence."
+        meta={
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <HeroStat label="Qualified" value={workbench.stats.qualified} />
+              <HeroStat label="With contacts" value={workbench.stats.with_verified_contacts} />
+              <HeroStat label="Drafted" value={workbench.stats.with_email_draft} />
+              <HeroStat label="Review" value={workbench.stats.ready_for_review} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <form action={runSignalAggregatorAction}>
+                <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+                <input type="hidden" name="limit" value="12" />
+                <PendingSubmitButton
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] active:translate-y-px"
+                  icon="refresh"
+                  pendingLabel="Refreshing"
+                >
+                  Refresh signals
+                </PendingSubmitButton>
+              </form>
+              <form action={prepareQualifiedSignalsAction}>
+                <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+                <input type="hidden" name="limit" value="25" />
+                <PendingSubmitButton
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+                  icon="send"
+                  pendingLabel="Preparing"
+                >
+                  Prepare contacts + drafts
+                </PendingSubmitButton>
+              </form>
+            </div>
+          </div>
+        }
+      />
+
+      <SurfaceSection title="Qualified list">
+        {workbench.signals.length === 0 ? (
+          <EmptyState
+            title="No qualified signals yet"
+            hint="Run ingestion after the prospecting profile is tuned. Only matched signals with a target company appear here."
+            cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
+          />
+        ) : (
+          <div className="grid gap-3">
+            {workbench.signals.map((signal) => (
+              <QualifiedSignalCard key={signal.id} signal={signal} />
+            ))}
+          </div>
+        )}
+      </SurfaceSection>
+    </div>
+  );
 }
 
-async function loadRecentSignals(workspaceId: string): Promise<SignalRow[]> {
-  const pool = getPool();
-  const { rows } = await pool.query<SignalRow>(
-    `select s.id,
-            s.kind::text as kind,
-            s.status::text as status,
-            s.title,
-            s.url,
-            s.match_score::text as match_score,
-            s.match_reason,
-            c.name as company_name,
-            s.freshness_at,
-            s.ingested_at
-       from signals s
-       left join graph_companies c on c.id = s.related_company_id
-      where s.workspace_id = $1
-      order by s.freshness_at desc nulls last, s.ingested_at desc
-      limit 24`,
-    [workspaceId],
+function QualifiedSignalCard({ signal }: { signal: QualifiedSignalItem }) {
+  const verifiedCount = signal.contacts.filter((contact) =>
+    contact.verification.email_verified === true
+  ).length;
+  return (
+    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4 md:p-5">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+        <section className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <SignalBadge label={signal.kind.replace(/_/g, " ")} tone="accent" />
+            <SignalBadge label={signal.status.replace(/_/g, " ")} />
+            {signal.match_score != null ? (
+              <SignalBadge label={`${Math.round(signal.match_score * 100)}% fit`} tone="positive" />
+            ) : null}
+            {verifiedCount > 0 ? (
+              <SignalBadge label={`${verifiedCount} verified`} tone="positive" />
+            ) : (
+              <SignalBadge label="contacts pending" tone="muted" />
+            )}
+          </div>
+
+          <h2 className="mt-4 text-xl font-semibold leading-tight text-[var(--color-text-1)]">
+            {signal.title}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-2)]">
+            {signal.company.name ?? "Unknown company"}
+            {signal.company.domain ? ` · ${signal.company.domain}` : ""}
+            {" · "}
+            Fresh {timeAgo(signal.freshness_at)}
+            {signal.matched_at ? ` · qualified ${timeAgo(signal.matched_at)}` : ""}
+          </p>
+
+          {signal.content ? (
+            <p className="mt-4 text-sm leading-6 text-[var(--color-text-2)]">
+              {signal.content}
+            </p>
+          ) : null}
+          {signal.match_reason ? (
+            <p className="mt-4 border-l-2 border-[var(--color-accent)] pl-3 text-sm leading-6 text-[var(--color-text-2)]">
+              {signal.match_reason}
+            </p>
+          ) : null}
+
+          <div className="mt-5 grid gap-3 border-t border-[var(--color-line-1)] pt-4 sm:grid-cols-3">
+            <Evidence label="Company" value={signal.company.name ?? "-"} icon="add_business" />
+            <Evidence label="Timing" value={signal.kind.replace(/_/g, " ")} icon="sensors" />
+            <Evidence
+              label="Draft"
+              value={signal.email_draft ? draftStatus(signal.email_draft.status) : "waiting"}
+              icon={signal.email_draft ? "mail" : "refresh"}
+            />
+          </div>
+        </section>
+
+        <section className="grid gap-5 xl:border-l xl:border-[var(--color-line-1)] xl:pl-5">
+          <ContactPanel
+            contacts={signal.contacts}
+            source={signal.contact_source}
+            deferReason={signal.contact_defer_reason}
+          />
+          <EmailDraftPanel signal={signal} />
+        </section>
+      </div>
+    </article>
   );
-  return rows;
 }
 
-async function loadSources(workspaceId: string): Promise<SourceRow[]> {
-  const pool = getPool();
-  const { rows } = await pool.query<SourceRow>(
-    `select gs.id,
-            gs.name,
-            gs.kind::text as kind,
-            coalesce(wsc.enabled, gs.enabled) as enabled,
-            coalesce(wsc.poll_cadence_sec, 900) as poll_cadence_sec,
-            coalesce(wsc.last_polled_at, gs.last_polled_at) as last_polled_at,
-            wsc.last_error
-       from graph_sources gs
-       left join workspace_source_configs wsc
-         on wsc.workspace_id = gs.workspace_id
-        and wsc.source_id = gs.id
-      where gs.workspace_id = $1
-      order by coalesce(wsc.enabled, gs.enabled) desc,
-               coalesce(wsc.last_polled_at, gs.last_polled_at) desc nulls last,
-               gs.name asc
-      limit 12`,
-    [workspaceId],
+function ContactPanel({
+  contacts,
+  source,
+  deferReason,
+}: {
+  contacts: QualifiedSignalContact[];
+  source: QualifiedSignalItem["contact_source"];
+  deferReason: string | null;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-[var(--color-text-1)]">
+          Verified contacts
+        </h3>
+        <span className="text-xs text-[var(--color-text-3)]">
+          {source === "resolution" ? "resolved" : source === "graph" ? "from graph" : "not ready"}
+        </span>
+      </div>
+      {contacts.length === 0 ? (
+        <p className="mt-3 rounded-md border border-[var(--color-line-1)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
+          {deferReason
+            ? `Contact resolution paused: ${deferReason.replace(/_/g, " ")}.`
+            : "No verified email contacts yet. Prepare contacts to run the Exa/Hunter/ZeroBounce waterfall."}
+        </p>
+      ) : (
+        <ol className="mt-3 grid gap-2">
+          {contacts.slice(0, 3).map((contact, index) => (
+            <li
+              key={`${contact.person_id}-${index}`}
+              className="grid gap-2 border-b border-[var(--color-line-1)] pb-3 last:border-b-0 last:pb-0"
+            >
+              <div className="flex min-w-0 items-start gap-2">
+                <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-[var(--color-ink-2)] text-xs font-semibold tabular-nums text-[var(--color-text-2)]">
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
+                    {contact.full_name}
+                  </p>
+                  <p className="truncate text-xs text-[var(--color-text-3)]">
+                    {contact.title ?? "Relevant contact"}
+                  </p>
+                </div>
+                <Icon
+                  name={contact.verification.email_verified ? "task_alt" : "report"}
+                  size={17}
+                  className={
+                    "ml-auto mt-0.5 " +
+                    (contact.verification.email_verified
+                      ? "text-[var(--color-pos)]"
+                      : "text-[var(--color-text-3)]")
+                  }
+                />
+              </div>
+              <div className="ml-9 flex flex-wrap items-center gap-2">
+                {contact.emails[0] ? (
+                  <span className="rounded-full bg-[rgba(255,255,255,0.62)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+                    {contact.emails[0]}
+                  </span>
+                ) : null}
+                <span className="rounded-full bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+                  {contact.verification.email_verified
+                    ? contact.verification.email_status ?? "verified"
+                    : "unverified"}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
-  return rows;
+}
+
+function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
+  const draft = signal.email_draft;
+  return (
+    <div className="border-t border-[var(--color-line-1)] pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-[var(--color-text-1)]">
+          Personalized email
+        </h3>
+        {draft ? (
+          <span className="text-xs text-[var(--color-text-3)]">
+            {draft.eval_score != null ? `${Math.round(draft.eval_score * 100)} judge` : draftStatus(draft.status)}
+          </span>
+        ) : null}
+      </div>
+      {!draft ? (
+        <p className="mt-3 rounded-md border border-[var(--color-line-1)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
+          No email draft yet. Once contacts resolve, the Signal-to-email Play writes and judges the draft here.
+        </p>
+      ) : (
+        <div className="mt-3">
+          <p className="text-sm font-semibold leading-5 text-[var(--color-text-1)]">
+            {draft.subject ?? "(no subject)"}
+          </p>
+          <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] px-3 py-3 text-sm leading-6 text-[var(--color-text-2)]">
+            {draft.body ?? "(no body)"}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <SignalBadge
+              label={draft.eval_passed === false ? "judge blocked" : draftStatus(draft.status)}
+              tone={draft.eval_passed === false ? "warning" : "positive"}
+            />
+            {draft.pending_approval_id ? (
+              <>
+                <Link
+                  href="/dashboard/review"
+                  prefetch={false}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                >
+                  <Icon name="rate_review" size={14} />
+                  Review draft
+                </Link>
+                <form action={decideApprovalWithDraftAction}>
+                  <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+                  <input type="hidden" name="approval_id" value={draft.pending_approval_id} />
+                  <input type="hidden" name="decision" value="approved" />
+                  <PendingSubmitButton
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+                    icon="check"
+                    iconSize={14}
+                    pendingLabel="Approving"
+                  >
+                    Approve
+                  </PendingSubmitButton>
+                </form>
+                <form action={decideApprovalWithDraftAction}>
+                  <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+                  <input type="hidden" name="approval_id" value={draft.pending_approval_id} />
+                  <input type="hidden" name="decision" value="rejected" />
+                  <PendingSubmitButton
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                    icon="close"
+                    iconSize={14}
+                    pendingLabel="Rejecting"
+                  >
+                    Reject
+                  </PendingSubmitButton>
+                </form>
+              </>
+            ) : draft.conversation_id ? (
+              <Link
+                href={`/dashboard/conversations/${draft.conversation_id}`}
+                prefetch={false}
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+              >
+                <Icon name="forum" size={14} />
+                Open conversation
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Evidence({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-3)]">
+        <Icon name={icon} size={14} />
+        {label}
+      </div>
+      <p className="mt-1 truncate text-sm font-medium text-[var(--color-text-1)]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SignalBadge({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "neutral" | "accent" | "positive" | "warning" | "muted";
+}) {
+  const styles = {
+    neutral: "bg-[var(--color-ink-2)] text-[var(--color-text-2)]",
+    accent: "bg-[var(--color-accent-bg)] text-[var(--color-accent)]",
+    positive: "bg-[var(--color-pos-bg)] text-[var(--color-pos)]",
+    warning: "bg-[var(--color-neg-bg)] text-[var(--color-neg)]",
+    muted: "bg-[rgba(255,255,255,0.62)] text-[var(--color-text-3)]",
+  }[tone];
+  return (
+    <span className={"rounded-full px-2.5 py-1 text-xs font-medium " + styles}>
+      {label}
+    </span>
+  );
+}
+
+function draftStatus(status: string): string {
+  if (status === "queued") return "queued to send";
+  if (status === "sent" || status === "delivered" || status === "replied") return status;
+  if (status === "deferred") return "needs attention";
+  return status.replace(/_/g, " ");
 }
 
 function timeAgo(d: Date | null): string {
@@ -113,187 +371,4 @@ function timeAgo(d: Date | null): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-export default async function SignalsPage() {
-  const workspace = await getActiveWorkspace();
-  if (!workspace) {
-    return (
-      <SurfaceHero
-        kicker="Signals"
-        title="No workspace selected."
-        description="Create a prospecting profile first, then signal ingestion will start filling this queue."
-      />
-    );
-  }
-
-  const [counts, signals, sources] = await Promise.all([
-    loadSignalCounts(workspace.id),
-    loadRecentSignals(workspace.id),
-    loadSources(workspace.id),
-  ]);
-  const actionable = counts.matched + counts.in_play;
-
-  return (
-    <div className="space-y-2">
-      <SurfaceHero
-        kicker="Signals"
-        title={<>Find timing before <em>everyone else</em>.</>}
-        description="Funding, hiring, launches, leadership moves, and open-web intent become Signals. Qualified Signals feed email, LinkedIn, and campaign Plays."
-        meta={
-          <div className="flex flex-wrap items-center gap-2">
-            <HeroStat label="Matched" value={counts.matched} />
-            <HeroStat label="In play" value={counts.in_play} />
-            <HeroStat label="Raw" value={counts.ingested} />
-            <form action={runSignalAggregatorAction}>
-              <input type="hidden" name="return_to" value="/dashboard/ingestion" />
-              <input type="hidden" name="limit" value="12" />
-              <PendingSubmitButton
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
-                icon="refresh"
-                pendingLabel="Refreshing"
-              >
-                Refresh signals
-              </PendingSubmitButton>
-            </form>
-          </div>
-        }
-      />
-
-      <SurfaceSection title="Signal sources">
-        {sources.length === 0 ? (
-          <EmptyState
-            title="No sources configured yet"
-            hint="The prospecting profile seeds the first source set. Signals stay quiet until a source is enabled."
-            cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "tune" }}
-          />
-        ) : (
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {sources.map((source) => (
-              <SourceCard key={source.id} source={source} />
-            ))}
-          </div>
-        )}
-      </SurfaceSection>
-
-      <SurfaceSection
-        title="Recent signals"
-        action={
-          <Link
-            href="/dashboard/campaigns"
-            className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.58)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
-          >
-            <Icon name="campaign" size={14} />
-            {actionable} actionable
-          </Link>
-        }
-      >
-        {signals.length === 0 ? (
-          <EmptyState
-            title="No signals yet"
-            hint="Run ingestion after the profile is tuned. Matched signals will trigger email, LinkedIn, and campaign Plays."
-            cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
-          />
-        ) : (
-          <div className="grid gap-2">
-            {signals.map((signal) => (
-              <SignalCard key={signal.id} signal={signal} />
-            ))}
-          </div>
-        )}
-      </SurfaceSection>
-    </div>
-  );
-}
-
-function SourceCard({ source }: { source: SourceRow }) {
-  const errored = Boolean(source.last_error);
-  return (
-    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
-      <div className="flex items-center gap-2">
-        <span className="grid size-8 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-          <Icon name={sourceIcon(source.kind)} size={16} />
-        </span>
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {source.name}
-          </h3>
-          <p className="text-xs text-[var(--color-text-3)]">
-            {source.kind.replace(/_/g, " ")}
-          </p>
-        </div>
-        <span
-          className={
-            "ml-auto rounded-full px-2 py-0.5 text-[10.5px] font-medium " +
-            (source.enabled
-              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
-          }
-        >
-          {source.enabled ? "On" : "Off"}
-        </span>
-      </div>
-      <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
-        Last polled {timeAgo(source.last_polled_at)}. Cadence {Math.round(source.poll_cadence_sec / 60)}m.
-      </p>
-      {errored ? (
-        <p className="mt-2 text-xs leading-5 text-[var(--color-neg)]">
-          Last run had an error. The workflow will retry through the event bus.
-        </p>
-      ) : null}
-    </article>
-  );
-}
-
-function SignalCard({ signal }: { signal: SignalRow }) {
-  const score = signal.match_score ? Math.round(Number(signal.match_score) * 100) : null;
-  const status = signal.status.replace(/_/g, " ");
-  const content = (
-    <article className="grid gap-3 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:bg-[var(--color-ink-2)]/40 md:grid-cols-[1fr_auto] md:items-center">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
-            {signal.kind.replace(/_/g, " ")}
-          </span>
-          <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-text-2)]">
-            {status}
-          </span>
-          {score ? (
-            <span className="rounded-full bg-[rgba(255,255,255,0.62)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-text-2)]">
-              {score}% fit
-            </span>
-          ) : null}
-        </div>
-        <h3 className="mt-3 text-sm font-semibold leading-5 text-[var(--color-text-1)]">
-          {signal.title}
-        </h3>
-        <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-          {signal.company_name ? `${signal.company_name} · ` : ""}
-          Fresh {timeAgo(signal.freshness_at)} · ingested {timeAgo(signal.ingested_at)}
-          {signal.match_reason ? ` · ${signal.match_reason}` : ""}
-        </p>
-      </div>
-      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-2)]">
-        <Icon name="arrow_forward" size={14} />
-        Campaign-ready
-      </span>
-    </article>
-  );
-  if (signal.url) {
-    return (
-      <a href={signal.url} target="_blank" rel="noreferrer" className="block">
-        {content}
-      </a>
-    );
-  }
-  return content;
-}
-
-function sourceIcon(kind: string): string {
-  if (kind === "job_board") return "badge";
-  if (kind === "product_hunt") return "rocket_launch";
-  if (kind === "rss" || kind === "newsletter") return "article";
-  if (kind === "podcast") return "forum";
-  if (kind === "web_monitor") return "travel_explore";
-  return "sensors";
 }
