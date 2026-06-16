@@ -1,3 +1,6 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import Icon from '@/components/Icon'
@@ -93,7 +96,86 @@ const FOOTER_LINKS = {
   ],
 }
 
+const TRUST_BADGES = [
+  'Live in 5 minutes',
+  'No credit card',
+  'Cancel anytime',
+  'Free forever tier',
+]
+
+const MARQUEE_ITEMS = [
+  'Signal-led outbound',
+  'AI scoring',
+  'Auto-enrichment',
+  'Human review gates',
+  'Multi-channel plays',
+  'Real-time intent',
+  'Smart sequencing',
+  'Pipeline tracking',
+]
+
+function useScrollReveal() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true)
+          observer.unobserve(el)
+        }
+      },
+      { threshold: 0.1, rootMargin: '0px 0px -50px 0px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return { ref, visible }
+}
+
+function ScrollReveal({
+  children,
+  delay = 0,
+  className = '',
+}: {
+  children: React.ReactNode
+  delay?: number
+  className?: string
+}) {
+  const { ref, visible } = useScrollReveal()
+  const delayClass = delay > 0 ? `sr-d-${Math.min(Math.ceil(delay * 10), 6)}` : ''
+
+  return (
+    <div
+      ref={ref}
+      className={`sr ${visible ? `visible ${delayClass}` : ''} ${className}`}
+      style={{ transitionDelay: `${delay}s` }}
+    >
+      {children}
+    </div>
+  )
+}
+
 export default function Home() {
+  const [activeFeature, setActiveFeature] = useState(0)
+  const [isTransitioning, setIsTransitioning] = useState(false)
+
+  // Auto-advance feature carousel
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIsTransitioning(true)
+      setTimeout(() => {
+        setActiveFeature((prev) => (prev + 1) % FEATURES.length)
+        setIsTransitioning(false)
+      }, 300)
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [])
+
   return (
     <main className="monaco-canvas relative isolate min-h-[100dvh] overflow-hidden text-[var(--color-text-1)]">
       {/* Animated background */}
@@ -127,70 +209,224 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pt-32 pb-16 md:px-10 md:pt-40 md:pb-24 lg:px-16 lg:pt-48 lg:pb-32">
+      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pt-28 pb-8 md:px-10 md:pt-36 md:pb-12 lg:px-16 lg:pt-44 lg:pb-16">
         <div className="mx-auto max-w-[720px] text-center">
-          <p className="mono text-[var(--color-accent)]">real-time signals</p>
-          <h1 className="display-serif mt-6 text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] text-[var(--color-text-1)]">
-            autonomous outbound stack
-          </h1>
-          <p className="mx-auto mt-5 max-w-[560px] text-[18px] leading-[1.65] text-[var(--color-text-2)]">
-            Bombsell builds your prospect graph, watches for signals, runs guarded outreach plays, and learns from every outcome. No more stale lists or manual CRM work.
-          </p>
-          <form action="/onboarding" method="GET" className="mt-8 mx-auto flex w-full max-w-[480px] flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-4)]">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M2 12h20" />
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                </svg>
+          <ScrollReveal delay={0.1}>
+            <p className="mono text-[var(--color-accent)]">real-time signals</p>
+          </ScrollReveal>
+          <ScrollReveal delay={0.2}>
+            <h1 className="display-serif mt-5 text-[clamp(2.25rem,5.5vw,4rem)] leading-[1.05] text-[var(--color-text-1)]">
+              autonomous outbound stack
+            </h1>
+          </ScrollReveal>
+          <ScrollReveal delay={0.3}>
+            <p className="mx-auto mt-4 max-w-[560px] text-[16px] leading-[1.6] text-[var(--color-text-2)]">
+              Bombsell builds your prospect graph, watches for signals, runs guarded outreach plays, and learns from every outcome. No more stale lists or manual CRM work.
+            </p>
+          </ScrollReveal>
+
+          <ScrollReveal delay={0.4}>
+            <form action="/onboarding" method="GET" className="mt-6 mx-auto flex w-full max-w-[480px] flex-col gap-3 sm:flex-row">
+              <div className="relative flex-1">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-4)]">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M2 12h20" />
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  name="url"
+                  placeholder="yourcompany.com"
+                  required
+                  pattern="[a-zA-Z0-9][a-zA-Z0-9\-_.]*\.[a-zA-Z]{2,}"
+                  title="Enter a valid domain like yourcompany.com"
+                  className="w-full rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] py-3 pl-10 pr-4 text-[14px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/10"
+                />
               </div>
-              <input
-                type="text"
-                name="url"
-                placeholder="yourcompany.com"
-                required
-                pattern="[a-zA-Z0-9][a-zA-Z0-9\-_.]*\.[a-zA-Z]{2,}"
-                title="Enter a valid domain like yourcompany.com"
-                className="w-full rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] py-3 pl-10 pr-4 text-[15px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/10"
-              />
+              <button type="submit" className="btn-solid whitespace-nowrap">
+                Get started
+              </button>
+            </form>
+          </ScrollReveal>
+
+          <ScrollReveal delay={0.5}>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {TRUST_BADGES.map((badge) => (
+                <span key={badge} className="pill pill-accent text-[11px]">
+                  <span className="pulse-dot mr-1.5 inline-block" />
+                  {badge}
+                </span>
+              ))}
             </div>
-            <button type="submit" className="btn-solid whitespace-nowrap">
-              Get started
-            </button>
-          </form>
-          <p className="mt-3 text-[13px] text-[var(--color-text-4)]">Free to start. No credit card required.</p>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* Marquee */}
+      <section className="relative z-10 py-6 border-y border-[var(--color-line-1)]">
+        <div className="marquee">
+          <div className="marquee-track">
+            {[...MARQUEE_ITEMS, ...MARQUEE_ITEMS].map((item, i) => (
+              <span key={i} className="flex items-center gap-2 text-[13px] text-[var(--color-text-3)] whitespace-nowrap">
+                <span className="size-1.5 rounded-full bg-[var(--color-accent)]" />
+                {item}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* Hero Product Visual */}
-      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pb-24 md:px-10 md:pb-32 lg:px-16 lg:pb-40">
-        <BrowserMockup>
-          <DashboardPreview />
-        </BrowserMockup>
+      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
+        <ScrollReveal>
+          <BrowserMockup>
+            <DashboardPreview />
+          </BrowserMockup>
+        </ScrollReveal>
       </section>
 
-      {/* Features */}
-      {FEATURES.map((feature, index) => (
-        <FeatureSection key={feature.eyebrow} feature={feature} reversed={index % 2 === 1} />
-      ))}
+      {/* Feature Carousel */}
+      <section className="relative z-10 border-t border-[var(--color-line-1)]">
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
+          <ScrollReveal>
+            <div className="flex items-center justify-between mb-8">
+              <p className="mono text-[var(--color-accent)]">How it works</p>
+              <div className="flex items-center gap-2">
+                {FEATURES.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setIsTransitioning(true)
+                      setTimeout(() => {
+                        setActiveFeature(i)
+                        setIsTransitioning(false)
+                      }, 300)
+                    }}
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      i === activeFeature ? 'w-8 bg-[var(--color-accent)]' : 'w-1.5 bg-[var(--color-line-2)] hover:bg-[var(--color-line-3)]'
+                    }`}
+                  />
+                ))}
+                <span className="ml-2 text-[12px] text-[var(--color-text-4)] font-mono">
+                  {activeFeature + 1}/{FEATURES.length}
+                </span>
+              </div>
+            </div>
+          </ScrollReveal>
+
+          <div className={`grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center carousel-fade ${isTransitioning ? 'opacity-0 translate-x-3' : 'opacity-100 translate-x-0'}`}>
+            <div>
+              <ScrollReveal>
+                <p className="mono text-[var(--color-accent)] mb-3">{FEATURES[activeFeature].eyebrow}</p>
+                <h2 className="display-serif text-[clamp(1.5rem,3vw,2.25rem)] leading-[1.1] text-[var(--color-text-1)]">
+                  {FEATURES[activeFeature].title}
+                </h2>
+                <p className="mt-4 max-w-[480px] text-[15px] leading-[1.65] text-[var(--color-text-2)]">
+                  {FEATURES[activeFeature].description}
+                </p>
+                <div className="mt-6 grid gap-3">
+                  {FEATURES[activeFeature].points.map((point) => (
+                    <div key={point.text} className="flex items-start gap-3">
+                      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+                        <Icon name={point.icon} size={14} />
+                      </span>
+                      <p className="text-[14px] leading-[1.5] text-[var(--color-text-2)]">{point.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </ScrollReveal>
+            </div>
+            <div>
+              <ScrollReveal delay={0.2}>
+                <BrowserMockup>
+                  <FeatureMockup feature={FEATURES[activeFeature].eyebrow} />
+                </BrowserMockup>
+              </ScrollReveal>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Stats */}
+      <section className="relative z-10 border-t border-[var(--color-line-1)]">
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-12 md:px-10 md:py-16 lg:px-16">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            {[
+              { value: '1,200+', label: 'Prospects found per week' },
+              { value: '8hrs', label: 'Saved on prospecting daily' },
+              { value: '<5min', label: 'From signup to running' },
+              { value: '94%', label: 'Lead accuracy score' },
+            ].map((stat, i) => (
+              <ScrollReveal key={i} delay={i * 0.1}>
+                <div className="text-center">
+                  <p className="text-[clamp(2rem,4vw,3rem)] font-semibold text-[var(--color-accent)] tabular-nums">
+                    {stat.value}
+                  </p>
+                  <p className="mt-1 text-[13px] text-[var(--color-text-3)]">{stat.label}</p>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* One Stack — Overlapping Cards */}
+      <section className="relative z-10 border-t border-[var(--color-line-1)]">
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
+          <ScrollReveal>
+            <div className="mx-auto max-w-[640px] text-center mb-10">
+              <p className="mono text-[var(--color-accent)]">One stack</p>
+              <h2 className="display-serif mt-4 text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
+                Replaces your entire outreach toolkit
+              </h2>
+            </div>
+          </ScrollReveal>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { icon: 'edit', title: 'Copywriting', desc: 'AI-personalized messages at scale' },
+              { icon: 'account_tree', title: 'Sequencing', desc: 'Smart multi-step sequences' },
+              { icon: 'sensors', title: 'Signal tracking', desc: '15+ buying signals monitored' },
+              { icon: 'travel_explore', title: 'Lead finding', desc: 'Total addressable market graph' },
+            ].map((card, i) => (
+              <ScrollReveal key={i} delay={i * 0.1}>
+                <div className="layer-stack">
+                  <div className="layer-back" />
+                  <div className="layer-front relative z-10 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 depth-lift">
+                    <div className="grid size-10 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)] mb-3">
+                      <Icon name={card.icon} size={18} />
+                    </div>
+                    <p className="text-[15px] font-semibold text-[var(--color-text-1)]">{card.title}</p>
+                    <p className="mt-1 text-[13px] text-[var(--color-text-3)]">{card.desc}</p>
+                  </div>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* How it works */}
       <section className="relative z-10 border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-24 md:px-10 md:py-32 lg:px-16 lg:py-40">
-          <div className="mx-auto max-w-[640px] text-center">
-            <p className="mono text-[var(--color-accent)]">How it works</p>
-            <h2 className="display-serif mt-5 text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
-              From setup to first meeting in under an hour
-            </h2>
-          </div>
-          <div className="mt-16 grid gap-8 md:grid-cols-3">
-            {STEPS.map((step) => (
-              <div key={step.number} className="relative">
-                <span className="mono text-[var(--color-text-4)]">{step.number}</span>
-                <h3 className="mt-4 text-[1.25rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
-                <p className="mt-2 text-[16px] leading-[1.65] text-[var(--color-text-2)]">{step.description}</p>
-              </div>
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
+          <ScrollReveal>
+            <div className="mx-auto max-w-[640px] text-center mb-10">
+              <p className="mono text-[var(--color-accent)]">How it works</p>
+              <h2 className="display-serif mt-4 text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
+                3 minutes to set up. First results today.
+              </h2>
+            </div>
+          </ScrollReveal>
+          <div className="grid gap-4 md:grid-cols-3">
+            {STEPS.map((step, i) => (
+              <ScrollReveal key={step.number} delay={i * 0.15}>
+                <div className="relative rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-6 depth-lift">
+                  <span className="mono text-[var(--color-text-4)]">{step.number}</span>
+                  <h3 className="mt-3 text-[1.125rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
+                  <p className="mt-2 text-[14px] leading-[1.65] text-[var(--color-text-2)]">{step.description}</p>
+                </div>
+              </ScrollReveal>
             ))}
           </div>
         </div>
@@ -198,20 +434,22 @@ export default function Home() {
 
       {/* CTA */}
       <section className="relative z-10 border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-24 md:px-10 md:py-32 lg:px-16 lg:py-40">
-          <div className="mx-auto max-w-[560px] text-center">
-            <h2 className="display-serif text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
-              Start growing your pipeline today
-            </h2>
-            <p className="mt-4 text-[16px] leading-[1.65] text-[var(--color-text-2)]">
-              Free to start. No credit card required. Your first prospecting graph builds in minutes.
-            </p>
-            <div className="mt-8">
-              <Link href="/onboarding" className="btn-solid">
-                Get started free
-              </Link>
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
+          <ScrollReveal>
+            <div className="mx-auto max-w-[560px] text-center">
+              <h2 className="display-serif text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
+                Start growing your pipeline today
+              </h2>
+              <p className="mt-4 text-[15px] leading-[1.65] text-[var(--color-text-2)]">
+                Free to start. No credit card required. Your first prospecting graph builds in minutes.
+              </p>
+              <div className="mt-8">
+                <Link href="/onboarding" className="btn-solid">
+                  Get started free
+                </Link>
+              </div>
             </div>
-          </div>
+          </ScrollReveal>
         </div>
       </section>
 
@@ -263,45 +501,6 @@ export default function Home() {
         </div>
       </footer>
     </main>
-  )
-}
-
-function FeatureSection({
-  feature,
-  reversed,
-}: {
-  feature: (typeof FEATURES)[number]
-  reversed: boolean
-}) {
-  return (
-    <section className="relative z-10 border-t border-[var(--color-line-1)]">
-      <div className="mx-auto grid w-full max-w-[1200px] grid-cols-1 items-center gap-12 px-6 py-24 md:px-10 md:py-32 lg:grid-cols-2 lg:gap-16 lg:px-16 lg:py-40">
-        <div className={reversed ? 'lg:order-2' : 'lg:order-1'}>
-          <p className="mono text-[var(--color-accent)]">{feature.eyebrow}</p>
-          <h2 className="display-serif mt-5 text-[clamp(1.5rem,3vw,2.25rem)] leading-[1.1] text-[var(--color-text-1)]">
-            {feature.title}
-          </h2>
-          <p className="mt-4 max-w-[480px] text-[16px] leading-[1.65] text-[var(--color-text-2)]">
-            {feature.description}
-          </p>
-          <div className="mt-8 grid gap-4">
-            {feature.points.map((point) => (
-              <div key={point.text} className="flex items-start gap-3">
-                <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
-                  <Icon name={point.icon} size={14} />
-                </span>
-                <p className="text-[15px] leading-[1.5] text-[var(--color-text-2)]">{point.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className={reversed ? 'lg:order-1' : 'lg:order-2'}>
-          <BrowserMockup>
-            <FeatureMockup feature={feature.eyebrow} />
-          </BrowserMockup>
-        </div>
-      </div>
-    </section>
   )
 }
 
