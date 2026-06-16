@@ -366,7 +366,7 @@ function BriefView({
 
   return (
     <div className="space-y-10">
-      <section className="relative overflow-hidden rounded-[12px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] sm:p-7 lg:p-8">
+      <section className="relative overflow-hidden rounded-[12px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 sm:p-7 lg:p-8">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
           {today}
         </p>

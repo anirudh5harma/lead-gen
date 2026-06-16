@@ -411,9 +411,9 @@ button:active, a:active {
 .dot-offline { background: var(--color-neg); }
 
 @keyframes dot-pulse {
-  0%   { box-shadow: 0 0 0 0 #18745f55; }
-  70%  { box-shadow: 0 0 0 6px #18745f00; }
-  100% { box-shadow: 0 0 0 0 #18745f00; }
+  0%   { box-shadow: 0 0 0 0 var(--color-pos); }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 /* ── Command bar ────────────────────────────────────────────── */
@@ -1499,12 +1499,31 @@ select:focus, select:focus-visible {
     0 4px 10px -6px rgba(38,87,94,0.06);
 }
 
+html[data-theme="dark"] .depth-lift {
+  box-shadow:
+    0 1px 0 rgba(0,0,0,0.15),
+    0 1px 2px rgba(0,0,0,0.20);
+}
+html[data-theme="dark"] .depth-lift:hover {
+  box-shadow:
+    0 1px 0 rgba(0,0,0,0.15),
+    0 12px 28px -16px rgba(0,0,0,0.35),
+    0 4px 10px -6px rgba(38,87,94,0.15);
+}
+
 /* stacked depth — explicit shadow ladder w/o hover */
 .depth-stack {
   box-shadow:
     0 1px 0 rgba(0,0,0,0.03),
     0 8px 20px -14px rgba(0,0,0,0.08),
     0 24px 60px -36px rgba(0,0,0,0.10);
+}
+
+html[data-theme="dark"] .depth-stack {
+  box-shadow:
+    0 1px 0 rgba(0,0,0,0.15),
+    0 8px 20px -14px rgba(0,0,0,0.25),
+    0 24px 60px -36px rgba(0,0,0,0.35);
 }
 
 /* ── Subtle background animation ─────────────────────────────── */
@@ -1525,6 +1544,10 @@ select:focus, select:focus-visible {
   pointer-events: none;
   z-index: 0;
   background: linear-gradient(180deg, #ffffff 0%, #fafbfc 50%, #f8fafb 100%);
+}
+
+html[data-theme="dark"] .animated-bg {
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
 }
 
 .animated-bg-orb {
@@ -1574,8 +1597,14 @@ select:focus, select:focus-visible {
   animation-duration: 28s, 14s;
 }
 
+html[data-theme="dark"] .animated-bg-orb-1 { background: rgba(38, 87, 94, 0.35); }
+html[data-theme="dark"] .animated-bg-orb-2 { background: rgba(5, 150, 105, 0.28); }
+html[data-theme="dark"] .animated-bg-orb-3 { background: rgba(38, 87, 94, 0.32); }
+html[data-theme="dark"] .animated-bg-orb-4 { background: rgba(5, 150, 105, 0.22); }
+
 @media (prefers-reduced-motion: reduce) {
   .animated-bg-orb { animation: none; opacity: 0.3; }
+  html[data-theme="dark"] .animated-bg-orb { opacity: 0.5; }
 }
 
 /* ── Glassmorphism navbar ────────────────────────────────────── */
