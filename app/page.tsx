@@ -67,13 +67,31 @@ const STEPS = [
   },
 ];
 
-const FOOTER_LINKS = [
-  { label: "Product", href: "/" },
-  { label: "Get started", href: "/onboarding" },
-  { label: "Log in", href: "/login" },
-  { label: "Privacy", href: "/privacy" },
-  { label: "Terms", href: "/terms" },
-];
+const FOOTER_LINKS = {
+  Product: [
+    { label: "Features", href: "/" },
+    { label: "Pricing", href: "#" },
+    { label: "Changelog", href: "#" },
+    { label: "Roadmap", href: "#" },
+  ],
+  Resources: [
+    { label: "Documentation", href: "#" },
+    { label: "API Reference", href: "#" },
+    { label: "Blog", href: "#" },
+    { label: "Status", href: "#" },
+  ],
+  Company: [
+    { label: "About", href: "#" },
+    { label: "Careers", href: "#" },
+    { label: "Contact", href: "#" },
+    { label: "Partners", href: "#" },
+  ],
+  Legal: [
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
+    { label: "Security", href: "#" },
+  ],
+};
 
 export default function Home() {
   return (
@@ -86,7 +104,7 @@ export default function Home() {
       </div>
 
       {/* Header */}
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/80 backdrop-blur-md">
+      <header className="relative z-10 fixed left-0 right-0 top-0 z-50 border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/80 backdrop-blur-md">
         <div className="mx-auto flex h-[64px] w-full max-w-[1200px] items-center justify-between px-6 md:px-10 lg:px-16">
           <Link href="/" className="flex items-center gap-2.5 text-[1.125rem] font-semibold text-[var(--color-text-1)] tracking-[-0.02em]" style={{ fontFamily: "var(--font-display)" }}>
             <Image src="/logo.svg" alt="" width={28} height={28} priority unoptimized className="size-7" />
@@ -108,7 +126,7 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="relative mx-auto w-full max-w-[1200px] px-6 pt-32 pb-16 md:px-10 md:pt-40 md:pb-24 lg:px-16 lg:pt-48 lg:pb-32">
+      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pt-32 pb-16 md:px-10 md:pt-40 md:pb-24 lg:px-16 lg:pt-48 lg:pb-32">
         <div className="mx-auto max-w-[720px] text-center">
           <p className="mono text-[var(--color-accent)]">Signal-led outbound</p>
           <h1 className="display-serif mt-6 text-[clamp(2.25rem,5.5vw,4rem)] leading-[1.05] text-[var(--color-text-1)]">
@@ -150,7 +168,7 @@ export default function Home() {
       </section>
 
       {/* Hero Product Visual */}
-      <section className="relative mx-auto w-full max-w-[1200px] px-6 pb-24 md:px-10 md:pb-32 lg:px-16 lg:pb-40">
+      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pb-24 md:px-10 md:pb-32 lg:px-16 lg:pb-40">
         <BrowserMockup>
           <DashboardPreview />
         </BrowserMockup>
@@ -162,7 +180,7 @@ export default function Home() {
       ))}
 
       {/* How it works */}
-      <section className="border-t border-[var(--color-line-1)]">
+      <section className="relative z-10 border-t border-[var(--color-line-1)]">
         <div className="mx-auto w-full max-w-[1200px] px-6 py-24 md:px-10 md:py-32 lg:px-16 lg:py-40">
           <div className="mx-auto max-w-[640px] text-center">
             <p className="mono text-[var(--color-accent)]">How it works</p>
@@ -183,7 +201,7 @@ export default function Home() {
       </section>
 
       {/* CTA */}
-      <section className="border-t border-[var(--color-line-1)]">
+      <section className="relative z-10 border-t border-[var(--color-line-1)]">
         <div className="mx-auto w-full max-w-[1200px] px-6 py-24 md:px-10 md:py-32 lg:px-16 lg:py-40">
           <div className="mx-auto max-w-[560px] text-center">
             <h2 className="display-serif text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
@@ -202,26 +220,38 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[var(--color-line-1)] bg-[var(--color-ink-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-12 md:px-10 md:py-16 lg:px-16">
-          <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
-            <div className="flex items-center gap-2.5 text-[1.0625rem] font-semibold text-[var(--color-text-1)]" style={{ fontFamily: "var(--font-display)" }}>
-              <Image src="/logo.svg" alt="" width={24} height={24} unoptimized className="size-6" />
-              Bombsell
+      <footer className="relative z-10 border-t border-[var(--color-line-1)] bg-[var(--color-ink-1)]">
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16">
+          <div className="grid grid-cols-2 gap-8 md:grid-cols-6">
+            {/* Brand column */}
+            <div className="col-span-2">
+              <div className="flex items-center gap-2.5 text-[1.0625rem] font-semibold text-[var(--color-text-1)]" style={{ fontFamily: "var(--font-display)" }}>
+                <Image src="/logo.svg" alt="" width={24} height={24} unoptimized className="size-6" />
+                Bombsell
+              </div>
+              <p className="mt-4 max-w-[260px] text-[13px] leading-[1.6] text-[var(--color-text-3)]">
+                Signal-led outbound for modern GTM teams. Build the graph, watch for signals, run the plays.
+              </p>
             </div>
-            <nav className="flex flex-wrap items-center gap-x-6 gap-y-2">
-              {FOOTER_LINKS.map((link) => (
-                <Link
-                  key={link.label}
-                  href={link.href}
-                  className="text-[13px] text-[var(--color-text-3)] transition-colors hover:text-[var(--color-text-1)]"
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
+            
+            {/* Link columns */}
+            {Object.entries(FOOTER_LINKS).map(([category, links]) => (
+              <div key={category}>
+                <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-1)]">{category}</p>
+                <ul className="mt-4 grid gap-2.5">
+                  {links.map((link) => (
+                    <li key={link.label}>
+                      <Link href={link.href} className="text-[13px] text-[var(--color-text-3)] transition-colors hover:text-[var(--color-text-1)]">
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-          <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-[var(--color-line-1)] pt-8 md:flex-row">
+          
+          <div className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-[var(--color-line-1)] pt-8 md:flex-row">
             <p className="text-[12px] text-[var(--color-text-4)]">
               &copy; {new Date().getFullYear()} Bombsell. All rights reserved.
             </p>
@@ -252,7 +282,7 @@ function FeatureSection({
   reversed: boolean;
 }) {
   return (
-    <section className="border-t border-[var(--color-line-1)]">
+    <section className="relative z-10 border-t border-[var(--color-line-1)]">
       <div className="mx-auto grid w-full max-w-[1200px] grid-cols-1 items-center gap-12 px-6 py-24 md:px-10 md:py-32 lg:grid-cols-2 lg:gap-16 lg:px-16 lg:py-40">
         <div className={reversed ? "lg:order-2" : "lg:order-1"}>
           <p className="mono text-[var(--color-accent)]">{feature.eyebrow}</p>

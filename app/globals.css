@@ -1422,36 +1422,36 @@ select:focus, select:focus-visible {
 .animated-bg-orb {
   position: absolute;
   border-radius: 999px;
-  filter: blur(80px);
+  filter: blur(60px);
   animation: bs-float 20s ease-in-out infinite, bs-pulse 8s ease-in-out infinite;
   will-change: transform, opacity;
 }
 
 .animated-bg-orb-1 {
-  width: 600px;
-  height: 600px;
-  top: -10%;
-  left: -5%;
-  background: rgba(38, 87, 94, 0.06);
+  width: 700px;
+  height: 700px;
+  top: -15%;
+  left: -10%;
+  background: rgba(38, 87, 94, 0.18);
   animation-delay: 0s;
 }
 
 .animated-bg-orb-2 {
-  width: 500px;
-  height: 500px;
-  top: 20%;
-  right: -10%;
-  background: rgba(5, 150, 105, 0.04);
+  width: 600px;
+  height: 600px;
+  top: 15%;
+  right: -15%;
+  background: rgba(5, 150, 105, 0.14);
   animation-delay: -7s;
   animation-duration: 24s, 10s;
 }
 
 .animated-bg-orb-3 {
-  width: 400px;
-  height: 400px;
-  bottom: 10%;
-  left: 30%;
-  background: rgba(38, 87, 94, 0.05);
+  width: 500px;
+  height: 500px;
+  bottom: 5%;
+  left: 25%;
+  background: rgba(38, 87, 94, 0.16);
   animation-delay: -14s;
   animation-duration: 18s, 12s;
 }
