@@ -80,6 +80,20 @@ function buildUserPrompt(input: JudgeInput): string {
         `${entry.subject_type}:${entry.subject_id} facts=${JSON.stringify(entry.facts)}`,
     )
     .join("\n");
+  const skill = input.context?.outreach_skill ?? null;
+  const skillBlock = skill
+    ? [
+        `Selected Play Skill: ${skill.name} (${skill.skill_key}@${skill.version})`,
+        skill.pattern_key ? `Skill pattern key: ${skill.pattern_key}` : null,
+        skill.seed_pattern_key ? `Seed pattern key: ${skill.seed_pattern_key}` : null,
+        "Skill framework:",
+        ...skill.framework.map((step, index) => `${index + 1}. ${step}`),
+        "Skill slot values:",
+        ...Object.entries(skill.slot_values ?? {}).map(([key, value]) => `- ${key}: ${value}`),
+        "Judge this draft against:",
+        ...skill.judge_focus.map((focus) => `- ${focus}`),
+      ].filter((line): line is string => line !== null).join("\n")
+    : null;
 
   return [
     `Rep: ${input.rep.name} (${input.rep.role})`,
@@ -99,6 +113,7 @@ function buildUserPrompt(input: JudgeInput): string {
     input.context?.workspace_context_markdown
       ? `Workspace context the writer saw:\n${input.context.workspace_context_markdown}`
       : null,
+    skillBlock,
     "",
     exemplars
       ? `Winning examples from past outcomes for this pattern:\n${exemplars}`

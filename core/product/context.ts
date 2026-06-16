@@ -4,6 +4,15 @@ import {
   assertProductWorkspaceAccess,
   type ProductWorkspaceSession,
 } from "./app.ts";
+import {
+  formatCompanyBrainMarkdown,
+  getWorkspaceCompanyBrain,
+} from "./company-brain.ts";
+import {
+  formatVerticalIntelligenceMarkdown,
+  parseVerticalIntelligencePack,
+  type VerticalIntelligencePack,
+} from "./vertical-intelligence.ts";
 
 interface ContextRepRow {
   id: string;
@@ -108,6 +117,7 @@ interface ContextProfile {
   exa_evidence_source_ids: string[];
   exa_result_count: number;
   exa_enriched_at: string | null;
+  vertical_intelligence: VerticalIntelligencePack | null;
 }
 
 interface ContextProfileRow {
@@ -128,6 +138,7 @@ interface ContextProfileRow {
   exa_evidence_source_ids: unknown;
   exa_result_count: string | number | null;
   exa_enriched_at: string | null;
+  vertical_intelligence: unknown;
 }
 
 interface ContextRecommendationQuality {
@@ -162,6 +173,7 @@ export interface WorkspaceAgentContext {
     recent_conversations: number;
     recent_outcomes: number;
     reviewed_recommendations: number;
+    company_brain_cards: number;
   };
 }
 
@@ -183,6 +195,7 @@ export async function getWorkspaceAgentContext(
     sendTraces,
     channelAccounts,
     recoveryQueue,
+    companyBrain,
   ] = await Promise.all([
     pool.query<ContextRepRow>(
       `select id, name, role::text as role, status::text as status, persona, autonomy
@@ -225,16 +238,17 @@ export async function getWorkspaceAgentContext(
               industry,
               description,
               properties #>> '{exa_profile,summary}' as exa_summary,
-              coalesce(properties #> '{exa_profile,source_domains}', '[]'::jsonb) as exa_source_domains,
-              coalesce(properties #> '{exa_profile,market_terms}', '[]'::jsonb) as exa_market_terms,
-              coalesce(properties #> '{exa_profile,positioning_notes}', '[]'::jsonb) as exa_positioning_notes,
-              coalesce(properties #> '{exa_profile,competitor_mentions}', '[]'::jsonb) as exa_competitor_mentions,
-              coalesce(properties #> '{exa_profile,audience_terms}', '[]'::jsonb) as exa_audience_terms,
-              coalesce(properties #> '{exa_profile,proof_points}', '[]'::jsonb) as exa_proof_points,
-              coalesce(properties #> '{profile_intelligence,evidence_cards}', '[]'::jsonb) as exa_evidence_cards,
-              coalesce(properties #> '{profile_intelligence,evidence_source_ids}', '[]'::jsonb) as exa_evidence_source_ids,
+              coalesce(properties #> '{exa_profile,intelligence,source_domains}', properties #> '{exa_profile,source_domains}', '[]'::jsonb) as exa_source_domains,
+              coalesce(properties #> '{exa_profile,intelligence,market_terms}', properties #> '{exa_profile,market_terms}', '[]'::jsonb) as exa_market_terms,
+              coalesce(properties #> '{exa_profile,intelligence,positioning_notes}', properties #> '{exa_profile,positioning_notes}', '[]'::jsonb) as exa_positioning_notes,
+              coalesce(properties #> '{exa_profile,intelligence,competitor_mentions}', properties #> '{exa_profile,competitor_mentions}', '[]'::jsonb) as exa_competitor_mentions,
+              coalesce(properties #> '{exa_profile,intelligence,audience_terms}', properties #> '{exa_profile,audience_terms}', '[]'::jsonb) as exa_audience_terms,
+              coalesce(properties #> '{exa_profile,intelligence,proof_points}', properties #> '{exa_profile,proof_points}', '[]'::jsonb) as exa_proof_points,
+              coalesce(properties #> '{exa_profile,intelligence,evidence_cards}', properties #> '{profile_intelligence,evidence_cards}', '[]'::jsonb) as exa_evidence_cards,
+              coalesce(properties #> '{exa_profile,evidence_source_ids}', properties #> '{profile_intelligence,evidence_source_ids}', '[]'::jsonb) as exa_evidence_source_ids,
               coalesce(properties #>> '{exa_profile,result_count}', '0') as exa_result_count,
-              properties #>> '{exa_profile,enriched_at}' as exa_enriched_at
+              properties #>> '{exa_profile,enriched_at}' as exa_enriched_at,
+              coalesce(properties #> '{vertical_intelligence}', '{}'::jsonb) as vertical_intelligence
          from graph_companies
         where workspace_id = $1
           and properties->>'profile_role' = 'workspace_company'
@@ -350,6 +364,7 @@ export async function getWorkspaceAgentContext(
         limit 8`,
       [session.workspace_id],
     ),
+    getWorkspaceCompanyBrain(session, pool, { skipAccessCheck: true }),
   ]);
 
   const generatedAt = new Date().toISOString();
@@ -390,6 +405,12 @@ export async function getWorkspaceAgentContext(
     "",
     "## Profile Intelligence",
     formatProfileIntelligence(profileState),
+    "",
+    "## Vertical Intelligence",
+    formatVerticalIntelligenceMarkdown(profileState?.vertical_intelligence ?? null),
+    "",
+    "## Shared Company Brain",
+    formatCompanyBrainMarkdown(companyBrain),
     "",
     "## Reps",
     listOrEmpty(
@@ -478,6 +499,7 @@ export async function getWorkspaceAgentContext(
       recent_conversations: numericCount(conversationCount.rows[0]?.count),
       recent_outcomes: numericCount(outcomeCount.rows[0]?.count),
       reviewed_recommendations: recommendationQuality.total_reviewed,
+      company_brain_cards: companyBrain.cards.length,
     },
   };
 }
@@ -582,6 +604,7 @@ function mapContextProfile(row: ContextProfileRow | null): ContextProfile | null
     exa_evidence_source_ids: stringArray(row.exa_evidence_source_ids),
     exa_result_count: numericCount(row.exa_result_count),
     exa_enriched_at: row.exa_enriched_at,
+    vertical_intelligence: parseVerticalIntelligencePack(row.vertical_intelligence),
   };
 }
 

@@ -171,7 +171,7 @@ export default async function ConversationsPage() {
           <EmptyState
             title="No outreach replies yet"
             hint="Once a signal starts an email or LinkedIn Play, replies and review moments will appear here."
-            cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
+            cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
           />
         ) : (
           <div className="grid gap-2">
@@ -192,14 +192,14 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
       tone: "bg-[var(--color-ink-2)] text-[var(--color-text-3)]",
     };
   return (
-    <article className="grid gap-3 rounded-[12px] bg-[rgba(255,255,255,0.68)] px-4 py-4 transition-colors hover:bg-[rgba(255,255,255,0.92)] md:grid-cols-[1fr_auto] md:items-center">
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[rgba(30,26,18,0.95)] md:grid-cols-[1fr_auto] md:items-center">
       <Link
         href={`/dashboard/conversations/${conversation.id}`}
         prefetch={false}
         className="min-w-0"
       >
         <div className="flex min-w-0 items-center gap-2">
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
             <Icon name={repIcon(conversation.rep_name)} size={16} />
           </span>
           <span className="min-w-0">
@@ -222,12 +222,12 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {conversation.signal_title ? (
-            <span className="max-w-[320px] truncate rounded-full bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            <span className="max-w-[320px] truncate rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
               Why now: {conversation.signal_title}
             </span>
           ) : null}
           {conversation.pending_approval_id || conversation.eval_passed != null ? (
-            <span className="rounded-full bg-[rgba(255,255,255,0.62)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            <span className="rounded-[8px] bg-[rgba(20,18,13,0.66)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
               {conversation.pending_approval_id || conversation.eval_passed === false
                 ? "Needs review"
                 : "Ready"}
@@ -236,7 +236,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
         </div>
       </Link>
       <div className="flex flex-wrap items-center gap-3 md:justify-end">
-        <span className={"rounded-full px-2.5 py-1 text-xs font-medium " + badge.tone}>
+        <span className={"rounded-[8px] px-2.5 py-1 text-xs font-medium " + badge.tone}>
           {badge.label}
         </span>
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
@@ -247,7 +247,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
             <Link
               href="/dashboard/review"
               prefetch={false}
-              className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
             >
               <Icon name="rate_review" size={14} />
               Review
@@ -270,7 +270,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="rejected" />
               <PendingSubmitButton
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
                 icon="close"
                 iconSize={14}
                 pendingLabel="Rejecting"

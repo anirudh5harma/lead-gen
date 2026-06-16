@@ -294,8 +294,9 @@ test("qualified signal email readiness requires connected Outlook reply sync", a
   }]), "00000000-0000-4000-8000-000000000001");
 
   assert.equal(missingSync.ready, false);
-  assert.equal(missingSync.status_label, "Needs sync");
+  assert.equal(missingSync.status_label, "Repairing sync");
   assert.match(missingSync.detail, /0\/2 Outlook inboxes/);
+  assert.match(missingSync.detail, /no reconnect is needed unless Microsoft revoked the grant/);
 
   const needsReconnect = await loadQualifiedSignalEmailReadiness(fakePool([{
     connected_outlook: "0",

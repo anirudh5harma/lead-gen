@@ -157,8 +157,8 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "DEEPSEEK_MODEL",
     requirement: "optional",
     category: "llm",
-    description: "Override for the default DeepSeek model.",
-    example: "deepseek-v4-pro",
+    description: "Override for the default DeepSeek model. Keep deepseek-v4-flash unless a call carries explicit Pro escalation.",
+    example: "deepseek-v4-flash",
   },
   {
     name: "OPENAI_API_KEY",

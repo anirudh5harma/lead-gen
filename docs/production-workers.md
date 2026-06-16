@@ -76,13 +76,45 @@ traffic remains on `9080` and the managed wrapper also exposes `9081`. It is
 steady at desired `1`, running `1`, pending `0`. On 2026-06-12, live
 `npm run verify:restate` confirmed deployment `dp_16RLtYXG3bAoyujNOKDPH57`
 advertises the full required service set, including
-`contact.resolve_for_signal.v1` and the Exa workflows, and
+`workspace.profile.icp`, `workspace.campaign.strategy`, `workspace.channel.readiness`,
+`workspace.company_brain.brief`, `workspace.company_brain.recall`,
+`workspace.contact.waterfall`, `workspace.eval.gate`, `workspace.meeting.prep`,
+`workspace.message.personalization`,
+`workspace.signal.ingestion`,
+`workspace.skill.optimizer`,
+`workspace.reply.triage`,
+`workspace.source.discovery`,
+`workspace.signal.matching`,
+`workspace.vertical_intelligence.refresh`,
+`contact.resolve_for_signal.v1`, and the Exa workflows, and
 `npm run verify:restate-runtime` completed
 `system.restate_runtime_probe.v1` with run
 `inv_1aad8PkwVeZz4b6dIS7Wt89Db8DnNEeMi5`. The rev33 deployment also makes the
 Outlook-first/explicit-managed-domain-opt-in email behavior live in the
 production worker; startup logs show the managed owned-domain transport is
 disabled unless `MANAGED_OWNED_DOMAIN_EMAIL_ENABLED=1`.
+The current release contract now also includes
+`workspace.outreach.skill_selection` for versioned Play Skill selection and the
+company-brain workflows for source-referenced workspace recall and living briefs.
+It includes `workspace.profile.icp` for source-backed Profile and ICP drafting
+from a website URL before confirmed setup primitives are configured.
+It includes `workspace.message.personalization` for Rep/Skill/memory-backed draft
+personalization that emits `message.personalized` before the hot-path eval gate.
+It includes `workspace.reply.triage` for Conversation-matched inbound replies
+that emit `reply.classified` and any attributable reply Outcome before follow-up
+or meeting prep workflows run.
+It includes `workspace.signal.ingestion` for the stateful Signal ingestion step
+that starts due `ingest_workspace_poll` runs before LangGraph matching.
+It includes `workspace.signal.matching` for the stateful lead-matching step
+that scores ingested Signals against Profile/ICP before `signal.matched` wakes
+Play dispatch.
+It includes `workspace.source.discovery` for source-mix setup through the same
+LangGraph/runtime path as activation and signal matching.
+It also includes `workspace.vertical_intelligence.refresh` for source-referenced
+vertical facts that feed Signal matching, Play Skills, writer/judge prompts, and
+meeting prep.
+The contract also includes `workspace.contact.waterfall`, the LangGraph wrapper
+around the official spend-aware `contact.resolve_for_signal.v1` resolver.
 `npm run verify:production-gate` now includes read-only Outlook account
 readiness and skips the legacy SES probe unless `AWS_SES_REQUIRED=1`. The old
 App Runner deployment was drained by purging completed maintenance-only
@@ -133,9 +165,12 @@ still does not send through Microsoft Graph.
 If strict outreach verification reports connected Outlook accounts without
 active Graph subscriptions, run `npm run repair:outlook-subscriptions`. That
 command invokes the existing `email_outlook_subscription_repair` workflow and
-does not send email. If Microsoft returns `invalid_client`, update
-`MICROSOFT_CLIENT_SECRET` to the app registration's secret value, not the
-secret ID, then rerun the repair and strict verifier.
+does not send email or ask users to reconnect. Graph subscription lifecycle
+events such as `reauthorizationRequired` are repaired by silently renewing the
+subscription with a fresh access token; only revoked or expired OAuth grants
+should move an account to `needs_reauth`. If Microsoft returns
+`invalid_client`, update `MICROSOFT_CLIENT_SECRET` to the app registration's
+secret value, not the secret ID, then rerun the repair and strict verifier.
 
 ## Required Shared Environment
 
@@ -281,6 +316,23 @@ real sends:
 The verifier expects these services:
 
 - `system.restate_runtime_probe.v1`
+- `workspace.activation.setup`
+- `workspace.profile.icp`
+- `workspace.campaign.strategy`
+- `workspace.channel.readiness`
+- `workspace.company_brain.brief`
+- `workspace.company_brain.recall`
+- `workspace.contact.waterfall`
+- `workspace.eval.gate`
+- `workspace.meeting.prep`
+- `workspace.message.personalization`
+- `workspace.outreach.skill_selection`
+- `workspace.reply.triage`
+- `workspace.signal.ingestion`
+- `workspace.skill.optimizer`
+- `workspace.source.discovery`
+- `workspace.vertical_intelligence.refresh`
+- `workspace.signal.matching`
 - `series_a_cold_open`
 - `play.signal_to_email.v1`
 - `play.signal_to_linkedin.v1`

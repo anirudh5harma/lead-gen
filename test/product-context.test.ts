@@ -33,6 +33,7 @@ test("product context includes Exa-enriched profile intelligence", () => {
     ],
     exa_result_count: 6,
     exa_enriched_at: "2026-06-03T12:00:00.000Z",
+    vertical_intelligence: null,
   });
 
   assert.match(markdown, /Company: Acme GTM/);

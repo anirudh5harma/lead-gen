@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import type { Pool } from "pg";
 import {
   createOutlookSubscriptionRepairWorkflow,
+  isOutlookReauthorizationRequiredError,
   loadOutlookSubscription,
   type OutlookAccessTokenProvider,
 } from "../core/channels/email/index.ts";
@@ -61,6 +62,82 @@ function context(workspace_id: string, bus: ReturnType<typeof createInMemoryEven
   };
 }
 
+test("Outlook lifecycle reauthorization repair uses one silent renewal call", async () => {
+  const workspace_id = randomUUID();
+  const channel_account_id = randomUUID();
+  const existing = {
+    id: "subscription-existing",
+    resource: "/me/messages",
+    expirationDateTime: "2026-05-28T00:00:00.000Z",
+    clientState: "secret",
+    notificationUrl: "https://app.example/api/webhooks/outlook",
+    lifecycleNotificationUrl: "https://app.example/api/webhooks/outlook",
+    recorded_at: "2026-05-27T00:00:00.000Z",
+  };
+  let persisted: unknown;
+  const pool = {
+    async query(sql: string, params: unknown[]) {
+      if (sql.includes("select id, workspace_id")) {
+        assert.equal(params[0], workspace_id);
+        assert.equal(params[1], channel_account_id);
+        return { rows: [{ id: channel_account_id, workspace_id }] };
+      }
+      if (sql.includes("select properties from channel_accounts")) {
+        return { rows: [{ properties: { outlook_subscription: existing } }] };
+      }
+      if (sql.includes("jsonb_build_object('outlook_subscription'")) {
+        persisted = JSON.parse(params[2] as string);
+        return { rowCount: 1, rows: [] };
+      }
+      if (sql.includes("last_error")) {
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  } as unknown as Pool;
+  const bus = createInMemoryEventBus();
+  const calls: Array<{ method: string | undefined; url: string }> = [];
+  const workflow = createOutlookSubscriptionRepairWorkflow({
+    pool,
+    accessTokens: accessTokens(),
+    notificationUrl: "https://app.example/api/webhooks/outlook",
+    fetchImpl: async (url, init) => {
+      calls.push({ method: init?.method, url: String(url) });
+      if (String(url).endsWith("/reauthorize")) {
+        throw new Error("unexpected Graph subscription reauthorize call");
+      }
+      return new Response(
+        JSON.stringify({ expirationDateTime: "2026-06-02T00:00:00.000Z" }),
+        { status: 200 },
+      );
+    },
+  });
+
+  const result = await workflow.run(
+    {
+      workspace_id,
+      channel_account_id,
+      lifecycle_event: "reauthorizationRequired",
+    },
+    context(workspace_id, bus),
+  );
+
+  assert.deepEqual(
+    calls.map((c) => [c.method, c.url.endsWith("/reauthorize")]),
+    [["PATCH", false]],
+  );
+  assert.equal(result.failed, 0);
+  assert.equal(result.subscriptions_renewed, 1);
+  assert.equal(
+    (persisted as { expirationDateTime?: string } | undefined)?.expirationDateTime,
+    "2026-06-02T00:00:00.000Z",
+  );
+  assert.equal(
+    (bus.published[0].payload as { operation: string }).operation,
+    "renewed",
+  );
+});
+
 test("Outlook repair workflow creates and projects a missing Graph subscription", async (t) => {
   const fx = await setupPg("outlook_subscription_create");
   if (!fx) return t.skip("DATABASE_URL not set");
@@ -107,6 +184,15 @@ test("Outlook repair workflow creates and projects a missing Graph subscription"
     assert.equal(
       body.lifecycleNotificationUrl,
       "https://app.example/api/webhooks/outlook",
+    );
+    const requestedExpirationMs = new Date(body.expirationDateTime).getTime();
+    assert.ok(
+      requestedExpirationMs - Date.now() > 6 * 24 * 60 * 60 * 1000,
+      "subscription renewal should be a quiet backend task near Graph's max window",
+    );
+    assert.ok(
+      requestedExpirationMs - Date.now() <= 7 * 24 * 60 * 60 * 1000,
+      "subscription expiration must stay under Graph's Outlook subscription max",
     );
     const subscription = await loadOutlookSubscription(
       fx.pool,
@@ -180,6 +266,67 @@ test("Outlook repair workflow renews an existing subscription for a requested ac
       account.channel_account_id,
     );
     assert.equal(subscription?.expirationDateTime, "2026-06-02T00:00:00.000Z");
+    assert.equal(
+      (bus.published[0].payload as { operation: string }).operation,
+      "renewed",
+    );
+  } finally {
+    await fx.close();
+  }
+});
+
+test("Outlook repair workflow renews once after lifecycle reauthorization notification", async (t) => {
+  const fx = await setupPg("outlook_subscription_lifecycle_reauth");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  try {
+    const account = await seedOutlookAccount(fx.pool);
+    await fx.pool.query(
+      `update channel_accounts
+          set properties = jsonb_build_object('outlook_subscription', $3::jsonb)
+        where workspace_id = $1 and id = $2`,
+      [
+        account.workspace_id,
+        account.channel_account_id,
+        JSON.stringify({
+          id: "subscription-existing",
+          resource: "/me/messages",
+          expirationDateTime: "2026-05-28T00:00:00.000Z",
+          clientState: "secret",
+          notificationUrl: "https://app.example/api/webhooks/outlook",
+          lifecycleNotificationUrl: "https://app.example/api/webhooks/outlook",
+          recorded_at: "2026-05-27T00:00:00.000Z",
+        }),
+      ],
+    );
+    const bus = createInMemoryEventBus();
+    const calls: Array<{ method: string | undefined; url: string }> = [];
+    const workflow = createOutlookSubscriptionRepairWorkflow({
+      pool: fx.pool,
+      accessTokens: accessTokens(),
+      notificationUrl: "https://app.example/api/webhooks/outlook",
+      fetchImpl: async (url, init) => {
+        calls.push({ method: init?.method, url: String(url) });
+        return new Response(
+          JSON.stringify({ expirationDateTime: "2026-06-02T00:00:00.000Z" }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const result = await workflow.run(
+      {
+        workspace_id: account.workspace_id,
+        channel_account_id: account.channel_account_id,
+        lifecycle_event: "reauthorizationRequired",
+      },
+      context(account.workspace_id, bus),
+    );
+
+    assert.deepEqual(
+      calls.map((c) => [c.method, c.url.endsWith("/reauthorize")]),
+      [["PATCH", false]],
+    );
+    assert.equal(result.subscriptions_renewed, 1);
     assert.equal(
       (bus.published[0].payload as { operation: string }).operation,
       "renewed",
@@ -348,4 +495,31 @@ test("Outlook repair workflow projects reauthorization failures as needs_reauth"
   } finally {
     await fx.close();
   }
+});
+
+test("Outlook repair classifier keeps provider configuration errors out of needs_reauth", () => {
+  assert.equal(
+    isOutlookReauthorizationRequiredError(
+      "Outlook token refresh failed (401): invalid_client AADSTS7000215: Invalid client secret provided.",
+    ),
+    false,
+  );
+  assert.equal(
+    isOutlookReauthorizationRequiredError(
+      "Outlook token refresh failed (400): invalid_grant AADSTS50173: The provided grant has expired due to it being revoked.",
+    ),
+    true,
+  );
+  assert.equal(
+    isOutlookReauthorizationRequiredError(
+      "Outlook token refresh failed (400): AADSTS700082: The refresh token has expired due to inactivity.",
+    ),
+    true,
+  );
+  assert.equal(
+    isOutlookReauthorizationRequiredError(
+      "Outlook subscription renew failed: AADSTS70000: transient provider condition",
+    ),
+    false,
+  );
 });

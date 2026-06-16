@@ -21,11 +21,11 @@ import {
  * insufficient once an attacker observes a clientState off the wire.
  *
  * Lifecycle events Graph emits via the same webhook POST endpoint:
- *   - `reauthorizationRequired` : tokens lapsed; the user must re-consent.
- *     We translate this to a typed `email.outlook.reauthorization.required`
- *     event so the dashboard can prompt the operator.
- *   - `subscriptionRemoved` : Graph deleted the subscription server-side
- *     (token expired, app uninstalled). The repair workflow recreates.
+ *   - `reauthorizationRequired` : Graph wants the app to refresh/renew the
+ *     subscription using a valid access token. This is usually backend repair,
+ *     not user OAuth re-consent.
+ *   - `subscriptionRemoved` : Graph deleted the subscription server-side.
+ *     The repair workflow recreates it when credentials are still valid.
  *   - `missed` : Graph noticed it failed to deliver some notifications.
  *     We log + rely on the next change to fall through naturally.
  */

@@ -3,6 +3,10 @@ import type { NextRequest } from "next/server";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { createJournaledDispatchEventBus } from "@/core/substrate/events/index.ts";
 import {
+  createRestateWorkflowRuntime,
+  restateBearerFromEnv,
+} from "@/core/substrate/workflows/index.ts";
+import {
   type OutlookNotificationBatch,
 } from "@/core/channels/email/outlook-subscription.ts";
 import {
@@ -24,7 +28,8 @@ import {
  *     → for change notifications: verify clientState + emit
  *       email.outlook.notification.received per resource.
  *     → for lifecycle notifications (reauthorizationRequired,
- *       subscriptionRemoved, missed): emit the appropriate typed event.
+ *       subscriptionRemoved): start silent subscription repair; the repair
+ *       workflow decides whether the user truly needs to reauthorize.
  *     → if validationTokens are present (always true once
  *       lifecycleNotificationUrl is wired), verify every token's
  *       Microsoft Entra signature + aud=MICROSOFT_CLIENT_ID before
@@ -123,36 +128,32 @@ export async function POST(req: NextRequest): Promise<Response> {
       for (const e of events) {
         const located = await locateAccount(pool, e.subscriptionId, e.clientState);
         if (!located) continue;
-        if (e.lifecycleEvent === "reauthorizationRequired") {
-          await bus.publish({
+        if (shouldRepairLifecycleSubscription(e.lifecycleEvent)) {
+          const started = await startOutlookSubscriptionRepair({
             workspace_id: located.workspace_id,
-            event_type: "email.outlook.reauthorization.required",
-            source: "webhook",
-            producer_ref: "webhook:outlook:graph:lifecycle",
-            idempotency_key:
-              `graph-lifecycle:${e.subscriptionId}:reauthorizationRequired`,
-            payload: {
-              channel_account_id: located.channel_account_id,
-              error: "Microsoft Graph requires re-consent for this account.",
-            },
+            channel_account_id: located.channel_account_id,
+            subscription_id: e.subscriptionId,
+            lifecycle_event: e.lifecycleEvent,
           });
+          if (started) continue;
         } else {
-          // subscriptionRemoved / missed / other: surface as a generic
-          // channel-account-errored so the dashboard can show + repair.
-          await bus.publish({
-            workspace_id: located.workspace_id,
-            event_type: "channel.account.errored",
-            source: "webhook",
-            producer_ref: "webhook:outlook:graph:lifecycle",
-            idempotency_key:
-              `graph-lifecycle:${e.subscriptionId}:${e.lifecycleEvent}`,
-            payload: {
-              channel_account_id: located.channel_account_id,
-              kind: "oauth_outlook",
-              error: `lifecycle event: ${e.lifecycleEvent}`,
-            },
-          });
+          console.warn("[outlook webhook] lifecycle event observed:", e.lifecycleEvent);
         }
+        await bus.publish({
+          workspace_id: located.workspace_id,
+          event_type: "channel.account.errored",
+          source: "webhook",
+          producer_ref: "webhook:outlook:graph:lifecycle",
+          idempotency_key:
+            `graph-lifecycle:${e.subscriptionId}:${e.lifecycleEvent}`,
+          payload: {
+            channel_account_id: located.channel_account_id,
+            kind: "oauth_outlook",
+            error: shouldRepairLifecycleSubscription(e.lifecycleEvent)
+              ? `lifecycle repair not started: ${e.lifecycleEvent}`
+              : `lifecycle event: ${e.lifecycleEvent}`,
+          },
+        });
       }
       return new Response(null, { status: 202 });
     }
@@ -194,6 +195,50 @@ export async function POST(req: NextRequest): Promise<Response> {
 interface LocatedAccount {
   workspace_id: string;
   channel_account_id: string;
+}
+
+interface OutlookSubscriptionRepairStart {
+  workspace_id: string;
+  channel_account_id: string;
+  subscription_id: string;
+  lifecycle_event: string;
+}
+
+function shouldRepairLifecycleSubscription(lifecycleEvent: string): boolean {
+  return lifecycleEvent === "reauthorizationRequired" ||
+    lifecycleEvent === "subscriptionRemoved";
+}
+
+async function startOutlookSubscriptionRepair(
+  input: OutlookSubscriptionRepairStart,
+): Promise<boolean> {
+  const ingressUrl = process.env.RESTATE_INGRESS_URL?.trim();
+  if (!ingressUrl) {
+    console.warn("[outlook webhook] RESTATE_INGRESS_URL is not set; repair skipped");
+    return false;
+  }
+  try {
+    const runtime = createRestateWorkflowRuntime({
+      ingressUrl,
+      bearer: restateBearerFromEnv(),
+    });
+    await runtime.start({
+      workspace_id: input.workspace_id,
+      workflow_name: "email_outlook_subscription_repair",
+      idempotency_key:
+        `outlook-lifecycle-repair:${input.channel_account_id}:` +
+        `${input.subscription_id}:${input.lifecycle_event}`,
+      input: {
+        workspace_id: input.workspace_id,
+        channel_account_id: input.channel_account_id,
+        lifecycle_event: input.lifecycle_event,
+      },
+    });
+    return true;
+  } catch (err) {
+    console.error("[outlook webhook] subscription repair start failed", err);
+    return false;
+  }
 }
 
 async function locateAccount(

@@ -3,6 +3,10 @@ import type {
   CompletionResponse,
   LLMClient,
 } from "./types.ts";
+import {
+  assertDeepSeekModelAllowed,
+  resolveDeepSeekDefaultModel,
+} from "./model-policy.ts";
 
 /**
  * DeepSeek client. DeepSeek's API is OpenAI-compatible
@@ -11,7 +15,7 @@ import type {
  *
  * Defaults (overridable via opts or env):
  *   - baseUrl        : https://api.deepseek.com/v1
- *   - defaultModel   : process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro"
+ *   - defaultModel   : process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash"
  *   - timeoutMs      : 60_000
  *   - retries        : 2  (so 3 total attempts on 429 / 5xx / network)
  *
@@ -59,14 +63,14 @@ function delay(ms: number): Promise<void> {
 
 export function createDeepSeekClient(opts: DeepSeekOptions): LLMClient {
   const baseUrl = (opts.baseUrl ?? "https://api.deepseek.com/v1").replace(/\/$/, "");
-  const defaultModel =
-    opts.defaultModel ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+  const defaultModel = resolveDeepSeekDefaultModel(opts.defaultModel);
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const retries = opts.retries ?? 2;
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
 
   async function complete(req: CompletionRequest): Promise<CompletionResponse> {
     const model = req.model ?? defaultModel;
+    assertDeepSeekModelAllowed(model, req.model_escalation);
     const body = JSON.stringify({
       model,
       messages: req.messages,

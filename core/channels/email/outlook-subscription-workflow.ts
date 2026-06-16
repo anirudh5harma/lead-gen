@@ -30,6 +30,8 @@ export interface OutlookSubscriptionRepairDeps {
 export interface OutlookSubscriptionRepairInput {
   workspace_id: string;
   channel_account_id?: string;
+  /** Graph lifecycle event that triggered this repair, when webhook-driven. */
+  lifecycle_event?: string;
   limit?: number;
 }
 
@@ -92,7 +94,10 @@ export function createOutlookSubscriptionRepairWorkflow(
         // ignores the field on PATCH for /me/messages), so we delete +
         // recreate — the new subscription has lifecycleNotificationUrl set.
         const needsMigration = Boolean(existing) && !existing!.lifecycleNotificationUrl;
-        const operation = needsMigration
+        const needsRecreate =
+          needsMigration ||
+          (Boolean(existing) && input.lifecycle_event === "subscriptionRemoved");
+        const operation = needsRecreate
           ? "created" as const
           : existing
             ? "renewed" as const
@@ -113,10 +118,13 @@ export function createOutlookSubscriptionRepairWorkflow(
               }),
             );
           }
+          // For reauthorizationRequired, renewal is the silent repair path.
+          // Avoid POST /reauthorize followed by PATCH; Graph treats both as
+          // subscription updates and this can create unnecessary churn.
           subscription = await ctx.step(
             `graph_subscription:${target.id}`,
             () =>
-              existing && !needsMigration
+              existing && !needsRecreate
                 ? renewOutlookSubscription({
                     pool: deps.pool,
                     workspaceId: target.workspace_id,
@@ -218,7 +226,7 @@ async function listSubscriptionTargets(
 }
 
 export function isOutlookReauthorizationRequiredError(message: string): boolean {
-  return /requires Outlook reauthorization|invalid_grant|AADSTS70000|AADSTS70008[24]/i
+  return /requires Outlook reauthorization|invalid_grant|AADSTS50173|AADSTS70008[24]/i
     .test(message);
 }
 

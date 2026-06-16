@@ -11,10 +11,13 @@ import {
   deleteProductRecommendation,
   dispatchSignalPlaysOnce,
   draftProductRecommendation,
+  generateProductMeetingPrep,
+  optimizeProductCampaignStrategy,
+  optimizeProductPlaySkills,
   recordProductCampaignOutcome,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
-  runWorkspaceSignalAggregatorOnce,
+  runWorkspaceSignalIngestion,
   updateProductRecommendation,
   verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
@@ -123,8 +126,9 @@ async function requireDashboardSession(
 export async function createWorkspaceAction(formData: FormData) {
   await requireDashboardSession(formData);
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/prospecting");
   revalidatePath("/dashboard/setup");
-  redirectWithToast("/dashboard/setup", "Workspace created.");
+  redirectWithToast("/dashboard/prospecting", "Workspace created.");
 }
 
 export async function switchWorkspaceAction(formData: FormData) {
@@ -172,7 +176,7 @@ export async function configureActivationAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirectWithToast("/dashboard/setup", "Guidance saved.");
+  redirectWithToast("/dashboard/prospecting", "Guidance saved.");
 }
 
 export async function configureRepAction(formData: FormData) {
@@ -330,20 +334,49 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
   redirectWithToast(returnTo, "Outcome recorded.");
 }
 
-export async function runSignalAggregatorAction(formData: FormData) {
+export async function runSignalIngestionAction(formData: FormData) {
   const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
-  await runWorkspaceSignalAggregatorOnce(
+  await runWorkspaceSignalIngestion(
     { limit: numberValue(formData, "limit", 8) },
+    session,
+    { wait: false },
+  );
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Signal ingestion started.");
+}
+
+export async function optimizeCampaignStrategyAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
+  await optimizeProductCampaignStrategy(
+    {
+      lookback_days: numberValue(formData, "lookback_days", 30),
+      min_samples: numberValue(formData, "min_samples", 3),
+    },
     session,
   );
   revalidateProductPaths();
-  redirectWithToast(returnTo, "Signals refreshed.");
+  redirectWithToast(returnTo, "Campaign strategy updated.");
+}
+
+export async function optimizePlaySkillsAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
+  await optimizeProductPlaySkills(
+    {
+      lookback_days: numberValue(formData, "lookback_days", 30),
+      min_samples: numberValue(formData, "min_samples", 3),
+    },
+    session,
+  );
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Play skills updated.");
 }
 
 export async function prepareQualifiedSignalsAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/ingestion");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/signals");
   await dispatchSignalPlaysOnce(
     { limit: numberValue(formData, "limit", 25) },
     session,
@@ -352,9 +385,25 @@ export async function prepareQualifiedSignalsAction(formData: FormData) {
   redirectWithToast(returnTo, "Preparing verified contacts and email drafts.");
 }
 
+export async function generateMeetingPrepAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const conversationId = value(formData, "conversation_id");
+  const returnTo = dashboardReturnPath(
+    formData,
+    conversationId ? `/dashboard/conversations/${conversationId}` : "/dashboard/conversations",
+  );
+  if (!conversationId) {
+    redirectWithToast(returnTo, "Choose a conversation before preparing.", "error");
+  }
+  await generateProductMeetingPrep({ conversation_id: conversationId }, session);
+  revalidateProductPaths();
+  revalidatePath(`/dashboard/conversations/${conversationId}`);
+  redirectWithToast(returnTo, "Meeting prep updated.");
+}
+
 export async function editCompanyProfileAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/setup");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/prospecting");
   const company_name = value(formData, "company_name");
   const website_url = value(formData, "website_url");
   if (!company_name || !website_url) {
@@ -428,8 +477,10 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
 
 function revalidateProductPaths() {
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/prospecting");
   revalidatePath("/dashboard/setup");
   revalidatePath("/dashboard/reps");
+  revalidatePath("/dashboard/signals");
   revalidatePath("/dashboard/ingestion");
   revalidatePath("/dashboard/plays");
   revalidatePath("/dashboard/campaigns");

@@ -217,6 +217,9 @@ test("signal LinkedIn Play runs research, draft, judge, approval policy, and nat
   assert.equal(message?.channel, "linkedin_dm");
   assert.equal(message?.eval_passed, true);
   assert.match(message?.provenance.pattern_key as string, /channel:linkedin_dm/);
+  assert.match(message?.provenance.pattern_key as string, /skill:linkedin_signal_dm_probe@v1/);
+  assert.equal(message?.provenance.skill_key, "linkedin_signal_dm_probe");
+  assert.equal(completed?.output?.skill_key, "linkedin_signal_dm_probe");
   assert.equal((message?.provenance.exa_influence as { provider?: string } | undefined)?.provider, "exa");
   assert.equal(
     (message?.provenance.exa_influence as { request_id?: string } | undefined)?.request_id,

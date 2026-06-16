@@ -4,6 +4,11 @@ import {
   createDeepSeekClient,
   DeepSeekError,
 } from "../core/agents/llm/deepseek.ts";
+import {
+  DEEPSEEK_V4_FLASH_MODEL,
+  DEEPSEEK_V4_PRO_MODEL,
+  LLMModelPolicyError,
+} from "../core/agents/llm/index.ts";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -13,7 +18,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
-function chatBody(content: string, model = "deepseek-v4-pro"): unknown {
+function chatBody(content: string, model = DEEPSEEK_V4_FLASH_MODEL): unknown {
   return {
     model,
     choices: [
@@ -30,7 +35,7 @@ test("deepseek client: posts to /chat/completions with bearer auth and JSON body
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const client = createDeepSeekClient({
     apiKey: "sk-test",
-    defaultModel: "deepseek-v4-pro",
+    defaultModel: DEEPSEEK_V4_FLASH_MODEL,
     fetchImpl: async (input, init) => {
       calls.push({
         url: typeof input === "string" ? input : (input as URL).toString(),
@@ -50,7 +55,7 @@ test("deepseek client: posts to /chat/completions with bearer auth and JSON body
   });
 
   assert.equal(out.content, "hello");
-  assert.equal(out.model, "deepseek-v4-pro");
+  assert.equal(out.model, DEEPSEEK_V4_FLASH_MODEL);
   assert.equal(out.usage.total_tokens, 15);
 
   assert.equal(calls.length, 1);
@@ -58,13 +63,73 @@ test("deepseek client: posts to /chat/completions with bearer auth and JSON body
   assert.equal((calls[0].init.headers as Record<string, string>).Authorization, "Bearer sk-test");
 
   const sent = JSON.parse(String(calls[0].init.body));
-  assert.equal(sent.model, "deepseek-v4-pro");
+  assert.equal(sent.model, DEEPSEEK_V4_FLASH_MODEL);
   assert.equal(sent.temperature, 0.2);
   assert.equal(sent.max_tokens, 100);
   assert.deepEqual(sent.messages, [
     { role: "system", content: "be brief" },
     { role: "user", content: "ping" },
   ]);
+});
+
+test("deepseek client: defaults to V4 Flash", async () => {
+  let sent: { model?: string } = {};
+  const client = createDeepSeekClient({
+    apiKey: "sk",
+    fetchImpl: async (_url, init) => {
+      sent = JSON.parse(String(init!.body));
+      return jsonResponse(chatBody("hello"));
+    },
+  });
+
+  await client.complete({ messages: [{ role: "user", content: "ping" }] });
+
+  assert.equal(sent.model, DEEPSEEK_V4_FLASH_MODEL);
+});
+
+test("deepseek client: blocks V4 Pro without explicit escalation", async () => {
+  let called = false;
+  const client = createDeepSeekClient({
+    apiKey: "sk",
+    fetchImpl: async () => {
+      called = true;
+      return jsonResponse(chatBody("should not happen", DEEPSEEK_V4_PRO_MODEL));
+    },
+  });
+
+  await assert.rejects(
+    client.complete({
+      model: DEEPSEEK_V4_PRO_MODEL,
+      messages: [{ role: "user", content: "hard synthesis" }],
+    }),
+    (err) =>
+      err instanceof LLMModelPolicyError &&
+      err.model === DEEPSEEK_V4_PRO_MODEL,
+  );
+  assert.equal(called, false);
+});
+
+test("deepseek client: allows V4 Pro with explicit escalation", async () => {
+  let sent: { model?: string } = {};
+  const client = createDeepSeekClient({
+    apiKey: "sk",
+    fetchImpl: async (_url, init) => {
+      sent = JSON.parse(String(init!.body));
+      return jsonResponse(chatBody("deep answer", DEEPSEEK_V4_PRO_MODEL));
+    },
+  });
+
+  const out = await client.complete({
+    model: DEEPSEEK_V4_PRO_MODEL,
+    model_escalation: {
+      reason: "operator_approved_investigation",
+      approved_by: "operator",
+    },
+    messages: [{ role: "user", content: "investigate this failure" }],
+  });
+
+  assert.equal(sent.model, DEEPSEEK_V4_PRO_MODEL);
+  assert.equal(out.model, DEEPSEEK_V4_PRO_MODEL);
 });
 
 test("deepseek client: forwards response_format for json_object mode", async () => {

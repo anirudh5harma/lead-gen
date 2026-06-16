@@ -17,6 +17,8 @@ import {
 import type { ResearchBrief, ResearchResult } from "../agents/reps/roles/researcher.ts";
 import type { RoleAgent, RoleAgentContext } from "../agents/reps/types.ts";
 import type { LinkedInChannel, LinkedInChannelName } from "../channels/linkedin/index.ts";
+import type { GraphCompany, GraphPerson } from "../graph/types.ts";
+import type { Signal } from "../primitives/index.ts";
 import type { VerticalSliceStore } from "./vertical-store.ts";
 import { exaInfluenceFromSignal } from "./exa-influence.ts";
 import {
@@ -32,6 +34,11 @@ import {
   shouldRequestApproval,
   type PlayChannelPolicy,
 } from "./autonomy.ts";
+import {
+  createSelectedOutreachSkill,
+  outreachSkillProvenance,
+  type SelectedOutreachSkill,
+} from "../agents/skills/outreach.ts";
 
 export const SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW = "play.signal_to_linkedin.v1";
 
@@ -48,6 +55,17 @@ export interface SignalToLinkedInPlayInput {
   linkedin_approval?: "none" | "approve_first" | "always" | "research_only";
   play_channel_policy?: PlayChannelPolicy | null;
   simulate_outcome_kind?: "positive_reply" | "meeting_booked" | null;
+  skill_key?: string | null;
+  skill_version?: string | null;
+  segment_key?: string | null;
+  campaign_strategy?: {
+    recommendation_id?: string | null;
+    variant_key: string;
+    matched_variant_key?: string | null;
+    recommendation: string;
+    allocation_weight: number;
+    reason: string;
+  } | null;
 }
 
 export interface SignalToLinkedInPlayOutput {
@@ -57,6 +75,9 @@ export interface SignalToLinkedInPlayOutput {
   outcome_id?: string;
   eval_score: number;
   pattern_key: string;
+  seed_pattern_key?: string | null;
+  skill_key?: string;
+  skill_version?: string;
   channel: LinkedInChannelName;
 }
 
@@ -215,6 +236,25 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
         : null;
       const groundedResearch = applyDraftGrounding(research, draftGrounding);
       const patternKey = `${research.pattern_key}|channel:${action}`;
+      const selectedSkill = createSelectedOutreachSkill({
+        channel: action,
+        stage: "cold_open",
+        signal_kind: signal.kind,
+        action,
+        person_title: person.title,
+        preferred_skill_key: input.skill_key,
+        preferred_skill_version: input.skill_version,
+        base_pattern_key: patternKey,
+        slot_values: linkedinSkillSlotValues({
+          signal,
+          research: groundedResearch,
+          person,
+          company,
+          workspaceContextMarkdown,
+          draftGrounding,
+          action,
+        }),
+      });
 
       const draft = await ctx.step("writer.compose_linkedin", async () => {
         const result = await writerRole.invoke({
@@ -223,6 +263,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
           research: groundedResearch,
           person,
           company,
+          skill: selectedSkill,
         }, roleContext);
         await ctx.publish("rep.role.completed", {
           rep_id: rep.id,
@@ -236,6 +277,10 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
           summary: result.body.slice(0, 140),
           output: {
             channel: action,
+            pattern_key: result.pattern_key,
+            seed_pattern_key: result.seed_pattern_key,
+            skill_key: result.skill?.skill_key ?? null,
+            skill_version: result.skill?.version ?? null,
             exemplar_ids: result.exemplar_ids,
             procedural_exemplar_count: result.procedural_exemplars.length,
           },
@@ -245,21 +290,52 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       });
 
       const message = await ctx.step("message.draft", async () => {
+        const message_id = randomUUID();
+        const personalized_at = new Date().toISOString();
+        const provenance = {
+          pattern_key: draft.pattern_key,
+          ...(draft.seed_pattern_key ? { seed_pattern_key: draft.seed_pattern_key } : {}),
+          exemplar_ids: draft.exemplar_ids,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          ...outreachSkillProvenance(draft.skill, {
+            pattern_key: draft.pattern_key,
+            seed_pattern_key: draft.seed_pattern_key,
+          }),
+          personalization_context: {
+            signal_id: signal.id,
+            person_id: person.id,
+            company_id: company?.id ?? null,
+            generated_at: personalized_at,
+          },
+          ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
+          ...(draftGrounding ? { exa_grounding: draftGroundingProvenance(draftGrounding) } : {}),
+        };
+        await ctx.publish("message.personalized", {
+          conversation_id: conversation.id,
+          message_id,
+          channel: action,
+          rep_id: rep.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          signal_id: signal.id,
+          person_id: person.id,
+          company_id: company?.id ?? null,
+          subject: null,
+          body: draft.body,
+          personalization_context_markdown: workspaceContextMarkdown ?? null,
+          skill: draft.skill ? { ...draft.skill } : null,
+          provenance,
+          personalized_at,
+        });
         const event = await ctx.publish("draft.proposed", {
           conversation_id: conversation.id,
-          message_id: randomUUID(),
+          message_id,
           channel: action,
           rep_id: rep.id,
           subject: null,
           body: draft.body,
-          provenance: {
-            pattern_key: patternKey,
-            exemplar_ids: draft.exemplar_ids,
-            play_id: input.play_id,
-            play_run_id: input.play_run_id,
-            ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
-            ...(draftGrounding ? { exa_grounding: draftGroundingProvenance(draftGrounding) } : {}),
-          },
+          provenance,
         });
         const row = await deps.store.projectMessageLifecycleEvent(event);
         if (!row) throw new Error(`Draft projection failed: ${event.payload.message_id}`);
@@ -284,6 +360,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
               counterparty_summary: research.counterparty_summary,
               procedural_exemplars: draft.procedural_exemplars,
               workspace_context_markdown: workspaceContextMarkdown ?? null,
+              outreach_skill: outreachSkillJudgeContext(draft),
             },
           },
         ),
@@ -302,7 +379,9 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
           conversation_id: conversation.id,
           message_id: message.id,
           eval_score: gate.verdict.score,
-          pattern_key: patternKey,
+          pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
           channel: action,
         };
         await ctx.publish("play.run.completed", {
@@ -325,7 +404,9 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
           conversation_id: conversation.id,
           message_id: message.id,
           eval_score: gate.verdict.score,
-          pattern_key: patternKey,
+          pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
           channel: action,
         };
         await publishPlayDeferred(ctx, message.id, action, "play_research_only", null);
@@ -353,7 +434,9 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
           conversation_id: conversation.id,
           message_id: message.id,
           eval_score: gate.verdict.score,
-          pattern_key: patternKey,
+          pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
           channel: action,
         };
         await publishPlayDeferred(
@@ -398,6 +481,8 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
             policy: policy.approval,
             daily_cap: policy.daily_cap,
             sent_today: dailySendCount,
+            skill_key: draft.skill?.skill_key ?? null,
+            skill_version: draft.skill?.version ?? null,
           },
         });
         if (decision.decision !== "approved") {
@@ -406,7 +491,9 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
             conversation_id: conversation.id,
             message_id: message.id,
             eval_score: gate.verdict.score,
-            pattern_key: patternKey,
+            pattern_key: draft.pattern_key,
+            seed_pattern_key: draft.seed_pattern_key,
+            ...skillOutput(draft.skill),
             channel: action,
           };
           await publishPlayDeferred(
@@ -465,6 +552,7 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
                   counterparty_summary: research.counterparty_summary,
                   procedural_exemplars: draft.procedural_exemplars,
                   workspace_context_markdown: workspaceContextMarkdown ?? null,
+                  outreach_skill: outreachSkillJudgeContext(draft),
                 },
               },
             ),
@@ -482,7 +570,9 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
               conversation_id: conversation.id,
               message_id: edited.id,
               eval_score: editedGate.verdict.score,
-              pattern_key: patternKey,
+              pattern_key: draft.pattern_key,
+              seed_pattern_key: draft.seed_pattern_key,
+              ...skillOutput(draft.skill),
               channel: action,
             };
             await ctx.publish("play.run.completed", {
@@ -558,7 +648,9 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
             attributed_signal_id: signal.id,
             attributed_rep_id: rep.id,
             properties: {
-              pattern_key: patternKey,
+              pattern_key: draft.pattern_key,
+              ...(draft.seed_pattern_key ? { seed_pattern_key: draft.seed_pattern_key } : {}),
+              ...skillOutput(draft.skill),
               exemplar_ids: draft.exemplar_ids,
               ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
             },
@@ -578,7 +670,9 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
         message_id: message.id,
         outcome_id,
         eval_score: sendDraft.eval_score,
-        pattern_key: patternKey,
+        pattern_key: draft.pattern_key,
+        seed_pattern_key: draft.seed_pattern_key,
+        ...skillOutput(draft.skill),
         channel: action,
       };
       await ctx.publish("play.run.completed", {
@@ -590,6 +684,64 @@ export function createSignalToLinkedInPlayWorkflow(deps: SignalToLinkedInPlayDep
       return output;
     },
   });
+}
+
+function linkedinSkillSlotValues(input: {
+  signal: Signal;
+  research: Pick<ResearchResult, "signal_summary" | "counterparty_summary">;
+  person: GraphPerson;
+  company: GraphCompany | null;
+  workspaceContextMarkdown?: string | null;
+  draftGrounding?: { summary: string } | null;
+  action: LinkedInChannelName;
+}): Record<string, string> {
+  return {
+    signal_hook: input.research.signal_summary,
+    counterparty_context: [
+      input.person.full_name,
+      input.person.title,
+      input.company?.name,
+      input.company?.industry,
+    ].filter(Boolean).join(", "),
+    reply_question: input.action === "linkedin_connection"
+      ? "Ask to connect because the timing is relevant."
+      : "Ask whether it is worth comparing notes.",
+    value_add:
+      compactText(input.draftGrounding?.summary, 220) ??
+      compactText(input.workspaceContextMarkdown, 220) ??
+      "Add one useful angle from the signal without pitching.",
+  };
+}
+
+function outreachSkillJudgeContext(draft: SignalLinkedInWriterDraft) {
+  if (!draft.skill) return null;
+  return {
+    skill_key: draft.skill.skill_key,
+    version: draft.skill.version,
+    name: draft.skill.name,
+    framework: draft.skill.framework,
+    judge_focus: draft.skill.judge_focus,
+    slot_values: draft.skill.slot_values,
+    pattern_key: draft.pattern_key,
+    seed_pattern_key: draft.seed_pattern_key,
+  };
+}
+
+function skillOutput(skill: SelectedOutreachSkill | null): {
+  skill_key?: string;
+  skill_version?: string;
+} {
+  if (!skill) return {};
+  return {
+    skill_key: skill.skill_key,
+    skill_version: skill.version,
+  };
+}
+
+function compactText(value: string | null | undefined, maxLength: number): string | null {
+  const cleaned = value?.replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, maxLength).trim()}...`;
 }
 
 function labelLinkedInAction(action: LinkedInChannelName): string {

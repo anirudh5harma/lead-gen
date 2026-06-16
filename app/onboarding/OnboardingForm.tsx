@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
-  createProfileAndAggregatorFormAction,
+  createActivationSetupFormAction,
   type OnboardingActionState,
 } from "./actions";
 
@@ -18,7 +18,7 @@ export default function OnboardingForm({
   initialCompanyName?: string;
 }) {
   const [state, action, pending] = useActionState(
-    createProfileAndAggregatorFormAction,
+    createActivationSetupFormAction,
     INITIAL_STATE,
   );
 

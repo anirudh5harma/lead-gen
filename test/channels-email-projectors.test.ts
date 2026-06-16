@@ -254,6 +254,12 @@ test("email ingress projector: Outlook notification fetch happens after enqueue"
       pool: fx.pool,
       bus,
       classifier: createFixedIntentClassifier("neutral", 0.9),
+      outlookAccessTokens: {
+        async getAccessToken(channel_account_id) {
+          assert.equal(channel_account_id, seeded.channel_account_id);
+          return "fresh-graph-token";
+        },
+      },
       fetchImpl: async (_url, init) => {
         fetchedAuthorization.push(String(init?.headers && (init.headers as Record<string, string>).Authorization));
         return new Response(
@@ -289,7 +295,7 @@ test("email ingress projector: Outlook notification fetch happens after enqueue"
       );
       return Number(rows[0].n) === 1 && classified;
     });
-    assert.deepEqual(fetchedAuthorization, ["Bearer graph-token"]);
+    assert.deepEqual(fetchedAuthorization, ["Bearer fresh-graph-token"]);
   } finally {
     if (priorKey === undefined) delete process.env.CREDENTIALS_ENCRYPTION_KEY;
     else process.env.CREDENTIALS_ENCRYPTION_KEY = priorKey;
@@ -424,13 +430,15 @@ test("Outlook refresh: publishes encrypted credentials once under concurrent tok
       classifier: createFixedIntentClassifier("neutral", 1),
     });
     let refreshCalls = 0;
+    const refreshBodies: string[] = [];
     const outlook = createOutlookSender({
       pool: fx.pool,
       bus,
       clientId: "microsoft-client",
       clientSecret: "microsoft-secret",
-      fetchImpl: async () => {
+      fetchImpl: async (_url, init) => {
         refreshCalls += 1;
+        refreshBodies.push(String(init?.body ?? ""));
         return new Response(
           JSON.stringify({
             access_token: "fresh-access",
@@ -448,6 +456,11 @@ test("Outlook refresh: publishes encrypted credentials once under concurrent tok
     ]);
     assert.deepEqual(tokens, ["fresh-access", "fresh-access"]);
     assert.equal(refreshCalls, 1);
+    assert.equal(
+      new URLSearchParams(refreshBodies[0]).get("scope"),
+      "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read",
+    );
+    assert.equal(refreshBodies[0].includes("Calendars.ReadBasic"), false);
 
     await until(async () => {
       const { rows } = await fx.pool.query<{ credentials: unknown }>(

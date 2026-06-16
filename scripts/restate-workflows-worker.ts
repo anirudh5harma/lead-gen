@@ -3,6 +3,25 @@ import {
   createDeepSeekJudge,
 } from "../core/agents/eval/index.ts";
 import {
+  createWorkspaceActivationSetupWorkflow,
+  createWorkspaceCampaignStrategyWorkflow,
+  createWorkspaceChannelReadinessWorkflow,
+  createWorkspaceCompanyBrainBriefWorkflow,
+  createWorkspaceCompanyBrainRecallWorkflow,
+  createWorkspaceContactWaterfallWorkflow,
+  createWorkspaceEvalGateWorkflow,
+  createWorkspaceMeetingPrepWorkflow,
+  createWorkspaceMessagePersonalizationWorkflow,
+  createWorkspaceOutreachSkillSelectionWorkflow,
+  createWorkspaceProfileIcpWorkflow,
+  createWorkspaceReplyTriageWorkflow,
+  createWorkspaceSignalIngestionWorkflow,
+  createWorkspaceSkillOptimizerWorkflow,
+  createWorkspaceSourceDiscoveryWorkflow,
+  createWorkspaceVerticalIntelligenceWorkflow,
+  createWorkspaceSignalMatchingWorkflow,
+} from "../core/agents/langgraph/index.ts";
+import {
   createPostgresEpisodicRepository,
   createPostgresProceduralRepository,
   createPostgresSemanticRepository,
@@ -50,6 +69,7 @@ import {
 } from "../core/plays/index.ts";
 import { getWorkspaceAgentContext } from "../core/product/context.ts";
 import { researchWorkspaceWithExa } from "../core/product/app.ts";
+import { registerProductTools } from "../core/product/tools.ts";
 import {
   createSendingDomainProvisioningWorkflow,
   createSendingDomainWarmupWorkflow,
@@ -71,6 +91,7 @@ const natsUrl = requiredEnv("NATS_URL");
 const natsCreds = process.env.NATS_CREDS?.trim();
 const pool = getPool();
 console.log("[restate-workflows] storage pool ready");
+registerProductTools();
 const bus = await createJournaledNatsEventBus({
   pool,
   servers: natsUrl,
@@ -114,6 +135,23 @@ const linkedinChannel = createPostgresLinkedInChannel({
 
 const workflows = [
   createRestateRuntimeProbeWorkflow(),
+  createWorkspaceActivationSetupWorkflow({ bus }),
+  createWorkspaceProfileIcpWorkflow({ bus }),
+  createWorkspaceCampaignStrategyWorkflow({ bus }),
+  createWorkspaceChannelReadinessWorkflow({ bus }),
+  createWorkspaceCompanyBrainBriefWorkflow({ bus }),
+  createWorkspaceCompanyBrainRecallWorkflow({ bus }),
+  createWorkspaceContactWaterfallWorkflow({ bus }),
+  createWorkspaceEvalGateWorkflow({ bus }),
+  createWorkspaceMeetingPrepWorkflow({ bus }),
+  createWorkspaceMessagePersonalizationWorkflow({ bus }),
+  createWorkspaceOutreachSkillSelectionWorkflow({ bus }),
+  createWorkspaceReplyTriageWorkflow({ bus }),
+  createWorkspaceSignalIngestionWorkflow({ bus }),
+  createWorkspaceSkillOptimizerWorkflow({ bus }),
+  createWorkspaceSourceDiscoveryWorkflow({ bus }),
+  createWorkspaceVerticalIntelligenceWorkflow({ bus }),
+  createWorkspaceSignalMatchingWorkflow({ bus }),
   createSeriesAColdOpenPlay({
     pool,
     bus,

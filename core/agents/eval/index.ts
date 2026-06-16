@@ -2,8 +2,8 @@
  * Hot-path evaluation. Sub-threshold generations NEVER reach a channel.
  * See ARCHITECTURE.md "Agent Fabric" #4.
  *
- * Production judge: `createDeepSeekJudge` — the same DeepSeek V4 Pro
- * client that the writer uses, with a low-temperature JSON-mode prompt.
+ * Production judge: `createDeepSeekJudge` — the governed DeepSeek client
+ * defaults to V4 Flash, with a low-temperature JSON-mode prompt.
  * Dev / tests: `createNoopJudge` and `createHeuristicJudge`.
  */
 

@@ -5,6 +5,10 @@ import type {
   CompletionResponse,
   LLMClient,
 } from "./types.ts";
+import {
+  DEEPSEEK_V4_FLASH_MODEL,
+  DEEPSEEK_V4_PRO_MODEL,
+} from "./model-policy.ts";
 
 export interface BudgetedLLMClientOptions {
   llm: LLMClient;
@@ -57,9 +61,12 @@ export function estimateCompletionTokens(req: CompletionRequest): number {
 }
 
 export function estimateDeepSeekCostUsd(res: CompletionResponse): number | null {
-  const promptPerMillion = Number(process.env.DEEPSEEK_PROMPT_USD_PER_MILLION ?? 0.14);
+  const defaults = defaultDeepSeekPricesUsdPerMillion(res.model);
+  const promptPerMillion = Number(
+    process.env.DEEPSEEK_PROMPT_USD_PER_MILLION ?? defaults.prompt,
+  );
   const completionPerMillion = Number(
-    process.env.DEEPSEEK_COMPLETION_USD_PER_MILLION ?? 0.28,
+    process.env.DEEPSEEK_COMPLETION_USD_PER_MILLION ?? defaults.completion,
   );
   if (!Number.isFinite(promptPerMillion) || !Number.isFinite(completionPerMillion)) {
     return null;
@@ -68,6 +75,14 @@ export function estimateDeepSeekCostUsd(res: CompletionResponse): number | null 
     (res.usage.prompt_tokens / 1_000_000) * promptPerMillion +
     (res.usage.completion_tokens / 1_000_000) * completionPerMillion
   );
+}
+
+function defaultDeepSeekPricesUsdPerMillion(
+  model: string,
+): { prompt: number; completion: number } {
+  if (model === DEEPSEEK_V4_PRO_MODEL) return { prompt: 0.435, completion: 0.87 };
+  if (model === DEEPSEEK_V4_FLASH_MODEL) return { prompt: 0.14, completion: 0.28 };
+  return { prompt: 0.14, completion: 0.28 };
 }
 
 export function createBudgetedLLMClient(opts: BudgetedLLMClientOptions): LLMClient {

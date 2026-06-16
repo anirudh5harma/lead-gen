@@ -34,7 +34,9 @@ import { projectOutcomeLifecycleEvent } from "../../primitives/outcome-lifecycle
  *      intent class, confidence, and terminal conversation status.
  *   5. For win/loss intents: publish `outcome.recorded`; shared outcome
  *      projection materializes the row and the procedural-memory bridge
- *      updates contributing exemplars.
+ *      updates contributing exemplars. Explicit scheduling intent is recorded
+ *      as the same positive_reply Outcome, with the narrower reply intent kept
+ *      on the message and Outcome properties for prep and optimization.
  *
  * If no conversation matches, we emit `reply.unmatched` and skip lifecycle
  * materialization; the surface layer can surface the unmatched provider event for
@@ -429,6 +431,7 @@ function outcomeForReplyIntent(
   intent: ReplyIntent,
 ): { kind: string; score: number } | null {
   if (intent === "positive") return { kind: "positive_reply", score: 1 };
+  if (intent === "meeting_intent") return { kind: "positive_reply", score: 1 };
   if (intent === "unsubscribe") return { kind: "unsubscribe", score: -1 };
   if (intent === "do_not_contact") return { kind: "do_not_contact", score: -1 };
   return null;

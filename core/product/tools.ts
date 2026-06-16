@@ -14,31 +14,55 @@ import {
   configureWorkspaceEmailAccount,
   configureWorkspaceSignalSource,
   discoverSignalFromSource,
+  dispatchWorkspaceSourcePollsOnce,
   dispatchSignalPlaysOnce,
   enrichWorkspaceProfileWithExa,
+  evaluateProductDraft,
+  generateProductMeetingPrep,
   getLinkedInAccountConnectIntent,
+  getProductLaunchReadiness,
+  getOutlookCalendarConnectIntent,
+  getProductOutlookCalendarAvailability,
   getOutlookAccountConnectIntent,
   getAppState,
   listDeadLetteredEventDispatches,
+  matchWorkspaceSignal,
+  optimizeProductCampaignStrategy,
+  optimizeProductPlaySkills,
+  personalizeProductMessage,
   researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
   recordProductCampaignOutcome,
+  runWorkspaceCompanyBrainBrief,
+  refreshWorkspaceVerticalIntelligence,
   retryFailedWorkflowRun,
+  runProductContactWaterfall,
+  runWorkspaceActivationSetup,
+  runWorkspaceProfileIcpDraft,
+  runWorkspaceSignalIngestion,
+  runWorkspaceSignalMatching,
   runWorkspaceSignalAggregatorOnce,
   startSendingDomainOperation,
   startWorkspaceBriefRefreshWithExa,
   startWorkspaceExaResearchWorkflow,
   submitManualSignal,
   trackCompanyForWorkspace,
+  triageProductReply,
   type ProductWorkspaceSession,
 } from "./app.ts";
+import { getWorkspaceAgentObservabilitySummary } from "./agent-observability.ts";
 import {
   analyzeCompanyWebsite,
   normalizeCompanyWebsiteUrl,
 } from "./company-profile.ts";
+import { getWorkspaceCompanyBrain } from "./company-brain.ts";
 import { getWorkspaceAgentContext } from "./context.ts";
 import { getConversationTrustTrace } from "./conversation-trust.ts";
 import { checkProductReadiness } from "./health.ts";
+import {
+  createSelectedOutreachSkill,
+  listOutreachSkills,
+} from "../agents/skills/outreach.ts";
 
 const SignalKindSchema = z.enum([
   "funding",
@@ -72,11 +96,180 @@ const CampaignOutcomeKindSchema = z.enum([
   "bounce",
   "do_not_contact",
 ]);
+const CampaignStrategyRecommendationSchema = z.enum([
+  "double_down",
+  "hold",
+  "reduce",
+  "not_enough_proof",
+]);
+const CompanyBrainBriefTypeSchema = z.enum([
+  "workspace",
+  "icp",
+  "account",
+  "campaign",
+  "decision_log",
+  "customer_ask_log",
+  "objection_bank",
+  "proof_bank",
+  "vertical_playbook",
+]);
+const CampaignStrategyVariantSchema = z.object({
+  variant_key: z.string().min(1),
+  play_id: z.string().uuid(),
+  play_name: z.string().min(1),
+  rep_id: z.string().uuid().nullable(),
+  rep_name: z.string().nullable(),
+  channel: z.string().nullable(),
+  skill_key: z.string().min(1),
+  pattern_key: z.string().min(1),
+  segment_key: z.string().min(1),
+  sample_count: z.number().int().nonnegative(),
+  outcome_count: z.number().int().nonnegative(),
+  reply_outcomes: z.number().int().nonnegative(),
+  positive_outcomes: z.number().int().nonnegative(),
+  negative_outcomes: z.number().int().nonnegative(),
+  meeting_outcomes: z.number().int().nonnegative(),
+  reply_rate: z.number().min(0).max(1),
+  positive_outcome_rate: z.number().min(0).max(1),
+  meeting_rate: z.number().min(0).max(1),
+  negative_outcome_rate: z.number().min(0).max(1),
+  utility_score: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  allocation_weight: z.number().min(0).max(1),
+  recommendation: CampaignStrategyRecommendationSchema,
+  explanation: z.string().min(1),
+});
+const SkillOptimizerNextActionSchema = z.enum([
+  "apply_play_gate",
+  "review_reduce",
+  "keep_learning",
+  "no_change",
+]);
+const SkillOptimizationRecommendationSchema = z.object({
+  skill_key: z.string().min(1),
+  pattern_key: z.string().min(1),
+  channel: z.string().nullable(),
+  segment_key: z.string().min(1),
+  rep_id: z.string().uuid().nullable(),
+  rep_name: z.string().nullable(),
+  sample_count: z.number().int().nonnegative(),
+  outcome_count: z.number().int().nonnegative(),
+  reply_outcomes: z.number().int().nonnegative(),
+  positive_outcomes: z.number().int().nonnegative(),
+  negative_outcomes: z.number().int().nonnegative(),
+  meeting_outcomes: z.number().int().nonnegative(),
+  reply_rate: z.number().min(0).max(1),
+  positive_outcome_rate: z.number().min(0).max(1),
+  meeting_rate: z.number().min(0).max(1),
+  negative_outcome_rate: z.number().min(0).max(1),
+  memory_win_count: z.number().int().nonnegative(),
+  memory_loss_count: z.number().int().nonnegative(),
+  memory_delta_score: z.number(),
+  utility_score: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  allocation_weight: z.number().min(0).max(1),
+  recommendation: CampaignStrategyRecommendationSchema,
+  next_action: SkillOptimizerNextActionSchema,
+  explanation: z.string().min(1),
+  source_variant_keys: z.array(z.string().min(1)),
+});
 const LinkedInActionSchema = z.enum([
   "linkedin_connection",
   "linkedin_dm",
   "linkedin_comment",
 ]);
+const OutreachSkillChannelSchema = z.enum([
+  "email",
+  "linkedin_connection",
+  "linkedin_dm",
+  "linkedin_inmail",
+  "linkedin_comment",
+  "x_dm",
+]);
+const OutreachSkillStageSchema = z.enum(["cold_open", "reply"]);
+const OutreachSkillSlotSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  source: z.enum(["signal", "counterparty", "workspace", "memory", "outcome"]),
+  required: z.boolean(),
+  instruction: z.string().min(1),
+});
+const OutreachSkillSchema = z.object({
+  skill_key: z.string().min(1),
+  version: z.string().min(1),
+  channel: OutreachSkillChannelSchema,
+  stage: OutreachSkillStageSchema,
+  name: z.string().min(1),
+  description: z.string().min(1),
+  framework: z.array(z.string().min(1)),
+  slots: z.array(OutreachSkillSlotSchema),
+  constraints: z.array(z.string().min(1)),
+  judge_focus: z.array(z.string().min(1)),
+  selection: z.object({
+    priority: z.number(),
+    signal_kinds: z.array(z.string()).optional(),
+    intents: z.array(z.string()).optional(),
+    actions: z.array(OutreachSkillChannelSchema).optional(),
+    seniority_regex: z.string().optional(),
+    fallback: z.boolean().optional(),
+  }),
+});
+const SelectedOutreachSkillSchema = OutreachSkillSchema.omit({ selection: true }).extend({
+  pattern_key: z.string().min(1),
+  slot_values: z.record(z.string(), z.string()),
+});
+const VerticalIntelligenceFactCategorySchema = z.enum([
+  "icp_rule",
+  "pain",
+  "objection",
+  "proof",
+  "competitor",
+  "trigger",
+  "positioning",
+  "signal_mapping",
+  "skill_performance",
+]);
+const VerticalIntelligencePrimitiveRefsSchema = z.object({
+  rep_id: z.string().uuid().nullable().optional(),
+  signal_id: z.string().uuid().nullable().optional(),
+  play_id: z.string().uuid().nullable().optional(),
+  play_run_id: z.string().uuid().nullable().optional(),
+  outcome_id: z.string().uuid().nullable().optional(),
+  company_id: z.string().uuid().nullable().optional(),
+  person_id: z.string().uuid().nullable().optional(),
+  icp_id: z.string().uuid().nullable().optional(),
+});
+const VerticalIntelligenceSourceRefSchema = z.object({
+  type: z.string().min(1),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  url: z.string().url().nullable().optional(),
+});
+const VerticalIntelligenceFactSchema = z.object({
+  id: z.string().min(1),
+  category: VerticalIntelligenceFactCategorySchema,
+  statement: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  tags: z.array(z.string().min(1)),
+  source_refs: z.array(VerticalIntelligenceSourceRefSchema),
+  primitive_refs: VerticalIntelligencePrimitiveRefsSchema,
+  last_observed_at: z.string().datetime(),
+  included_in_prompt: z.boolean(),
+});
+const VerticalIntelligencePackSchema = z.object({
+  workspace_id: z.string().uuid(),
+  company_id: z.string().uuid(),
+  company_name: z.string().min(1),
+  vertical: z.string().min(1),
+  generated_at: z.string().datetime(),
+  graph_name: z.string().min(1),
+  run_id: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  facts: z.array(VerticalIntelligenceFactSchema),
+  prompt_context: z.string(),
+  evidence_source_ids: z.array(z.string().uuid()),
+  redaction_status: z.literal("source_refs_only"),
+});
 const RepRoleSchema = z.enum([
   "sdr",
   "replier",
@@ -98,6 +291,251 @@ const SourceAdapterSchema = z.enum([
 
 const WorkspaceResultSchema = z.object({
   workspace_id: z.string().uuid(),
+});
+const MessagePersonalizationOutputSchema = WorkspaceResultSchema.extend({
+  conversation_id: z.string().uuid().nullable(),
+  message_id: z.string().uuid(),
+  channel: OutreachSkillChannelSchema,
+  rep_id: z.string().uuid(),
+  signal_id: z.string().uuid(),
+  person_id: z.string().uuid(),
+  company_id: z.string().uuid().nullable(),
+  subject: z.string().nullable(),
+  body: z.string().min(1),
+  pattern_key: z.string().min(1),
+  seed_pattern_key: z.string().nullable(),
+  skill_key: z.string().min(1),
+  skill_version: z.string().min(1),
+  exemplar_ids: z.array(z.string()),
+  procedural_exemplar_count: z.number().int().nonnegative(),
+  personalization_context_markdown: z.string().min(1),
+  provenance: z.record(z.string(), z.unknown()),
+  llm_used: z.boolean(),
+  next_action: z.literal("run_eval_gate"),
+});
+const EvalArtifactKindSchema = z.enum(["draft", "plan", "post", "reply", "other"]);
+const DraftEvalSkillContextSchema = z.object({
+  skill_key: z.string().min(1),
+  version: z.string().min(1),
+  name: z.string().min(1),
+  framework: z.array(z.string().min(1)),
+  judge_focus: z.array(z.string().min(1)),
+  slot_values: z.record(z.string(), z.string()).optional(),
+  pattern_key: z.string().min(1).optional(),
+  seed_pattern_key: z.string().nullable().optional(),
+});
+const DraftEvalInputSchema = z.object({
+  message_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  channel: z.string().min(1),
+  subject: z.string().nullable().optional(),
+  body: z.string().min(1),
+  artifact_kind: EvalArtifactKindSchema.optional(),
+  signal_summary: z.string().nullable().optional(),
+  counterparty_summary: z.string().nullable().optional(),
+  personalization_context_markdown: z.string().nullable().optional(),
+  workspace_context_markdown: z.string().nullable().optional(),
+  outreach_skill: DraftEvalSkillContextSchema.nullable().optional(),
+});
+const DraftEvalOutputSchema = WorkspaceResultSchema.extend({
+  message_id: z.string().uuid(),
+  rep_id: z.string().uuid(),
+  channel: z.string().min(1),
+  decision: z.enum(["pass", "reject"]),
+  eval_score: z.number().min(0).max(1),
+  threshold: z.number().min(0).max(1),
+  passed: z.boolean(),
+  notes: z.record(z.string(), z.unknown()),
+  judged_event_id: z.string().uuid(),
+  rejected_event_id: z.string().uuid().nullable(),
+  rejection_reason: z.string().nullable(),
+  next_action: z.enum(["continue_to_play_gate", "revise_draft"]),
+});
+const ReplyTriageIntentSchema = z.enum([
+  "positive",
+  "meeting_intent",
+  "negative",
+  "neutral",
+  "ooo",
+  "unsubscribe",
+  "do_not_contact",
+  "spam",
+]);
+const ReplyTriageNextActionSchema = z.enum([
+  "generate_meeting_prep",
+  "draft_reply",
+  "block_contact",
+  "stop",
+  "review_unmatched",
+]);
+const ReplyTriageOutputSchema = WorkspaceResultSchema.extend({
+  channel: z.literal("email"),
+  matched_conversation_id: z.string().uuid().nullable(),
+  inbound_message_id: z.string().uuid().nullable(),
+  intent: ReplyTriageIntentSchema.nullable(),
+  intent_confidence: z.number().min(0).max(1).nullable(),
+  outcome_id: z.string().uuid().nullable(),
+  next_action: ReplyTriageNextActionSchema,
+});
+const LaunchReadinessStatusSchema = z.enum(["ready", "needs_attention", "blocked"]);
+const LaunchReadinessRequiredChannelSchema = z.enum(["any", "email", "linkedin", "both"]);
+const LaunchReadinessCheckSchema = z.object({
+  id: z.enum([
+    "workspace_profile",
+    "icp",
+    "rep",
+    "signal_sources",
+    "plays",
+    "outlook",
+    "linkedin",
+    "outreach_channel",
+  ]),
+  label: z.string().min(1),
+  primitive: z.enum(["Rep", "Signal", "Play", "Conversation"]),
+  status: LaunchReadinessStatusSchema,
+  required: z.boolean(),
+  detail: z.string().min(1),
+  count: z.number().int().nonnegative(),
+  action: z.object({
+    label: z.string().min(1),
+    tools: z.array(z.string().min(1)),
+    surface: z.string().min(1),
+  }).nullable(),
+});
+const LaunchReadinessSchema = WorkspaceResultSchema.extend({
+  checked_at: z.string().datetime(),
+  required_channel: LaunchReadinessRequiredChannelSchema,
+  status: LaunchReadinessStatusSchema,
+  launch_ready: z.boolean(),
+  next_action: z.enum([
+    "start_outreach",
+    "configure_profile",
+    "configure_icp",
+    "configure_rep",
+    "configure_sources",
+    "configure_play",
+    "connect_outlook",
+    "connect_linkedin",
+    "repair_channel",
+  ]),
+  checks: z.array(LaunchReadinessCheckSchema),
+  blockers: z.array(z.string().min(1)),
+  warnings: z.array(z.string().min(1)),
+});
+const ContactWaterfallChannelSchema = z.enum(["email", "linkedin"]);
+const ContactCandidateSchema = z.object({
+  person_id: z.string().uuid(),
+  full_name: z.string().min(1),
+  title: z.string().nullable(),
+  company_id: z.string().uuid().nullable(),
+  emails: z.array(z.string()),
+  linkedin_url: z.string().nullable(),
+  score: z.number(),
+  reasons: z.array(z.string()),
+  verification: z.object({
+    email_status: z.string().nullable().optional(),
+    email_verified: z.boolean().optional(),
+    linkedin_ready: z.boolean().optional(),
+  }),
+  provenance: z.record(z.string(), z.unknown()),
+});
+const ContactWaterfallResultSchema = WorkspaceResultSchema.extend({
+  workflow_name: z.literal("contact.resolve_for_signal.v1"),
+  workflow_run_id: z.string().min(1),
+  workflow_status: z.enum([
+    "pending",
+    "running",
+    "awaiting_approval",
+    "awaiting_event",
+    "completed",
+    "failed",
+    "cancelled",
+  ]),
+  decision: z.enum(["started", "resolved", "deferred"]),
+  contact_resolution_id: z.string().uuid().nullable(),
+  candidates: z.array(ContactCandidateSchema),
+  selected_person_id: z.string().uuid().nullable(),
+  defer_reason: z.string().nullable(),
+});
+const MeetingPrepProfileContextSchema = z.object({
+  user: z.object({
+    user_id: z.string().min(1).nullable(),
+    name: z.string().nullable(),
+    email: z.string().nullable(),
+    role: z.string().nullable(),
+  }),
+  prospect: z.object({
+    person_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    title: z.string().nullable(),
+    linkedin_url: z.string().nullable(),
+  }),
+  company: z.object({
+    company_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    domain: z.string().nullable(),
+    industry: z.string().nullable(),
+    description: z.string().nullable(),
+  }),
+  rep: z.object({
+    rep_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    role: z.string().nullable(),
+  }),
+});
+const MeetingPrepSourceRefSchema = z.object({
+  type: z.enum(["conversation", "message", "signal", "outcome", "person", "company", "rep", "user"]),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  url: z.string().url().nullable().optional(),
+});
+const MeetingPrepThreadTurnSchema = z.object({
+  message_id: z.string().min(1),
+  direction: z.string().min(1),
+  at: z.string().datetime().nullable(),
+  intent_class: z.string().nullable(),
+  excerpt: z.string().min(1),
+});
+const MeetingPrepNoteSchema = WorkspaceResultSchema.extend({
+  meeting_prep_id: z.string().uuid(),
+  conversation_id: z.string().uuid(),
+  generated_at: z.string().datetime(),
+  status: z.enum(["ready", "blocked"]),
+  next_action: z.enum([
+    "prepare_meeting",
+    "ask_for_times",
+    "wait_for_reply",
+    "do_not_follow_up",
+  ]),
+  summary: z.string().min(1),
+  thread_summary: z.string().min(1),
+  thread_turns: z.array(MeetingPrepThreadTurnSchema),
+  agenda: z.array(z.string().min(1)),
+  suggested_questions: z.array(z.string().min(1)),
+  suggested_times: z.array(z.string().min(1)),
+  availability_status: z.enum(["included", "omitted_no_consent"]),
+  availability_reason: z.string().min(1),
+  calendar_provider: z.string().nullable(),
+  calendar_account_id: z.string().uuid().nullable(),
+  calendar_account_display_name: z.string().nullable(),
+  profile_context: MeetingPrepProfileContextSchema,
+  source_refs: z.array(MeetingPrepSourceRefSchema),
+});
+const OutlookCalendarAvailabilitySchema = z.object({
+  consented: z.boolean(),
+  provider: z.literal("outlook"),
+  channel_account_id: z.string().uuid().nullable(),
+  account_display_name: z.string().nullable(),
+  suggested_times: z.array(z.string()),
+  reason: z.enum([
+    "calendar_included",
+    "calendar_not_configured",
+    "no_connected_calendar",
+    "calendar_permission_missing",
+    "calendar_needs_reauth",
+    "calendar_provider_error",
+    "no_free_slots",
+  ]),
 });
 const ProductReadinessStatusSchema = z.enum(["ok", "degraded", "unconfigured"]);
 const ProductReadinessSchema = z.object({
@@ -122,6 +560,114 @@ const DeadLetteredDispatchSchema = z.object({
   dead_lettered_at: z.string().datetime(),
   source: z.string(),
   producer_ref: z.string().nullable(),
+});
+const AgentTraceStatusSchema = z.enum(["ok", "error", "deferred", "blocked"]);
+const AgentTracePrimitiveRefsSchema = z.object({
+  rep_id: z.string().nullable().optional(),
+  signal_id: z.string().nullable().optional(),
+  play_id: z.string().nullable().optional(),
+  play_run_id: z.string().nullable().optional(),
+  conversation_id: z.string().nullable().optional(),
+  message_id: z.string().nullable().optional(),
+  outcome_id: z.string().nullable().optional(),
+  company_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+});
+const AgentTraceSpanSummarySchema = z.object({
+  span_id: z.string().min(1),
+  parent_span_id: z.string().min(1).nullable(),
+  kind: z.enum([
+    "agent.run",
+    "langgraph.node",
+    "llm.call",
+    "tool.call",
+    "memory.read",
+    "memory.write",
+    "eval.judge",
+    "workflow.step",
+    "channel.send",
+    "contact.waterfall.step",
+    "approval.interrupt",
+    "campaign.optimizer.decision",
+  ]),
+  name: z.string().min(1),
+  status: AgentTraceStatusSchema,
+  started_at: z.string().datetime(),
+  ended_at: z.string().datetime().nullable(),
+  duration_ms: z.number().nonnegative().nullable(),
+  graph_name: z.string().nullable(),
+  node_name: z.string().nullable(),
+  run_id: z.string().nullable(),
+  thread_id: z.string().nullable(),
+  model: z.string().nullable(),
+  prompt_tokens: z.number().int().nonnegative().nullable(),
+  completion_tokens: z.number().int().nonnegative().nullable(),
+  estimated_cost_usd: z.number().nonnegative().nullable(),
+  retry_count: z.number().int().nonnegative().nullable(),
+  attributes: z.record(z.string(), z.unknown()),
+  error: z.object({
+    message: z.string().min(1),
+    name: z.string().nullable(),
+  }).nullable(),
+});
+const AgentObservabilitySummarySchema = z.object({
+  workspace_id: z.string().uuid(),
+  generated_at: z.string().datetime(),
+  lookback_hours: z.number().int().positive(),
+  trace_id: z.string().nullable(),
+  trace_count: z.number().int().nonnegative(),
+  span_count: z.number().int().nonnegative(),
+  error_span_count: z.number().int().nonnegative(),
+  blocked_span_count: z.number().int().nonnegative(),
+  deferred_span_count: z.number().int().nonnegative(),
+  eval_failure_count: z.number().int().nonnegative(),
+  total_prompt_tokens: z.number().int().nonnegative(),
+  total_completion_tokens: z.number().int().nonnegative(),
+  estimated_cost_usd: z.number().nonnegative(),
+  redaction: z.object({
+    pii_redacted_trace_count: z.number().int().nonnegative(),
+    external_export_count: z.number().int().nonnegative(),
+    raw_export_blocked: z.boolean(),
+  }),
+  traces: z.array(z.object({
+    trace_id: z.string().min(1),
+    status: AgentTraceStatusSchema,
+    first_seen_at: z.string().datetime(),
+    last_seen_at: z.string().datetime(),
+    duration_ms: z.number().nonnegative().nullable(),
+    span_count: z.number().int().nonnegative(),
+    error_span_count: z.number().int().nonnegative(),
+    blocked_span_count: z.number().int().nonnegative(),
+    deferred_span_count: z.number().int().nonnegative(),
+    eval_failure_count: z.number().int().nonnegative(),
+    graph_names: z.array(z.string()),
+    node_names: z.array(z.string()),
+    model_names: z.array(z.string()),
+    total_prompt_tokens: z.number().int().nonnegative(),
+    total_completion_tokens: z.number().int().nonnegative(),
+    estimated_cost_usd: z.number().nonnegative(),
+    primitive_refs: AgentTracePrimitiveRefsSchema,
+    latest_error: z.object({
+      message: z.string().min(1),
+      name: z.string().nullable(),
+    }).nullable(),
+    export_destinations: z.array(z.string()),
+    redaction: z.object({
+      pii: z.enum(["none", "redacted", "contains_pii"]),
+      external_export_allowed: z.boolean(),
+      raw_payload_exported: z.boolean(),
+    }),
+    spans: z.array(AgentTraceSpanSummarySchema),
+  })),
+  eval_failures: z.array(z.object({
+    eval_case_id: z.string().min(1),
+    trace_id: z.string().min(1),
+    span_id: z.string().min(1).nullable(),
+    failure_kind: z.string().min(1),
+    reason: z.string().min(1),
+    source_event_id: z.string().nullable(),
+    created_at: z.string().datetime(),
+  })),
 });
 
 let registered = false;
@@ -168,10 +714,114 @@ export function registerProductTools(): void {
         recent_signals: z.number().int().nonnegative(),
         recent_conversations: z.number().int().nonnegative(),
         recent_outcomes: z.number().int().nonnegative(),
+        company_brain_cards: z.number().int().nonnegative(),
       }),
     }),
     async handler(_input, ctx) {
       return getWorkspaceAgentContext(sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.company_brain.recall",
+    description:
+      "Read the workspace-scoped shared company brain: profile facts, high-intent Signals, Outcomes, meeting prep, playbook memory, semantic facts, source refs, and optional Memory Store connector status.",
+    kind: "read",
+    input: z.object({}),
+    output: z.object({
+      workspace_id: z.string().uuid(),
+      generated_at: z.string().datetime(),
+      connector: z.object({
+        memory_store: z.object({
+          enabled: z.boolean(),
+          status: z.enum(["disabled", "configured"]),
+          detail: z.string(),
+        }),
+      }),
+      cards: z.array(z.object({
+        id: z.string(),
+        kind: z.enum([
+          "profile",
+          "signal",
+          "outcome",
+          "playbook",
+          "semantic_fact",
+          "meeting_prep",
+        ]),
+        title: z.string(),
+        summary: z.string(),
+        confidence: z.number().nullable(),
+        freshness_at: z.string().datetime().nullable(),
+        tags: z.array(z.string()),
+        primitive_refs: z.object({
+          rep_id: z.string().nullable().optional(),
+          signal_id: z.string().nullable().optional(),
+          conversation_id: z.string().nullable().optional(),
+          message_id: z.string().nullable().optional(),
+          outcome_id: z.string().nullable().optional(),
+          company_id: z.string().nullable().optional(),
+          person_id: z.string().nullable().optional(),
+        }),
+        source_refs: z.array(z.object({
+          type: z.string(),
+          id: z.string(),
+          label: z.string(),
+          url: z.string().nullable().optional(),
+        })).min(1),
+      })),
+    }),
+    async handler(_input, ctx) {
+      return getWorkspaceCompanyBrain(sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.company_brain.brief.refresh",
+    description:
+      "Start the durable shared company-brain brief workflow. It recalls source-backed workspace memory and emits company.brief.updated for workspace, ICP, account, campaign, decision, ask, objection, proof, or vertical playbook context.",
+    kind: "write",
+    input: z.object({
+      brief_type: CompanyBrainBriefTypeSchema.optional(),
+      task: z.string().min(1).optional(),
+      rep_id: z.string().uuid().nullable().optional(),
+      signal_id: z.string().uuid().nullable().optional(),
+      play_id: z.string().uuid().nullable().optional(),
+      play_run_id: z.string().uuid().nullable().optional(),
+      conversation_id: z.string().uuid().nullable().optional(),
+      message_id: z.string().uuid().nullable().optional(),
+      outcome_id: z.string().uuid().nullable().optional(),
+      company_id: z.string().uuid().nullable().optional(),
+      person_id: z.string().uuid().nullable().optional(),
+      idempotency_nonce: z.string().min(1).nullable().optional(),
+      wait: z.boolean().optional(),
+      timeout_ms: z.number().int().positive().max(120_000).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      workflow_name: z.literal("workspace.company_brain.brief"),
+      workflow_run_id: z.string(),
+      output: z.unknown().nullable(),
+    }),
+    async handler(input, ctx) {
+      const { wait, timeout_ms, ...workflowInput } = input;
+      return runWorkspaceCompanyBrainBrief(
+        workflowInput,
+        sessionFromContext(ctx),
+        { wait, timeoutMs: timeout_ms },
+      );
+    },
+  });
+
+  registerTool({
+    name: "product.vertical_intelligence.refresh",
+    description:
+      "Refresh graph-backed vertical intelligence for Signal matching, Play Skills, writer/judge context, and meeting prep by emitting vertical.intelligence.updated.",
+    kind: "write",
+    input: z.object({
+      company_id: z.string().uuid().nullable().optional(),
+    }),
+    output: VerticalIntelligencePackSchema,
+    async handler(input, ctx) {
+      return refreshWorkspaceVerticalIntelligence(input, sessionFromContext(ctx));
     },
   });
 
@@ -189,6 +839,59 @@ export function registerProductTools(): void {
   });
 
   registerTool({
+    name: "product.launch.readiness.get",
+    description:
+      "Read the workspace launch gate for autonomous outreach: profile, ICP, Rep, Signal sources, active Plays, Outlook reply sync, LinkedIn health, blockers, warnings, and next action.",
+    kind: "read",
+    input: z.object({
+      required_channel: LaunchReadinessRequiredChannelSchema.optional(),
+    }),
+    output: LaunchReadinessSchema,
+    async handler(input, ctx) {
+      return getProductLaunchReadiness(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.agent_observability.summary.get",
+    description:
+      "Read a redacted, event-sourced summary of recent agent traces: LangGraph nodes, LLM/tool spans, model cost, primitive refs, exports, and failed eval candidates.",
+    kind: "read",
+    input: z.object({
+      trace_id: z.string().min(1).nullable().optional(),
+      lookback_hours: z.number().int().min(1).max(24 * 30).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+      span_limit: z.number().int().min(1).max(50).optional(),
+    }),
+    output: AgentObservabilitySummarySchema,
+    async handler(input, ctx) {
+      return getWorkspaceAgentObservabilitySummary(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.contact.waterfall.resolve",
+    description:
+      "Run the official graph-first contact resolution waterfall for a matched Signal before any Play sends: graph cache, provider discovery, email verification, ranked candidates, or a typed defer.",
+    kind: "write",
+    input: z.object({
+      signal_id: z.string().uuid(),
+      company_id: z.string().uuid(),
+      play_id: z.string().uuid(),
+      rep_id: z.string().uuid(),
+      channel: ContactWaterfallChannelSchema,
+      limit: z.number().int().min(1).max(3).optional(),
+      repair_key: z.string().min(1).max(64).nullable().optional(),
+      wait: z.boolean().optional(),
+      timeout_ms: z.number().int().positive().max(120_000).optional(),
+    }),
+    output: ContactWaterfallResultSchema,
+    async handler(input, ctx) {
+      return runProductContactWaterfall(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
     name: "product.conversation.trust.get",
     description:
       "Read the user-facing proof trace for one Conversation: Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes.",
@@ -200,6 +903,20 @@ export function registerProductTools(): void {
         workspace_id: ctx.workspace_id,
         conversation_id: input.conversation_id,
       });
+    },
+  });
+
+  registerTool({
+    name: "product.meeting.prep.generate",
+    description:
+      "Generate a source-referenced meeting prep note for one Conversation. Availability is omitted unless calendar consent exists.",
+    kind: "write",
+    input: z.object({
+      conversation_id: z.string().uuid(),
+    }),
+    output: MeetingPrepNoteSchema,
+    async handler(input, ctx) {
+      return generateProductMeetingPrep(input, sessionFromContext(ctx));
     },
   });
 
@@ -229,6 +946,85 @@ export function registerProductTools(): void {
         companyHint: input.company_hint,
         allowedIndustries: input.allowed_industries,
       });
+    },
+  });
+
+  registerTool({
+    name: "product.profile_icp.draft",
+    description:
+      "Run the durable LangGraph Profile/ICP draft step from a website URL. Emits workspace.profile.drafted and icp.drafted; it does not configure Reps, Plays, sources, channels, or sends.",
+    kind: "write",
+    input: z.object({
+      website_url: z.string().min(1),
+      company_hint: z.string().optional(),
+      allowed_industries: z.array(z.string().min(1)).optional(),
+      wait: z.boolean().optional(),
+      timeout_ms: z.number().int().positive().max(120_000).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      workflow_name: z.literal("workspace.profile.icp"),
+      workflow_run_id: z.string(),
+      output: z.unknown().nullable(),
+    }),
+    async handler(input, ctx) {
+      const { wait, timeout_ms, ...workflowInput } = input;
+      return runWorkspaceProfileIcpDraft(
+        workflowInput,
+        sessionFromContext(ctx),
+        { wait, timeoutMs: timeout_ms },
+      );
+    },
+  });
+
+  registerTool({
+    name: "product.activation.setup.run",
+    description:
+      "Run the durable website-to-setup LangGraph workflow. It drafts Profile/ICP, configures Rep and email/LinkedIn Plays, configures low-cost default Signal sources, returns Outlook/LinkedIn connection gates, and then starts initial Signal ingestion after activation completes. It never matches leads or sends outreach.",
+    kind: "write",
+    input: z.object({
+      website_url: z.string().min(1),
+      company_hint: z.string().optional(),
+      allowed_industries: z.array(z.string().min(1)).optional(),
+      wait: z.boolean().optional(),
+      timeout_ms: z.number().int().positive().max(120_000).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      workflow_name: z.literal("workspace.activation.setup"),
+      workflow_run_id: z.string(),
+      output: z.unknown().nullable(),
+      initial_signal_ingestion: z.object({
+        workflow_name: z.literal("workspace.signal.ingestion"),
+        workflow_run_id: z.string(),
+        output: z.unknown().nullable(),
+      }).nullable().optional(),
+    }),
+    async handler(input, ctx) {
+      const { wait, timeout_ms, ...workflowInput } = input;
+      const session = sessionFromContext(ctx);
+      const activation = await runWorkspaceActivationSetup(
+        workflowInput,
+        session,
+        { wait, timeoutMs: timeout_ms },
+      );
+      if (wait === false) {
+        return {
+          ...activation,
+          initial_signal_ingestion: null,
+        };
+      }
+      const initial_signal_ingestion = await runWorkspaceSignalIngestion(
+        { limit: 4 },
+        session,
+        { wait: false },
+      );
+      return {
+        ...activation,
+        initial_signal_ingestion: {
+          workflow_name: initial_signal_ingestion.workflow_name,
+          workflow_run_id: initial_signal_ingestion.workflow_run_id,
+          output: initial_signal_ingestion.output,
+        },
+      };
     },
   });
 
@@ -439,6 +1235,129 @@ export function registerProductTools(): void {
   });
 
   registerTool({
+    name: "product.play.skills.list",
+    description:
+      "List versioned outbound Play Skills for email, LinkedIn, and reply drafting, including framework slots, constraints, and judge focus.",
+    kind: "read",
+    input: z.object({
+      channel: OutreachSkillChannelSchema.optional(),
+      stage: OutreachSkillStageSchema.optional(),
+      signal_kind: SignalKindSchema.optional(),
+      intent: z.string().optional(),
+      action: OutreachSkillChannelSchema.optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      skills: z.array(OutreachSkillSchema),
+    }),
+    async handler(input, ctx) {
+      const session = sessionFromContext(ctx);
+      return {
+        workspace_id: session.workspace_id,
+        skills: listOutreachSkills(input),
+      };
+    },
+  });
+
+  registerTool({
+    name: "product.play.skills.select",
+    description:
+      "Preview the Play Skill selected for a channel, stage, signal, or reply intent before writer/judge execution.",
+    kind: "read",
+    input: z.object({
+      channel: OutreachSkillChannelSchema,
+      stage: OutreachSkillStageSchema,
+      signal_kind: SignalKindSchema.optional(),
+      intent: z.string().optional(),
+      action: OutreachSkillChannelSchema.optional(),
+      person_title: z.string().nullable().optional(),
+      base_pattern_key: z.string().min(1).optional(),
+      slot_values: z.record(z.string(), z.unknown()).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      skill: SelectedOutreachSkillSchema,
+    }),
+    async handler(input, ctx) {
+      const session = sessionFromContext(ctx);
+      return {
+        workspace_id: session.workspace_id,
+        skill: createSelectedOutreachSkill({
+          channel: input.channel,
+          stage: input.stage,
+          signal_kind: input.signal_kind,
+          intent: input.intent,
+          action: input.action,
+          person_title: input.person_title,
+          base_pattern_key:
+            input.base_pattern_key ?? `preview:${input.channel}|stage:${input.stage}`,
+          slot_values: input.slot_values,
+        }),
+      };
+    },
+  });
+
+  registerTool({
+    name: "product.message.personalize",
+    description:
+      "Personalize an outbound message from Rep, Signal, prospect, graph context, vertical intelligence, and a selected Play Skill; emits message.personalized and returns the draft for eval gating.",
+    kind: "write",
+    input: z.object({
+      rep_id: z.string().uuid(),
+      signal_id: z.string().uuid(),
+      person_id: z.string().uuid(),
+      company_id: z.string().uuid().nullable().optional(),
+      channel: OutreachSkillChannelSchema.optional(),
+      stage: OutreachSkillStageSchema.optional(),
+      play_id: z.string().uuid().nullable().optional(),
+      play_run_id: z.string().uuid().nullable().optional(),
+      conversation_id: z.string().uuid().nullable().optional(),
+      message_id: z.string().uuid().nullable().optional(),
+      use_llm: z.boolean().optional(),
+    }),
+    output: MessagePersonalizationOutputSchema,
+    async handler(input, ctx) {
+      return personalizeProductMessage(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.draft.eval.gate",
+    description:
+      "Run the hot-path judge on a draft and emit draft.judged plus draft.rejected when the draft must not reach an outreach channel.",
+    kind: "write",
+    input: DraftEvalInputSchema,
+    output: DraftEvalOutputSchema,
+    async handler(input, ctx) {
+      return evaluateProductDraft(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.reply.triage",
+    description:
+      "Triage an inbound email reply through the official Conversation matcher, Rep replier role, reply.classified event, and Outcome recording path.",
+    kind: "write",
+    input: z.object({
+      channel: z.literal("email").optional(),
+      external_id: z.string().min(1),
+      external_thread_id: z.string().nullable().optional(),
+      in_reply_to: z.string().nullable().optional(),
+      references: z.array(z.string()).optional(),
+      from_email: z.string().email(),
+      from_name: z.string().nullable().optional(),
+      subject: z.string().min(1),
+      body_text: z.string().min(1),
+      body_html: z.string().nullable().optional(),
+      received_at: z.string().datetime(),
+      channel_account_id: z.string().uuid().nullable().optional(),
+      ingress_event_id: z.string().uuid().nullable().optional(),
+    }),
+    output: ReplyTriageOutputSchema,
+    async handler(input, ctx) {
+      return triageProductReply(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
     name: "product.email_account.configure",
     description:
       "Configure the optional workspace owned-domain email account surface and emit channel.account.configured.",
@@ -465,6 +1384,34 @@ export function registerProductTools(): void {
     }),
     async handler(_input, ctx) {
       return getOutlookAccountConnectIntent(sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.outlook_calendar.connect_url.get",
+    description:
+      "Return the explicit Outlook calendar-consent URL for meeting prep availability. Opening it upgrades/reuses the connected Microsoft account and does not send outreach.",
+    kind: "read",
+    input: z.object({}),
+    output: WorkspaceResultSchema.extend({
+      connect_url: z.string().min(1),
+      provider_configured: z.boolean(),
+      scope: z.literal("Calendars.ReadBasic"),
+    }),
+    async handler(_input, ctx) {
+      return getOutlookCalendarConnectIntent(sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.outlook_calendar.availability.get",
+    description:
+      "Read Outlook free/busy availability for meeting prep when calendar consent exists; returns an actionable reason when it is missing.",
+    kind: "read",
+    input: z.object({}),
+    output: OutlookCalendarAvailabilitySchema,
+    async handler(_input, ctx) {
+      return getProductOutlookCalendarAvailability(sessionFromContext(ctx));
     },
   });
 
@@ -677,6 +1624,129 @@ export function registerProductTools(): void {
   });
 
   registerTool({
+    name: "product.campaign.strategy.optimize",
+    description:
+      "Score campaign Play variants from attributable Outcomes and emit a conservative campaign.strategy.recommended event for double-down, hold, reduce, or exploration decisions.",
+    kind: "write",
+    input: z.object({
+      lookback_days: z.number().int().positive().max(180).optional(),
+      min_samples: z.number().int().positive().max(50).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      recommendation_id: z.string().uuid(),
+      generated_at: z.string().datetime(),
+      min_samples: z.number().int().positive(),
+      summary: z.string().min(1),
+      variants: z.array(CampaignStrategyVariantSchema),
+    }),
+    async handler(input, ctx) {
+      return optimizeProductCampaignStrategy(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.play.skills.optimize",
+    description:
+      "Score outreach Skills from campaign Outcomes and procedural memory, then emit advisory play.skill.optimization.recommended recommendations without mutating Plays.",
+    kind: "write",
+    input: z.object({
+      lookback_days: z.number().int().positive().max(180).optional(),
+      min_samples: z.number().int().positive().max(50).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      recommendation_id: z.string().uuid(),
+      generated_at: z.string().datetime(),
+      min_samples: z.number().int().positive(),
+      summary: z.string().min(1),
+      recommendations: z.array(SkillOptimizationRecommendationSchema),
+    }),
+    async handler(input, ctx) {
+      return optimizeProductPlaySkills(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.sources.poll.start",
+    description:
+      "Start due workspace source poll workflows without resuming local workflow runs or projecting events. This is the primitive used by the Signal ingestion graph.",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().positive().max(100).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      dispatched: z.number().int().nonnegative(),
+    }),
+    async handler(input, ctx) {
+      const session = sessionFromContext(ctx);
+      const dispatched = await dispatchWorkspaceSourcePollsOnce(
+        { limit: input.limit },
+        session,
+      );
+      return {
+        workspace_id: session.workspace_id,
+        dispatched,
+      };
+    },
+  });
+
+  registerTool({
+    name: "product.signal.ingestion.run",
+    description:
+      "Start the stateful LangGraph Signal ingestion step. It launches due source poll workflows through product.sources.poll.start and does not match leads or send outreach.",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().positive().max(100).optional(),
+      wait: z.boolean().optional(),
+      timeout_ms: z.number().int().positive().max(120_000).optional(),
+      idempotency_nonce: z.string().optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      workflow_name: z.literal("workspace.signal.ingestion"),
+      workflow_run_id: z.string(),
+      output: z.unknown().nullable(),
+    }),
+    async handler(input, ctx) {
+      const { wait, timeout_ms, ...workflowInput } = input;
+      return runWorkspaceSignalIngestion(
+        workflowInput,
+        sessionFromContext(ctx),
+        { wait, timeoutMs: timeout_ms },
+      );
+    },
+  });
+
+  registerTool({
+    name: "product.signal.matching.run",
+    description:
+      "Start the stateful LangGraph Signal matching step for one ingested Signal. It scores against Profile/ICP through product.signal.match, emits classification events, and does not send outreach.",
+    kind: "write",
+    input: z.object({
+      signal_id: z.string().uuid(),
+      thread_id: z.string().optional(),
+      wait: z.boolean().optional(),
+      timeout_ms: z.number().int().positive().max(120_000).optional(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      workflow_name: z.literal("workspace.signal.matching"),
+      workflow_run_id: z.string(),
+      output: z.unknown().nullable(),
+    }),
+    async handler(input, ctx) {
+      const { wait, timeout_ms, ...workflowInput } = input;
+      return runWorkspaceSignalMatching(
+        workflowInput,
+        sessionFromContext(ctx),
+        {
+          wait,
+          timeoutMs: timeout_ms,
+          correlationId: ctx.correlation_id,
+          causationEventId: ctx.causation_id,
+        },
+      );
+    },
+  });
+
+  registerTool({
     name: "product.sources.aggregate.run",
     description:
       "Start due workspace source poll workflows and, in local Postgres mode, resume/project the run once for immediate feedback.",
@@ -756,6 +1826,43 @@ export function registerProductTools(): void {
     output: WorkspaceResultSchema.extend({ signal_id: z.string().uuid() }),
     async handler(input, ctx) {
       return submitManualSignal(input, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.signal.match",
+    description:
+      "Classify one ingested Signal against enabled ICP segments and emit the typed classification event that projects signal.matched or signal.dismissed.",
+    kind: "write",
+    input: z.object({
+      signal_id: z.string().uuid(),
+    }),
+    output: WorkspaceResultSchema.extend({
+      signal_id: z.string().uuid(),
+      status: z.enum(["matched", "dismissed", "skipped"]),
+      kind: SignalKindSchema.nullable(),
+      matched_icp_ids: z.array(z.string().uuid()),
+      match_score: z.number().min(0).max(1).nullable(),
+      match_reason: z.string().nullable(),
+      matches: z.array(z.object({
+        icp_segment: z.string().uuid(),
+        match_score: z.number().min(0).max(1),
+        reason: z.string(),
+      })),
+      skip_reason: z.enum([
+        "no_icps",
+        "budget",
+        "not_found",
+        "non_json",
+        "filtered",
+      ]).nullable(),
+    }),
+    async handler(input, ctx) {
+      return matchWorkspaceSignal(input, sessionFromContext(ctx), {
+        correlation_id: ctx.correlation_id,
+        causation_id: ctx.causation_id,
+        producerRef: "tool:product.signal.match",
+      });
     },
   });
 

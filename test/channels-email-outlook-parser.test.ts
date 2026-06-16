@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { isOutlookRefreshReauthorizationError } from "../core/channels/email/adapters/outlook.ts";
 import {
   graphMessageToInbound,
+  reauthorizeOutlookSubscription,
   type GraphMessage,
 } from "../core/channels/email/outlook-subscription.ts";
 
@@ -76,4 +78,72 @@ test("graph parser: prefers internetMessageId over the Graph-internal id", () =>
   };
   const inbound = graphMessageToInbound(message, wsId, channelId)!;
   assert.equal(inbound.external_id, "<rfc-id@example.com>");
+});
+
+test("Outlook subscription reauthorize posts to Graph without changing persisted state", async () => {
+  const existing = {
+    id: "subscription-1",
+    resource: "/me/messages",
+    expirationDateTime: "2026-06-01T00:00:00.000Z",
+    clientState: "client-state",
+    notificationUrl: "https://app.example/api/webhooks/outlook",
+    lifecycleNotificationUrl: "https://app.example/api/webhooks/outlook",
+    recorded_at: "2026-05-25T00:00:00.000Z",
+  };
+  const pool = {
+    async query() {
+      return { rows: [{ properties: { outlook_subscription: existing } }] };
+    },
+  };
+  let requestedUrl: string | undefined;
+  let requestedInit: RequestInit | undefined;
+
+  const result = await reauthorizeOutlookSubscription({
+    pool: pool as never,
+    workspaceId: wsId,
+    channelAccountId: channelId,
+    accessToken: "fresh-access-token",
+    fetchImpl: async (url, init) => {
+      requestedUrl = String(url);
+      requestedInit = init;
+      return new Response(null, { status: 204 });
+    },
+  });
+
+  assert.equal(
+    requestedUrl,
+    "https://graph.microsoft.com/v1.0/subscriptions/subscription-1/reauthorize",
+  );
+  assert.equal(requestedInit?.method, "POST");
+  assert.equal(
+    (requestedInit?.headers as Record<string, string>).Authorization,
+    "Bearer fresh-access-token",
+  );
+  assert.equal(result, existing);
+});
+
+test("Outlook refresh reauthorization classifier only flags revoked/expired grants", () => {
+  assert.equal(isOutlookRefreshReauthorizationError(400, "invalid_grant"), true);
+  assert.equal(
+    isOutlookRefreshReauthorizationError(
+      400,
+      "AADSTS50173: The provided grant has expired due to it being revoked.",
+    ),
+    true,
+  );
+  assert.equal(
+    isOutlookRefreshReauthorizationError(400, "AADSTS700082: refresh token expired"),
+    true,
+  );
+  assert.equal(
+    isOutlookRefreshReauthorizationError(400, "invalid_scope: bad scope"),
+    false,
+  );
+  assert.equal(
+    isOutlookRefreshReauthorizationError(
+      401,
+      "invalid_client: client secret is wrong",
+    ),
+    false,
+  );
 });

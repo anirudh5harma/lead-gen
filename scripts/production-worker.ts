@@ -1,6 +1,25 @@
 import { createDeepSeekClientFromEnv } from "../core/agents/llm/index.ts";
 import { createDeepSeekJudge } from "../core/agents/eval/index.ts";
 import {
+  createWorkspaceActivationSetupWorkflow,
+  createWorkspaceCampaignStrategyWorkflow,
+  createWorkspaceChannelReadinessWorkflow,
+  createWorkspaceCompanyBrainBriefWorkflow,
+  createWorkspaceCompanyBrainRecallWorkflow,
+  createWorkspaceContactWaterfallWorkflow,
+  createWorkspaceEvalGateWorkflow,
+  createWorkspaceMeetingPrepWorkflow,
+  createWorkspaceMessagePersonalizationWorkflow,
+  createWorkspaceOutreachSkillSelectionWorkflow,
+  createWorkspaceProfileIcpWorkflow,
+  createWorkspaceReplyTriageWorkflow,
+  createWorkspaceSignalIngestionWorkflow,
+  createWorkspaceSkillOptimizerWorkflow,
+  createWorkspaceSourceDiscoveryWorkflow,
+  createWorkspaceVerticalIntelligenceWorkflow,
+  createWorkspaceSignalMatchingWorkflow,
+} from "../core/agents/langgraph/index.ts";
+import {
   createPostgresEpisodicRepository,
   createPostgresProceduralRepository,
   createPostgresSemanticRepository,
@@ -40,7 +59,6 @@ import {
   createExpireWorkflow,
   createWorkspacePollWorkflow,
   registerSignalProjectors,
-  startClassifyWorkflow,
 } from "../core/ingest/index.ts";
 import {
   createPostgresVerticalSliceStore,
@@ -58,11 +76,13 @@ import {
 } from "../core/product/domain-provisioning.ts";
 import {
   dispatchReplyEmailPlaysOnce,
+  dispatchSignalMatchingWorkflowFromIngestedEvent,
   dispatchSignalPlaysOnce,
   dispatchWorkspaceRecommendationResearchOnce,
   registerProductEventDispatchers,
   researchWorkspaceWithExa,
 } from "../core/product/app.ts";
+import { registerProductTools } from "../core/product/tools.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
 import {
@@ -93,6 +113,7 @@ const sesConfigurationSet = process.env.SES_CONFIGURATION_SET?.trim()
 const restateBearer = restateBearerFromEnv();
 
 const pool = getPool();
+registerProductTools();
 const bus = await createJournaledNatsEventBus({
   pool,
   servers: natsUrl,
@@ -133,6 +154,23 @@ const linkedinChannel = createPostgresLinkedInChannel({
 
 const workflows = [
   createRestateRuntimeProbeWorkflow(),
+  createWorkspaceActivationSetupWorkflow({ bus }),
+  createWorkspaceProfileIcpWorkflow({ bus }),
+  createWorkspaceCampaignStrategyWorkflow({ bus }),
+  createWorkspaceChannelReadinessWorkflow({ bus }),
+  createWorkspaceCompanyBrainBriefWorkflow({ bus }),
+  createWorkspaceCompanyBrainRecallWorkflow({ bus }),
+  createWorkspaceContactWaterfallWorkflow({ bus }),
+  createWorkspaceEvalGateWorkflow({ bus }),
+  createWorkspaceMeetingPrepWorkflow({ bus }),
+  createWorkspaceMessagePersonalizationWorkflow({ bus }),
+  createWorkspaceOutreachSkillSelectionWorkflow({ bus }),
+  createWorkspaceReplyTriageWorkflow({ bus }),
+  createWorkspaceSignalIngestionWorkflow({ bus }),
+  createWorkspaceSkillOptimizerWorkflow({ bus }),
+  createWorkspaceSourceDiscoveryWorkflow({ bus }),
+  createWorkspaceVerticalIntelligenceWorkflow({ bus }),
+  createWorkspaceSignalMatchingWorkflow({ bus }),
   createSeriesAColdOpenPlay({
     pool,
     bus,
@@ -222,6 +260,7 @@ const emailSubscriptions = await registerEmailIngressProjectors(
     bus,
     classifier: createDeepSeekIntentClassifier({ llm }),
     memory,
+    outlookAccessTokens: outlook,
     outlookSubscriptionRepair: {
       async start({ workspace_id, channel_account_id }) {
         await workflowsClient.start({
@@ -247,26 +286,20 @@ const signalSubscriptions = await registerSignalProjectors(
     },
   },
 );
-const classifier = await startClassifyWorkflow(
-  {
-    pool,
-    bus,
-    llm,
-    rethrowErrors: true,
-  },
-  {
-    subscribe(handler, durableName) {
-      return bus.subscribeScoped("*", "signal.ingested", handler, { durableName });
-    },
-  },
-);
 const playDispatchSubscriptions = await registerProductEventDispatchers(
   {
     subscribe(eventType, handler, durableName) {
       return bus.subscribeScoped("*", eventType, handler, { durableName });
     },
   },
-  { limit: 50 },
+  {
+    limit: 50,
+    dispatchSignalMatching: (event) =>
+      dispatchSignalMatchingWorkflowFromIngestedEvent(event, {
+        pool,
+        workflows: workflowsClient,
+      }),
+  },
 );
 console.log("[production-worker] projectors consuming events");
 
@@ -326,7 +359,6 @@ async function shutdown(): Promise<void> {
   clearInterval(recoveryTimer);
   clearInterval(productRedriveTimer);
   await Promise.all([
-    classifier.subscription.unsubscribe(),
     ...emailSubscriptions.map((subscription) => subscription.unsubscribe()),
     ...signalSubscriptions.map((subscription) => subscription.unsubscribe()),
     ...playDispatchSubscriptions.map((subscription) => subscription.unsubscribe()),

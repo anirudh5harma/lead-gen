@@ -189,7 +189,7 @@ export async function loadQualifiedSignalEmailReadiness(
     : needsReauth > 0
       ? "Reconnect inbox"
       : connected > 0
-        ? "Needs sync"
+        ? "Repairing sync"
         : "Connect inbox";
   const detail = ready
     ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync.`
@@ -198,7 +198,7 @@ export async function loadQualifiedSignalEmailReadiness(
           needsReauth === 1 ? "inbox needs" : "inboxes need"
         } Microsoft reauthorization. Reconnect Outlook before approved drafts can send.`
       : connected > 0
-        ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync. Approved drafts wait until sync is healthy.`
+        ? `${activeSubscriptions}/${connected} Outlook inboxes have active reply sync. We're repairing Graph subscriptions in the background; no reconnect is needed unless Microsoft revoked the grant.`
         : "No connected Outlook inbox. Approved drafts wait until a Microsoft 365 mailbox is connected.";
   return {
     ready,

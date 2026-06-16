@@ -3,18 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
-  configureActivationSetup,
-  configureDefaultSignalAggregator,
-  configureIcpSegment,
-  configureSignalEmailPlay,
-  configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
-  runWorkspaceSignalAggregatorOnce,
+  runWorkspaceActivationSetup,
+  runWorkspaceSignalIngestion,
   verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
 } from "@/core/product/app";
 import {
-  analyzeCompanyWebsite,
   normalizeCompanyWebsiteUrl,
 } from "@/core/product/company-profile";
 import { getRequestAuthIdentity } from "@/lib/auth";
@@ -64,17 +59,17 @@ async function requireOnboardingSession(
   });
 }
 
-export async function createProfileAndAggregatorAction(formData: FormData) {
-  await createProfileAndAggregator(formData);
+export async function createActivationSetupAction(formData: FormData) {
+  await createActivationSetup(formData);
   redirect(PRODUCT_HOME_PATH);
 }
 
-export async function createProfileAndAggregatorFormAction(
+export async function createActivationSetupFormAction(
   _prevState: OnboardingActionState,
   formData: FormData,
 ): Promise<OnboardingActionState> {
   try {
-    await createProfileAndAggregator(formData);
+    await createActivationSetup(formData);
   } catch (error) {
     if (isNextRedirectError(error)) throw error;
     return {
@@ -87,132 +82,61 @@ export async function createProfileAndAggregatorFormAction(
   redirect(PRODUCT_HOME_PATH);
 }
 
+export async function createProfileAndAggregatorAction(formData: FormData) {
+  return createActivationSetupAction(formData);
+}
+
+export async function createProfileAndAggregatorFormAction(
+  prevState: OnboardingActionState,
+  formData: FormData,
+): Promise<OnboardingActionState> {
+  return createActivationSetupFormAction(prevState, formData);
+}
+
 function isNextRedirectError(error: unknown): boolean {
   if (!error || typeof error !== "object" || !("digest" in error)) return false;
   return String((error as { digest?: unknown }).digest).startsWith("NEXT_REDIRECT;");
 }
 
-async function createProfileAndAggregator(formData: FormData): Promise<void> {
+async function createActivationSetup(formData: FormData): Promise<void> {
   const websiteUrl = normalizeCompanyWebsiteUrl(value(formData, "website_url"));
   if (!websiteUrl) throw new Error("Enter a valid company website.");
 
-  const profile = await analyzeCompanyWebsite({
-    websiteUrl,
-    companyHint: value(formData, "company_name"),
-    allowedIndustries: [
-      "B2B SaaS",
-      "AI",
-      "Fintech",
-      "Healthcare",
-      "Developer tools",
-      "Ecommerce",
-      "Cybersecurity",
-      "Other",
-    ],
-  });
-  if (!profile) {
-    throw new Error("Could not read the company website with Firecrawl.");
-  }
-
-  const companyName =
-    profile.company_name ?? (value(formData, "company_name") || "Bombsell Workspace");
+  const companyHint = value(formData, "company_name");
+  const companyName = companyHint || companyNameFromWebsiteUrl(websiteUrl);
   const session = await requireOnboardingSession(`${companyName} GTM`);
-  await configureWorkspaceCompanyProfile(
+  await runWorkspaceActivationSetup(
     {
-      company_name: companyName,
-      website_url: profile.website_url,
-      industry: profile.industry,
-      description: profile.description,
-      profile_source: profile.source,
+      website_url: websiteUrl,
+      company_hint: companyHint || undefined,
+      allowed_industries: [
+        "B2B SaaS",
+        "AI",
+        "Fintech",
+        "Healthcare",
+        "Developer tools",
+        "Ecommerce",
+        "Cybersecurity",
+        "Other",
+      ],
     },
     session,
   );
-
-  const activation = await configureActivationSetup(
-    {
-      rep: {
-        name: "Sampark",
-        role: "sdr",
-        voice:
-          "Clear, specific, low-hype, and useful. Never pretend to know more than the signal proves.",
-        story: `Turns market movement around ${companyName} into careful founder-led conversations.`,
-        daily_cap: 15,
-        approval: "approve_first",
-      },
-      icp: {
-        name: `${companyName} press and market signals`,
-        description: `${profile.description} Match companies and people showing public momentum, hiring, launch, funding, or competitive signals relevant to this market.`,
-        signal_kind: "press_mention",
-        match_threshold: 0.6,
-        nice_to_haves: [
-          `Relevant to ${companyName}`,
-          profile.industry ? `Mentions ${profile.industry}` : "Clear market timing",
-          "Fresh enough to justify outreach",
-        ],
-      },
-      play: {
-        signal_kind: "press_mention",
-        daily_cap: 15,
-        approval: "approve_first",
-      },
-    },
-    session,
-  );
-
-  const hiringIcp = await configureIcpSegment(
-    {
-      name: `${companyName} hiring signals`,
-      description: `Hiring changes that imply teams in ${profile.industry ?? "this market"} are rebuilding GTM, product, or operations motions relevant to ${companyName}.`,
-      signal_kind: "hiring",
-      match_threshold: 0.6,
-    },
-    session,
-  );
-  await configureSignalEmailPlay(
-    {
-      rep_id: activation.rep_id,
-      name: `${companyName} Hiring Signal Email`,
-      signal_kind: "hiring",
-      icp_name: hiringIcp.icp_id,
-      daily_cap: 10,
-      approval: "approve_first",
-    },
-    session,
-  );
-
-  const launchIcp = await configureIcpSegment(
-    {
-      name: `${companyName} launch signals`,
-      description: `Product launches, Show HN posts, and Product Hunt launches that indicate companies entering or reshaping ${profile.industry ?? "this market"}.`,
-      signal_kind: "product_launch",
-      match_threshold: 0.6,
-    },
-    session,
-  );
-  await configureSignalEmailPlay(
-    {
-      rep_id: activation.rep_id,
-      name: `${companyName} Launch Signal Email`,
-      signal_kind: "product_launch",
-      icp_name: launchIcp.icp_id,
-      daily_cap: 10,
-      approval: "approve_first",
-    },
-    session,
-  );
-
-  await configureDefaultSignalAggregator(
-    {
-      company_name: companyName,
-      website_url: profile.website_url,
-      industry: profile.industry,
-      description: profile.description,
-    },
-    session,
-  );
-  await runWorkspaceSignalAggregatorOnce({ limit: 4 }, session);
+  await runWorkspaceSignalIngestion({ limit: 4 }, session, { wait: false });
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/prospecting");
+  revalidatePath("/dashboard/signals");
   revalidatePath("/dashboard/setup");
   revalidatePath("/dashboard/campaigns");
+}
+
+function companyNameFromWebsiteUrl(websiteUrl: string): string {
+  try {
+    const domain = new URL(websiteUrl).hostname.toLowerCase().replace(/^www\./, "");
+    const stem = domain.split(".")[0]?.replace(/[-_]+/g, " ") || "Bombsell Workspace";
+    return stem.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  } catch {
+    return "Bombsell Workspace";
+  }
 }

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   SignJWT,
   exportJWK,
@@ -197,4 +198,14 @@ test("isLifecycleEnvelope: pure change envelope returns false", () => {
   };
   assert.equal(isLifecycleEnvelope(envelope), false);
   assert.equal(extractLifecycleEvents(envelope).length, 0);
+});
+
+test("Outlook webhook repairs lifecycle reauthorization silently", () => {
+  const route = readFileSync("app/api/webhooks/outlook/route.ts", "utf8");
+
+  assert.match(route, /startOutlookSubscriptionRepair/);
+  assert.doesNotMatch(
+    route,
+    /event_type:\s*"email\.outlook\.reauthorization\.required"/,
+  );
 });

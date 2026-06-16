@@ -1,9 +1,8 @@
 /**
- * LLM clients. Per ARCHITECTURE.md, DeepSeek V4 Pro is the single default
- * for every LLM call — drafting, reasoning, hot-path judges, classification,
- * dedup. Workspaces can BYO Anthropic / OpenAI keys; the LLMClient surface
- * is provider-agnostic so the rest of the system never cares which model
- * is on the other side of a `complete()` call.
+ * LLM clients. Per the pivot-v2 cost posture, DeepSeek V4 Flash is the
+ * default for drafting, classification, hot-path judges, and optimizer loops.
+ * Heavier models require explicit call-site escalation so the rest of the
+ * system can stay cheap by default.
  */
 
 export * from "./types.ts";
@@ -21,3 +20,14 @@ export {
   LLMBudgetExceededError,
 } from "./budget.ts";
 export type { BudgetedLLMClientOptions } from "./budget.ts";
+export {
+  assertDeepSeekModelAllowed,
+  DEEPSEEK_V4_FLASH_MODEL,
+  DEEPSEEK_V4_PRO_MODEL,
+  LLMModelPolicyError,
+  resolveDeepSeekDefaultModel,
+} from "./model-policy.ts";
+export type {
+  LLMModelEscalation,
+  LLMModelEscalationReason,
+} from "./model-policy.ts";

@@ -3,6 +3,9 @@ import test from "node:test";
 import type { Pool } from "pg";
 import {
   createBudgetedLLMClient,
+  DEEPSEEK_V4_FLASH_MODEL,
+  DEEPSEEK_V4_PRO_MODEL,
+  estimateDeepSeekCostUsd,
   isLLMBudgetExceededError,
 } from "../core/agents/llm/index.ts";
 import type { LLMClient } from "../core/agents/llm/types.ts";
@@ -98,6 +101,40 @@ test("budgeted LLM: rejects before spend and emits defer event", async () => {
   assert.equal(called, false);
   assert.equal(bus.published.at(-1)?.event_type, "llm.call.deferred");
 });
+
+test("DeepSeek cost estimate: uses Flash defaults and Pro escalation defaults", () => {
+  assertCostAlmostEqual(
+    estimateDeepSeekCostUsd({
+      content: "{}",
+      model: DEEPSEEK_V4_FLASH_MODEL,
+      finish_reason: "stop",
+      usage: {
+        prompt_tokens: 1_000_000,
+        completion_tokens: 1_000_000,
+        total_tokens: 2_000_000,
+      },
+    }),
+    0.42,
+  );
+  assertCostAlmostEqual(
+    estimateDeepSeekCostUsd({
+      content: "{}",
+      model: DEEPSEEK_V4_PRO_MODEL,
+      finish_reason: "stop",
+      usage: {
+        prompt_tokens: 1_000_000,
+        completion_tokens: 1_000_000,
+        total_tokens: 2_000_000,
+      },
+    }),
+    1.305,
+  );
+});
+
+function assertCostAlmostEqual(actual: number | null, expected: number): void {
+  assert.notEqual(actual, null);
+  assert.ok(Math.abs(actual! - expected) < 0.000_001);
+}
 
 test("fallback judge: degrades to heuristic when budget is exhausted", async () => {
   const primary = {

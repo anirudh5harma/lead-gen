@@ -63,8 +63,13 @@ async function loadSetupState(workspaceId: string) {
     pool.query<SetupAccountRow>(
       `select id, display_name, kind::text as kind, status::text as status, daily_cap
          from channel_accounts
-        where workspace_id = $1 and kind in ('email_domain','oauth_outlook')
-        order by case when kind = 'oauth_outlook' then 0 else 1 end,
+        where workspace_id = $1
+          and kind in ('email_domain','oauth_outlook','linkedin_session','linkedin_oauth')
+        order by case
+                   when kind = 'oauth_outlook' then 0
+                   when kind in ('linkedin_session','linkedin_oauth') then 1
+                   else 2
+                 end,
                  created_at asc`,
       [workspaceId],
     ),
@@ -87,12 +92,14 @@ export default async function SetupPage() {
   ]);
   const rep = state.reps[0];
   const icp = state.icps[0];
-  const account = state.accounts[0];
+  const outlookAccount = state.accounts.find((row) => row.kind === "oauth_outlook");
+  const linkedInAccount = state.accounts.find((row) => isLinkedInKind(row.kind));
   const readyCount = [
     state.reps.length > 0,
     state.icps.length > 0,
-    state.accounts.length > 0,
     Boolean(profile),
+    isConnected(outlookAccount),
+    isConnected(linkedInAccount),
   ].filter(Boolean).length;
 
   return (
@@ -103,7 +110,7 @@ export default async function SetupPage() {
         description="Define your company, ICP, voice, timing signals, and channel pace. Email, LinkedIn, and campaigns work from this profile."
         meta={
           <div className="flex flex-wrap gap-2">
-            <HeroStat label="Ready" value={`${readyCount}/4`} />
+            <HeroStat label="Ready" value={`${readyCount}/5`} />
             {profile?.company_name ? <HeroStat label="Company" value={profile.company_name} /> : null}
             {icp ? <HeroStat label="Audience" value={icp.name} /> : null}
           </div>
@@ -117,7 +124,7 @@ export default async function SetupPage() {
           action={editCompanyProfileAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-2"
         >
-          <input type="hidden" name="return_to" value="/dashboard/setup" />
+          <input type="hidden" name="return_to" value="/dashboard/prospecting" />
           <Field
             name="company_name"
             label="Company"
@@ -162,7 +169,7 @@ export default async function SetupPage() {
           action={configureActivationAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5"
         >
-          <input type="hidden" name="return_to" value="/dashboard/setup" />
+          <input type="hidden" name="return_to" value="/dashboard/prospecting" />
           <TextArea
             name="icp_description"
             label="Target companies and people"
@@ -186,7 +193,7 @@ export default async function SetupPage() {
               name="daily_cap"
               label="Daily ceiling"
               type="number"
-              defaultValue={String(rep?.autonomy.channels?.email?.daily_cap ?? account?.daily_cap ?? 25)}
+              defaultValue={String(rep?.autonomy.channels?.email?.daily_cap ?? outlookAccount?.daily_cap ?? 25)}
             />
             <Select
               name="approval"
@@ -215,33 +222,88 @@ export default async function SetupPage() {
       </SurfaceSection>
 
       <SurfaceSection title="Email and LinkedIn channels">
-        <div className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-[1fr_auto] md:items-center">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              {account ? account.display_name : "Connect Outlook"}
-            </p>
-            <p className="mt-1 text-sm text-[var(--color-text-3)]">
-              {account
-                ? `${accountKindLabel(account.kind)} - ${account.status} - ${account.daily_cap ?? "unlimited"} daily ceiling`
-                : "Use the customer's Microsoft 365 mailbox for founder-led outbound and reply sync. LinkedIn uses the native channel provider when connected."}
-            </p>
-          </div>
-          <Link
+        <div className="grid gap-3">
+          <ChannelConnectRow
+            account={outlookAccount}
+            title="Outlook inbox"
+            description="Use the customer's Microsoft 365 mailbox for founder-led outbound, native threading, and reply sync."
             href="/api/auth/outlook"
-            prefetch={false}
-            className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
-          >
-            <Icon name="mail" size={16} />
-            {account ? "Reconnect Outlook" : "Connect Outlook"}
-          </Link>
+            icon="mail"
+            connectLabel="Connect Outlook"
+            reconnectLabel="Reconnect Outlook"
+          />
+          <ChannelConnectRow
+            account={linkedInAccount}
+            title="LinkedIn account"
+            description="Connect the native LinkedIn channel for connection requests, DMs, and comment-led warmup Plays."
+            href="/api/auth/linkedin"
+            icon="forum"
+            connectLabel="Connect LinkedIn"
+            reconnectLabel="Reconnect LinkedIn"
+          />
         </div>
       </SurfaceSection>
     </div>
   );
 }
 
+function ChannelConnectRow({
+  account,
+  title,
+  description,
+  href,
+  icon,
+  connectLabel,
+  reconnectLabel,
+}: {
+  account: SetupAccountRow | undefined;
+  title: string;
+  description: string;
+  href: string;
+  icon: string;
+  connectLabel: string;
+  reconnectLabel: string;
+}) {
+  return (
+    <div className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-[1fr_auto] md:items-center">
+      <div>
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          {account ? account.display_name : title}
+        </p>
+        <p className="mt-1 text-sm text-[var(--color-text-3)]">
+          {account ? accountSummary(account) : description}
+        </p>
+      </div>
+      <Link
+        href={href}
+        prefetch={false}
+        className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+      >
+        <Icon name={icon} size={16} />
+        {account ? reconnectLabel : connectLabel}
+      </Link>
+    </div>
+  );
+}
+
+function isConnected(account: SetupAccountRow | undefined): boolean {
+  return account?.status === "connected";
+}
+
+function isLinkedInKind(kind: string): boolean {
+  return kind === "linkedin_session" || kind === "linkedin_oauth";
+}
+
+function accountSummary(account: SetupAccountRow): string {
+  return `${accountKindLabel(account.kind)} - ${account.status} - ${
+    account.daily_cap ?? "unlimited"
+  } daily ceiling`;
+}
+
 function accountKindLabel(kind: string): string {
   if (kind === "oauth_outlook") return "Outlook inbox";
+  if (kind === "linkedin_session") return "LinkedIn session";
+  if (kind === "linkedin_oauth") return "LinkedIn account";
   if (kind === "email_domain") return "Owned sender";
   return kind.replace(/_/g, " ");
 }
@@ -259,7 +321,7 @@ function NoWorkspaceSetup() {
           action={createWorkspaceAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:max-w-xl"
         >
-          <input type="hidden" name="return_to" value="/dashboard/setup" />
+          <input type="hidden" name="return_to" value="/dashboard/prospecting" />
           <Field name="workspace_name" label="Workspace name" defaultValue="Bombsell Workspace" />
           <Field name="workspace_slug" label="Workspace slug" defaultValue="bombsell-workspace" />
           <PendingSubmitButton

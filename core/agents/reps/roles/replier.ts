@@ -11,13 +11,20 @@ import type {
   SemanticEntry,
   SemanticRepository,
 } from "../../memory/types.ts";
+import {
+  outreachSkillPatternKey,
+  outreachSkillPromptBlock,
+  selectedOutreachSkill,
+  selectOutreachSkill,
+  type SelectedOutreachSkill,
+} from "../../skills/outreach.ts";
 import type { RoleAgent } from "../types.ts";
 
 /**
  * Replier role agent.
  *
- * Responsibility: classify inbound messages on a Conversation (positive /
- * negative / neutral / OOO / unsubscribe), append to the Rep's episodic
+ * Responsibility: classify inbound messages on a Conversation (meeting intent /
+ * positive / negative / neutral / OOO / unsubscribe), append to the Rep's episodic
  * memory, and recommend any Outcome that should be recorded. Response
  * drafting/approval remains a later Play, so this role is deliberately
  * limited to durable triage + learning signals.
@@ -100,6 +107,7 @@ export interface ReplyDraftResult {
   procedural_exemplars: ProceduralExemplar[];
   semantic_subjects: string[];
   semantic_memory: SemanticEntry[];
+  skill: SelectedOutreachSkill | null;
 }
 
 export interface ReplyDraftRoleOptions {
@@ -107,6 +115,7 @@ export interface ReplyDraftRoleOptions {
 }
 
 const OUTCOME_BY_INTENT: Partial<Record<ReplyIntent, ReplierOutcomeRecommendation>> = {
+  meeting_intent: { kind: "positive_reply", score: 1 },
   positive: { kind: "positive_reply", score: 1 },
   unsubscribe: { kind: "unsubscribe", score: -1 },
   do_not_contact: { kind: "do_not_contact", score: -1 },
@@ -197,7 +206,10 @@ export function createReplierRole(
       return {
         classification,
         outcome,
-        handoff_required: classification.intent === "positive" || classification.intent === "neutral",
+        handoff_required:
+          classification.intent === "meeting_intent" ||
+          classification.intent === "positive" ||
+          classification.intent === "neutral",
         semantic_subjects,
         semantic_facts,
       };
@@ -353,6 +365,21 @@ function replyPatternTags(
   return Array.from(new Set(tags));
 }
 
+function buildReplySkillPatternKeys(
+  pattern_keys: string[],
+  skill: Pick<SelectedOutreachSkill, "skill_key" | "version"> | null,
+): string[] {
+  if (!skill) return pattern_keys;
+  return Array.from(
+    new Set(
+      pattern_keys.flatMap((pattern_key) => [
+        outreachSkillPatternKey(pattern_key, skill),
+        pattern_key,
+      ]),
+    ),
+  );
+}
+
 function memoryFactText(entries: SemanticEntry[], keys: string[]): string | null {
   for (const entry of entries) {
     for (const key of keys) {
@@ -412,6 +439,37 @@ function exemplarText(exemplar: ProceduralExemplar): string | null {
   return typeof body === "string" && body.trim() ? body.trim() : null;
 }
 
+function replySkillSlotValues(
+  brief: ReplyDraftBrief,
+  semantic_memory: SemanticEntry[],
+): Record<string, string> {
+  const inboundSignal = brief.inbound.intent_reason || excerpt(brief.inbound.body_text, 180);
+  const priorContext = brief.prior_outbound?.body_text
+    ? excerpt(brief.prior_outbound.body_text, 220)
+    : brief.conversation.topic ?? "The prior outbound thread";
+  const objection = memoryFactText(semantic_memory, [
+    "objection",
+    "latest_contact_objection",
+    "preference",
+    "latest_contact_preference",
+  ]) ?? excerpt(brief.inbound.body_text, 180);
+  const requestedNextStep = memoryFactText(semantic_memory, [
+    "requested_next_step",
+    "latest_contact_requested_next_step",
+    "preference",
+    "latest_contact_preference",
+  ]);
+
+  return {
+    inbound_signal: inboundSignal,
+    prior_context: priorContext,
+    next_step: requestedNextStep ?? "Ask whether a short conversation or focused follow-up makes sense.",
+    objection,
+    useful_answer: "Give one concrete answer or offer the smallest useful detail.",
+    low_pressure_next_step: requestedNextStep ?? "Ask one clarifying question or offer to send concise context.",
+  };
+}
+
 function semanticSubjects(brief: ReplyDraftBrief): Array<{ type: "person" | "company"; id: string }> {
   return [
     brief.counterparty.person_id
@@ -469,7 +527,9 @@ function deterministicReplyDraft(
       body_text: body,
     };
   }
-  const positive = brief.inbound.intent === "positive";
+  const positive =
+    brief.inbound.intent === "meeting_intent" ||
+    brief.inbound.intent === "positive";
   const body = positive
     ? [
         `Hi ${firstName},`,
@@ -514,10 +574,22 @@ export function createReplyDraftRole(
       );
       const semantic_subjects = semantic_memory.map(semanticSubjectKey);
       const pattern_keys = buildReplyPatternKeys(brief, semantic_memory);
+      const skillDefinition = selectOutreachSkill({
+        channel: "email",
+        stage: "reply",
+        intent: brief.inbound.intent,
+        person_title: brief.counterparty.title,
+      });
+      const skill = selectedOutreachSkill(
+        skillDefinition,
+        pattern_keys[0] ?? buildReplyBasePatternKey(brief),
+        replySkillSlotValues(brief, semantic_memory),
+      );
+      const procedural_pattern_keys = buildReplySkillPatternKeys(pattern_keys, skill);
       const { pattern_key, procedural_exemplars } = await topProceduralForPatternKeys(
         ctx.memory.procedural,
         scope,
-        pattern_keys,
+        procedural_pattern_keys,
         3,
       );
       if (!opts.llm) {
@@ -525,11 +597,12 @@ export function createReplyDraftRole(
         return {
           ...draft,
           pattern_key,
-          seed_pattern_key: seedPatternKey(pattern_keys, pattern_key),
+          seed_pattern_key: seedPatternKey(procedural_pattern_keys, pattern_key),
           exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
           procedural_exemplars,
           semantic_subjects,
           semantic_memory,
+          skill,
         };
       }
 
@@ -557,6 +630,7 @@ export function createReplyDraftRole(
               `Conversation topic: ${brief.conversation.topic ?? "-"}`,
               `Reply intent: ${brief.inbound.intent}`,
               brief.inbound.intent_reason ? `Intent reason: ${brief.inbound.intent_reason}` : null,
+              outreachSkillPromptBlock(skill),
               brief.prior_outbound?.body_text
                 ? `Prior outbound:\n${brief.prior_outbound.body_text.slice(0, 1200)}`
                 : null,
@@ -595,11 +669,12 @@ export function createReplyDraftRole(
         body: parsed.body,
         body_text: parsed.body,
         pattern_key,
-        seed_pattern_key: seedPatternKey(pattern_keys, pattern_key),
+        seed_pattern_key: seedPatternKey(procedural_pattern_keys, pattern_key),
         exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
         procedural_exemplars,
         semantic_subjects,
         semantic_memory,
+        skill,
       };
     },
   };

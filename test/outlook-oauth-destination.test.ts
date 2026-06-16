@@ -33,6 +33,22 @@ test("Outlook OAuth state carries the exact callback redirect URI", () => {
   assert.match(callbackRoute, /import \{ callbackRedirectUri \} from "\.\/redirect-uri\.ts"/);
 });
 
+test("Outlook OAuth supports explicit calendar consent without duplicate accounts", () => {
+  const startRoute = readFileSync("app/api/auth/outlook/route.ts", "utf8");
+  const callbackRoute = readFileSync("app/api/auth/outlook/callback/route.ts", "utf8");
+
+  assert.match(startRoute, /intent = outlookAuthIntent/);
+  assert.match(startRoute, /return_to: returnTo/);
+  assert.match(startRoute, /intent === "calendar" \? "consent" : "select_account"/);
+  assert.match(startRoute, /Calendars\.ReadBasic/);
+
+  assert.match(callbackRoute, /findExistingOutlookAccountId/);
+  assert.match(callbackRoute, /properties ->> 'ms_user_id' = \$2/);
+  assert.match(callbackRoute, /outlook-authorization:\$\{channelAccountId\}:\$\{state\.nonce\}/);
+  assert.match(callbackRoute, /outlookSuccessRedirect/);
+  assert.match(callbackRoute, /calendar_connected/);
+});
+
 test("Outlook callback uses the current legacy callback URI when old state has no redirect URI", () => {
   const previous = process.env.APP_ORIGIN;
   process.env.APP_ORIGIN = "https://www.bombsell.com";

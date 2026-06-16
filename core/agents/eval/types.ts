@@ -37,6 +37,17 @@ export interface JudgeInput {
     personalization_context_markdown?: string | null;
     /** Prompt-ready workspace context the writer saw. */
     workspace_context_markdown?: string | null;
+    /** Selected Play Skill framework the writer/replier used. */
+    outreach_skill?: {
+      skill_key: string;
+      version: string;
+      name: string;
+      framework: string[];
+      judge_focus: string[];
+      slot_values?: Record<string, string>;
+      pattern_key?: string;
+      seed_pattern_key?: string | null;
+    } | null;
   };
 }
 

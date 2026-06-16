@@ -457,6 +457,68 @@ test("reply: positive intent records a positive_reply outcome and emits outcome.
   }
 });
 
+test("reply: meeting intent records positive_reply outcome while preserving intent class", async (t) => {
+  const fx = await setupPg("rep_outcome_meeting");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createPostgresEventBus({
+    pool: fx.pool,
+    listenConnectionString: process.env.DATABASE_URL,
+  });
+  try {
+    const seeded = await seedConversationWithOutbound(fx.pool);
+
+    const result = await handleInboundEmail(
+      {
+        pool: fx.pool,
+        bus,
+        classifier: createFixedIntentClassifier(
+          "meeting_intent",
+          0.97,
+          "Asked to book time.",
+        ),
+      },
+      {
+        workspace_id: seeded.workspace_id,
+        external_id: `in-${randomUUID()}`,
+        in_reply_to: seeded.outbound_external_id,
+        from: { email: seeded.counterparty_email },
+        subject: "Re: saw your series a",
+        body_text: "Can you send a few times for next week?",
+        received_at: new Date().toISOString(),
+      },
+    );
+
+    assert.equal(result.intent, "meeting_intent");
+    assert.ok(result.outcome_id);
+
+    const { rows: messageRows } = await fx.pool.query<{
+      intent_class: string;
+      intent_confidence: string;
+    }>(
+      `select intent_class, intent_confidence::text as intent_confidence
+         from messages where id = $1`,
+      [result.inbound_message_id],
+    );
+    assert.equal(messageRows[0].intent_class, "meeting_intent");
+    assert.equal(Number(messageRows[0].intent_confidence), 0.97);
+
+    const { rows: outcomeRows } = await fx.pool.query<{
+      kind: string;
+      reply_intent: string;
+    }>(
+      `select kind::text as kind,
+              properties->>'reply_intent' as reply_intent
+         from outcomes where id = $1`,
+      [result.outcome_id],
+    );
+    assert.equal(outcomeRows[0].kind, "positive_reply");
+    assert.equal(outcomeRows[0].reply_intent, "meeting_intent");
+  } finally {
+    await bus.close();
+    await fx.close();
+  }
+});
+
 test("reply: unsubscribe records unsubscribe outcome + closes conversation negatively", async (t) => {
   const fx = await setupPg("rep_outcome_unsub");
   if (!fx) return t.skip("DATABASE_URL not set");

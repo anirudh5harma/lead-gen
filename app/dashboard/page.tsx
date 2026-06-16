@@ -35,6 +35,14 @@ interface PulseMetric {
   last_activity_at: Date | null;
 }
 
+interface BriefActionState {
+  pending_reviews: number;
+  unhealthy_channels: number;
+  bounced_24h: number;
+  useful_outcomes_7d: number;
+  meetings_7d: number;
+}
+
 async function loadRunning(workspaceId: string): Promise<RunningRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<RunningRow>(
@@ -124,6 +132,50 @@ async function loadGtmPulse(workspaceId: string): Promise<GtmPulse> {
   };
 }
 
+async function loadBriefActionState(workspaceId: string): Promise<BriefActionState> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    pending_reviews: string;
+    unhealthy_channels: string;
+    bounced_24h: string;
+    useful_outcomes_7d: string;
+    meetings_7d: string;
+  }>(
+    `select
+       (select count(*)::text from workflow_approvals a
+          where a.workspace_id = $1
+            and a.decision = 'pending') as pending_reviews,
+       (select count(*)::text from channel_accounts ca
+          where ca.workspace_id = $1
+            and ca.kind in ('oauth_outlook','email_domain','linkedin_oauth','linkedin_session')
+            and (
+              ca.status::text in ('needs_reauth','errored','error','rate_limited','suspended','disconnected')
+              or ca.last_error is not null
+            )) as unhealthy_channels,
+       (select count(*)::text from messages m
+          where m.workspace_id = $1
+            and m.direction = 'outbound'
+            and m.status = 'bounced'
+            and m.sent_at >= now() - interval '24 hours') as bounced_24h,
+       (select count(*)::text from outcomes o
+          where o.workspace_id = $1
+            and o.kind in ('positive_reply','opportunity_created','meeting_booked','deal_won')
+            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as useful_outcomes_7d,
+       (select count(*)::text from outcomes o
+          where o.workspace_id = $1
+            and o.kind = 'meeting_booked'
+            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as meetings_7d`,
+    [workspaceId],
+  );
+  return {
+    pending_reviews: Number(rows[0]?.pending_reviews ?? 0),
+    unhealthy_channels: Number(rows[0]?.unhealthy_channels ?? 0),
+    bounced_24h: Number(rows[0]?.bounced_24h ?? 0),
+    useful_outcomes_7d: Number(rows[0]?.useful_outcomes_7d ?? 0),
+    meetings_7d: Number(rows[0]?.meetings_7d ?? 0),
+  };
+}
+
 function timeAgo(d: Date): string {
   const diff = Date.now() - d.getTime();
   const minutes = Math.floor(diff / 60_000);
@@ -145,45 +197,86 @@ const STATUS_TONE: Record<string, { label: string; tone: "pos" | "warn" | "neutr
   replied: { label: "Replied", tone: "pos" },
 };
 
-const REP_TILES: Array<{
-  key: keyof GtmPulse;
+const EMPTY_ACTION_STATE: BriefActionState = {
+  pending_reviews: 0,
+  unhealthy_channels: 0,
+  bounced_24h: 0,
+  useful_outcomes_7d: 0,
+  meetings_7d: 0,
+};
+
+const OPERATING_LOOP_META: Array<{
+  key: keyof GtmPulse | "outcomes";
+  step: string;
   name: string;
-  role: string;
   href: string;
   icon: string;
-  unit: (n: number) => string;
+  unit: (pulse: GtmPulse, actions: BriefActionState) => string;
+  detail: (pulse: GtmPulse, actions: BriefActionState) => string;
 }> = [
   {
     key: "prospects",
-    name: "Prospecting",
-    role: "People and accounts",
-    href: "/dashboard/setup",
+    step: "01",
+    name: "Prospect graph",
+    href: "/dashboard/prospecting",
     icon: "person",
-    unit: (n) => `${n} ${n === 1 ? "profile" : "profiles"} in the graph`,
+    unit: (pulse) =>
+      `${pulse.prospects.count} ${pulse.prospects.count === 1 ? "profile" : "profiles"}`,
+    detail: (pulse) =>
+      pulse.prospects.last_activity_at
+        ? `Updated ${timeAgo(pulse.prospects.last_activity_at)}`
+        : "Define the market once",
   },
   {
     key: "signals",
+    step: "02",
     name: "Signals",
-    role: "Timing",
-    href: "/dashboard/ingestion",
+    href: "/dashboard/signals",
     icon: "sensors",
-    unit: (n) => `${n} ${n === 1 ? "fresh signal" : "fresh signals"} today`,
-  },
-  {
-    key: "outreach",
-    name: "Outreach",
-    role: "Email and LinkedIn",
-    href: "/dashboard/conversations",
-    icon: "forum",
-    unit: (n) => `${n} ${n === 1 ? "conversation" : "conversations"} moving`,
+    unit: (pulse) =>
+      `${pulse.signals.count} ${pulse.signals.count === 1 ? "fresh Signal" : "fresh Signals"}`,
+    detail: (pulse) =>
+      pulse.signals.last_activity_at
+        ? `Last matched ${timeAgo(pulse.signals.last_activity_at)}`
+        : "Waiting for timing evidence",
   },
   {
     key: "campaigns",
-    name: "Campaigns",
-    role: "Campaigns",
+    step: "03",
+    name: "Plays",
     href: "/dashboard/campaigns",
     icon: "science",
-    unit: (n) => `${n} ${n === 1 ? "campaign idea" : "campaign ideas"} today`,
+    unit: (pulse) =>
+      `${pulse.campaigns.count} ${pulse.campaigns.count === 1 ? "run" : "runs"} today`,
+    detail: (pulse) =>
+      pulse.campaigns.last_activity_at
+        ? `Started ${timeAgo(pulse.campaigns.last_activity_at)}`
+        : "Small bets before scale",
+  },
+  {
+    key: "outreach",
+    step: "04",
+    name: "Conversations",
+    href: "/dashboard/conversations",
+    icon: "forum",
+    unit: (pulse, actions) =>
+      `${pulse.outreach.count} moving · ${actions.pending_reviews} review`,
+    detail: (pulse) =>
+      pulse.outreach.last_activity_at
+        ? `Last activity ${timeAgo(pulse.outreach.last_activity_at)}`
+        : "Replies collect here",
+  },
+  {
+    key: "outcomes",
+    step: "05",
+    name: "Outcomes",
+    href: "/dashboard/campaigns",
+    icon: "task_alt",
+    unit: (_pulse, actions) => `${actions.useful_outcomes_7d} useful this week`,
+    detail: (_pulse, actions) =>
+      actions.meetings_7d > 0
+        ? `${actions.meetings_7d} ${actions.meetings_7d === 1 ? "meeting" : "meetings"} booked`
+        : "Learning waits for proof",
   },
 ];
 
@@ -192,7 +285,6 @@ export default async function BriefPage() {
   if (!session) {
     return (
       <BriefView
-        workspaceName={null}
         running={[]}
         outcomes={[]}
         pulse={{
@@ -201,34 +293,36 @@ export default async function BriefPage() {
           outreach: { count: 0, last_activity_at: null },
           campaigns: { count: 0, last_activity_at: null },
         }}
+        actions={EMPTY_ACTION_STATE}
       />
     );
   }
-  const [running, outcomes, pulse] = await Promise.all([
+  const [running, outcomes, pulse, actions] = await Promise.all([
     loadRunning(session.workspace.id),
     loadOutcomes(session.workspace.id),
     loadGtmPulse(session.workspace.id),
+    loadBriefActionState(session.workspace.id),
   ]);
   return (
     <BriefView
-      workspaceName={session.workspace.name}
       running={running}
       outcomes={outcomes}
       pulse={pulse}
+      actions={actions}
     />
   );
 }
 
 function BriefView({
-  workspaceName,
   running,
   outcomes,
   pulse,
+  actions,
 }: {
-  workspaceName: string | null;
   running: RunningRow[];
   outcomes: OutcomeRow[];
   pulse: GtmPulse;
+  actions: BriefActionState;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
@@ -237,74 +331,40 @@ function BriefView({
   });
   const totalPulse =
     pulse.prospects.count + pulse.signals.count + pulse.outreach.count + pulse.campaigns.count;
-  const heroVerb = heroWorkVerb(today);
   const lastMovement = latestPulseDate(pulse);
+  const priorityActions = buildPriorityActions(pulse, actions);
 
   return (
-    <div className="space-y-12">
-      {/* Hero */}
-      <section className="max-w-[calc(100vw-48px)] border-b border-[color:var(--color-line-2)] pb-10 sm:max-w-none">
-        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
+    <div className="space-y-10">
+      <section className="relative overflow-hidden rounded-[12px] border border-[color:var(--color-line-2)] bg-[rgba(12,11,8,0.72)] p-5 shadow-[inset_0_1px_0_rgba(247,221,184,0.06)] sm:p-7 lg:p-8">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
           {today}
         </p>
         <h1
-          className="display-serif mt-5 max-w-[calc(100vw-48px)] break-words text-[2.25rem] text-[var(--color-text-1)] sm:max-w-none sm:text-[clamp(2.5rem,5.4vw,4.5rem)]"
-          style={{ fontWeight: 500, letterSpacing: 0, lineHeight: 1.0 }}
+          className="display-serif mt-5 max-w-[980px] break-words text-[2.25rem] text-[var(--color-text-1)] sm:text-[clamp(2.5rem,5.4vw,4.5rem)]"
+          style={{ fontWeight: 500, letterSpacing: 0, lineHeight: 1.02 }}
         >
-          {workspaceName ? (
-            <>
-              <span className="block">{workspaceName} is</span>
-              <em>{heroVerb}.</em>
-            </>
-          ) : (
-            <>
-              <span className="block">Set prospecting.</span>
-              <em>Then watch Signals.</em>
-            </>
-          )}
+          <span className="block">Your GTM runs from</span>
+          {" "}
+          <em>Signal to Outcome.</em>
         </h1>
-        <p className="mt-5 max-w-[32ch] text-[15px] leading-[1.7] text-[var(--color-text-2)] sm:max-w-[64ch]">
+        <p className="mt-5 max-w-[72ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
           {totalPulse === 0
             ? "Nothing to surface yet. Define the prospecting profile once, then signal-led outreach will appear here."
-            : `Prospects: ${pulse.prospects.count}. Fresh signals: ${pulse.signals.count}. Active outreach: ${pulse.outreach.count}. Campaign ideas: ${pulse.campaigns.count}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
+            : `Prospects: ${pulse.prospects.count}. Fresh Signals: ${pulse.signals.count}. Active Conversations: ${pulse.outreach.count}. Play runs today: ${pulse.campaigns.count}. Useful Outcomes this week: ${actions.useful_outcomes_7d}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
         </p>
+        <div className="mt-7 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <BriefMetric label="Prospects" value={pulse.prospects.count} />
+          <BriefMetric label="Signals" value={pulse.signals.count} />
+          <BriefMetric label="Conversations" value={pulse.outreach.count} />
+          <BriefMetric label="Outcomes" value={actions.useful_outcomes_7d} />
+        </div>
       </section>
 
-      {/* Rep tiles */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {REP_TILES.map((tile) => {
-          const metric = pulse[tile.key];
-          return (
-            <Link
-              key={tile.name}
-              href={tile.href}
-              className="group rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
-            >
-              <div className="flex items-center gap-2">
-                <span className="grid size-7 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                  <Icon name={tile.icon} size={15} />
-                </span>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
-                  {tile.role}
-                </p>
-              </div>
-              <p
-                className="mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]"
-                style={{ fontFamily: "var(--font-display)" }}
-              >
-                {tile.name}
-              </p>
-              <p className="mt-1 text-[13px] text-[var(--color-text-2)]">
-                {tile.unit(metric.count)}
-              </p>
-              {metric.last_activity_at ? (
-                <p className="mt-3 text-[12px] text-[var(--color-text-3)]">
-                  Fresh {timeAgo(new Date(metric.last_activity_at))}
-                </p>
-              ) : null}
-            </Link>
-          );
-        })}
+      {/* Operating loop */}
+      <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12">
+        <OperatingLoop pulse={pulse} actions={actions} />
+        <PriorityActions actions={priorityActions} />
       </section>
 
       {/* Two feeds */}
@@ -316,7 +376,7 @@ function BriefView({
             <EmptyState
               title="No signals yet."
               hint="Bombsell will surface good-fit opportunities after prospecting is tuned."
-              cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
+              cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
             />
           }
         >
@@ -368,10 +428,17 @@ function latestPulseDate(pulse: GtmPulse): Date | null {
   return new Date(Math.max(...times));
 }
 
-function heroWorkVerb(today: string): string {
-  const verbs = ["working quietly", "moving the day forward", "keeping the canvas warm", "finding the next useful move"];
-  const seed = today.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return verbs[seed % verbs.length];
+function BriefMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(21,19,15,0.74)] px-4 py-3">
+      <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-3)]">
+        {label}
+      </span>
+      <strong className="mt-2 block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
+        {value}
+      </strong>
+    </div>
+  );
 }
 
 function Feed({
@@ -387,9 +454,9 @@ function Feed({
 }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
   return (
-    <div>
-      <div className="mb-6 flex items-baseline justify-between">
-        <p className="text-[10.5px] font-medium uppercase tracking-[0.2em] text-[var(--color-text-3)]">
+    <div className="rounded-[10px] border border-[var(--color-line-2)] bg-[rgba(12,11,8,0.48)] p-4">
+      <div className="mb-4 flex items-baseline justify-between border-b border-[var(--color-line-1)] pb-3">
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
           {eyebrow}
         </p>
         <h2
@@ -418,8 +485,8 @@ function FeedRow({
   href?: string;
 }) {
   const inner = (
-    <div className="flex items-start gap-3 py-3.5">
-      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+    <div className="flex items-start gap-3 px-1 py-3.5">
+      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
         <Icon name={icon} size={16} />
       </span>
       <div className="min-w-0 flex-1">
@@ -433,7 +500,7 @@ function FeedRow({
       {pill ? (
         <span
           className={
-            "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium " +
+            "shrink-0 rounded-[8px] px-2 py-0.5 text-[10.5px] font-medium " +
             (pill.tone === "pos"
               ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
               : pill.tone === "warn"
@@ -451,7 +518,7 @@ function FeedRow({
       <li>
         <Link
           href={href}
-          className="block transition-colors hover:bg-[var(--color-ink-2)]/40"
+          className="block rounded-[8px] transition-colors hover:bg-[var(--color-ink-2)]/70"
         >
           {inner}
         </Link>
@@ -459,4 +526,157 @@ function FeedRow({
     );
   }
   return <li>{inner}</li>;
+}
+
+function OperatingLoop({
+  pulse,
+  actions,
+}: {
+  pulse: GtmPulse;
+  actions: BriefActionState;
+}) {
+  return (
+    <div>
+      <div className="mb-5 flex items-baseline justify-between">
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
+          Operating loop
+        </p>
+        <h2
+          className="text-[15px] font-medium text-[var(--color-text-2)]"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          Prospecting to learning
+        </h2>
+      </div>
+      <div className="operating-loop">
+        {OPERATING_LOOP_META.map((item) => (
+          <Link key={item.name} href={item.href} className="operating-loop-step">
+            <span className="operating-loop-index">{item.step}</span>
+            <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+              <Icon name={item.icon} size={16} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[14px] font-semibold text-[var(--color-text-1)]">
+                {item.name}
+              </span>
+              <span className="mt-0.5 block truncate text-[12.5px] text-[var(--color-text-3)]">
+                {item.unit(pulse, actions)}
+              </span>
+            </span>
+            <span className="ml-auto hidden text-right text-[12px] text-[var(--color-text-3)] md:block">
+              {item.detail(pulse, actions)}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PriorityActions({ actions }: { actions: PriorityAction[] }) {
+  return (
+    <aside className="section-note h-fit">
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">Next useful moves</p>
+      <div className="mt-4 grid gap-2">
+        {actions.map((action) => (
+          <Link key={action.title} href={action.href} className="priority-action">
+            <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+              <Icon name={action.icon} size={16} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+                {action.title}
+              </span>
+              <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
+                {action.detail}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+interface PriorityAction {
+  title: string;
+  detail: string;
+  href: string;
+  icon: string;
+}
+
+function buildPriorityActions(
+  pulse: GtmPulse,
+  actions: BriefActionState,
+): PriorityAction[] {
+  const items: PriorityAction[] = [];
+  if (pulse.prospects.count === 0) {
+    items.push({
+      title: "Build the prospect graph",
+      detail: "Profile, ICP, voice, and channel pace are the first inputs.",
+      href: "/dashboard/prospecting",
+      icon: "person",
+    });
+  }
+  if (actions.unhealthy_channels > 0 || actions.bounced_24h > 0) {
+    items.push({
+      title: "Restore channel health",
+      detail: `${actions.unhealthy_channels} channel ${
+        actions.unhealthy_channels === 1 ? "account needs" : "accounts need"
+      } attention. ${actions.bounced_24h} ${
+        actions.bounced_24h === 1 ? "bounce" : "bounces"
+      } today.`,
+      href: "/dashboard/deliverability",
+      icon: "health_and_safety",
+    });
+  }
+  if (actions.pending_reviews > 0) {
+    items.push({
+      title: "Review judged drafts",
+      detail: `${actions.pending_reviews} ${
+        actions.pending_reviews === 1 ? "draft is" : "drafts are"
+      } waiting for a human decision.`,
+      href: "/dashboard/review",
+      icon: "rate_review",
+    });
+  }
+  if (pulse.signals.count > 0) {
+    items.push({
+      title: "Prepare Signal-led outreach",
+      detail: `${pulse.signals.count} fresh ${
+        pulse.signals.count === 1 ? "Signal has" : "Signals have"
+      } timing evidence.`,
+      href: "/dashboard/signals",
+      icon: "sensors",
+    });
+  }
+  if (pulse.outreach.count > 0) {
+    items.push({
+      title: "Move active Conversations",
+      detail: `${pulse.outreach.count} ${
+        pulse.outreach.count === 1 ? "thread is" : "threads are"
+      } still open across email and LinkedIn.`,
+      href: "/dashboard/conversations",
+      icon: "forum",
+    });
+  }
+  if (actions.useful_outcomes_7d > 0) {
+    items.push({
+      title: "Scale what produced Outcomes",
+      detail: `${actions.useful_outcomes_7d} useful ${
+        actions.useful_outcomes_7d === 1 ? "Outcome" : "Outcomes"
+      } can sharpen the next Play.`,
+      href: "/dashboard/campaigns",
+      icon: "task_alt",
+    });
+  }
+  if (items.length === 0) {
+    items.push({
+      title: "Refresh Signals",
+      detail: "No urgent work is waiting. Check the latest market movement.",
+      href: "/dashboard/signals",
+      icon: "refresh",
+    });
+  }
+  return items.slice(0, 4);
 }

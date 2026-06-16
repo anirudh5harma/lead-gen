@@ -10,6 +10,12 @@ import type {
 import type { GraphCompany, GraphPerson } from "../../../graph/types.ts";
 import type { LLMClient } from "../../llm/types.ts";
 import type { ProceduralExemplar } from "../../memory/types.ts";
+import {
+  fallbackSeedPatternKey,
+  outreachPatternCandidates,
+  outreachSkillPromptBlock,
+  type SelectedOutreachSkill,
+} from "../../skills/outreach.ts";
 import type { ResearchResult } from "./researcher.ts";
 import type { RoleAgent, RoleAgentContext } from "../types.ts";
 import type { EventBus } from "../../../substrate/events/index.ts";
@@ -20,12 +26,16 @@ export interface SignalLinkedInWriterBrief {
   research: Pick<ResearchResult, "signal_summary" | "counterparty_summary">;
   person: Pick<GraphPerson, "full_name" | "given_name">;
   company?: Pick<GraphCompany, "name" | "industry"> | null;
+  skill?: SelectedOutreachSkill | null;
 }
 
 export interface SignalLinkedInWriterDraft {
   body: string;
   exemplar_ids: string[];
   procedural_exemplars: ProceduralExemplar[];
+  pattern_key: string;
+  seed_pattern_key: string | null;
+  skill: SelectedOutreachSkill | null;
 }
 
 export interface LinkedInWriterRoleOptions {
@@ -39,13 +49,20 @@ export function createLinkedInWriterRole(
     kind: "writer",
     name: opts.llm ? "writer.linkedin.signal.llm" : "writer.linkedin.signal.deterministic",
     async invoke(brief, ctx) {
-      const procedural_exemplars = await ctx.memory.procedural.topForPattern(
-        { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id },
-        brief.pattern_key,
-        3,
-      );
+      const candidates = outreachPatternCandidates(brief.pattern_key, brief.skill);
+      const {
+        pattern_key,
+        seed_pattern_key,
+        procedural_exemplars,
+      } = await topLinkedInProceduralExemplars(brief, ctx, candidates);
       if (!opts.llm) {
-        return deterministicLinkedInDraft(brief, ctx, procedural_exemplars);
+        return deterministicLinkedInDraft(
+          brief,
+          ctx,
+          procedural_exemplars,
+          pattern_key,
+          seed_pattern_key,
+        );
       }
 
       const response = await opts.llm.complete({
@@ -75,8 +92,43 @@ export function createLinkedInWriterRole(
         body: parsed.body.trim(),
         exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
         procedural_exemplars,
+        pattern_key,
+        seed_pattern_key,
+        skill: brief.skill ?? null,
       };
     },
+  };
+}
+
+async function topLinkedInProceduralExemplars(
+  brief: SignalLinkedInWriterBrief,
+  ctx: RoleAgentContext,
+  candidates: string[],
+): Promise<{
+  pattern_key: string;
+  seed_pattern_key: string | null;
+  procedural_exemplars: ProceduralExemplar[];
+}> {
+  const scope = { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id };
+  for (const pattern_key of candidates) {
+    const procedural_exemplars = await ctx.memory.procedural.topForPattern(
+      scope,
+      pattern_key,
+      3,
+    );
+    if (procedural_exemplars.length > 0) {
+      return {
+        pattern_key,
+        seed_pattern_key: fallbackSeedPatternKey(candidates, pattern_key),
+        procedural_exemplars,
+      };
+    }
+  }
+  const pattern_key = candidates[0] ?? brief.pattern_key;
+  return {
+    pattern_key,
+    seed_pattern_key: fallbackSeedPatternKey(candidates, pattern_key),
+    procedural_exemplars: [],
   };
 }
 
@@ -97,6 +149,7 @@ function linkedInWriterPrompt(
     brief.company?.industry ? `Industry: ${brief.company.industry}` : null,
     `Signal: ${brief.research.signal_summary}`,
     `Counterparty: ${brief.research.counterparty_summary}`,
+    outreachSkillPromptBlock(brief.skill),
     ctx.workspace_context_markdown
       ? `Workspace context:\n${ctx.workspace_context_markdown}`
       : null,
@@ -122,6 +175,8 @@ function deterministicLinkedInDraft(
   brief: SignalLinkedInWriterBrief,
   ctx: RoleAgentContext,
   procedural_exemplars: ProceduralExemplar[],
+  pattern_key: string,
+  seed_pattern_key: string | null,
 ): SignalLinkedInWriterDraft {
   const firstName =
     brief.person.given_name ??
@@ -139,6 +194,9 @@ function deterministicLinkedInDraft(
     body,
     exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
     procedural_exemplars,
+    pattern_key,
+    seed_pattern_key,
+    skill: brief.skill ?? null,
   };
 }
 

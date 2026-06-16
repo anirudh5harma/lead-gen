@@ -1,10 +1,16 @@
-import { createDeepSeekClientFromEnv } from "../core/agents/llm/index.ts";
 import {
   registerSignalProjectors,
-  startClassifyWorkflow,
 } from "../core/ingest/index.ts";
+import {
+  dispatchSignalMatchingWorkflowFromIngestedEvent,
+  registerSignalMatchingEventDispatcher,
+} from "../core/product/app.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
+import {
+  createRestateWorkflowRuntime,
+  restateBearerFromEnv,
+} from "../core/substrate/workflows/index.ts";
 
 const natsUrl = process.env.NATS_URL?.trim();
 if (!natsUrl) {
@@ -12,6 +18,10 @@ if (!natsUrl) {
 }
 
 const natsCreds = process.env.NATS_CREDS?.trim();
+const restateIngressUrl = process.env.RESTATE_INGRESS_URL?.trim();
+if (!restateIngressUrl) {
+  throw new Error("RESTATE_INGRESS_URL is required to run signal projectors");
+}
 const pool = getPool();
 const bus = await createJournaledNatsEventBus({
   pool,
@@ -20,7 +30,10 @@ const bus = await createJournaledNatsEventBus({
   ...optionalPositiveNumber(process.env.NATS_STREAM_MAX_BYTES, "streamMaxBytes"),
   ...optionalPositiveNumber(process.env.NATS_STREAM_MAX_AGE_MS, "streamMaxAgeMs"),
 });
-const llm = createDeepSeekClientFromEnv();
+const workflows = createRestateWorkflowRuntime({
+  ingressUrl: restateIngressUrl,
+  bearer: restateBearerFromEnv(),
+});
 
 const projectorSubscriptions = await registerSignalProjectors(
   { pool, bus },
@@ -30,17 +43,15 @@ const projectorSubscriptions = await registerSignalProjectors(
     },
   },
 );
-const classifier = await startClassifyWorkflow(
+const signalMatchingSubscription = await registerSignalMatchingEventDispatcher(
   {
-    pool,
-    bus,
-    llm,
-    rethrowErrors: true,
+    subscribe(eventType, handler, durableName) {
+      return bus.subscribeScoped("*", eventType, handler, { durableName });
+    },
   },
   {
-    subscribe(handler, durableName) {
-      return bus.subscribeScoped("*", "signal.ingested", handler, { durableName });
-    },
+    dispatchSignalMatching: (event) =>
+      dispatchSignalMatchingWorkflowFromIngestedEvent(event, { pool, workflows }),
   },
 );
 
@@ -66,7 +77,7 @@ console.log("[signal-projectors] consuming signal classification lifecycle event
 async function shutdown(): Promise<void> {
   clearInterval(relayTimer);
   await Promise.all([
-    classifier.subscription.unsubscribe(),
+    signalMatchingSubscription.unsubscribe(),
     ...projectorSubscriptions.map((subscription) => subscription.unsubscribe()),
   ]);
   await bus.close();

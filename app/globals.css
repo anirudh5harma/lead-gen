@@ -1,46 +1,43 @@
 @import "tailwindcss";
 
-/* ─────────────────────────────────────────────────────────────
-   Bombsell workspace canvas
-   Notion-like page calm + Obsidian-like connected work maps.
-   ───────────────────────────────────────────────────────────── */
+/* Monaco-inspired product operating surface. */
 
 @theme inline {
-  /* Surfaces: bright cool canvas */
-  --color-ink-0: #ffffff;        /* page / cards */
-  --color-ink-1: #f5f8fb;        /* app bg — bright cool */
-  --color-ink-2: #eaeff4;        /* panel / muted fill */
-  --color-ink-3: #dfe6ec;        /* selected / secondary fill */
-  --color-ink-4: #d0dae2;        /* hover */
+  /* Surfaces: locked dark, product-pane hierarchy */
+  --color-ink-0: #15130f;
+  --color-ink-1: #070806;
+  --color-ink-2: #1d1a13;
+  --color-ink-3: #282319;
+  --color-ink-4: #342c1e;
 
-  /* Borders: cool hairlines */
-  --color-line-1: #1f2a3318;
-  --color-line-2: #1f2a3333;
-  --color-line-3: #2e6f7455;
+  /* Borders: Monaco-like warm hairlines */
+  --color-line-1: #f7ddb814;
+  --color-line-2: #f7ddb82b;
+  --color-line-3: #d6b36566;
 
-  /* Text: cool ink */
-  --color-text-1: #1d252e;       /* primary */
-  --color-text-2: #4d5660;       /* secondary */
-  --color-text-3: #69727d;       /* tertiary / labels */
-  --color-text-4: #a1aab4;       /* hints */
+  /* Text: high-contrast warm neutrals */
+  --color-text-1: #f5ead7;
+  --color-text-2: #c8bea7;
+  --color-text-3: #918774;
+  --color-text-4: #635947;
 
-  /* Accent: muted teal (fills/decoration use --color-accent; text/links use -hi) */
-  --color-accent: #2e6f74;
-  --color-accent-soft: #2e6f7416;
-  --color-accent-bg: #d9eaea;
-  --color-accent-hi: #235458;
-  --color-accent-on: #ffffff;
+  /* Accent: singular amber action color */
+  --color-accent: #c9a35b;
+  --color-accent-soft: #c9a35b1f;
+  --color-accent-bg: #2a2114;
+  --color-accent-hi: #f0c66a;
+  --color-accent-on: #090806;
 
   /* Semantic */
-  --color-pos: #2f8f6b;
-  --color-pos-bg: #e6f3ee;
-  --color-warn: #9a6a15;
-  --color-warn-bg: #f5ecd7;
-  --color-neg: #c44e44;
-  --color-neg-bg: #f6e2de;
-  --color-canvas-grid: #1f2a330a;
-  --color-canvas-grid-strong: #2e6f741f;
-  --color-canvas-wash: #fafcfe;
+  --color-pos: #67d19a;
+  --color-pos-bg: #123521;
+  --color-warn: #f0c66a;
+  --color-warn-bg: #342715;
+  --color-neg: #ff8b78;
+  --color-neg-bg: #3a1712;
+  --color-canvas-grid: #f7ddb80a;
+  --color-canvas-grid-strong: #c9a35b24;
+  --color-canvas-wash: #0b0a08;
 
   /* Fonts */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
@@ -48,52 +45,51 @@
   --font-serif: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
 
-  /* ── "Bombsell workspace canvas" palette ── */
-  --color-surface: #f5f8fb;
-  --color-surface-bright: #ffffff;
-  --color-surface-dim: #e6ecf1;
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f0f4f8;
-  --color-surface-container: #e9eef3;
-  --color-surface-container-high: #e0e7ed;
-  --color-surface-container-highest: #d2dbe3;
-  --color-on-surface: #1d252e;
-  --color-on-surface-variant: #4d5660;
-  --color-outline: #69727d;
-  --color-outline-variant: #d5dde4;
-  --color-background: #f5f8fb;
-  --color-on-background: #1d252e;
+  --color-surface: #090907;
+  --color-surface-bright: #17140f;
+  --color-surface-dim: #0d0c09;
+  --color-surface-container-lowest: #100f0c;
+  --color-surface-container-low: #17140f;
+  --color-surface-container: #1d1a13;
+  --color-surface-container-high: #282319;
+  --color-surface-container-highest: #342c1e;
+  --color-on-surface: #f5ead7;
+  --color-on-surface-variant: #c8bea7;
+  --color-outline: #918774;
+  --color-outline-variant: #3b3324;
+  --color-background: #070806;
+  --color-on-background: #f5ead7;
 
-  --color-primary: #2a6065;
-  --color-on-primary: #ffffff;
-  --color-primary-container: #d9eaea;
-  --color-on-primary-container: #06302f;
-  --color-primary-fixed: #d9eaea;
-  --color-primary-fixed-dim: #aed3d3;
-  --color-inverse-primary: #aed3d3;
+  --color-primary: #c9a35b;
+  --color-on-primary: #090806;
+  --color-primary-container: #2a2114;
+  --color-on-primary-container: #f5ead7;
+  --color-primary-fixed: #2a2114;
+  --color-primary-fixed-dim: #4a381e;
+  --color-inverse-primary: #7a5b23;
 
-  --color-secondary: #4f6f79;
-  --color-on-secondary: #ffffff;
-  --color-secondary-container: #e0f1f4;
-  --color-on-secondary-container: #123036;
-  --color-secondary-fixed: #e0f1f4;
-  --color-secondary-fixed-dim: #c0d9de;
+  --color-secondary: #8f8168;
+  --color-on-secondary: #090806;
+  --color-secondary-container: #211d16;
+  --color-on-secondary-container: #e7dcc8;
+  --color-secondary-fixed: #211d16;
+  --color-secondary-fixed-dim: #2b251b;
 
-  --color-tertiary: #8a6c3a;
-  --color-on-tertiary: #ffffff;
-  --color-tertiary-container: #f5ead7;
-  --color-on-tertiary-container: #30200a;
-  --color-tertiary-fixed: #f5ead7;
-  --color-tertiary-fixed-dim: #dcc8a8;
+  --color-tertiary: #67d19a;
+  --color-on-tertiary: #08110c;
+  --color-tertiary-container: #123521;
+  --color-on-tertiary-container: #dff7e8;
+  --color-tertiary-fixed: #123521;
+  --color-tertiary-fixed-dim: #1b4b2f;
 
-  --color-error: #c44e44;
-  --color-on-error: #ffffff;
-  --color-error-container: #f7e3df;
-  --color-on-error-container: #5a120e;
+  --color-error: #ff8b78;
+  --color-on-error: #190806;
+  --color-error-container: #3a1712;
+  --color-on-error-container: #ffd4cc;
 
-  --color-inverse-surface: #1d2430;
-  --color-inverse-on-surface: #f4f6f9;
-  --color-surface-tint: #2a6065;
+  --color-inverse-surface: #f5ead7;
+  --color-inverse-on-surface: #12100c;
+  --color-surface-tint: #c9a35b;
 
   /* ── Stitch spacing scale ── */
   --spacing-base: 4px;
@@ -150,7 +146,7 @@
   --text-body-main--font-weight: 400;
 }
 
-:root { color-scheme: light; }
+:root { color-scheme: dark; }
 
 html, body {
   background: var(--color-ink-1);
@@ -164,8 +160,8 @@ html, body {
 /* Subtle scrollbars */
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: #00000014; border-radius: 999px; }
-*::-webkit-scrollbar-thumb:hover { background: #00000028; }
+*::-webkit-scrollbar-thumb { background: #f7ddb824; border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: #f7ddb842; }
 
 /* Selection */
 ::selection { background: var(--color-accent); color: var(--color-accent-on); }
@@ -227,7 +223,7 @@ html, body {
 .display-serif {
   font-family: var(--font-display);
   font-weight: 500;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
   line-height: 1.0;
   text-wrap: balance;
 }
@@ -358,7 +354,7 @@ button:active, a:active {
 }
 .cmdbar:focus-within {
   border-color: var(--color-text-1);
-  box-shadow: 0 0 0 4px #1a18160d;
+  box-shadow: 0 0 0 4px #c9a35b1f;
 }
 .cmdbar input, .cmdbar textarea {
   flex: 1; min-width: 0;
@@ -402,8 +398,8 @@ button:active, a:active {
 
 /* Code block */
 .codeblock {
-  background: #111d19;
-  color: #edf5f0;
+  background: #0b0a08;
+  color: var(--color-text-1);
   border-radius: 12px;
   padding: 16px 18px;
   font-family: var(--font-mono);
@@ -419,25 +415,16 @@ button:active, a:active {
 
 /* ── Canvas surfaces ─────────────────────────────────────────── */
 
-/* Warm paper sheet: creamy wash + sheet vignette. Texture layers sit ABOVE
-   this wash (positive z) so they actually show; page content uses z-10. */
 .canvas-bg {
   position: relative;
   isolation: isolate;
   background-color: var(--color-ink-1);
   background-image:
-    /* knowledge-graph nodes — sparse teal accent points */
-    radial-gradient(
-      circle,
-      color-mix(in srgb, var(--color-accent) 18%, transparent) 1.6px,
-      transparent 2px
-    ),
-    /* base node mesh — fine cool dots where grid lines used to cross */
-    radial-gradient(circle, rgba(31, 42, 51, 0.10) 1.2px, transparent 1.6px),
-    radial-gradient(135% 110% at 30% 0%, rgba(255, 255, 255, 0.85), transparent 52%),
-    radial-gradient(125% 125% at 50% 34%, transparent 62%, rgba(31, 42, 51, 0.04) 100%),
-    linear-gradient(170deg, #fbfdff 0%, #f5f8fb 58%, #edf2f7 100%);
-  background-size: 132px 132px, 44px 44px, auto, auto, auto;
+    linear-gradient(to right, rgba(247, 221, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(247, 221, 184, 0.035) 1px, transparent 1px),
+    radial-gradient(circle at center, rgba(247, 221, 184, 0.08) 1px, transparent 1.4px),
+    linear-gradient(180deg, #10100d 0%, #070806 48%, #0b0907 100%);
+  background-size: 96px 96px, 96px 96px, 34px 34px, auto;
   background-position: center top;
   background-attachment: fixed;
 }
@@ -451,8 +438,8 @@ button:active, a:active {
   position: absolute; left: 50%; top: 50%;
   width: 90%; aspect-ratio: 1; transform: translate(-50%, -50%);
   border-radius: 999px; z-index: 0; pointer-events: none;
-  background: radial-gradient(circle, color-mix(in srgb, var(--color-accent) 26%, transparent), transparent 64%);
-  filter: blur(38px); opacity: 0.5;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  filter: blur(26px); opacity: 0.28;
 }
 
 /* Sun — Bombsell wordmark nucleus */
@@ -462,11 +449,11 @@ button:active, a:active {
   width: 20%; aspect-ratio: 1; border-radius: 999px;
   display: grid; place-items: center;
   background: var(--color-accent-hi);
-  border: 1px solid color-mix(in srgb, var(--color-accent-hi) 80%, #000 0%);
+  border: 1px solid color-mix(in srgb, var(--color-accent-hi) 70%, transparent);
   box-shadow:
     0 0 0 6px color-mix(in srgb, var(--color-accent) 10%, transparent),
     0 0 38px 10px color-mix(in srgb, var(--color-accent) 30%, transparent),
-    0 22px 50px -28px rgba(35, 84, 88, 0.55);
+    0 22px 50px -28px rgba(201, 163, 91, 0.55);
   z-index: 6;
 }
 .solar-sun-mark {
@@ -474,7 +461,7 @@ button:active, a:active {
   font-weight: 600;
   font-size: clamp(10px, 1.6vw, 12.5px);
   letter-spacing: -0.015em;
-  color: #ffffff;
+  color: var(--color-accent-on);
   line-height: 1;
 }
 .solar-sun::after {
@@ -505,10 +492,10 @@ button:active, a:active {
 .orbit-4 { width: 96%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: -27s; }
 
 /* Per-orbit pill colors — distinct hues, complementing teal accent. */
-.orbit-1 .planet-icon { background: #d9eaea; color: #235458; } /* sea-teal */
-.orbit-2 .planet-icon { background: #dde2f1; color: #2e3d6b; } /* deep indigo */
-.orbit-3 .planet-icon { background: #f1e5cb; color: #7a5a1a; } /* warm amber */
-.orbit-4 .planet-icon { background: #dceadb; color: #2f5b3b; } /* muted sage */
+.orbit-1 .planet-icon { background: #2a2114; color: #f0c66a; }
+.orbit-2 .planet-icon { background: #1d2b21; color: #67d19a; }
+.orbit-3 .planet-icon { background: #261e2d; color: #d7b7ff; }
+.orbit-4 .planet-icon { background: #301c17; color: #ff9a87; }
 @keyframes solar-spin {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to   { transform: translate(-50%, -50%) rotate(360deg); }
@@ -536,7 +523,7 @@ button:active, a:active {
   border-radius: 999px;
   border: 1px solid var(--color-line-2);
   background: var(--color-ink-0);
-  box-shadow: 0 10px 22px -14px rgba(35, 84, 88, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: 0 18px 42px -30px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(247, 221, 184, 0.08);
   white-space: nowrap;
 }
 .planet-icon {
@@ -560,10 +547,10 @@ button:active, a:active {
   position: sticky;
   top: 14px;
   z-index: 20;
-  border: 1px solid rgba(36, 36, 33, 0.12);
+  border: 1px solid var(--color-line-2);
   border-radius: 16px;
-  background: rgba(238, 238, 234, 0.88);
-  box-shadow: 0 1px 0 rgba(36, 36, 33, 0.04);
+  background: rgba(17, 15, 11, 0.88);
+  box-shadow: 0 1px 0 rgba(247, 221, 184, 0.04);
 }
 
 .workspace-main {
@@ -606,7 +593,7 @@ button:active, a:active {
 .workspace-row-active {
   background: var(--color-ink-0);
   color: var(--color-text-1);
-  box-shadow: 0 1px 0 rgba(32, 32, 28, 0.04);
+  box-shadow: 0 1px 0 rgba(247, 221, 184, 0.04);
 }
 
 .graph-link {
@@ -642,9 +629,10 @@ button:active, a:active {
   inset: -8%;
   z-index: 0;
   background:
-    conic-gradient(from 28deg at 42% 46%, transparent 0deg, rgba(111, 91, 213, 0.1) 56deg, transparent 112deg, rgba(47, 143, 107, 0.08) 186deg, transparent 248deg, rgba(154, 106, 21, 0.08) 306deg, transparent 360deg);
+    linear-gradient(115deg, transparent 0 18%, rgba(201, 163, 91, 0.1) 38%, transparent 58%),
+    linear-gradient(22deg, transparent 0 30%, rgba(103, 209, 154, 0.06) 54%, transparent 74%);
   filter: blur(6px);
-  opacity: 0.45;
+  opacity: 0.32;
   animation: brief-drift 22s linear infinite;
 }
 
@@ -652,10 +640,8 @@ button:active, a:active {
   inset: -8%;
   z-index: 0;
   background:
-    radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.58), transparent 18%),
-    radial-gradient(circle at 76% 18%, rgba(255, 255, 255, 0.48), transparent 14%),
-    linear-gradient(112deg, transparent 0 22%, rgba(255, 255, 255, 0.38) 42%, transparent 64%);
-  opacity: 0.32;
+    linear-gradient(112deg, transparent 0 22%, rgba(247, 221, 184, 0.08) 42%, transparent 64%);
+  opacity: 0.28;
 }
 
 .brief-node,
@@ -680,8 +666,8 @@ button:active, a:active {
   align-items: center;
   min-height: 28px;
   border-radius: 999px;
-  border: 1px solid rgba(36, 36, 33, 0.1);
-  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--color-line-2);
+  background: rgba(20, 18, 13, 0.78);
   padding: 0 10px;
   color: var(--color-text-2);
   font-size: 13px;
@@ -692,9 +678,9 @@ button:active, a:active {
   display: inline-flex;
   min-height: 28px;
   align-items: center;
-  border: 1px solid rgba(36, 36, 33, 0.1);
+  border: 1px solid var(--color-line-2);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(20, 18, 13, 0.62);
   padding: 0 10px;
   color: var(--color-text-3);
 }
@@ -705,9 +691,9 @@ button:active, a:active {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid rgba(36, 36, 33, 0.12);
+  border: 1px solid var(--color-line-2);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(20, 18, 13, 0.82);
   padding: 0 16px;
   color: var(--color-text-1);
   font-size: 14px;
@@ -716,8 +702,8 @@ button:active, a:active {
 }
 
 .brief-button:hover {
-  border-color: rgba(111, 91, 213, 0.35);
-  background: rgba(255, 255, 255, 0.92);
+  border-color: var(--color-line-3);
+  background: rgba(31, 27, 19, 0.95);
 }
 
 .brief-button-primary {
@@ -736,9 +722,9 @@ button:active, a:active {
   gap: 14px;
   width: min(42vw, 300px);
   border-radius: 14px;
-  border: 1px solid rgba(36, 36, 33, 0.12);
+  border: 1px solid var(--color-line-2);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(251, 251, 248, 0.78));
+    linear-gradient(180deg, rgba(24, 21, 15, 0.95), rgba(14, 13, 10, 0.86));
   padding: 16px;
   box-shadow: 0 1px 0 rgba(36, 36, 33, 0.05);
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
@@ -753,10 +739,65 @@ button:active, a:active {
 }
 
 .section-note {
-  border: 1px solid rgba(36, 36, 33, 0.11);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 16px;
+  border: 1px solid var(--color-line-2);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(23, 20, 14, 0.88), rgba(12, 11, 8, 0.82));
+  padding: 18px;
+  box-shadow: inset 0 1px 0 rgba(247, 221, 184, 0.06);
+}
+
+.operating-loop {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--color-line-2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(12, 11, 8, 0.66);
+}
+
+.operating-loop-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  border-bottom: 1px solid var(--color-line-1);
+  color: inherit;
+  transition: background 160ms ease, padding 160ms ease;
+}
+
+@media (min-width: 768px) {
+  .operating-loop-step {
+    grid-template-columns: 36px 32px minmax(0, 1fr) minmax(132px, 180px);
+  }
+}
+
+.operating-loop-step:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  padding-inline: 10px;
+}
+
+.operating-loop-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-4);
+}
+
+.priority-action {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  border-radius: 8px;
+  padding: 10px;
+  color: inherit;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.priority-action:hover {
+  background: rgba(38, 31, 20, 0.82);
+  transform: translateY(-1px);
 }
 
 .dashboard-loader {
@@ -781,7 +822,8 @@ button:active, a:active {
   inset: -18%;
   z-index: 0;
   background:
-    conic-gradient(from 36deg at 48% 52%, transparent 0deg, rgba(111, 91, 213, 0.11) 60deg, transparent 118deg, rgba(47, 143, 107, 0.1) 190deg, transparent 252deg, rgba(154, 106, 21, 0.08) 318deg, transparent 360deg);
+    linear-gradient(116deg, transparent 0 20%, rgba(201, 163, 91, 0.14) 44%, transparent 66%),
+    linear-gradient(28deg, transparent 0 34%, rgba(103, 209, 154, 0.08) 56%, transparent 74%);
   filter: blur(8px);
   opacity: 0.5;
   animation: brief-drift 24s linear infinite;
@@ -791,9 +833,8 @@ button:active, a:active {
   inset: 16% 10%;
   z-index: 0;
   background:
-    linear-gradient(112deg, transparent 0 18%, rgba(255, 255, 255, 0.52) 42%, transparent 68%),
-    radial-gradient(circle at 74% 32%, rgba(255, 255, 255, 0.5), transparent 16%);
-  opacity: 0.44;
+    linear-gradient(112deg, transparent 0 18%, rgba(247, 221, 184, 0.12) 42%, transparent 68%);
+  opacity: 0.36;
 }
 
 .dashboard-loader-orbit {
@@ -853,7 +894,7 @@ button:active, a:active {
   border: 1px solid var(--color-line-2);
   border-radius: 10px;
   background:
-    linear-gradient(110deg, rgba(255, 255, 255, 0.7), rgba(238, 238, 234, 0.58), rgba(255, 255, 255, 0.72));
+    linear-gradient(110deg, rgba(20, 18, 13, 0.78), rgba(42, 33, 20, 0.86), rgba(20, 18, 13, 0.78));
   background-size: 220% 100%;
   animation: dashboard-loader-sheen 1.7s ease-in-out infinite;
 }
@@ -866,7 +907,7 @@ button:active, a:active {
   z-index: 60;
   height: 3px;
   overflow: hidden;
-  background: rgba(36, 36, 33, 0.06);
+  background: rgba(247, 221, 184, 0.08);
 }
 
 .dashboard-route-pending::after {
@@ -874,7 +915,7 @@ button:active, a:active {
   display: block;
   height: 100%;
   width: 42%;
-  background: linear-gradient(to right, transparent, var(--color-accent), var(--color-pos), transparent);
+  background: linear-gradient(to right, transparent, var(--color-accent-hi), var(--color-pos), transparent);
   animation: dashboard-route-progress 0.95s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
@@ -894,22 +935,18 @@ button:active, a:active {
   to { transform: translateX(260%); }
 }
 
-/* ── Onboarding panel ────────────────────────────────────────────
-   Elevated glass sheet that reads as a deliberate surface, not a
-   plain box. Layered wash + inset highlight + soft depth shadow,
-   accent hairline along the top edge. */
 .onboard-panel {
   position: relative;
   isolation: isolate;
   border-radius: 18px;
   border: 1px solid var(--color-line-1);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(247, 250, 253, 0.88) 100%);
+    linear-gradient(180deg, rgba(24, 21, 15, 0.94) 0%, rgba(12, 11, 8, 0.88) 100%);
   padding: clamp(24px, 3vw, 36px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 2px 6px -3px rgba(31, 42, 51, 0.12),
-    0 28px 60px -34px rgba(31, 42, 51, 0.45);
+    inset 0 1px 0 rgba(247, 221, 184, 0.12),
+    0 2px 6px -3px rgba(0, 0, 0, 0.4),
+    0 28px 60px -34px rgba(0, 0, 0, 0.82);
   backdrop-filter: blur(10px);
   overflow: hidden;
 }
@@ -971,7 +1008,7 @@ button:active, a:active {
   font-size: 14px;
   color: var(--color-text-1);
   outline: none;
-  box-shadow: inset 0 1px 2px rgba(31, 42, 51, 0.04);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.32);
   transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 .onboard-field input::placeholder { color: var(--color-text-4); }
@@ -979,7 +1016,7 @@ button:active, a:active {
 .onboard-field input:focus {
   border-color: var(--color-accent);
   box-shadow:
-    inset 0 1px 2px rgba(31, 42, 51, 0.04),
+    inset 0 1px 2px rgba(0, 0, 0, 0.32),
     0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
 .onboard-field:focus-within .onboard-field-icon { color: var(--color-accent-hi); }
@@ -988,7 +1025,7 @@ button:active, a:active {
   position: absolute;
   height: 1px;
   transform-origin: left center;
-  background: linear-gradient(to right, transparent, rgba(111, 91, 213, 0.32), rgba(47, 143, 107, 0.28), transparent);
+  background: linear-gradient(to right, transparent, rgba(201, 163, 91, 0.34), rgba(103, 209, 154, 0.22), transparent);
   pointer-events: none;
 }
 
@@ -1000,8 +1037,8 @@ button:active, a:active {
 }
 
 .brief-note:hover {
-  border-color: rgba(111, 91, 213, 0.32);
-  background: rgba(255, 255, 255, 0.95);
+  border-color: var(--color-line-3);
+  background: rgba(30, 26, 18, 0.95);
   transform: translateY(-1px);
 }
 
@@ -1012,7 +1049,7 @@ button:active, a:active {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--color-accent) 12%, white);
+  background: color-mix(in srgb, var(--color-accent) 18%, #090806);
   color: var(--color-accent-hi);
 }
 
@@ -1020,7 +1057,7 @@ button:active, a:active {
   z-index: 1;
   height: 1px;
   transform-origin: left center;
-  background: linear-gradient(to right, transparent, rgba(111, 91, 213, 0.42), rgba(47, 143, 107, 0.38), transparent);
+  background: linear-gradient(to right, transparent, rgba(201, 163, 91, 0.42), rgba(103, 209, 154, 0.28), transparent);
   opacity: 0.72;
 }
 
@@ -1028,7 +1065,7 @@ button:active, a:active {
   content: "";
   position: absolute;
   inset: -3px 0;
-  background: linear-gradient(to right, transparent 0 22%, rgba(111, 91, 213, 0.34) 45%, transparent 68%);
+  background: linear-gradient(to right, transparent 0 22%, rgba(201, 163, 91, 0.34) 45%, transparent 68%);
   animation: brief-flow 5.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
@@ -1172,11 +1209,11 @@ select:focus, select:focus-visible {
 }
 
 /* ── Stitch hairlines (warm ink @ 7%) ──────────────────────────── */
-.hairline-border { border: 1px solid rgba(26, 24, 22, 0.07); }
-.hairline-b { border-bottom: 1px solid rgba(26, 24, 22, 0.07); }
-.hairline-r { border-right: 1px solid rgba(26, 24, 22, 0.07); }
-.hairline-t { border-top: 1px solid rgba(26, 24, 22, 0.07); }
-.hairline-l { border-left: 1px solid rgba(26, 24, 22, 0.07); }
+.hairline-border { border: 1px solid var(--color-line-1); }
+.hairline-b { border-bottom: 1px solid var(--color-line-1); }
+.hairline-r { border-right: 1px solid var(--color-line-1); }
+.hairline-t { border-top: 1px solid var(--color-line-1); }
+.hairline-l { border-left: 1px solid var(--color-line-1); }
 
 /* ── Editorial agentic-GTM helpers ─────────────────────────────── */
 .agent-status-dot { width: 6px; height: 6px; border-radius: 9999px; }

@@ -36,6 +36,7 @@
     "verify:frontend-latency": "node scripts/measure-frontend-latency.mjs",
     "verify:outlook": "node --experimental-strip-types scripts/verify-outlook-readiness.ts",
     "verify:exa": "node --experimental-strip-types scripts/verify-exa-intelligence.ts",
+    "verify:agent-observability": "node --experimental-strip-types scripts/verify-agent-observability.ts",
     "verify:aws-ses": "node --experimental-strip-types scripts/verify-aws-ses.ts",
     "verify:ses": "node --experimental-strip-types scripts/verify-ses.ts",
     "repair:outlook-subscriptions": "node --experimental-strip-types scripts/repair-outlook-subscriptions.ts",
@@ -46,6 +47,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1053.0",
+    "@langchain/core": "^1.1.49",
+    "@langchain/langgraph": "^1.4.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@restatedev/restate-sdk": "^1.14.4",
     "@supabase/ssr": "^0.10.0",

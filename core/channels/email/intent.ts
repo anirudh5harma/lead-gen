@@ -7,7 +7,8 @@ import type { LLMClient } from "../../agents/llm/types.ts";
  *
  * Output classes (deliberately narrow):
  *
- *   positive          — wants to engage, asks a question, suggests time
+ *   meeting_intent    — explicitly asks to book, schedule, or receive times
+ *   positive          — wants to engage or asks a substantive question
  *   negative          — says no clearly
  *   neutral           — acknowledges, defers, asks for less context
  *   ooo               — auto-reply: out of office / on leave
@@ -16,6 +17,7 @@ import type { LLMClient } from "../../agents/llm/types.ts";
  *   spam              — looks like an autoresponder / bounce body
  *
  * Mapping to outcomes (applied by handleInboundEmail):
+ *   meeting_intent    → outcome.kind = positive_reply
  *   positive          → outcome.kind = positive_reply
  *   unsubscribe       → outcome.kind = unsubscribe
  *   do_not_contact    → outcome.kind = do_not_contact
@@ -27,6 +29,7 @@ import type { LLMClient } from "../../agents/llm/types.ts";
 
 export type ReplyIntent =
   | "positive"
+  | "meeting_intent"
   | "negative"
   | "neutral"
   | "ooo"
@@ -67,7 +70,8 @@ export interface DeepSeekIntentClassifierOptions {
 const SYSTEM_PROMPT = `You classify the intent of an inbound email reply.
 
 Choose ONE class from this fixed set:
-  positive          — wants to engage, asks a question, or suggests a time
+  meeting_intent    — explicitly asks to book, schedule, jump on a call, or receive meeting times
+  positive          — wants to engage or asks a substantive question, but does not ask to schedule
   negative          — clearly says no, not now, or not interested
   neutral           — acknowledges, defers vaguely, asks for less context
   ooo               — auto-reply: out of office, on leave, parental leave
@@ -101,6 +105,7 @@ function buildUserPrompt(input: IntentClassifierInput): string {
 function isReplyIntent(s: unknown): s is ReplyIntent {
   return (
     s === "positive" ||
+    s === "meeting_intent" ||
     s === "negative" ||
     s === "neutral" ||
     s === "ooo" ||

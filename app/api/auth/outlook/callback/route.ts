@@ -14,7 +14,7 @@ import {
   createRestateWorkflowRuntime,
   restateBearerFromEnv,
 } from "@/core/substrate/workflows/index.ts";
-import { verifyState } from "../route.ts";
+import { OUTLOOK_MAIL_AND_CALENDAR_SCOPES, verifyState } from "../route.ts";
 import { outlookConnectedRedirectPath } from "../destination.ts";
 import { getRequestUserId } from "@/lib/auth";
 import { hasWorkspaceAccess } from "@/lib/workspace";
@@ -39,8 +39,7 @@ export const dynamic = "force-dynamic";
 const TOKEN_ENDPOINT =
   "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const ME_ENDPOINT = "https://graph.microsoft.com/v1.0/me";
-const DEFAULT_SCOPES =
-  "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read";
+const DEFAULT_SCOPES = OUTLOOK_MAIL_AND_CALENDAR_SCOPES.join(" ");
 
 interface TokenResponse {
   access_token: string;
@@ -149,11 +148,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   try {
     const email = me.mail ?? me.userPrincipalName ?? me.displayName ?? "outlook";
     const pool = getPool();
-    const channelAccountId = randomUUID();
+    const channelAccountId =
+      (await findExistingOutlookAccountId(pool, state.workspace_id, me.id)) ?? randomUUID();
     const credentials = encryptCredentials(
       {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
+        scope: tokens.scope,
         expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
       },
       {
@@ -167,7 +168,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       event_type: "email.outlook.authorization.received",
       source: "user",
       producer_ref: `user:${userId}`,
-      idempotency_key: `outlook-authorization:${channelAccountId}`,
+      idempotency_key: `outlook-authorization:${channelAccountId}:${state.nonce}`,
       payload: {
         channel_account_id: channelAccountId,
         display_name: email,
@@ -198,12 +199,30 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
     await startOutlookSubscriptionRepair(state.workspace_id, channelAccountId);
 
-    const dest = new URL(outlookConnectedRedirectPath(channelAccountId), appOrigin(req));
+    const dest = outlookSuccessRedirect(req, state, channelAccountId);
     return Response.redirect(dest.toString(), 302);
   } catch (err) {
     console.error("[auth/outlook/callback] completion failed", err);
     return outlookErrorRedirect(req);
   }
+}
+
+async function findExistingOutlookAccountId(
+  pool: Pool,
+  workspace_id: string,
+  ms_user_id: string,
+): Promise<string | null> {
+  const { rows } = await pool.query<{ id: string }>(
+    `select id
+       from channel_accounts
+      where workspace_id = $1
+        and kind = 'oauth_outlook'
+        and properties ->> 'ms_user_id' = $2
+      order by created_at asc
+      limit 1`,
+    [workspace_id, ms_user_id],
+  );
+  return rows[0]?.id ?? null;
 }
 
 async function appendIngressEvent(
@@ -264,6 +283,20 @@ function outlookErrorRedirect(req: NextRequest): Response {
   dest.searchParams.set("outlook", "error");
   dest.searchParams.set("reason", "callback");
   return Response.redirect(dest.toString(), 302);
+}
+
+function outlookSuccessRedirect(
+  req: NextRequest,
+  state: { intent?: string; return_to?: string },
+  channelAccountId: string,
+): URL {
+  if (state.intent === "calendar" && state.return_to?.startsWith("/dashboard/")) {
+    const dest = new URL(state.return_to, appOrigin(req));
+    dest.searchParams.set("outlook", "calendar_connected");
+    dest.searchParams.set("channel_account_id", channelAccountId);
+    return dest;
+  }
+  return new URL(outlookConnectedRedirectPath(channelAccountId), appOrigin(req));
 }
 
 function appOrigin(req: NextRequest): string {

@@ -87,6 +87,7 @@ export { createSesSender } from "./adapters/ses.ts";
 export type { SesSender, SesSenderOptions, SesSendInput } from "./adapters/ses.ts";
 export {
   createOutlookSender,
+  isOutlookRefreshReauthorizationError,
   OutlookAuthError,
   OutlookSendError,
 } from "./adapters/outlook.ts";
@@ -100,6 +101,7 @@ export type {
 export {
   createOutlookSubscription,
   renewOutlookSubscription,
+  reauthorizeOutlookSubscription,
   deleteOutlookSubscription,
   loadSubscription as loadOutlookSubscription,
   persistOutlookSubscription,
@@ -115,12 +117,24 @@ export type {
   OutlookNotificationBatch,
   GraphMessage,
 } from "./outlook-subscription.ts";
-export { createOutlookSubscriptionRepairWorkflow } from "./outlook-subscription-workflow.ts";
+export {
+  createOutlookSubscriptionRepairWorkflow,
+  isOutlookReauthorizationRequiredError,
+} from "./outlook-subscription-workflow.ts";
 export type {
   OutlookSubscriptionRepairDeps,
   OutlookSubscriptionRepairInput,
   OutlookSubscriptionRepairSummary,
 } from "./outlook-subscription-workflow.ts";
+export {
+  getOutlookCalendarAvailability,
+  suggestOutlookMeetingTimes,
+} from "./outlook-calendar.ts";
+export type {
+  OutlookCalendarAvailability,
+  OutlookCalendarAvailabilityOptions,
+  OutlookCalendarAvailabilityReason,
+} from "./outlook-calendar.ts";
 export {
   parseSnsEnvelope,
   parseSnsNotification,

@@ -102,11 +102,11 @@ DATABASE_URL=... npm test # runs every test, including Postgres event bus
 
 ### LLM
 
-DeepSeek V4 Pro is the single default for every LLM call — drafting, hot-path judges, classification. Workspaces can BYO Anthropic / OpenAI keys, but the platform default is DeepSeek (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) "Opinionated Tech Stack").
+DeepSeek V4 Flash is the default for drafting, hot-path judges, classification, and optimizer loops. V4 Pro is reserved for explicit escalations such as hard synthesis, repeated Flash failure, or operator-approved investigation. Workspaces can BYO Anthropic / OpenAI keys, but the platform default is DeepSeek (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) "Opinionated Tech Stack").
 
 ```bash
 export DEEPSEEK_API_KEY=sk-...
-export DEEPSEEK_MODEL=deepseek-v4-pro   # optional override
+export DEEPSEEK_MODEL=deepseek-v4-flash # optional override
 ```
 
 The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` interface so swapping providers is a single-file change.
@@ -255,9 +255,9 @@ fail the platform closed; **RECOMMENDED** items degrade gracefully.
 
 **REQUIRED FOR DEPLOYED FEATURES (the feature stops, the platform still runs):**
 
-- `DEEPSEEK_API_KEY` (+ optional `DEEPSEEK_MODEL`) — the default LLM for every
-  drafting, judging, and classification call. Without it, drafts cannot be
-  produced.
+- `DEEPSEEK_API_KEY` (+ optional `DEEPSEEK_MODEL`) — the Flash-first LLM path
+  for drafting, judging, classification, and optimizer calls. Without it,
+  drafts cannot be produced.
 - `OPENAI_API_KEY` — embedding model for signal ingestion (DeepSeek does not
   yet ship embeddings).
 - `AWS_REGION`, `AWS_SNS_TOPIC_ARNS` — legacy optional managed owned-domain

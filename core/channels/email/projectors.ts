@@ -8,6 +8,7 @@ import type {
 import { decryptCredentials } from "../../substrate/auth/index.ts";
 import type { RepMemory } from "../../agents/memory/index.ts";
 import type { IntentClassifier } from "./intent.ts";
+import type { OutlookAccessTokenProvider } from "./adapters/outlook.ts";
 import { handleBounce } from "./bounces.ts";
 import { handleInboundEmail, type InboundEmail } from "./reply.ts";
 import { fetchOutlookMessage, graphMessageToInbound } from "./outlook-subscription.ts";
@@ -30,6 +31,7 @@ export interface EmailIngressProjectorDeps {
   classifier: IntentClassifier;
   memory?: RepMemory;
   fetchImpl?: typeof fetch;
+  outlookAccessTokens?: OutlookAccessTokenProvider;
   outlookSubscriptionRepair?: OutlookSubscriptionRepairStarter;
 }
 
@@ -85,6 +87,7 @@ export async function registerEmailIngressProjectors(
           event.workspace_id,
           event.payload.channel_account_id,
           event.payload.resource_id,
+          deps.outlookAccessTokens,
           deps.fetchImpl,
         );
         if (!inbound) return;
@@ -166,8 +169,18 @@ async function fetchInboundFromOutlookNotification(
   workspaceId: string,
   channelAccountId: string,
   resourceId: string,
+  accessTokens?: OutlookAccessTokenProvider,
   fetchImpl?: typeof fetch,
 ): Promise<InboundEmail | null> {
+  if (accessTokens) {
+    const accessToken = await accessTokens.getAccessToken(channelAccountId);
+    const message = await fetchOutlookMessage({
+      accessToken,
+      messageId: resourceId,
+      fetchImpl,
+    });
+    return graphMessageToInbound(message, workspaceId, channelAccountId);
+  }
   const { rows } = await pool.query<{ credentials: unknown }>(
     `select credentials
        from channel_accounts

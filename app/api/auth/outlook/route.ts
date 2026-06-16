@@ -14,12 +14,15 @@ import { getActiveWorkspaceSession } from "@/lib/workspace";
 export const dynamic = "force-dynamic";
 
 const AUTHORIZE = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
-const DEFAULT_SCOPES = [
+export const OUTLOOK_MAIL_AND_CALENDAR_SCOPES = [
   "offline_access",
   "https://graph.microsoft.com/Mail.Send",
   "https://graph.microsoft.com/Mail.Read",
+  "https://graph.microsoft.com/Calendars.ReadBasic",
   "https://graph.microsoft.com/User.Read",
-];
+] as const;
+
+type OutlookAuthIntent = "mail" | "calendar";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const session = await getActiveWorkspaceSession();
@@ -33,11 +36,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   const sessionSecret = process.env.SESSION_SECRET;
   if (!sessionSecret) return new Response("SESSION_SECRET is not set", { status: 500 });
 
+  const intent = outlookAuthIntent(req.nextUrl.searchParams.get("intent"));
+  const returnTo = safeReturnTo(req.nextUrl.searchParams.get("return_to"));
   const state = signState(
     {
       workspace_id: session.workspace.id,
       user_id: session.user_id,
       redirect_uri: redirectUri,
+      intent,
+      ...(returnTo ? { return_to: returnTo } : {}),
       nonce: randomBytes(12).toString("base64url"),
       iat: Date.now(),
     },
@@ -49,9 +56,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("redirect_uri", redirectUri);
   authorizeUrl.searchParams.set("response_mode", "query");
-  authorizeUrl.searchParams.set("scope", DEFAULT_SCOPES.join(" "));
+  authorizeUrl.searchParams.set("scope", OUTLOOK_MAIL_AND_CALENDAR_SCOPES.join(" "));
   authorizeUrl.searchParams.set("state", state);
-  authorizeUrl.searchParams.set("prompt", "select_account");
+  authorizeUrl.searchParams.set("prompt", intent === "calendar" ? "consent" : "select_account");
 
   return Response.redirect(authorizeUrl.toString(), 302);
 }
@@ -60,6 +67,8 @@ interface OAuthState {
   workspace_id: string;
   user_id: string;
   redirect_uri?: string;
+  intent?: OutlookAuthIntent;
+  return_to?: string;
   nonce: string;
   iat: number;
 }
@@ -95,4 +104,18 @@ function appOrigin(req: NextRequest): string {
   if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, "");
   const url = new URL(req.url);
   return `${url.protocol}//${url.host}`;
+}
+
+function outlookAuthIntent(value: string | null): OutlookAuthIntent {
+  return value === "calendar" ? "calendar" : "mail";
+}
+
+function safeReturnTo(value: string | null): string | null {
+  if (!value?.startsWith("/dashboard/")) return null;
+  try {
+    const parsed = new URL(value, "https://app.local");
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return null;
+  }
 }

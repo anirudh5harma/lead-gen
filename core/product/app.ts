@@ -18,10 +18,63 @@ import {
   SignalKind,
   type SignalKind as SignalKindValue,
 } from "../primitives/signal.ts";
+import type { Signal } from "../primitives/index.ts";
+import {
+  createWorkspaceActivationSetupWorkflow,
+  createWorkspaceCampaignStrategyWorkflow,
+  createWorkspaceChannelReadinessWorkflow,
+  createWorkspaceCompanyBrainBriefWorkflow,
+  createWorkspaceCompanyBrainRecallWorkflow,
+  createWorkspaceContactWaterfallWorkflow,
+  createWorkspaceEvalGateWorkflow,
+  createWorkspaceMeetingPrepWorkflow,
+  createWorkspaceMessagePersonalizationWorkflow,
+  createWorkspaceOutreachSkillSelectionWorkflow,
+  createWorkspaceProfileIcpWorkflow,
+  createWorkspaceReplyTriageWorkflow,
+  createWorkspaceSignalIngestionWorkflow,
+  createWorkspaceSkillOptimizerWorkflow,
+  createWorkspaceSourceDiscoveryWorkflow,
+  createWorkspaceVerticalIntelligenceWorkflow,
+  createWorkspaceSignalMatchingWorkflow,
+  WORKSPACE_ACTIVATION_SETUP_WORKFLOW,
+  WORKSPACE_CAMPAIGN_STRATEGY_WORKFLOW,
+  WORKSPACE_CHANNEL_READINESS_WORKFLOW,
+  WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW,
+  WORKSPACE_COMPANY_BRAIN_RECALL_WORKFLOW,
+  WORKSPACE_CONTACT_WATERFALL_WORKFLOW,
+  WORKSPACE_EVAL_GATE_WORKFLOW,
+  WORKSPACE_MEETING_PREP_WORKFLOW,
+  WORKSPACE_MESSAGE_PERSONALIZATION_WORKFLOW,
+  WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW,
+  WORKSPACE_PROFILE_ICP_WORKFLOW,
+  WORKSPACE_REPLY_TRIAGE_WORKFLOW,
+  WORKSPACE_SIGNAL_INGESTION_WORKFLOW,
+  WORKSPACE_SKILL_OPTIMIZER_WORKFLOW,
+  WORKSPACE_SOURCE_DISCOVERY_WORKFLOW,
+  WORKSPACE_VERTICAL_INTELLIGENCE_WORKFLOW,
+  WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
+  type ActivationSetupGraphInput,
+  type BombsellLangGraphState,
+  type CompanyBrainGraphInput,
+  type LeadMatchingGraphInput,
+  type MeetingPrepGraphInput,
+  type ProfileIcpGraphInput,
+  type SignalIngestionGraphInput,
+  type VerticalIntelligenceGraphInput,
+} from "../agents/langgraph/index.ts";
 import {
   createFallbackJudge,
   createHeuristicJudge,
+  evalGate,
+  type JudgeInput,
 } from "../agents/eval/index.ts";
+import {
+  createLinkedInWriterRole,
+  createResearcherRole,
+  createWriterRole,
+} from "../agents/reps/index.ts";
+import type { ResearchResult } from "../agents/reps/roles/researcher.ts";
 import {
   createPostgresEpisodicRepository,
   createOutcomeMemoryUpdateProjection,
@@ -33,17 +86,24 @@ import {
 } from "../agents/memory/index.ts";
 import {
   createDryRunEmailTransport,
+  createDeepSeekIntentClassifier,
+  getOutlookCalendarAvailability,
+  handleInboundEmail,
   createOutlookSender,
   createPostgresOwnedDomainEmailChannel,
   createResendEmailTransport,
+  type IntentClassifier,
   type EmailTransport,
   type EmailChannel,
+  type OutlookCalendarAvailability,
   type OutlookSender,
+  type ReplyIntent,
 } from "../channels/email/index.ts";
 import {
   CONTACT_RESOLUTION_WORKFLOW,
   createContactResolutionProviders,
   createContactResolutionWorkflow,
+  type ContactCandidate,
   type ContactChannel,
   type ContactResolutionInput,
   type ContactResolutionOutput,
@@ -114,7 +174,11 @@ import {
   createDeepSeekJudge,
   isMalformedJudgeResponseError,
 } from "../agents/eval/adapters/deepseek-judge.ts";
-import type { WorkflowRuntime } from "../substrate/workflows/index.ts";
+import type {
+  WorkflowRun,
+  WorkflowRuntime,
+  WorkflowRunStatus,
+} from "../substrate/workflows/index.ts";
 import { RestateClientError } from "../substrate/workflows/adapters/restate.ts";
 import {
   createEmailDeliveryFeedbackProjection,
@@ -132,6 +196,7 @@ import {
   getLatestEventTraceForWorkspace,
   type EventTrace,
 } from "./forensics.ts";
+import { getConversationTrustTrace } from "./conversation-trust.ts";
 import {
   createProductSubstrate,
   type ProductSubstrateMode,
@@ -140,6 +205,31 @@ import {
   buildCampaignOutcomeLearningExemplar,
   campaignOutcomePatternKey,
 } from "./campaign-learning.ts";
+import {
+  buildCampaignStrategyRecommendation,
+  type CampaignStrategyRecommendation,
+  type CampaignOptimizerRecommendation,
+  type CampaignOptimizerOutcomeKind,
+} from "./campaign-optimizer.ts";
+import {
+  buildSkillOptimizationPlan,
+  type SkillOptimizationPlan,
+} from "./skill-optimizer.ts";
+import {
+  planCampaignDispatchAllocations,
+  type CampaignDispatchAllocation,
+  type CampaignDispatchCandidate,
+  type CampaignDispatchPlan,
+  type CampaignDispatchStrategy,
+} from "./campaign-allocation.ts";
+import {
+  createSelectedOutreachSkill,
+  outreachSkillProvenance,
+  selectOutreachSkill,
+  type OutreachSkillChannel,
+  type OutreachSkillStage,
+  type SelectedOutreachSkill,
+} from "../agents/skills/outreach.ts";
 import {
   planExaResearchQuery,
   recommendationResearchPatternKey,
@@ -155,6 +245,20 @@ import {
   summarizeExaEvidence,
   type ExaResult,
 } from "../exa/index.ts";
+import {
+  buildMeetingPrepNote,
+  type MeetingPrepNote,
+} from "../meetings/prep.ts";
+import {
+  loadWorkspaceLaunchReadiness,
+  type LaunchReadinessRequiredChannel,
+  type WorkspaceLaunchReadiness,
+} from "./launch-readiness.ts";
+import {
+  buildVerticalIntelligencePack,
+  type VerticalIntelligencePack,
+  type VerticalIntelligenceProfileInput,
+} from "./vertical-intelligence.ts";
 import { createConversationLifecycleProjection } from "../primitives/conversation-lifecycle.ts";
 import { createOutcomeLifecycleProjection } from "../primitives/outcome-lifecycle.ts";
 import {
@@ -191,6 +295,23 @@ const SIGNAL_PLAY_REJUDGE_REPAIR_KEY = "judge-fallback-v1";
 const REPAIRABLE_DRAFT_REJECTION_PATTERN =
   "(being an AI|as an AI|AI language model|language model|judge returned non-JSON response)";
 const RUNNABLE_WORKFLOW_NAMES = [
+  WORKSPACE_ACTIVATION_SETUP_WORKFLOW,
+  WORKSPACE_CAMPAIGN_STRATEGY_WORKFLOW,
+  WORKSPACE_SKILL_OPTIMIZER_WORKFLOW,
+  WORKSPACE_CHANNEL_READINESS_WORKFLOW,
+  WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW,
+  WORKSPACE_COMPANY_BRAIN_RECALL_WORKFLOW,
+  WORKSPACE_CONTACT_WATERFALL_WORKFLOW,
+  WORKSPACE_EVAL_GATE_WORKFLOW,
+  WORKSPACE_MEETING_PREP_WORKFLOW,
+  WORKSPACE_MESSAGE_PERSONALIZATION_WORKFLOW,
+  WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW,
+  WORKSPACE_PROFILE_ICP_WORKFLOW,
+  WORKSPACE_REPLY_TRIAGE_WORKFLOW,
+  WORKSPACE_SIGNAL_INGESTION_WORKFLOW,
+  WORKSPACE_SOURCE_DISCOVERY_WORKFLOW,
+  WORKSPACE_VERTICAL_INTELLIGENCE_WORKFLOW,
+  WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
   CONTACT_RESOLUTION_WORKFLOW,
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   REPLY_TO_EMAIL_PLAY_WORKFLOW,
@@ -469,6 +590,13 @@ export interface OutlookAccountConnectIntent {
   provider_configured: boolean;
 }
 
+export interface OutlookCalendarConnectIntent {
+  workspace_id: string;
+  connect_url: string;
+  provider_configured: boolean;
+  scope: "Calendars.ReadBasic";
+}
+
 export interface ConfigureActivationInput {
   rep: ConfigureRepInput;
   icp: ConfigureIcpInput;
@@ -532,6 +660,28 @@ export interface DiscoveredSignalResult {
 
 export interface DiscoverSignalWebhookOptions {
   producerRef?: string;
+}
+
+export interface MatchWorkspaceSignalInput {
+  signal_id: string;
+}
+
+export interface MatchWorkspaceSignalOptions {
+  correlation_id?: string | null;
+  causation_id?: string | null;
+  producerRef?: string;
+}
+
+export interface MatchWorkspaceSignalResult {
+  workspace_id: string;
+  signal_id: string;
+  status: "matched" | "dismissed" | "skipped";
+  kind: SignalKindValue | null;
+  matched_icp_ids: string[];
+  match_score: number | null;
+  match_reason: string | null;
+  matches: Array<{ icp_segment: string; match_score: number; reason: string }>;
+  skip_reason: "no_icps" | "budget" | "not_found" | "non_json" | "filtered" | null;
 }
 
 export interface ConfigureWorkspaceProfileInput {
@@ -710,6 +860,149 @@ export interface ProductCampaignOutcomeResult {
   pattern_key: string;
   exemplar_ids: string[];
 }
+
+export interface ProductCampaignStrategyInput {
+  lookback_days?: number;
+  min_samples?: number;
+}
+
+export interface ProductCampaignStrategyResult extends CampaignStrategyRecommendation {
+  recommendation_id: string;
+}
+
+export interface ProductSkillOptimizerInput {
+  lookback_days?: number;
+  min_samples?: number;
+}
+
+export interface ProductSkillOptimizerResult extends SkillOptimizationPlan {
+  recommendation_id: string;
+}
+
+export interface ProductMessagePersonalizationInput {
+  rep_id: string;
+  signal_id: string;
+  person_id: string;
+  company_id?: string | null;
+  channel?: OutreachSkillChannel;
+  stage?: OutreachSkillStage;
+  play_id?: string | null;
+  play_run_id?: string | null;
+  conversation_id?: string | null;
+  message_id?: string | null;
+  use_llm?: boolean;
+}
+
+export interface ProductMessagePersonalizationResult {
+  workspace_id: string;
+  conversation_id: string | null;
+  message_id: string;
+  channel: OutreachSkillChannel;
+  rep_id: string;
+  signal_id: string;
+  person_id: string;
+  company_id: string | null;
+  subject: string | null;
+  body: string;
+  pattern_key: string;
+  seed_pattern_key: string | null;
+  skill_key: string;
+  skill_version: string;
+  exemplar_ids: string[];
+  procedural_exemplar_count: number;
+  personalization_context_markdown: string;
+  provenance: Record<string, unknown>;
+  llm_used: boolean;
+  next_action: "run_eval_gate";
+}
+
+export type ProductDraftEvalArtifactKind = JudgeInput["artifact"]["kind"];
+export type ProductDraftEvalSkillContext = NonNullable<
+  NonNullable<JudgeInput["context"]>["outreach_skill"]
+>;
+
+export interface ProductDraftEvalInput {
+  message_id: string;
+  rep_id: string;
+  channel: string;
+  body: string;
+  subject?: string | null;
+  artifact_kind?: ProductDraftEvalArtifactKind;
+  signal_summary?: string | null;
+  counterparty_summary?: string | null;
+  personalization_context_markdown?: string | null;
+  workspace_context_markdown?: string | null;
+  outreach_skill?: ProductDraftEvalSkillContext | null;
+}
+
+export interface ProductDraftEvalResult {
+  workspace_id: string;
+  message_id: string;
+  rep_id: string;
+  channel: string;
+  decision: "pass" | "reject";
+  eval_score: number;
+  threshold: number;
+  passed: boolean;
+  notes: Record<string, unknown>;
+  judged_event_id: string;
+  rejected_event_id: string | null;
+  rejection_reason: string | null;
+  next_action: "continue_to_play_gate" | "revise_draft";
+}
+
+export interface ProductReplyTriageInput {
+  channel?: "email";
+  external_id: string;
+  external_thread_id?: string | null;
+  in_reply_to?: string | null;
+  references?: string[];
+  from_email: string;
+  from_name?: string | null;
+  subject: string;
+  body_text: string;
+  body_html?: string | null;
+  received_at: string;
+  channel_account_id?: string | null;
+  ingress_event_id?: string | null;
+}
+
+export interface ProductReplyTriageResult {
+  workspace_id: string;
+  channel: "email";
+  matched_conversation_id: string | null;
+  inbound_message_id: string | null;
+  intent: ReplyIntent | null;
+  intent_confidence: number | null;
+  outcome_id: string | null;
+  next_action:
+    | "generate_meeting_prep"
+    | "draft_reply"
+    | "block_contact"
+    | "stop"
+    | "review_unmatched";
+}
+
+export interface ProductMeetingPrepInput {
+  conversation_id: string;
+}
+
+export interface ProductMeetingPrepResult extends MeetingPrepNote {
+  workspace_id: string;
+  meeting_prep_id: string;
+}
+
+export interface ProductLaunchReadinessInput {
+  required_channel?: LaunchReadinessRequiredChannel;
+}
+
+export interface ProductLaunchReadinessResult extends WorkspaceLaunchReadiness {}
+
+export interface ProductVerticalIntelligenceInput {
+  company_id?: string | null;
+}
+
+export interface ProductVerticalIntelligenceResult extends VerticalIntelligencePack {}
 
 export interface ProductRecommendationQualityBucket {
   total_reviewed: number;
@@ -3071,6 +3364,1095 @@ export async function recordProductCampaignOutcome(
   };
 }
 
+export async function optimizeProductCampaignStrategy(
+  input: ProductCampaignStrategyInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductCampaignStrategyResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const lookbackDays = Math.max(1, Math.min(180, Math.trunc(input.lookback_days ?? 30)));
+  const minSamples = Math.max(1, Math.min(50, Math.trunc(input.min_samples ?? 3)));
+  const outcomeKinds: CampaignOptimizerOutcomeKind[] = [
+    "positive_reply",
+    "meeting_booked",
+    "opportunity_created",
+    "deal_won",
+    "engagement_lift",
+    "unsubscribe",
+    "bounce",
+    "do_not_contact",
+  ];
+  const [playRuns, outcomes] = await Promise.all([
+    engine.pool.query<{
+      play_run_id: string;
+      play_id: string;
+      play_name: string;
+      rep_id: string | null;
+      rep_name: string | null;
+      channel: string | null;
+      skill_key: string | null;
+      pattern_key: string | null;
+      segment_key: string | null;
+      created_at: Date;
+    }>(
+      `select pr.id::text as play_run_id,
+              pr.play_id::text as play_id,
+              p.name as play_name,
+              coalesce(run_rep.id, default_rep.id)::text as rep_id,
+              coalesce(run_rep.name, default_rep.name) as rep_name,
+              coalesce(
+                pr.output->>'channel',
+                pr.input->>'channel',
+                p.compiled #>> '{trigger,channel}',
+                p.compiled #>> '{channel}'
+              ) as channel,
+              coalesce(
+                pr.output->>'skill_key',
+                pr.output #>> '{draft,provenance,skill_key}',
+                pr.output #>> '{provenance,skill_key}',
+                pr.output #>> '{draft,provenance,pattern_key}',
+                pr.output #>> '{provenance,pattern_key}',
+                pr.input->>'skill_key',
+                pr.input->>'pattern_key'
+              ) as skill_key,
+              coalesce(
+                pr.output #>> '{draft,provenance,pattern_key}',
+                pr.output #>> '{provenance,pattern_key}',
+                pr.input->>'pattern_key'
+              ) as pattern_key,
+              coalesce(
+                pr.output->>'segment_key',
+                pr.output->>'icp_segment',
+                pr.input->>'segment_key',
+                pr.input->>'icp_id',
+                p.compiled #>> '{icp,name}'
+              ) as segment_key,
+              pr.created_at
+         from play_runs pr
+         join plays p
+           on p.id = pr.play_id
+          and p.workspace_id = pr.workspace_id
+         left join reps run_rep
+           on run_rep.id = pr.rep_id
+          and run_rep.workspace_id = pr.workspace_id
+         left join reps default_rep
+           on default_rep.id = p.default_rep_id
+          and default_rep.workspace_id = pr.workspace_id
+        where pr.workspace_id = $1
+          and pr.created_at >= now() - ($2::int * interval '1 day')
+        order by pr.created_at desc
+        limit 500`,
+      [session.workspace_id, lookbackDays],
+    ),
+    engine.pool.query<{
+      outcome_id: string;
+      play_run_id: string | null;
+      play_id: string | null;
+      kind: CampaignOptimizerOutcomeKind;
+      score: string | null;
+      occurred_at: Date;
+    }>(
+      `select id::text as outcome_id,
+              attributed_play_run_id::text as play_run_id,
+              attributed_play_id::text as play_id,
+              kind::text as kind,
+              score::text as score,
+              occurred_at
+         from outcomes
+        where workspace_id = $1
+          and occurred_at >= now() - ($2::int * interval '1 day')
+          and kind::text = any($3::text[])
+        order by occurred_at desc
+        limit 500`,
+      [session.workspace_id, lookbackDays, outcomeKinds],
+    ),
+  ]);
+
+  const recommendation = buildCampaignStrategyRecommendation({
+    workspace_id: session.workspace_id,
+    play_runs: playRuns.rows,
+    outcomes: outcomes.rows,
+    min_samples: minSamples,
+  });
+  const recommendation_id = randomUUID();
+  const generatedBucket = recommendation.generated_at.slice(0, 13);
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "campaign.strategy.recommended",
+    source: "system",
+    producer_ref: `campaign-optimizer:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "campaign.strategy.recommended",
+      session.workspace_id,
+      generatedBucket,
+      {
+        lookback_days: lookbackDays,
+        min_samples: minSamples,
+        variants: recommendation.variants.map((variant) => variant.variant_key),
+      },
+    ),
+    payload: {
+      recommendation_id,
+      generated_at: recommendation.generated_at,
+      min_samples: recommendation.min_samples,
+      summary: recommendation.summary,
+      variants: recommendation.variants,
+    },
+  });
+  const eventPayload = event.payload as { recommendation_id: string };
+  return {
+    ...recommendation,
+    recommendation_id: eventPayload.recommendation_id,
+  };
+}
+
+export async function optimizeProductPlaySkills(
+  input: ProductSkillOptimizerInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductSkillOptimizerResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const lookbackDays = Math.max(1, Math.min(180, Math.trunc(input.lookback_days ?? 30)));
+  const minSamples = Math.max(1, Math.min(50, Math.trunc(input.min_samples ?? 3)));
+  const outcomeKinds: CampaignOptimizerOutcomeKind[] = [
+    "positive_reply",
+    "meeting_booked",
+    "opportunity_created",
+    "deal_won",
+    "engagement_lift",
+    "unsubscribe",
+    "bounce",
+    "do_not_contact",
+  ];
+  const [playRuns, outcomes, memoryUpdates] = await Promise.all([
+    engine.pool.query<{
+      play_run_id: string;
+      play_id: string;
+      play_name: string;
+      rep_id: string | null;
+      rep_name: string | null;
+      channel: string | null;
+      skill_key: string | null;
+      pattern_key: string | null;
+      segment_key: string | null;
+      created_at: Date;
+    }>(
+      `select pr.id::text as play_run_id,
+              pr.play_id::text as play_id,
+              p.name as play_name,
+              coalesce(run_rep.id, default_rep.id)::text as rep_id,
+              coalesce(run_rep.name, default_rep.name) as rep_name,
+              coalesce(
+                pr.output->>'channel',
+                pr.input->>'channel',
+                p.compiled #>> '{trigger,channel}',
+                p.compiled #>> '{channel}'
+              ) as channel,
+              coalesce(
+                pr.output->>'skill_key',
+                pr.output #>> '{draft,provenance,skill_key}',
+                pr.output #>> '{provenance,skill_key}',
+                pr.output #>> '{draft,provenance,pattern_key}',
+                pr.output #>> '{provenance,pattern_key}',
+                pr.input->>'skill_key',
+                pr.input->>'pattern_key'
+              ) as skill_key,
+              coalesce(
+                pr.output #>> '{draft,provenance,pattern_key}',
+                pr.output #>> '{provenance,pattern_key}',
+                pr.input->>'pattern_key'
+              ) as pattern_key,
+              coalesce(
+                pr.output->>'segment_key',
+                pr.output->>'icp_segment',
+                pr.input->>'segment_key',
+                pr.input->>'icp_id',
+                p.compiled #>> '{icp,name}'
+              ) as segment_key,
+              pr.created_at
+         from play_runs pr
+         join plays p
+           on p.id = pr.play_id
+          and p.workspace_id = pr.workspace_id
+         left join reps run_rep
+           on run_rep.id = pr.rep_id
+          and run_rep.workspace_id = pr.workspace_id
+         left join reps default_rep
+           on default_rep.id = p.default_rep_id
+          and default_rep.workspace_id = pr.workspace_id
+        where pr.workspace_id = $1
+          and pr.created_at >= now() - ($2::int * interval '1 day')
+        order by pr.created_at desc
+        limit 500`,
+      [session.workspace_id, lookbackDays],
+    ),
+    engine.pool.query<{
+      outcome_id: string;
+      play_run_id: string | null;
+      play_id: string | null;
+      kind: CampaignOptimizerOutcomeKind;
+      score: string | null;
+      occurred_at: Date;
+    }>(
+      `select id::text as outcome_id,
+              attributed_play_run_id::text as play_run_id,
+              attributed_play_id::text as play_id,
+              kind::text as kind,
+              score::text as score,
+              occurred_at
+         from outcomes
+        where workspace_id = $1
+          and occurred_at >= now() - ($2::int * interval '1 day')
+          and kind::text = any($3::text[])
+        order by occurred_at desc
+        limit 500`,
+      [session.workspace_id, lookbackDays, outcomeKinds],
+    ),
+    engine.pool.query<{
+      event_id: string;
+      rep_id: string | null;
+      pattern_key: string;
+      delta_score: string | null;
+      win: boolean | null;
+      occurred_at: Date;
+    }>(
+      `select id::text as event_id,
+              payload ->> 'rep_id' as rep_id,
+              payload ->> 'pattern_key' as pattern_key,
+              (payload ->> 'delta_score')::text as delta_score,
+              nullif(payload ->> 'win', '')::boolean as win,
+              occurred_at
+         from events
+        where workspace_id = $1
+          and event_type = 'rep.memory.procedural.updated'
+          and occurred_at >= now() - ($2::int * interval '1 day')
+          and payload ->> 'pattern_key' is not null
+        order by occurred_at desc
+        limit 500`,
+      [session.workspace_id, lookbackDays],
+    ),
+  ]);
+
+  const campaignRecommendation = buildCampaignStrategyRecommendation({
+    workspace_id: session.workspace_id,
+    play_runs: playRuns.rows,
+    outcomes: outcomes.rows,
+    min_samples: minSamples,
+  });
+  const plan = buildSkillOptimizationPlan({
+    workspace_id: session.workspace_id,
+    variants: campaignRecommendation.variants,
+    memory_updates: memoryUpdates.rows,
+    min_samples: minSamples,
+    generated_at: campaignRecommendation.generated_at,
+  });
+  const recommendation_id = randomUUID();
+  const generatedBucket = plan.generated_at.slice(0, 13);
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "play.skill.optimization.recommended",
+    source: "system",
+    producer_ref: `skill-optimizer:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "play.skill.optimization.recommended",
+      session.workspace_id,
+      generatedBucket,
+      {
+        lookback_days: lookbackDays,
+        min_samples: minSamples,
+        recommendations: plan.recommendations.map((item) =>
+          `${item.skill_key}:${item.pattern_key}:${item.channel ?? "any"}:${item.segment_key}`
+        ),
+      },
+    ),
+    payload: {
+      recommendation_id,
+      generated_at: plan.generated_at,
+      min_samples: plan.min_samples,
+      summary: plan.summary,
+      recommendations: plan.recommendations,
+    },
+  });
+  const eventPayload = event.payload as { recommendation_id: string };
+  return {
+    ...plan,
+    recommendation_id: eventPayload.recommendation_id,
+  };
+}
+
+export async function personalizeProductMessage(
+  input: ProductMessagePersonalizationInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductMessagePersonalizationResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const store = createPostgresVerticalSliceStore(engine.pool);
+  const [rep, signal, person] = await Promise.all([
+    store.getRep(input.rep_id),
+    store.getSignal(input.signal_id),
+    store.getPerson(input.person_id),
+  ]);
+  if (!rep) throw new Error(`Rep not found: ${input.rep_id}`);
+  if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
+  if (!person) throw new Error(`Person not found: ${input.person_id}`);
+  if (rep.workspace_id !== session.workspace_id) throw new Error("Rep does not belong to workspace.");
+  if (signal.workspace_id !== session.workspace_id) throw new Error("Signal does not belong to workspace.");
+  if (person.workspace_id !== session.workspace_id) throw new Error("Person does not belong to workspace.");
+
+  const company_id =
+    input.company_id ??
+    signal.related_company_id ??
+    person.company_id ??
+    null;
+  const company = await store.getCompany(company_id);
+  const channel = normalizePersonalizationChannel(input.channel);
+  const stage = input.stage ?? "cold_open";
+  const workspaceContextMarkdown = await getWorkflowWorkspaceContext(
+    engine,
+    session.workspace_id,
+  );
+  const roleContext = {
+    rep,
+    tool_context: {
+      workspace_id: session.workspace_id,
+      user_id: session.user_id,
+      rep_id: rep.id,
+    },
+    memory: engine.memory,
+    judge: createHeuristicJudge({ threshold: 0.55 }),
+    workspace_context_markdown: workspaceContextMarkdown,
+  };
+  const research = await createResearcherRole().invoke({ signal, person, company }, roleContext);
+  const basePatternKey = personalizationBasePatternKey(research.pattern_key, channel);
+  const skill = createSelectedOutreachSkill({
+    channel,
+    stage,
+    signal_kind: signal.kind,
+    action: channel === "email" ? null : channel,
+    person_title: person.title,
+    base_pattern_key: basePatternKey,
+    slot_values: messagePersonalizationSlotValues({
+      signal,
+      person,
+      company,
+      workspaceContextMarkdown,
+      channel,
+      research,
+    }),
+  });
+  const personalizationContextMarkdown = buildMessagePersonalizationContext({
+    signal,
+    person,
+    company,
+    skill,
+    workspaceContextMarkdown,
+  });
+  const writerLlm = input.use_llm === false
+    ? undefined
+    : createGovernedLLM(
+      engine,
+      session.workspace_id,
+      channel === "email" ? "writer.email.personalization" : "writer.linkedin.personalization",
+    );
+  const draft = channel === "email"
+    ? await createWriterRole({ llm: writerLlm }).invoke({
+      channel: "email",
+      research,
+      recipient_name: person.given_name ?? person.full_name.split(" ")[0] ?? person.full_name,
+      skill,
+      personalization_context_markdown: personalizationContextMarkdown,
+    }, roleContext)
+    : await createLinkedInWriterRole({ llm: writerLlm }).invoke({
+      action: linkedInPersonalizationChannel(channel),
+      pattern_key: basePatternKey,
+      research,
+      person,
+      company,
+      skill,
+    }, roleContext);
+  const message_id = input.message_id?.trim() || randomUUID();
+  const personalized_at = new Date().toISOString();
+  const subject = "subject" in draft && typeof draft.subject === "string"
+    ? draft.subject
+    : null;
+  const body = String(draft.body);
+  const skillPayload: Record<string, unknown> | null = draft.skill
+    ? { ...draft.skill }
+    : null;
+  const provenance = {
+    graph_name: "message.personalization_graph.v1",
+    pattern_key: draft.pattern_key,
+    ...(draft.seed_pattern_key ? { seed_pattern_key: draft.seed_pattern_key } : {}),
+    exemplar_ids: draft.exemplar_ids,
+    play_id: input.play_id ?? null,
+    play_run_id: input.play_run_id ?? null,
+    research: {
+      pattern_key: research.pattern_key,
+      signal_summary: research.signal_summary,
+      counterparty_summary: research.counterparty_summary,
+    },
+    personalization_context: {
+      signal_id: signal.id,
+      person_id: person.id,
+      company_id: company?.id ?? null,
+      generated_at: personalized_at,
+    },
+    ...outreachSkillProvenance(draft.skill, {
+      pattern_key: draft.pattern_key,
+      seed_pattern_key: draft.seed_pattern_key,
+    }),
+  };
+  await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "message.personalized",
+    source: "agent",
+    producer_ref: `rep:${rep.id}`,
+    idempotency_key: configurationEventKey(
+      "message.personalized",
+      session.workspace_id,
+      message_id,
+      {
+        channel,
+        pattern_key: draft.pattern_key,
+        play_id: input.play_id ?? null,
+        play_run_id: input.play_run_id ?? null,
+      },
+    ),
+    payload: {
+      conversation_id: input.conversation_id ?? null,
+      message_id,
+      channel,
+      rep_id: rep.id,
+      play_id: input.play_id ?? null,
+      play_run_id: input.play_run_id ?? null,
+      signal_id: signal.id,
+      person_id: person.id,
+      company_id: company?.id ?? null,
+      subject,
+      body,
+      personalization_context_markdown: personalizationContextMarkdown,
+      skill: skillPayload,
+      provenance,
+      personalized_at,
+    },
+  });
+
+  return {
+    workspace_id: session.workspace_id,
+    conversation_id: input.conversation_id ?? null,
+    message_id,
+    channel,
+    rep_id: rep.id,
+    signal_id: signal.id,
+    person_id: person.id,
+    company_id: company?.id ?? null,
+    subject,
+    body,
+    pattern_key: draft.pattern_key,
+    seed_pattern_key: draft.seed_pattern_key,
+    skill_key: draft.skill?.skill_key ?? skill.skill_key,
+    skill_version: draft.skill?.version ?? skill.version,
+    exemplar_ids: draft.exemplar_ids,
+    procedural_exemplar_count: draft.procedural_exemplars.length,
+    personalization_context_markdown: personalizationContextMarkdown,
+    provenance,
+    llm_used: Boolean(writerLlm),
+    next_action: "run_eval_gate",
+  };
+}
+
+export async function evaluateProductDraft(
+  input: ProductDraftEvalInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductDraftEvalResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const store = createPostgresVerticalSliceStore(engine.pool);
+  const rep = await store.getRep(input.rep_id);
+  if (!rep) throw new Error(`Rep not found: ${input.rep_id}`);
+  const gate = await evalGate(
+    { judge: createGovernedJudge(engine, session.workspace_id), bus: engine.bus },
+    {
+      workspace_id: session.workspace_id,
+      rep,
+      message_id: input.message_id,
+      artifact: {
+        kind: input.artifact_kind ?? "draft",
+        channel: input.channel,
+        subject: input.subject ?? null,
+        body: input.body,
+      },
+      context: {
+        signal_summary: input.signal_summary ?? undefined,
+        counterparty_summary: input.counterparty_summary ?? undefined,
+        personalization_context_markdown:
+          input.personalization_context_markdown ?? undefined,
+        workspace_context_markdown: input.workspace_context_markdown ?? undefined,
+        outreach_skill: input.outreach_skill ?? null,
+      },
+    },
+  );
+  return {
+    workspace_id: session.workspace_id,
+    message_id: input.message_id,
+    rep_id: rep.id,
+    channel: input.channel,
+    decision: gate.decision,
+    eval_score: gate.verdict.score,
+    threshold: gate.verdict.threshold,
+    passed: gate.verdict.passed,
+    notes: gate.verdict.notes as unknown as Record<string, unknown>,
+    judged_event_id: gate.events.judged.id,
+    rejected_event_id: gate.events.rejected?.id ?? null,
+    rejection_reason: gate.rejection_reason ?? null,
+    next_action: gate.decision === "pass" ? "continue_to_play_gate" : "revise_draft",
+  };
+}
+
+export async function triageProductReply(
+  input: ProductReplyTriageInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductReplyTriageResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const channel = input.channel ?? "email";
+  if (channel !== "email") {
+    throw new Error(`Reply triage does not support ${channel}`);
+  }
+  const result = await handleInboundEmail(
+    {
+      pool: engine.pool,
+      bus: engine.bus,
+      classifier: createProductReplyIntentClassifier(engine, session.workspace_id),
+      memory: engine.memory,
+      ingress_event_id: input.ingress_event_id ?? undefined,
+    },
+    {
+      workspace_id: session.workspace_id,
+      external_id: input.external_id,
+      external_thread_id: input.external_thread_id ?? undefined,
+      in_reply_to: input.in_reply_to ?? undefined,
+      references: input.references ?? [],
+      from: {
+        email: input.from_email,
+        name: input.from_name ?? undefined,
+      },
+      subject: input.subject,
+      body_text: input.body_text,
+      body_html: input.body_html ?? undefined,
+      received_at: input.received_at,
+      channel_account_id: input.channel_account_id ?? undefined,
+    },
+  );
+  return {
+    workspace_id: session.workspace_id,
+    channel: "email",
+    matched_conversation_id: result.matched_conversation_id,
+    inbound_message_id: result.inbound_message_id,
+    intent: result.intent ?? null,
+    intent_confidence: result.intent_confidence ?? null,
+    outcome_id: result.outcome_id ?? null,
+    next_action: replyTriageNextAction(result),
+  };
+}
+
+function normalizePersonalizationChannel(
+  channel: OutreachSkillChannel | undefined,
+): OutreachSkillChannel {
+  const next = channel ?? "email";
+  if (
+    next === "email" ||
+    next === "linkedin_connection" ||
+    next === "linkedin_dm" ||
+    next === "linkedin_comment"
+  ) {
+    return next;
+  }
+  throw new Error(`Message personalization does not support ${next}`);
+}
+
+function linkedInPersonalizationChannel(channel: OutreachSkillChannel): LinkedInChannelName {
+  if (
+    channel === "linkedin_connection" ||
+    channel === "linkedin_dm" ||
+    channel === "linkedin_comment"
+  ) {
+    return channel;
+  }
+  throw new Error(`Message personalization does not support ${channel}`);
+}
+
+function personalizationBasePatternKey(
+  researchPatternKey: string,
+  channel: OutreachSkillChannel,
+): string {
+  return channel === "email" ? researchPatternKey : `${researchPatternKey}|channel:${channel}`;
+}
+
+function messagePersonalizationSlotValues(input: {
+  signal: Signal;
+  person: GraphPerson;
+  company: GraphCompany | null;
+  workspaceContextMarkdown: string | null;
+  channel: OutreachSkillChannel;
+  research: ResearchResult;
+}): Record<string, string> {
+  const signalHook = compactPersonalizationText(
+    [input.signal.title, input.signal.content].filter(Boolean).join(" "),
+    220,
+  );
+  const counterpartyContext = compactPersonalizationText(
+    [
+      input.person.full_name,
+      input.person.title,
+      input.company?.name ? `at ${input.company.name}` : null,
+      input.company?.industry,
+    ].filter(Boolean).join(" "),
+    180,
+  );
+  const workspaceProof = firstUsefulContextLine(input.workspaceContextMarkdown) ??
+    "Use the workspace profile, ICP, vertical intelligence, and prior Outcomes only when supported.";
+  const role = input.person.title ?? "their team";
+  const channelAsk = input.channel === "email"
+    ? "Worth a quick reply if this is relevant?"
+    : "Open to comparing notes?";
+  return {
+    signal_hook: signalHook,
+    why_now: input.signal.freshness_at
+      ? `Fresh signal observed ${input.signal.freshness_at}.`
+      : "The signal is current enough to justify timely outreach.",
+    inferred_problem: compactPersonalizationText(
+      `${role} may need to turn this signal into a concrete GTM priority without adding manual research work.`,
+      220,
+    ),
+    proof_or_relevance: compactPersonalizationText(workspaceProof, 240),
+    peer_pattern: compactPersonalizationText(workspaceProof, 240),
+    counterparty_context: counterpartyContext,
+    reply_question: channelAsk,
+    signal_summary: compactPersonalizationText(input.research.signal_summary, 240),
+  };
+}
+
+function buildMessagePersonalizationContext(input: {
+  signal: Signal;
+  person: GraphPerson;
+  company: GraphCompany | null;
+  skill: SelectedOutreachSkill;
+  workspaceContextMarkdown: string | null;
+}): string {
+  const sections = [
+    "## Signal Timing And Why Now",
+    `- Signal: ${input.signal.title}`,
+    input.signal.content ? `- Detail: ${compactPersonalizationText(input.signal.content, 500)}` : null,
+    input.signal.url ? `- Source: ${input.signal.url}` : null,
+    `- Kind: ${input.signal.kind}`,
+    "",
+    "## Counterparty",
+    `- Person: ${input.person.full_name}`,
+    input.person.title ? `- Role: ${input.person.title}` : null,
+    input.company?.name ? `- Company: ${input.company.name}` : null,
+    input.company?.description
+      ? `- Company context: ${compactPersonalizationText(input.company.description, 420)}`
+      : null,
+    "",
+    "## Workspace And Vertical Context",
+    input.workspaceContextMarkdown
+      ? compactPersonalizationText(input.workspaceContextMarkdown, 1800)
+      : "- No workspace context available.",
+    "",
+    "## Play Skill",
+    `- Skill: ${input.skill.name} (${input.skill.skill_key}@${input.skill.version})`,
+    ...input.skill.framework.map((step) => `- ${step}`),
+    "Constraints:",
+    ...input.skill.constraints.map((constraint) => `- ${constraint}`),
+  ].filter((line): line is string => line !== null);
+  return sections.join("\n");
+}
+
+function firstUsefulContextLine(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value
+    .split("\n")
+    .map((line) => line.replace(/^[-#*\s]+/, "").trim())
+    .find((line) => line.length > 8) ?? null;
+}
+
+function compactPersonalizationText(value: string | null | undefined, maxLength: number): string {
+  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+function replyTriageNextAction(
+  result: Awaited<ReturnType<typeof handleInboundEmail>>,
+): ProductReplyTriageResult["next_action"] {
+  if (!result.matched_conversation_id || !result.inbound_message_id) {
+    return "review_unmatched";
+  }
+  if (result.intent === "meeting_intent" || result.intent === "positive") {
+    return "generate_meeting_prep";
+  }
+  if (result.intent === "neutral") return "draft_reply";
+  if (result.intent === "unsubscribe" || result.intent === "do_not_contact") {
+    return "block_contact";
+  }
+  return "stop";
+}
+
+export async function generateProductMeetingPrep(
+  input: ProductMeetingPrepInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductMeetingPrepResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const conversation_id = input.conversation_id.trim();
+  if (!conversation_id) throw new Error("conversation_id is required");
+  const trace = await getConversationTrustTrace(
+    {
+      workspace_id: session.workspace_id,
+      conversation_id,
+    },
+    engine.pool,
+  );
+  if (!trace) throw new Error(`Conversation not found: ${conversation_id}`);
+  const note = buildMeetingPrepNote({
+    conversation: {
+      id: trace.conversation.id,
+      topic: trace.conversation.topic,
+      counterparty_person_id: trace.conversation.counterparty_person_id,
+      counterparty_name: trace.conversation.counterparty_name,
+      counterparty_title: trace.conversation.counterparty_title,
+      counterparty_linkedin_url: trace.conversation.counterparty_linkedin_url,
+      company_id: trace.conversation.company_id,
+      company_name: trace.conversation.company_name,
+      company_domain: trace.conversation.company_domain,
+      company_industry: trace.conversation.company_industry,
+      company_description: trace.conversation.company_description,
+      rep_id: trace.conversation.rep_id,
+      rep_name: trace.conversation.rep_name,
+      rep_role: trace.conversation.rep_role,
+      signal_id: trace.conversation.signal_id,
+      signal_title: trace.conversation.signal_title,
+      signal_kind: trace.conversation.signal_kind,
+      signal_content: trace.conversation.signal_content,
+      signal_url: trace.conversation.signal_url,
+    },
+    user: {
+      user_id: session.user_id,
+    },
+    messages: trace.messages.map((message) => ({
+      id: message.id,
+      direction: message.direction,
+      subject: message.subject,
+      body: message.body,
+      intent_class: message.intent_class,
+      created_at: message.sent_at ?? message.created_at,
+    })),
+    outcomes: trace.outcomes.map((outcome) => ({
+      id: outcome.id,
+      kind: outcome.kind,
+      occurred_at: outcome.occurred_at,
+    })),
+    calendar: await resolveMeetingPrepCalendar(engine, session.workspace_id),
+  });
+  const meeting_prep_id = randomUUID();
+  const generatedBucket = note.generated_at.slice(0, 13);
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "meeting.prep.generated",
+    source: "system",
+    producer_ref: `meeting-prep:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "meeting.prep.generated",
+      session.workspace_id,
+      `${conversation_id}:${generatedBucket}`,
+      {
+        latest_message_id: trace.messages.at(-1)?.id ?? null,
+        latest_outcome_id: trace.outcomes.at(-1)?.id ?? null,
+      },
+    ),
+    payload: {
+      meeting_prep_id,
+      conversation_id: note.conversation_id,
+      generated_at: note.generated_at,
+      status: note.status,
+      next_action: note.next_action,
+      summary: note.summary,
+      thread_summary: note.thread_summary,
+      thread_turns: note.thread_turns,
+      agenda: note.agenda,
+      suggested_questions: note.suggested_questions,
+      suggested_times: note.suggested_times,
+      availability_status: note.availability_status,
+      availability_reason: note.availability_reason,
+      calendar_provider: note.calendar_provider,
+      calendar_account_id: note.calendar_account_id,
+      calendar_account_display_name: note.calendar_account_display_name,
+      profile_context: note.profile_context,
+      source_refs: note.source_refs,
+    },
+  });
+  const eventPayload = event.payload as { meeting_prep_id: string };
+  return {
+    workspace_id: session.workspace_id,
+    meeting_prep_id: eventPayload.meeting_prep_id,
+    ...note,
+  };
+}
+
+export async function getProductLaunchReadiness(
+  input: ProductLaunchReadinessInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductLaunchReadinessResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return loadWorkspaceLaunchReadiness(engine.pool, session.workspace_id, {
+    required_channel: input.required_channel ?? "any",
+  });
+}
+
+interface VerticalProfileRow {
+  company_id: string;
+  company_name: string;
+  domain: string | null;
+  website_url: string | null;
+  industry: string | null;
+  description: string | null;
+  exa_summary: string | null;
+  evidence_source_ids: unknown;
+  intelligence: unknown;
+  updated_at: Date;
+}
+
+interface VerticalIcpRow {
+  id: string;
+  name: string;
+  description: string;
+  must_haves: unknown[];
+  nice_to_haves: string[];
+  match_threshold: string;
+  enabled: boolean;
+  updated_at: Date;
+}
+
+interface VerticalSemanticRow {
+  id: string;
+  rep_id: string | null;
+  subject_type: string;
+  subject_id: string;
+  facts: Record<string, unknown> | null;
+  confidence: string | null;
+  last_observed_at: Date;
+}
+
+interface VerticalPlaybookRow {
+  id: string;
+  rep_id: string | null;
+  pattern_key: string;
+  score: string;
+  win_count: number;
+  loss_count: number;
+  last_used_at: Date | null;
+  created_at: Date;
+}
+
+export async function refreshWorkspaceVerticalIntelligence(
+  input: ProductVerticalIntelligenceInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductVerticalIntelligenceResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const profile = await loadVerticalProfile(
+    engine.pool,
+    session.workspace_id,
+    input.company_id ?? null,
+  );
+  if (!profile) {
+    throw new Error("Workspace company profile is required before vertical intelligence can refresh.");
+  }
+  const [icps, semantic, playbooks] = await Promise.all([
+    loadVerticalIcps(engine.pool, session.workspace_id),
+    loadVerticalSemanticMemory(engine.pool, session.workspace_id),
+    loadVerticalPlaybooks(engine.pool, session.workspace_id),
+  ]);
+  const pack = buildVerticalIntelligencePack({
+    workspace_id: session.workspace_id,
+    profile: {
+      company_id: profile.company_id,
+      company_name: profile.company_name,
+      domain: profile.domain,
+      website_url: profile.website_url,
+      industry: profile.industry,
+      description: profile.description,
+      exa_summary: profile.exa_summary,
+      evidence_source_ids: arrayStringStateValue(profile.evidence_source_ids),
+      intelligence: recordStateValue(profile.intelligence) as VerticalIntelligenceProfileInput["intelligence"],
+      updated_at: profile.updated_at,
+    },
+    icps: icps.rows,
+    semantic: semantic.rows,
+    playbooks: playbooks.rows,
+  });
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "vertical.intelligence.updated",
+    source: "system",
+    producer_ref: `vertical-intelligence:${session.user_id}`,
+    idempotency_key: configurationEventKey(
+      "vertical.intelligence.updated",
+      session.workspace_id,
+      profile.company_id,
+      {
+        generated_bucket: pack.generated_at.slice(0, 13),
+        fact_ids: pack.facts.map((fact) => fact.id),
+      },
+    ),
+    payload: {
+      company_id: pack.company_id,
+      company_name: pack.company_name,
+      vertical: pack.vertical,
+      generated_at: pack.generated_at,
+      graph_name: pack.graph_name,
+      run_id: pack.run_id,
+      confidence: pack.confidence,
+      facts: pack.facts,
+      prompt_context: pack.prompt_context,
+      evidence_source_ids: pack.evidence_source_ids,
+      redaction_status: pack.redaction_status,
+    },
+  });
+  await projectVerticalIntelligenceUpdated(engine.pool, event);
+  return pack;
+}
+
+async function loadVerticalProfile(
+  pool: Pool,
+  workspace_id: string,
+  company_id: string | null,
+): Promise<VerticalProfileRow | null> {
+  const { rows } = await pool.query<VerticalProfileRow>(
+    `select id::text as company_id,
+            name as company_name,
+            domain::text as domain,
+            properties->>'website_url' as website_url,
+            industry,
+            description,
+            properties #>> '{exa_profile,summary}' as exa_summary,
+            coalesce(properties #> '{exa_profile,evidence_source_ids}', '[]'::jsonb) as evidence_source_ids,
+            coalesce(properties #> '{exa_profile,intelligence}', '{}'::jsonb) as intelligence,
+            updated_at
+       from graph_companies
+      where workspace_id = $1
+        and ($2::uuid is null or id = $2)
+        and (
+          $2::uuid is not null
+          or properties->>'profile_role' = 'workspace_company'
+        )
+      order by updated_at desc
+      limit 1`,
+    [workspace_id, company_id],
+  );
+  return rows[0] ?? null;
+}
+
+async function loadVerticalIcps(
+  pool: Pool,
+  workspace_id: string,
+): Promise<{ rows: VerticalIcpRow[] }> {
+  return pool.query<VerticalIcpRow>(
+    `select id::text,
+            name,
+            description,
+            must_haves,
+            nice_to_haves,
+            match_threshold::text as match_threshold,
+            enabled,
+            updated_at
+       from workspace_icps
+      where workspace_id = $1
+      order by enabled desc, updated_at desc
+      limit 12`,
+    [workspace_id],
+  );
+}
+
+async function loadVerticalSemanticMemory(
+  pool: Pool,
+  workspace_id: string,
+): Promise<{ rows: VerticalSemanticRow[] }> {
+  return pool.query<VerticalSemanticRow>(
+    `select id::text,
+            rep_id::text,
+            subject_type,
+            subject_id::text,
+            facts,
+            confidence::text,
+            last_observed_at
+       from rep_memory_semantic
+      where workspace_id = $1
+        and (
+          facts ? 'objection'
+          or facts ? 'objections'
+          or facts ? 'pain'
+          or facts ? 'proof'
+          or facts ? 'buying_trigger'
+          or facts ? 'competitor'
+        )
+      order by confidence desc nulls last, last_observed_at desc
+      limit 16`,
+    [workspace_id],
+  );
+}
+
+async function loadVerticalPlaybooks(
+  pool: Pool,
+  workspace_id: string,
+): Promise<{ rows: VerticalPlaybookRow[] }> {
+  return pool.query<VerticalPlaybookRow>(
+    `select id::text,
+            rep_id::text,
+            pattern_key,
+            score::text,
+            win_count,
+            loss_count,
+            last_used_at,
+            created_at
+       from rep_memory_procedural
+      where workspace_id = $1
+      order by score desc, win_count desc, created_at desc
+      limit 16`,
+    [workspace_id],
+  );
+}
+
+async function projectVerticalIntelligenceUpdated(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as Omit<VerticalIntelligencePack, "workspace_id">;
+  const result = await pool.query(
+    `update graph_companies
+        set properties = properties ||
+              jsonb_build_object('vertical_intelligence', $3::jsonb),
+            provenance = provenance ||
+              jsonb_build_object('vertical_intelligence_event_id', $4::text),
+            updated_at = now()
+      where workspace_id = $1 and id = $2`,
+    [
+      event.workspace_id,
+      payload.company_id,
+      JSON.stringify({
+        workspace_id: event.workspace_id,
+        ...payload,
+      }),
+      event.id,
+    ],
+  );
+  if ((result.rowCount ?? 0) === 0) {
+    throw new Error(`Vertical intelligence target company was not found: ${payload.company_id}`);
+  }
+}
+
 async function publishExaContentsFetched(
   engine: ProductEngine,
   session: ProductWorkspaceSession,
@@ -3532,6 +4914,475 @@ export async function configureActivationSetup(
   };
 }
 
+export interface WorkspaceActivationSetupRunResult {
+  workspace_id: string;
+  workflow_name: typeof WORKSPACE_ACTIVATION_SETUP_WORKFLOW;
+  workflow_run_id: string;
+  output: BombsellLangGraphState | null;
+}
+
+export interface WorkspaceProfileIcpRunResult {
+  workspace_id: string;
+  workflow_name: typeof WORKSPACE_PROFILE_ICP_WORKFLOW;
+  workflow_run_id: string;
+  output: BombsellLangGraphState | null;
+}
+
+export interface WorkspaceSignalIngestionRunResult {
+  workspace_id: string;
+  workflow_name: typeof WORKSPACE_SIGNAL_INGESTION_WORKFLOW;
+  workflow_run_id: string;
+  output: BombsellLangGraphState | null;
+}
+
+export interface WorkspaceSignalMatchingRunResult {
+  workspace_id: string;
+  workflow_name: typeof WORKSPACE_SIGNAL_MATCHING_WORKFLOW;
+  workflow_run_id: string;
+  output: BombsellLangGraphState | null;
+}
+
+export interface WorkspaceCompanyBrainBriefRunResult {
+  workspace_id: string;
+  workflow_name: typeof WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW;
+  workflow_run_id: string;
+  output: BombsellLangGraphState | null;
+}
+
+export async function runWorkspaceCompanyBrainBrief(
+  input: Omit<CompanyBrainGraphInput, "workspace_id" | "user_id"> & {
+    idempotency_nonce?: string | null;
+  },
+  session: ProductWorkspaceSession,
+  opts: {
+    wait?: boolean;
+    timeoutMs?: number;
+  } = {},
+): Promise<WorkspaceCompanyBrainBriefRunResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  await registerWorkspaceCompanyBrainWorkflows(engine);
+  const workflowInput: CompanyBrainGraphInput = {
+    ...input,
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+  };
+  const run = await engine.runtime.start<CompanyBrainGraphInput, BombsellLangGraphState>({
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW,
+    idempotency_key: companyBrainBriefIdempotencyKey(
+      session.workspace_id,
+      workflowInput,
+      input.idempotency_nonce,
+    ),
+    input: workflowInput,
+  });
+  if (opts.wait === false) {
+    return {
+      workspace_id: session.workspace_id,
+      workflow_name: WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW,
+      workflow_run_id: run.id,
+      output: run.output ?? null,
+    };
+  }
+  const completed = await waitForWorkflowTerminal<BombsellLangGraphState>(
+    engine.runtime,
+    run.id,
+    opts.timeoutMs ?? 30_000,
+  );
+  if (completed.status === "failed") {
+    throw new Error(completed.error?.message ?? "Company brain brief workflow failed.");
+  }
+  if (completed.status !== "completed") {
+    throw new Error(`Company brain brief workflow ended with status ${completed.status}.`);
+  }
+  return {
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW,
+    workflow_run_id: run.id,
+    output: completed.output ?? null,
+  };
+}
+
+export async function runWorkspaceSignalIngestion(
+  input: Omit<SignalIngestionGraphInput, "workspace_id" | "user_id"> & {
+    idempotency_nonce?: string | null;
+  },
+  session: ProductWorkspaceSession,
+  opts: {
+    wait?: boolean;
+    timeoutMs?: number;
+  } = {},
+): Promise<WorkspaceSignalIngestionRunResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  await registerWorkspaceSignalIngestionWorkflow(engine);
+  const workflowInput: SignalIngestionGraphInput = {
+    ...input,
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+  };
+  const run = await engine.runtime.start<SignalIngestionGraphInput, BombsellLangGraphState>({
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_SIGNAL_INGESTION_WORKFLOW,
+    idempotency_key: signalIngestionIdempotencyKey(
+      session.workspace_id,
+      workflowInput,
+      input.idempotency_nonce,
+    ),
+    input: workflowInput,
+  });
+  if (opts.wait === false) {
+    return {
+      workspace_id: session.workspace_id,
+      workflow_name: WORKSPACE_SIGNAL_INGESTION_WORKFLOW,
+      workflow_run_id: run.id,
+      output: run.output ?? null,
+    };
+  }
+  const completed = await waitForWorkflowTerminal<BombsellLangGraphState>(
+    engine.runtime,
+    run.id,
+    opts.timeoutMs ?? 30_000,
+  );
+  if (completed.status === "failed") {
+    throw new Error(completed.error?.message ?? "Signal ingestion workflow failed.");
+  }
+  if (completed.status !== "completed") {
+    throw new Error(`Signal ingestion workflow ended with status ${completed.status}.`);
+  }
+  return {
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_SIGNAL_INGESTION_WORKFLOW,
+    workflow_run_id: run.id,
+    output: completed.output ?? null,
+  };
+}
+
+export async function runWorkspaceSignalMatching(
+  input: Omit<LeadMatchingGraphInput, "workspace_id" | "user_id">,
+  session: ProductWorkspaceSession,
+  opts: {
+    wait?: boolean;
+    timeoutMs?: number;
+    correlationId?: string | null;
+    causationEventId?: string | null;
+  } = {},
+): Promise<WorkspaceSignalMatchingRunResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const signal_id = input.signal_id.trim();
+  if (!signal_id) throw new Error("signal_id required");
+  await registerWorkspaceSignalMatchingWorkflow(engine);
+  const workflowInput: LeadMatchingGraphInput = {
+    ...input,
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+    signal_id,
+    thread_id: input.thread_id ?? `signal-match:${session.workspace_id}:${signal_id}`,
+    correlation_id: input.correlation_id ?? opts.correlationId ?? undefined,
+    causation_event_id: input.causation_event_id ?? opts.causationEventId ?? null,
+  };
+  const run = await engine.runtime.start<LeadMatchingGraphInput, BombsellLangGraphState>({
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
+    idempotency_key: signalMatchingIdempotencyKey(session.workspace_id, signal_id),
+    correlation_id: workflowInput.correlation_id,
+    causation_id: workflowInput.causation_event_id ?? undefined,
+    input: workflowInput,
+  });
+  if (opts.wait === false) {
+    return {
+      workspace_id: session.workspace_id,
+      workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
+      workflow_run_id: run.id,
+      output: run.output ?? null,
+    };
+  }
+  const completed = await waitForWorkflowTerminal<BombsellLangGraphState>(
+    engine.runtime,
+    run.id,
+    opts.timeoutMs ?? 30_000,
+  );
+  if (completed.status === "failed") {
+    throw new Error(completed.error?.message ?? "Signal matching workflow failed.");
+  }
+  if (completed.status !== "completed") {
+    throw new Error(`Signal matching workflow ended with status ${completed.status}.`);
+  }
+  return {
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
+    workflow_run_id: run.id,
+    output: completed.output ?? null,
+  };
+}
+
+export async function runWorkspaceProfileIcpDraft(
+  input: Omit<ProfileIcpGraphInput, "workspace_id" | "user_id">,
+  session: ProductWorkspaceSession,
+  opts: {
+    wait?: boolean;
+    timeoutMs?: number;
+  } = {},
+): Promise<WorkspaceProfileIcpRunResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const websiteUrl = normalizeWebsiteUrl(input.website_url);
+  if (!websiteUrl) throw new Error("valid website_url required");
+  await registerWorkspaceProfileIcpWorkflow(engine);
+  const workflowInput: ProfileIcpGraphInput = {
+    ...input,
+    website_url: websiteUrl,
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+  };
+  const run = await engine.runtime.start<ProfileIcpGraphInput, BombsellLangGraphState>({
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_PROFILE_ICP_WORKFLOW,
+    idempotency_key: profileIcpIdempotencyKey(session.workspace_id, workflowInput),
+    input: workflowInput,
+  });
+  if (opts.wait === false) {
+    return {
+      workspace_id: session.workspace_id,
+      workflow_name: WORKSPACE_PROFILE_ICP_WORKFLOW,
+      workflow_run_id: run.id,
+      output: run.output ?? null,
+    };
+  }
+  const completed = await waitForWorkflowTerminal<BombsellLangGraphState>(
+    engine.runtime,
+    run.id,
+    opts.timeoutMs ?? 30_000,
+  );
+  if (completed.status === "failed") {
+    throw new Error(completed.error?.message ?? "Profile ICP workflow failed.");
+  }
+  if (completed.status !== "completed") {
+    throw new Error(`Profile ICP workflow ended with status ${completed.status}.`);
+  }
+  return {
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_PROFILE_ICP_WORKFLOW,
+    workflow_run_id: run.id,
+    output: completed.output ?? null,
+  };
+}
+
+export async function runWorkspaceActivationSetup(
+  input: Omit<ActivationSetupGraphInput, "workspace_id" | "user_id">,
+  session: ProductWorkspaceSession,
+  opts: {
+    wait?: boolean;
+    timeoutMs?: number;
+  } = {},
+): Promise<WorkspaceActivationSetupRunResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const websiteUrl = normalizeWebsiteUrl(input.website_url);
+  if (!websiteUrl) throw new Error("valid website_url required");
+  await registerWorkspaceActivationSetupWorkflow(engine);
+  const workflowInput: ActivationSetupGraphInput = {
+    ...input,
+    website_url: websiteUrl,
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+  };
+  const run = await engine.runtime.start<ActivationSetupGraphInput, BombsellLangGraphState>({
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_ACTIVATION_SETUP_WORKFLOW,
+    idempotency_key: activationSetupIdempotencyKey(session.workspace_id, workflowInput),
+    input: workflowInput,
+  });
+  if (opts.wait === false) {
+    return {
+      workspace_id: session.workspace_id,
+      workflow_name: WORKSPACE_ACTIVATION_SETUP_WORKFLOW,
+      workflow_run_id: run.id,
+      output: run.output ?? null,
+    };
+  }
+  const completed = await waitForWorkflowTerminal<BombsellLangGraphState>(
+    engine.runtime,
+    run.id,
+    opts.timeoutMs ?? 30_000,
+  );
+  if (completed.status === "failed") {
+    throw new Error(completed.error?.message ?? "Activation setup workflow failed.");
+  }
+  if (completed.status !== "completed") {
+    throw new Error(`Activation setup workflow ended with status ${completed.status}.`);
+  }
+  return {
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_ACTIVATION_SETUP_WORKFLOW,
+    workflow_run_id: run.id,
+    output: completed.output ?? null,
+  };
+}
+
+export interface ProductContactWaterfallInput {
+  signal_id: string;
+  company_id: string;
+  play_id: string;
+  rep_id: string;
+  channel: ContactChannel;
+  limit?: number;
+  repair_key?: string | null;
+  wait?: boolean;
+  timeout_ms?: number;
+}
+
+export interface ProductContactWaterfallResult {
+  workspace_id: string;
+  workflow_name: typeof CONTACT_RESOLUTION_WORKFLOW;
+  workflow_run_id: string;
+  workflow_status: WorkflowRunStatus;
+  decision: "started" | ContactResolutionOutput["decision"];
+  contact_resolution_id: string | null;
+  candidates: ContactCandidate[];
+  selected_person_id: string | null;
+  defer_reason: string | null;
+}
+
+export async function runProductContactWaterfall(
+  input: ProductContactWaterfallInput,
+  session: ProductWorkspaceSession,
+): Promise<ProductContactWaterfallResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const workflowInput: ContactResolutionInput = {
+    workspace_id: session.workspace_id,
+    signal_id: input.signal_id,
+    company_id: input.company_id,
+    play_id: input.play_id,
+    rep_id: input.rep_id,
+    channel: input.channel,
+    limit: input.limit,
+    repair_key: input.repair_key ?? null,
+  };
+  const run = await startContactResolution(engine, workflowInput);
+  if (input.wait === false) {
+    return contactWaterfallResultFromRun(session.workspace_id, run, null);
+  }
+  const completed = await waitForWorkflowTerminal<ContactResolutionOutput>(
+    engine.runtime,
+    run.id,
+    input.timeout_ms ?? 30_000,
+  );
+  if (completed.status === "failed") {
+    throw new Error(completed.error?.message ?? "Contact waterfall workflow failed.");
+  }
+  if (completed.status !== "completed") {
+    return contactWaterfallResultFromRun(session.workspace_id, completed, null);
+  }
+  return contactWaterfallResultFromRun(
+    session.workspace_id,
+    completed,
+    completed.output ?? null,
+  );
+}
+
+function contactWaterfallResultFromRun(
+  workspace_id: string,
+  run: WorkflowRun<unknown, ContactResolutionOutput>,
+  output: ContactResolutionOutput | null,
+): ProductContactWaterfallResult {
+  return {
+    workspace_id,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    workflow_run_id: run.id,
+    workflow_status: run.status,
+    decision: output?.decision ?? "started",
+    contact_resolution_id: output?.contact_resolution_id ?? null,
+    candidates: output?.candidates ?? [],
+    selected_person_id: output?.selected_person_id ?? null,
+    defer_reason: output?.defer_reason ?? null,
+  };
+}
+
+export async function matchWorkspaceSignal(
+  input: MatchWorkspaceSignalInput,
+  session: ProductWorkspaceSession,
+  opts: MatchWorkspaceSignalOptions = {},
+): Promise<MatchWorkspaceSignalResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{ workspace_id: string }>(
+    `select workspace_id
+       from signals
+      where id = $1
+      limit 1`,
+    [input.signal_id],
+  );
+  const signalWorkspaceId = rows[0]?.workspace_id;
+  if (!signalWorkspaceId) {
+    return {
+      workspace_id: session.workspace_id,
+      signal_id: input.signal_id,
+      status: "skipped",
+      kind: null,
+      matched_icp_ids: [],
+      match_score: null,
+      match_reason: null,
+      matches: [],
+      skip_reason: "not_found",
+    };
+  }
+  if (signalWorkspaceId !== session.workspace_id) {
+    throw new Error("Signal not found in the active workspace.");
+  }
+  const outcome = await classifySignal(
+    {
+      pool: engine.pool,
+      bus: engine.bus,
+      llm: createSignalClassifierLLM(engine, session.workspace_id),
+      correlation_id: opts.correlation_id,
+      causation_id: opts.causation_id,
+      producer_ref: opts.producerRef ?? "product:signal.match",
+    },
+    { signal_id: input.signal_id },
+  );
+  if (outcome.status === "matched") {
+    return {
+      workspace_id: session.workspace_id,
+      signal_id: input.signal_id,
+      status: "matched",
+      kind: outcome.kind,
+      matched_icp_ids: outcome.matched_icp_ids,
+      match_score: outcome.match_score,
+      match_reason: outcome.match_reason,
+      matches: outcome.matches,
+      skip_reason: null,
+    };
+  }
+  if (outcome.status === "dismissed") {
+    return {
+      workspace_id: session.workspace_id,
+      signal_id: input.signal_id,
+      status: "dismissed",
+      kind: null,
+      matched_icp_ids: [],
+      match_score: null,
+      match_reason: outcome.reason,
+      matches: [],
+      skip_reason: null,
+    };
+  }
+  return {
+    workspace_id: session.workspace_id,
+    signal_id: input.signal_id,
+    status: "skipped",
+    kind: null,
+    matched_icp_ids: [],
+    match_score: null,
+    match_reason: outcome.reason,
+    matches: [],
+    skip_reason: outcome.reason,
+  };
+}
+
 function parseSignalKind(kind: unknown): SignalKindValue {
   const parsed = SignalKind.safeParse(kind);
   return parsed.success ? parsed.data : "hiring";
@@ -3556,6 +5407,107 @@ function titleizeLinkedInAction(action: LinkedInChannelName): string {
   if (action === "linkedin_connection") return "LinkedIn Connection";
   if (action === "linkedin_comment") return "LinkedIn Comment";
   return "LinkedIn DM";
+}
+
+function activationSetupIdempotencyKey(
+  workspace_id: string,
+  input: ActivationSetupGraphInput,
+): string {
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        workspace_id,
+        website_url: input.website_url,
+        company_hint: input.company_hint ?? null,
+        allowed_industries: input.allowed_industries ?? [],
+      }),
+    )
+    .digest("hex")
+    .slice(0, 24);
+  return `activation.setup:${workspace_id}:${digest}`;
+}
+
+function profileIcpIdempotencyKey(
+  workspace_id: string,
+  input: ProfileIcpGraphInput,
+): string {
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        workspace_id,
+        website_url: input.website_url,
+        company_hint: input.company_hint ?? null,
+        allowed_industries: input.allowed_industries ?? [],
+      }),
+    )
+    .digest("hex")
+    .slice(0, 24);
+  return `profile.icp:${workspace_id}:${digest}`;
+}
+
+function signalIngestionIdempotencyKey(
+  workspace_id: string,
+  input: SignalIngestionGraphInput,
+  nonce?: string | null,
+): string {
+  const minuteBucket = Math.floor(Date.now() / 60_000);
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        workspace_id,
+        limit: input.limit ?? null,
+        nonce: nonce?.trim() || `minute:${minuteBucket}`,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 24);
+  return `signal.ingestion:${workspace_id}:${digest}`;
+}
+
+function companyBrainBriefIdempotencyKey(
+  workspace_id: string,
+  input: CompanyBrainGraphInput,
+  nonce?: string | null,
+): string {
+  const minuteBucket = Math.floor(Date.now() / 60_000);
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        brief_type: input.brief_type ?? "workspace",
+        task: input.task ?? null,
+        rep_id: input.rep_id ?? null,
+        signal_id: input.signal_id ?? null,
+        play_id: input.play_id ?? null,
+        play_run_id: input.play_run_id ?? null,
+        conversation_id: input.conversation_id ?? null,
+        message_id: input.message_id ?? null,
+        outcome_id: input.outcome_id ?? null,
+        company_id: input.company_id ?? null,
+        person_id: input.person_id ?? null,
+        nonce: nonce?.trim() || `minute:${minuteBucket}`,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 24);
+  return `company.brief:${workspace_id}:${digest}`;
+}
+
+async function waitForWorkflowTerminal<O>(
+  runtime: WorkflowRuntime,
+  run_id: string,
+  timeoutMs: number,
+): Promise<WorkflowRun<unknown, O>> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const run = await runtime.get<unknown, O>(run_id);
+    if (run && ["completed", "failed", "cancelled"].includes(run.status)) {
+      return run;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`Workflow ${run_id} did not finish within ${timeoutMs}ms.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
 }
 
 function clamp01(value: number): number {
@@ -4149,6 +6101,31 @@ export async function getOutlookAccountConnectIntent(
   };
 }
 
+export async function getOutlookCalendarConnectIntent(
+  session: ProductWorkspaceSession,
+): Promise<OutlookCalendarConnectIntent> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return {
+    workspace_id: session.workspace_id,
+    connect_url: productRouteUrl("/api/auth/outlook?intent=calendar"),
+    provider_configured: Boolean(
+      process.env.MICROSOFT_CLIENT_ID &&
+        process.env.MICROSOFT_CLIENT_SECRET &&
+        process.env.SESSION_SECRET,
+    ),
+    scope: "Calendars.ReadBasic",
+  };
+}
+
+export async function getProductOutlookCalendarAvailability(
+  session: ProductWorkspaceSession,
+): Promise<OutlookCalendarAvailability> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  return resolveMeetingPrepCalendar(engine, session.workspace_id);
+}
+
 export async function configureEmailAccount(
   input: ConfigureEmailInput,
   session?: ProductWorkspaceSession,
@@ -4421,14 +6398,12 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       apply: async (event) => {
         const signalId = (event.payload as { signal_id?: string }).signal_id;
         if (!signalId) return;
-        await classifySignal(
-          {
-            pool: engine.pool,
-            bus: engine.bus,
-            llm: createSignalClassifierLLM(engine, event.workspace_id),
-          },
-          { signal_id: signalId },
-        );
+        await startSignalMatchingWorkflowForEvent(engine, {
+          workspace_id: event.workspace_id,
+          signal_id: signalId,
+          event_id: event.id,
+          correlation_id: event.correlation_id ?? event.id,
+        });
       },
     },
     createSignalCompanyLinkedProjection(engine),
@@ -5216,6 +7191,45 @@ function createLocalSignalClassifierLLM(): LLMClient {
   };
 }
 
+function createProductReplyIntentClassifier(
+  engine: ProductEngine,
+  workspace_id: string,
+): IntentClassifier {
+  const llm = createGovernedLLM(engine, workspace_id, "classifier.reply");
+  if (llm) return createDeepSeekIntentClassifier({ llm });
+  if (isProductionProductRuntime()) {
+    throw new ProductEnvironmentError("reply triage", ["DEEPSEEK_API_KEY"]);
+  }
+  return createLocalReplyIntentClassifier();
+}
+
+function createLocalReplyIntentClassifier(): IntentClassifier {
+  return {
+    async classify(input) {
+      const text = `${input.subject}\n${input.body_text}`.toLowerCase();
+      if (/\b(unsubscribe|remove me|opt out)\b/.test(text)) {
+        return { intent: "unsubscribe", confidence: 0.95, reason: "Local classifier found an unsubscribe request." };
+      }
+      if (/\b(do not contact|never contact|legal|spam complaint)\b/.test(text)) {
+        return { intent: "do_not_contact", confidence: 0.95, reason: "Local classifier found a do-not-contact request." };
+      }
+      if (/\b(out of office|ooo|on leave|vacation)\b/.test(text)) {
+        return { intent: "ooo", confidence: 0.8, reason: "Local classifier found an out-of-office pattern." };
+      }
+      if (/\b(not interested|no thanks|not a priority|no budget)\b/.test(text)) {
+        return { intent: "negative", confidence: 0.78, reason: "Local classifier found a negative reply pattern." };
+      }
+      if (/\b(book|meeting|calendar|chat|call|available|availability|time[s]?|schedule)\b/.test(text)) {
+        return { intent: "meeting_intent", confidence: 0.86, reason: "Local classifier found explicit scheduling intent." };
+      }
+      if (/\b(interested|send me|tell me more)\b/.test(text)) {
+        return { intent: "positive", confidence: 0.82, reason: "Local classifier found buying-interest language." };
+      }
+      return { intent: "neutral", confidence: 0.55, reason: "Local classifier found no decisive reply intent." };
+    },
+  };
+}
+
 function createProductEmailTransport(): EmailTransport | undefined {
   if (resolveProductEmailTransportMode() === "resend") {
     return createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY! });
@@ -5231,6 +7245,28 @@ function createProductOutlookSender(
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) return undefined;
   return createOutlookSender({ pool, bus, clientId, clientSecret });
+}
+
+async function resolveMeetingPrepCalendar(
+  engine: ProductEngine,
+  workspace_id: string,
+): Promise<OutlookCalendarAvailability> {
+  const outlook = createProductOutlookSender(engine.pool, engine.bus);
+  if (!outlook) {
+    return {
+      consented: false,
+      provider: "outlook",
+      channel_account_id: null,
+      account_display_name: null,
+      suggested_times: [],
+      reason: "calendar_not_configured",
+    };
+  }
+  return getOutlookCalendarAvailability({
+    pool: engine.pool,
+    accessTokens: outlook,
+    workspace_id,
+  });
 }
 
 function createGovernedJudge(engine: ProductEngine, workspace_id: string) {
@@ -5302,6 +7338,237 @@ function registerContactResolutionWorkflow(engine: ProductEngine): void {
       ...createContactResolutionProviders({ pool: engine.pool }),
     }),
   );
+}
+
+async function registerWorkspaceActivationSetupWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceActivationSetupWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceProfileIcpWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceProfileIcpWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceSignalMatchingWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceSignalMatchingWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceSignalIngestionWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceSignalIngestionWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceCampaignStrategyWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceCampaignStrategyWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceSkillOptimizerWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceSkillOptimizerWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceChannelReadinessWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceChannelReadinessWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceCompanyBrainWorkflows(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceCompanyBrainRecallWorkflow({
+      bus: engine.bus,
+    }),
+  );
+  engine.runtime.register(
+    createWorkspaceCompanyBrainBriefWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceContactWaterfallWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceContactWaterfallWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceEvalGateWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceEvalGateWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceMeetingPrepWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceMeetingPrepWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceMessagePersonalizationWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceMessagePersonalizationWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceOutreachSkillSelectionWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceOutreachSkillSelectionWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceReplyTriageWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceReplyTriageWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceSourceDiscoveryWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceSourceDiscoveryWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function registerWorkspaceVerticalIntelligenceWorkflow(
+  engine: ProductEngine,
+): Promise<void> {
+  const { registerProductTools } = await import("./tools.ts");
+  registerProductTools();
+  engine.runtime.register(
+    createWorkspaceVerticalIntelligenceWorkflow({
+      bus: engine.bus,
+    }),
+  );
+}
+
+async function startSignalMatchingWorkflowForEvent(
+  engine: ProductEngine,
+  input: {
+    workspace_id: string;
+    signal_id: string;
+    event_id: string;
+    correlation_id: string;
+  },
+): Promise<boolean> {
+  const user_id = await getWorkflowUserId(engine.pool, input.workspace_id);
+  if (!user_id) return false;
+  await registerWorkspaceSignalMatchingWorkflow(engine);
+  await engine.runtime.start<LeadMatchingGraphInput, BombsellLangGraphState>({
+    workspace_id: input.workspace_id,
+    workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
+    idempotency_key: signalMatchingIdempotencyKey(input.workspace_id, input.signal_id),
+    correlation_id: input.correlation_id,
+    causation_id: input.event_id,
+    input: {
+      workspace_id: input.workspace_id,
+      user_id,
+      signal_id: input.signal_id,
+      thread_id: `signal-match:${input.workspace_id}:${input.signal_id}`,
+      correlation_id: input.correlation_id,
+      causation_event_id: input.event_id,
+    },
+  });
+  return true;
+}
+
+function signalMatchingIdempotencyKey(workspace_id: string, signal_id: string): string {
+  return `signal-match:${workspace_id}:${signal_id}`;
 }
 
 async function getWorkflowWorkspaceContext(
@@ -5475,6 +7742,8 @@ async function startSignalEmailPlay(
     policy: PlayChannelPolicy;
     simulate_outcome_kind?: SignalToEmailPlayInput["simulate_outcome_kind"];
     repair_key?: string | null;
+    campaign_allocation?: CampaignDispatchAllocation | null;
+    campaign_recommendation_id?: string | null;
   },
 ) {
   const store = createPostgresVerticalSliceStore(engine.pool);
@@ -5521,6 +7790,19 @@ async function startSignalEmailPlay(
       email_approval: input.approval,
       play_channel_policy: input.policy,
       simulate_outcome_kind: input.simulate_outcome_kind ?? null,
+      skill_key: input.campaign_allocation?.skill_key ?? null,
+      skill_version: input.campaign_allocation?.skill_version ?? null,
+      segment_key: input.campaign_allocation?.segment_key ?? null,
+      campaign_strategy: input.campaign_allocation
+        ? {
+            recommendation_id: input.campaign_recommendation_id ?? null,
+            variant_key: input.campaign_allocation.variant_key,
+            matched_variant_key: input.campaign_allocation.matched_variant_key,
+            recommendation: input.campaign_allocation.recommendation,
+            allocation_weight: input.campaign_allocation.allocation_weight,
+            reason: input.campaign_allocation.reason,
+          }
+        : null,
     },
   });
 }
@@ -5539,6 +7821,8 @@ async function startSignalLinkedInPlay(
     policy: PlayChannelPolicy;
     simulate_outcome_kind?: SignalToLinkedInPlayInput["simulate_outcome_kind"];
     repair_key?: string | null;
+    campaign_allocation?: CampaignDispatchAllocation | null;
+    campaign_recommendation_id?: string | null;
   },
 ) {
   const store = createPostgresVerticalSliceStore(engine.pool);
@@ -5589,6 +7873,19 @@ async function startSignalLinkedInPlay(
       linkedin_approval: input.approval,
       play_channel_policy: input.policy,
       simulate_outcome_kind: input.simulate_outcome_kind ?? null,
+      skill_key: input.campaign_allocation?.skill_key ?? null,
+      skill_version: input.campaign_allocation?.skill_version ?? null,
+      segment_key: input.campaign_allocation?.segment_key ?? null,
+      campaign_strategy: input.campaign_allocation
+        ? {
+            recommendation_id: input.campaign_recommendation_id ?? null,
+            variant_key: input.campaign_allocation.variant_key,
+            matched_variant_key: input.campaign_allocation.matched_variant_key,
+            recommendation: input.campaign_allocation.recommendation,
+            allocation_weight: input.campaign_allocation.allocation_weight,
+            reason: input.campaign_allocation.reason,
+          }
+        : null,
     },
   });
 }
@@ -5678,6 +7975,178 @@ function isRepairableDraftRejection(reason: string | null | undefined): boolean 
     .test(reason ?? "");
 }
 
+interface SignalDispatchRow {
+  event_id: string;
+  workspace_id: string;
+  signal_id: string;
+  company_id: string | null;
+  resolved_person_id: string | null;
+  resolver_run_id: string | null;
+  resolver_idempotency_key: string | null;
+  resolver_status: string | null;
+  resolver_output: Record<string, unknown> | null;
+  existing_run_status: string | null;
+  existing_run_output: Record<string, unknown> | null;
+  existing_draft_message_id: string | null;
+  existing_rejection_reason: string | null;
+  play_id: string;
+  play_name: string;
+  rep_id: string;
+  workflow_name: string;
+  target_channel: string;
+  signal_kind: string;
+  signal_audience_hint: Record<string, unknown>;
+  segment_key: string | null;
+  signal_properties: Record<string, unknown>;
+  play_autonomy: Record<string, unknown>;
+}
+
+type SignalDispatchCandidate = CampaignDispatchCandidate & {
+  row: SignalDispatchRow;
+  original_index: number;
+};
+
+async function latestCampaignDispatchStrategy(
+  pool: Pool,
+  workspace_id: string,
+): Promise<CampaignDispatchStrategy | null> {
+  const { rows } = await pool.query<{ payload: Record<string, unknown> }>(
+    `select payload
+       from events
+      where workspace_id = $1
+        and event_type = 'campaign.strategy.recommended'
+      order by occurred_at desc
+      limit 1`,
+    [workspace_id],
+  );
+  return campaignDispatchStrategyFromPayload(rows[0]?.payload);
+}
+
+function campaignDispatchStrategyFromPayload(
+  payload: Record<string, unknown> | null | undefined,
+): CampaignDispatchStrategy | null {
+  const variants = Array.isArray(payload?.variants) ? payload.variants : [];
+  const parsed = variants
+    .map((variant) =>
+      variant && typeof variant === "object" && !Array.isArray(variant)
+        ? campaignDispatchStrategyVariantFromRecord(variant as Record<string, unknown>)
+        : null
+    )
+    .filter((variant): variant is CampaignDispatchStrategy["variants"][number] => Boolean(variant));
+  if (parsed.length === 0) return null;
+  return {
+    recommendation_id: stringOrNull(payload?.recommendation_id),
+    generated_at: stringOrNull(payload?.generated_at),
+    variants: parsed,
+  };
+}
+
+function campaignDispatchStrategyVariantFromRecord(
+  variant: Record<string, unknown>,
+): CampaignDispatchStrategy["variants"][number] | null {
+  const recommendation = campaignOptimizerRecommendationValue(variant.recommendation);
+  const play_id = stringOrNull(variant.play_id);
+  const variant_key = stringOrNull(variant.variant_key);
+  const skill_key = stringOrNull(variant.skill_key);
+  const pattern_key = stringOrNull(variant.pattern_key);
+  if (!recommendation || !play_id || !variant_key || !skill_key || !pattern_key) return null;
+  return {
+    variant_key,
+    play_id,
+    channel: stringOrNull(variant.channel),
+    skill_key,
+    segment_key: stringOrNull(variant.segment_key) ?? "all",
+    allocation_weight: numberOrDefault(variant.allocation_weight, 0.2),
+    recommendation,
+    explanation: stringOrNull(variant.explanation),
+  };
+}
+
+function campaignOptimizerRecommendationValue(value: unknown): CampaignOptimizerRecommendation | null {
+  return value === "double_down" ||
+    value === "hold" ||
+    value === "reduce" ||
+    value === "not_enough_proof"
+    ? value
+    : null;
+}
+
+function signalDispatchCampaignCandidate(row: SignalDispatchRow): CampaignDispatchCandidate {
+  const action = row.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW
+    ? parseLinkedInAction(row.target_channel) ?? "linkedin_dm"
+    : null;
+  const channel = action ?? "email";
+  const selectedSkill = selectOutreachSkill({
+    channel: channel as OutreachSkillChannel,
+    stage: "cold_open",
+    signal_kind: row.signal_kind,
+    action: action as OutreachSkillChannel | null,
+  });
+  return {
+    play_id: row.play_id,
+    play_name: row.play_name,
+    channel,
+    skill_key: selectedSkill.skill_key,
+    skill_version: selectedSkill.version,
+    segment_key: row.segment_key ?? stringOrNull(row.signal_audience_hint.icp_segment) ?? "all",
+  };
+}
+
+function signalDispatchCampaignSkipIdempotencyKey(
+  row: SignalDispatchRow,
+  allocation: CampaignDispatchAllocation,
+): string {
+  return [
+    "campaign-dispatch-skip",
+    `signal:${row.signal_id}`,
+    `play:${row.play_id}`,
+    `variant:${allocation.matched_variant_key ?? allocation.variant_key}`,
+    `strategy:${allocation.recommendation_id ?? "none"}`,
+  ].join(":");
+}
+
+async function publishCampaignDispatchSkipped(
+  engine: ProductEngine,
+  row: SignalDispatchRow,
+  allocation: CampaignDispatchAllocation,
+): Promise<void> {
+  await engine.bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "campaign.dispatch.skipped",
+    source: "system",
+    producer_ref: "product.dispatchSignalPlaysOnce",
+    correlation_id: row.event_id,
+    causation_id: row.event_id,
+    idempotency_key: signalDispatchCampaignSkipIdempotencyKey(row, allocation),
+    payload: {
+      signal_id: row.signal_id,
+      play_id: row.play_id,
+      play_name: row.play_name,
+      channel: allocation.channel,
+      skill_key: allocation.skill_key,
+      skill_version: allocation.skill_version,
+      segment_key: allocation.segment_key,
+      variant_key: allocation.variant_key,
+      matched_variant_key: allocation.matched_variant_key,
+      recommendation_id: allocation.recommendation_id,
+      strategy_generated_at: allocation.strategy_generated_at,
+      recommendation: allocation.recommendation,
+      allocation_weight: allocation.allocation_weight,
+      reason: allocation.reason,
+      skipped_at: new Date().toISOString(),
+    },
+  });
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberOrDefault(value: unknown, fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : fallback;
+}
+
 export async function dispatchSignalPlaysOnce(
   opts: DispatchOptions = {},
   session?: ProductWorkspaceSession,
@@ -5686,7 +8155,9 @@ export async function dispatchSignalPlaysOnce(
   registerSignalEmailWorkflow(engine);
   registerContactResolutionWorkflow(engine);
   if (session) await assertProductWorkspaceAccess(session, engine.pool);
-  const repairLimit = opts.limit ?? 25;
+  const dispatchLimit = opts.limit ?? 25;
+  const repairLimit = dispatchLimit;
+  const candidateLimit = Math.max(dispatchLimit, dispatchLimit * 4);
   const repaired = await repairMatchedSignalCompanyLinksOnce(
     { pool: engine.pool, bus: engine.bus },
     { workspace_id: session?.workspace_id ?? null, limit: repairLimit },
@@ -5704,27 +8175,7 @@ export async function dispatchSignalPlaysOnce(
       },
     );
   }
-  const { rows } = await engine.pool.query<{
-    event_id: string;
-    workspace_id: string;
-    signal_id: string;
-    company_id: string | null;
-    resolved_person_id: string | null;
-    resolver_run_id: string | null;
-    resolver_idempotency_key: string | null;
-    resolver_status: string | null;
-    resolver_output: Record<string, unknown> | null;
-    existing_run_status: string | null;
-    existing_run_output: Record<string, unknown> | null;
-    existing_draft_message_id: string | null;
-    existing_rejection_reason: string | null;
-    play_id: string;
-    rep_id: string;
-    workflow_name: string;
-    target_channel: string;
-    signal_properties: Record<string, unknown>;
-    play_autonomy: Record<string, unknown>;
-  }>(
+  const { rows } = await engine.pool.query<SignalDispatchRow>(
     `select e.id as event_id,
             e.workspace_id,
             e.payload->>'signal_id' as signal_id,
@@ -5739,9 +8190,17 @@ export async function dispatchSignalPlaysOnce(
             existing_draft.message_id::text as existing_draft_message_id,
             existing_rejection.payload->>'reason' as existing_rejection_reason,
             p.id as play_id,
+            p.name as play_name,
             p.default_rep_id as rep_id,
             coalesce(p.compiled->>'workflow', $1) as workflow_name,
             coalesce(p.compiled->>'channel', 'email') as target_channel,
+            s.kind::text as signal_kind,
+            coalesce(s.audience_hint, '{}'::jsonb) as signal_audience_hint,
+            coalesce(
+              s.audience_hint->>'icp_segment',
+              p.compiled #>> '{icp,name}',
+              p.compiled #>> '{trigger,filter,kind}'
+            ) as segment_key,
             s.properties as signal_properties,
             p.autonomy as play_autonomy
        from events e
@@ -5757,6 +8216,28 @@ export async function dispatchSignalPlaysOnce(
           p.compiled #>> '{trigger,filter,kind}' is null
           or p.compiled #>> '{trigger,filter,kind}' = s.kind::text
         )
+       left join lateral (
+         select strategy.occurred_at
+           from events strategy
+          where strategy.workspace_id = e.workspace_id
+            and strategy.event_type = 'campaign.strategy.recommended'
+          order by strategy.occurred_at desc
+          limit 1
+       ) latest_strategy on true
+       left join lateral (
+         select skipped.id
+           from events skipped
+          where skipped.workspace_id = e.workspace_id
+            and skipped.event_type = 'campaign.dispatch.skipped'
+            and skipped.payload->>'signal_id' = e.payload->>'signal_id'
+            and skipped.payload->>'play_id' = p.id::text
+            and (
+              latest_strategy.occurred_at is null
+              or skipped.occurred_at >= latest_strategy.occurred_at
+            )
+          order by skipped.occurred_at desc
+          limit 1
+       ) campaign_skip on true
        left join lateral (
          select cr.payload
            from events cr
@@ -5881,6 +8362,7 @@ export async function dispatchSignalPlaysOnce(
         )
         and coalesce(p.compiled->>'workflow', $1) = any($2::text[])
         and s.related_company_id is not null
+        and campaign_skip.id is null
         and ($4::uuid is null or e.workspace_id = $4)
         and ($7::uuid is null or s.id = $7)
         and ($8::uuid is null or p.id = $8)
@@ -5889,7 +8371,7 @@ export async function dispatchSignalPlaysOnce(
     [
       SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
       [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW],
-      opts.limit ?? 25,
+      candidateLimit,
       session?.workspace_id ?? null,
       CONTACT_RESOLUTION_WORKFLOW,
       CONTACT_RESOLUTION_REPAIR_KEY,
@@ -5901,8 +8383,46 @@ export async function dispatchSignalPlaysOnce(
     ],
   );
 
+  const candidatesByWorkspace = new Map<string, SignalDispatchCandidate[]>();
+  rows.forEach((row, original_index) => {
+    const candidate: SignalDispatchCandidate = {
+      ...signalDispatchCampaignCandidate(row),
+      explicit_target: Boolean(opts.play_id),
+      row,
+      original_index,
+    };
+    const workspaceCandidates = candidatesByWorkspace.get(row.workspace_id) ?? [];
+    workspaceCandidates.push(candidate);
+    candidatesByWorkspace.set(row.workspace_id, workspaceCandidates);
+  });
+
+  const planned: Array<CampaignDispatchPlan<SignalDispatchCandidate>> = [];
+  for (const [workspace_id, candidates] of candidatesByWorkspace) {
+    const strategy = await latestCampaignDispatchStrategy(engine.pool, workspace_id);
+    planned.push(...planCampaignDispatchAllocations(candidates, strategy));
+  }
+  planned.sort((a, b) => {
+    const dispatchRank = Number(b.allocation.should_dispatch) - Number(a.allocation.should_dispatch);
+    if (dispatchRank !== 0) return dispatchRank;
+    const weightRank = b.allocation.allocation_weight - a.allocation.allocation_weight;
+    if (weightRank !== 0) return weightRank;
+    return a.candidate.original_index - b.candidate.original_index;
+  });
+
+  const skipped = new Set<string>();
+  for (const plan of planned) {
+    if (plan.allocation.should_dispatch) continue;
+    const key = signalDispatchCampaignSkipIdempotencyKey(plan.candidate.row, plan.allocation);
+    if (skipped.has(key)) continue;
+    skipped.add(key);
+    await publishCampaignDispatchSkipped(engine, plan.candidate.row, plan.allocation);
+  }
+
   let dispatched = 0;
-  for (const row of rows) {
+  for (const plan of planned) {
+    if (!plan.allocation.should_dispatch) continue;
+    if (dispatched >= dispatchLimit) break;
+    const row = plan.candidate.row;
     const simulate = simulateOutcomeFromSignal(row.signal_properties);
     const contactChannel = contactChannelForTarget(row.target_channel);
     let personId = row.resolved_person_id;
@@ -5941,6 +8461,8 @@ export async function dispatchSignalPlaysOnce(
         policy,
         simulate_outcome_kind: simulate,
         repair_key: playRepairKey,
+        campaign_allocation: plan.allocation,
+        campaign_recommendation_id: plan.allocation.recommendation_id,
       });
     } else {
       const policy = resolvePlayChannelPolicy(row.play_autonomy, "email", {
@@ -5957,6 +8479,8 @@ export async function dispatchSignalPlaysOnce(
         policy,
         simulate_outcome_kind: simulate,
         repair_key: playRepairKey,
+        campaign_allocation: plan.allocation,
+        campaign_recommendation_id: plan.allocation.recommendation_id,
       });
     }
     dispatched++;
@@ -5992,7 +8516,7 @@ export async function dispatchReplyEmailPlaysOnce(
         and wr.workflow_name = $1
         and wr.idempotency_key = concat('reply:', e.payload->>'message_id', ':email')
       where e.event_type = 'reply.classified'
-        and e.payload->>'intent' in ('positive', 'neutral')
+        and e.payload->>'intent' in ('meeting_intent', 'positive', 'neutral')
         and wr.id is null
         and ($3::uuid is null or e.workspace_id = $3)
       order by e.occurred_at asc
@@ -6031,11 +8555,159 @@ export async function dispatchReplyEmailPlaysOnce(
   return dispatched;
 }
 
+export async function dispatchMeetingPrepOnce(
+  opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
+): Promise<number> {
+  const engine = await getProductEngine();
+  await registerWorkspaceMeetingPrepWorkflow(engine);
+  if (session) await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{
+    event_id: string;
+    workspace_id: string;
+    conversation_id: string;
+    inbound_message_id: string;
+  }>(
+    `select e.id as event_id,
+            e.workspace_id,
+            e.payload->>'conversation_id' as conversation_id,
+            e.payload->>'message_id' as inbound_message_id
+       from events e
+       join conversations c
+         on c.workspace_id = e.workspace_id
+        and c.id = (e.payload->>'conversation_id')::uuid
+       left join workflow_runs wr
+         on wr.workspace_id = e.workspace_id
+        and wr.workflow_name = $1
+        and wr.idempotency_key = concat('meeting-prep:', e.payload->>'message_id')
+      where e.event_type = 'reply.classified'
+        and e.payload->>'intent' in ('meeting_intent', 'positive')
+        and wr.id is null
+        and e.payload->>'conversation_id' is not null
+        and e.payload->>'message_id' is not null
+        and ($3::uuid is null or e.workspace_id = $3)
+      order by e.occurred_at asc
+      limit $2`,
+    [
+      WORKSPACE_MEETING_PREP_WORKFLOW,
+      opts.limit ?? 25,
+      session?.workspace_id ?? null,
+    ],
+  );
+
+  let dispatched = 0;
+  for (const row of rows) {
+    const user_id = await getWorkflowUserId(engine.pool, row.workspace_id);
+    if (!user_id) continue;
+    await registerWorkspaceMeetingPrepWorkflow(engine);
+    await engine.runtime.start<MeetingPrepGraphInput, BombsellLangGraphState>({
+      workspace_id: row.workspace_id,
+      workflow_name: WORKSPACE_MEETING_PREP_WORKFLOW,
+      idempotency_key: `meeting-prep:${row.inbound_message_id}`,
+      correlation_id: row.event_id,
+      causation_id: row.event_id,
+      input: {
+        workspace_id: row.workspace_id,
+        user_id,
+        conversation_id: row.conversation_id,
+        thread_id: `meeting-prep:${row.workspace_id}:${row.conversation_id}`,
+        correlation_id: row.event_id,
+        causation_event_id: row.event_id,
+      },
+    });
+    dispatched++;
+  }
+  return dispatched;
+}
+
 type ProductDispatchEventType = "signal.matched" | "contact.resolved" | "reply.classified";
+type SignalMatchingDispatchEventType = "signal.ingested";
+
+interface SignalMatchingWorkflowStarter {
+  start<I, O = unknown>(opts: {
+    workspace_id: string;
+    workflow_name: string;
+    input: I;
+    idempotency_key?: string;
+    correlation_id?: string;
+    causation_id?: string;
+  }): Promise<unknown>;
+}
+
+export interface SignalMatchingWorkflowDispatchDeps {
+  pool?: Pool;
+  workflows?: SignalMatchingWorkflowStarter;
+}
+
+export interface SignalMatchingEventDispatcherOptions {
+  dispatchSignalMatching?: (event: PublishedEvent) => Promise<number>;
+}
+
+export interface SignalMatchingEventDispatchSubscriptionAdapter {
+  subscribe(
+    eventType: SignalMatchingDispatchEventType,
+    handler: (event: PublishedEvent) => Promise<void>,
+    durableName: string,
+  ): Promise<Subscription>;
+}
+
+export async function dispatchSignalMatchingWorkflowFromIngestedEvent(
+  event: PublishedEvent,
+  deps: SignalMatchingWorkflowDispatchDeps = {},
+): Promise<number> {
+  const signal_id = (event.payload as { signal_id?: unknown }).signal_id;
+  if (typeof signal_id !== "string" || !signal_id.trim()) return 0;
+  const correlation_id = event.correlation_id ?? event.id;
+
+  if (deps.pool && deps.workflows) {
+    const user_id = await getWorkflowUserId(deps.pool, event.workspace_id);
+    if (!user_id) return 0;
+    await deps.workflows.start<LeadMatchingGraphInput, BombsellLangGraphState>({
+      workspace_id: event.workspace_id,
+      workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
+      idempotency_key: signalMatchingIdempotencyKey(event.workspace_id, signal_id),
+      correlation_id,
+      causation_id: event.id,
+      input: {
+        workspace_id: event.workspace_id,
+        user_id,
+        signal_id,
+        thread_id: `signal-match:${event.workspace_id}:${signal_id}`,
+        correlation_id,
+        causation_event_id: event.id,
+      },
+    });
+    return 1;
+  }
+
+  const engine = await getProductEngine();
+  const started = await startSignalMatchingWorkflowForEvent(engine, {
+    workspace_id: event.workspace_id,
+    signal_id,
+    event_id: event.id,
+    correlation_id,
+  });
+  return started ? 1 : 0;
+}
+
+export async function registerSignalMatchingEventDispatcher(
+  adapter: SignalMatchingEventDispatchSubscriptionAdapter,
+  opts: SignalMatchingEventDispatcherOptions = {},
+): Promise<Subscription> {
+  const dispatchSignalMatching =
+    opts.dispatchSignalMatching ?? dispatchSignalMatchingWorkflowFromIngestedEvent;
+  return adapter.subscribe(
+    "signal.ingested",
+    async (event) => {
+      await dispatchSignalMatching(event);
+    },
+    "product-signal-matching-workflow-dispatcher-v1",
+  );
+}
 
 interface ProductEventDispatchSubscriptionAdapter {
   subscribe(
-    eventType: ProductDispatchEventType,
+    eventType: ProductDispatchEventType | SignalMatchingDispatchEventType,
     handler: (event: PublishedEvent) => Promise<void>,
     durableName: string,
   ): Promise<Subscription>;
@@ -6045,6 +8717,8 @@ interface ProductEventDispatcherOptions {
   limit?: number;
   dispatchSignalPlays?: typeof dispatchSignalPlaysOnce;
   dispatchReplyEmailPlays?: typeof dispatchReplyEmailPlaysOnce;
+  dispatchMeetingPrep?: typeof dispatchMeetingPrepOnce;
+  dispatchSignalMatching?: (event: PublishedEvent) => Promise<number>;
 }
 
 export async function registerProductEventDispatchers(
@@ -6055,7 +8729,17 @@ export async function registerProductEventDispatchers(
   const dispatchSignalPlays = opts.dispatchSignalPlays ?? dispatchSignalPlaysOnce;
   const dispatchReplyEmailPlays =
     opts.dispatchReplyEmailPlays ?? dispatchReplyEmailPlaysOnce;
+  const dispatchMeetingPrep = opts.dispatchMeetingPrep ?? dispatchMeetingPrepOnce;
+  const dispatchSignalMatching =
+    opts.dispatchSignalMatching ?? dispatchSignalMatchingWorkflowFromIngestedEvent;
 
+  const signalMatchingSubscription = await adapter.subscribe(
+    "signal.ingested",
+    async (event) => {
+      await dispatchSignalMatching(event);
+    },
+    "product-signal-matching-workflow-dispatcher-v1",
+  );
   const signalSubscription = await adapter.subscribe(
     "signal.matched",
     async () => {
@@ -6077,8 +8761,21 @@ export async function registerProductEventDispatchers(
     },
     "product-reply-play-dispatcher-v1",
   );
+  const meetingPrepSubscription = await adapter.subscribe(
+    "reply.classified",
+    async () => {
+      await dispatchMeetingPrep({ limit });
+    },
+    "product-meeting-prep-dispatcher-v1",
+  );
 
-  return [signalSubscription, contactSubscription, replySubscription];
+  return [
+    signalMatchingSubscription,
+    signalSubscription,
+    contactSubscription,
+    replySubscription,
+    meetingPrepSubscription,
+  ];
 }
 
 interface RssSourceRow {
@@ -6548,7 +9245,42 @@ export async function resumeRunnableWorkflowsOnce(
   });
   let resumed = 0;
   for (const row of rows) {
-    if (row.workflow_name === CONTACT_RESOLUTION_WORKFLOW) {
+    if (row.workflow_name === WORKSPACE_ACTIVATION_SETUP_WORKFLOW) {
+      await registerWorkspaceActivationSetupWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_PROFILE_ICP_WORKFLOW) {
+      await registerWorkspaceProfileIcpWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_CAMPAIGN_STRATEGY_WORKFLOW) {
+      await registerWorkspaceCampaignStrategyWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_SKILL_OPTIMIZER_WORKFLOW) {
+      await registerWorkspaceSkillOptimizerWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_CHANNEL_READINESS_WORKFLOW) {
+      await registerWorkspaceChannelReadinessWorkflow(engine);
+    } else if (
+      row.workflow_name === WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW ||
+      row.workflow_name === WORKSPACE_COMPANY_BRAIN_RECALL_WORKFLOW
+    ) {
+      await registerWorkspaceCompanyBrainWorkflows(engine);
+    } else if (row.workflow_name === WORKSPACE_CONTACT_WATERFALL_WORKFLOW) {
+      await registerWorkspaceContactWaterfallWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_EVAL_GATE_WORKFLOW) {
+      await registerWorkspaceEvalGateWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_MEETING_PREP_WORKFLOW) {
+      await registerWorkspaceMeetingPrepWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_MESSAGE_PERSONALIZATION_WORKFLOW) {
+      await registerWorkspaceMessagePersonalizationWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW) {
+      await registerWorkspaceOutreachSkillSelectionWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_REPLY_TRIAGE_WORKFLOW) {
+      await registerWorkspaceReplyTriageWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_SOURCE_DISCOVERY_WORKFLOW) {
+      await registerWorkspaceSourceDiscoveryWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_VERTICAL_INTELLIGENCE_WORKFLOW) {
+      await registerWorkspaceVerticalIntelligenceWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_SIGNAL_INGESTION_WORKFLOW) {
+      await registerWorkspaceSignalIngestionWorkflow(engine);
+    } else if (row.workflow_name === WORKSPACE_SIGNAL_MATCHING_WORKFLOW) {
+      await registerWorkspaceSignalMatchingWorkflow(engine);
+    } else if (row.workflow_name === CONTACT_RESOLUTION_WORKFLOW) {
       registerContactResolutionWorkflow(engine);
     } else if (row.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
       registerSignalEmailWorkflow(engine, row.workspace_id);
@@ -6657,7 +9389,42 @@ export async function retryFailedWorkflowRun(
     if (run.workspace_id !== session.workspace_id) return;
     await assertProductWorkspaceAccess(session, engine.pool);
   }
-  if (run.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
+  if (run.workflow_name === WORKSPACE_ACTIVATION_SETUP_WORKFLOW) {
+    await registerWorkspaceActivationSetupWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_PROFILE_ICP_WORKFLOW) {
+    await registerWorkspaceProfileIcpWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_CAMPAIGN_STRATEGY_WORKFLOW) {
+    await registerWorkspaceCampaignStrategyWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_SKILL_OPTIMIZER_WORKFLOW) {
+    await registerWorkspaceSkillOptimizerWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_CHANNEL_READINESS_WORKFLOW) {
+    await registerWorkspaceChannelReadinessWorkflow(engine);
+  } else if (
+    run.workflow_name === WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW ||
+    run.workflow_name === WORKSPACE_COMPANY_BRAIN_RECALL_WORKFLOW
+  ) {
+    await registerWorkspaceCompanyBrainWorkflows(engine);
+  } else if (run.workflow_name === WORKSPACE_CONTACT_WATERFALL_WORKFLOW) {
+    await registerWorkspaceContactWaterfallWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_EVAL_GATE_WORKFLOW) {
+    await registerWorkspaceEvalGateWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_MEETING_PREP_WORKFLOW) {
+    await registerWorkspaceMeetingPrepWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_MESSAGE_PERSONALIZATION_WORKFLOW) {
+    await registerWorkspaceMessagePersonalizationWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW) {
+    await registerWorkspaceOutreachSkillSelectionWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_REPLY_TRIAGE_WORKFLOW) {
+    await registerWorkspaceReplyTriageWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_SOURCE_DISCOVERY_WORKFLOW) {
+    await registerWorkspaceSourceDiscoveryWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_VERTICAL_INTELLIGENCE_WORKFLOW) {
+    await registerWorkspaceVerticalIntelligenceWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_SIGNAL_INGESTION_WORKFLOW) {
+    await registerWorkspaceSignalIngestionWorkflow(engine);
+  } else if (run.workflow_name === WORKSPACE_SIGNAL_MATCHING_WORKFLOW) {
+    await registerWorkspaceSignalMatchingWorkflow(engine);
+  } else if (run.workflow_name === SIGNAL_TO_EMAIL_PLAY_WORKFLOW) {
     registerSignalEmailWorkflow(engine, run.workspace_id);
   } else if (run.workflow_name === REPLY_TO_EMAIL_PLAY_WORKFLOW) {
     registerReplyEmailWorkflow(engine, run.workspace_id);

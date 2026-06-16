@@ -12,13 +12,13 @@ export function SurfaceHero({
   meta?: ReactNode;
 }) {
   return (
-    <section className="border-b border-[color:var(--color-line-2)] pb-10">
-      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-3)]">
+    <section className="relative overflow-hidden rounded-[10px] border border-[color:var(--color-line-2)] bg-[rgba(12,11,8,0.62)] p-5 shadow-[inset_0_1px_0_rgba(247,221,184,0.06)] md:p-7">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
         {kicker}
       </p>
       <h1
         className="display-serif mt-5 text-[clamp(2rem,4.4vw,3.6rem)] text-[var(--color-text-1)]"
-        style={{ fontWeight: 500, letterSpacing: "-0.03em", lineHeight: 1.05 }}
+        style={{ fontWeight: 500, letterSpacing: 0, lineHeight: 1.05 }}
       >
         {title}
       </h1>
@@ -44,10 +44,10 @@ export function SurfaceSection({
   return (
     <section className="mt-10">
       {title || action ? (
-        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3">
+        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-3 border-b border-[var(--color-line-1)] pb-3">
           {title ? (
             <h2
-              className="text-[15px] font-medium text-[var(--color-text-2)]"
+              className="text-[15px] font-medium text-[var(--color-text-1)]"
               style={{ fontFamily: "var(--font-display)" }}
             >
               {title}
@@ -63,7 +63,7 @@ export function SurfaceSection({
 
 export function HeroStat({ label, value }: { label: string; value: number | string }) {
   return (
-    <span className="inline-flex items-baseline gap-1.5 rounded-full border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1">
+    <span className="inline-flex items-baseline gap-1.5 rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1">
       <strong className="text-[13px] font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
       <span className="text-[11.5px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">{label}</span>
     </span>

@@ -6,12 +6,16 @@ import {
 } from "../core/agents/memory/index.ts";
 import {
   createDeepSeekIntentClassifier,
+  createOutlookSender,
   registerEmailIngressProjectors,
 } from "../core/channels/email/index.ts";
 import {
   registerSignalProjectors,
-  startClassifyWorkflow,
 } from "../core/ingest/index.ts";
+import {
+  dispatchSignalMatchingWorkflowFromIngestedEvent,
+  registerSignalMatchingEventDispatcher,
+} from "../core/product/app.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
 import { getPool } from "../core/substrate/storage/index.ts";
 import {
@@ -48,6 +52,7 @@ const workflows = createRestateWorkflowRuntime({
   ingressUrl: restateIngressUrl,
   bearer: restateBearerFromEnv(),
 });
+const outlookAccessTokens = createProjectorOutlookAccessTokens();
 
 const emailSubscriptions = await registerEmailIngressProjectors(
   {
@@ -55,6 +60,7 @@ const emailSubscriptions = await registerEmailIngressProjectors(
     bus,
     classifier: createDeepSeekIntentClassifier({ llm }),
     memory,
+    outlookAccessTokens,
     outlookSubscriptionRepair: {
       async start({ workspace_id, channel_account_id }) {
         await workflows.start({
@@ -81,17 +87,15 @@ const signalSubscriptions = await registerSignalProjectors(
     },
   },
 );
-const classifier = await startClassifyWorkflow(
+const signalMatchingSubscription = await registerSignalMatchingEventDispatcher(
   {
-    pool,
-    bus,
-    llm,
-    rethrowErrors: true,
+    subscribe(eventType, handler, durableName) {
+      return bus.subscribeScoped("*", eventType, handler, { durableName });
+    },
   },
   {
-    subscribe(handler, durableName) {
-      return bus.subscribeScoped("*", "signal.ingested", handler, { durableName });
-    },
+    dispatchSignalMatching: (event) =>
+      dispatchSignalMatchingWorkflowFromIngestedEvent(event, { pool, workflows }),
   },
 );
 
@@ -117,7 +121,7 @@ console.log("[projectors] consuming email ingress and signal lifecycle events");
 async function shutdown(): Promise<void> {
   clearInterval(relayTimer);
   await Promise.all([
-    classifier.subscription.unsubscribe(),
+    signalMatchingSubscription.unsubscribe(),
     ...emailSubscriptions.map((subscription) => subscription.unsubscribe()),
     ...signalSubscriptions.map((subscription) => subscription.unsubscribe()),
   ]);
@@ -142,4 +146,21 @@ function optionalPositiveNumber<K extends string>(
     throw new Error(`${key} must be a positive number`);
   }
   return { [key]: value } as Partial<Record<K, number>>;
+}
+
+function createProjectorOutlookAccessTokens() {
+  const clientId = process.env.MICROSOFT_CLIENT_ID?.trim();
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) {
+    console.warn(
+      "[projectors] Microsoft credentials missing; Outlook reply sync cannot silently refresh access tokens.",
+    );
+    return undefined;
+  }
+  return createOutlookSender({
+    pool,
+    bus,
+    clientId,
+    clientSecret,
+  });
 }

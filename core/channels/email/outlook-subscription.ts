@@ -10,11 +10,13 @@ import type { InboundEmail } from "./reply.ts";
  * Subscription lifecycle:
  *   - createOutlookSubscription : POST /subscriptions
  *   - renewOutlookSubscription  : PATCH /subscriptions/{id}
+ *   - reauthorizeOutlookSubscription : POST /subscriptions/{id}/reauthorize
  *   - deleteOutlookSubscription : DELETE /subscriptions/{id}
  *
- * Graph caps subscription lifetime by resource. For /me/messages the
- * documented max is about three days, so a scheduled durable workflow
- * renews it before expiry.
+ * Graph caps subscription lifetime by resource. Outlook message/event/contact
+ * resources currently allow up to 10,080 minutes; we stay just under that
+ * cap and let the durable workflow renew silently before expiry. This is
+ * backend subscription maintenance, not user OAuth reauthorization.
  * The `clientState` we set on creation is echoed back in every change
  * notification — the webhook handler MUST verify it to reject forged
  * payloads.
@@ -25,6 +27,7 @@ import type { InboundEmail } from "./reply.ts";
  */
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+const OUTLOOK_MESSAGE_SUBSCRIPTION_EXPIRATION_MINUTES = 10_000;
 
 export interface OutlookSubscription {
   id: string;
@@ -59,7 +62,7 @@ export interface CreateOutlookSubscriptionOptions {
    * automatically when not provided otherwise.
    */
   lifecycleNotificationUrl?: string;
-  /** Defaults to 4230 (Graph max for /me/messages). */
+  /** Defaults just under Graph's current Outlook message subscription max. */
   expirationMinutes?: number;
   /** Defaults to "/me/messages". */
   resource?: string;
@@ -80,6 +83,14 @@ export interface RenewOutlookSubscriptionOptions {
 }
 
 export interface DeleteOutlookSubscriptionOptions {
+  pool: Pool;
+  workspaceId: string;
+  channelAccountId: string;
+  accessToken: string;
+  fetchImpl?: typeof fetch;
+}
+
+export interface ReauthorizeOutlookSubscriptionOptions {
   pool: Pool;
   workspaceId: string;
   channelAccountId: string;
@@ -108,7 +119,8 @@ export async function createOutlookSubscription(
   opts: CreateOutlookSubscriptionOptions,
 ): Promise<OutlookSubscription> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
-  const expirationMinutes = opts.expirationMinutes ?? 4230;
+  const expirationMinutes =
+    opts.expirationMinutes ?? OUTLOOK_MESSAGE_SUBSCRIPTION_EXPIRATION_MINUTES;
   const resource = opts.resource ?? "/me/messages";
   const clientState = randomBytes(24).toString("base64url");
   const expirationDateTime = new Date(Date.now() + expirationMinutes * 60_000).toISOString();
@@ -162,7 +174,8 @@ export async function renewOutlookSubscription(
   opts: RenewOutlookSubscriptionOptions,
 ): Promise<OutlookSubscription> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
-  const expirationMinutes = opts.expirationMinutes ?? 4230;
+  const expirationMinutes =
+    opts.expirationMinutes ?? OUTLOOK_MESSAGE_SUBSCRIPTION_EXPIRATION_MINUTES;
   const existing = await loadSubscription(opts.pool, opts.workspaceId, opts.channelAccountId);
   if (!existing) {
     throw new OutlookSubscriptionError(
@@ -196,6 +209,32 @@ export async function renewOutlookSubscription(
     await persistOutlookSubscription(opts.pool, opts.workspaceId, opts.channelAccountId, updated);
   }
   return updated;
+}
+
+export async function reauthorizeOutlookSubscription(
+  opts: ReauthorizeOutlookSubscriptionOptions,
+): Promise<OutlookSubscriptionRecord> {
+  const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  const existing = await loadSubscription(opts.pool, opts.workspaceId, opts.channelAccountId);
+  if (!existing) {
+    throw new OutlookSubscriptionError(
+      "no subscription to reauthorize for channel_account",
+      404,
+      opts.channelAccountId,
+    );
+  }
+  const response = await fetchImpl(`${GRAPH_BASE}/subscriptions/${existing.id}/reauthorize`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${opts.accessToken}` },
+  });
+  if (!response.ok) {
+    throw new OutlookSubscriptionError(
+      "Outlook subscription reauthorize failed",
+      response.status,
+      await response.text(),
+    );
+  }
+  return existing;
 }
 
 export async function deleteOutlookSubscription(

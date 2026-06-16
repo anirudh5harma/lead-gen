@@ -37,6 +37,13 @@ const WorkspaceMemberAccepted = z.object({
   role: z.enum(["owner", "admin", "member"]),
 });
 
+const WorkspaceActivationRequested = z.object({
+  website_url: z.string().url(),
+  requested_by: z.string().uuid().nullable().optional(),
+  graph_name: z.string().min(1),
+  run_id: z.string().min(1),
+});
+
 const RepConfigured = z.object({
   rep_id: z.string().uuid(),
   name: z.string().min(1),
@@ -89,6 +96,51 @@ const WorkspaceCompanyProfiled = z.object({
   profile_source: z.enum(["manual", "firecrawl", "fallback"]).optional(),
 });
 
+const WorkspaceProfileDrafted = z.object({
+  company_name: z.string().min(1),
+  website_url: z.string().url(),
+  domain: z.string().nullable(),
+  industry: z.string().nullable(),
+  description: z.string().nullable(),
+  profile_source: z.enum(["firecrawl", "fallback", "manual"]).optional(),
+  confidence: z.number().min(0).max(1),
+  evidence: z.array(
+    z.object({
+      label: z.string().min(1),
+      value: z.string().min(1),
+      source_ref: z.string().min(1).nullable().optional(),
+    }),
+  ),
+  needs_review: z.array(z.string()),
+});
+
+const IcpDrafted = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  signal_kind: z.enum([
+    "funding",
+    "hiring",
+    "leadership_change",
+    "product_launch",
+    "acquisition",
+    "churn_risk",
+    "competitor_move",
+    "podcast_mention",
+    "press_mention",
+    "regulation",
+    "expansion",
+    "layoff",
+    "other",
+  ]),
+  match_threshold: z.number().min(0).max(1),
+  nice_to_haves: z.array(z.string()),
+  inferred_from: z.object({
+    website_url: z.string().url(),
+    company_name: z.string().min(1),
+  }),
+  needs_review: z.array(z.string()),
+});
+
 const WorkspaceProfileEnriched = z.object({
   company_id: z.string().uuid(),
   company_name: z.string().min(1),
@@ -113,6 +165,60 @@ const WorkspaceProfileEnriched = z.object({
   query_count: z.number().int().nonnegative(),
   result_count: z.number().int().nonnegative(),
   request_ids: z.array(z.string()),
+});
+
+const VerticalIntelligencePrimitiveRefs = z.object({
+  rep_id: z.string().uuid().nullable().optional(),
+  signal_id: z.string().uuid().nullable().optional(),
+  play_id: z.string().uuid().nullable().optional(),
+  play_run_id: z.string().uuid().nullable().optional(),
+  outcome_id: z.string().uuid().nullable().optional(),
+  company_id: z.string().uuid().nullable().optional(),
+  person_id: z.string().uuid().nullable().optional(),
+  icp_id: z.string().uuid().nullable().optional(),
+});
+
+const VerticalIntelligenceSourceRef = z.object({
+  type: z.string().min(1),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  url: z.string().url().nullable().optional(),
+});
+
+const VerticalIntelligenceFact = z.object({
+  id: z.string().min(1),
+  category: z.enum([
+    "icp_rule",
+    "pain",
+    "objection",
+    "proof",
+    "competitor",
+    "trigger",
+    "positioning",
+    "signal_mapping",
+    "skill_performance",
+  ]),
+  statement: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  tags: z.array(z.string().min(1)),
+  source_refs: z.array(VerticalIntelligenceSourceRef),
+  primitive_refs: VerticalIntelligencePrimitiveRefs,
+  last_observed_at: z.string().datetime(),
+  included_in_prompt: z.boolean(),
+});
+
+const VerticalIntelligenceUpdated = z.object({
+  company_id: z.string().uuid(),
+  company_name: z.string().min(1),
+  vertical: z.string().min(1),
+  generated_at: z.string().datetime(),
+  graph_name: z.string().min(1),
+  run_id: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  facts: z.array(VerticalIntelligenceFact),
+  prompt_context: z.string(),
+  evidence_source_ids: z.array(z.string().uuid()),
+  redaction_status: z.enum(["source_refs_only"]),
 });
 
 const WorkspaceSourceConfigured = z.object({
@@ -395,6 +501,24 @@ const DraftProposed = z.object({
   provenance: z.record(z.string(), z.unknown()).optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
   proposed_at: z.string().datetime().optional(),
+});
+
+const MessagePersonalized = z.object({
+  conversation_id: z.string().uuid().nullable().optional(),
+  message_id: z.string().uuid(),
+  channel: z.string(),
+  rep_id: z.string().uuid(),
+  play_id: z.string().uuid().nullable().optional(),
+  play_run_id: z.string().uuid().nullable().optional(),
+  signal_id: z.string().uuid().nullable().optional(),
+  person_id: z.string().uuid().nullable().optional(),
+  company_id: z.string().uuid().nullable().optional(),
+  subject: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
+  personalization_context_markdown: z.string().nullable().optional(),
+  skill: z.record(z.string(), z.unknown()).nullable().optional(),
+  provenance: z.record(z.string(), z.unknown()).optional(),
+  personalized_at: z.string().datetime().optional(),
 });
 
 const DraftJudged = z.object({
@@ -749,6 +873,371 @@ const LLMCallDeferred = z.object({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Production agent observability
+// ─────────────────────────────────────────────────────────────────────────────
+
+const AgentTraceSpanKind = z.enum([
+  "agent.run",
+  "langgraph.node",
+  "llm.call",
+  "tool.call",
+  "memory.read",
+  "memory.write",
+  "eval.judge",
+  "workflow.step",
+  "channel.send",
+  "contact.waterfall.step",
+  "approval.interrupt",
+  "campaign.optimizer.decision",
+]);
+
+const AgentTracePrimitiveRefs = z.object({
+  rep_id: z.string().uuid().nullable().optional(),
+  signal_id: z.string().uuid().nullable().optional(),
+  play_id: z.string().uuid().nullable().optional(),
+  play_run_id: z.string().uuid().nullable().optional(),
+  conversation_id: z.string().uuid().nullable().optional(),
+  message_id: z.string().uuid().nullable().optional(),
+  outcome_id: z.string().uuid().nullable().optional(),
+  company_id: z.string().uuid().nullable().optional(),
+  person_id: z.string().uuid().nullable().optional(),
+});
+
+const AgentTraceRedaction = z.object({
+  pii: z.enum(["none", "redacted", "contains_pii"]),
+  raw_payload_exported: z.boolean(),
+  external_export_allowed: z.boolean(),
+});
+
+const AgentTraceSpanRecorded = z.object({
+  span_id: z.string().min(1),
+  trace_id: z.string().min(1),
+  parent_span_id: z.string().min(1).nullable().optional(),
+  kind: AgentTraceSpanKind,
+  name: z.string().min(1),
+  status: z.enum(["ok", "error", "deferred", "blocked"]),
+  started_at: z.string().datetime(),
+  ended_at: z.string().datetime().nullable().optional(),
+  duration_ms: z.number().nonnegative().nullable().optional(),
+  graph_name: z.string().min(1).nullable().optional(),
+  node_name: z.string().min(1).nullable().optional(),
+  run_id: z.string().min(1).nullable().optional(),
+  thread_id: z.string().min(1).nullable().optional(),
+  correlation_id: z.string().min(1).nullable().optional(),
+  causation_event_id: z.string().min(1).nullable().optional(),
+  primitive_refs: AgentTracePrimitiveRefs.optional(),
+  model: z.string().min(1).nullable().optional(),
+  prompt_tokens: z.number().int().nonnegative().nullable().optional(),
+  completion_tokens: z.number().int().nonnegative().nullable().optional(),
+  estimated_cost_usd: z.number().nonnegative().nullable().optional(),
+  retry_count: z.number().int().nonnegative().nullable().optional(),
+  attributes: z.record(z.string(), z.unknown()),
+  redaction: AgentTraceRedaction,
+  error: z.object({
+    message: z.string().min(1),
+    name: z.string().min(1).nullable().optional(),
+  }).nullable().optional(),
+});
+
+const AgentTraceExported = z.object({
+  export_id: z.string().min(1),
+  destination: z.string().min(1),
+  trace_id: z.string().min(1).nullable(),
+  span_count: z.number().int().nonnegative(),
+  redaction: AgentTraceRedaction,
+  exported_at: z.string().datetime(),
+});
+
+const AgentTraceEvalFailed = z.object({
+  eval_case_id: z.string().min(1),
+  trace_id: z.string().min(1),
+  span_id: z.string().min(1).nullable().optional(),
+  failure_kind: z.string().min(1),
+  reason: z.string().min(1),
+  source_event_id: z.string().uuid().nullable().optional(),
+  created_at: z.string().datetime(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared company brain (derived workspace memory over the five primitives)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CompanyBrainBriefType = z.enum([
+  "workspace",
+  "icp",
+  "account",
+  "campaign",
+  "decision_log",
+  "customer_ask_log",
+  "objection_bank",
+  "proof_bank",
+  "vertical_playbook",
+]);
+
+const CompanyBrainConnector = z.object({
+  memory_store: z.object({
+    enabled: z.boolean(),
+    status: z.enum(["disabled", "configured"]),
+    detail: z.string().min(1),
+  }),
+});
+
+const CompanyBrainPrimitiveRefs = z.object({
+  rep_id: z.string().uuid().nullable().optional(),
+  signal_id: z.string().uuid().nullable().optional(),
+  play_id: z.string().uuid().nullable().optional(),
+  play_run_id: z.string().uuid().nullable().optional(),
+  conversation_id: z.string().uuid().nullable().optional(),
+  message_id: z.string().uuid().nullable().optional(),
+  outcome_id: z.string().uuid().nullable().optional(),
+  company_id: z.string().uuid().nullable().optional(),
+  person_id: z.string().uuid().nullable().optional(),
+});
+
+const CompanyBrainCardRef = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["profile", "signal", "outcome", "playbook", "semantic_fact", "meeting_prep"]),
+  title: z.string().min(1),
+  confidence: z.number().min(0).max(1).nullable(),
+  freshness_at: z.string().datetime().nullable(),
+  tags: z.array(z.string().min(1)),
+  primitive_refs: CompanyBrainPrimitiveRefs,
+  source_ref_count: z.number().int().nonnegative(),
+});
+
+const CompanyMemoryRecalled = z.object({
+  recalled_at: z.string().datetime(),
+  task: z.string().min(1),
+  brief_type: CompanyBrainBriefType,
+  graph_name: z.string().min(1),
+  run_id: z.string().min(1),
+  card_count: z.number().int().nonnegative(),
+  source_ref_count: z.number().int().nonnegative(),
+  connector: CompanyBrainConnector,
+  primitive_refs: CompanyBrainPrimitiveRefs,
+  card_refs: z.array(CompanyBrainCardRef),
+  redaction_status: z.enum(["source_refs_only"]),
+});
+
+const CompanyBriefUpdated = z.object({
+  brief_id: z.string().min(1),
+  brief_type: CompanyBrainBriefType,
+  updated_at: z.string().datetime(),
+  task: z.string().min(1),
+  graph_name: z.string().min(1),
+  run_id: z.string().min(1),
+  markdown: z.string().min(1),
+  card_count: z.number().int().nonnegative(),
+  source_ref_count: z.number().int().nonnegative(),
+  connector: CompanyBrainConnector,
+  primitive_refs: CompanyBrainPrimitiveRefs,
+  card_refs: z.array(CompanyBrainCardRef),
+  redaction_status: z.enum(["source_refs_only"]),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Campaign optimization
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CampaignStrategyRecommended = z.object({
+  recommendation_id: z.string().uuid(),
+  generated_at: z.string().datetime(),
+  min_samples: z.number().int().positive(),
+  summary: z.string().min(1),
+  variants: z.array(z.object({
+    variant_key: z.string().min(1),
+    play_id: z.string().uuid(),
+    play_name: z.string().min(1),
+    rep_id: z.string().uuid().nullable(),
+    rep_name: z.string().nullable(),
+    channel: z.string().nullable(),
+    skill_key: z.string().min(1),
+    pattern_key: z.string().min(1),
+    segment_key: z.string().min(1),
+    sample_count: z.number().int().nonnegative(),
+    outcome_count: z.number().int().nonnegative(),
+    reply_outcomes: z.number().int().nonnegative(),
+    positive_outcomes: z.number().int().nonnegative(),
+    negative_outcomes: z.number().int().nonnegative(),
+    meeting_outcomes: z.number().int().nonnegative(),
+    reply_rate: z.number().min(0).max(1),
+    positive_outcome_rate: z.number().min(0).max(1),
+    meeting_rate: z.number().min(0).max(1),
+    negative_outcome_rate: z.number().min(0).max(1),
+    utility_score: z.number().min(0).max(1),
+    confidence: z.number().min(0).max(1),
+    allocation_weight: z.number().min(0).max(1),
+    recommendation: z.enum(["double_down", "hold", "reduce", "not_enough_proof"]),
+    explanation: z.string().min(1),
+  })),
+});
+
+const PlaySkillOptimizationRecommended = z.object({
+  recommendation_id: z.string().uuid(),
+  generated_at: z.string().datetime(),
+  min_samples: z.number().int().positive(),
+  summary: z.string().min(1),
+  recommendations: z.array(z.object({
+    skill_key: z.string().min(1),
+    pattern_key: z.string().min(1),
+    channel: z.string().nullable(),
+    segment_key: z.string().min(1),
+    rep_id: z.string().uuid().nullable(),
+    rep_name: z.string().nullable(),
+    sample_count: z.number().int().nonnegative(),
+    outcome_count: z.number().int().nonnegative(),
+    reply_outcomes: z.number().int().nonnegative(),
+    positive_outcomes: z.number().int().nonnegative(),
+    negative_outcomes: z.number().int().nonnegative(),
+    meeting_outcomes: z.number().int().nonnegative(),
+    reply_rate: z.number().min(0).max(1),
+    positive_outcome_rate: z.number().min(0).max(1),
+    meeting_rate: z.number().min(0).max(1),
+    negative_outcome_rate: z.number().min(0).max(1),
+    memory_win_count: z.number().int().nonnegative(),
+    memory_loss_count: z.number().int().nonnegative(),
+    memory_delta_score: z.number(),
+    utility_score: z.number().min(0).max(1),
+    confidence: z.number().min(0).max(1),
+    allocation_weight: z.number().min(0).max(1),
+    recommendation: z.enum(["double_down", "hold", "reduce", "not_enough_proof"]),
+    next_action: z.enum(["apply_play_gate", "review_reduce", "keep_learning", "no_change"]),
+    explanation: z.string().min(1),
+    source_variant_keys: z.array(z.string().min(1)),
+  })),
+});
+
+const CampaignDispatchSkipped = z.object({
+  signal_id: z.string().uuid(),
+  play_id: z.string().uuid(),
+  play_name: z.string().min(1).nullable().optional(),
+  channel: z.string().nullable(),
+  skill_key: z.string().min(1),
+  skill_version: z.string().min(1).nullable().optional(),
+  segment_key: z.string().min(1),
+  variant_key: z.string().min(1),
+  matched_variant_key: z.string().min(1).nullable().optional(),
+  recommendation_id: z.string().uuid().nullable().optional(),
+  strategy_generated_at: z.string().datetime().nullable().optional(),
+  recommendation: z.enum([
+    "double_down",
+    "hold",
+    "reduce",
+    "not_enough_proof",
+    "unscored",
+  ]),
+  allocation_weight: z.number().min(0).max(1),
+  reason: z.string().min(1),
+  skipped_at: z.string().datetime(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Meeting prep
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MeetingPrepProfileContext = z.object({
+  user: z.object({
+    user_id: z.string().min(1).nullable(),
+    name: z.string().nullable(),
+    email: z.string().nullable(),
+    role: z.string().nullable(),
+  }),
+  prospect: z.object({
+    person_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    title: z.string().nullable(),
+    linkedin_url: z.string().nullable(),
+  }),
+  company: z.object({
+    company_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    domain: z.string().nullable(),
+    industry: z.string().nullable(),
+    description: z.string().nullable(),
+  }),
+  rep: z.object({
+    rep_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    role: z.string().nullable(),
+  }),
+});
+
+const MeetingPrepSourceRef = z.object({
+  type: z.enum(["conversation", "message", "signal", "outcome", "person", "company", "rep", "user"]),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  url: z.string().url().nullable().optional(),
+});
+
+const MeetingPrepThreadTurn = z.object({
+  message_id: z.string().min(1),
+  direction: z.string().min(1),
+  at: z.string().datetime().nullable(),
+  intent_class: z.string().nullable(),
+  excerpt: z.string().min(1),
+});
+
+const MeetingPrepGenerated = z.object({
+  meeting_prep_id: z.string().uuid(),
+  conversation_id: z.string().uuid(),
+  generated_at: z.string().datetime(),
+  status: z.enum(["ready", "blocked"]),
+  next_action: z.enum([
+    "prepare_meeting",
+    "ask_for_times",
+    "wait_for_reply",
+    "do_not_follow_up",
+  ]),
+  summary: z.string().min(1),
+  thread_summary: z.string().min(1),
+  thread_turns: z.array(MeetingPrepThreadTurn),
+  agenda: z.array(z.string().min(1)),
+  suggested_questions: z.array(z.string().min(1)),
+  suggested_times: z.array(z.string().min(1)),
+  availability_status: z.enum(["included", "omitted_no_consent"]),
+  availability_reason: z.string().min(1),
+  calendar_provider: z.string().nullable(),
+  calendar_account_id: z.string().uuid().nullable(),
+  calendar_account_display_name: z.string().nullable(),
+  profile_context: MeetingPrepProfileContext,
+  source_refs: z.array(MeetingPrepSourceRef),
+});
+
+const WorkspaceLaunchReadinessChecked = z.object({
+  checked_at: z.string().datetime(),
+  required_channel: z.enum(["any", "email", "linkedin", "both"]),
+  status: z.enum(["ready", "needs_attention", "blocked"]),
+  launch_ready: z.boolean(),
+  next_action: z.enum([
+    "start_outreach",
+    "configure_profile",
+    "configure_icp",
+    "configure_rep",
+    "configure_sources",
+    "configure_play",
+    "connect_outlook",
+    "connect_linkedin",
+    "repair_channel",
+  ]),
+  checks: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    primitive: z.enum(["Rep", "Signal", "Play", "Conversation"]),
+    status: z.enum(["ready", "needs_attention", "blocked"]),
+    required: z.boolean(),
+    detail: z.string().min(1),
+    count: z.number().int().nonnegative(),
+    action: z.object({
+      label: z.string().min(1),
+      tools: z.array(z.string().min(1)),
+      surface: z.string().min(1),
+    }).nullable(),
+  })),
+  blockers: z.array(z.string().min(1)),
+  warnings: z.array(z.string().min(1)),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public-web intelligence (Exa)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -889,12 +1378,16 @@ export const eventRegistry = {
   "workspace.created": WorkspaceCreated,
   "workspace.member.invited": WorkspaceMemberInvited,
   "workspace.member.accepted": WorkspaceMemberAccepted,
+  "workspace.activation.requested": WorkspaceActivationRequested,
   "rep.configured": RepConfigured,
   "rep.role.completed": RepRoleCompleted,
   "workspace.icp.configured": WorkspaceIcpConfigured,
   "workspace.company.tracked": WorkspaceCompanyTracked,
   "workspace.company.profiled": WorkspaceCompanyProfiled,
+  "workspace.profile.drafted": WorkspaceProfileDrafted,
+  "icp.drafted": IcpDrafted,
   "workspace.profile.enriched": WorkspaceProfileEnriched,
+  "vertical.intelligence.updated": VerticalIntelligenceUpdated,
   "workspace.source.configured": WorkspaceSourceConfigured,
   "contact.resolved": ContactResolved,
   "contact.resolution.deferred": ContactResolutionDeferred,
@@ -921,6 +1414,7 @@ export const eventRegistry = {
   "event.dispatch.redriven": EventDispatchRedriven,
 
   "draft.proposed": DraftProposed,
+  "message.personalized": MessagePersonalized,
   "draft.judged": DraftJudged,
   "draft.rejected": DraftRejected,
 
@@ -963,6 +1457,17 @@ export const eventRegistry = {
 
   "llm.usage.recorded": LLMUsageRecorded,
   "llm.call.deferred": LLMCallDeferred,
+  "agent.trace.span.recorded": AgentTraceSpanRecorded,
+  "agent.trace.exported": AgentTraceExported,
+  "agent.trace.eval_failed": AgentTraceEvalFailed,
+  "company.memory.recalled": CompanyMemoryRecalled,
+  "company.brief.updated": CompanyBriefUpdated,
+
+  "campaign.strategy.recommended": CampaignStrategyRecommended,
+  "play.skill.optimization.recommended": PlaySkillOptimizationRecommended,
+  "campaign.dispatch.skipped": CampaignDispatchSkipped,
+  "meeting.prep.generated": MeetingPrepGenerated,
+  "workspace.launch.readiness.checked": WorkspaceLaunchReadinessChecked,
 
   "exa.query.requested": ExaQueryRequested,
   "exa.query.completed": ExaQueryCompleted,

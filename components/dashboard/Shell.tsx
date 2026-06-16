@@ -20,8 +20,8 @@ export interface ShellWorkspace {
 
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Brief" },
-  { href: "/dashboard/setup", label: "Prospecting" },
-  { href: "/dashboard/ingestion", label: "Signals" },
+  { href: "/dashboard/prospecting", label: "Prospecting" },
+  { href: "/dashboard/signals", label: "Signals" },
   { href: "/dashboard/conversations", label: "Outreach" },
   { href: "/dashboard/campaigns", label: "Campaigns" },
 ];
@@ -67,8 +67,8 @@ export function DashboardShell({
   return (
     <div className="canvas-bg relative isolate min-h-[100dvh] overflow-x-clip text-[var(--color-text-1)]">
       {routePending ? <div className="dashboard-route-pending" aria-hidden="true" /> : null}
-      {/* Top frame — translucent full-viewport bar, top + bottom hairlines */}
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-t border-[color:var(--color-line-2)] bg-[rgba(245,248,251,0.72)] backdrop-blur-md">
+      {/* Top product frame */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[color:var(--color-line-2)] bg-[rgba(7,8,6,0.88)] backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
             href="/dashboard"
@@ -98,9 +98,9 @@ export function DashboardShell({
                   onClick={(event) => handleNavClick(event, item.href)}
                   aria-current={active ? "page" : undefined}
                   className={
-                    "rounded-md px-2.5 py-1.5 text-[13.5px] transition-colors " +
+                    "rounded-[8px] px-2.5 py-1.5 text-[13.5px] transition-colors " +
                     (active
-                      ? "text-[var(--color-text-1)] bg-[var(--color-ink-2)]"
+                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent-hi)]"
                       : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                   }
                 >
@@ -121,7 +121,7 @@ export function DashboardShell({
                   name="workspace_id"
                   defaultValue={activeWorkspaceId}
                   onChange={(event) => event.currentTarget.form?.requestSubmit()}
-                  className="h-8 max-w-[180px] rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-2 text-[13px] font-medium text-[var(--color-text-2)] outline-none transition hover:text-[var(--color-text-1)]"
+                  className="h-8 max-w-[180px] rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-2 text-[13px] font-medium text-[var(--color-text-2)] outline-none transition hover:border-[var(--color-line-3)] hover:text-[var(--color-text-1)]"
                 >
                   {workspaces.map((workspace) => (
                     <option key={workspace.id} value={workspace.id}>
@@ -135,7 +135,7 @@ export function DashboardShell({
               <PendingSubmitButton
                 aria-label="Sign out"
                 title="Sign out"
-                className="relative grid size-8 place-items-center rounded-md text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
+                className="relative grid size-8 place-items-center rounded-[8px] text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
                 pendingLabel=""
               >
                 <Icon name="logout" size={17} />
@@ -156,7 +156,7 @@ export function DashboardShell({
       />
 
       {/* Mobile sub-nav (visible <md) — wraps the section list under the header */}
-      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-2)] bg-[rgba(245,248,251,0.72)] px-6 py-2 backdrop-blur-md md:hidden">
+      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-2)] bg-[rgba(7,8,6,0.88)] px-6 py-2 backdrop-blur-md md:hidden">
         {NAV.map((item) => {
           const active = isActivePath(pathname, item.href);
           return (
@@ -166,9 +166,9 @@ export function DashboardShell({
               onClick={(event) => handleNavClick(event, item.href)}
               aria-current={active ? "page" : undefined}
               className={
-                "shrink-0 rounded-md px-2.5 py-1 text-[13px] transition-colors " +
+                "shrink-0 rounded-[8px] px-2.5 py-1 text-[13px] transition-colors " +
                 (active
-                  ? "text-[var(--color-text-1)] bg-[var(--color-ink-2)]"
+                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent-hi)]"
                   : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
               }
             >
@@ -195,7 +195,7 @@ export function EmptyState({
   cta?: { href: string; label: string; icon?: string };
 }) {
   return (
-    <div className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
+    <div className="rounded-[10px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
       <p className="text-[17px] font-semibold text-[var(--color-text-1)]">{title}</p>
       {hint ? (
         <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-6 text-[var(--color-text-3)]">
@@ -205,7 +205,7 @@ export function EmptyState({
       {cta ? (
         <Link
           href={cta.href}
-          className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+          className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-accent-hi)] px-4 text-sm font-semibold text-[var(--color-accent-on)] transition-colors hover:bg-[var(--color-accent)]"
         >
           {cta.icon ? <Icon name={cta.icon} size={16} /> : null}
           {cta.label}

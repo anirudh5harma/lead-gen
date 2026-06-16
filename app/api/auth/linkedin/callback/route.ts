@@ -70,7 +70,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   const dest = new URL(
-    `/dashboard/setup?status=linkedin_connecting&channel_account_id=${channelAccountId}`,
+    `/dashboard/prospecting?status=linkedin_connecting&channel_account_id=${channelAccountId}`,
     appOrigin(req),
   );
   return Response.redirect(dest.toString(), 302);

@@ -7,6 +7,12 @@ import type { EventBus } from "../../substrate/events/index.ts";
 import type { EmailChannel } from "../../channels/email/index.ts";
 import type { LLMClient } from "../llm/types.ts";
 import type { ProceduralExemplar } from "../memory/types.ts";
+import {
+  fallbackSeedPatternKey,
+  outreachPatternCandidates,
+  outreachSkillPromptBlock,
+  type SelectedOutreachSkill,
+} from "../skills/outreach.ts";
 import type { ResearchResult } from "./roles/researcher.ts";
 import type { RoleAgent, RoleAgentContext } from "./types.ts";
 
@@ -55,6 +61,7 @@ export interface SignalEmailWriterBrief {
   channel: "email";
   research: ResearchResult;
   recipient_name: string;
+  skill?: SelectedOutreachSkill | null;
   /**
    * Prompt-ready summary of the targeting company, targeted company/person,
    * timing, and evidence the writer must use for personalization.
@@ -69,6 +76,9 @@ export interface SignalEmailWriterDraft {
   exemplar_ids: string[];
   procedural_exemplars: ProceduralExemplar[];
   personalization_context_markdown?: string | null;
+  pattern_key: string;
+  seed_pattern_key: string | null;
+  skill: SelectedOutreachSkill | null;
 }
 
 export interface WriterRoleOptions {
@@ -79,6 +89,8 @@ function deterministicEmailDraft(
   brief: SignalEmailWriterBrief,
   ctx: RoleAgentContext,
   procedural_exemplars: ProceduralExemplar[],
+  pattern_key: string,
+  seed_pattern_key: string | null,
 ): SignalEmailWriterDraft {
   const subject = brief.research.signal_summary.slice(0, 48) || "Quick question";
   const body = [
@@ -99,18 +111,45 @@ function deterministicEmailDraft(
     exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
     procedural_exemplars,
     personalization_context_markdown: brief.personalization_context_markdown ?? null,
+    pattern_key,
+    seed_pattern_key,
+    skill: brief.skill ?? null,
   };
 }
 
 async function topProceduralExemplars(
   brief: SignalEmailWriterBrief,
   ctx: RoleAgentContext,
-): Promise<ProceduralExemplar[]> {
-  return ctx.memory.procedural.topForPattern(
-    { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id },
+): Promise<{
+  pattern_key: string;
+  seed_pattern_key: string | null;
+  procedural_exemplars: ProceduralExemplar[];
+}> {
+  const candidates = outreachPatternCandidates(
     brief.research.pattern_key,
-    3,
+    brief.skill,
   );
+  const scope = { workspace_id: ctx.rep.workspace_id, rep_id: ctx.rep.id };
+  for (const pattern_key of candidates) {
+    const procedural_exemplars = await ctx.memory.procedural.topForPattern(
+      scope,
+      pattern_key,
+      3,
+    );
+    if (procedural_exemplars.length > 0) {
+      return {
+        pattern_key,
+        seed_pattern_key: fallbackSeedPatternKey(candidates, pattern_key),
+        procedural_exemplars,
+      };
+    }
+  }
+  const pattern_key = candidates[0] ?? brief.research.pattern_key;
+  return {
+    pattern_key,
+    seed_pattern_key: fallbackSeedPatternKey(candidates, pattern_key),
+    procedural_exemplars: [],
+  };
 }
 
 export function createWriterRole(
@@ -120,11 +159,23 @@ export function createWriterRole(
     kind: "writer",
     name: opts.llm ? "writer.email.signal.llm" : "writer.email.signal.deterministic",
     async invoke(brief, ctx) {
-      const procedural_exemplars = await topProceduralExemplars(brief, ctx);
-      if (!opts.llm) return deterministicEmailDraft(brief, ctx, procedural_exemplars);
+      const {
+        pattern_key,
+        seed_pattern_key,
+        procedural_exemplars,
+      } = await topProceduralExemplars(brief, ctx);
+      if (!opts.llm) {
+        return deterministicEmailDraft(
+          brief,
+          ctx,
+          procedural_exemplars,
+          pattern_key,
+          seed_pattern_key,
+        );
+      }
       const outcomeExamples = procedural_exemplars.length
         ? [
-          "Outcome learnings from prior successful/failed drafts for this pattern:",
+          "Outcome learnings from prior successful/failed drafts for this skill pattern:",
           ...procedural_exemplars.slice(0, 3).map((exemplar, index) =>
             [
               `Example ${index + 1}: score=${exemplar.score.toFixed(2)} wins=${exemplar.win_count} losses=${exemplar.loss_count}`,
@@ -156,6 +207,7 @@ export function createWriterRole(
               `Recipient first name: ${brief.recipient_name}`,
               `Signal: ${brief.research.signal_summary}`,
               `Counterparty: ${brief.research.counterparty_summary}`,
+              outreachSkillPromptBlock(brief.skill),
               brief.personalization_context_markdown
                 ? `Personalization context:\n${brief.personalization_context_markdown}`
                 : null,
@@ -188,6 +240,9 @@ export function createWriterRole(
         exemplar_ids: procedural_exemplars.map((exemplar) => exemplar.id),
         procedural_exemplars,
         personalization_context_markdown: brief.personalization_context_markdown ?? null,
+        pattern_key,
+        seed_pattern_key,
+        skill: brief.skill ?? null,
       };
     },
   };

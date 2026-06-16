@@ -128,15 +128,15 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
     direction: "inbound",
     status: "delivered",
     subject: "Re: Series A expansion",
-    body: "Happy to chat. What did you have in mind?",
+    body: "Happy to chat. Can you send a few times?",
     body_html: null,
     external_id: "inbound-1",
     external_thread_id: null,
     channel_account_id: null,
     eval_score: null,
     eval_passed: null,
-    eval_notes: { intent_reason: "Asked to continue the conversation." },
-    intent_class: "positive",
+    eval_notes: { intent_reason: "Asked for meeting times." },
+    intent_class: "meeting_intent",
     intent_confidence: 0.92,
     scheduled_at: null,
     sent_at: now,
@@ -153,7 +153,7 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
   const bus = createInMemoryEventBus();
   const runtime = createInProcessWorkflowRuntime({ bus });
   const memory = createInMemoryRepMemory();
-  const pattern_key = "conversation:email|intent:positive|company:acme-payroll|stage:reply";
+  const pattern_key = "conversation:email|intent:meeting_intent|company:acme-payroll|stage:reply";
   const exemplar = await memory.procedural.add(
     { workspace_id, rep_id },
     {
@@ -263,6 +263,11 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
   assert.equal(reply?.status, "sent");
   assert.equal(reply?.provenance.inbound_message_id, inbound_message_id);
   assert.equal(reply?.provenance.pattern_key, pattern_key);
+  assert.match(
+    String(reply?.provenance.seed_pattern_key),
+    /conversation:email\|intent:meeting_intent\|company:acme-payroll\|stage:reply.*\|skill:reply_next_step_bridge@v1/,
+  );
+  assert.equal(reply?.provenance.skill_key, "reply_next_step_bridge");
   assert.deepEqual(reply?.provenance.exemplar_ids, [exemplar.id]);
   assert.deepEqual(reply?.provenance.semantic_subjects, [
     `person:${person_id}`,
@@ -276,6 +281,11 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
       event.payload.action === "draft_email_reply",
   );
   assert.equal(roleEvent?.payload.output.pattern_key, pattern_key);
+  assert.match(
+    String(roleEvent?.payload.output.seed_pattern_key),
+    /conversation:email\|intent:meeting_intent\|company:acme-payroll\|stage:reply.*\|skill:reply_next_step_bridge@v1/,
+  );
+  assert.equal(roleEvent?.payload.output.skill_key, "reply_next_step_bridge");
   assert.deepEqual(roleEvent?.payload.output.exemplar_ids, [exemplar.id]);
   assert.deepEqual(roleEvent?.payload.output.semantic_subjects, [
     `person:${person_id}`,
@@ -284,4 +294,5 @@ test("reply email Play drafts, judges, requests approval, then sends", async () 
   assert.equal(roleEvent?.payload.output.semantic_memory_count, 2);
 
   assert.equal(completed?.output?.pattern_key, pattern_key);
+  assert.equal(completed?.output?.skill_key, "reply_next_step_bridge");
 });

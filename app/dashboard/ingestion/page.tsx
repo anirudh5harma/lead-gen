@@ -14,7 +14,7 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 import {
   prepareQualifiedSignalsAction,
-  runSignalAggregatorAction,
+  runSignalIngestionAction,
   decideApprovalWithDraftAction,
 } from "../actions";
 
@@ -54,19 +54,19 @@ export default async function SignalsPage() {
               <HeroStat label="Inbox" value={emailReadiness.status_label} />
             </div>
             <div className="flex flex-wrap gap-2">
-              <form action={runSignalAggregatorAction}>
-                <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+              <form action={runSignalIngestionAction}>
+                <input type="hidden" name="return_to" value="/dashboard/signals" />
                 <input type="hidden" name="limit" value="12" />
                 <PendingSubmitButton
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.62)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] active:translate-y-px"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.66)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] active:translate-y-px"
                   icon="refresh"
-                  pendingLabel="Refreshing"
+                  pendingLabel="Starting ingestion"
                 >
-                  Refresh signals
+                  Ingest signals
                 </PendingSubmitButton>
               </form>
               <form action={prepareQualifiedSignalsAction}>
-                <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+                <input type="hidden" name="return_to" value="/dashboard/signals" />
                 <input type="hidden" name="limit" value="25" />
                 <PendingSubmitButton
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
@@ -88,7 +88,7 @@ export default async function SignalsPage() {
           <EmptyState
             title="No qualified signals yet"
             hint="Run ingestion after the prospecting profile is tuned. Only matched signals with a target company appear here."
-            cta={{ href: "/dashboard/setup", label: "Tune prospecting", icon: "person" }}
+            cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
           />
         ) : (
           <div className="grid gap-3">
@@ -126,7 +126,7 @@ function EmailReadinessBanner({
             {needsReconnect
               ? "Reconnect Outlook to send"
               : hasOutlook
-                ? "Outlook reply sync needs attention"
+                ? "Outlook reply sync is being repaired"
                 : "Connect Outlook to send"}
           </p>
           <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
@@ -146,7 +146,7 @@ function EmailReadinessBanner({
         {needsReconnect
           ? "Reconnect Outlook"
           : hasOutlook
-            ? "Open deliverability"
+            ? "Review sync"
             : "Connect Outlook"}
       </Link>
     </div>
@@ -277,7 +277,7 @@ function ContactPanel({
               </div>
               <div className="ml-9 flex flex-wrap items-center gap-2">
                 {contact.emails[0] ? (
-                  <span className="rounded-full bg-[rgba(255,255,255,0.62)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+                  <span className="rounded-full bg-[rgba(20,18,13,0.66)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
                     {contact.emails[0]}
                   </span>
                 ) : null}
@@ -318,7 +318,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
           <p className="text-sm font-semibold leading-5 text-[var(--color-text-1)]">
             {draft.subject ?? "(no subject)"}
           </p>
-          <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.54)] px-3 py-3 text-sm leading-6 text-[var(--color-text-2)]">
+          <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.58)] px-3 py-3 text-sm leading-6 text-[var(--color-text-2)]">
             {draft.body ?? "(no body)"}
           </p>
           <div className="mt-3 grid gap-3 border-t border-[var(--color-line-1)] pt-3 sm:grid-cols-3">
@@ -354,13 +354,13 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                 <Link
                   href="/dashboard/review"
                   prefetch={false}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
                 >
                   <Icon name="rate_review" size={14} />
                   Review draft
                 </Link>
                 <form action={decideApprovalWithDraftAction}>
-                  <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+                  <input type="hidden" name="return_to" value="/dashboard/signals" />
                   <input type="hidden" name="approval_id" value={draft.pending_approval_id} />
                   <input type="hidden" name="decision" value="approved" />
                   <PendingSubmitButton
@@ -373,11 +373,11 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                   </PendingSubmitButton>
                 </form>
                 <form action={decideApprovalWithDraftAction}>
-                  <input type="hidden" name="return_to" value="/dashboard/ingestion" />
+                  <input type="hidden" name="return_to" value="/dashboard/signals" />
                   <input type="hidden" name="approval_id" value={draft.pending_approval_id} />
                   <input type="hidden" name="decision" value="rejected" />
                   <PendingSubmitButton
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
                     icon="close"
                     iconSize={14}
                     pendingLabel="Rejecting"
@@ -390,7 +390,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
               <Link
                 href={`/dashboard/conversations/${draft.conversation_id}`}
                 prefetch={false}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
               >
                 <Icon name="forum" size={14} />
                 Open conversation
@@ -478,7 +478,7 @@ function SignalBadge({
     accent: "bg-[var(--color-accent-bg)] text-[var(--color-accent)]",
     positive: "bg-[var(--color-pos-bg)] text-[var(--color-pos)]",
     warning: "bg-[var(--color-neg-bg)] text-[var(--color-neg)]",
-    muted: "bg-[rgba(255,255,255,0.62)] text-[var(--color-text-3)]",
+    muted: "bg-[rgba(20,18,13,0.66)] text-[var(--color-text-3)]",
   }[tone];
   return (
     <span className={"rounded-full px-2.5 py-1 text-xs font-medium " + styles}>

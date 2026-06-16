@@ -147,6 +147,15 @@ test("deepseek judge: includes Rep persona + procedural exemplars in the prompt"
           last_observed_at: new Date().toISOString(),
         },
       ],
+      outreach_skill: {
+        skill_key: "signal_problem_probe",
+        version: "v1",
+        name: "Signal Problem Probe",
+        framework: ["Open with the signal.", "Ask one concrete question."],
+        judge_focus: ["Signal is named early.", "The ask is answerable."],
+        slot_values: { signal_hook: "Series A close at $20M" },
+        pattern_key: "icp:fintech-founder|signal:series_a|stage:cold_open|skill:signal_problem_probe@v1",
+      },
     },
   });
   const userPrompt = llm.calls[0].messages.find((m) => m.role === "user")!.content;
@@ -159,4 +168,7 @@ test("deepseek judge: includes Rep persona + procedural exemplars in the prompt"
   assert.match(userPrompt, /score 0\.91/);
   assert.match(userPrompt, /Known semantic memory/);
   assert.match(userPrompt, /security review/);
+  assert.match(userPrompt, /Selected Play Skill: Signal Problem Probe/);
+  assert.match(userPrompt, /signal_problem_probe@v1/);
+  assert.match(userPrompt, /Signal is named early/);
 });

@@ -14,7 +14,11 @@ import type {
   ReplyDraftResult,
 } from "../agents/reps/roles/replier.ts";
 import type { RoleAgent, RoleAgentContext } from "../agents/reps/types.ts";
-import type { EmailChannel } from "../channels/email/index.ts";
+import {
+  outreachSkillProvenance,
+  type SelectedOutreachSkill,
+} from "../agents/skills/outreach.ts";
+import type { EmailChannel, ReplyIntent } from "../channels/email/index.ts";
 import type { EventBus } from "../substrate/events/index.ts";
 import { defineWorkflow, type RunContext } from "../substrate/workflows/index.ts";
 import type { VerticalSliceStore } from "./vertical-store.ts";
@@ -39,6 +43,9 @@ export interface ReplyToEmailPlayOutput {
   message_id?: string;
   intent: string;
   pattern_key?: string;
+  seed_pattern_key?: string | null;
+  skill_key?: string;
+  skill_version?: string;
   eval_score?: number;
 }
 
@@ -87,7 +94,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
         throw new Error(`Message is not inbound: ${input.inbound_message_id}`);
       }
       const intent = inbound.intent_class ?? "unknown";
-      if (intent !== "positive" && intent !== "neutral") {
+      const replyableIntent = replyableReplyIntent(intent);
+      if (!replyableIntent) {
         return {
           decision: "deferred",
           conversation_id: conversation.id,
@@ -153,7 +161,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
               from_email: typeof inbound.provenance.from_email === "string"
                 ? inbound.provenance.from_email
                 : null,
-              intent: intent as "positive" | "neutral",
+              intent: replyableIntent,
               intent_reason:
                 typeof inbound.eval_notes?.intent_reason === "string"
                   ? inbound.eval_notes.intent_reason
@@ -191,6 +199,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             inbound_message_id: inbound.id,
             pattern_key: result.pattern_key,
             seed_pattern_key: result.seed_pattern_key,
+            skill_key: result.skill?.skill_key ?? null,
+            skill_version: result.skill?.version ?? null,
             exemplar_ids: result.exemplar_ids,
             procedural_exemplar_count: result.procedural_exemplars.length,
             semantic_subjects: result.semantic_subjects,
@@ -215,7 +225,11 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             inbound_message_id: inbound.id,
             intent,
             pattern_key: draft.pattern_key,
-            seed_pattern_key: draft.seed_pattern_key,
+            ...(draft.seed_pattern_key ? { seed_pattern_key: draft.seed_pattern_key } : {}),
+            ...outreachSkillProvenance(draft.skill, {
+              pattern_key: draft.pattern_key,
+              seed_pattern_key: draft.seed_pattern_key,
+            }),
             exemplar_ids: draft.exemplar_ids,
             semantic_subjects: draft.semantic_subjects,
           },
@@ -251,6 +265,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
               procedural_exemplars: draft.procedural_exemplars,
               semantic_memory: draft.semantic_memory,
               workspace_context_markdown: workspaceContextMarkdown ?? null,
+              outreach_skill: outreachSkillJudgeContext(draft),
             },
           },
         ),
@@ -265,6 +280,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
           message_id: message.id,
           intent,
           pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
           eval_score: gate.verdict.score,
         };
         await ctx.publish("play.run.completed", {
@@ -285,6 +302,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
           message_id: message.id,
           intent,
           pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
           eval_score: gate.verdict.score,
         };
         await ctx.publish("play.run.completed", {
@@ -313,6 +332,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             intent,
             pattern_key: draft.pattern_key,
             seed_pattern_key: draft.seed_pattern_key,
+            skill_key: draft.skill?.skill_key ?? null,
+            skill_version: draft.skill?.version ?? null,
             subject: draft.subject,
             body: draft.body,
             eval_score: gate.verdict.score,
@@ -327,6 +348,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
             message_id: message.id,
             intent,
             pattern_key: draft.pattern_key,
+            seed_pattern_key: draft.seed_pattern_key,
+            ...skillOutput(draft.skill),
             eval_score: gate.verdict.score,
           };
           await ctx.publish("play.run.completed", {
@@ -383,6 +406,7 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
                   procedural_exemplars: draft.procedural_exemplars,
                   semantic_memory: draft.semantic_memory,
                   workspace_context_markdown: workspaceContextMarkdown ?? null,
+                  outreach_skill: outreachSkillJudgeContext(draft),
                 },
               },
             ),
@@ -400,6 +424,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
               message_id: edited.id,
               intent,
               pattern_key: draft.pattern_key,
+              seed_pattern_key: draft.seed_pattern_key,
+              ...skillOutput(draft.skill),
               eval_score: editedGate.verdict.score,
             };
             await ctx.publish("play.run.completed", {
@@ -473,6 +499,8 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
         message_id: message.id,
         intent,
         pattern_key: draft.pattern_key,
+        seed_pattern_key: draft.seed_pattern_key,
+        ...skillOutput(draft.skill),
         eval_score: sendDraft.eval_score,
       };
       await ctx.publish("play.run.completed", {
@@ -484,6 +512,39 @@ export function createReplyToEmailPlayWorkflow(deps: ReplyToEmailPlayDeps) {
       return output;
     },
   });
+}
+
+function replyableReplyIntent(intent: string): ReplyIntent | null {
+  return intent === "meeting_intent" ||
+    intent === "positive" ||
+    intent === "neutral"
+    ? intent
+    : null;
+}
+
+function outreachSkillJudgeContext(draft: ReplyDraftResult) {
+  if (!draft.skill) return null;
+  return {
+    skill_key: draft.skill.skill_key,
+    version: draft.skill.version,
+    name: draft.skill.name,
+    framework: draft.skill.framework,
+    judge_focus: draft.skill.judge_focus,
+    slot_values: draft.skill.slot_values,
+    pattern_key: draft.pattern_key,
+    seed_pattern_key: draft.seed_pattern_key,
+  };
+}
+
+function skillOutput(skill: SelectedOutreachSkill | null): {
+  skill_key?: string;
+  skill_version?: string;
+} {
+  if (!skill) return {};
+  return {
+    skill_key: skill.skill_key,
+    skill_version: skill.version,
+  };
 }
 
 function parseApprovalDraftOverride(

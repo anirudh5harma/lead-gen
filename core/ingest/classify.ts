@@ -96,6 +96,12 @@ export interface ClassifyDeps {
   pool: Pool;
   bus: EventBus;
   llm: LLMClient;
+  /** Optional event correlation for workflow-owned classifier calls. */
+  correlation_id?: string | null;
+  /** Optional causation event id for workflow-owned classifier calls. */
+  causation_id?: string | null;
+  /** Optional producer reference for the classification event. */
+  producer_ref?: string;
   /** Optional override of the model id for classifier batches. */
   model?: string;
   /** Optional override of the temperature. Default 0.1. */
@@ -107,7 +113,14 @@ export interface ClassifyInput {
 }
 
 export type ClassifyOutcome =
-  | { status: "matched"; matched_icp_ids: string[]; kind: SignalKind }
+  | {
+      status: "matched";
+      matched_icp_ids: string[];
+      kind: SignalKind;
+      match_score: number;
+      match_reason: string;
+      matches: Array<{ icp_segment: string; match_score: number; reason: string }>;
+    }
   | { status: "dismissed"; reason: string }
   | { status: "skipped"; reason: "no_icps" | "budget" | "not_found" | "non_json" | "filtered" };
 
@@ -281,6 +294,13 @@ export async function classifySignal(
     status: "matched",
     matched_icp_ids: matched.map((m) => m.icp.id),
     kind: parsed.kind,
+    match_score: best.score,
+    match_reason: best.reason,
+    matches: matched.map((m) => ({
+      icp_segment: m.icp.id,
+      match_score: m.score,
+      reason: m.reason,
+    })),
   };
 }
 
@@ -293,7 +313,9 @@ async function emitClassification(
     workspace_id: signal.workspace_id,
     event_type: "signal.classification.completed",
     source: "system",
-    producer_ref: "ingest:classify",
+    producer_ref: deps.producer_ref ?? "ingest:classify",
+    correlation_id: deps.correlation_id ?? undefined,
+    causation_id: deps.causation_id ?? undefined,
     idempotency_key: `classification:${signal.id}`,
     payload: {
       signal_id: signal.id,

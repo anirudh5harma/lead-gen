@@ -1,17 +1,22 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { EmptyState } from "@/components/dashboard/Shell";
+import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   getConversationTrustTrace,
   type ConversationTrustApproval,
   type ConversationTrustConversation,
+  type ConversationTrustEvent,
   type ConversationTrustMessage,
   type ConversationTrustOutcome,
   type ConversationTrustReplyProof,
 } from "@/core/product/conversation-trust";
 import { getActiveWorkspace } from "@/lib/workspace";
-import { decideApprovalWithDraftAction } from "../../actions";
+import {
+  decideApprovalWithDraftAction,
+  generateMeetingPrepAction,
+} from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +99,104 @@ function TrustTracePanel({
   );
 }
 
+interface MeetingPrepCard {
+  meeting_prep_id: string;
+  generated_at: string;
+  status: "ready" | "blocked";
+  next_action: string;
+  summary: string;
+  thread_summary: string;
+  agenda: string[];
+  suggested_questions: string[];
+  suggested_times: string[];
+  availability_status: "included" | "omitted_no_consent";
+  source_refs: Array<{ type: string; id: string; label: string; url?: string | null }>;
+}
+
+function MeetingPrepPanel({
+  conversationId,
+  prep,
+}: {
+  conversationId: string;
+  prep: MeetingPrepCard | null;
+}) {
+  return (
+    <div className="section-note">
+      <div className="flex items-start gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">Meeting prep</p>
+          {prep ? (
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+              Updated {new Date(prep.generated_at).toLocaleString()}
+            </p>
+          ) : null}
+        </div>
+        <form action={generateMeetingPrepAction} className="ml-auto">
+          <input type="hidden" name="return_to" value={`/dashboard/conversations/${conversationId}`} />
+          <input type="hidden" name="conversation_id" value={conversationId} />
+          <PendingSubmitButton
+            className="inline-flex min-h-8 items-center justify-center rounded-[8px] border border-[var(--color-line-1)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)]"
+            icon="schedule"
+            iconSize={14}
+            pendingLabel="Preparing"
+          >
+            Prepare
+          </PendingSubmitButton>
+        </form>
+      </div>
+      {prep ? (
+        <div className="mt-4 grid gap-3">
+          <TraceRow
+            label="Next action"
+            value={meetingPrepActionLabel(prep.next_action)}
+            meta={
+              prep.availability_status === "omitted_no_consent"
+                ? "Availability omitted until calendar consent exists."
+                : prep.suggested_times.join(", ")
+            }
+          />
+          {prep.availability_status === "omitted_no_consent" ? (
+            <Link
+              href={{
+                pathname: "/api/auth/outlook",
+                query: {
+                  intent: "calendar",
+                  return_to: `/dashboard/conversations/${conversationId}`,
+                },
+              }}
+              prefetch={false}
+              className="inline-flex min-h-8 w-fit items-center gap-2 rounded-[8px] border border-[var(--color-line-1)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)]"
+            >
+              <Icon name="event_available" size={14} />
+              Connect calendar
+            </Link>
+          ) : null}
+          <TraceRow label="Summary" value={prep.summary} />
+          {prep.thread_summary ? (
+            <TraceRow label="Thread" value={prep.thread_summary} />
+          ) : null}
+          {prep.agenda.length ? (
+            <TraceRow label="Agenda" value={prep.agenda.join(" · ")} />
+          ) : null}
+          {prep.suggested_questions.length ? (
+            <TraceRow label="Questions" value={prep.suggested_questions.join(" · ")} />
+          ) : null}
+          {prep.source_refs.length ? (
+            <TraceRow
+              label="Sources"
+              value={prep.source_refs.map((ref) => ref.label).join(" · ")}
+            />
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
+          No prep note yet.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function TraceRow({
   label,
   value,
@@ -142,7 +245,7 @@ function PendingApprovalPanel({
           <input
             name="subject"
             defaultValue={subject}
-            className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)] px-3 text-sm text-[var(--color-text-1)]"
+            className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)] px-3 text-sm text-[var(--color-text-1)]"
           />
         </label>
         <label className="grid gap-1.5">
@@ -151,7 +254,7 @@ function PendingApprovalPanel({
             name="body"
             rows={8}
             defaultValue={body}
-            className="rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+            className="rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
           />
         </label>
         <PendingSubmitButton
@@ -166,7 +269,7 @@ function PendingApprovalPanel({
         <input type="hidden" name="approval_id" value={approval.id} />
         <input type="hidden" name="decision" value="rejected" />
         <PendingSubmitButton
-          className="inline-flex min-h-10 w-full items-center justify-center rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(255,255,255,0.68)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+          className="inline-flex min-h-10 w-full items-center justify-center rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
           pendingLabel="Rejecting"
         >
           Reject
@@ -218,6 +321,14 @@ function channelEventLabel(eventType: string): string {
   return eventType.replace(/_/g, " ").replace(/\./g, " ");
 }
 
+function meetingPrepActionLabel(action: string): string {
+  if (action === "prepare_meeting") return "Prepare meeting";
+  if (action === "ask_for_times") return "Ask for times";
+  if (action === "wait_for_reply") return "Wait for reply";
+  if (action === "do_not_follow_up") return "Do not follow up";
+  return action.replace(/_/g, " ");
+}
+
 function formatWhen(value: Date): string {
   return new Date(value).toLocaleString();
 }
@@ -264,12 +375,14 @@ export default async function ConversationDetailPage({
   const {
     conversation: conv,
     messages,
+    events,
     approvals,
     outcomes,
     reply_proofs: replyProofs,
   } = trace;
   const pendingApproval =
     approvals.filter((approval) => approval.decision === "pending").at(-1) ?? null;
+  const latestPrep = latestMeetingPrep(events);
 
   return (
     <>
@@ -297,12 +410,12 @@ export default async function ConversationDetailPage({
                   className={
                     "rounded-[14px] border p-4 " +
                     (m.direction === "outbound"
-                      ? "border-[var(--color-line-1)] bg-[rgba(255,255,255,0.72)]"
-                      : "border-[var(--color-line-2)] bg-[rgba(238,238,234,0.72)]")
+                      ? "border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)]"
+                      : "border-[var(--color-line-2)] bg-[rgba(17,15,11,0.76)]")
                   }
                 >
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[rgba(255,255,255,0.64)] px-2 py-1 text-xs text-[var(--color-text-3)]">
+                    <span className="rounded-full bg-[rgba(20,18,13,0.68)] px-2 py-1 text-xs text-[var(--color-text-3)]">
                       {messageDirectionLabel(m.direction)}
                     </span>
                     <span
@@ -354,6 +467,8 @@ export default async function ConversationDetailPage({
               conversationId={conv.id}
             />
           ) : null}
+
+          <MeetingPrepPanel conversationId={conv.id} prep={latestPrep} />
 
           <TrustTracePanel
             conversation={conv}
@@ -407,4 +522,60 @@ export default async function ConversationDetailPage({
       </div>
     </>
   );
+}
+
+function latestMeetingPrep(events: ConversationTrustEvent[]): MeetingPrepCard | null {
+  const event = events
+    .filter((item) => item.event_type === "meeting.prep.generated")
+    .at(-1);
+  return event ? parseMeetingPrep(event.payload) : null;
+}
+
+function parseMeetingPrep(payload: Record<string, unknown>): MeetingPrepCard | null {
+  const meeting_prep_id = textValue(payload.meeting_prep_id);
+  const generated_at = textValue(payload.generated_at);
+  const summary = textValue(payload.summary);
+  if (!meeting_prep_id || !generated_at || !summary) return null;
+  return {
+    meeting_prep_id,
+    generated_at,
+    status: payload.status === "blocked" ? "blocked" : "ready",
+    next_action: textValue(payload.next_action) ?? "wait_for_reply",
+    summary,
+    thread_summary: textValue(payload.thread_summary) ?? "",
+    agenda: stringArray(payload.agenda),
+    suggested_questions: stringArray(payload.suggested_questions),
+    suggested_times: stringArray(payload.suggested_times),
+    availability_status:
+      payload.availability_status === "included" ? "included" : "omitted_no_consent",
+    source_refs: Array.isArray(payload.source_refs)
+      ? payload.source_refs.map(parseSourceRef).filter(isSourceRef)
+      : [],
+  };
+}
+
+function parseSourceRef(value: unknown): MeetingPrepCard["source_refs"][number] | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const id = textValue(record.id);
+  const label = textValue(record.label);
+  if (!id || !label) return null;
+  return {
+    type: textValue(record.type) ?? "conversation",
+    id,
+    label,
+    url: textValue(record.url),
+  };
+}
+
+function isSourceRef(
+  value: MeetingPrepCard["source_refs"][number] | null,
+): value is MeetingPrepCard["source_refs"][number] {
+  return value != null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
 }

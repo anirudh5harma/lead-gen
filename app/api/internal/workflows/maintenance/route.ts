@@ -1,11 +1,15 @@
 import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { getPool } from "@/core/substrate/storage/index.ts";
+import type { Pool } from "pg";
+import { getPool } from "../../../../../core/substrate/storage/index.ts";
 import {
   createRestateWorkflowRuntime,
   restateBearerFromEnv,
   triggerDueWorkspaceMaintenance,
-} from "@/core/substrate/workflows/index.ts";
+  type WorkflowRuntime,
+  type WorkspaceMaintenanceTriggerDeps,
+  type WorkspaceMaintenanceTriggerSummary,
+} from "../../../../../core/substrate/workflows/index.ts";
 
 /**
  * Control-plane entry point for routine platform and tenant-scoped work. The
@@ -24,17 +28,33 @@ import {
  * identical to POST.
  */
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+export interface MaintenanceRouteDeps {
+  allowedSecrets?: string[];
+  ingressUrl?: string;
+  bearer?: string | null;
+  pool?: Pool;
+  runtime?: Pick<WorkflowRuntime, "start">;
+  trigger?: (
+    deps: WorkspaceMaintenanceTriggerDeps,
+  ) => Promise<WorkspaceMaintenanceTriggerSummary>;
+}
 
 export async function POST(req: NextRequest): Promise<Response> {
-  return handle(req);
+  return handleMaintenanceRequest(req);
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
-  return handle(req);
+  return handleMaintenanceRequest(req);
 }
 
-async function handle(req: NextRequest): Promise<Response> {
-  const allowedSecrets = collectAllowedSecrets();
+export async function handleMaintenanceRequest(
+  req: Pick<Request, "headers">,
+  deps: MaintenanceRouteDeps = {},
+): Promise<Response> {
+  const allowedSecrets = deps.allowedSecrets ?? collectAllowedSecrets();
   if (allowedSecrets.length === 0) {
     return new Response(
       "MAINTENANCE_TRIGGER_SECRET or CRON_SECRET must be set",
@@ -45,18 +65,19 @@ async function handle(req: NextRequest): Promise<Response> {
     return new Response("unauthorized", { status: 401 });
   }
 
-  const ingressUrl = process.env.RESTATE_INGRESS_URL;
-  if (!ingressUrl) {
+  const ingressUrl = deps.ingressUrl ?? process.env.RESTATE_INGRESS_URL;
+  if (!deps.runtime && !ingressUrl) {
     return new Response("RESTATE_INGRESS_URL is not set", { status: 500 });
   }
 
   try {
-    const summary = await triggerDueWorkspaceMaintenance({
-      pool: getPool(),
-      runtime: createRestateWorkflowRuntime({
-        ingressUrl,
-        bearer: restateBearerFromEnv(),
-      }),
+    const workflowRuntime = deps.runtime ?? createRestateWorkflowRuntime({
+      ingressUrl: ingressUrl!,
+      bearer: deps.bearer ?? restateBearerFromEnv(),
+    });
+    const summary = await (deps.trigger ?? triggerDueWorkspaceMaintenance)({
+      pool: deps.pool ?? getPool(),
+      runtime: workflowRuntime,
     });
     return Response.json(summary, {
       status: summary.failures.length === 0 ? 202 : 207,

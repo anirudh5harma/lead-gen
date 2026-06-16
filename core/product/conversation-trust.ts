@@ -4,6 +4,7 @@ import {
   SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
   SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
 } from "../plays/index.ts";
+import { WORKSPACE_MEETING_PREP_WORKFLOW } from "../agents/langgraph/index.ts";
 import { getPool } from "../substrate/storage/index.ts";
 
 export interface ConversationTrustConversation {
@@ -12,11 +13,19 @@ export interface ConversationTrustConversation {
   topic: string | null;
   started_at: Date;
   last_activity_at: Date;
+  counterparty_person_id: string | null;
   counterparty_name: string | null;
   counterparty_emails: string[] | null;
+  counterparty_title: string | null;
+  counterparty_linkedin_url: string | null;
+  company_id: string | null;
   company_name: string | null;
+  company_domain: string | null;
+  company_industry: string | null;
+  company_description: string | null;
   rep_name: string | null;
   rep_id: string | null;
+  rep_role: string | null;
   signal_id: string | null;
   signal_title: string | null;
   signal_kind: string | null;
@@ -594,11 +603,19 @@ async function loadConversation(
 ): Promise<ConversationTrustConversation | null> {
   const { rows } = await pool.query<ConversationTrustConversation>(
     `select c.id, c.status::text as status, c.topic, c.started_at, c.last_activity_at,
+            p.id as counterparty_person_id,
             p.full_name as counterparty_name,
             p.emails::text[] as counterparty_emails,
+            p.title as counterparty_title,
+            p.linkedin_url as counterparty_linkedin_url,
+            co.id as company_id,
             co.name as company_name,
+            co.domain::text as company_domain,
+            co.industry as company_industry,
+            co.description as company_description,
             r.name as rep_name,
             r.id as rep_id,
+            r.role::text as rep_role,
             s.id as signal_id,
             s.title as signal_title,
             s.kind::text as signal_kind,
@@ -673,6 +690,7 @@ async function loadWorkflowRun(
         SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
         SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
         REPLY_TO_EMAIL_PLAY_WORKFLOW,
+        WORKSPACE_MEETING_PREP_WORKFLOW,
       ],
       input.signal_id,
       input.conversation_id,

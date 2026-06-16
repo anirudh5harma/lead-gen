@@ -24,10 +24,13 @@ import type { EmailDraft } from "../types.ts";
 const TOKEN_ENDPOINT =
   "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const SEND_MAIL_ENDPOINT = "https://graph.microsoft.com/v1.0/me/sendMail";
+const DEFAULT_REFRESH_SCOPE =
+  "offline_access https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read";
 
 export interface OutlookCredentials {
   access_token: string;
   refresh_token: string;
+  scope?: string;
   /** ISO timestamp. */
   expires_at: string;
 }
@@ -38,7 +41,7 @@ export interface OutlookSenderOptions {
   /** Microsoft app registration. */
   clientId: string;
   clientSecret: string;
-  /** Scopes; default 'https://graph.microsoft.com/.default offline_access'. */
+  /** Scopes; default mail-only launch scopes. */
   scope?: string;
   /** Skew (ms) — refresh tokens that expire within this. Default 60_000. */
   refreshSkewMs?: number;
@@ -87,6 +90,7 @@ interface TokenResponse {
   access_token: string;
   refresh_token?: string;
   expires_in: number;
+  scope?: string;
 }
 
 interface SendMailErrorBody {
@@ -120,10 +124,18 @@ export class OutlookSendError extends Error {
   }
 }
 
+export function isOutlookRefreshReauthorizationError(
+  status: number,
+  body: string,
+): boolean {
+  if (status !== 400) return false;
+  return /invalid_grant|AADSTS50173|AADSTS70008[24]/i.test(body);
+}
+
 export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const skew = opts.refreshSkewMs ?? 60_000;
-  const scope = opts.scope ?? "https://graph.microsoft.com/.default offline_access";
+  const scope = opts.scope ?? DEFAULT_REFRESH_SCOPE;
 
   async function loadCredentials(
     db: Pool | PoolClient,
@@ -225,7 +237,7 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
       client_secret: opts.clientSecret,
       grant_type: "refresh_token",
       refresh_token: snapshot.credentials.refresh_token,
-      scope,
+      scope: snapshot.credentials.scope ?? scope,
     });
 
     const response = await fetchImpl(TOKEN_ENDPOINT, {
@@ -235,10 +247,10 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
     });
     if (!response.ok) {
       const text = await response.text();
-      // 400 from the token endpoint with `invalid_grant` means the user
-      // revoked access or the refresh token expired. Mark the account
-      // disconnected via its projector so the channel surfaces a clear reason.
-      if (response.status === 400) {
+      // Only revoked / expired refresh-token failures should disturb the user.
+      // Other token-endpoint 400s are operator/configuration errors and should
+      // remain account errors, not reconnect prompts.
+      if (isOutlookRefreshReauthorizationError(response.status, text)) {
         await opts.bus.publish({
           workspace_id: snapshot.workspace_id,
           event_type: "email.outlook.reauthorization.required",
@@ -263,6 +275,7 @@ export function createOutlookSender(opts: OutlookSenderOptions): OutlookSender {
     const refreshed: OutlookCredentials = {
       access_token: json.access_token,
       refresh_token: json.refresh_token ?? snapshot.credentials.refresh_token,
+      scope: json.scope ?? snapshot.credentials.scope,
       expires_at: new Date(Date.now() + json.expires_in * 1000).toISOString(),
     };
     await publishCredentialsRefreshed(channel_account_id, snapshot, refreshed);

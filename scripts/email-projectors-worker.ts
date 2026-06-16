@@ -6,6 +6,7 @@ import {
 } from "../core/agents/memory/index.ts";
 import {
   createDeepSeekIntentClassifier,
+  createOutlookSender,
   registerEmailIngressProjectors,
 } from "../core/channels/email/index.ts";
 import { createJournaledNatsEventBus } from "../core/substrate/events/index.ts";
@@ -45,6 +46,7 @@ const workflows = createRestateWorkflowRuntime({
 const classifier = createDeepSeekIntentClassifier({
   llm: createDeepSeekClientFromEnv(),
 });
+const outlookAccessTokens = createProjectorOutlookAccessTokens();
 
 const subscriptions = await registerEmailIngressProjectors(
   {
@@ -52,6 +54,7 @@ const subscriptions = await registerEmailIngressProjectors(
     bus,
     classifier,
     memory,
+    outlookAccessTokens,
     outlookSubscriptionRepair: {
       async start({ workspace_id, channel_account_id }) {
         await workflows.start({
@@ -113,4 +116,21 @@ function optionalPositiveNumber<K extends string>(
     throw new Error(`${key} must be a positive number`);
   }
   return { [key]: value } as Partial<Record<K, number>>;
+}
+
+function createProjectorOutlookAccessTokens() {
+  const clientId = process.env.MICROSOFT_CLIENT_ID?.trim();
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) {
+    console.warn(
+      "[email-projectors] Microsoft credentials missing; Outlook reply sync cannot silently refresh access tokens.",
+    );
+    return undefined;
+  }
+  return createOutlookSender({
+    pool,
+    bus,
+    clientId,
+    clientSecret,
+  });
 }

@@ -28,6 +28,12 @@ import {
   shouldRequestApproval,
   type PlayChannelPolicy,
 } from "./autonomy.ts";
+import {
+  createSelectedOutreachSkill,
+  outreachSkillProvenance,
+  type SelectedOutreachSkill,
+} from "../agents/skills/outreach.ts";
+import type { SignalEmailWriterDraft } from "../agents/reps/index.ts";
 
 export const SIGNAL_TO_EMAIL_PLAY_WORKFLOW = "play.signal_to_email.v1";
 
@@ -43,6 +49,17 @@ export interface SignalToEmailPlayInput {
   email_approval?: "none" | "approve_first" | "always" | "research_only";
   play_channel_policy?: PlayChannelPolicy | null;
   simulate_outcome_kind?: "positive_reply" | "meeting_booked" | null;
+  skill_key?: string | null;
+  skill_version?: string | null;
+  segment_key?: string | null;
+  campaign_strategy?: {
+    recommendation_id?: string | null;
+    variant_key: string;
+    matched_variant_key?: string | null;
+    recommendation: string;
+    allocation_weight: number;
+    reason: string;
+  } | null;
 }
 
 export interface SignalToEmailPlayOutput {
@@ -52,6 +69,9 @@ export interface SignalToEmailPlayOutput {
   outcome_id?: string;
   eval_score: number;
   pattern_key: string;
+  seed_pattern_key?: string | null;
+  skill_key?: string;
+  skill_version?: string;
 }
 
 export interface SignalToEmailPlayDeps {
@@ -247,6 +267,23 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         workspaceContextMarkdown: workspaceContextMarkdown ?? null,
         draftGrounding,
       });
+      const selectedSkill = createSelectedOutreachSkill({
+        channel: "email",
+        stage: "cold_open",
+        signal_kind: signal.kind,
+        person_title: person.title,
+        preferred_skill_key: input.skill_key,
+        preferred_skill_version: input.skill_version,
+        base_pattern_key: research.pattern_key,
+        slot_values: emailSkillSlotValues({
+          signal,
+          research: groundedResearch,
+          person,
+          company,
+          workspaceContextMarkdown,
+          draftGrounding,
+        }),
+      });
 
       const draft = await ctx.step("writer.compose_email", async () => {
         const result = await writer.invoke(
@@ -255,6 +292,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             research: groundedResearch,
             recipient_name: person.given_name ?? person.full_name.split(" ")[0] ?? person.full_name,
             personalization_context_markdown: personalizationContextMarkdown,
+            skill: selectedSkill,
           },
           roleContext,
         );
@@ -269,6 +307,10 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           workflow_run_id: ctx.run_id,
           summary: result.subject,
           output: {
+            pattern_key: result.pattern_key,
+            seed_pattern_key: result.seed_pattern_key,
+            skill_key: result.skill?.skill_key ?? null,
+            skill_version: result.skill?.version ?? null,
             exemplar_ids: result.exemplar_ids,
             procedural_exemplar_count: result.procedural_exemplars.length,
           },
@@ -278,9 +320,47 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
       });
 
       const message = await ctx.step("message.draft", async () => {
+        const message_id = randomUUID();
+        const personalized_at = new Date().toISOString();
+        const provenance = {
+          pattern_key: draft.pattern_key,
+          ...(draft.seed_pattern_key ? { seed_pattern_key: draft.seed_pattern_key } : {}),
+          exemplar_ids: draft.exemplar_ids,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          ...outreachSkillProvenance(draft.skill, {
+            pattern_key: draft.pattern_key,
+            seed_pattern_key: draft.seed_pattern_key,
+          }),
+          personalization_context: {
+            signal_id: signal.id,
+            person_id: person.id,
+            company_id: company?.id ?? null,
+            generated_at: personalized_at,
+          },
+          ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
+          ...(draftGrounding ? { exa_grounding: draftGroundingProvenance(draftGrounding) } : {}),
+        };
+        await ctx.publish("message.personalized", {
+          conversation_id: conversation.id,
+          message_id,
+          channel: "email",
+          rep_id: rep.id,
+          play_id: input.play_id,
+          play_run_id: input.play_run_id,
+          signal_id: signal.id,
+          person_id: person.id,
+          company_id: company?.id ?? null,
+          subject: draft.subject,
+          body: draft.body,
+          personalization_context_markdown: personalizationContextMarkdown,
+          skill: draft.skill ? { ...draft.skill } : null,
+          provenance,
+          personalized_at,
+        });
         const event = await ctx.publish("draft.proposed", {
           conversation_id: conversation.id,
-          message_id: randomUUID(),
+          message_id,
           channel: "email",
           rep_id: rep.id,
           subject: draft.subject,
@@ -288,20 +368,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           properties: {
             personalization_context_markdown: personalizationContextMarkdown,
           },
-          provenance: {
-            pattern_key: research.pattern_key,
-            exemplar_ids: draft.exemplar_ids,
-            play_id: input.play_id,
-            play_run_id: input.play_run_id,
-            personalization_context: {
-              signal_id: signal.id,
-              person_id: person.id,
-              company_id: company?.id ?? null,
-              generated_at: new Date().toISOString(),
-            },
-            ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
-            ...(draftGrounding ? { exa_grounding: draftGroundingProvenance(draftGrounding) } : {}),
-          },
+          provenance,
         });
         const row = await deps.store.projectMessageLifecycleEvent(event);
         if (!row) throw new Error(`Draft projection failed: ${event.payload.message_id}`);
@@ -327,6 +394,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
               procedural_exemplars: draft.procedural_exemplars,
               personalization_context_markdown: personalizationContextMarkdown,
               workspace_context_markdown: workspaceContextMarkdown ?? null,
+              outreach_skill: outreachSkillJudgeContext(draft),
             },
           },
         ),
@@ -344,7 +412,9 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           conversation_id: conversation.id,
           message_id: message.id,
           eval_score: gate.verdict.score,
-          pattern_key: research.pattern_key,
+          pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
         };
         await ctx.publish("play.run.completed", {
           play_id: input.play_id,
@@ -366,7 +436,9 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           conversation_id: conversation.id,
           message_id: message.id,
           eval_score: gate.verdict.score,
-          pattern_key: research.pattern_key,
+          pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
         };
         await publishPlayDeferred(ctx, message.id, "play_research_only", null);
         await ctx.publish("play.run.completed", {
@@ -393,7 +465,9 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
           conversation_id: conversation.id,
           message_id: message.id,
           eval_score: gate.verdict.score,
-          pattern_key: research.pattern_key,
+          pattern_key: draft.pattern_key,
+          seed_pattern_key: draft.seed_pattern_key,
+          ...skillOutput(draft.skill),
         };
         await publishPlayDeferred(
           ctx,
@@ -439,6 +513,8 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             daily_cap: policy.daily_cap,
             sent_today: dailySendCount,
             personalization_context_markdown: personalizationContextMarkdown,
+            skill_key: draft.skill?.skill_key ?? null,
+            skill_version: draft.skill?.version ?? null,
           },
         });
         if (decision.decision !== "approved") {
@@ -447,7 +523,9 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             conversation_id: conversation.id,
             message_id: message.id,
             eval_score: gate.verdict.score,
-            pattern_key: research.pattern_key,
+            pattern_key: draft.pattern_key,
+            seed_pattern_key: draft.seed_pattern_key,
+            ...skillOutput(draft.skill),
           };
           await publishPlayDeferred(
             ctx,
@@ -508,6 +586,7 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
                   procedural_exemplars: draft.procedural_exemplars,
                   personalization_context_markdown: personalizationContextMarkdown,
                   workspace_context_markdown: workspaceContextMarkdown ?? null,
+                  outreach_skill: outreachSkillJudgeContext(draft),
                 },
               },
             ),
@@ -524,7 +603,9 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
               conversation_id: conversation.id,
               message_id: edited.id,
               eval_score: editedGate.verdict.score,
-              pattern_key: research.pattern_key,
+              pattern_key: draft.pattern_key,
+              seed_pattern_key: draft.seed_pattern_key,
+              ...skillOutput(draft.skill),
             };
             await ctx.publish("play.run.completed", {
               play_id: input.play_id,
@@ -601,7 +682,9 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
             attributed_signal_id: signal.id,
             attributed_rep_id: rep.id,
             properties: {
-              pattern_key: research.pattern_key,
+              pattern_key: draft.pattern_key,
+              ...(draft.seed_pattern_key ? { seed_pattern_key: draft.seed_pattern_key } : {}),
+              ...skillOutput(draft.skill),
               exemplar_ids: draft.exemplar_ids,
               ...(exaInfluence ? { exa_influence: exaInfluence } : {}),
             },
@@ -621,7 +704,9 @@ export function createSignalToEmailPlayWorkflow(deps: SignalToEmailPlayDeps) {
         message_id: message.id,
         outcome_id,
         eval_score: sendDraft.eval_score,
-        pattern_key: research.pattern_key,
+        pattern_key: draft.pattern_key,
+        seed_pattern_key: draft.seed_pattern_key,
+        ...skillOutput(draft.skill),
       };
       await ctx.publish("play.run.completed", {
         play_id: input.play_id,
@@ -638,6 +723,67 @@ function compactMarkdown(markdown: string | null | undefined, maxLength: number)
   const cleaned = markdown?.trim();
   if (!cleaned) return null;
   return cleaned.length <= maxLength ? cleaned : `${cleaned.slice(0, maxLength).trim()}...`;
+}
+
+function emailSkillSlotValues(input: {
+  signal: Signal;
+  research: { signal_summary: string; counterparty_summary: string };
+  person: GraphPerson;
+  company: GraphCompany | null;
+  workspaceContextMarkdown?: string | null;
+  draftGrounding?: { summary: string } | null;
+}): Record<string, string> {
+  const whyNow = [
+    input.signal.match_reason,
+    input.signal.audience_hint.rationale,
+    input.signal.freshness_at ? `Fresh as of ${formatIsoDate(input.signal.freshness_at)}.` : null,
+  ].filter((part): part is string => Boolean(part));
+  return {
+    signal_hook: input.research.signal_summary,
+    why_now: whyNow.join(" ") || input.signal.title,
+    inferred_problem:
+      input.signal.match_reason ??
+      `${input.person.title ?? "This contact"} may care because ${input.signal.kind.replace(/_/g, " ")} changed the timing.`,
+    proof_or_relevance:
+      compactMarkdown(input.draftGrounding?.summary, 240) ??
+      compactMarkdown(input.workspaceContextMarkdown, 240) ??
+      "Use Bombsell's workspace context only if it is directly relevant.",
+    peer_pattern:
+      compactMarkdown(input.workspaceContextMarkdown, 240) ??
+      "No outcome-backed peer proof available yet; avoid inventing proof.",
+    counterparty_context: [
+      input.person.full_name,
+      input.person.title,
+      input.company?.name,
+      input.company?.industry,
+    ].filter(Boolean).join(", "),
+    reply_question: "Ask whether this is worth comparing notes on now.",
+  };
+}
+
+function outreachSkillJudgeContext(draft: SignalEmailWriterDraft) {
+  if (!draft.skill) return null;
+  return {
+    skill_key: draft.skill.skill_key,
+    version: draft.skill.version,
+    name: draft.skill.name,
+    framework: draft.skill.framework,
+    judge_focus: draft.skill.judge_focus,
+    slot_values: draft.skill.slot_values,
+    pattern_key: draft.pattern_key,
+    seed_pattern_key: draft.seed_pattern_key,
+  };
+}
+
+function skillOutput(skill: SelectedOutreachSkill | null): {
+  skill_key?: string;
+  skill_version?: string;
+} {
+  if (!skill) return {};
+  return {
+    skill_key: skill.skill_key,
+    skill_version: skill.version,
+  };
 }
 
 function formatIsoDate(value: string): string {
