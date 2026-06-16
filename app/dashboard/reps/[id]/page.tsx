@@ -293,7 +293,7 @@ function LearningNote({ item }: { item: RepLearningRow }) {
   const score = Math.round(Number(item.score) * 100);
   const label = item.label?.trim() || humanPattern(item.pattern_key);
   return (
-    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] p-4">
+    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-pos-bg)] px-2 py-1 text-xs font-medium text-[var(--color-pos)]">
           {score}% useful
@@ -317,7 +317,7 @@ function LearningNote({ item }: { item: RepLearningRow }) {
 
 function MessageNote({ message }: { message: RecentMessageRow }) {
   return (
-    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] p-4">
+    <article className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs font-medium text-[var(--color-accent)]">
           {messageStatusLabel(message.status)}
@@ -423,7 +423,7 @@ function Select({
 
 function MiniStatus({ label, value }: { label: string; value: number }) {
   return (
-    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.60)] p-3">
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
       <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
         {value}
       </strong>

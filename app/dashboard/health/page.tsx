@@ -145,7 +145,7 @@ export default async function HealthPage() {
         ) : (
           <ul className="grid gap-2">
             {dead.map((d) => (
-              <li key={d.event_id} className="rounded-[12px] bg-[rgba(20,18,13,0.78)] px-4 py-3">
+              <li key={d.event_id} className="rounded-[12px] bg-[var(--color-ink-0)] px-4 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:flex-nowrap">
                   <span className="min-w-0 max-w-full truncate text-xs text-[var(--color-text-3)] sm:w-44 sm:shrink-0">
                     {d.event_type}
@@ -200,7 +200,7 @@ function AgentObservabilityPanel({
         <State label="Tokens" value={observability.total_prompt_tokens + observability.total_completion_tokens} />
         <State label="Cost" value={formatCost(observability.estimated_cost_usd)} />
       </div>
-      <div className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.60)] px-4 py-3">
+      <div className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-4)]">
             Last 24h
@@ -237,7 +237,7 @@ function AgentObservabilityPanel({
 function AgentTraceItem({ trace }: { trace: AgentTraceSummary }) {
   const label = trace.graph_names[0] ?? trace.spans[0]?.name ?? "agent trace";
   return (
-    <li className="rounded-[12px] bg-[rgba(20,18,13,0.78)] px-4 py-3">
+    <li className="rounded-[12px] bg-[var(--color-ink-0)] px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <TraceStatusDot status={trace.status} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-1)]">
@@ -288,7 +288,7 @@ function AgentTraceItem({ trace }: { trace: AgentTraceSummary }) {
 function ReadinessPanel({ readiness }: { readiness: ProductReadiness }) {
   return (
     <div className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-[rgba(20,18,13,0.78)] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-[var(--color-ink-0)] px-4 py-3">
         <StatusDot status={readiness.status} />
         <p className="font-sans text-sm font-semibold text-[var(--color-text-1)]">
           Product runtime is {readiness.status}
@@ -301,7 +301,7 @@ function ReadinessPanel({ readiness }: { readiness: ProductReadiness }) {
         {readiness.checks.map((check) => (
           <div
             key={check.name}
-            className="rounded-[12px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.60)] px-4 py-3"
+            className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-4 py-3"
           >
             <div className="flex items-center gap-2">
               <StatusDot status={check.status} />
@@ -334,7 +334,7 @@ function ReadinessDetail({ detail }: { detail: string }) {
       <summary className="cursor-pointer select-none text-xs font-semibold text-[var(--color-accent)] marker:text-[var(--color-accent)]">
         Details
       </summary>
-      <p className="mt-2 max-h-40 overflow-auto break-words rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.58)] p-3 font-mono text-[11px] leading-5 text-[var(--color-text-3)]">
+      <p className="mt-2 max-h-40 overflow-auto break-words rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 font-mono text-[11px] leading-5 text-[var(--color-text-3)]">
         {detail}
       </p>
     </details>
@@ -363,7 +363,7 @@ function TraceStatusDot({ status }: { status: AgentTraceSummary["status"] }) {
 
 function State({ label, value }: { label: string; value: number | string }) {
   return (
-    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.60)] p-3 text-center">
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 text-center">
       <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
       <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
     </span>

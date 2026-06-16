@@ -192,7 +192,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
       tone: "bg-[var(--color-ink-2)] text-[var(--color-text-3)]",
     };
   return (
-    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[rgba(30,26,18,0.95)] md:grid-cols-[1fr_auto] md:items-center">
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
       <Link
         href={`/dashboard/conversations/${conversation.id}`}
         prefetch={false}
@@ -227,7 +227,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
             </span>
           ) : null}
           {conversation.pending_approval_id || conversation.eval_passed != null ? (
-            <span className="rounded-[8px] bg-[rgba(20,18,13,0.66)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
               {conversation.pending_approval_id || conversation.eval_passed === false
                 ? "Needs review"
                 : "Ready"}
@@ -247,7 +247,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
             <Link
               href="/dashboard/review"
               prefetch={false}
-              className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
             >
               <Icon name="rate_review" size={14} />
               Review
@@ -270,7 +270,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="rejected" />
               <PendingSubmitButton
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
                 icon="close"
                 iconSize={14}
                 pendingLabel="Rejecting"

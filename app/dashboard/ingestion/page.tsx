@@ -104,7 +104,7 @@ function EmailReadinessBanner({
       : "/api/auth/outlook";
   const icon = needsReconnect ? "login" : hasOutlook ? "sync_problem" : "mail";
   return (
-    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-4 py-3">
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-3">
       <div className="flex min-w-0 items-start gap-3">
         <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
           <Icon name={icon} size={17} />
@@ -146,7 +146,7 @@ function QualifiedSignalCard({ signal }: { signal: QualifiedSignalItem }) {
     contact.verification.email_verified === true
   ).length;
   return (
-    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4 md:p-5">
+    <article className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4 md:p-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
         <section className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -265,7 +265,7 @@ function ContactPanel({
               </div>
               <div className="ml-9 flex flex-wrap items-center gap-2">
                 {contact.emails[0] ? (
-                  <span className="rounded-full bg-[rgba(20,18,13,0.66)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+                  <span className="rounded-full bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
                     {contact.emails[0]}
                   </span>
                 ) : null}
@@ -306,7 +306,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
           <p className="text-sm font-semibold leading-5 text-[var(--color-text-1)]">
             {draft.subject ?? "(no subject)"}
           </p>
-          <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.58)] px-3 py-3 text-sm leading-6 text-[var(--color-text-2)]">
+          <p className="mt-3 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3 text-sm leading-6 text-[var(--color-text-2)]">
             {draft.body ?? "(no body)"}
           </p>
           <div className="mt-3 grid gap-3 border-t border-[var(--color-line-1)] pt-3 sm:grid-cols-3">
@@ -342,7 +342,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                 <Link
                   href="/dashboard/review"
                   prefetch={false}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
                 >
                   <Icon name="rate_review" size={14} />
                   Review draft
@@ -365,7 +365,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                   <input type="hidden" name="approval_id" value={draft.pending_approval_id} />
                   <input type="hidden" name="decision" value="rejected" />
                   <PendingSubmitButton
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
                     icon="close"
                     iconSize={14}
                     pendingLabel="Rejecting"
@@ -378,7 +378,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
               <Link
                 href={`/dashboard/conversations/${draft.conversation_id}`}
                 prefetch={false}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
               >
                 <Icon name="forum" size={14} />
                 Open conversation
@@ -466,7 +466,7 @@ function SignalBadge({
     accent: "bg-[var(--color-accent-bg)] text-[var(--color-accent)]",
     positive: "bg-[var(--color-pos-bg)] text-[var(--color-pos)]",
     warning: "bg-[var(--color-neg-bg)] text-[var(--color-neg)]",
-    muted: "bg-[rgba(20,18,13,0.66)] text-[var(--color-text-3)]",
+    muted: "bg-[var(--color-ink-2)] text-[var(--color-text-3)]",
   }[tone];
   return (
     <span className={"rounded-full px-2.5 py-1 text-xs font-medium " + styles}>

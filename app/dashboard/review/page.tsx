@@ -121,7 +121,7 @@ function ReviewNote({ approval }: { approval: PendingApprovalRow }) {
           <p className="mt-3 text-sm leading-6 text-[var(--color-text-2)]">
             {approval.reason ?? "Bombsell wants a human check before this moves."}
           </p>
-          <p className="mt-5 whitespace-pre-wrap rounded-[10px] bg-[rgba(20,18,13,0.62)] p-4 text-sm leading-7 text-[var(--color-text-2)]">
+          <p className="mt-5 whitespace-pre-wrap rounded-[10px] bg-[var(--color-ink-2)] p-4 text-sm leading-7 text-[var(--color-text-2)]">
             {body}
           </p>
         </section>
@@ -166,7 +166,7 @@ function ReviewNote({ approval }: { approval: PendingApprovalRow }) {
             <input type="hidden" name="approval_id" value={approval.id} />
             <input type="hidden" name="decision" value="rejected" />
             <PendingSubmitButton
-              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-4 text-sm font-semibold text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)]"
+              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 text-sm font-semibold text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)]"
               icon="close"
               iconSize={17}
               pendingLabel="Rejecting"
@@ -187,7 +187,7 @@ function stringPayload(payload: Record<string, unknown> | null, key: string): st
 
 function Evidence({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[28px_1fr] gap-2 rounded-[8px] bg-[rgba(20,18,13,0.66)] p-2">
+    <div className="grid grid-cols-[28px_1fr] gap-2 rounded-[8px] bg-[var(--color-ink-2)] p-2">
       <Icon name={icon} size={18} className="mt-0.5 text-[var(--color-accent)]" />
       <p className="min-w-0">
         <span className="block text-xs text-[var(--color-text-3)]">{label}</span>

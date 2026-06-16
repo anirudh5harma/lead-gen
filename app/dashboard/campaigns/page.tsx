@@ -369,7 +369,7 @@ function SkillOptimizerPanel({
   const topRecommendations = skillOptimization.recommendations.slice(0, 3);
   return (
     <div className="mt-3 space-y-3">
-      <div className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
+      <div className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
         <p className="text-[14px] leading-5 text-[var(--color-text-1)]">
           {skillOptimization.summary}
         </p>
@@ -395,7 +395,7 @@ function SkillRecommendationCard({
 }) {
   const utility = Math.round(recommendation.utility_score * 100);
   return (
-    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
+    <article className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
           {strategyLabel(recommendation.recommendation)}
@@ -433,7 +433,7 @@ function StrategyOptimizerPanel({ strategy }: { strategy: CampaignStrategyState 
   const topVariants = strategy.variants.slice(0, 3);
   return (
     <div className="mt-3 space-y-3">
-      <div className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
+      <div className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
         <p className="text-[14px] leading-5 text-[var(--color-text-1)]">
           {strategy.summary}
         </p>
@@ -453,7 +453,7 @@ function StrategyVariantCard({ variant }: { variant: CampaignStrategyVariant }) 
   const utility = Math.round(variant.utility_score * 100);
   const allocation = Math.round(variant.allocation_weight * 100);
   return (
-    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
+    <article className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
           {strategyLabel(variant.recommendation)}
@@ -500,7 +500,7 @@ function CampaignIdeaNote({ idea }: { idea: CampaignIdeaRow }) {
     : `started ${timeAgo(idea.started_at ?? idea.created_at)}`;
   const outcomes = Number(idea.outcome_count);
   return (
-    <article className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
+    <article className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
           {idea.rep_name ?? "Prayog"}
@@ -768,7 +768,7 @@ function clampRate(value: number): number {
 function SignalRow({ signal }: { signal: QualifiedSignalRow }) {
   const score = signal.match_score ? Math.round(Number(signal.match_score) * 100) : null;
   return (
-    <div className="rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
+    <div className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
           Qualified

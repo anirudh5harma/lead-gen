@@ -167,7 +167,7 @@ export default async function SetupPage() {
       <SurfaceSection title="Company context">
         <form
           action={editCompanyProfileAction}
-          className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-2"
+          className="grid gap-4 rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 md:grid-cols-2"
         >
           <input
             type="hidden"
@@ -219,7 +219,7 @@ export default async function SetupPage() {
       <SurfaceSection title="Audience and pace">
         <form
           action={configureActivationAction}
-          className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5"
+          className="grid gap-4 rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5"
         >
           <input
             type="hidden"
@@ -333,7 +333,7 @@ function ChannelConnectRow({
   reconnectLabel: string;
 }) {
   return (
-    <div className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-[1fr_auto] md:items-center">
+    <div className="grid gap-4 rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 md:grid-cols-[1fr_auto] md:items-center">
       <div>
         <p className="text-sm font-semibold text-[var(--color-text-1)]">
           {account ? account.display_name : title}
@@ -387,7 +387,7 @@ function NoWorkspaceSetup() {
       <SurfaceSection title="Workspace">
         <form
           action={createWorkspaceAction}
-          className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:max-w-xl"
+          className="grid gap-4 rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 md:max-w-xl"
         >
           <input
             type="hidden"
@@ -440,7 +440,7 @@ function Field({
         type={type}
         required={required}
         defaultValue={defaultValue}
-        className="min-h-10 rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
+        className="min-h-10 rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
       />
     </label>
   );
@@ -466,7 +466,7 @@ function TextArea({
         name={name}
         rows={rows}
         defaultValue={defaultValue}
-        className="rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+        className="rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
       />
     </label>
   );
@@ -491,7 +491,7 @@ function Select({
       <select
         name={name}
         defaultValue={defaultValue}
-        className="min-h-10 rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
+        className="min-h-10 rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
       >
         {options.map(([value, label]) => (
           <option key={value} value={value}>
@@ -549,7 +549,7 @@ function RepRoster({ reps }: { reps: SetupRepRow[] }) {
               key={name}
               href={r ? `/dashboard/reps/${r.id}` : meta.href}
               prefetch={false}
-              className="group rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
+              className="group rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
             >
               <div className="flex items-center gap-2">
                 <span className="grid size-7 place-items-center rounded-md bg-[var(--color-ink-2)] text-[var(--color-text-2)]">

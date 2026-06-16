@@ -70,7 +70,7 @@ export function RecommendationLearningBadge({
   if (accepted + ignored === 0) return null;
   const rate = acceptanceRate == null ? null : `${Math.round(acceptanceRate * 100)}% useful`;
   return (
-    <p className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.58)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-3)]">
+    <p className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-3)]">
       <Icon name="auto_awesome" size={14} />
       <span>{accepted} useful</span>
       <span>{ignored} dismissed</span>
@@ -151,7 +151,7 @@ function RecommendationReviewActions({
   if (item.decision === "accepted") {
     return (
       <div className="mt-4 space-y-3">
-        <p className="inline-flex items-center gap-1.5 rounded-full bg-[rgba(20,18,13,0.66)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)]">
+        <p className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)]">
           <Icon name="check" size={14} />
           Saved
         </p>
@@ -187,7 +187,7 @@ function RecommendationReviewActions({
             name="external_ref"
             type="url"
             placeholder={externalRefLabel}
-            className="min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.66)] px-3 py-1.5 text-xs text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
+            className="min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
           />
           <ToastSubmitButton
             className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
@@ -220,7 +220,7 @@ function RecommendationReviewActions({
           <input type="hidden" name="review_id" value={item.review_id} />
           <input type="hidden" name="decision" value="ignored" />
           <ToastSubmitButton
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.66)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
             icon="close"
             iconSize={14}
             pendingLabel="Dismissing"
@@ -269,7 +269,7 @@ function RecommendationDeleteFields({
       <input type="hidden" name="review_id" value={reviewId} />
       <input type="hidden" name="reason" value={`Deleted from ${surface}`} />
       <ToastSubmitButton
-        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.66)] px-3 py-1.5 text-xs font-semibold text-[var(--color-neg)] transition active:translate-y-px"
+        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-neg)] transition active:translate-y-px"
         icon="delete"
         iconSize={14}
         pendingLabel="Deleting"
@@ -284,14 +284,14 @@ function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
   if (!item.review_id) return null;
   return (
     <details className="group">
-      <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.46)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition hover:bg-[var(--color-ink-2)]">
+      <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition hover:bg-[var(--color-ink-2)]">
         <Icon name="edit" size={14} />
         Edit
       </summary>
       <ToastActionForm
         action={updateRecommendationAction}
         successTitle="Suggestion updated"
-        className="mt-3 grid gap-2 rounded-lg border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.54)] p-3"
+        className="mt-3 grid gap-2 rounded-lg border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3"
       >
         <input type="hidden" name="review_id" value={item.review_id} />
         <label className="grid gap-1">
@@ -300,7 +300,7 @@ function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
             name="title"
             required
             defaultValue={item.title}
-            className="min-h-9 rounded-md border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.72)] px-3 text-xs text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
+            className="min-h-9 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 text-xs text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
           />
         </label>
         <label className="grid gap-1">
@@ -309,7 +309,7 @@ function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
             name="detail"
             rows={3}
             defaultValue={item.detail}
-            className="rounded-md border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.72)] px-3 py-2 text-xs leading-5 text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
+            className="rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-2 text-xs leading-5 text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
           />
         </label>
         <label className="grid gap-1">
@@ -318,7 +318,7 @@ function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
             name="url"
             type="url"
             defaultValue={item.url ?? ""}
-            className="min-h-9 rounded-md border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.72)] px-3 text-xs text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
+            className="min-h-9 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 text-xs text-[var(--color-text-1)] outline-none focus:border-[var(--color-line-3)]"
           />
         </label>
         <ToastSubmitButton

@@ -268,7 +268,7 @@ export default async function DeliverabilityPage() {
           ) : (
             <div className="grid gap-2">
               {bounces.map((bounce) => (
-                <div key={bounce.external_id} className="grid gap-2 rounded-[12px] bg-[rgba(20,18,13,0.78)] p-3 sm:grid-cols-[120px_1fr_80px] sm:items-center">
+                <div key={bounce.external_id} className="grid gap-2 rounded-[12px] bg-[var(--color-ink-0)] p-3 sm:grid-cols-[120px_1fr_80px] sm:items-center">
                   <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-1 text-xs text-[var(--color-accent)]">
                     {bounce.bounce_type ?? "bounced"}
                   </span>
@@ -312,7 +312,7 @@ function HealthPanel({
 
 function DomainRow({ domain }: { domain: SendingDomainRow }) {
   return (
-    <div className="rounded-[12px] bg-[rgba(20,18,13,0.78)] p-3">
+    <div className="rounded-[12px] bg-[var(--color-ink-0)] p-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-1)]">
           {domain.domain}
@@ -336,7 +336,7 @@ function DomainRow({ domain }: { domain: SendingDomainRow }) {
 
 function AccountRow({ account }: { account: ChannelAccountRow }) {
   return (
-    <div className="rounded-[12px] bg-[rgba(20,18,13,0.78)] p-3">
+    <div className="rounded-[12px] bg-[var(--color-ink-0)] p-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-1)]">
           {account.display_name}
@@ -373,7 +373,7 @@ function verifiedCount(domain: SendingDomainRow): number {
 
 function HealthStat({ label, value }: { label: string; value: number | string }) {
   return (
-    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.60)] p-3">
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
       <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
       <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
     </span>

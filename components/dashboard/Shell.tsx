@@ -70,7 +70,7 @@ export function DashboardShell({
         <div className="dashboard-route-pending" aria-hidden="true" />
       ) : null}
       {/* Top product frame */}
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[color:var(--color-line-2)] bg-[rgba(7,8,6,0.88)] backdrop-blur-md">
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[color:var(--color-line-1)] bg-[var(--color-ink-0)]/80 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
             href="/dashboard"
@@ -102,7 +102,7 @@ export function DashboardShell({
                   className={
                     "rounded-[8px] px-2.5 py-1.5 text-[13.5px] transition-colors " +
                     (active
-                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent-hi)]"
+                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
                       : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                   }
                 >
@@ -125,7 +125,7 @@ export function DashboardShell({
                   onChange={(event) =>
                     event.currentTarget.form?.requestSubmit()
                   }
-                  className="h-8 max-w-[180px] rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-2 text-[13px] font-medium text-[var(--color-text-2)] outline-none transition hover:border-[var(--color-line-3)] hover:text-[var(--color-text-1)]"
+                  className="h-8 max-w-[180px] rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-2 text-[13px] font-medium text-[var(--color-text-2)] outline-none transition hover:border-[var(--color-line-3)] hover:text-[var(--color-text-1)]"
                 >
                   {workspaces.map((workspace) => (
                     <option key={workspace.id} value={workspace.id}>
@@ -144,7 +144,7 @@ export function DashboardShell({
               className={
                 "relative grid size-8 place-items-center rounded-[8px] transition-colors " +
                 (settingsActive
-                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent-hi)]"
+                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
                   : "text-[var(--color-text-3)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
               }
             >
@@ -164,18 +164,8 @@ export function DashboardShell({
         </div>
       </header>
 
-      {/* Viewport-anchored side rules */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 left-6 top-0 z-10 w-px bg-[color:var(--color-line-2)] md:left-10 lg:left-16"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 right-6 top-0 z-10 w-px bg-[color:var(--color-line-2)] md:right-10 lg:right-16"
-      />
-
-      {/* Mobile sub-nav (visible <md) — wraps the section list under the header */}
-      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-2)] bg-[rgba(7,8,6,0.88)] px-6 py-2 backdrop-blur-md md:hidden">
+      {/* Mobile sub-nav (visible <md) */}
+      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-1)] bg-[var(--color-ink-0)]/80 px-6 py-2 backdrop-blur-md md:hidden">
         {NAV.map((item) => {
           const active = isActivePath(pathname, item.href);
           return (
@@ -187,7 +177,7 @@ export function DashboardShell({
               className={
                 "shrink-0 rounded-[8px] px-2.5 py-1 text-[13px] transition-colors " +
                 (active
-                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent-hi)]"
+                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
                   : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
               }
             >
@@ -214,7 +204,7 @@ export function EmptyState({
   cta?: { href: string; label: string; icon?: string };
 }) {
   return (
-    <div className="rounded-[10px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
+    <div className="rounded-[10px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
       <p className="text-[17px] font-semibold text-[var(--color-text-1)]">
         {title}
       </p>
@@ -226,7 +216,7 @@ export function EmptyState({
       {cta ? (
         <Link
           href={cta.href}
-          className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-accent-hi)] px-4 text-sm font-semibold text-[var(--color-accent-on)] transition-colors hover:bg-[var(--color-accent)]"
+          className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-accent)] px-4 text-sm font-semibold text-[var(--color-accent-on)] transition-colors hover:bg-[var(--color-accent-hi)]"
         >
           {cta.icon ? <Icon name={cta.icon} size={16} /> : null}
           {cta.label}

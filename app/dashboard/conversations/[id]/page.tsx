@@ -269,7 +269,7 @@ function PendingApprovalPanel({
         <input type="hidden" name="approval_id" value={approval.id} />
         <input type="hidden" name="decision" value="rejected" />
         <PendingSubmitButton
-          className="inline-flex min-h-10 w-full items-center justify-center rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+          className="inline-flex min-h-10 w-full items-center justify-center rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
           pendingLabel="Rejecting"
         >
           Reject
@@ -415,7 +415,7 @@ export default async function ConversationDetailPage({
                   }
                 >
                   <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[rgba(20,18,13,0.68)] px-2 py-1 text-xs text-[var(--color-text-3)]">
+                    <span className="rounded-full bg-[var(--color-ink-2)] px-2 py-1 text-xs text-[var(--color-text-3)]">
                       {messageDirectionLabel(m.direction)}
                     </span>
                     <span

@@ -51,7 +51,7 @@ export default async function OnboardingPage({
 
         <section className="onboard-panel flex flex-col justify-center">
           <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-[var(--color-accent-hi)] text-[var(--color-accent-on)] shadow-[0_8px_20px_-12px_rgba(35,84,88,0.7)]">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-[var(--color-accent)] text-[var(--color-accent-on)] shadow-[0_8px_20px_-12px_rgba(38,87,94,0.25)]">
               <Icon name="rocket_launch" size={20} />
             </span>
             <div className="min-w-0">

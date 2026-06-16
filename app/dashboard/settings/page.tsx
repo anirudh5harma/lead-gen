@@ -318,9 +318,9 @@ function AutonomyOption({
   defaultChecked: boolean;
 }) {
   return (
-    <label className="relative flex cursor-pointer gap-3 rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)]">
+    <label className="relative flex cursor-pointer gap-3 rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)]">
       <input
-        className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent-hi)]"
+        className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
         type="radio"
         name="autonomy_mode"
         value={value}
@@ -340,7 +340,7 @@ function AutonomyOption({
 
 function ProfileFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-2">
+    <div className="rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2">
       <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-4)]">
         {label}
       </p>
@@ -374,7 +374,7 @@ function Field({
         type={type}
         required={required}
         defaultValue={defaultValue}
-        className="min-h-10 rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
+        className="min-h-10 rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
       />
     </label>
   );
@@ -400,7 +400,7 @@ function TextArea({
         name={name}
         rows={rows}
         defaultValue={defaultValue}
-        className="rounded-[8px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+        className="rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
       />
     </label>
   );

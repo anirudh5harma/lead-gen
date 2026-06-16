@@ -33,7 +33,7 @@ export default async function LoginPage({
         </p>
         <Link
           href={googleAuthPath(next)}
-          className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+          className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[var(--color-accent)] px-4 text-sm font-semibold text-[var(--color-accent-on)] transition-colors hover:bg-[var(--color-accent-hi)]"
         >
           <Icon name="login" size={18} />
           Continue with Google

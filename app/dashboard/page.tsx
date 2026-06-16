@@ -366,8 +366,8 @@ function BriefView({
 
   return (
     <div className="space-y-10">
-      <section className="relative overflow-hidden rounded-[12px] border border-[color:var(--color-line-2)] bg-[rgba(12,11,8,0.72)] p-5 shadow-[inset_0_1px_0_rgba(247,221,184,0.06)] sm:p-7 lg:p-8">
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
+      <section className="relative overflow-hidden rounded-[12px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] sm:p-7 lg:p-8">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
           {today}
         </p>
         <h1
@@ -460,7 +460,7 @@ function latestPulseDate(pulse: GtmPulse): Date | null {
 
 function BriefMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(21,19,15,0.74)] px-4 py-3">
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-3">
       <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-3)]">
         {label}
       </span>
@@ -484,9 +484,9 @@ function Feed({
 }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
   return (
-    <div className="rounded-[10px] border border-[var(--color-line-2)] bg-[rgba(12,11,8,0.48)] p-4">
+    <div className="rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
       <div className="mb-4 flex items-baseline justify-between border-b border-[var(--color-line-1)] pb-3">
-        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
           {eyebrow}
         </p>
         <h2
@@ -568,7 +568,7 @@ function OperatingLoop({
   return (
     <div>
       <div className="mb-5 flex items-baseline justify-between">
-        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
           Operating loop
         </p>
         <h2

@@ -41,7 +41,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`h-full antialiased ${geistSans.variable} ${geistMono.variable} ${bricolage.variable}`}
-      style={{ colorScheme: "dark" }}
+      style={{ colorScheme: "light" }}
     >
       <body className="min-h-full flex flex-col bg-[var(--color-ink-1)] text-[var(--color-text-1)] font-sans">
         {children}

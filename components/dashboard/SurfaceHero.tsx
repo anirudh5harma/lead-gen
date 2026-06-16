@@ -12,8 +12,8 @@ export function SurfaceHero({
   meta?: ReactNode;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-[10px] border border-[color:var(--color-line-2)] bg-[rgba(12,11,8,0.62)] p-5 shadow-[inset_0_1px_0_rgba(247,221,184,0.06)] md:p-7">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent-hi)]">
+    <section className="relative overflow-hidden rounded-[10px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] md:p-7">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
         {kicker}
       </p>
       <h1
