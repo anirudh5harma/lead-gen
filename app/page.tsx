@@ -128,9 +128,9 @@ export default function Home() {
       {/* Hero */}
       <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pt-32 pb-16 md:px-10 md:pt-40 md:pb-24 lg:px-16 lg:pt-48 lg:pb-32">
         <div className="mx-auto max-w-[720px] text-center">
-          <p className="mono text-[var(--color-accent)]">Signal-led outbound</p>
+          <p className="mono text-[var(--color-accent)]">real-time signals</p>
           <h1 className="display-serif mt-6 text-[clamp(2.25rem,5.5vw,4rem)] leading-[1.05] text-[var(--color-text-1)]">
-            GTM that keeps itself current
+            autonomous outbound stack
           </h1>
           <p className="mx-auto mt-5 max-w-[560px] text-[17px] leading-[1.65] text-[var(--color-text-2)]">
             Bombsell builds your prospect graph, watches for signals, runs guarded outreach plays, and learns from every outcome. No more stale lists or manual CRM work.
