@@ -301,7 +301,7 @@ export default function Home() {
           <ScrollReveal>
             <div className="mx-auto max-w-[640px] text-center mb-10">
               <p className="mono text-[var(--color-accent)]">How it works</p>
-              <h2 className="display-serif mt-4 text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
+              <h2 className="display-serif mt-4 text-[clamp(1.5rem,3vw,2.25rem)] leading-[1.1] text-[var(--color-text-1)]">
                 3 minutes to set up. First results today.
               </h2>
             </div>
@@ -316,8 +316,8 @@ export default function Home() {
                   <div className="mx-auto grid size-12 place-items-center rounded-full border-2 border-[var(--color-accent)] bg-[var(--color-ink-0)] text-[var(--color-accent)] font-mono text-[13px] font-semibold relative z-10">
                     {step.number}
                   </div>
-                  <h3 className="mt-5 text-[1.25rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
-                  <p className="mt-2 text-[16px] leading-[1.65] text-[var(--color-text-2)] max-w-[320px] mx-auto">{step.description}</p>
+                  <h3 className="mt-5 text-[1.0625rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
+                  <p className="mt-2 text-[15px] leading-[1.65] text-[var(--color-text-2)] max-w-[320px] mx-auto">{step.description}</p>
                 </div>
               </ScrollReveal>
             ))}
