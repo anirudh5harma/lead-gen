@@ -67,35 +67,24 @@ const STEPS = [
   },
 ];
 
-const FOOTER_LINKS = {
-  Product: [
-    { label: "Features", href: "#" },
-    { label: "Pricing", href: "#" },
-    { label: "Changelog", href: "#" },
-    { label: "Roadmap", href: "#" },
-  ],
-  Resources: [
-    { label: "Documentation", href: "#" },
-    { label: "API Reference", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "Status", href: "#" },
-  ],
-  Company: [
-    { label: "About", href: "#" },
-    { label: "Careers", href: "#" },
-    { label: "Contact", href: "#" },
-    { label: "Partners", href: "#" },
-  ],
-  Legal: [
-    { label: "Privacy", href: "/privacy" },
-    { label: "Terms", href: "/terms" },
-    { label: "Security", href: "#" },
-  ],
-};
+const FOOTER_LINKS = [
+  { label: "Product", href: "/" },
+  { label: "Get started", href: "/onboarding" },
+  { label: "Log in", href: "/login" },
+  { label: "Privacy", href: "/privacy" },
+  { label: "Terms", href: "/terms" },
+];
 
 export default function Home() {
   return (
     <main className="monaco-canvas relative isolate min-h-[100dvh] overflow-hidden text-[var(--color-text-1)]">
+      {/* Subtle animated background */}
+      <div className="animated-bg">
+        <div className="animated-bg-orb animated-bg-orb-1" />
+        <div className="animated-bg-orb animated-bg-orb-2" />
+        <div className="animated-bg-orb animated-bg-orb-3" />
+      </div>
+
       {/* Header */}
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/80 backdrop-blur-md">
         <div className="mx-auto flex h-[64px] w-full max-w-[1200px] items-center justify-between px-6 md:px-10 lg:px-16">
@@ -140,10 +129,12 @@ export default function Home() {
                 </svg>
               </div>
               <input
-                type="url"
+                type="text"
                 name="url"
                 placeholder="yourcompany.com"
                 required
+                pattern="[a-zA-Z0-9][a-zA-Z0-9\-_.]*\.[a-zA-Z]{2,}"
+                title="Enter a valid domain like yourcompany.com"
                 className="w-full rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] py-3 pl-10 pr-4 text-[14px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/10"
               />
             </div>
@@ -212,37 +203,25 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-[var(--color-line-1)] bg-[var(--color-ink-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16">
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-6">
-            {/* Brand column */}
-            <div className="col-span-2">
-              <div className="flex items-center gap-2.5 text-[1.0625rem] font-semibold text-[var(--color-text-1)]" style={{ fontFamily: "var(--font-display)" }}>
-                <Image src="/logo.svg" alt="" width={24} height={24} unoptimized className="size-6" />
-                Bombsell
-              </div>
-              <p className="mt-4 max-w-[260px] text-[13px] leading-[1.6] text-[var(--color-text-3)]">
-                Signal-led outbound for modern GTM teams. Build the graph, watch for signals, run the plays.
-              </p>
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-12 md:px-10 md:py-16 lg:px-16">
+          <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
+            <div className="flex items-center gap-2.5 text-[1.0625rem] font-semibold text-[var(--color-text-1)]" style={{ fontFamily: "var(--font-display)" }}>
+              <Image src="/logo.svg" alt="" width={24} height={24} unoptimized className="size-6" />
+              Bombsell
             </div>
-            
-            {/* Link columns */}
-            {Object.entries(FOOTER_LINKS).map(([category, links]) => (
-              <div key={category}>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-1)]">{category}</p>
-                <ul className="mt-4 grid gap-2.5">
-                  {links.map((link) => (
-                    <li key={link.label}>
-                      <Link href={link.href} className="text-[13px] text-[var(--color-text-3)] transition-colors hover:text-[var(--color-text-1)]">
-                        {link.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+            <nav className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              {FOOTER_LINKS.map((link) => (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  className="text-[13px] text-[var(--color-text-3)] transition-colors hover:text-[var(--color-text-1)]"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
           </div>
-          
-          <div className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-[var(--color-line-1)] pt-8 md:flex-row">
+          <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-[var(--color-line-1)] pt-8 md:flex-row">
             <p className="text-[12px] text-[var(--color-text-4)]">
               &copy; {new Date().getFullYear()} Bombsell. All rights reserved.
             </p>
