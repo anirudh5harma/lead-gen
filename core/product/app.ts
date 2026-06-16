@@ -7,6 +7,7 @@ import {
   upsertTrackedCompany,
   type TrackedCompany,
 } from "../ingest/catalog.ts";
+import { discoverCompanyOwnedSignalSources } from "../ingest/source-autodiscovery.ts";
 import {
   createIcp,
   updateIcp,
@@ -488,6 +489,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export type WorkspaceSignalSourceAdapter =
   | "rss"
+  | "greenhouse"
+  | "lever"
+  | "ashby"
+  | "workable"
+  | "sec_edgar"
   | "google_news"
   | "hn_front"
   | "hn_whos_hiring"
@@ -668,6 +674,16 @@ export interface ConfigureWorkspaceSignalSourceInput {
   adapter: WorkspaceSignalSourceAdapter;
   name: string;
   provider?: string;
+  board_slug?: string;
+  company_name?: string;
+  company_domain?: string;
+  website_url?: string;
+  industry?: string;
+  size_bucket?: string;
+  sec_cik?: string;
+  source_tier?: string;
+  source_authority?: number;
+  source_reason?: string;
   signal_kind?: string;
   url?: string;
   query?: string;
@@ -5113,31 +5129,60 @@ export async function configureDefaultSignalAggregator(
     industry || signalKeywordsFromDescription(input.description) || "B2B SaaS";
   // Keep signup/profile bootstrap predictable and free-source-first. Paid Exa
   // monitoring is configured explicitly through product.signal.discover_open_web.
+  const ownedSources = await discoverCompanyOwnedSignalSources({
+    company_name: companyName,
+    website_url: input.website_url,
+  });
   const sourceInputs: ConfigureWorkspaceSignalSourceInput[] = [
+    ...ownedSources.map((source): ConfigureWorkspaceSignalSourceInput => ({
+      adapter: source.adapter,
+      name: source.name,
+      url: source.url,
+      board_slug: source.board_slug,
+      company_name: source.company_name,
+      company_domain: source.company_domain,
+      signal_kind: source.signal_kind,
+      poll_interval_minutes: source.poll_interval_minutes,
+      source_tier: source.source_tier,
+      source_authority: 0.95,
+      source_reason: source.source_reason,
+    })),
     {
       adapter: "google_news",
       name: `${companyName} market news`,
       query: `${marketPhrase} hiring funding launch`,
       signal_kind: input.signal_kind ?? "press_mention",
       poll_interval_minutes: 30,
+      source_tier: "aggregator",
+      source_authority: 0.66,
+      source_reason: "free_news_recall",
     },
     {
       adapter: "hn_front",
       name: "Hacker News launch signals",
       signal_kind: "product_launch",
       poll_interval_minutes: 60,
+      source_tier: "community",
+      source_authority: 0.58,
+      source_reason: "developer_launch_recall",
     },
     {
       adapter: "hn_whos_hiring",
       name: "HN hiring signals",
       signal_kind: "hiring",
       poll_interval_minutes: 60,
+      source_tier: "trusted",
+      source_authority: 0.82,
+      source_reason: "public_hiring_thread",
     },
     {
       adapter: "product_hunt",
       name: "Product Hunt launches",
       signal_kind: "product_launch",
       poll_interval_minutes: 60,
+      source_tier: "trusted",
+      source_authority: 0.82,
+      source_reason: "public_launch_source",
     },
   ];
   let source_count = 0;
@@ -7284,6 +7329,11 @@ export async function configureWorkspaceSignalSource(
           : "workspace_adapter",
       ...(provider ? { provider } : {}),
       ...(quota ? { quota } : {}),
+      ...(input.source_tier ? { source_tier: input.source_tier } : {}),
+      ...(typeof input.source_authority === "number"
+        ? { source_authority: input.source_authority }
+        : {}),
+      ...(input.source_reason ? { source_reason: input.source_reason } : {}),
       ...(isPushSignalSourceAdapter(adapter)
         ? { ingestion_contract: "bombsell_signal_v1" }
         : {}),
@@ -7447,6 +7497,11 @@ function parseWorkspaceSignalSourceAdapter(
 ): WorkspaceSignalSourceAdapter {
   switch (adapter) {
     case "rss":
+    case "greenhouse":
+    case "lever":
+    case "ashby":
+    case "workable":
+    case "sec_edgar":
     case "google_news":
     case "hn_front":
     case "hn_whos_hiring":
@@ -7470,9 +7525,16 @@ function sourceKindForAdapter(
     case "hn_front":
     case "hn_whos_hiring":
       return "hn";
+    case "greenhouse":
+    case "lever":
+    case "ashby":
+    case "workable":
+      return "job_board";
     case "rss":
     case "google_news":
       return "rss";
+    case "sec_edgar":
+      return "web_monitor";
     case "exa":
       return "web_monitor";
     case "reddit":
@@ -7487,6 +7549,16 @@ function defaultWorkspaceSourceName(
   adapter: WorkspaceSignalSourceAdapter,
 ): string {
   switch (adapter) {
+    case "greenhouse":
+      return "Greenhouse hiring";
+    case "lever":
+      return "Lever hiring";
+    case "ashby":
+      return "Ashby hiring";
+    case "workable":
+      return "Workable hiring";
+    case "sec_edgar":
+      return "SEC EDGAR filings";
     case "google_news":
       return "Google News signals";
     case "hn_front":
@@ -7521,8 +7593,36 @@ function sourceConfigForAdapter(
     kind: signalKind,
     signal_kind: signalKind,
     poll_interval_ms: minutes * 60_000,
+    ...(input.source_tier ? { source_tier: input.source_tier } : {}),
+    ...(typeof input.source_authority === "number"
+      ? { source_authority: input.source_authority }
+      : {}),
+    ...(input.source_reason ? { source_reason: input.source_reason } : {}),
   };
   switch (adapter) {
+    case "greenhouse":
+    case "lever":
+    case "ashby":
+    case "workable":
+      return {
+        ...base,
+        board_slug: input.board_slug?.trim() || input.name.trim(),
+        company_name: input.company_name?.trim() || input.name.trim(),
+        company_domain: input.company_domain?.trim(),
+        website_url: input.website_url?.trim(),
+        industry: input.industry?.trim(),
+        size_bucket: input.size_bucket?.trim(),
+        max_items_per_poll: 10,
+      };
+    case "sec_edgar":
+      return {
+        ...base,
+        sec_cik: input.sec_cik?.trim() || input.board_slug?.trim(),
+        company_name: input.company_name?.trim() || input.name.trim(),
+        company_domain: input.company_domain?.trim(),
+        website_url: input.website_url?.trim(),
+        max_items_per_poll: 10,
+      };
     case "google_news":
       return {
         ...base,
@@ -7583,6 +7683,9 @@ function sourceConfigForAdapter(
       return {
         ...base,
         url: input.url?.trim(),
+        company_name: input.company_name?.trim(),
+        company_domain: input.company_domain?.trim(),
+        website_url: input.website_url?.trim(),
       };
   }
 }
@@ -7638,7 +7741,13 @@ function defaultSignalKindForAdapter(
 ): string {
   switch (adapter) {
     case "hn_whos_hiring":
+    case "greenhouse":
+    case "lever":
+    case "ashby":
+    case "workable":
       return "hiring";
+    case "sec_edgar":
+      return "other";
     case "hn_front":
     case "product_hunt":
       return "product_launch";

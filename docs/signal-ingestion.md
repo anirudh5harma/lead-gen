@@ -66,9 +66,11 @@ Practical startup provider stack:
 
 Recommended provider order:
 
-1. **Native/free direct adapters first**: HN, RSS/Google News, Product Hunt,
-   bounded Reddit, ATS job boards, and public company/blog feeds. This is the
-   cheapest path and already runs through durable `ingest_workspace_poll`.
+1. **Company-owned and official feeds first**: autodiscover RSS/Atom feeds and
+   known ATS boards from the user's website, then poll Greenhouse, Lever, Ashby,
+   Workable, SEC EDGAR, HN, Google News RSS, Product Hunt, and bounded Reddit.
+   This is the cheapest path and already runs through durable
+   `ingest_workspace_poll`.
 2. **Paid X provider gateway after query proof**: use the `x_search` workspace
    adapter to compare official X API with SocialData/TwitterAPI.io-style
    providers for 5-10 tightly scoped searches. Enforce source-level item/call
@@ -143,10 +145,11 @@ References to recheck before procurement or provider enablement:
 - X API docs and pricing: <https://docs.x.com/x-api/getting-started/about-x-api>
 - LinkedIn User Agreement and developer access docs: <https://www.linkedin.com/legal/user-agreement>, <https://learn.microsoft.com/linkedin/>
 
-### Phase 1 — hiring-first
+### Phase 1 — official-source-first, hiring-heavy
 
 | Source                          | Best for                                                                  | Cost | Notes |
 |---------------------------------|---------------------------------------------------------------------------|------|-------|
+| **Company website autodiscovery** | company-owned RSS/Atom feeds and ATS links from the homepage/careers pages | Free | Signup/default aggregator discovers official sources without adding setup friction |
 | **Greenhouse** public board API | hiring (broad — thousands of tech companies use Greenhouse)               | Free | Polled per company; we maintain a curated catalog (see Q3 decision) |
 | **Lever** public board API      | hiring                                                                    | Free | Same per-company pattern |
 | **Ashby** public board API      | hiring (growing, mid-market)                                              | Free | Same per-company pattern |
@@ -206,13 +209,18 @@ For push-capable sources:
 For pull-only sources, each `(workspace, source)` durable workflow polls on a cadence:
 
 1. Adapter fetches items since the stored cursor.
-2. Lightweight rules drop obvious noise (keyword filters, date-window, language).
-3. **Embedding step**: compute a DeepSeek embedding on `title + first 200 chars` of each surviving item (~$0.0001 each). Store on `signals.embedding`.
-4. **Dedup, two-tier**:
+2. Official-source quality metadata is attached before materialization:
+   `source_tier`, `source_authority`, `source_credibility`, `buying_intent`,
+   `timing`, and `signal_quality`. The classifier prompt and ICP cheap filters
+   both see this metadata, so fresh official buying-intent signals spend budget
+   before noisy aggregators.
+3. Lightweight rules drop obvious noise (keyword filters, date-window, language).
+4. **Embedding step**: compute a DeepSeek embedding on `title + first 200 chars` of each surviving item (~$0.0001 each). Store on `signals.embedding`.
+5. **Dedup, two-tier**:
    - **Exact**: `novelty_key = sha256(canonical_company_domain ':' rough_kind_hint ':' iso_week)`. Collision → drop + bump `novelty_count` on the original.
    - **Fuzzy**: pgvector cosine similarity > 0.85 against same workspace + 7-day window. Match → drop + bump `novelty_count` (a high count is itself a "this is being widely covered" signal).
-5. Surviving items insert into `signals` with `status='ingested'`, `kind=NULL`.
-6. `signal.ingested` event published per insert.
+6. Surviving items insert into `signals` with `status='ingested'`, `kind=NULL`.
+7. `signal.ingested` event published per insert.
 
 Cadence per source (rough — tunable per workspace via `workspace_source_configs.poll_cadence_sec`):
 

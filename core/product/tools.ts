@@ -286,6 +286,11 @@ const RepRoleSchema = z.enum([
 ]);
 const SourceAdapterSchema = z.enum([
   "rss",
+  "greenhouse",
+  "lever",
+  "ashby",
+  "workable",
+  "sec_edgar",
   "google_news",
   "hn_front",
   "hn_whos_hiring",
@@ -1528,6 +1533,16 @@ export function registerProductTools(): void {
       adapter: SourceAdapterSchema,
       name: z.string().min(1),
       provider: z.string().optional(),
+      board_slug: z.string().optional(),
+      company_name: z.string().optional(),
+      company_domain: z.string().optional(),
+      website_url: z.string().optional(),
+      industry: z.string().optional(),
+      size_bucket: z.string().optional(),
+      sec_cik: z.string().optional(),
+      source_tier: z.string().optional(),
+      source_authority: z.number().min(0).max(1).optional(),
+      source_reason: z.string().optional(),
       url: z.string().optional(),
       query: z.string().optional(),
       subreddit: z.string().optional(),
@@ -1624,7 +1639,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.sources.default_aggregator.configure",
     description:
-      "Configure the default real signal aggregator sources for a profiled company: Google News, HN front, HN Who's Hiring, and Product Hunt.",
+      "Configure the default free Signal source mix for a profiled company: official website/ATS sources when discoverable, plus Google News, HN, and Product Hunt.",
     kind: "write",
     input: z.object({
       company_name: z.string().min(1),

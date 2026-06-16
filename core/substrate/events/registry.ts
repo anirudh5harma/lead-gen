@@ -260,6 +260,11 @@ const WorkspaceSourceConfigured = z.object({
   ]),
   adapter: z.enum([
     "rss",
+    "greenhouse",
+    "lever",
+    "ashby",
+    "workable",
+    "sec_edgar",
     "google_news",
     "hn_front",
     "hn_whos_hiring",

@@ -88,6 +88,7 @@ interface SignalRow {
   title: string;
   content: string | null;
   url: string | null;
+  properties: Record<string, unknown> | null;
   structured: Record<string, unknown> | null;
   freshness_at: Date;
 }
@@ -125,14 +126,17 @@ export type ClassifyOutcome =
   | { status: "skipped"; reason: "no_icps" | "budget" | "not_found" | "non_json" | "filtered" };
 
 function buildUserPrompt(row: SignalRow, icps: IcpRow[]): string {
+  const quality = signalQualityContext(row);
   const lines: string[] = [
     `Signal:`,
     `  id: ${row.id}`,
     `  kind: ${row.kind ?? "(unknown — classify)"}`,
     `  title: ${row.title}`,
+    row.url ? `  url: ${row.url}` : "",
     row.content ? `  content: ${row.content.slice(0, 1500)}` : "",
     `  freshness_at: ${row.freshness_at.toISOString()}`,
     row.structured ? `  structured: ${JSON.stringify(row.structured).slice(0, 600)}` : "",
+    quality ? `  quality: ${JSON.stringify(quality).slice(0, 900)}` : "",
     "",
     `ICP segments to score:`,
   ];
@@ -156,7 +160,7 @@ export async function classifySignal(
 ): Promise<ClassifyOutcome> {
   const { rows } = await deps.pool.query<SignalRow>(
     `select id, workspace_id, kind::text as kind, title, content, url,
-            properties->'structured' as structured, freshness_at
+            properties, properties->'structured' as structured, freshness_at
        from signals where id = $1`,
     [input.signal_id],
   );
@@ -185,6 +189,7 @@ export async function classifySignal(
       kind: signal.kind,
       title: signal.title,
       url: signal.url,
+      ...(signalQualityContext(signal) ?? {}),
       structured: signal.structured ?? {},
       freshness_at: signal.freshness_at.toISOString(),
     },
@@ -302,6 +307,29 @@ export async function classifySignal(
       reason: m.reason,
     })),
   };
+}
+
+function signalQualityContext(row: SignalRow): Record<string, unknown> | null {
+  const properties = row.properties ?? {};
+  const ctx: Record<string, unknown> = {};
+  copyIfPresent(ctx, properties, "source_tier");
+  copyIfPresent(ctx, properties, "source_authority");
+  copyIfPresent(ctx, properties, "source_confidence");
+  copyIfPresent(ctx, properties, "source_credibility");
+  copyIfPresent(ctx, properties, "buying_intent");
+  copyIfPresent(ctx, properties, "timing");
+  copyIfPresent(ctx, properties, "signal_quality");
+  return Object.keys(ctx).length > 0 ? ctx : null;
+}
+
+function copyIfPresent(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+  key: string,
+): void {
+  if (source[key] !== undefined && source[key] !== null) {
+    target[key] = source[key];
+  }
 }
 
 async function emitClassification(

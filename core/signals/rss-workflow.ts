@@ -166,6 +166,7 @@ export function createRssSignalIngestionWorkflow(
               kind: source.kind,
               name: source.name,
               config: source.config,
+              properties: source.properties,
             },
             adapter_id: "rss",
             kind_hint: signalKindFromConfig(source.config) ?? null,

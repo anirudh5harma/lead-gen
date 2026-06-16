@@ -376,6 +376,90 @@ test("workspace poll: kindHint='product_launch' is preserved on the signal", asy
   }
 });
 
+test("workspace poll: official ATS sources materialize credibility, buying intent, and timing", async (t) => {
+  const fx = await setupPg("wsp_official_ats");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const { workspace_id, source_id } = await seed(fx.pool, "job_board", {
+      adapter: "greenhouse",
+      board_slug: "acme",
+      company_name: "Acme",
+      company_domain: "acme.example",
+      signal_kind: "hiring",
+      source_tier: "official",
+      source_authority: 0.95,
+      source_reason: "autodiscovered_careers_ats",
+      max_items_per_poll: 10,
+    });
+    const now = new Date().toISOString();
+    const fetchImpl = (async (url: string) => {
+      assert.equal(
+        url,
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true",
+      );
+      return jsonResponse({
+        jobs: [
+          {
+            id: 101,
+            title: "Founding VP Sales",
+            content: "<p>Lead GTM expansion after our Series A.</p>",
+            absolute_url: "https://boards.greenhouse.io/acme/jobs/101",
+            updated_at: now,
+            location: { name: "New York, NY" },
+            departments: [{ id: 1, name: "Sales" }],
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const summary = await workspacePollOnce(
+      {
+        pool: fx.pool,
+        bus,
+        embedder: createMockEmbeddingClient(),
+        fetchImpl,
+      },
+      { workspace_id, source_id },
+    );
+
+    assert.equal(summary.inserted, 1);
+    await until(() =>
+      bus.published.some((event) => event.event_type === "signal.ingested"),
+    );
+    const { rows } = await fx.pool.query<{
+      kind: string;
+      properties: Record<string, unknown>;
+      provenance: Record<string, unknown>;
+    }>(
+      `select kind::text as kind, properties, provenance
+         from signals
+        where workspace_id = $1 and source_id = $2`,
+      [workspace_id, source_id],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, "hiring");
+    assert.equal(rows[0].properties.source_tier, "official");
+    assert.equal(rows[0].properties.source_authority, 0.95);
+    assert.equal(
+      (rows[0].properties.source_credibility as { tier?: string }).tier,
+      "official",
+    );
+    assert.equal(
+      (rows[0].properties.buying_intent as { level?: string }).level,
+      "high",
+    );
+    assert.equal(
+      (rows[0].properties.timing as { conversion_window?: string }).conversion_window,
+      "now",
+    );
+    assert.equal(rows[0].provenance.source_tier, "official");
+    assert.equal(rows[0].provenance.quality_model, "signal_quality.v1");
+  } finally {
+    await fx.close();
+  }
+});
+
 test("workspace poll: emits signal.ingested with source_id set on the payload", async (t) => {
   const fx = await setupPg("wsp_emit");
   if (!fx) return t.skip("DATABASE_URL not set");

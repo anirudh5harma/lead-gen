@@ -13,6 +13,13 @@ import { redditAdapter } from "./reddit.ts";
 import { googleNewsAdapter } from "./google-news.ts";
 import { xSearchAdapter } from "./x-search.ts";
 import { exaAdapter } from "./exa.ts";
+import {
+  ashbyWorkspaceAdapter,
+  greenhouseWorkspaceAdapter,
+  leverWorkspaceAdapter,
+  secEdgarWorkspaceAdapter,
+  workableWorkspaceAdapter,
+} from "./official-workspace.ts";
 
 /**
  * Adapter registry. Lookup by id. Adapters are registered statically here
@@ -43,6 +50,11 @@ export function listCatalogAdapterIds(): string[] {
 
 export const workspaceAdapters: Record<string, WorkspaceAdapter> = {
   rss: rssAdapter,
+  greenhouse: greenhouseWorkspaceAdapter,
+  lever: leverWorkspaceAdapter,
+  ashby: ashbyWorkspaceAdapter,
+  workable: workableWorkspaceAdapter,
+  sec_edgar: secEdgarWorkspaceAdapter,
   hn_front: hnFrontAdapter,
   hn_whos_hiring: hnWhosHiringAdapter,
   product_hunt: productHuntAdapter,

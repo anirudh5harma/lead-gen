@@ -149,6 +149,69 @@ test("product surface: webhook signal sources are push-only and skip poll mainte
   }
 });
 
+test("product surface: official ATS sources are pollable with credibility metadata", async (t) => {
+  const fx = await setupPg("product_official_source");
+  if (!fx) return t.skip("DATABASE_URL not set");
+
+  setPool(fx.pool);
+  try {
+    const userId = randomUUID();
+    const workspace = await createProductWorkspaceForUser(
+      { name: "Official Source Workspace", slug: "official-source-workspace" },
+      userId,
+    );
+    const boot = await configureWorkspaceSignalSource(
+      {
+        adapter: "greenhouse",
+        name: "Acme Greenhouse hiring",
+        board_slug: "acme",
+        company_name: "Acme",
+        company_domain: "acme.example",
+        signal_kind: "hiring",
+        source_tier: "official",
+        source_authority: 0.95,
+        source_reason: "autodiscovered_careers_ats",
+        poll_interval_minutes: 360,
+      },
+      { workspace_id: workspace.id, user_id: userId },
+    );
+
+    const { rows } = await fx.pool.query<{
+      kind: string;
+      config: Record<string, unknown>;
+      properties: Record<string, unknown>;
+      poll_enabled: boolean;
+      poll_cadence_sec: number;
+    }>(
+      `select gs.kind::text as kind,
+              gs.config,
+              gs.properties,
+              wsc.enabled as poll_enabled,
+              wsc.poll_cadence_sec
+         from graph_sources gs
+         join workspace_source_configs wsc
+           on wsc.workspace_id = gs.workspace_id and wsc.source_id = gs.id
+        where gs.workspace_id = $1 and gs.id = $2`,
+      [workspace.id, boot.source_id],
+    );
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kind, "job_board");
+    assert.equal(rows[0].poll_enabled, true);
+    assert.equal(rows[0].poll_cadence_sec, 21_600);
+    assert.equal(rows[0].config.adapter, "greenhouse");
+    assert.equal(rows[0].config.board_slug, "acme");
+    assert.equal(rows[0].config.source_tier, "official");
+    assert.equal(rows[0].properties.source_tier, "official");
+    assert.equal(rows[0].properties.source_authority, 0.95);
+    assert.equal(rows[0].properties.source_reason, "autodiscovered_careers_ats");
+  } finally {
+    await resetProductEngineForTests();
+    await fx.close();
+    await resetPool();
+  }
+});
+
 test("product surface: X search sources stay pollable with provider budgets", async (t) => {
   const fx = await setupPg("product_x_source");
   if (!fx) return t.skip("DATABASE_URL not set");

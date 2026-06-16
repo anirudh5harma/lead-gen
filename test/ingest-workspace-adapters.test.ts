@@ -16,6 +16,10 @@ import { googleNewsAdapter } from "../core/ingest/adapters/google-news.ts";
 import { xSearchAdapter, XSearchError } from "../core/ingest/adapters/x-search.ts";
 import { exaAdapter } from "../core/ingest/adapters/exa.ts";
 import {
+  atsSourceFromUrl,
+  discoverCompanyOwnedSignalSources,
+} from "../core/ingest/source-autodiscovery.ts";
+import {
   listWorkspaceAdapterIds,
   workspaceAdapters,
 } from "../core/ingest/adapters/registry.ts";
@@ -40,17 +44,27 @@ test("workspace registry: adapters registered with expected kindHints", () => {
   assert.deepEqual(
     listWorkspaceAdapterIds().sort(),
     [
+      "ashby",
       "exa",
       "google_news",
+      "greenhouse",
       "hn_front",
       "hn_whos_hiring",
+      "lever",
       "product_hunt",
       "reddit",
       "rss",
+      "sec_edgar",
+      "workable",
       "x_search",
     ],
   );
   assert.equal(workspaceAdapters.rss.kindHint, null);
+  assert.equal(workspaceAdapters.greenhouse.kindHint, "hiring");
+  assert.equal(workspaceAdapters.lever.kindHint, "hiring");
+  assert.equal(workspaceAdapters.ashby.kindHint, "hiring");
+  assert.equal(workspaceAdapters.workable.kindHint, "hiring");
+  assert.equal(workspaceAdapters.sec_edgar.kindHint, null);
   assert.equal(workspaceAdapters.hn_front.kindHint, null);
   assert.equal(workspaceAdapters.hn_whos_hiring.kindHint, "hiring");
   assert.equal(workspaceAdapters.product_hunt.kindHint, "product_launch");
@@ -58,6 +72,67 @@ test("workspace registry: adapters registered with expected kindHints", () => {
   assert.equal(workspaceAdapters.google_news.kindHint, null);
   assert.equal(workspaceAdapters.exa.kindHint, null);
   assert.equal(workspaceAdapters.x_search.kindHint, null);
+});
+
+test("source autodiscovery: finds official RSS and ATS sources from a website", async () => {
+  const fetchImpl = (async (url: string) => {
+    if (url === "https://acme.example/") {
+      return textResponse(
+        `<html><head>
+          <link rel="alternate" type="application/rss+xml" href="/blog/rss.xml" />
+        </head><body>
+          <a href="/careers">Careers</a>
+        </body></html>`,
+        200,
+        { "content-type": "text/html" },
+      );
+    }
+    if (url === "https://acme.example/careers") {
+      return textResponse(
+        `<html><body>
+          <a href="https://boards.greenhouse.io/acme">Open roles</a>
+        </body></html>`,
+        200,
+        { "content-type": "text/html" },
+      );
+    }
+    return new Response("missing", { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const sources = await discoverCompanyOwnedSignalSources({
+    company_name: "Acme",
+    website_url: "https://acme.example",
+    fetchImpl,
+  });
+
+  assert.deepEqual(
+    sources.map((source) => source.adapter).sort(),
+    ["greenhouse", "rss"],
+  );
+  const rss = sources.find((source) => source.adapter === "rss");
+  assert.equal(rss?.url, "https://acme.example/blog/rss.xml");
+  assert.equal(rss?.source_tier, "official");
+  const greenhouse = sources.find((source) => source.adapter === "greenhouse");
+  assert.equal(greenhouse?.board_slug, "acme");
+  assert.equal(greenhouse?.signal_kind, "hiring");
+});
+
+test("source autodiscovery: extracts known ATS slugs from public careers URLs", () => {
+  assert.equal(
+    atsSourceFromUrl("https://jobs.lever.co/linear", "Linear")?.board_slug,
+    "linear",
+  );
+  assert.equal(
+    atsSourceFromUrl("https://jobs.ashbyhq.com/vercel", "Vercel")?.adapter,
+    "ashby",
+  );
+  assert.equal(
+    atsSourceFromUrl(
+      "https://apply.workable.com/api/v3/accounts/acme/jobs/",
+      "Acme",
+    )?.board_slug,
+    "acme",
+  );
 });
 
 // ─── Exa adapter ─────────────────────────────────────────────────────────

@@ -34,6 +34,8 @@ export interface RawCandidate {
   freshness_at: string;
   /** Raw upstream payload subset for forensics. */
   provenance?: Record<string, unknown>;
+  /** Normalized metadata for the Signal projection. */
+  properties?: Record<string, unknown>;
   /** Optional adapter-supplied novelty hint (e.g. canonical company domain). */
   novelty_hint?: { domain?: string };
 }

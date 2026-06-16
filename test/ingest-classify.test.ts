@@ -56,7 +56,13 @@ async function seedWorkspace(pool: Pool): Promise<SeedResult> {
 async function insertSignal(
   pool: Pool,
   workspace_id: string,
-  opts: { kind?: string | null; title?: string; content?: string; structured?: Record<string, unknown> } = {},
+  opts: {
+    kind?: string | null;
+    title?: string;
+    content?: string;
+    structured?: Record<string, unknown>;
+    properties?: Record<string, unknown>;
+  } = {},
 ): Promise<string> {
   const id = randomUUID();
   await pool.query(
@@ -69,7 +75,10 @@ async function insertSignal(
       opts.kind ?? null,
       opts.title ?? "Acme raises $20M Series A",
       opts.content ?? "TechCrunch reports Acme AI closed a $20M Series A.",
-      JSON.stringify({ structured: opts.structured ?? {} }),
+      JSON.stringify({
+        ...(opts.properties ?? {}),
+        structured: opts.structured ?? opts.properties?.structured ?? {},
+      }),
     ],
   );
   return id;
@@ -204,6 +213,84 @@ test("classify: best-score wins for match_score; multiple ICPs above threshold e
       [signal_id],
     );
     assert.equal(Number(rows[0].match_score), 0.95);
+  } finally {
+    await fx.close();
+  }
+});
+
+test("classify: source quality metadata feeds ICP filters and the scoring prompt", async (t) => {
+  const fx = await setupPg("cls_quality");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const workspace_id = randomUUID();
+    await fx.pool.query(
+      `insert into workspaces (id, slug, name) values ($1, $2, $3)`,
+      [workspace_id, `ws-${workspace_id.slice(0, 8)}`, "ws"],
+    );
+    await fx.pool.query(
+      `insert into workspace_ingestion_budgets (workspace_id, daily_classify_cap)
+       values ($1, 100)`,
+      [workspace_id],
+    );
+    const icp_id = randomUUID();
+    await fx.pool.query(
+      `insert into workspace_icps (id, workspace_id, name, description, must_haves, match_threshold)
+       values ($1, $2, 'Official high-intent hiring', 'Fresh official hiring signals', $3::jsonb, 0.6)`,
+      [
+        icp_id,
+        workspace_id,
+        JSON.stringify([
+          { field: "source_tier", op: "eq", value: "official" },
+          { field: "buying_intent.level", op: "eq", value: "high" },
+          { field: "timing.conversion_window", op: "eq", value: "now" },
+        ]),
+      ],
+    );
+    const signal_id = await insertSignal(fx.pool, workspace_id, {
+      kind: "hiring",
+      title: "Acme hiring a founding AE",
+      content: "Acme is hiring a founding Account Executive for GTM expansion.",
+      structured: { function: "sales", seniority: "founding" },
+      properties: {
+        source_tier: "official",
+        source_authority: 0.95,
+        source_credibility: {
+          version: "source_credibility.v1",
+          tier: "official",
+          score: 0.95,
+        },
+        buying_intent: {
+          version: "buying_intent.v1",
+          score: 0.92,
+          level: "high",
+          reasons: ["go-to-market hiring trigger"],
+        },
+        timing: {
+          score: 0.96,
+          conversion_window: "now",
+          freshness_hours: 2,
+          reason: "fresh event; timing is strong",
+        },
+        signal_quality: {
+          version: "signal_quality.v1",
+          score: 0.94,
+          level: "high",
+        },
+      },
+    });
+    const llm = mockLlm({
+      kind: "hiring",
+      per_icp: [{ icp_id, score: 0.82, reason: "Official fresh GTM hire." }],
+    });
+
+    const result = await classifySignal({ pool: fx.pool, bus, llm }, { signal_id });
+    assert.equal(result.status, "matched");
+    assert.equal(llm.calls.length, 1);
+    const prompt = llm.calls[0].messages.at(-1)?.content ?? "";
+    assert.match(prompt, /source_credibility/);
+    assert.match(prompt, /buying_intent/);
+    assert.match(prompt, /conversion_window/);
   } finally {
     await fx.close();
   }

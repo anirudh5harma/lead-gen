@@ -13,6 +13,7 @@ import {
 } from "./budget.ts";
 import { allMatchingIcps } from "./icp-filter.ts";
 import { listIcps } from "./icps.ts";
+import { deriveSignalQualityMetadata } from "./source-quality.ts";
 
 export interface WorkspaceSignalSourceRow {
   id: string;
@@ -20,6 +21,7 @@ export interface WorkspaceSignalSourceRow {
   kind: string;
   name: string;
   config: Record<string, unknown>;
+  properties: Record<string, unknown>;
 }
 
 export interface WorkspaceSignalDiscoveryDeps {
@@ -76,7 +78,8 @@ export async function loadWorkspaceSignalSource(
   source_id: string,
 ): Promise<WorkspaceSignalSourceRow | null> {
   const { rows } = await pool.query<WorkspaceSignalSourceRow>(
-    `select id, workspace_id, kind::text as kind, name, config
+    `select id, workspace_id, kind::text as kind, name, config,
+            coalesce(properties, '{}'::jsonb) as properties
        from graph_sources
       where workspace_id = $1 and id = $2 and enabled`,
     [workspace_id, source_id],
@@ -198,6 +201,14 @@ export async function discoverWorkspaceSignal(
       ? await upsertSignalCompanyHint(deps, ctx, item)
       : null;
   const relatedCompanyHint = relatedCompany?.hint ?? null;
+  const quality = deriveSignalQualityMetadata({
+    adapter_id: ctx.adapter_id,
+    source_name: ctx.source.name,
+    source_config: ctx.source.config,
+    source_properties: ctx.source.properties,
+    item,
+    kind: itemKind,
+  });
   const signal_id = randomUUID();
   const event = await deps.bus.publish({
     workspace_id: ctx.workspace_id,
@@ -222,6 +233,7 @@ export async function discoverWorkspaceSignal(
       origin_candidate_id: null,
       properties: {
         ...(item.properties ?? {}),
+        ...quality.properties,
         structured: item.structured ?? item.properties?.structured ?? {},
         ...(relatedCompanyHint
           ? {
@@ -236,6 +248,7 @@ export async function discoverWorkspaceSignal(
       },
       provenance: {
         adapter: ctx.adapter_id,
+        ...quality.provenance,
         ...(typeof ctx.source.config.provider === "string" &&
         ctx.source.config.provider.trim()
           ? { provider: ctx.source.config.provider.trim() }
