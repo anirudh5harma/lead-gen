@@ -63,12 +63,12 @@ function readChannelPolicy(
       ? (channels as Record<string, unknown>)[channel]
       : null;
   if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
-    return { daily_cap: 0, approval: "approve_first" };
+    return { daily_cap: 0, approval: "none" };
   }
   const raw = policy as Record<string, unknown>;
   return {
     daily_cap: nonnegativeInteger(raw.daily_cap),
-    approval: parseApprovalPolicy(raw.approval) ?? "approve_first",
+    approval: parseApprovalPolicy(raw.approval) ?? "none",
   };
 }
 

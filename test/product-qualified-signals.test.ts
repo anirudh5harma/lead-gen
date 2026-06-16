@@ -235,6 +235,64 @@ test("qualified signals workbench falls back to graph contacts when resolution h
   assert.equal(workbench.signals[0]?.contacts[0]?.verification.email_verified, true);
 });
 
+test("qualified signals workbench decodes HTML entities in displayed signal text", async () => {
+  const now = new Date("2026-06-12T10:00:00Z");
+  const pool = fakePool([
+    {
+      id: "00000000-0000-4000-8000-000000000103",
+      kind: "hiring",
+      status: "matched",
+      title: "Weave opened roles at https:&#x2F;&#x2F;weave.bio&#x2F;careers",
+      content: "Careers page: https:&#x2F;&#x2F;weave.bio&#x2F;careers &amp; hiring.",
+      url: "https:&#x2F;&#x2F;weave.bio&#x2F;careers?team=gtm&amp;role=sales",
+      match_score: "0.7300",
+      match_reason: "Hiring signal from https:&#47;&#47;weave.bio&#47;careers",
+      freshness_at: now,
+      ingested_at: now,
+      matched_at: null,
+      company_id: "00000000-0000-4000-8000-000000000203",
+      company_name: "Weave Bio",
+      company_domain: "weave.bio",
+      company_industry: null,
+      company_description: "AI &amp; bio workflows.",
+      contact_candidates: null,
+      graph_candidates: [],
+      contact_channel: null,
+      contact_defer_reason: null,
+      draft_conversation_id: null,
+      draft_message_id: null,
+      draft_channel: null,
+      draft_status: null,
+      draft_subject: null,
+      draft_body: null,
+      draft_eval_score: null,
+      draft_eval_passed: null,
+      draft_external_id: null,
+      draft_scheduled_at: null,
+      draft_sent_at: null,
+      draft_delivered_at: null,
+      draft_channel_event_type: null,
+      draft_channel_event_at: null,
+      draft_defer_reason: null,
+      draft_defer_detail: null,
+      draft_created_at: null,
+      pending_approval_id: null,
+    },
+  ]);
+
+  const workbench = await loadQualifiedSignalWorkbench(
+    pool,
+    "00000000-0000-4000-8000-000000000001",
+  );
+  const signal = workbench.signals[0];
+
+  assert.equal(signal?.title, "Weave opened roles at https://weave.bio/careers");
+  assert.equal(signal?.content, "Careers page: https://weave.bio/careers & hiring.");
+  assert.equal(signal?.url, "https://weave.bio/careers?team=gtm&role=sales");
+  assert.equal(signal?.match_reason, "Hiring signal from https://weave.bio/careers");
+  assert.equal(signal?.company.description, "AI & bio workflows.");
+});
+
 test("qualified signals query only surfaces actionable company-backed verified-contact work", async () => {
   let sql = "";
   const pool = {
@@ -259,6 +317,35 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   assert.match(sql, /e\.event_type = 'draft\.rejected'/);
   assert.match(sql, /coalesce\(m\.eval_score, \(judged\.payload->>'eval_score'\)::numeric\)/);
   assert.match(sql, /limit \$2/);
+});
+
+test("qualified signal email readiness coalesces duplicate Outlook rows by mailbox", async () => {
+  let sql = "";
+  const pool = {
+    async query<T>(query: string) {
+      sql = query;
+      return {
+        rows: [{
+          connected_outlook: "1",
+          active_subscriptions: "1",
+          needs_reauth_outlook: "0",
+          errored_connected: "0",
+          connected_managed_domains: "0",
+        }] as T[],
+      };
+    },
+  } as unknown as Pool;
+
+  const ready = await loadQualifiedSignalEmailReadiness(
+    pool,
+    "00000000-0000-4000-8000-000000000001",
+  );
+
+  assert.equal(ready.ready, true);
+  assert.match(sql, /outlook_mailboxes/);
+  assert.match(sql, /properties ->> 'mailbox_email'/);
+  assert.match(sql, /group by outlook_mailbox_key/);
+  assert.match(sql, /has_needs_reauth and not has_connected/);
 });
 
 test("qualified signal email readiness requires connected Outlook reply sync", async () => {

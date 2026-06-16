@@ -139,36 +139,44 @@ export async function loadQualifiedSignalEmailReadiness(
   workspaceId: string,
 ): Promise<QualifiedSignalEmailReadiness> {
   const { rows } = await pool.query<EmailReadinessRow>(
-    `select
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'connected'
-        ) as connected_outlook,
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'connected'
-            and properties -> 'outlook_subscription' is not null
-            and properties -> 'outlook_subscription' ->> 'clientState' is not null
-            and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
-            and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
-                  > now() + interval '15 minutes'
-        ) as active_subscriptions,
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'needs_reauth'
-        ) as needs_reauth_outlook,
-        count(*) filter (
-          where kind = 'oauth_outlook'
-            and status = 'connected'
-            and last_error is not null
-        ) as errored_connected,
-        count(*) filter (
-          where kind = 'email_domain'
-            and status = 'connected'
-        ) as connected_managed_domains
-       from channel_accounts
-      where workspace_id = $1
-        and kind in ('oauth_outlook', 'email_domain')`,
+    `with relevant_accounts as (
+       select *,
+              coalesce(
+                nullif(lower(properties ->> 'mailbox_email'), ''),
+                nullif(lower(display_name), ''),
+                id::text
+              ) as outlook_mailbox_key
+         from channel_accounts
+        where workspace_id = $1
+          and kind in ('oauth_outlook', 'email_domain')
+     ),
+     outlook_mailboxes as (
+       select outlook_mailbox_key,
+              bool_or(status = 'connected') as has_connected,
+              bool_or(
+                status = 'connected'
+                and properties -> 'outlook_subscription' is not null
+                and properties -> 'outlook_subscription' ->> 'clientState' is not null
+                and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
+                and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
+                      > now() + interval '15 minutes'
+              ) as has_active_subscription,
+              bool_or(status = 'needs_reauth') as has_needs_reauth,
+              bool_or(status = 'connected' and last_error is not null) as has_connected_error
+         from relevant_accounts
+        where kind = 'oauth_outlook'
+        group by outlook_mailbox_key
+     )
+     select
+       (select count(*) from outlook_mailboxes where has_connected)::text as connected_outlook,
+       (select count(*) from outlook_mailboxes where has_active_subscription)::text as active_subscriptions,
+       (select count(*) from outlook_mailboxes where has_needs_reauth and not has_connected)::text as needs_reauth_outlook,
+       (select count(*) from outlook_mailboxes where has_connected_error)::text as errored_connected,
+       count(*) filter (
+         where kind = 'email_domain'
+           and status = 'connected'
+       )::text as connected_managed_domains
+       from relevant_accounts`,
     [workspaceId],
   );
   const row = rows[0] ?? {
@@ -532,20 +540,20 @@ function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
     id: row.id,
     kind: row.kind,
     status: row.status,
-    title: row.title,
-    content: row.content,
-    url: row.url,
+    title: normalizeSignalDisplayText(row.title),
+    content: normalizeNullableSignalDisplayText(row.content),
+    url: normalizeNullableSignalDisplayText(row.url),
     match_score: parseNumber(row.match_score),
-    match_reason: row.match_reason,
+    match_reason: normalizeNullableSignalDisplayText(row.match_reason),
     freshness_at: row.freshness_at,
     ingested_at: row.ingested_at,
     matched_at: row.matched_at,
     company: {
       id: row.company_id,
-      name: row.company_name,
-      domain: row.company_domain,
-      industry: row.company_industry,
-      description: row.company_description,
+      name: normalizeNullableSignalDisplayText(row.company_name),
+      domain: normalizeNullableSignalDisplayText(row.company_domain),
+      industry: normalizeNullableSignalDisplayText(row.company_industry),
+      description: normalizeNullableSignalDisplayText(row.company_description),
     },
     contacts,
     contact_source:
@@ -575,6 +583,45 @@ function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
         }
       : null,
   };
+}
+
+const HTML_ENTITY_NAMES: Record<string, string> = {
+  amp: "&",
+  apos: "'",
+  gt: ">",
+  lt: "<",
+  nbsp: " ",
+  quot: "\"",
+};
+
+export function normalizeSignalDisplayText(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi, (_match, entity: string) => {
+    const key = entity.toLowerCase();
+    if (key.startsWith("#x")) {
+      const codePoint = Number.parseInt(key.slice(2), 16);
+      return codePointToText(codePoint, _match);
+    }
+    if (key.startsWith("#")) {
+      const codePoint = Number.parseInt(key.slice(1), 10);
+      return codePointToText(codePoint, _match);
+    }
+    return HTML_ENTITY_NAMES[key] ?? _match;
+  });
+}
+
+function codePointToText(codePoint: number, fallback: string): string {
+  if (
+    Number.isInteger(codePoint) &&
+    codePoint >= 0 &&
+    codePoint <= 0x10ffff
+  ) {
+    return String.fromCodePoint(codePoint);
+  }
+  return fallback;
+}
+
+function normalizeNullableSignalDisplayText(value: string | null): string | null {
+  return value ? normalizeSignalDisplayText(value) : null;
 }
 
 export function normalizeContactCandidates(value: unknown): QualifiedSignalContact[] {

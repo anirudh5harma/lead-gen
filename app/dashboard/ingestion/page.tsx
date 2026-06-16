@@ -14,7 +14,6 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
 import {
   prepareQualifiedSignalsAction,
-  runSignalIngestionAction,
   decideApprovalWithDraftAction,
 } from "../actions";
 
@@ -54,17 +53,6 @@ export default async function SignalsPage() {
               <HeroStat label="Inbox" value={emailReadiness.status_label} />
             </div>
             <div className="flex flex-wrap gap-2">
-              <form action={runSignalIngestionAction}>
-                <input type="hidden" name="return_to" value="/dashboard/signals" />
-                <input type="hidden" name="limit" value="12" />
-                <PendingSubmitButton
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.66)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)] active:translate-y-px"
-                  icon="refresh"
-                  pendingLabel="Starting ingestion"
-                >
-                  Ingest signals
-                </PendingSubmitButton>
-              </form>
               <form action={prepareQualifiedSignalsAction}>
                 <input type="hidden" name="return_to" value="/dashboard/signals" />
                 <input type="hidden" name="limit" value="25" />
@@ -87,7 +75,7 @@ export default async function SignalsPage() {
         {workbench.signals.length === 0 ? (
           <EmptyState
             title="No qualified signals yet"
-            hint="Run ingestion after the prospecting profile is tuned. Only matched signals with a target company appear here."
+            hint="Tune the prospecting profile so matched company signals have enough context to qualify."
             cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
           />
         ) : (

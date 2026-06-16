@@ -7,7 +7,6 @@ import {
   optimizeCampaignStrategyAction,
   optimizePlaySkillsAction,
   recordCampaignOutcomeAction,
-  runSignalIngestionAction,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -264,17 +263,6 @@ export default async function CampaignsPage() {
             <HeroStat label="Qualified today" value={counts.qualified_today} />
             <HeroStat label="Ideas this week" value={counts.ideas_week} />
             <HeroStat label="Outcomes this week" value={counts.outcomes_week} />
-            <form action={runSignalIngestionAction}>
-              <input type="hidden" name="return_to" value="/dashboard/campaigns" />
-              <input type="hidden" name="limit" value="8" />
-              <PendingSubmitButton
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
-                icon="refresh"
-                pendingLabel="Starting ingestion"
-              >
-                Run signal ingestion
-              </PendingSubmitButton>
-            </form>
           </div>
         }
       />

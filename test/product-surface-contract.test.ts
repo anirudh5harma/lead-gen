@@ -11,8 +11,16 @@ test("dashboard navigation uses active product surface routes", () => {
 
   assert.match(shell, /href: "\/dashboard\/prospecting", label: "Prospecting"/);
   assert.match(shell, /href: "\/dashboard\/signals", label: "Signals"/);
-  assert.doesNotMatch(shell, /href: "\/dashboard\/setup", label: "Prospecting"/);
-  assert.doesNotMatch(shell, /href: "\/dashboard\/ingestion", label: "Signals"/);
+  assert.match(shell, /href="\/dashboard\/settings"/);
+  assert.match(shell, /Icon name="settings"/);
+  assert.doesNotMatch(
+    shell,
+    /href: "\/dashboard\/setup", label: "Prospecting"/,
+  );
+  assert.doesNotMatch(
+    shell,
+    /href: "\/dashboard\/ingestion", label: "Signals"/,
+  );
 });
 
 test("canonical Prospecting and Signals routes preserve old implementations", () => {
@@ -74,8 +82,26 @@ test("Setup presents separate Outlook and LinkedIn connection gates", () => {
 
   assert.match(setup, /href="\/api\/auth\/outlook"/);
   assert.match(setup, /href="\/api\/auth\/linkedin"/);
-  assert.match(setup, /kind in \('email_domain','oauth_outlook','linkedin_session','linkedin_oauth'\)/);
+  assert.match(
+    setup,
+    /kind in \('email_domain','oauth_outlook','linkedin_session','linkedin_oauth'\)/,
+  );
   assert.match(setup, /Ready" value=\{`\$\{readyCount\}\/5`\}/);
+});
+
+test("Outlook connection surfaces collapse duplicate rows by mailbox identity", () => {
+  const setup = source("app/dashboard/setup/page.tsx");
+  const deliverability = source("app/dashboard/deliverability/page.tsx");
+  const brief = source("app/dashboard/page.tsx");
+
+  assert.match(setup, /row_number\(\) over/);
+  assert.match(setup, /properties ->> 'mailbox_email'/);
+  assert.match(setup, /where account_rank = 1/);
+  assert.match(deliverability, /row_number\(\) over/);
+  assert.match(deliverability, /properties ->> 'mailbox_email'/);
+  assert.match(deliverability, /where account_rank = 1/);
+  assert.match(brief, /outlook_mailboxes/);
+  assert.match(brief, /has_blocked_status and not has_connected/);
 });
 
 test("Campaigns presents Play Skill optimizer from outcome learning", () => {
@@ -89,22 +115,90 @@ test("Campaigns presents Play Skill optimizer from outcome learning", () => {
   assert.match(campaigns, /Optimize skills/);
 });
 
-test("dashboard Signal actions start the durable LangGraph ingestion workflow", () => {
+test("dashboard Signal surfaces do not expose manual ingestion controls", () => {
   const campaigns = source("app/dashboard/campaigns/page.tsx");
   const signals = source("app/dashboard/ingestion/page.tsx");
   const actions = source("app/dashboard/actions.ts");
+  const onboardingActions = source("app/onboarding/actions.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
-  assert.match(actions, /runWorkspaceSignalIngestion/);
-  assert.match(actions, /runSignalIngestionAction/);
-  assert.match(actions, /wait: false/);
   assert.doesNotMatch(actions, /runWorkspaceSignalAggregatorOnce/);
-  assert.match(campaigns, /runSignalIngestionAction/);
-  assert.match(campaigns, /Run signal ingestion/);
-  assert.match(signals, /runSignalIngestionAction/);
-  assert.match(signals, /Ingest signals/);
-  assert.match(capabilityMap, /`\/dashboard\/campaigns`, `\/dashboard\/signals`/);
+  assert.doesNotMatch(actions, /runSignalIngestionAction/);
+  assert.doesNotMatch(actions, /runWorkspaceSignalIngestion/);
+  assert.doesNotMatch(campaigns, /runSignalIngestionAction/);
+  assert.doesNotMatch(campaigns, /Run signal ingestion/);
+  assert.doesNotMatch(signals, /runSignalIngestionAction/);
+  assert.doesNotMatch(signals, /Ingest signals/);
+  assert.doesNotMatch(signals, /Run ingestion/);
+  assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
+  assert.match(onboardingActions, /wait: false/);
+  assert.match(capabilityMap, /Autonomous signal ingestion/);
+  assert.doesNotMatch(
+    capabilityMap,
+    /`\/dashboard\/campaigns`, `\/dashboard\/signals`/,
+  );
+  assert.match(capabilityMap, /autonomous workspace workers/);
   assert.match(capabilityMap, /`product\.signal\.ingestion\.run`/);
+});
+
+test("Settings exposes profile, Outlook, and workspace autonomy controls", () => {
+  const settings = source("app/dashboard/settings/page.tsx");
+  const actions = source("app/dashboard/actions.ts");
+  const productApp = source("core/product/app.ts");
+  const registry = source("core/substrate/events/registry.ts");
+
+  assert.match(settings, /editCompanyProfileAction/);
+  assert.match(settings, /updateWorkspaceAutonomyAction/);
+  assert.match(settings, /href="\/api\/auth\/outlook"/);
+  assert.match(settings, /value="autonomous"/);
+  assert.match(settings, /value="review_only"/);
+  assert.match(settings, /row_number\(\) over/);
+  assert.match(settings, /properties ->> 'mailbox_email'/);
+  assert.match(actions, /configureWorkspaceAutonomyMode/);
+  assert.match(productApp, /event_type: "workspace\.configured"/);
+  assert.match(productApp, /event_type: "rep\.configured"/);
+  assert.match(productApp, /event_type: "play\.configured"/);
+  assert.match(registry, /"workspace\.configured": WorkspaceConfigured/);
+});
+
+test("new product defaults are autonomous after checks", () => {
+  const actions = source("app/dashboard/actions.ts");
+  const setup = source("app/dashboard/setup/page.tsx");
+  const repDetail = source("app/dashboard/reps/[id]/page.tsx");
+  const productApp = source("core/product/app.ts");
+  const playAutonomy = source("core/plays/autonomy.ts");
+  const repPrimitive = source("core/primitives/rep.ts");
+  const activationGraph = source("core/agents/langgraph/graphs/activation.ts");
+  const productTools = source("core/product/tools.ts");
+  const migration = source("db/migrations/038_autonomous_default_backfill.sql");
+
+  assert.match(actions, /fallback: DashboardApprovalPolicy = "none"/);
+  assert.match(
+    setup,
+    /defaultValue=\{rep\?\.autonomy\.channels\?\.email\?\.approval \?\? "none"\}/,
+  );
+  assert.match(
+    repDetail,
+    /defaultValue=\{rep\.autonomy\.channels\?\.email\?\.approval \?\? "none"\}/,
+  );
+  assert.match(
+    productApp,
+    /const DEFAULT_CHANNEL_APPROVAL: ApprovalPolicy = "none"/,
+  );
+  assert.match(
+    productApp,
+    /default_channel_approval: DEFAULT_CHANNEL_APPROVAL/,
+  );
+  assert.match(playAutonomy, /approval: "none"/);
+  assert.match(repPrimitive, /\.default\("none"\)/);
+  assert.match(activationGraph, /approval: "none"/);
+  assert.match(productTools, /approval: ApprovalSchema\.default\("none"\)/);
+  assert.match(migration, /default_channel_approval/);
+  assert.match(migration, /value->>'approval' = 'approve_first'/);
+  assert.match(
+    migration,
+    /jsonb_set\(value, '\{approval\}', '"none"'::jsonb, true\)/,
+  );
 });
 
 test("Signal ingress matching dispatch is centralized in the product dispatcher", () => {
@@ -117,7 +211,10 @@ test("Signal ingress matching dispatch is centralized in the product dispatcher"
   assert.match(productApp, /registerSignalMatchingEventDispatcher/);
   assert.match(productApp, /dispatchSignalMatchingWorkflowFromIngestedEvent/);
   assert.match(productApp, /product-signal-matching-workflow-dispatcher-v1/);
-  assert.match(productionWorker, /dispatchSignalMatchingWorkflowFromIngestedEvent/);
+  assert.match(
+    productionWorker,
+    /dispatchSignalMatchingWorkflowFromIngestedEvent/,
+  );
   assert.match(projectorsWorker, /registerSignalMatchingEventDispatcher/);
   assert.match(signalProjectorsWorker, /registerSignalMatchingEventDispatcher/);
   assert.doesNotMatch(
@@ -141,7 +238,10 @@ test("meeting-intent replies wake prep and reply workflows", () => {
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
   assert.match(intent, /meeting_intent/);
-  assert.match(productApp, /e\.payload->>'intent' in \('meeting_intent', 'positive'\)/);
+  assert.match(
+    productApp,
+    /e\.payload->>'intent' in \('meeting_intent', 'positive'\)/,
+  );
   assert.match(
     productApp,
     /e\.payload->>'intent' in \('meeting_intent', 'positive', 'neutral'\)/,
@@ -194,8 +294,14 @@ test("Bombsell logo asset stays canonical and untinted", () => {
 
   assert.match(home, /src="\/logo\.svg"/);
   assert.match(shell, /src="\/logo\.svg"/);
-  assert.doesNotMatch(home, /filter-|invert|grayscale|sepia|hue-rotate|brightness|contrast/);
-  assert.doesNotMatch(shell, /filter-|invert|grayscale|sepia|hue-rotate|brightness|contrast/);
+  assert.doesNotMatch(
+    home,
+    /filter-|invert|grayscale|sepia|hue-rotate|brightness|contrast/,
+  );
+  assert.doesNotMatch(
+    shell,
+    /filter-|invert|grayscale|sepia|hue-rotate|brightness|contrast/,
+  );
   assert.match(logo, /fill="#23555C"/);
   assert.match(logo, /fill="#FCFCFD"/);
   assert.match(logo, /fill="#26575E"/);

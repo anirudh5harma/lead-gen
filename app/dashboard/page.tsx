@@ -141,17 +141,47 @@ async function loadBriefActionState(workspaceId: string): Promise<BriefActionSta
     useful_outcomes_7d: string;
     meetings_7d: string;
   }>(
-    `select
+    `with outlook_accounts as (
+       select coalesce(
+                nullif(lower(ca.properties ->> 'mailbox_email'), ''),
+                nullif(lower(ca.display_name), ''),
+                ca.id::text
+              ) as outlook_mailbox_key,
+              ca.status,
+              ca.last_error
+         from channel_accounts ca
+        where ca.workspace_id = $1
+          and ca.kind = 'oauth_outlook'
+     ),
+     outlook_mailboxes as (
+       select outlook_mailbox_key,
+              bool_or(status = 'connected') as has_connected,
+              bool_or(status = 'connected' and last_error is not null) as has_connected_error,
+              bool_or(status::text in (
+                'needs_reauth',
+                'errored',
+                'error',
+                'rate_limited',
+                'suspended',
+                'disconnected'
+              )) as has_blocked_status
+         from outlook_accounts
+        group by outlook_mailbox_key
+     )
+     select
        (select count(*)::text from workflow_approvals a
           where a.workspace_id = $1
             and a.decision = 'pending') as pending_reviews,
-       (select count(*)::text from channel_accounts ca
-          where ca.workspace_id = $1
-            and ca.kind in ('oauth_outlook','email_domain','linkedin_oauth','linkedin_session')
-            and (
-              ca.status::text in ('needs_reauth','errored','error','rate_limited','suspended','disconnected')
-              or ca.last_error is not null
-            )) as unhealthy_channels,
+       ((select count(*) from outlook_mailboxes
+          where has_connected_error
+             or (has_blocked_status and not has_connected))
+        + (select count(*) from channel_accounts ca
+             where ca.workspace_id = $1
+               and ca.kind in ('email_domain','linkedin_oauth','linkedin_session')
+               and (
+                 ca.status::text in ('needs_reauth','errored','error','rate_limited','suspended','disconnected')
+                 or ca.last_error is not null
+               )))::text as unhealthy_channels,
        (select count(*)::text from messages m
           where m.workspace_id = $1
             and m.direction = 'outbound'

@@ -2,7 +2,11 @@ import Link from "next/link";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { ProfileIntelligence } from "@/components/dashboard/ProfileIntelligence";
-import { HeroStat, SurfaceHero, SurfaceSection } from "@/components/dashboard/SurfaceHero";
+import {
+  HeroStat,
+  SurfaceHero,
+  SurfaceSection,
+} from "@/components/dashboard/SurfaceHero";
 import {
   getProductCompanyProfile,
   verifiedProductWorkspaceSession,
@@ -23,7 +27,9 @@ interface SetupRepRow {
   role: string;
   status: string;
   persona: { voice?: string; story?: string };
-  autonomy: { channels?: { email?: { daily_cap?: number; approval?: string } } };
+  autonomy: {
+    channels?: { email?: { daily_cap?: number; approval?: string } };
+  };
 }
 
 interface SetupIcpRow {
@@ -61,10 +67,39 @@ async function loadSetupState(workspaceId: string) {
       [workspaceId],
     ),
     pool.query<SetupAccountRow>(
-      `select id, display_name, kind::text as kind, status::text as status, daily_cap
-         from channel_accounts
-        where workspace_id = $1
-          and kind in ('email_domain','oauth_outlook','linkedin_session','linkedin_oauth')
+      `with ranked_accounts as (
+         select id, display_name, kind::text as kind, status::text as status, daily_cap,
+                row_number() over (
+                  partition by case
+                    when kind = 'oauth_outlook' then 'outlook:' || coalesce(
+                      nullif(lower(properties ->> 'mailbox_email'), ''),
+                      nullif(lower(display_name), ''),
+                      id::text
+                    )
+                    else id::text
+                  end
+                  order by case
+                             when kind = 'oauth_outlook' and status = 'connected' then 0
+                             when kind = 'oauth_outlook' and status = 'needs_reauth' then 1
+                             else 2
+                           end,
+                           case
+                             when kind = 'oauth_outlook'
+                               and properties -> 'outlook_subscription' is not null
+                               and properties -> 'outlook_subscription' ->> 'clientState' is not null
+                             then 0
+                             else 1
+                           end,
+                           updated_at desc,
+                           created_at desc
+                ) as account_rank
+           from channel_accounts
+          where workspace_id = $1
+            and kind in ('email_domain','oauth_outlook','linkedin_session','linkedin_oauth')
+       )
+       select id, display_name, kind, status, daily_cap
+         from ranked_accounts
+        where account_rank = 1
         order by case
                    when kind = 'oauth_outlook' then 0
                    when kind in ('linkedin_session','linkedin_oauth') then 1
@@ -92,8 +127,12 @@ export default async function SetupPage() {
   ]);
   const rep = state.reps[0];
   const icp = state.icps[0];
-  const outlookAccount = state.accounts.find((row) => row.kind === "oauth_outlook");
-  const linkedInAccount = state.accounts.find((row) => isLinkedInKind(row.kind));
+  const outlookAccount = state.accounts.find(
+    (row) => row.kind === "oauth_outlook",
+  );
+  const linkedInAccount = state.accounts.find((row) =>
+    isLinkedInKind(row.kind),
+  );
   const readyCount = [
     state.reps.length > 0,
     state.icps.length > 0,
@@ -106,12 +145,18 @@ export default async function SetupPage() {
     <div className="space-y-2">
       <SurfaceHero
         kicker="Prospecting"
-        title={<>Tell Bombsell <em>who to chase</em>.</>}
+        title={
+          <>
+            Tell Bombsell <em>who to chase</em>.
+          </>
+        }
         description="Define your company, ICP, voice, timing signals, and channel pace. Email, LinkedIn, and campaigns work from this profile."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Ready" value={`${readyCount}/5`} />
-            {profile?.company_name ? <HeroStat label="Company" value={profile.company_name} /> : null}
+            {profile?.company_name ? (
+              <HeroStat label="Company" value={profile.company_name} />
+            ) : null}
             {icp ? <HeroStat label="Audience" value={icp.name} /> : null}
           </div>
         }
@@ -124,7 +169,11 @@ export default async function SetupPage() {
           action={editCompanyProfileAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:grid-cols-2"
         >
-          <input type="hidden" name="return_to" value="/dashboard/prospecting" />
+          <input
+            type="hidden"
+            name="return_to"
+            value="/dashboard/prospecting"
+          />
           <Field
             name="company_name"
             label="Company"
@@ -134,7 +183,10 @@ export default async function SetupPage() {
           <Field
             name="website_url"
             label="Website"
-            defaultValue={profile?.website_url ?? (profile?.domain ? `https://${profile.domain}` : "")}
+            defaultValue={
+              profile?.website_url ??
+              (profile?.domain ? `https://${profile.domain}` : "")
+            }
             required
           />
           <Field
@@ -169,7 +221,11 @@ export default async function SetupPage() {
           action={configureActivationAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5"
         >
-          <input type="hidden" name="return_to" value="/dashboard/prospecting" />
+          <input
+            type="hidden"
+            name="return_to"
+            value="/dashboard/prospecting"
+          />
           <TextArea
             name="icp_description"
             label="Target companies and people"
@@ -193,23 +249,35 @@ export default async function SetupPage() {
               name="daily_cap"
               label="Daily ceiling"
               type="number"
-              defaultValue={String(rep?.autonomy.channels?.email?.daily_cap ?? outlookAccount?.daily_cap ?? 25)}
+              defaultValue={String(
+                rep?.autonomy.channels?.email?.daily_cap ??
+                  outlookAccount?.daily_cap ??
+                  25,
+              )}
             />
             <Select
               name="approval"
               label="Review mode"
-              defaultValue={rep?.autonomy.channels?.email?.approval ?? "approve_first"}
+              defaultValue={rep?.autonomy.channels?.email?.approval ?? "none"}
               options={[
-                ["approve_first", "Review the first move"],
-                ["always", "Review every move"],
                 ["none", "Autonomous after checks"],
+                ["always", "Review every move"],
+                ["approve_first", "Review the first move"],
                 ["research_only", "Research only"],
               ]}
             />
           </div>
-          <input type="hidden" name="icp_name" value={icp?.name ?? "Default audience"} />
+          <input
+            type="hidden"
+            name="icp_name"
+            value={icp?.name ?? "Default audience"}
+          />
           <input type="hidden" name="signal_kind" value="hiring" />
-          <input type="hidden" name="match_threshold" value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"} />
+          <input
+            type="hidden"
+            name="match_threshold"
+            value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
+          />
           <input type="hidden" name="rep_name" value={rep?.name ?? "Sampark"} />
           <PendingSubmitButton
             className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
@@ -321,9 +389,21 @@ function NoWorkspaceSetup() {
           action={createWorkspaceAction}
           className="grid gap-4 rounded-lg border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] p-5 md:max-w-xl"
         >
-          <input type="hidden" name="return_to" value="/dashboard/prospecting" />
-          <Field name="workspace_name" label="Workspace name" defaultValue="Bombsell Workspace" />
-          <Field name="workspace_slug" label="Workspace slug" defaultValue="bombsell-workspace" />
+          <input
+            type="hidden"
+            name="return_to"
+            value="/dashboard/prospecting"
+          />
+          <Field
+            name="workspace_name"
+            label="Workspace name"
+            defaultValue="Bombsell Workspace"
+          />
+          <Field
+            name="workspace_slug"
+            label="Workspace slug"
+            defaultValue="bombsell-workspace"
+          />
           <PendingSubmitButton
             className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
             icon="add_business"
@@ -352,7 +432,9 @@ function Field({
 }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-xs font-medium text-[var(--color-text-3)]">{label}</span>
+      <span className="text-xs font-medium text-[var(--color-text-3)]">
+        {label}
+      </span>
       <input
         name={name}
         type={type}
@@ -377,7 +459,9 @@ function TextArea({
 }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-xs font-medium text-[var(--color-text-3)]">{label}</span>
+      <span className="text-xs font-medium text-[var(--color-text-3)]">
+        {label}
+      </span>
       <textarea
         name={name}
         rows={rows}
@@ -401,7 +485,9 @@ function Select({
 }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-xs font-medium text-[var(--color-text-3)]">{label}</span>
+      <span className="text-xs font-medium text-[var(--color-text-3)]">
+        {label}
+      </span>
       <select
         name={name}
         defaultValue={defaultValue}
@@ -442,7 +528,9 @@ function RepRoster({ reps }: { reps: SetupRepRow[] }) {
   const byName = new Map(reps.map((r) => [r.name, r]));
   const ordered = [
     ...REP_ORDER.map((name) => byName.get(name) ?? null),
-    ...reps.filter((rep) => !REP_ORDER.includes(rep.name) && !HIDDEN_REP_NAMES.has(rep.name)),
+    ...reps.filter(
+      (rep) => !REP_ORDER.includes(rep.name) && !HIDDEN_REP_NAMES.has(rep.name),
+    ),
   ];
   return (
     <SurfaceSection title="Outbound motion">
@@ -477,9 +565,15 @@ function RepRoster({ reps }: { reps: SetupRepRow[] }) {
               >
                 {name}
               </p>
-              <p className="mt-1 text-[13px] text-[var(--color-text-2)]">{meta.surface}</p>
+              <p className="mt-1 text-[13px] text-[var(--color-text-2)]">
+                {meta.surface}
+              </p>
               <p className="mt-3 text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-3)]">
-                {status === "active" ? "Active" : status === "absent" ? "Not set up" : status}
+                {status === "active"
+                  ? "Active"
+                  : status === "absent"
+                    ? "Not set up"
+                    : status}
               </p>
             </Link>
           );

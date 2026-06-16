@@ -60,7 +60,7 @@ export const ChannelAutonomy = z.object({
   daily_cap: z.number().int().nonnegative().default(0),
   approval: z
     .enum(["none", "approve_first", "always", "research_only"])
-    .default("approve_first"),
+    .default("none"),
 });
 export type ChannelAutonomy = z.infer<typeof ChannelAutonomy>;
 

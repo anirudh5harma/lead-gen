@@ -31,6 +31,20 @@ test("play autonomy: resolves per-channel approval and volume policy", () => {
   assert.equal(isDailyCapExceeded(policy, 12), true);
 });
 
+test("play autonomy: missing channel policy defaults to autonomous", () => {
+  const policy = resolvePlayChannelPolicy(
+    { channels: {}, global: {} },
+    "email",
+  );
+
+  assert.deepEqual(policy, {
+    channel: "email",
+    daily_cap: 0,
+    approval: "none",
+  });
+  assert.equal(shouldRequestApproval(policy, 0), false);
+});
+
 test("play autonomy: explicit run approval override can tighten or relax the channel gate", () => {
   const policy = resolvePlayChannelPolicy(
     {

@@ -351,6 +351,7 @@ test("email ingress projector: encrypted Outlook authorization creates account t
         daily_cap: 25,
         encrypted_credentials: credentials,
         ms_user_id: "ms-user-1",
+        mailbox_email: "founder@example.com",
       },
     });
 
@@ -358,7 +359,7 @@ test("email ingress projector: encrypted Outlook authorization creates account t
     const { rows } = await fx.pool.query<{
       display_name: string;
       credentials: unknown;
-      properties: { ms_user_id: string };
+      properties: { ms_user_id: string; mailbox_email?: string };
     }>(
       `select display_name, credentials, properties
          from channel_accounts
@@ -368,6 +369,7 @@ test("email ingress projector: encrypted Outlook authorization creates account t
     assert.equal(rows[0].display_name, "founder@example.com");
     assert.deepEqual(rows[0].credentials, credentials);
     assert.equal(rows[0].properties.ms_user_id, "ms-user-1");
+    assert.equal(rows[0].properties.mailbox_email, "founder@example.com");
     assert.deepEqual(repairs, [{ workspace_id, channel_account_id }]);
 
     const { rows: connected } = await fx.pool.query<{ n: string }>(
@@ -384,6 +386,7 @@ test("email ingress projector: encrypted Outlook authorization creates account t
       daily_cap: 25,
       encrypted_credentials: credentials,
       ms_user_id: "ms-user-1",
+      mailbox_email: "founder@example.com",
     });
     const { rows: count } = await fx.pool.query<{ n: string }>(
       `select count(*)::text as n from channel_accounts where id = $1`,

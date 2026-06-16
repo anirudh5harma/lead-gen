@@ -44,6 +44,9 @@ test("Outlook OAuth supports explicit calendar consent without duplicate account
 
   assert.match(callbackRoute, /findExistingOutlookAccountId/);
   assert.match(callbackRoute, /properties ->> 'ms_user_id' = \$2/);
+  assert.match(callbackRoute, /properties ->> 'mailbox_email'/);
+  assert.match(callbackRoute, /mailbox_email: mailboxEmail/);
+  assert.match(callbackRoute, /schema_version: 2/);
   assert.match(callbackRoute, /outlook-authorization:\$\{channelAccountId\}:\$\{state\.nonce\}/);
   assert.match(callbackRoute, /outlookSuccessRedirect/);
   assert.match(callbackRoute, /calendar_connected/);

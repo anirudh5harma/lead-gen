@@ -6,6 +6,7 @@ import {
   approveWorkflowApproval,
   configureActivationSetup,
   configureRep,
+  configureWorkspaceAutonomyMode,
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
   deleteProductRecommendation,
@@ -17,7 +18,6 @@ import {
   recordProductCampaignOutcome,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
-  runWorkspaceSignalIngestion,
   updateProductRecommendation,
   verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
@@ -62,7 +62,11 @@ function redirectWithToast(
   redirect(`${parsed.pathname}${parsed.search}${parsed.hash}`);
 }
 
-function numberValue(formData: FormData, key: string, fallback: number): number {
+function numberValue(
+  formData: FormData,
+  key: string,
+  fallback: number,
+): number {
   const parsed = Number(value(formData, key));
   return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -76,7 +80,7 @@ type DashboardApprovalPolicy =
 function approvalValue(
   formData: FormData,
   key: string,
-  fallback: DashboardApprovalPolicy = "approve_first",
+  fallback: DashboardApprovalPolicy = "none",
 ): DashboardApprovalPolicy {
   const raw = value(formData, key);
   return raw === "none" ||
@@ -134,11 +138,33 @@ export async function createWorkspaceAction(formData: FormData) {
 export async function switchWorkspaceAction(formData: FormData) {
   const workspaceId = value(formData, "workspace_id");
   if (!workspaceId) {
-    redirectWithToast("/dashboard", "Choose a workspace before switching.", "error");
+    redirectWithToast(
+      "/dashboard",
+      "Choose a workspace before switching.",
+      "error",
+    );
   }
   await setActiveWorkspaceCookie(workspaceId);
   revalidateProductPaths();
   redirectWithToast("/dashboard", "Workspace switched.");
+}
+
+export async function updateWorkspaceAutonomyAction(formData: FormData) {
+  const session = await requireDashboardSession(formData);
+  const returnTo = dashboardReturnPath(formData, "/dashboard/settings");
+  const mode =
+    value(formData, "autonomy_mode") === "review_only"
+      ? "review_only"
+      : "autonomous";
+  await configureWorkspaceAutonomyMode({ mode }, session);
+  revalidateProductPaths();
+  revalidatePath("/dashboard/settings");
+  redirectWithToast(
+    returnTo,
+    mode === "review_only"
+      ? "Review-only mode saved."
+      : "Autonomous mode saved.",
+  );
 }
 
 export async function configureActivationAction(formData: FormData) {
@@ -211,7 +237,8 @@ export async function reviewRecommendationAction(formData: FormData) {
   const session = await requireDashboardSession();
   const reviewId = value(formData, "review_id");
   if (!reviewId) return;
-  const decision = value(formData, "decision") === "ignored" ? "ignored" : "accepted";
+  const decision =
+    value(formData, "decision") === "ignored" ? "ignored" : "accepted";
   await reviewProductRecommendation(
     {
       review_id: reviewId,
@@ -306,7 +333,11 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
   const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
   const playRunId = value(formData, "play_run_id");
   if (!playRunId) {
-    redirectWithToast(returnTo, "Choose a campaign before recording an outcome.", "error");
+    redirectWithToast(
+      returnTo,
+      "Choose a campaign before recording an outcome.",
+      "error",
+    );
   }
   const kindValue = value(formData, "outcome_kind");
   const kind =
@@ -332,18 +363,6 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
   );
   revalidateProductPaths();
   redirectWithToast(returnTo, "Outcome recorded.");
-}
-
-export async function runSignalIngestionAction(formData: FormData) {
-  const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
-  await runWorkspaceSignalIngestion(
-    { limit: numberValue(formData, "limit", 8) },
-    session,
-    { wait: false },
-  );
-  revalidateProductPaths();
-  redirectWithToast(returnTo, "Signal ingestion started.");
 }
 
 export async function optimizeCampaignStrategyAction(formData: FormData) {
@@ -390,12 +409,21 @@ export async function generateMeetingPrepAction(formData: FormData) {
   const conversationId = value(formData, "conversation_id");
   const returnTo = dashboardReturnPath(
     formData,
-    conversationId ? `/dashboard/conversations/${conversationId}` : "/dashboard/conversations",
+    conversationId
+      ? `/dashboard/conversations/${conversationId}`
+      : "/dashboard/conversations",
   );
   if (!conversationId) {
-    redirectWithToast(returnTo, "Choose a conversation before preparing.", "error");
+    redirectWithToast(
+      returnTo,
+      "Choose a conversation before preparing.",
+      "error",
+    );
   }
-  await generateProductMeetingPrep({ conversation_id: conversationId }, session);
+  await generateProductMeetingPrep(
+    { conversation_id: conversationId },
+    session,
+  );
   revalidateProductPaths();
   revalidatePath(`/dashboard/conversations/${conversationId}`);
   redirectWithToast(returnTo, "Meeting prep updated.");
@@ -407,7 +435,11 @@ export async function editCompanyProfileAction(formData: FormData) {
   const company_name = value(formData, "company_name");
   const website_url = value(formData, "website_url");
   if (!company_name || !website_url) {
-    redirectWithToast(returnTo, "Enter the company name and website before saving.", "error");
+    redirectWithToast(
+      returnTo,
+      "Enter the company name and website before saving.",
+      "error",
+    );
   }
   try {
     await configureWorkspaceCompanyProfile(
@@ -435,9 +467,14 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
   const returnTo = dashboardReturnPath(formData, "/dashboard/review");
   const approvalId = value(formData, "approval_id");
   if (!approvalId) {
-    redirectWithToast(returnTo, "Choose an outreach item before deciding.", "error");
+    redirectWithToast(
+      returnTo,
+      "Choose an outreach item before deciding.",
+      "error",
+    );
   }
-  const decision = value(formData, "decision") === "rejected" ? "rejected" : "approved";
+  const decision =
+    value(formData, "decision") === "rejected" ? "rejected" : "approved";
   const subject = value(formData, "subject");
   const body = value(formData, "body");
   const note =
@@ -450,7 +487,12 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
       : value(formData, "decision_note") || undefined;
   let decided = false;
   try {
-    decided = await approveWorkflowApproval(approvalId, decision, session, note);
+    decided = await approveWorkflowApproval(
+      approvalId,
+      decision,
+      session,
+      note,
+    );
   } catch (error) {
     console.error("Approval decision failed", error);
     redirectWithToast(
@@ -488,4 +530,5 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard/conversations");
   revalidatePath("/dashboard/deliverability");
   revalidatePath("/dashboard/health");
+  revalidatePath("/dashboard/settings");
 }

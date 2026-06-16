@@ -208,6 +208,12 @@ export async function projectOutlookAuthorization(
   workspaceId: string,
   payload: EventPayload<"email.outlook.authorization.received">,
 ): Promise<void> {
+  const properties: Record<string, string> = {
+    ms_user_id: payload.ms_user_id,
+  };
+  if (payload.mailbox_email?.trim()) {
+    properties.mailbox_email = payload.mailbox_email.trim().toLowerCase();
+  }
   const result = await pool.query(
     `insert into channel_accounts (
        id, workspace_id, kind, display_name, status,
@@ -222,7 +228,8 @@ export async function projectOutlookAuthorization(
        daily_cap = excluded.daily_cap,
        credentials = excluded.credentials,
        properties = channel_accounts.properties || excluded.properties,
-       last_error = null
+       last_error = null,
+       updated_at = now()
      where channel_accounts.workspace_id = excluded.workspace_id
        and channel_accounts.kind = 'oauth_outlook'
      returning id`,
@@ -232,7 +239,7 @@ export async function projectOutlookAuthorization(
       payload.display_name,
       payload.daily_cap,
       JSON.stringify(payload.encrypted_credentials),
-      JSON.stringify({ ms_user_id: payload.ms_user_id }),
+      JSON.stringify(properties),
     ],
   );
   if (result.rowCount !== 1) {
@@ -251,7 +258,8 @@ export async function projectOutlookCredentialsRefreshed(
     `update channel_accounts
         set credentials = $3::jsonb,
             status = 'connected',
-            last_error = null
+            last_error = null,
+            updated_at = now()
       where workspace_id = $1
         and id = $2
         and kind = 'oauth_outlook'`,
@@ -276,7 +284,8 @@ export async function projectOutlookReauthorizationRequired(
   const result = await pool.query(
     `update channel_accounts
         set status = 'needs_reauth',
-            last_error = $3::jsonb
+            last_error = $3::jsonb,
+            updated_at = now()
       where workspace_id = $1
         and id = $2
         and kind = 'oauth_outlook'`,

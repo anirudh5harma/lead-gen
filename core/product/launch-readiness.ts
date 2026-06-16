@@ -74,7 +74,36 @@ export async function loadWorkspaceLaunchReadiness(
 ): Promise<WorkspaceLaunchReadiness> {
   const required_channel = opts.required_channel ?? "any";
   const { rows } = await pool.query<LaunchReadinessRow>(
-    `select
+    `with outlook_accounts as (
+       select coalesce(
+                nullif(lower(properties ->> 'mailbox_email'), ''),
+                nullif(lower(display_name), ''),
+                id::text
+              ) as outlook_mailbox_key,
+              status,
+              properties,
+              last_error
+         from channel_accounts
+        where workspace_id = $1
+          and kind = 'oauth_outlook'
+     ),
+     outlook_mailboxes as (
+       select outlook_mailbox_key,
+              bool_or(status = 'connected') as has_connected,
+              bool_or(
+                status = 'connected'
+                and properties -> 'outlook_subscription' is not null
+                and properties -> 'outlook_subscription' ->> 'clientState' is not null
+                and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
+                and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
+                      > now() + interval '15 minutes'
+              ) as has_active_subscription,
+              bool_or(status = 'needs_reauth') as has_needs_reauth,
+              bool_or(status = 'connected' and last_error is not null) as has_connected_error
+         from outlook_accounts
+        group by outlook_mailbox_key
+     )
+     select
         (select count(*) from graph_companies
           where workspace_id = $1
             and properties->>'profile_role' = 'workspace_company') as workspace_profiles,
@@ -86,28 +115,14 @@ export async function loadWorkspaceLaunchReadiness(
           where workspace_id = $1 and enabled) as enabled_sources,
         (select count(*) from plays
           where workspace_id = $1 and status = 'active') as active_plays,
-        (select count(*) from channel_accounts
-          where workspace_id = $1
-            and kind = 'oauth_outlook'
-            and status = 'connected') as connected_outlook,
-        (select count(*) from channel_accounts
-          where workspace_id = $1
-            and kind = 'oauth_outlook'
-            and status = 'connected'
-            and properties -> 'outlook_subscription' is not null
-            and properties -> 'outlook_subscription' ->> 'clientState' is not null
-            and properties -> 'outlook_subscription' ->> 'lifecycleNotificationUrl' is not null
-            and (properties -> 'outlook_subscription' ->> 'expirationDateTime')::timestamptz
-                  > now() + interval '15 minutes') as active_outlook_subscriptions,
-        (select count(*) from channel_accounts
-          where workspace_id = $1
-            and kind = 'oauth_outlook'
-            and status = 'needs_reauth') as needs_reauth_outlook,
-        (select count(*) from channel_accounts
-          where workspace_id = $1
-            and kind = 'oauth_outlook'
-            and status = 'connected'
-            and last_error is not null) as errored_outlook,
+        (select count(*) from outlook_mailboxes
+          where has_connected) as connected_outlook,
+        (select count(*) from outlook_mailboxes
+          where has_active_subscription) as active_outlook_subscriptions,
+        (select count(*) from outlook_mailboxes
+          where has_needs_reauth and not has_connected) as needs_reauth_outlook,
+        (select count(*) from outlook_mailboxes
+          where has_connected_error) as errored_outlook,
         (select count(*) from channel_accounts
           where workspace_id = $1
             and kind in ('linkedin_session','linkedin_oauth')

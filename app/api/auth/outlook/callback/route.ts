@@ -56,6 +56,12 @@ interface GraphMe {
   displayName?: string;
 }
 
+interface OutlookAccountIdentity {
+  ms_user_id: string;
+  mailbox_email: string | null;
+  display_name: string;
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const url = req.nextUrl;
   const code = url.searchParams.get("code");
@@ -146,10 +152,18 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   try {
-    const email = me.mail ?? me.userPrincipalName ?? me.displayName ?? "outlook";
+    const mailboxEmail = normalizeMailboxEmail(me.mail) ??
+      normalizeMailboxEmail(me.userPrincipalName);
+    const displayName = mailboxEmail ??
+      normalizeDisplayName(me.displayName) ??
+      "outlook";
     const pool = getPool();
     const channelAccountId =
-      (await findExistingOutlookAccountId(pool, state.workspace_id, me.id)) ?? randomUUID();
+      (await findExistingOutlookAccountId(pool, state.workspace_id, {
+        ms_user_id: me.id,
+        mailbox_email: mailboxEmail,
+        display_name: displayName,
+      })) ?? randomUUID();
     const credentials = encryptCredentials(
       {
         access_token: tokens.access_token,
@@ -166,15 +180,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     const authorizationEvent = await appendIngressEvent(pool, {
       workspace_id: state.workspace_id,
       event_type: "email.outlook.authorization.received",
+      schema_version: 2,
       source: "user",
       producer_ref: `user:${userId}`,
       idempotency_key: `outlook-authorization:${channelAccountId}:${state.nonce}`,
       payload: {
         channel_account_id: channelAccountId,
-        display_name: email,
+        display_name: displayName,
         daily_cap: Number(process.env.OUTLOOK_DEFAULT_DAILY_CAP ?? 25),
         encrypted_credentials: credentials,
         ms_user_id: me.id,
+        mailbox_email: mailboxEmail,
       },
     });
     await projectOutlookAuthorization(
@@ -193,7 +209,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       payload: {
         channel_account_id: channelAccountId,
         kind: "oauth_outlook",
-        account_display_name: email,
+        account_display_name: displayName,
         provider_account_id: me.id,
       },
     });
@@ -207,22 +223,59 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 }
 
-async function findExistingOutlookAccountId(
+export async function findExistingOutlookAccountId(
   pool: Pool,
   workspace_id: string,
-  ms_user_id: string,
+  identity: OutlookAccountIdentity,
 ): Promise<string | null> {
+  const mailboxEmail = identity.mailbox_email?.trim().toLowerCase() || null;
+  const displayName = identity.display_name.trim().toLowerCase() || null;
   const { rows } = await pool.query<{ id: string }>(
     `select id
        from channel_accounts
       where workspace_id = $1
         and kind = 'oauth_outlook'
-        and properties ->> 'ms_user_id' = $2
-      order by created_at asc
+        and (
+          properties ->> 'ms_user_id' = $2
+          or (
+            $3::text is not null
+            and coalesce(
+                  nullif(lower(properties ->> 'mailbox_email'), ''),
+                  nullif(lower(display_name), '')
+                ) = $3
+          )
+          or ($4::text is not null and lower(display_name) = $4)
+        )
+      order by case
+                 when properties ->> 'ms_user_id' = $2 then 0
+                 when $3::text is not null
+                   and coalesce(
+                         nullif(lower(properties ->> 'mailbox_email'), ''),
+                         nullif(lower(display_name), '')
+                       ) = $3 then 1
+                 else 2
+               end,
+               case
+                 when status = 'connected' then 0
+                 when status = 'needs_reauth' then 1
+                 else 2
+               end,
+               updated_at desc,
+               created_at asc
       limit 1`,
-    [workspace_id, ms_user_id],
+    [workspace_id, identity.ms_user_id, mailboxEmail, displayName],
   );
   return rows[0]?.id ?? null;
+}
+
+function normalizeMailboxEmail(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && normalized.includes("@") ? normalized : null;
+}
+
+function normalizeDisplayName(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : null;
 }
 
 async function appendIngressEvent(

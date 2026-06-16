@@ -102,11 +102,40 @@ async function loadSendingDomains(workspaceId: string): Promise<SendingDomainRow
 async function loadChannelAccounts(workspaceId: string): Promise<ChannelAccountRow[]> {
   const pool = getPool();
   const { rows } = await pool.query<ChannelAccountRow>(
-    `select id, kind::text as kind, display_name, status::text as status,
-            daily_cap, daily_used, last_used_at, last_error
-      from channel_accounts
-      where workspace_id = $1
-        and kind in ('oauth_outlook','email_domain')
+    `with ranked_accounts as (
+       select id, kind::text as kind, display_name, status::text as status,
+              daily_cap, daily_used, last_used_at, last_error,
+              row_number() over (
+                partition by case
+                  when kind = 'oauth_outlook' then 'outlook:' || coalesce(
+                    nullif(lower(properties ->> 'mailbox_email'), ''),
+                    nullif(lower(display_name), ''),
+                    id::text
+                  )
+                  else id::text
+                end
+                order by case
+                           when kind = 'oauth_outlook' and status = 'connected' then 0
+                           when kind = 'oauth_outlook' and status = 'needs_reauth' then 1
+                           else 2
+                         end,
+                         case
+                           when kind = 'oauth_outlook'
+                             and properties -> 'outlook_subscription' is not null
+                             and properties -> 'outlook_subscription' ->> 'clientState' is not null
+                           then 0
+                           else 1
+                         end,
+                         updated_at desc,
+                         created_at desc
+              ) as account_rank
+         from channel_accounts
+        where workspace_id = $1
+          and kind in ('oauth_outlook','email_domain')
+     )
+     select id, kind, display_name, status, daily_cap, daily_used, last_used_at, last_error
+       from ranked_accounts
+      where account_rank = 1
       order by status,
                case when kind = 'oauth_outlook' then 0 else 1 end,
                display_name`,

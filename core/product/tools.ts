@@ -80,7 +80,12 @@ const SignalKindSchema = z.enum([
   "other",
 ]);
 
-const ApprovalSchema = z.enum(["none", "approve_first", "always", "research_only"]);
+const ApprovalSchema = z.enum([
+  "none",
+  "approve_first",
+  "always",
+  "research_only",
+]);
 const ExaResearchIntentSchema = z.enum([
   "rep_research",
   "brief_refresh",
@@ -214,7 +219,9 @@ const OutreachSkillSchema = z.object({
     fallback: z.boolean().optional(),
   }),
 });
-const SelectedOutreachSkillSchema = OutreachSkillSchema.omit({ selection: true }).extend({
+const SelectedOutreachSkillSchema = OutreachSkillSchema.omit({
+  selection: true,
+}).extend({
   pattern_key: z.string().min(1),
   slot_values: z.record(z.string(), z.string()),
 });
@@ -313,7 +320,13 @@ const MessagePersonalizationOutputSchema = WorkspaceResultSchema.extend({
   llm_used: z.boolean(),
   next_action: z.literal("run_eval_gate"),
 });
-const EvalArtifactKindSchema = z.enum(["draft", "plan", "post", "reply", "other"]);
+const EvalArtifactKindSchema = z.enum([
+  "draft",
+  "plan",
+  "post",
+  "reply",
+  "other",
+]);
 const DraftEvalSkillContextSchema = z.object({
   skill_key: z.string().min(1),
   version: z.string().min(1),
@@ -377,8 +390,17 @@ const ReplyTriageOutputSchema = WorkspaceResultSchema.extend({
   outcome_id: z.string().uuid().nullable(),
   next_action: ReplyTriageNextActionSchema,
 });
-const LaunchReadinessStatusSchema = z.enum(["ready", "needs_attention", "blocked"]);
-const LaunchReadinessRequiredChannelSchema = z.enum(["any", "email", "linkedin", "both"]);
+const LaunchReadinessStatusSchema = z.enum([
+  "ready",
+  "needs_attention",
+  "blocked",
+]);
+const LaunchReadinessRequiredChannelSchema = z.enum([
+  "any",
+  "email",
+  "linkedin",
+  "both",
+]);
 const LaunchReadinessCheckSchema = z.object({
   id: z.enum([
     "workspace_profile",
@@ -396,11 +418,13 @@ const LaunchReadinessCheckSchema = z.object({
   required: z.boolean(),
   detail: z.string().min(1),
   count: z.number().int().nonnegative(),
-  action: z.object({
-    label: z.string().min(1),
-    tools: z.array(z.string().min(1)),
-    surface: z.string().min(1),
-  }).nullable(),
+  action: z
+    .object({
+      label: z.string().min(1),
+      tools: z.array(z.string().min(1)),
+      surface: z.string().min(1),
+    })
+    .nullable(),
 });
 const LaunchReadinessSchema = WorkspaceResultSchema.extend({
   checked_at: z.string().datetime(),
@@ -484,7 +508,16 @@ const MeetingPrepProfileContextSchema = z.object({
   }),
 });
 const MeetingPrepSourceRefSchema = z.object({
-  type: z.enum(["conversation", "message", "signal", "outcome", "person", "company", "rep", "user"]),
+  type: z.enum([
+    "conversation",
+    "message",
+    "signal",
+    "outcome",
+    "person",
+    "company",
+    "rep",
+    "user",
+  ]),
   id: z.string().min(1),
   label: z.string().min(1),
   url: z.string().url().nullable().optional(),
@@ -605,10 +638,12 @@ const AgentTraceSpanSummarySchema = z.object({
   estimated_cost_usd: z.number().nonnegative().nullable(),
   retry_count: z.number().int().nonnegative().nullable(),
   attributes: z.record(z.string(), z.unknown()),
-  error: z.object({
-    message: z.string().min(1),
-    name: z.string().nullable(),
-  }).nullable(),
+  error: z
+    .object({
+      message: z.string().min(1),
+      name: z.string().nullable(),
+    })
+    .nullable(),
 });
 const AgentObservabilitySummarySchema = z.object({
   workspace_id: z.string().uuid(),
@@ -629,52 +664,60 @@ const AgentObservabilitySummarySchema = z.object({
     external_export_count: z.number().int().nonnegative(),
     raw_export_blocked: z.boolean(),
   }),
-  traces: z.array(z.object({
-    trace_id: z.string().min(1),
-    status: AgentTraceStatusSchema,
-    first_seen_at: z.string().datetime(),
-    last_seen_at: z.string().datetime(),
-    duration_ms: z.number().nonnegative().nullable(),
-    span_count: z.number().int().nonnegative(),
-    error_span_count: z.number().int().nonnegative(),
-    blocked_span_count: z.number().int().nonnegative(),
-    deferred_span_count: z.number().int().nonnegative(),
-    eval_failure_count: z.number().int().nonnegative(),
-    graph_names: z.array(z.string()),
-    node_names: z.array(z.string()),
-    model_names: z.array(z.string()),
-    total_prompt_tokens: z.number().int().nonnegative(),
-    total_completion_tokens: z.number().int().nonnegative(),
-    estimated_cost_usd: z.number().nonnegative(),
-    primitive_refs: AgentTracePrimitiveRefsSchema,
-    latest_error: z.object({
-      message: z.string().min(1),
-      name: z.string().nullable(),
-    }).nullable(),
-    export_destinations: z.array(z.string()),
-    redaction: z.object({
-      pii: z.enum(["none", "redacted", "contains_pii"]),
-      external_export_allowed: z.boolean(),
-      raw_payload_exported: z.boolean(),
+  traces: z.array(
+    z.object({
+      trace_id: z.string().min(1),
+      status: AgentTraceStatusSchema,
+      first_seen_at: z.string().datetime(),
+      last_seen_at: z.string().datetime(),
+      duration_ms: z.number().nonnegative().nullable(),
+      span_count: z.number().int().nonnegative(),
+      error_span_count: z.number().int().nonnegative(),
+      blocked_span_count: z.number().int().nonnegative(),
+      deferred_span_count: z.number().int().nonnegative(),
+      eval_failure_count: z.number().int().nonnegative(),
+      graph_names: z.array(z.string()),
+      node_names: z.array(z.string()),
+      model_names: z.array(z.string()),
+      total_prompt_tokens: z.number().int().nonnegative(),
+      total_completion_tokens: z.number().int().nonnegative(),
+      estimated_cost_usd: z.number().nonnegative(),
+      primitive_refs: AgentTracePrimitiveRefsSchema,
+      latest_error: z
+        .object({
+          message: z.string().min(1),
+          name: z.string().nullable(),
+        })
+        .nullable(),
+      export_destinations: z.array(z.string()),
+      redaction: z.object({
+        pii: z.enum(["none", "redacted", "contains_pii"]),
+        external_export_allowed: z.boolean(),
+        raw_payload_exported: z.boolean(),
+      }),
+      spans: z.array(AgentTraceSpanSummarySchema),
     }),
-    spans: z.array(AgentTraceSpanSummarySchema),
-  })),
-  eval_failures: z.array(z.object({
-    eval_case_id: z.string().min(1),
-    trace_id: z.string().min(1),
-    span_id: z.string().min(1).nullable(),
-    failure_kind: z.string().min(1),
-    reason: z.string().min(1),
-    source_event_id: z.string().nullable(),
-    created_at: z.string().datetime(),
-  })),
+  ),
+  eval_failures: z.array(
+    z.object({
+      eval_case_id: z.string().min(1),
+      trace_id: z.string().min(1),
+      span_id: z.string().min(1).nullable(),
+      failure_kind: z.string().min(1),
+      reason: z.string().min(1),
+      source_event_id: z.string().nullable(),
+      created_at: z.string().datetime(),
+    }),
+  ),
 });
 
 let registered = false;
 
 function sessionFromContext(ctx: ToolContext): ProductWorkspaceSession {
   if (!ctx.user_id) {
-    throw new Error("Authenticated user context is required for product tools.");
+    throw new Error(
+      "Authenticated user context is required for product tools.",
+    );
   }
   return { workspace_id: ctx.workspace_id, user_id: ctx.user_id };
 }
@@ -738,37 +781,43 @@ export function registerProductTools(): void {
           detail: z.string(),
         }),
       }),
-      cards: z.array(z.object({
-        id: z.string(),
-        kind: z.enum([
-          "profile",
-          "signal",
-          "outcome",
-          "playbook",
-          "semantic_fact",
-          "meeting_prep",
-        ]),
-        title: z.string(),
-        summary: z.string(),
-        confidence: z.number().nullable(),
-        freshness_at: z.string().datetime().nullable(),
-        tags: z.array(z.string()),
-        primitive_refs: z.object({
-          rep_id: z.string().nullable().optional(),
-          signal_id: z.string().nullable().optional(),
-          conversation_id: z.string().nullable().optional(),
-          message_id: z.string().nullable().optional(),
-          outcome_id: z.string().nullable().optional(),
-          company_id: z.string().nullable().optional(),
-          person_id: z.string().nullable().optional(),
-        }),
-        source_refs: z.array(z.object({
-          type: z.string(),
+      cards: z.array(
+        z.object({
           id: z.string(),
-          label: z.string(),
-          url: z.string().nullable().optional(),
-        })).min(1),
-      })),
+          kind: z.enum([
+            "profile",
+            "signal",
+            "outcome",
+            "playbook",
+            "semantic_fact",
+            "meeting_prep",
+          ]),
+          title: z.string(),
+          summary: z.string(),
+          confidence: z.number().nullable(),
+          freshness_at: z.string().datetime().nullable(),
+          tags: z.array(z.string()),
+          primitive_refs: z.object({
+            rep_id: z.string().nullable().optional(),
+            signal_id: z.string().nullable().optional(),
+            conversation_id: z.string().nullable().optional(),
+            message_id: z.string().nullable().optional(),
+            outcome_id: z.string().nullable().optional(),
+            company_id: z.string().nullable().optional(),
+            person_id: z.string().nullable().optional(),
+          }),
+          source_refs: z
+            .array(
+              z.object({
+                type: z.string(),
+                id: z.string(),
+                label: z.string(),
+                url: z.string().nullable().optional(),
+              }),
+            )
+            .min(1),
+        }),
+      ),
     }),
     async handler(_input, ctx) {
       return getWorkspaceCompanyBrain(sessionFromContext(ctx));
@@ -821,7 +870,10 @@ export function registerProductTools(): void {
     }),
     output: VerticalIntelligencePackSchema,
     async handler(input, ctx) {
-      return refreshWorkspaceVerticalIntelligence(input, sessionFromContext(ctx));
+      return refreshWorkspaceVerticalIntelligence(
+        input,
+        sessionFromContext(ctx),
+      );
     },
   });
 
@@ -859,13 +911,21 @@ export function registerProductTools(): void {
     kind: "read",
     input: z.object({
       trace_id: z.string().min(1).nullable().optional(),
-      lookback_hours: z.number().int().min(1).max(24 * 30).optional(),
+      lookback_hours: z
+        .number()
+        .int()
+        .min(1)
+        .max(24 * 30)
+        .optional(),
       limit: z.number().int().min(1).max(100).optional(),
       span_limit: z.number().int().min(1).max(50).optional(),
     }),
     output: AgentObservabilitySummarySchema,
     async handler(input, ctx) {
-      return getWorkspaceAgentObservabilitySummary(input, sessionFromContext(ctx));
+      return getWorkspaceAgentObservabilitySummary(
+        input,
+        sessionFromContext(ctx),
+      );
     },
   });
 
@@ -992,11 +1052,14 @@ export function registerProductTools(): void {
       workflow_name: z.literal("workspace.activation.setup"),
       workflow_run_id: z.string(),
       output: z.unknown().nullable(),
-      initial_signal_ingestion: z.object({
-        workflow_name: z.literal("workspace.signal.ingestion"),
-        workflow_run_id: z.string(),
-        output: z.unknown().nullable(),
-      }).nullable().optional(),
+      initial_signal_ingestion: z
+        .object({
+          workflow_name: z.literal("workspace.signal.ingestion"),
+          workflow_run_id: z.string(),
+          output: z.unknown().nullable(),
+        })
+        .nullable()
+        .optional(),
     }),
     async handler(input, ctx) {
       const { wait, timeout_ms, ...workflowInput } = input;
@@ -1288,7 +1351,8 @@ export function registerProductTools(): void {
           action: input.action,
           person_title: input.person_title,
           base_pattern_key:
-            input.base_pattern_key ?? `preview:${input.channel}|stage:${input.stage}`,
+            input.base_pattern_key ??
+            `preview:${input.channel}|stage:${input.stage}`,
           slot_values: input.slot_values,
         }),
       };
@@ -1366,7 +1430,9 @@ export function registerProductTools(): void {
       display_name: z.string().min(1),
       daily_cap: z.number().int().nonnegative(),
     }),
-    output: WorkspaceResultSchema.extend({ channel_account_id: z.string().uuid() }),
+    output: WorkspaceResultSchema.extend({
+      channel_account_id: z.string().uuid(),
+    }),
     async handler(input, ctx) {
       return configureWorkspaceEmailAccount(input, sessionFromContext(ctx));
     },
@@ -1567,7 +1633,9 @@ export function registerProductTools(): void {
       description: z.string().optional(),
       signal_kind: SignalKindSchema.optional(),
     }),
-    output: WorkspaceResultSchema.extend({ source_count: z.number().int().nonnegative() }),
+    output: WorkspaceResultSchema.extend({
+      source_count: z.number().int().nonnegative(),
+    }),
     async handler(input, ctx) {
       return configureDefaultSignalAggregator(input, sessionFromContext(ctx));
     },
@@ -1819,9 +1887,12 @@ export function registerProductTools(): void {
       signal_url: z.string().optional(),
       signal_kind: SignalKindSchema.optional(),
       icp_segment: z.string().optional(),
-      approval: ApprovalSchema.default("always"),
+      approval: ApprovalSchema.default("none"),
       match_score: z.number().min(0).max(1).optional(),
-      simulate_outcome_kind: z.enum(["positive_reply", "meeting_booked"]).nullable().optional(),
+      simulate_outcome_kind: z
+        .enum(["positive_reply", "meeting_booked"])
+        .nullable()
+        .optional(),
     }),
     output: WorkspaceResultSchema.extend({ signal_id: z.string().uuid() }),
     async handler(input, ctx) {
@@ -1844,18 +1915,16 @@ export function registerProductTools(): void {
       matched_icp_ids: z.array(z.string().uuid()),
       match_score: z.number().min(0).max(1).nullable(),
       match_reason: z.string().nullable(),
-      matches: z.array(z.object({
-        icp_segment: z.string().uuid(),
-        match_score: z.number().min(0).max(1),
-        reason: z.string(),
-      })),
-      skip_reason: z.enum([
-        "no_icps",
-        "budget",
-        "not_found",
-        "non_json",
-        "filtered",
-      ]).nullable(),
+      matches: z.array(
+        z.object({
+          icp_segment: z.string().uuid(),
+          match_score: z.number().min(0).max(1),
+          reason: z.string(),
+        }),
+      ),
+      skip_reason: z
+        .enum(["no_icps", "budget", "not_found", "non_json", "filtered"])
+        .nullable(),
     }),
     async handler(input, ctx) {
       return matchWorkspaceSignal(input, sessionFromContext(ctx), {
@@ -1968,7 +2037,10 @@ export function registerProductTools(): void {
     }),
     output: z.object({ ok: z.literal(true) }),
     async handler(input, ctx) {
-      await startSendingDomainOperation(input.operation, sessionFromContext(ctx));
+      await startSendingDomainOperation(
+        input.operation,
+        sessionFromContext(ctx),
+      );
       return { ok: true as const };
     },
   });

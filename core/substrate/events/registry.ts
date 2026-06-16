@@ -44,10 +44,22 @@ const WorkspaceActivationRequested = z.object({
   run_id: z.string().min(1),
 });
 
+const WorkspaceConfigured = z.object({
+  workspace_id: z.string().uuid(),
+  settings: z.record(z.string(), z.unknown()),
+});
+
 const RepConfigured = z.object({
   rep_id: z.string().uuid(),
   name: z.string().min(1),
-  role: z.enum(["sdr", "content", "replier", "researcher", "campaign", "custom"]),
+  role: z.enum([
+    "sdr",
+    "content",
+    "replier",
+    "researcher",
+    "campaign",
+    "custom",
+  ]),
   status: z.enum(["draft", "active", "paused", "retired"]),
   persona: z.record(z.string(), z.unknown()),
   channels: z.array(z.string()),
@@ -56,7 +68,14 @@ const RepConfigured = z.object({
 
 const RepRoleCompleted = z.object({
   rep_id: z.string().uuid(),
-  role: z.enum(["researcher", "writer", "sender", "replier", "planner", "judge"]),
+  role: z.enum([
+    "researcher",
+    "writer",
+    "sender",
+    "replier",
+    "planner",
+    "judge",
+  ]),
   action: z.string().min(1),
   conversation_id: z.string().uuid().nullable().optional(),
   message_id: z.string().uuid().nullable().optional(),
@@ -147,21 +166,25 @@ const WorkspaceProfileEnriched = z.object({
   website_url: z.string().url().nullable(),
   evidence_source_ids: z.array(z.string().uuid()),
   summary: z.string(),
-  intelligence: z.object({
-    source_domains: z.array(z.string()),
-    market_terms: z.array(z.string()),
-    positioning_notes: z.array(z.string()).optional(),
-    competitor_mentions: z.array(z.string()).optional(),
-    audience_terms: z.array(z.string()).optional(),
-    proof_points: z.array(z.string()).optional(),
-    evidence_cards: z.array(z.object({
-      title: z.string(),
-      url: z.string().url(),
-      source_domain: z.string().nullable(),
-      snippet: z.string().nullable(),
-      published_at: z.string().nullable(),
-    })),
-  }).optional(),
+  intelligence: z
+    .object({
+      source_domains: z.array(z.string()),
+      market_terms: z.array(z.string()),
+      positioning_notes: z.array(z.string()).optional(),
+      competitor_mentions: z.array(z.string()).optional(),
+      audience_terms: z.array(z.string()).optional(),
+      proof_points: z.array(z.string()).optional(),
+      evidence_cards: z.array(
+        z.object({
+          title: z.string(),
+          url: z.string().url(),
+          source_domain: z.string().nullable(),
+          snippet: z.string().nullable(),
+          published_at: z.string().nullable(),
+        }),
+      ),
+    })
+    .optional(),
   query_count: z.number().int().nonnegative(),
   result_count: z.number().int().nonnegative(),
   request_ids: z.array(z.string()),
@@ -297,21 +320,23 @@ const ContactResolutionDeferred = z.object({
 const SignalDiscovered = z.object({
   signal_id: z.string().uuid(),
   source_id: z.string().uuid().nullable(),
-  kind: z.enum([
-    "funding",
-    "hiring",
-    "leadership_change",
-    "product_launch",
-    "acquisition",
-    "churn_risk",
-    "competitor_move",
-    "podcast_mention",
-    "press_mention",
-    "regulation",
-    "expansion",
-    "layoff",
-    "other",
-  ]).nullable(),
+  kind: z
+    .enum([
+      "funding",
+      "hiring",
+      "leadership_change",
+      "product_launch",
+      "acquisition",
+      "churn_risk",
+      "competitor_move",
+      "podcast_mention",
+      "press_mention",
+      "regulation",
+      "expansion",
+      "layoff",
+      "other",
+    ])
+    .nullable(),
   title: z.string().min(1),
   content: z.string().nullable(),
   url: z.string().nullable(),
@@ -358,30 +383,34 @@ const SignalDismissed = z.object({
 
 const SignalClassificationCompleted = z.object({
   signal_id: z.string().uuid(),
-  kind: z.enum([
-    "funding",
-    "hiring",
-    "leadership_change",
-    "product_launch",
-    "acquisition",
-    "churn_risk",
-    "competitor_move",
-    "podcast_mention",
-    "press_mention",
-    "regulation",
-    "expansion",
-    "layoff",
-    "other",
-  ]).nullable(),
+  kind: z
+    .enum([
+      "funding",
+      "hiring",
+      "leadership_change",
+      "product_launch",
+      "acquisition",
+      "churn_risk",
+      "competitor_move",
+      "podcast_mention",
+      "press_mention",
+      "regulation",
+      "expansion",
+      "layoff",
+      "other",
+    ])
+    .nullable(),
   disposition: z.enum(["matched", "dismissed"]),
   match_score: z.number().min(0).max(1).nullable(),
   match_reason: z.string(),
   audience_hint: z.record(z.string(), z.unknown()),
-  matches: z.array(z.object({
-    icp_segment: z.string().uuid(),
-    match_score: z.number().min(0).max(1),
-    reason: z.string(),
-  })),
+  matches: z.array(
+    z.object({
+      icp_segment: z.string().uuid(),
+      match_score: z.number().min(0).max(1),
+      reason: z.string(),
+    }),
+  ),
 });
 
 /**
@@ -594,6 +623,7 @@ const OutlookAuthorizationReceived = z.object({
     ciphertext: z.string().min(1),
   }),
   ms_user_id: z.string().min(1),
+  mailbox_email: z.string().min(1).nullable().optional(),
 });
 
 const OutlookCredentialsRefreshed = z.object({
@@ -681,10 +711,12 @@ const ReplyReceived = z.object({
   external_thread_id: z.string().nullable().optional(),
   in_reply_to: z.string().nullable().optional(),
   references: z.array(z.string()).optional(),
-  from: z.object({
-    email: z.string().email(),
-    name: z.string().nullable().optional(),
-  }).optional(),
+  from: z
+    .object({
+      email: z.string().email(),
+      name: z.string().nullable().optional(),
+    })
+    .optional(),
   subject: z.string().optional(),
   body_text: z.string().optional(),
   body_html: z.string().nullable().optional(),
@@ -771,13 +803,16 @@ const ChannelAccountErrored = z.object({
   channel_account_id: z.string().uuid(),
   kind: z.string(),
   error: z.string(),
-  status: z.enum([
-    "connected",
-    "needs_reauth",
-    "rate_limited",
-    "suspended",
-    "disconnected",
-  ]).nullable().optional(),
+  status: z
+    .enum([
+      "connected",
+      "needs_reauth",
+      "rate_limited",
+      "suspended",
+      "disconnected",
+    ])
+    .nullable()
+    .optional(),
   account_display_name: z.string().min(1).optional(),
   provider_account_id: z.string().min(1).optional(),
   provider_event_id: z.string().min(1).optional(),
@@ -933,10 +968,13 @@ const AgentTraceSpanRecorded = z.object({
   retry_count: z.number().int().nonnegative().nullable().optional(),
   attributes: z.record(z.string(), z.unknown()),
   redaction: AgentTraceRedaction,
-  error: z.object({
-    message: z.string().min(1),
-    name: z.string().min(1).nullable().optional(),
-  }).nullable().optional(),
+  error: z
+    .object({
+      message: z.string().min(1),
+      name: z.string().min(1).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const AgentTraceExported = z.object({
@@ -996,7 +1034,14 @@ const CompanyBrainPrimitiveRefs = z.object({
 
 const CompanyBrainCardRef = z.object({
   id: z.string().min(1),
-  kind: z.enum(["profile", "signal", "outcome", "playbook", "semantic_fact", "meeting_prep"]),
+  kind: z.enum([
+    "profile",
+    "signal",
+    "outcome",
+    "playbook",
+    "semantic_fact",
+    "meeting_prep",
+  ]),
   title: z.string().min(1),
   confidence: z.number().min(0).max(1).nullable(),
   freshness_at: z.string().datetime().nullable(),
@@ -1044,32 +1089,39 @@ const CampaignStrategyRecommended = z.object({
   generated_at: z.string().datetime(),
   min_samples: z.number().int().positive(),
   summary: z.string().min(1),
-  variants: z.array(z.object({
-    variant_key: z.string().min(1),
-    play_id: z.string().uuid(),
-    play_name: z.string().min(1),
-    rep_id: z.string().uuid().nullable(),
-    rep_name: z.string().nullable(),
-    channel: z.string().nullable(),
-    skill_key: z.string().min(1),
-    pattern_key: z.string().min(1),
-    segment_key: z.string().min(1),
-    sample_count: z.number().int().nonnegative(),
-    outcome_count: z.number().int().nonnegative(),
-    reply_outcomes: z.number().int().nonnegative(),
-    positive_outcomes: z.number().int().nonnegative(),
-    negative_outcomes: z.number().int().nonnegative(),
-    meeting_outcomes: z.number().int().nonnegative(),
-    reply_rate: z.number().min(0).max(1),
-    positive_outcome_rate: z.number().min(0).max(1),
-    meeting_rate: z.number().min(0).max(1),
-    negative_outcome_rate: z.number().min(0).max(1),
-    utility_score: z.number().min(0).max(1),
-    confidence: z.number().min(0).max(1),
-    allocation_weight: z.number().min(0).max(1),
-    recommendation: z.enum(["double_down", "hold", "reduce", "not_enough_proof"]),
-    explanation: z.string().min(1),
-  })),
+  variants: z.array(
+    z.object({
+      variant_key: z.string().min(1),
+      play_id: z.string().uuid(),
+      play_name: z.string().min(1),
+      rep_id: z.string().uuid().nullable(),
+      rep_name: z.string().nullable(),
+      channel: z.string().nullable(),
+      skill_key: z.string().min(1),
+      pattern_key: z.string().min(1),
+      segment_key: z.string().min(1),
+      sample_count: z.number().int().nonnegative(),
+      outcome_count: z.number().int().nonnegative(),
+      reply_outcomes: z.number().int().nonnegative(),
+      positive_outcomes: z.number().int().nonnegative(),
+      negative_outcomes: z.number().int().nonnegative(),
+      meeting_outcomes: z.number().int().nonnegative(),
+      reply_rate: z.number().min(0).max(1),
+      positive_outcome_rate: z.number().min(0).max(1),
+      meeting_rate: z.number().min(0).max(1),
+      negative_outcome_rate: z.number().min(0).max(1),
+      utility_score: z.number().min(0).max(1),
+      confidence: z.number().min(0).max(1),
+      allocation_weight: z.number().min(0).max(1),
+      recommendation: z.enum([
+        "double_down",
+        "hold",
+        "reduce",
+        "not_enough_proof",
+      ]),
+      explanation: z.string().min(1),
+    }),
+  ),
 });
 
 const PlaySkillOptimizationRecommended = z.object({
@@ -1077,34 +1129,46 @@ const PlaySkillOptimizationRecommended = z.object({
   generated_at: z.string().datetime(),
   min_samples: z.number().int().positive(),
   summary: z.string().min(1),
-  recommendations: z.array(z.object({
-    skill_key: z.string().min(1),
-    pattern_key: z.string().min(1),
-    channel: z.string().nullable(),
-    segment_key: z.string().min(1),
-    rep_id: z.string().uuid().nullable(),
-    rep_name: z.string().nullable(),
-    sample_count: z.number().int().nonnegative(),
-    outcome_count: z.number().int().nonnegative(),
-    reply_outcomes: z.number().int().nonnegative(),
-    positive_outcomes: z.number().int().nonnegative(),
-    negative_outcomes: z.number().int().nonnegative(),
-    meeting_outcomes: z.number().int().nonnegative(),
-    reply_rate: z.number().min(0).max(1),
-    positive_outcome_rate: z.number().min(0).max(1),
-    meeting_rate: z.number().min(0).max(1),
-    negative_outcome_rate: z.number().min(0).max(1),
-    memory_win_count: z.number().int().nonnegative(),
-    memory_loss_count: z.number().int().nonnegative(),
-    memory_delta_score: z.number(),
-    utility_score: z.number().min(0).max(1),
-    confidence: z.number().min(0).max(1),
-    allocation_weight: z.number().min(0).max(1),
-    recommendation: z.enum(["double_down", "hold", "reduce", "not_enough_proof"]),
-    next_action: z.enum(["apply_play_gate", "review_reduce", "keep_learning", "no_change"]),
-    explanation: z.string().min(1),
-    source_variant_keys: z.array(z.string().min(1)),
-  })),
+  recommendations: z.array(
+    z.object({
+      skill_key: z.string().min(1),
+      pattern_key: z.string().min(1),
+      channel: z.string().nullable(),
+      segment_key: z.string().min(1),
+      rep_id: z.string().uuid().nullable(),
+      rep_name: z.string().nullable(),
+      sample_count: z.number().int().nonnegative(),
+      outcome_count: z.number().int().nonnegative(),
+      reply_outcomes: z.number().int().nonnegative(),
+      positive_outcomes: z.number().int().nonnegative(),
+      negative_outcomes: z.number().int().nonnegative(),
+      meeting_outcomes: z.number().int().nonnegative(),
+      reply_rate: z.number().min(0).max(1),
+      positive_outcome_rate: z.number().min(0).max(1),
+      meeting_rate: z.number().min(0).max(1),
+      negative_outcome_rate: z.number().min(0).max(1),
+      memory_win_count: z.number().int().nonnegative(),
+      memory_loss_count: z.number().int().nonnegative(),
+      memory_delta_score: z.number(),
+      utility_score: z.number().min(0).max(1),
+      confidence: z.number().min(0).max(1),
+      allocation_weight: z.number().min(0).max(1),
+      recommendation: z.enum([
+        "double_down",
+        "hold",
+        "reduce",
+        "not_enough_proof",
+      ]),
+      next_action: z.enum([
+        "apply_play_gate",
+        "review_reduce",
+        "keep_learning",
+        "no_change",
+      ]),
+      explanation: z.string().min(1),
+      source_variant_keys: z.array(z.string().min(1)),
+    }),
+  ),
 });
 
 const CampaignDispatchSkipped = z.object({
@@ -1163,7 +1227,16 @@ const MeetingPrepProfileContext = z.object({
 });
 
 const MeetingPrepSourceRef = z.object({
-  type: z.enum(["conversation", "message", "signal", "outcome", "person", "company", "rep", "user"]),
+  type: z.enum([
+    "conversation",
+    "message",
+    "signal",
+    "outcome",
+    "person",
+    "company",
+    "rep",
+    "user",
+  ]),
   id: z.string().min(1),
   label: z.string().min(1),
   url: z.string().url().nullable().optional(),
@@ -1219,20 +1292,24 @@ const WorkspaceLaunchReadinessChecked = z.object({
     "connect_linkedin",
     "repair_channel",
   ]),
-  checks: z.array(z.object({
-    id: z.string().min(1),
-    label: z.string().min(1),
-    primitive: z.enum(["Rep", "Signal", "Play", "Conversation"]),
-    status: z.enum(["ready", "needs_attention", "blocked"]),
-    required: z.boolean(),
-    detail: z.string().min(1),
-    count: z.number().int().nonnegative(),
-    action: z.object({
+  checks: z.array(
+    z.object({
+      id: z.string().min(1),
       label: z.string().min(1),
-      tools: z.array(z.string().min(1)),
-      surface: z.string().min(1),
-    }).nullable(),
-  })),
+      primitive: z.enum(["Rep", "Signal", "Play", "Conversation"]),
+      status: z.enum(["ready", "needs_attention", "blocked"]),
+      required: z.boolean(),
+      detail: z.string().min(1),
+      count: z.number().int().nonnegative(),
+      action: z
+        .object({
+          label: z.string().min(1),
+          tools: z.array(z.string().min(1)),
+          surface: z.string().min(1),
+        })
+        .nullable(),
+    }),
+  ),
   blockers: z.array(z.string().min(1)),
   warnings: z.array(z.string().min(1)),
 });
@@ -1379,6 +1456,7 @@ export const eventRegistry = {
   "workspace.member.invited": WorkspaceMemberInvited,
   "workspace.member.accepted": WorkspaceMemberAccepted,
   "workspace.activation.requested": WorkspaceActivationRequested,
+  "workspace.configured": WorkspaceConfigured,
   "rep.configured": RepConfigured,
   "rep.role.completed": RepRoleCompleted,
   "workspace.icp.configured": WorkspaceIcpConfigured,
@@ -1447,7 +1525,8 @@ export const eventRegistry = {
   "channel.account.connected": ChannelAccountConnected,
   "channel.account.configured": ChannelAccountConfigured,
   "channel.account.errored": ChannelAccountErrored,
-  "linkedin.account.authorization.received": LinkedInAccountAuthorizationReceived,
+  "linkedin.account.authorization.received":
+    LinkedInAccountAuthorizationReceived,
   "channel.domain.provisioned": ChannelDomainSnapshot,
   "channel.domain.verification.requested": ChannelDomainVerificationRequested,
   "channel.domain.status.received": ChannelDomainSnapshot,

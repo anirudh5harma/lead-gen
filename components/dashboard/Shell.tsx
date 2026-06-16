@@ -44,12 +44,12 @@ export function DashboardShell({
 }) {
   const pathname = usePathname() ?? "/dashboard";
   const [pendingHref, setPendingHref] = useState<string | null>(null);
-  const routePending = pendingHref ? !isActivePath(pathname, pendingHref) : false;
+  const routePending = pendingHref
+    ? !isActivePath(pathname, pendingHref)
+    : false;
+  const settingsActive = isActivePath(pathname, "/dashboard/settings");
 
-  function handleNavClick(
-    event: MouseEvent<HTMLAnchorElement>,
-    href: string,
-  ) {
+  function handleNavClick(event: MouseEvent<HTMLAnchorElement>, href: string) {
     if (
       event.defaultPrevented ||
       event.metaKey ||
@@ -66,7 +66,9 @@ export function DashboardShell({
 
   return (
     <div className="canvas-bg relative isolate min-h-[100dvh] overflow-x-clip text-[var(--color-text-1)]">
-      {routePending ? <div className="dashboard-route-pending" aria-hidden="true" /> : null}
+      {routePending ? (
+        <div className="dashboard-route-pending" aria-hidden="true" />
+      ) : null}
       {/* Top product frame */}
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-[color:var(--color-line-2)] bg-[rgba(7,8,6,0.88)] backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
@@ -120,7 +122,9 @@ export function DashboardShell({
                   id="workspace-switcher"
                   name="workspace_id"
                   defaultValue={activeWorkspaceId}
-                  onChange={(event) => event.currentTarget.form?.requestSubmit()}
+                  onChange={(event) =>
+                    event.currentTarget.form?.requestSubmit()
+                  }
                   className="h-8 max-w-[180px] rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.78)] px-2 text-[13px] font-medium text-[var(--color-text-2)] outline-none transition hover:border-[var(--color-line-3)] hover:text-[var(--color-text-1)]"
                 >
                   {workspaces.map((workspace) => (
@@ -131,6 +135,21 @@ export function DashboardShell({
                 </select>
               </form>
             ) : null}
+            <Link
+              href="/dashboard/settings"
+              aria-label="Settings"
+              title="Settings"
+              onClick={(event) => handleNavClick(event, "/dashboard/settings")}
+              aria-current={settingsActive ? "page" : undefined}
+              className={
+                "relative grid size-8 place-items-center rounded-[8px] transition-colors " +
+                (settingsActive
+                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent-hi)]"
+                  : "text-[var(--color-text-3)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
+              }
+            >
+              <Icon name="settings" size={17} />
+            </Link>
             <form action="/auth/sign-out" method="post">
               <PendingSubmitButton
                 aria-label="Sign out"
@@ -196,7 +215,9 @@ export function EmptyState({
 }) {
   return (
     <div className="rounded-[10px] border border-[color:var(--color-line-2)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
-      <p className="text-[17px] font-semibold text-[var(--color-text-1)]">{title}</p>
+      <p className="text-[17px] font-semibold text-[var(--color-text-1)]">
+        {title}
+      </p>
       {hint ? (
         <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-6 text-[var(--color-text-3)]">
           {hint}

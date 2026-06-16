@@ -168,5 +168,7 @@ test("launch readiness: loader uses the workspace-scoped launch query", async ()
   assert.match(sql, /workspace_icps/);
   assert.match(sql, /workspace_source_configs/);
   assert.match(sql, /kind = 'oauth_outlook'/);
+  assert.match(sql, /outlook_mailboxes/);
+  assert.match(sql, /has_needs_reauth and not has_connected/);
   assert.match(sql, /kind in \('linkedin_session','linkedin_oauth'\)/);
 });

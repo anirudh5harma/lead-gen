@@ -162,6 +162,7 @@ import {
 import {
   parseApprovalPolicy,
   resolvePlayChannelPolicy,
+  type ApprovalPolicy,
   type PlayChannelPolicy,
 } from "../plays/autonomy.ts";
 import {
@@ -180,9 +181,7 @@ import type {
   WorkflowRunStatus,
 } from "../substrate/workflows/index.ts";
 import { RestateClientError } from "../substrate/workflows/adapters/restate.ts";
-import {
-  createEmailDeliveryFeedbackProjection,
-} from "./email-feedback.ts";
+import { createEmailDeliveryFeedbackProjection } from "./email-feedback.ts";
 import {
   createSendingDomainProvisioningWorkflow,
   createSendingDomainProjection,
@@ -288,7 +287,8 @@ const DEFAULT_WORKSPACE_SLUG = "demo";
 export const DEFAULT_PRODUCT_USER_ID = "00000000-0000-4000-8000-000000000001";
 export const DEFAULT_PRODUCT_WORKSPACE_SLUG = DEFAULT_WORKSPACE_SLUG;
 const DEFAULT_WORKFLOW_LEASE_MS = 2 * 60 * 1000;
-const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION = "channel.email_account_configuration.v1";
+const EMAIL_ACCOUNT_CONFIGURATION_PROJECTION =
+  "channel.email_account_configuration.v1";
 const CONTACT_RESOLUTION_REPAIR_KEY = "verified-contact-v2";
 const SIGNAL_PLAY_REPAIR_KEY = "draft-grounding-skip-v1";
 const SIGNAL_PLAY_REJUDGE_REPAIR_KEY = "judge-fallback-v1";
@@ -327,6 +327,18 @@ const EXA_AEO_AUDIT_WORKFLOW_NAME = "aeo.audit.exa";
 const DEFAULT_RECOMMENDATION_RESEARCH_CADENCE_MS = 24 * 60 * 60 * 1000;
 type WorkspaceRoleValue = "owner" | "admin" | "member";
 type ProductEmailTransport = "resend" | "dry-run" | "unconfigured";
+const DEFAULT_WORKSPACE_AUTONOMY_MODE: WorkspaceAutonomyMode = "autonomous";
+const DEFAULT_CHANNEL_APPROVAL: ApprovalPolicy = "none";
+
+function defaultWorkspaceSettings(
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...extra,
+    autonomy_mode: DEFAULT_WORKSPACE_AUTONOMY_MODE,
+    default_channel_approval: DEFAULT_CHANNEL_APPROVAL,
+  };
+}
 
 interface DefaultRepProfile {
   key: string;
@@ -357,10 +369,12 @@ const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
       story: "Owns outreach from fresh market signals to useful conversations.",
       kpis: ["positive replies", "meetings booked"],
       do_not: ["Do not mention being an AI.", "Do not overpromise."],
-      samples: ["Saw the launch. The timing feels worth a quick compare-notes conversation."],
+      samples: [
+        "Saw the launch. The timing feels worth a quick compare-notes conversation.",
+      ],
     },
     autonomy: {
-      channels: { email: { daily_cap: 25, approval: "approve_first" } },
+      channels: { email: { daily_cap: 25, approval: "none" } },
       global: {},
     },
   },
@@ -370,16 +384,21 @@ const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
     role: "content",
     channels: ["content"],
     persona: {
-      voice: "Clear, observant, evidence-led, and useful without sounding like a brand deck.",
-      story: "Turns market movement, buyer questions, and proof into content worth publishing.",
+      voice:
+        "Clear, observant, evidence-led, and useful without sounding like a brand deck.",
+      story:
+        "Turns market movement, buyer questions, and proof into content worth publishing.",
       kpis: ["post_published", "engagement_lift"],
-      do_not: ["Do not manufacture authority.", "Do not use generic AI phrasing."],
+      do_not: [
+        "Do not manufacture authority.",
+        "Do not use generic AI phrasing.",
+      ],
       samples: [
         "The useful angle is not that teams need more pipeline. It is that timing signals change what is worth saying.",
       ],
     },
     autonomy: {
-      channels: { content: { daily_cap: 3, approval: "approve_first" } },
+      channels: { content: { daily_cap: 3, approval: "none" } },
       global: {},
     },
   },
@@ -390,7 +409,8 @@ const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
     channels: ["email", "content"],
     persona: {
       voice: "Structured, experimental, and calm about tradeoffs.",
-      story: "Turns proven plays into small campaigns with clear review gates and measurable Outcomes.",
+      story:
+        "Turns proven plays into small campaigns with clear review gates and measurable Outcomes.",
       kpis: ["positive replies", "meeting_booked", "engagement_lift"],
       do_not: ["Do not scale a weak signal.", "Do not bypass channel caps."],
       samples: [
@@ -399,8 +419,8 @@ const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
     },
     autonomy: {
       channels: {
-        email: { daily_cap: 15, approval: "approve_first" },
-        content: { daily_cap: 2, approval: "approve_first" },
+        email: { daily_cap: 15, approval: "none" },
+        content: { daily_cap: 2, approval: "none" },
       },
       global: {},
     },
@@ -412,7 +432,8 @@ const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
     channels: ["aeo", "web"],
     persona: {
       voice: "Precise, diagnostic, and grounded in cited evidence.",
-      story: "Finds answer gaps, category narratives, and visibility opportunities before buyers ask.",
+      story:
+        "Finds answer gaps, category narratives, and visibility opportunities before buyers ask.",
       kpis: ["engagement_lift", "follower_lift"],
       do_not: [
         "Do not treat search visibility as a vanity metric.",
@@ -423,7 +444,7 @@ const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
       ],
     },
     autonomy: {
-      channels: { aeo: { daily_cap: 3, approval: "approve_first" } },
+      channels: { aeo: { daily_cap: 3, approval: "none" } },
       global: {},
     },
   },
@@ -461,6 +482,10 @@ function stableJson(value: unknown): string {
     .join(",")}}`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export type WorkspaceSignalSourceAdapter =
   | "rss"
   | "google_news"
@@ -472,7 +497,9 @@ export type WorkspaceSignalSourceAdapter =
   | "x_search"
   | "webhook";
 
-const verifiedProductWorkspaceAccess: unique symbol = Symbol("verifiedProductWorkspaceAccess");
+const verifiedProductWorkspaceAccess: unique symbol = Symbol(
+  "verifiedProductWorkspaceAccess",
+);
 
 export interface ProductWorkspaceSession {
   workspace_id: string;
@@ -606,6 +633,20 @@ export interface ConfigureActivationInput {
   source?: ConfigureRssSourceInput;
 }
 
+export type WorkspaceAutonomyMode = "autonomous" | "review_only";
+
+export interface ConfigureWorkspaceAutonomyModeInput {
+  mode: WorkspaceAutonomyMode;
+}
+
+export interface ConfigureWorkspaceAutonomyModeResult {
+  workspace_id: string;
+  mode: WorkspaceAutonomyMode;
+  approval: ApprovalPolicy;
+  rep_count: number;
+  play_count: number;
+}
+
 export interface ActivationSetupResult {
   workspace_id: string;
   rep_id: string;
@@ -681,7 +722,13 @@ export interface MatchWorkspaceSignalResult {
   match_score: number | null;
   match_reason: string | null;
   matches: Array<{ icp_segment: string; match_score: number; reason: string }>;
-  skip_reason: "no_icps" | "budget" | "not_found" | "non_json" | "filtered" | null;
+  skip_reason:
+    | "no_icps"
+    | "budget"
+    | "not_found"
+    | "non_json"
+    | "filtered"
+    | null;
 }
 
 export interface ConfigureWorkspaceProfileInput {
@@ -1141,9 +1188,15 @@ export interface AppState {
     approval_policy: string | null;
     created_at: string;
   }>;
-  messages: Awaited<ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>>["messages"];
-  outcomes: Awaited<ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>>["outcomes"];
-  conversations: Awaited<ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>>["conversations"];
+  messages: Awaited<
+    ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>
+  >["messages"];
+  outcomes: Awaited<
+    ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>
+  >["outcomes"];
+  conversations: Awaited<
+    ReturnType<ReturnType<typeof createPostgresVerticalSliceStore>["snapshot"]>
+  >["conversations"];
   channelAccounts: Array<{
     id: string;
     display_name: string;
@@ -1312,7 +1365,7 @@ export async function bootstrapWorkspace(
         ws,
         slug,
         opts.workspace_name ?? "Bombsell Demo Workspace",
-        JSON.stringify({ mode: "local-product" }),
+        JSON.stringify(defaultWorkspaceSettings({ mode: "local-product" })),
       ],
     );
     const event = await engine.bus.publish({
@@ -1326,7 +1379,7 @@ export async function bootstrapWorkspace(
         created_by: user_id,
         slug,
         name: opts.workspace_name ?? "Bombsell Demo Workspace",
-        settings: { mode: "local-product" },
+        settings: defaultWorkspaceSettings({ mode: "local-product" }),
         owner_role: "owner",
       },
     });
@@ -1338,7 +1391,12 @@ export async function bootstrapWorkspace(
   const rep = await ensureRep(engine, ws, user_id);
   const play = await ensurePlay(engine, ws, rep.id, user_id);
   const trustedDemoState = !isProductionProductRuntime();
-  const account = await ensureChannelAccount(engine, ws, trustedDemoState, user_id);
+  const account = await ensureChannelAccount(
+    engine,
+    ws,
+    trustedDemoState,
+    user_id,
+  );
   await ensureProceduralSeed(engine, ws, rep.id, user_id);
   return {
     workspace_id: ws,
@@ -1393,7 +1451,12 @@ export async function createProductWorkspaceForUser(
           id,
           slug,
           name,
-          JSON.stringify({ mode: "product-activation", activated_from: "dashboard" }),
+          JSON.stringify(
+            defaultWorkspaceSettings({
+              mode: "product-activation",
+              activated_from: "dashboard",
+            }),
+          ),
         ],
       );
 
@@ -1409,7 +1472,10 @@ export async function createProductWorkspaceForUser(
           created_by: user_id,
           slug,
           name,
-          settings: { mode: "product-activation", activated_from: "dashboard" },
+          settings: defaultWorkspaceSettings({
+            mode: "product-activation",
+            activated_from: "dashboard",
+          }),
           owner_role: "owner",
         },
       });
@@ -1469,6 +1535,22 @@ async function projectWorkspaceCreated(
   );
 }
 
+async function projectWorkspaceConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    workspace_id: string;
+    settings: Record<string, unknown>;
+  };
+  await pool.query(
+    `update workspaces
+        set settings = settings || $2::jsonb
+      where id = $1`,
+    [payload.workspace_id, JSON.stringify(payload.settings)],
+  );
+}
+
 export async function reconcileWorkspaceMembershipsForAuthIdentity(
   input: {
     user_id: string;
@@ -1485,7 +1567,8 @@ export async function reconcileWorkspaceMembershipsForAuthIdentity(
   const pool = deps.pool ?? engine!.pool;
   const bus = deps.bus ?? engine!.bus;
   const applyMembership =
-    deps.applyMembership ?? ((event: PublishedEvent) => projectWorkspaceMemberAccepted(pool, event));
+    deps.applyMembership ??
+    ((event: PublishedEvent) => projectWorkspaceMemberAccepted(pool, event));
 
   const { rows } = await pool.query<AuthIdentityWorkspaceReconciliation>(
     `select distinct
@@ -1604,7 +1687,8 @@ async function ensureDefaultRepTeam(
   workspace_id: string,
   user_id: string,
 ): Promise<Record<"sampark" | "vaani" | "prayog" | "bodh", string>> {
-  const ids: Partial<Record<"sampark" | "vaani" | "prayog" | "bodh", string>> = {};
+  const ids: Partial<Record<"sampark" | "vaani" | "prayog" | "bodh", string>> =
+    {};
   for (const profile of DEFAULT_REP_TEAM) {
     ids[profile.key as keyof typeof ids] = await ensureDefaultRep(
       engine,
@@ -1687,7 +1771,7 @@ async function ensurePlay(
         ],
       },
       autonomy: {
-        channels: { email: { daily_cap: 25, approval: "approve_first" } },
+        channels: { email: { daily_cap: 25, approval: "none" } },
         global: {},
       },
       default_rep_id: rep_id,
@@ -1725,7 +1809,13 @@ async function ensureChannelAccount(
 ): Promise<{ id: string; display_name: string }> {
   const existing = await findEmailDomainAccount(engine.pool, workspace_id);
   if (existing) {
-    await ensureEmailDomainProjection(engine, workspace_id, existing, trustedDemoState, user_id);
+    await ensureEmailDomainProjection(
+      engine,
+      workspace_id,
+      existing,
+      trustedDemoState,
+      user_id,
+    );
     return existing;
   }
   const id = randomUUID();
@@ -1737,7 +1827,9 @@ async function ensureChannelAccount(
     kind: "email_domain" as const,
     display_name,
     daily_cap: trustedDemoState ? 25 : 0,
-    transport: trustedDemoState ? "dry-run" as const : "unconfigured" as const,
+    transport: trustedDemoState
+      ? ("dry-run" as const)
+      : ("unconfigured" as const),
   };
   const event = await engine.bus.publish({
     workspace_id,
@@ -1772,7 +1864,10 @@ async function ensureEmailDomainProjection(
     channel_account_id: account.id,
     kind: "email_domain" as const,
     display_name: account.display_name,
-    daily_cap: Math.max(0, Math.trunc(account.daily_cap ?? (trustedDemoState ? 25 : 0))),
+    daily_cap: Math.max(
+      0,
+      Math.trunc(account.daily_cap ?? (trustedDemoState ? 25 : 0)),
+    ),
     transport: resolveChannelAccountTransport(account, trustedDemoState),
   };
   const event = await engine.bus.publish({
@@ -1796,7 +1891,11 @@ function resolveChannelAccountTransport(
   trustedDemoState: boolean,
 ): ProductEmailTransport {
   const transport = account.properties?.transport;
-  if (transport === "resend" || transport === "dry-run" || transport === "unconfigured") {
+  if (
+    transport === "resend" ||
+    transport === "dry-run" ||
+    transport === "unconfigured"
+  ) {
     return transport;
   }
   if (account.status !== "connected") return "unconfigured";
@@ -1843,7 +1942,9 @@ async function ensureSendingDomain(
       Math.max(0, Math.trunc(targetDailyCap)),
       trustedDemoState ? 25 : 0,
       JSON.stringify({
-        managed_by: trustedDemoState ? "local-product-bootstrap" : "product-surface",
+        managed_by: trustedDemoState
+          ? "local-product-bootstrap"
+          : "product-surface",
       }),
     ],
   );
@@ -1864,8 +1965,7 @@ async function ensureProceduralSeed(
     icp_segment: "fintech-founder",
     signal_kind: "funding",
     subject: "Congrats on the round",
-    body:
-      "Congrats on the raise. Usually this is when pipeline quality starts mattering more than raw volume.",
+    body: "Congrats on the raise. Usually this is when pipeline quality starts mattering more than raw volume.",
   });
 }
 
@@ -1894,8 +1994,7 @@ async function ensureProceduralSeedFor(
     event_type: "rep.memory.procedural.seeded",
     source: "system",
     producer_ref: user_id,
-    idempotency_key:
-      `bootstrap:rep.memory.procedural.seeded:${workspace_id}:${rep_id}:${pattern_key}`,
+    idempotency_key: `bootstrap:rep.memory.procedural.seeded:${workspace_id}:${rep_id}:${pattern_key}`,
     payload: {
       exemplar_id: randomUUID(),
       rep_id,
@@ -1921,7 +2020,9 @@ export async function configureRep(
   const name = input.name.trim() || "Sampark";
   const role = parseRepRole(input.role);
   const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 25));
-  const approval = parseApprovalPolicy(input.approval);
+  const approval =
+    parseApprovalPolicy(input.approval) ??
+    (await getWorkspaceDefaultApproval(engine.pool, session.workspace_id));
   const existing = await engine.pool.query<{ id: string }>(
     `select id from reps where workspace_id = $1 and lower(name) = lower($2) limit 1`,
     [session.workspace_id, name],
@@ -1976,6 +2077,247 @@ export async function configureRep(
 function parseRepRole(role: unknown): RepRoleValue {
   const parsed = RepRole.safeParse(role);
   return parsed.success ? parsed.data : "sdr";
+}
+
+async function getWorkspaceDefaultApproval(
+  pool: Pool,
+  workspace_id: string,
+): Promise<ApprovalPolicy> {
+  const { rows } = await pool.query<{ approval: string | null }>(
+    `select settings->>'default_channel_approval' as approval
+       from workspaces
+      where id = $1`,
+    [workspace_id],
+  );
+  return parseApprovalPolicy(rows[0]?.approval) ?? DEFAULT_CHANNEL_APPROVAL;
+}
+
+function parseWorkspaceAutonomyMode(value: unknown): WorkspaceAutonomyMode {
+  return value === "review_only"
+    ? "review_only"
+    : DEFAULT_WORKSPACE_AUTONOMY_MODE;
+}
+
+function workspaceAutonomyApproval(
+  mode: WorkspaceAutonomyMode,
+): ApprovalPolicy {
+  return mode === "review_only" ? "always" : DEFAULT_CHANNEL_APPROVAL;
+}
+
+function channelNamesFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (channel): channel is string =>
+      typeof channel === "string" && channel.trim().length > 0,
+  );
+}
+
+function compiledChannelNames(value: unknown): string[] {
+  if (!isRecord(value)) return [];
+  const channel = value.channel;
+  return typeof channel === "string" && channel.trim() ? [channel.trim()] : [];
+}
+
+function defaultDailyCapForChannel(channel: string): number {
+  if (channel.startsWith("linkedin")) return 10;
+  if (channel === "content" || channel === "aeo") return 3;
+  return 25;
+}
+
+function nonnegativeChannelDailyCap(value: unknown, fallback: number): number {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(numeric) && numeric >= 0
+    ? Math.trunc(numeric)
+    : fallback;
+}
+
+function retuneAutonomyApproval(
+  value: unknown,
+  approval: ApprovalPolicy,
+  fallbackChannels: readonly string[] = [],
+): Record<string, unknown> {
+  const autonomy = isRecord(value) ? value : {};
+  const existingChannels = isRecord(autonomy.channels) ? autonomy.channels : {};
+  const channelNames = new Set<string>([
+    ...Object.keys(existingChannels),
+    ...fallbackChannels.filter(Boolean),
+  ]);
+  const channels: Record<string, unknown> = {};
+  for (const channel of channelNames) {
+    const existing = isRecord(existingChannels[channel])
+      ? existingChannels[channel]
+      : {};
+    channels[channel] = {
+      ...existing,
+      daily_cap: nonnegativeChannelDailyCap(
+        existing.daily_cap,
+        defaultDailyCapForChannel(channel),
+      ),
+      approval,
+    };
+  }
+  return {
+    ...autonomy,
+    channels,
+    global: isRecord(autonomy.global) ? autonomy.global : {},
+  };
+}
+
+export async function configureWorkspaceAutonomyMode(
+  input: ConfigureWorkspaceAutonomyModeInput,
+  session: ProductWorkspaceSession,
+): Promise<ConfigureWorkspaceAutonomyModeResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const mode = parseWorkspaceAutonomyMode(input.mode);
+  const approval = workspaceAutonomyApproval(mode);
+  const settings = {
+    autonomy_mode: mode,
+    default_channel_approval: approval,
+  };
+  const workspacePayload = {
+    workspace_id: session.workspace_id,
+    settings,
+  };
+  const workspaceEvent = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "workspace.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: configurationEventKey(
+      "workspace.configured",
+      session.workspace_id,
+      session.workspace_id,
+      workspacePayload,
+    ),
+    payload: workspacePayload,
+  });
+  await projectWorkspaceConfigured(engine.pool, workspaceEvent);
+
+  const [reps, plays] = await Promise.all([
+    engine.pool.query<{
+      id: string;
+      name: string;
+      role: RepRoleValue;
+      status: "draft" | "active" | "paused";
+      persona: Record<string, unknown>;
+      channels: string[] | null;
+      autonomy: Record<string, unknown> | null;
+    }>(
+      `select id,
+              name,
+              role::text as role,
+              status::text as status,
+              persona,
+              channels,
+              autonomy
+         from reps
+        where workspace_id = $1
+          and status <> 'retired'
+        order by created_at asc`,
+      [session.workspace_id],
+    ),
+    engine.pool.query<{
+      id: string;
+      name: string;
+      declaration: string;
+      compiled: Record<string, unknown> | null;
+      autonomy: Record<string, unknown> | null;
+      default_rep_id: string | null;
+      status: "draft" | "active" | "paused" | "archived";
+      version: number;
+    }>(
+      `select id,
+              name,
+              declaration,
+              compiled,
+              autonomy,
+              default_rep_id,
+              status::text as status,
+              version
+         from plays
+        where workspace_id = $1
+          and status in ('draft', 'active', 'paused', 'archived')
+        order by created_at asc`,
+      [session.workspace_id],
+    ),
+  ]);
+
+  let rep_count = 0;
+  for (const row of reps.rows) {
+    const channels = channelNamesFrom(row.channels);
+    const payload = {
+      rep_id: row.id,
+      name: row.name,
+      role: row.role,
+      status: row.status,
+      persona: row.persona ?? {},
+      channels,
+      autonomy: retuneAutonomyApproval(row.autonomy, approval, channels),
+    };
+    const event = await engine.bus.publish({
+      workspace_id: session.workspace_id,
+      event_type: "rep.configured",
+      source: "user",
+      producer_ref: session.user_id,
+      idempotency_key: configurationEventKey(
+        "rep.configured",
+        session.workspace_id,
+        row.id,
+        payload,
+      ),
+      payload,
+    });
+    await projectRepConfigured(engine.pool, event);
+    rep_count++;
+  }
+
+  let play_count = 0;
+  for (const row of plays.rows) {
+    const fallbackChannels = compiledChannelNames(row.compiled);
+    const payload = {
+      play_id: row.id,
+      name: row.name,
+      declaration: row.declaration,
+      compiled: row.compiled ?? {},
+      autonomy: retuneAutonomyApproval(
+        row.autonomy,
+        approval,
+        fallbackChannels,
+      ),
+      default_rep_id: row.default_rep_id,
+      status: row.status,
+      version: row.version,
+    };
+    const event = await engine.bus.publish({
+      workspace_id: session.workspace_id,
+      event_type: "play.configured",
+      source: "user",
+      producer_ref: session.user_id,
+      idempotency_key: configurationEventKey(
+        "play.configured",
+        session.workspace_id,
+        row.id,
+        payload,
+      ),
+      payload,
+    });
+    await projectPlayConfigured(engine.pool, event);
+    play_count++;
+  }
+
+  return {
+    workspace_id: session.workspace_id,
+    mode,
+    approval,
+    rep_count,
+    play_count,
+  };
 }
 
 async function projectRepConfigured(
@@ -2091,7 +2433,8 @@ async function projectIcpConfigured(
       match_threshold: payload.match_threshold,
       enabled: payload.enabled,
     });
-    if (!updated) throw new Error(`ICP not found after update: ${payload.icp_id}`);
+    if (!updated)
+      throw new Error(`ICP not found after update: ${payload.icp_id}`);
     return updated;
   }
   return createIcpWithId(pool, event.workspace_id, payload);
@@ -2287,9 +2630,13 @@ export async function enrichWorkspaceProfileWithExa(
 }> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const websiteUrl = input.website_url ? normalizeWebsiteUrl(input.website_url) : null;
+  const websiteUrl = input.website_url
+    ? normalizeWebsiteUrl(input.website_url)
+    : null;
   const domain = websiteUrl ? domainFromWebsiteUrl(websiteUrl) : null;
-  const companyName = input.company_name.trim() || (domain ? titleizeDomain(domain) : "Workspace company");
+  const companyName =
+    input.company_name.trim() ||
+    (domain ? titleizeDomain(domain) : "Workspace company");
   const company_id =
     input.company_id ??
     (await findWorkspaceCompanyId(engine.pool, session.workspace_id, {
@@ -2309,7 +2656,10 @@ export async function enrichWorkspaceProfileWithExa(
   const queryHashes: string[] = [];
   const usageIds: string[] = [];
   let cacheHitCount = 0;
-  const maxPerQuery = Math.max(2, Math.min(5, Math.trunc(input.max_results ?? 8)));
+  const maxPerQuery = Math.max(
+    2,
+    Math.min(5, Math.trunc(input.max_results ?? 8)),
+  );
   const profileQuery = queries.join(" | ");
   await engine.bus.publish({
     workspace_id: session.workspace_id,
@@ -2357,7 +2707,10 @@ export async function enrichWorkspaceProfileWithExa(
       cache_hit: search.cache_hit,
     });
   }
-  const deduped = dedupeExaResults(results).slice(0, Math.max(3, Math.min(18, input.max_results ?? 12)));
+  const deduped = dedupeExaResults(results).slice(
+    0,
+    Math.max(3, Math.min(18, input.max_results ?? 12)),
+  );
   const projected = await projectExaEvidence(engine.pool, {
     workspace_id: session.workspace_id,
     query: profileQuery,
@@ -2382,7 +2735,11 @@ export async function enrichWorkspaceProfileWithExa(
       "exa.query.completed",
       session.workspace_id,
       company_id,
-      { query: profileQuery, intent: "profile_bootstrap", request_ids: requestIds },
+      {
+        query: profileQuery,
+        intent: "profile_bootstrap",
+        request_ids: requestIds,
+      },
     ),
     payload: {
       query: profileQuery,
@@ -2404,7 +2761,11 @@ export async function enrichWorkspaceProfileWithExa(
       "exa.evidence.projected",
       session.workspace_id,
       company_id,
-      { query: profileQuery, intent: "profile_bootstrap", sources: projected.sources.map((source) => source.id) },
+      {
+        query: profileQuery,
+        intent: "profile_bootstrap",
+        sources: projected.sources.map((source) => source.id),
+      },
     ),
     payload: {
       query: profileQuery,
@@ -2454,10 +2815,8 @@ export async function startWorkspaceProfileEnrichmentWithExa(
 ): Promise<{ workspace_id: string; workflow_run_id: string }> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const {
-    createExaProfileBootstrapWorkflow,
-    EXA_PROFILE_BOOTSTRAP_WORKFLOW,
-  } = await import("../exa/workflows.ts");
+  const { createExaProfileBootstrapWorkflow, EXA_PROFILE_BOOTSTRAP_WORKFLOW } =
+    await import("../exa/workflows.ts");
   engine.runtime.register(createExaProfileBootstrapWorkflow());
   const workflowInput = {
     workspace_id: session.workspace_id,
@@ -2487,7 +2846,11 @@ export async function startWorkspaceProfileEnrichmentWithExa(
 export async function startWorkspaceExaResearchWorkflow(
   input: ProductExaResearchInput,
   session: ProductWorkspaceSession,
-): Promise<{ workspace_id: string; workflow_run_id: string; workflow_name: string }> {
+): Promise<{
+  workspace_id: string;
+  workflow_run_id: string;
+  workflow_name: string;
+}> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
   const intent = input.intent ?? "rep_research";
@@ -2507,22 +2870,22 @@ export async function startWorkspaceExaResearchWorkflow(
     intent === "brief_refresh"
       ? createExaBriefRefreshWorkflow()
       : intent === "draft_grounding"
-      ? createExaDraftGroundingWorkflow()
-      : intent === "content_research"
-        ? createExaContentOpportunityWorkflow()
-        : intent === "aeo_audit"
-          ? createExaAeoAuditWorkflow()
-          : createExaRepResearchWorkflow();
+        ? createExaDraftGroundingWorkflow()
+        : intent === "content_research"
+          ? createExaContentOpportunityWorkflow()
+          : intent === "aeo_audit"
+            ? createExaAeoAuditWorkflow()
+            : createExaRepResearchWorkflow();
   const workflow_name =
     intent === "brief_refresh"
       ? EXA_BRIEF_REFRESH_WORKFLOW
       : intent === "draft_grounding"
-      ? EXA_DRAFT_GROUNDING_WORKFLOW
-      : intent === "content_research"
-        ? EXA_CONTENT_OPPORTUNITY_WORKFLOW
-        : intent === "aeo_audit"
-          ? EXA_AEO_AUDIT_WORKFLOW
-          : EXA_REP_RESEARCH_WORKFLOW;
+        ? EXA_DRAFT_GROUNDING_WORKFLOW
+        : intent === "content_research"
+          ? EXA_CONTENT_OPPORTUNITY_WORKFLOW
+          : intent === "aeo_audit"
+            ? EXA_AEO_AUDIT_WORKFLOW
+            : EXA_REP_RESEARCH_WORKFLOW;
   engine.runtime.register(workflow);
   const workflowInput = {
     workspace_id: session.workspace_id,
@@ -2547,19 +2910,25 @@ export async function startWorkspaceExaResearchWorkflow(
     ),
     input: workflowInput,
   });
-  return { workspace_id: session.workspace_id, workflow_run_id: run.id, workflow_name };
+  return {
+    workspace_id: session.workspace_id,
+    workflow_run_id: run.id,
+    workflow_name,
+  };
 }
 
 export async function startWorkspaceBriefRefreshWithExa(
   input: ProductExaBriefRefreshInput,
   session: ProductWorkspaceSession,
-): Promise<{ workspace_id: string; workflow_run_id: string; workflow_name: string }> {
+): Promise<{
+  workspace_id: string;
+  workflow_run_id: string;
+  workflow_name: string;
+}> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const {
-    createExaBriefRefreshWorkflow,
-    EXA_BRIEF_REFRESH_WORKFLOW,
-  } = await import("../exa/workflows.ts");
+  const { createExaBriefRefreshWorkflow, EXA_BRIEF_REFRESH_WORKFLOW } =
+    await import("../exa/workflows.ts");
   engine.runtime.register(createExaBriefRefreshWorkflow());
   const workflowInput = {
     workspace_id: session.workspace_id,
@@ -2570,7 +2939,9 @@ export async function startWorkspaceBriefRefreshWithExa(
     idempotency_nonce: input.idempotency_nonce,
   };
   const entityId = createHash("sha256")
-    .update(`${input.query?.trim() ?? "auto"}:${new Date().toISOString().slice(0, 10)}`)
+    .update(
+      `${input.query?.trim() ?? "auto"}:${new Date().toISOString().slice(0, 10)}`,
+    )
     .digest("hex")
     .slice(0, 20);
   const run = await engine.runtime.start({
@@ -2597,7 +2968,10 @@ export async function refreshWorkspaceBriefWithExa(
 ): Promise<ProductExaBriefRefreshResult> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const context = await loadBriefRefreshContext(engine.pool, session.workspace_id);
+  const context = await loadBriefRefreshContext(
+    engine.pool,
+    session.workspace_id,
+  );
   const query = (input.query?.trim() || buildBriefRefreshQuery(context)).trim();
   if (!query) throw new Error("brief refresh query required");
   const entityId = createHash("sha256")
@@ -2693,7 +3067,11 @@ export async function refreshWorkspaceBriefWithExa(
       "exa.evidence.projected",
       session.workspace_id,
       entityId,
-      { query, intent: "brief_refresh", evidence_source_ids: evidenceSourceIds },
+      {
+        query,
+        intent: "brief_refresh",
+        evidence_source_ids: evidenceSourceIds,
+      },
     ),
     payload: {
       query,
@@ -2823,7 +3201,11 @@ export async function researchWorkspaceWithExa(
   });
   const evidenceSourceIds = projected.sources.map((source) => source.id);
   const summary = summarizeExaEvidence(response.results, 8);
-  const reviewPayload = buildExaResearchReviewPayload(intent, response.results, evidenceSourceIds);
+  const reviewPayload = buildExaResearchReviewPayload(
+    intent,
+    response.results,
+    evidenceSourceIds,
+  );
   await engine.bus.publish({
     workspace_id: session.workspace_id,
     event_type: "exa.query.completed",
@@ -3138,7 +3520,9 @@ export async function recordProductRecommendationOutcome(
     payload: {
       outcome_id: randomUUID(),
       kind: input.kind,
-      score: clamp01(input.score ?? defaultRecommendationOutcomeScore(input.kind)),
+      score: clamp01(
+        input.score ?? defaultRecommendationOutcomeScore(input.kind),
+      ),
       conversation_id: null,
       attributed_play_id: null,
       attributed_play_run_id: null,
@@ -3190,10 +3574,15 @@ export async function draftProductRecommendation(
     session.workspace_id,
     review.review_kind,
   );
-  if (!repId) throw new Error("No active Rep is available to draft this recommendation.");
+  if (!repId)
+    throw new Error("No active Rep is available to draft this recommendation.");
 
-  const channel = input.channel ?? defaultRecommendationDraftChannel(review.review_kind);
-  const target = await ensureRecommendationDraftTarget(engine.pool, session.workspace_id);
+  const channel =
+    input.channel ?? defaultRecommendationDraftChannel(review.review_kind);
+  const target = await ensureRecommendationDraftTarget(
+    engine.pool,
+    session.workspace_id,
+  );
   const openedAt = new Date().toISOString();
   const conversationEvent = await engine.bus.publish({
     workspace_id: session.workspace_id,
@@ -3224,7 +3613,9 @@ export async function draftProductRecommendation(
     },
   });
   if (engine.substrateMode === "postgres") {
-    await createConversationLifecycleProjection(engine.pool).apply(conversationEvent);
+    await createConversationLifecycleProjection(engine.pool).apply(
+      conversationEvent,
+    );
   }
 
   const draftEvent = await engine.bus.publish({
@@ -3245,7 +3636,10 @@ export async function draftProductRecommendation(
       message_id: randomUUID(),
       channel,
       rep_id: repId,
-      subject: recommendationDraftSubject(review.review_kind, review.item.title),
+      subject: recommendationDraftSubject(
+        review.review_kind,
+        review.item.title,
+      ),
       body: recommendationDraftBody(review.review_kind, review.item),
       provenance: {
         source: "recommendation.draft",
@@ -3370,8 +3764,14 @@ export async function optimizeProductCampaignStrategy(
 ): Promise<ProductCampaignStrategyResult> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const lookbackDays = Math.max(1, Math.min(180, Math.trunc(input.lookback_days ?? 30)));
-  const minSamples = Math.max(1, Math.min(50, Math.trunc(input.min_samples ?? 3)));
+  const lookbackDays = Math.max(
+    1,
+    Math.min(180, Math.trunc(input.lookback_days ?? 30)),
+  );
+  const minSamples = Math.max(
+    1,
+    Math.min(50, Math.trunc(input.min_samples ?? 3)),
+  );
   const outcomeKinds: CampaignOptimizerOutcomeKind[] = [
     "positive_reply",
     "meeting_booked",
@@ -3512,8 +3912,14 @@ export async function optimizeProductPlaySkills(
 ): Promise<ProductSkillOptimizerResult> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const lookbackDays = Math.max(1, Math.min(180, Math.trunc(input.lookback_days ?? 30)));
-  const minSamples = Math.max(1, Math.min(50, Math.trunc(input.min_samples ?? 3)));
+  const lookbackDays = Math.max(
+    1,
+    Math.min(180, Math.trunc(input.lookback_days ?? 30)),
+  );
+  const minSamples = Math.max(
+    1,
+    Math.min(50, Math.trunc(input.min_samples ?? 3)),
+  );
   const outcomeKinds: CampaignOptimizerOutcomeKind[] = [
     "positive_reply",
     "meeting_booked",
@@ -3660,8 +4066,9 @@ export async function optimizeProductPlaySkills(
       {
         lookback_days: lookbackDays,
         min_samples: minSamples,
-        recommendations: plan.recommendations.map((item) =>
-          `${item.skill_key}:${item.pattern_key}:${item.channel ?? "any"}:${item.segment_key}`
+        recommendations: plan.recommendations.map(
+          (item) =>
+            `${item.skill_key}:${item.pattern_key}:${item.channel ?? "any"}:${item.segment_key}`,
         ),
       },
     ),
@@ -3695,15 +4102,15 @@ export async function personalizeProductMessage(
   if (!rep) throw new Error(`Rep not found: ${input.rep_id}`);
   if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
   if (!person) throw new Error(`Person not found: ${input.person_id}`);
-  if (rep.workspace_id !== session.workspace_id) throw new Error("Rep does not belong to workspace.");
-  if (signal.workspace_id !== session.workspace_id) throw new Error("Signal does not belong to workspace.");
-  if (person.workspace_id !== session.workspace_id) throw new Error("Person does not belong to workspace.");
+  if (rep.workspace_id !== session.workspace_id)
+    throw new Error("Rep does not belong to workspace.");
+  if (signal.workspace_id !== session.workspace_id)
+    throw new Error("Signal does not belong to workspace.");
+  if (person.workspace_id !== session.workspace_id)
+    throw new Error("Person does not belong to workspace.");
 
   const company_id =
-    input.company_id ??
-    signal.related_company_id ??
-    person.company_id ??
-    null;
+    input.company_id ?? signal.related_company_id ?? person.company_id ?? null;
   const company = await store.getCompany(company_id);
   const channel = normalizePersonalizationChannel(input.channel);
   const stage = input.stage ?? "cold_open";
@@ -3722,8 +4129,14 @@ export async function personalizeProductMessage(
     judge: createHeuristicJudge({ threshold: 0.55 }),
     workspace_context_markdown: workspaceContextMarkdown,
   };
-  const research = await createResearcherRole().invoke({ signal, person, company }, roleContext);
-  const basePatternKey = personalizationBasePatternKey(research.pattern_key, channel);
+  const research = await createResearcherRole().invoke(
+    { signal, person, company },
+    roleContext,
+  );
+  const basePatternKey = personalizationBasePatternKey(
+    research.pattern_key,
+    channel,
+  );
   const skill = createSelectedOutreachSkill({
     channel,
     stage,
@@ -3747,34 +4160,48 @@ export async function personalizeProductMessage(
     skill,
     workspaceContextMarkdown,
   });
-  const writerLlm = input.use_llm === false
-    ? undefined
-    : createGovernedLLM(
-      engine,
-      session.workspace_id,
-      channel === "email" ? "writer.email.personalization" : "writer.linkedin.personalization",
-    );
-  const draft = channel === "email"
-    ? await createWriterRole({ llm: writerLlm }).invoke({
-      channel: "email",
-      research,
-      recipient_name: person.given_name ?? person.full_name.split(" ")[0] ?? person.full_name,
-      skill,
-      personalization_context_markdown: personalizationContextMarkdown,
-    }, roleContext)
-    : await createLinkedInWriterRole({ llm: writerLlm }).invoke({
-      action: linkedInPersonalizationChannel(channel),
-      pattern_key: basePatternKey,
-      research,
-      person,
-      company,
-      skill,
-    }, roleContext);
+  const writerLlm =
+    input.use_llm === false
+      ? undefined
+      : createGovernedLLM(
+          engine,
+          session.workspace_id,
+          channel === "email"
+            ? "writer.email.personalization"
+            : "writer.linkedin.personalization",
+        );
+  const draft =
+    channel === "email"
+      ? await createWriterRole({ llm: writerLlm }).invoke(
+          {
+            channel: "email",
+            research,
+            recipient_name:
+              person.given_name ??
+              person.full_name.split(" ")[0] ??
+              person.full_name,
+            skill,
+            personalization_context_markdown: personalizationContextMarkdown,
+          },
+          roleContext,
+        )
+      : await createLinkedInWriterRole({ llm: writerLlm }).invoke(
+          {
+            action: linkedInPersonalizationChannel(channel),
+            pattern_key: basePatternKey,
+            research,
+            person,
+            company,
+            skill,
+          },
+          roleContext,
+        );
   const message_id = input.message_id?.trim() || randomUUID();
   const personalized_at = new Date().toISOString();
-  const subject = "subject" in draft && typeof draft.subject === "string"
-    ? draft.subject
-    : null;
+  const subject =
+    "subject" in draft && typeof draft.subject === "string"
+      ? draft.subject
+      : null;
   const body = String(draft.body);
   const skillPayload: Record<string, unknown> | null = draft.skill
     ? { ...draft.skill }
@@ -3782,7 +4209,9 @@ export async function personalizeProductMessage(
   const provenance = {
     graph_name: "message.personalization_graph.v1",
     pattern_key: draft.pattern_key,
-    ...(draft.seed_pattern_key ? { seed_pattern_key: draft.seed_pattern_key } : {}),
+    ...(draft.seed_pattern_key
+      ? { seed_pattern_key: draft.seed_pattern_key }
+      : {}),
     exemplar_ids: draft.exemplar_ids,
     play_id: input.play_id ?? null,
     play_run_id: input.play_run_id ?? null,
@@ -3871,7 +4300,10 @@ export async function evaluateProductDraft(
   const rep = await store.getRep(input.rep_id);
   if (!rep) throw new Error(`Rep not found: ${input.rep_id}`);
   const gate = await evalGate(
-    { judge: createGovernedJudge(engine, session.workspace_id), bus: engine.bus },
+    {
+      judge: createGovernedJudge(engine, session.workspace_id),
+      bus: engine.bus,
+    },
     {
       workspace_id: session.workspace_id,
       rep,
@@ -3887,7 +4319,8 @@ export async function evaluateProductDraft(
         counterparty_summary: input.counterparty_summary ?? undefined,
         personalization_context_markdown:
           input.personalization_context_markdown ?? undefined,
-        workspace_context_markdown: input.workspace_context_markdown ?? undefined,
+        workspace_context_markdown:
+          input.workspace_context_markdown ?? undefined,
         outreach_skill: input.outreach_skill ?? null,
       },
     },
@@ -3905,7 +4338,8 @@ export async function evaluateProductDraft(
     judged_event_id: gate.events.judged.id,
     rejected_event_id: gate.events.rejected?.id ?? null,
     rejection_reason: gate.rejection_reason ?? null,
-    next_action: gate.decision === "pass" ? "continue_to_play_gate" : "revise_draft",
+    next_action:
+      gate.decision === "pass" ? "continue_to_play_gate" : "revise_draft",
   };
 }
 
@@ -3923,7 +4357,10 @@ export async function triageProductReply(
     {
       pool: engine.pool,
       bus: engine.bus,
-      classifier: createProductReplyIntentClassifier(engine, session.workspace_id),
+      classifier: createProductReplyIntentClassifier(
+        engine,
+        session.workspace_id,
+      ),
       memory: engine.memory,
       ingress_event_id: input.ingress_event_id ?? undefined,
     },
@@ -3971,7 +4408,9 @@ function normalizePersonalizationChannel(
   throw new Error(`Message personalization does not support ${next}`);
 }
 
-function linkedInPersonalizationChannel(channel: OutreachSkillChannel): LinkedInChannelName {
+function linkedInPersonalizationChannel(
+  channel: OutreachSkillChannel,
+): LinkedInChannelName {
   if (
     channel === "linkedin_connection" ||
     channel === "linkedin_dm" ||
@@ -3986,7 +4425,9 @@ function personalizationBasePatternKey(
   researchPatternKey: string,
   channel: OutreachSkillChannel,
 ): string {
-  return channel === "email" ? researchPatternKey : `${researchPatternKey}|channel:${channel}`;
+  return channel === "email"
+    ? researchPatternKey
+    : `${researchPatternKey}|channel:${channel}`;
 }
 
 function messagePersonalizationSlotValues(input: {
@@ -4007,15 +4448,19 @@ function messagePersonalizationSlotValues(input: {
       input.person.title,
       input.company?.name ? `at ${input.company.name}` : null,
       input.company?.industry,
-    ].filter(Boolean).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" "),
     180,
   );
-  const workspaceProof = firstUsefulContextLine(input.workspaceContextMarkdown) ??
+  const workspaceProof =
+    firstUsefulContextLine(input.workspaceContextMarkdown) ??
     "Use the workspace profile, ICP, vertical intelligence, and prior Outcomes only when supported.";
   const role = input.person.title ?? "their team";
-  const channelAsk = input.channel === "email"
-    ? "Worth a quick reply if this is relevant?"
-    : "Open to comparing notes?";
+  const channelAsk =
+    input.channel === "email"
+      ? "Worth a quick reply if this is relevant?"
+      : "Open to comparing notes?";
   return {
     signal_hook: signalHook,
     why_now: input.signal.freshness_at
@@ -4029,7 +4474,10 @@ function messagePersonalizationSlotValues(input: {
     peer_pattern: compactPersonalizationText(workspaceProof, 240),
     counterparty_context: counterpartyContext,
     reply_question: channelAsk,
-    signal_summary: compactPersonalizationText(input.research.signal_summary, 240),
+    signal_summary: compactPersonalizationText(
+      input.research.signal_summary,
+      240,
+    ),
   };
 }
 
@@ -4043,7 +4491,9 @@ function buildMessagePersonalizationContext(input: {
   const sections = [
     "## Signal Timing And Why Now",
     `- Signal: ${input.signal.title}`,
-    input.signal.content ? `- Detail: ${compactPersonalizationText(input.signal.content, 500)}` : null,
+    input.signal.content
+      ? `- Detail: ${compactPersonalizationText(input.signal.content, 500)}`
+      : null,
     input.signal.url ? `- Source: ${input.signal.url}` : null,
     `- Kind: ${input.signal.kind}`,
     "",
@@ -4069,15 +4519,22 @@ function buildMessagePersonalizationContext(input: {
   return sections.join("\n");
 }
 
-function firstUsefulContextLine(value: string | null | undefined): string | null {
+function firstUsefulContextLine(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
-  return value
-    .split("\n")
-    .map((line) => line.replace(/^[-#*\s]+/, "").trim())
-    .find((line) => line.length > 8) ?? null;
+  return (
+    value
+      .split("\n")
+      .map((line) => line.replace(/^[-#*\s]+/, "").trim())
+      .find((line) => line.length > 8) ?? null
+  );
 }
 
-function compactPersonalizationText(value: string | null | undefined, maxLength: number): string {
+function compactPersonalizationText(
+  value: string | null | undefined,
+  maxLength: number,
+): string {
   const normalized = (value ?? "").replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
@@ -4268,7 +4725,9 @@ export async function refreshWorkspaceVerticalIntelligence(
     input.company_id ?? null,
   );
   if (!profile) {
-    throw new Error("Workspace company profile is required before vertical intelligence can refresh.");
+    throw new Error(
+      "Workspace company profile is required before vertical intelligence can refresh.",
+    );
   }
   const [icps, semantic, playbooks] = await Promise.all([
     loadVerticalIcps(engine.pool, session.workspace_id),
@@ -4286,7 +4745,9 @@ export async function refreshWorkspaceVerticalIntelligence(
       description: profile.description,
       exa_summary: profile.exa_summary,
       evidence_source_ids: arrayStringStateValue(profile.evidence_source_ids),
-      intelligence: recordStateValue(profile.intelligence) as VerticalIntelligenceProfileInput["intelligence"],
+      intelligence: recordStateValue(
+        profile.intelligence,
+      ) as VerticalIntelligenceProfileInput["intelligence"],
       updated_at: profile.updated_at,
     },
     icps: icps.rows,
@@ -4429,7 +4890,10 @@ async function projectVerticalIntelligenceUpdated(
   pool: Pool,
   event: PublishedEvent,
 ): Promise<void> {
-  const payload = event.payload as Omit<VerticalIntelligencePack, "workspace_id">;
+  const payload = event.payload as Omit<
+    VerticalIntelligencePack,
+    "workspace_id"
+  >;
   const result = await pool.query(
     `update graph_companies
         set properties = properties ||
@@ -4449,7 +4913,9 @@ async function projectVerticalIntelligenceUpdated(
     ],
   );
   if ((result.rowCount ?? 0) === 0) {
-    throw new Error(`Vertical intelligence target company was not found: ${payload.company_id}`);
+    throw new Error(
+      `Vertical intelligence target company was not found: ${payload.company_id}`,
+    );
   }
 }
 
@@ -4465,7 +4931,9 @@ async function publishExaContentsFetched(
   },
 ): Promise<void> {
   const ids = input.results.flatMap((result) => (result.id ? [result.id] : []));
-  const urls = input.results.flatMap((result) => (result.url ? [result.url] : []));
+  const urls = input.results.flatMap((result) =>
+    result.url ? [result.url] : [],
+  );
   if (ids.length === 0 && urls.length === 0) return;
   await engine.bus.publish({
     workspace_id: session.workspace_id,
@@ -4513,7 +4981,8 @@ export async function configureExaOpenWebSignalSource(
     },
     session,
   );
-  if (!result.source_id) throw new Error("Exa source configuration did not return a source id.");
+  if (!result.source_id)
+    throw new Error("Exa source configuration did not return a source id.");
   return { ...result, source_id: result.source_id };
 }
 
@@ -4686,7 +5155,8 @@ export async function configureSignalEmailPlay(
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
   const signalKind = parseSignalKind(input.signal_kind);
-  const name = input.name?.trim() || `${titleizeSignalKind(signalKind)} Signal Email`;
+  const name =
+    input.name?.trim() || `${titleizeSignalKind(signalKind)} Signal Email`;
   const existing = await engine.pool.query<{ id: string; version: number }>(
     `select id, version from plays
       where workspace_id = $1 and lower(name) = lower($2)
@@ -4696,7 +5166,9 @@ export async function configureSignalEmailPlay(
   );
   const play_id = existing.rows[0]?.id ?? randomUUID();
   const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 25));
-  const approval = parseApprovalPolicy(input.approval);
+  const approval =
+    parseApprovalPolicy(input.approval) ??
+    (await getWorkspaceDefaultApproval(engine.pool, session.workspace_id));
   const declaration =
     input.description?.trim() ||
     `When a ${signalKind.replace(/_/g, " ")} Signal matches ${input.icp_name ?? "the ICP"}, draft, judge, gate, and send one concise founder-led email.`;
@@ -4752,7 +5224,9 @@ export async function configureSignalLinkedInPlay(
   const signalKind = parseSignalKind(input.signal_kind);
   const action = parseLinkedInAction(input.action) ?? "linkedin_dm";
   const actionLabel = titleizeLinkedInAction(action);
-  const name = input.name?.trim() || `${titleizeSignalKind(signalKind)} Signal ${actionLabel}`;
+  const name =
+    input.name?.trim() ||
+    `${titleizeSignalKind(signalKind)} Signal ${actionLabel}`;
   const existing = await engine.pool.query<{ id: string; version: number }>(
     `select id, version from plays
       where workspace_id = $1 and lower(name) = lower($2)
@@ -4762,7 +5236,9 @@ export async function configureSignalLinkedInPlay(
   );
   const play_id = existing.rows[0]?.id ?? randomUUID();
   const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 10));
-  const approval = parseApprovalPolicy(input.approval);
+  const approval =
+    parseApprovalPolicy(input.approval) ??
+    (await getWorkspaceDefaultApproval(engine.pool, session.workspace_id));
   const declaration =
     input.description?.trim() ||
     `When a ${signalKind.replace(/_/g, " ")} Signal matches ${input.icp_name ?? "the ICP"}, research, draft, judge, gate, and send one concise LinkedIn touch.`;
@@ -4896,13 +5372,18 @@ export async function configureActivationSetup(
     );
     source_id = row.rows[0]?.id ?? source_id;
   }
-  await ensureProceduralSeedFor(engine, session.workspace_id, rep.rep_id, session.user_id, {
-    icp_segment: icp.icp_id,
-    signal_kind: signalKind,
-    subject: "Saw the hiring signal",
-    body:
-      "Saw the new role. Usually that means the operating motion is changing fast enough to compare notes.",
-  });
+  await ensureProceduralSeedFor(
+    engine,
+    session.workspace_id,
+    rep.rep_id,
+    session.user_id,
+    {
+      icp_segment: icp.icp_id,
+      signal_kind: signalKind,
+      subject: "Saw the hiring signal",
+      body: "Saw the new role. Usually that means the operating motion is changing fast enough to compare notes.",
+    },
+  );
   return {
     workspace_id: session.workspace_id,
     rep_id: rep.rep_id,
@@ -4967,7 +5448,10 @@ export async function runWorkspaceCompanyBrainBrief(
     workspace_id: session.workspace_id,
     user_id: session.user_id,
   };
-  const run = await engine.runtime.start<CompanyBrainGraphInput, BombsellLangGraphState>({
+  const run = await engine.runtime.start<
+    CompanyBrainGraphInput,
+    BombsellLangGraphState
+  >({
     workspace_id: session.workspace_id,
     workflow_name: WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW,
     idempotency_key: companyBrainBriefIdempotencyKey(
@@ -4991,10 +5475,14 @@ export async function runWorkspaceCompanyBrainBrief(
     opts.timeoutMs ?? 30_000,
   );
   if (completed.status === "failed") {
-    throw new Error(completed.error?.message ?? "Company brain brief workflow failed.");
+    throw new Error(
+      completed.error?.message ?? "Company brain brief workflow failed.",
+    );
   }
   if (completed.status !== "completed") {
-    throw new Error(`Company brain brief workflow ended with status ${completed.status}.`);
+    throw new Error(
+      `Company brain brief workflow ended with status ${completed.status}.`,
+    );
   }
   return {
     workspace_id: session.workspace_id,
@@ -5022,7 +5510,10 @@ export async function runWorkspaceSignalIngestion(
     workspace_id: session.workspace_id,
     user_id: session.user_id,
   };
-  const run = await engine.runtime.start<SignalIngestionGraphInput, BombsellLangGraphState>({
+  const run = await engine.runtime.start<
+    SignalIngestionGraphInput,
+    BombsellLangGraphState
+  >({
     workspace_id: session.workspace_id,
     workflow_name: WORKSPACE_SIGNAL_INGESTION_WORKFLOW,
     idempotency_key: signalIngestionIdempotencyKey(
@@ -5046,10 +5537,14 @@ export async function runWorkspaceSignalIngestion(
     opts.timeoutMs ?? 30_000,
   );
   if (completed.status === "failed") {
-    throw new Error(completed.error?.message ?? "Signal ingestion workflow failed.");
+    throw new Error(
+      completed.error?.message ?? "Signal ingestion workflow failed.",
+    );
   }
   if (completed.status !== "completed") {
-    throw new Error(`Signal ingestion workflow ended with status ${completed.status}.`);
+    throw new Error(
+      `Signal ingestion workflow ended with status ${completed.status}.`,
+    );
   }
   return {
     workspace_id: session.workspace_id,
@@ -5079,14 +5574,22 @@ export async function runWorkspaceSignalMatching(
     workspace_id: session.workspace_id,
     user_id: session.user_id,
     signal_id,
-    thread_id: input.thread_id ?? `signal-match:${session.workspace_id}:${signal_id}`,
+    thread_id:
+      input.thread_id ?? `signal-match:${session.workspace_id}:${signal_id}`,
     correlation_id: input.correlation_id ?? opts.correlationId ?? undefined,
-    causation_event_id: input.causation_event_id ?? opts.causationEventId ?? null,
+    causation_event_id:
+      input.causation_event_id ?? opts.causationEventId ?? null,
   };
-  const run = await engine.runtime.start<LeadMatchingGraphInput, BombsellLangGraphState>({
+  const run = await engine.runtime.start<
+    LeadMatchingGraphInput,
+    BombsellLangGraphState
+  >({
     workspace_id: session.workspace_id,
     workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
-    idempotency_key: signalMatchingIdempotencyKey(session.workspace_id, signal_id),
+    idempotency_key: signalMatchingIdempotencyKey(
+      session.workspace_id,
+      signal_id,
+    ),
     correlation_id: workflowInput.correlation_id,
     causation_id: workflowInput.causation_event_id ?? undefined,
     input: workflowInput,
@@ -5105,10 +5608,14 @@ export async function runWorkspaceSignalMatching(
     opts.timeoutMs ?? 30_000,
   );
   if (completed.status === "failed") {
-    throw new Error(completed.error?.message ?? "Signal matching workflow failed.");
+    throw new Error(
+      completed.error?.message ?? "Signal matching workflow failed.",
+    );
   }
   if (completed.status !== "completed") {
-    throw new Error(`Signal matching workflow ended with status ${completed.status}.`);
+    throw new Error(
+      `Signal matching workflow ended with status ${completed.status}.`,
+    );
   }
   return {
     workspace_id: session.workspace_id,
@@ -5137,10 +5644,16 @@ export async function runWorkspaceProfileIcpDraft(
     workspace_id: session.workspace_id,
     user_id: session.user_id,
   };
-  const run = await engine.runtime.start<ProfileIcpGraphInput, BombsellLangGraphState>({
+  const run = await engine.runtime.start<
+    ProfileIcpGraphInput,
+    BombsellLangGraphState
+  >({
     workspace_id: session.workspace_id,
     workflow_name: WORKSPACE_PROFILE_ICP_WORKFLOW,
-    idempotency_key: profileIcpIdempotencyKey(session.workspace_id, workflowInput),
+    idempotency_key: profileIcpIdempotencyKey(
+      session.workspace_id,
+      workflowInput,
+    ),
     input: workflowInput,
   });
   if (opts.wait === false) {
@@ -5160,7 +5673,9 @@ export async function runWorkspaceProfileIcpDraft(
     throw new Error(completed.error?.message ?? "Profile ICP workflow failed.");
   }
   if (completed.status !== "completed") {
-    throw new Error(`Profile ICP workflow ended with status ${completed.status}.`);
+    throw new Error(
+      `Profile ICP workflow ended with status ${completed.status}.`,
+    );
   }
   return {
     workspace_id: session.workspace_id,
@@ -5189,10 +5704,16 @@ export async function runWorkspaceActivationSetup(
     workspace_id: session.workspace_id,
     user_id: session.user_id,
   };
-  const run = await engine.runtime.start<ActivationSetupGraphInput, BombsellLangGraphState>({
+  const run = await engine.runtime.start<
+    ActivationSetupGraphInput,
+    BombsellLangGraphState
+  >({
     workspace_id: session.workspace_id,
     workflow_name: WORKSPACE_ACTIVATION_SETUP_WORKFLOW,
-    idempotency_key: activationSetupIdempotencyKey(session.workspace_id, workflowInput),
+    idempotency_key: activationSetupIdempotencyKey(
+      session.workspace_id,
+      workflowInput,
+    ),
     input: workflowInput,
   });
   if (opts.wait === false) {
@@ -5209,10 +5730,14 @@ export async function runWorkspaceActivationSetup(
     opts.timeoutMs ?? 30_000,
   );
   if (completed.status === "failed") {
-    throw new Error(completed.error?.message ?? "Activation setup workflow failed.");
+    throw new Error(
+      completed.error?.message ?? "Activation setup workflow failed.",
+    );
   }
   if (completed.status !== "completed") {
-    throw new Error(`Activation setup workflow ended with status ${completed.status}.`);
+    throw new Error(
+      `Activation setup workflow ended with status ${completed.status}.`,
+    );
   }
   return {
     workspace_id: session.workspace_id,
@@ -5272,7 +5797,9 @@ export async function runProductContactWaterfall(
     input.timeout_ms ?? 30_000,
   );
   if (completed.status === "failed") {
-    throw new Error(completed.error?.message ?? "Contact waterfall workflow failed.");
+    throw new Error(
+      completed.error?.message ?? "Contact waterfall workflow failed.",
+    );
   }
   if (completed.status !== "completed") {
     return contactWaterfallResultFromRun(session.workspace_id, completed, null);
@@ -5504,7 +6031,9 @@ async function waitForWorkflowTerminal<O>(
       return run;
     }
     if (Date.now() > deadline) {
-      throw new Error(`Workflow ${run_id} did not finish within ${timeoutMs}ms.`);
+      throw new Error(
+        `Workflow ${run_id} did not finish within ${timeoutMs}ms.`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -5528,11 +6057,14 @@ function blankToNull(value: string | undefined | null): string | null {
 function normalizeWebsiteUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const withProtocol = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
   try {
     const url = new URL(withProtocol);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (!url.hostname.includes(".") || url.hostname === "localhost") return null;
+    if (!url.hostname.includes(".") || url.hostname === "localhost")
+      return null;
     url.hash = "";
     return url.toString().replace(/\/$/, "");
   } catch {
@@ -5581,7 +6113,10 @@ function exaProfileQueries(input: {
   industry: string | null;
   description: string | null;
 }): string[] {
-  const market = input.industry || signalKeywordsFromDescription(input.description) || "B2B SaaS";
+  const market =
+    input.industry ||
+    signalKeywordsFromDescription(input.description) ||
+    "B2B SaaS";
   const domainPart = input.domain ? ` ${input.domain}` : "";
   return [
     `${input.companyName}${domainPart} product customers competitors positioning`,
@@ -5694,7 +6229,10 @@ async function loadBriefRefreshContext(
 function buildBriefRefreshQuery(context: BriefRefreshContext): string {
   const companyName = context.company?.name ?? "workspace company";
   const domain = context.company?.domain ? ` ${context.company.domain}` : "";
-  const market = context.company?.industry ?? signalKeywordsFromDescription(context.company?.description) ?? "B2B SaaS";
+  const market =
+    context.company?.industry ??
+    signalKeywordsFromDescription(context.company?.description) ??
+    "B2B SaaS";
   const signals = context.signals
     .slice(0, 3)
     .map((signal) => `${signal.kind}: ${signal.title}`)
@@ -5714,33 +6252,49 @@ function buildBriefRefreshPayload(input: {
   context: BriefRefreshContext;
   results: readonly ExaResult[];
   evidence_source_ids: string[];
-}): Omit<ProductExaBriefRefreshResult, "workspace_id" | "request_id" | "summary" | "evidence_source_ids"> {
-  const evidenceItems: ProductBriefItem[] = input.results.slice(0, 4).map((result, index) =>
-    briefItemFromExaResult(result, input.evidence_source_ids[index] ? [input.evidence_source_ids[index]!] : []),
-  );
-  const recentChanges: ProductBriefItem[] = input.context.signals.slice(0, 3).map((signal) => ({
-    title: signal.title,
-    detail: `${signal.kind.replace(/_/g, " ")} signal from ${signal.freshness_at.toISOString().slice(0, 10)}.`,
-    url: signal.url,
-    evidence_source_ids: [],
-  }));
-  const reviewItems: ProductBriefItem[] = input.context.approvals.slice(0, 3).map((approval) => ({
-    title: approval.kind.replace(/_/g, " "),
-    detail: approval.reason ?? "A workflow is waiting for review.",
-    evidence_source_ids: [],
-  }));
+}): Omit<
+  ProductExaBriefRefreshResult,
+  "workspace_id" | "request_id" | "summary" | "evidence_source_ids"
+> {
+  const evidenceItems: ProductBriefItem[] = input.results
+    .slice(0, 4)
+    .map((result, index) =>
+      briefItemFromExaResult(
+        result,
+        input.evidence_source_ids[index]
+          ? [input.evidence_source_ids[index]!]
+          : [],
+      ),
+    );
+  const recentChanges: ProductBriefItem[] = input.context.signals
+    .slice(0, 3)
+    .map((signal) => ({
+      title: signal.title,
+      detail: `${signal.kind.replace(/_/g, " ")} signal from ${signal.freshness_at.toISOString().slice(0, 10)}.`,
+      url: signal.url,
+      evidence_source_ids: [],
+    }));
+  const reviewItems: ProductBriefItem[] = input.context.approvals
+    .slice(0, 3)
+    .map((approval) => ({
+      title: approval.kind.replace(/_/g, " "),
+      detail: approval.reason ?? "A workflow is waiting for review.",
+      evidence_source_ids: [],
+    }));
   const quietExceptions: ProductBriefItem[] = input.context.conversations
     .filter((conversation) => conversation.status === "awaiting_us")
     .slice(0, 3)
     .map((conversation) => ({
       title: conversation.topic ?? "Conversation needs attention",
-      detail: "A conversation is waiting on the workspace before the Rep can continue.",
+      detail:
+        "A conversation is waiting on the workspace before the Rep can continue.",
       evidence_source_ids: [],
     }));
   if (quietExceptions.length === 0 && input.context.signals.length === 0) {
     quietExceptions.push({
       title: "No urgent public-web changes",
-      detail: "Exa did not find a stronger change than the current watched context for this Brief refresh.",
+      detail:
+        "Exa did not find a stronger change than the current watched context for this Brief refresh.",
       evidence_source_ids: input.evidence_source_ids.slice(0, 2),
     });
   }
@@ -5752,12 +6306,20 @@ function buildBriefRefreshPayload(input: {
   };
 }
 
-function briefItemFromExaResult(result: ExaResult, evidence_source_ids: string[]): ProductBriefItem {
+function briefItemFromExaResult(
+  result: ExaResult,
+  evidence_source_ids: string[],
+): ProductBriefItem {
   const url = canonicalUrl(result.url);
   const host = url ? domainFromWebsiteUrl(url) : null;
   return {
-    title: (result.title || host || "Public-web evidence").replace(/\s+/g, " ").trim().slice(0, 140),
-    detail: profileSnippetFromResult(result) ?? "Fresh public-web evidence is available for Rep context.",
+    title: (result.title || host || "Public-web evidence")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 140),
+    detail:
+      profileSnippetFromResult(result) ??
+      "Fresh public-web evidence is available for Rep context.",
     url,
     evidence_source_ids,
   };
@@ -5769,12 +6331,14 @@ function buildExaResearchReviewPayload(
   evidence_source_ids: string[],
 ): Pick<ProductExaResearchResult, "review_items" | "opportunities" | "gaps"> {
   if (intent !== "content_research" && intent !== "aeo_audit") return {};
-  const items = results.slice(0, 6).map((result, index) =>
-    briefItemFromExaResult(
-      result,
-      evidence_source_ids[index] ? [evidence_source_ids[index]!] : [],
-    ),
-  );
+  const items = results
+    .slice(0, 6)
+    .map((result, index) =>
+      briefItemFromExaResult(
+        result,
+        evidence_source_ids[index] ? [evidence_source_ids[index]!] : [],
+      ),
+    );
   if (intent === "content_research") {
     const opportunities = items.map((item) => ({
       ...item,
@@ -5842,28 +6406,35 @@ function buildExaProfileIntelligence(results: readonly ExaResult[]): {
   const competitorMentions: string[] = [];
   const audienceTerms = new Set<string>();
   const proofPoints: string[] = [];
-  const evidenceCards = results.flatMap((result) => {
-    const url = canonicalUrl(result.url);
-    for (const term of profileTermsFromResult(result)) {
-      termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
-    }
-    collectProfileSignals(result, {
-      positioningNotes,
-      competitorMentions,
-      audienceTerms,
-      proofPoints,
-    });
-    if (!url) return [];
-    const sourceDomain = domainFromWebsiteUrl(url);
-    if (sourceDomain) sourceDomains.add(sourceDomain);
-    return [{
-      title: (result.title || sourceDomain || url).replace(/\s+/g, " ").trim().slice(0, 160),
-      url,
-      source_domain: sourceDomain,
-      snippet: profileSnippetFromResult(result),
-      published_at: normalizeOptionalDate(result.publishedDate),
-    }];
-  }).slice(0, 8);
+  const evidenceCards = results
+    .flatMap((result) => {
+      const url = canonicalUrl(result.url);
+      for (const term of profileTermsFromResult(result)) {
+        termCounts.set(term, (termCounts.get(term) ?? 0) + 1);
+      }
+      collectProfileSignals(result, {
+        positioningNotes,
+        competitorMentions,
+        audienceTerms,
+        proofPoints,
+      });
+      if (!url) return [];
+      const sourceDomain = domainFromWebsiteUrl(url);
+      if (sourceDomain) sourceDomains.add(sourceDomain);
+      return [
+        {
+          title: (result.title || sourceDomain || url)
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 160),
+          url,
+          source_domain: sourceDomain,
+          snippet: profileSnippetFromResult(result),
+          published_at: normalizeOptionalDate(result.publishedDate),
+        },
+      ];
+    })
+    .slice(0, 8);
 
   return {
     source_domains: [...sourceDomains].slice(0, 10),
@@ -5890,16 +6461,30 @@ function collectProfileSignals(
 ): void {
   const title = cleanProfileLine(result.title, 140);
   const snippet = profileSnippetFromResult(result);
-  const haystack = [result.title, result.summary, result.highlights.join(" "), result.text]
+  const haystack = [
+    result.title,
+    result.summary,
+    result.highlights.join(" "),
+    result.text,
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  if (snippet && out.positioningNotes.length < 6) out.positioningNotes.push(snippet);
-  if (/(alternative|competitor|versus|\bvs\.?\b|compare|comparison)/i.test(haystack)) {
+  if (snippet && out.positioningNotes.length < 6)
+    out.positioningNotes.push(snippet);
+  if (
+    /(alternative|competitor|versus|\bvs\.?\b|compare|comparison)/i.test(
+      haystack,
+    )
+  ) {
     const mention = title ?? snippet;
     if (mention) out.competitorMentions.push(mention);
   }
-  if (/(customer|case study|testimonial|review|launch|funding|raised|partner|integration)/i.test(haystack)) {
+  if (
+    /(customer|case study|testimonial|review|launch|funding|raised|partner|integration)/i.test(
+      haystack,
+    )
+  ) {
     const proof = snippet ?? title;
     if (proof) out.proofPoints.push(proof);
   }
@@ -5919,10 +6504,15 @@ function profileAudienceTerms(text: string): string[] {
     ["buyers", /\bbuyers?\b|procurement|evaluation/],
     ["revenue teams", /\brevenue\b|pipeline|crm/],
   ] as const;
-  return terms.flatMap(([label, pattern]) => (pattern.test(text) ? [label] : []));
+  return terms.flatMap(([label, pattern]) =>
+    pattern.test(text) ? [label] : [],
+  );
 }
 
-function cleanProfileLine(value: string | null | undefined, max: number): string | null {
+function cleanProfileLine(
+  value: string | null | undefined,
+  max: number,
+): string | null {
   const cleaned = value?.replace(/\s+/g, " ").trim();
   return cleaned ? cleaned.slice(0, max) : null;
 }
@@ -5971,16 +6561,18 @@ function profileTermsFromResult(result: ExaResult): string[] {
     "with",
     "your",
   ]);
-  const text = [
-    result.title,
-    result.summary,
-    result.highlights.join(" "),
-  ].filter(Boolean).join(" ");
-  const terms = text
-    .toLowerCase()
-    .replace(/https?:\/\/\S+/g, " ")
-    .match(/[a-z][a-z0-9-]{3,}/g) ?? [];
-  return [...new Set(terms.filter((term) => !stopwords.has(term)))].slice(0, 20);
+  const text = [result.title, result.summary, result.highlights.join(" ")]
+    .filter(Boolean)
+    .join(" ");
+  const terms =
+    text
+      .toLowerCase()
+      .replace(/https?:\/\/\S+/g, " ")
+      .match(/[a-z][a-z0-9-]{3,}/g) ?? [];
+  return [...new Set(terms.filter((term) => !stopwords.has(term)))].slice(
+    0,
+    20,
+  );
 }
 
 function profileSnippetFromResult(result: ExaResult): string | null {
@@ -5990,7 +6582,9 @@ function profileSnippetFromResult(result: ExaResult): string | null {
   return cleaned ? cleaned.slice(0, 260) : null;
 }
 
-function normalizeOptionalDate(value: string | null | undefined): string | null {
+function normalizeOptionalDate(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
   const ms = Date.parse(value);
   return Number.isNaN(ms) ? null : new Date(ms).toISOString();
@@ -6009,7 +6603,9 @@ function canonicalUrl(raw: string): string | null {
   }
 }
 
-function signalKeywordsFromDescription(description: string | null | undefined): string | null {
+function signalKeywordsFromDescription(
+  description: string | null | undefined,
+): string | null {
   const words =
     description
       ?.toLowerCase()
@@ -6046,7 +6642,10 @@ export async function configureWorkspaceEmailAccount(
 ): Promise<{ workspace_id: string; channel_account_id: string }> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const existing = await findEmailDomainAccount(engine.pool, session.workspace_id);
+  const existing = await findEmailDomainAccount(
+    engine.pool,
+    session.workspace_id,
+  );
   const channel_account_id = existing?.id ?? randomUUID();
   const transport = resolveProductEmailTransportMode();
   const payload = {
@@ -6095,8 +6694,8 @@ export async function getOutlookAccountConnectIntent(
     connect_url: productRouteUrl("/api/auth/outlook"),
     provider_configured: Boolean(
       process.env.MICROSOFT_CLIENT_ID &&
-        process.env.MICROSOFT_CLIENT_SECRET &&
-        process.env.SESSION_SECRET,
+      process.env.MICROSOFT_CLIENT_SECRET &&
+      process.env.SESSION_SECRET,
     ),
   };
 }
@@ -6111,8 +6710,8 @@ export async function getOutlookCalendarConnectIntent(
     connect_url: productRouteUrl("/api/auth/outlook?intent=calendar"),
     provider_configured: Boolean(
       process.env.MICROSOFT_CLIENT_ID &&
-        process.env.MICROSOFT_CLIENT_SECRET &&
-        process.env.SESSION_SECRET,
+      process.env.MICROSOFT_CLIENT_SECRET &&
+      process.env.SESSION_SECRET,
     ),
     scope: "Calendars.ReadBasic",
   };
@@ -6187,7 +6786,8 @@ async function projectEmailAccountConfigured(
     daily_cap: number;
     transport: "resend" | "dry-run" | "unconfigured";
   };
-  const status = payload.transport === "unconfigured" ? "disconnected" : "connected";
+  const status =
+    payload.transport === "unconfigured" ? "disconnected" : "connected";
   await pool.query(
     `insert into channel_accounts (
        id, workspace_id, kind, display_name, status, daily_cap, daily_used, properties
@@ -6205,7 +6805,10 @@ async function projectEmailAccountConfigured(
       payload.display_name,
       status,
       payload.daily_cap,
-      JSON.stringify({ transport: payload.transport, configured_event_id: event.id }),
+      JSON.stringify({
+        transport: payload.transport,
+        configured_event_id: event.id,
+      }),
     ],
   );
   await ensureSendingDomain(
@@ -6228,7 +6831,8 @@ async function resolveProductOutcomeAttribution(event: PublishedEvent) {
   const exemplar_ids = Array.isArray(props.exemplar_ids)
     ? props.exemplar_ids.filter((id): id is string => typeof id === "string")
     : [];
-  const pattern_key = typeof props.pattern_key === "string" ? props.pattern_key : null;
+  const pattern_key =
+    typeof props.pattern_key === "string" ? props.pattern_key : null;
   if (payload.attributed_rep_id && pattern_key && exemplar_ids.length > 0) {
     return {
       scope: {
@@ -6265,11 +6869,20 @@ async function resolveProductOutcomeAttribution(event: PublishedEvent) {
     const rep_id = payload.attributed_rep_id ?? row?.rep_id ?? null;
     const provenance = row?.provenance ?? null;
     const messagePatternKey =
-      typeof provenance?.pattern_key === "string" ? provenance.pattern_key : null;
+      typeof provenance?.pattern_key === "string"
+        ? provenance.pattern_key
+        : null;
     const messageExemplarIds = Array.isArray(provenance?.exemplar_ids)
-      ? provenance.exemplar_ids.filter((id): id is string => typeof id === "string")
+      ? provenance.exemplar_ids.filter(
+          (id): id is string => typeof id === "string",
+        )
       : [];
-    if (rep_id && provenance && messagePatternKey && messageExemplarIds.length > 0) {
+    if (
+      rep_id &&
+      provenance &&
+      messagePatternKey &&
+      messageExemplarIds.length > 0
+    ) {
       return {
         scope: {
           workspace_id: event.workspace_id,
@@ -6287,14 +6900,20 @@ async function resolveProductOutcomeAttribution(event: PublishedEvent) {
 
 function productSeedFromProperties(
   properties: Record<string, unknown>,
-): { pattern_key: string; exemplar: Record<string, unknown>; initial_score?: number } | null {
+): {
+  pattern_key: string;
+  exemplar: Record<string, unknown>;
+  initial_score?: number;
+} | null {
   const pattern_key =
-    typeof properties.seed_pattern_key === "string" ? properties.seed_pattern_key : null;
+    typeof properties.seed_pattern_key === "string"
+      ? properties.seed_pattern_key
+      : null;
   const exemplar =
     properties.seed_exemplar &&
     typeof properties.seed_exemplar === "object" &&
     !Array.isArray(properties.seed_exemplar)
-      ? properties.seed_exemplar as Record<string, unknown>
+      ? (properties.seed_exemplar as Record<string, unknown>)
       : null;
   if (!pattern_key || !exemplar) return null;
   const initial_score =
@@ -6314,7 +6933,9 @@ function productSeedFromMessage(
   body: string | null,
 ): { pattern_key: string; exemplar: Record<string, unknown> } | null {
   const pattern_key =
-    typeof provenance.seed_pattern_key === "string" ? provenance.seed_pattern_key : null;
+    typeof provenance.seed_pattern_key === "string"
+      ? provenance.seed_pattern_key
+      : null;
   if (!pattern_key || !body?.trim()) return null;
   return {
     pattern_key,
@@ -6343,7 +6964,9 @@ function createSignalCompanyLinkedProjection(
   };
 }
 
-function createProductEventProjections(engine: ProductEngine): DurableEventProjection[] {
+function createProductEventProjections(
+  engine: ProductEngine,
+): DurableEventProjection[] {
   return [
     {
       name: "workspace.created.v1",
@@ -6374,7 +6997,11 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       name: "signal.discovered.projector.v1",
       eventTypes: ["signal.discovered"],
       apply: async (event) => {
-        await projectSignalDiscovered(engine.pool, event.workspace_id, event.payload as never);
+        await projectSignalDiscovered(
+          engine.pool,
+          event.workspace_id,
+          event.payload as never,
+        );
         await engine.bus.publish({
           workspace_id: event.workspace_id,
           event_type: "signal.ingested",
@@ -6385,7 +7012,8 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
           idempotency_key: `projection:${event.id}:signal.ingested`,
           payload: {
             signal_id: (event.payload as { signal_id: string }).signal_id,
-            source_id: (event.payload as { source_id: string | null }).source_id,
+            source_id: (event.payload as { source_id: string | null })
+              .source_id,
             kind: (event.payload as { kind: string | null }).kind,
             novelty_score: null,
           },
@@ -6411,7 +7039,11 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
       name: "signal.classification.projector.v1",
       eventTypes: ["signal.classification.completed"],
       apply: async (event) => {
-        await projectSignalClassification(engine.pool, event.workspace_id, event.payload as never);
+        await projectSignalClassification(
+          engine.pool,
+          event.workspace_id,
+          event.payload as never,
+        );
         const payload = event.payload as {
           signal_id: string;
           disposition: "matched" | "dismissed";
@@ -6442,8 +7074,7 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
             producer_ref: "projection:signal.classification.completed",
             correlation_id: event.correlation_id ?? event.id,
             causation_id: event.id,
-            idempotency_key:
-              `projection:${event.id}:signal.matched:${match.icp_segment}`,
+            idempotency_key: `projection:${event.id}:signal.matched:${match.icp_segment}`,
             payload: {
               signal_id: payload.signal_id,
               match_score: match.match_score,
@@ -6513,7 +7144,9 @@ function createProductEventProjections(engine: ProductEngine): DurableEventProje
   ];
 }
 
-async function projectVisibleProductState(engine: ProductEngine): Promise<void> {
+async function projectVisibleProductState(
+  engine: ProductEngine,
+): Promise<void> {
   if (engine.substrateMode !== "postgres") return;
   await runDurableEventProjectionsOnce(
     engine.pool,
@@ -6548,9 +7181,14 @@ export async function startSendingDomainOperation(
     [session.workspace_id],
   );
   const domain = rows[0];
-  if (!domain) throw new Error("Configure an email sender before provisioning its domain.");
+  if (!domain)
+    throw new Error(
+      "Configure an email sender before provisioning its domain.",
+    );
   if (operation !== "provision" && !domain.provider_domain_id) {
-    throw new Error("Provision the sending domain before requesting verification.");
+    throw new Error(
+      "Provision the sending domain before requesting verification.",
+    );
   }
   engine.runtime.register(
     createSendingDomainProvisioningWorkflow({
@@ -6737,7 +7375,8 @@ export async function discoverSignalFromSource(
       title: input.title,
       content: input.content ?? undefined,
       url: input.url ?? undefined,
-      kind: input.signal_kind == null ? null : parseSignalKind(input.signal_kind),
+      kind:
+        input.signal_kind == null ? null : parseSignalKind(input.signal_kind),
       freshness_at: input.freshness_at ?? new Date().toISOString(),
       structured: input.structured ?? {},
       provenance: input.provenance ?? {},
@@ -6784,7 +7423,8 @@ export async function discoverSignalFromWebhook(
       title: input.title,
       content: input.content ?? undefined,
       url: input.url ?? undefined,
-      kind: input.signal_kind == null ? null : parseSignalKind(input.signal_kind),
+      kind:
+        input.signal_kind == null ? null : parseSignalKind(input.signal_kind),
       freshness_at: input.freshness_at ?? new Date().toISOString(),
       structured: input.structured ?? {},
       provenance: input.provenance ?? {},
@@ -6821,7 +7461,9 @@ function parseWorkspaceSignalSourceAdapter(
   }
 }
 
-function sourceKindForAdapter(adapter: WorkspaceSignalSourceAdapter): SourceKind {
+function sourceKindForAdapter(
+  adapter: WorkspaceSignalSourceAdapter,
+): SourceKind {
   switch (adapter) {
     case "product_hunt":
       return "product_hunt";
@@ -6841,7 +7483,9 @@ function sourceKindForAdapter(adapter: WorkspaceSignalSourceAdapter): SourceKind
   }
 }
 
-function defaultWorkspaceSourceName(adapter: WorkspaceSignalSourceAdapter): string {
+function defaultWorkspaceSourceName(
+  adapter: WorkspaceSignalSourceAdapter,
+): string {
   switch (adapter) {
     case "google_news":
       return "Google News signals";
@@ -6943,13 +7587,18 @@ function sourceConfigForAdapter(
   }
 }
 
-function isPushSignalSourceAdapter(adapter: WorkspaceSignalSourceAdapter): boolean {
+function isPushSignalSourceAdapter(
+  adapter: WorkspaceSignalSourceAdapter,
+): boolean {
   return adapter === "webhook";
 }
 
 function signalSourceProvider(provider: unknown): string | undefined {
   if (typeof provider !== "string") return undefined;
-  const normalized = provider.trim().toLowerCase().replace(/[^a-z0-9_:-]+/g, "_");
+  const normalized = provider
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_:-]+/g, "_");
   return normalized || undefined;
 }
 
@@ -6984,7 +7633,9 @@ function positiveNumber(value: unknown): number | undefined {
   return value > 0 ? value : undefined;
 }
 
-function defaultSignalKindForAdapter(adapter: WorkspaceSignalSourceAdapter): string {
+function defaultSignalKindForAdapter(
+  adapter: WorkspaceSignalSourceAdapter,
+): string {
   switch (adapter) {
     case "hn_whos_hiring":
       return "hiring";
@@ -7153,7 +7804,9 @@ function createSignalClassifierLLM(
   const llm = createGovernedLLM(engine, workspace_id, "classifier.signal");
   if (llm) return llm;
   if (isProductionProductRuntime()) {
-    throw new ProductEnvironmentError("signal classification", ["DEEPSEEK_API_KEY"]);
+    throw new ProductEnvironmentError("signal classification", [
+      "DEEPSEEK_API_KEY",
+    ]);
   }
   return createLocalSignalClassifierLLM();
 }
@@ -7174,7 +7827,8 @@ function createLocalSignalClassifierLLM(): LLMClient {
         per_icp: icpIds.map((icp_id) => ({
           icp_id,
           score: 0.72,
-          reason: "Local deterministic classifier matched the configured signal kind.",
+          reason:
+            "Local deterministic classifier matched the configured signal kind.",
         })),
       };
       return {
@@ -7208,24 +7862,60 @@ function createLocalReplyIntentClassifier(): IntentClassifier {
     async classify(input) {
       const text = `${input.subject}\n${input.body_text}`.toLowerCase();
       if (/\b(unsubscribe|remove me|opt out)\b/.test(text)) {
-        return { intent: "unsubscribe", confidence: 0.95, reason: "Local classifier found an unsubscribe request." };
+        return {
+          intent: "unsubscribe",
+          confidence: 0.95,
+          reason: "Local classifier found an unsubscribe request.",
+        };
       }
-      if (/\b(do not contact|never contact|legal|spam complaint)\b/.test(text)) {
-        return { intent: "do_not_contact", confidence: 0.95, reason: "Local classifier found a do-not-contact request." };
+      if (
+        /\b(do not contact|never contact|legal|spam complaint)\b/.test(text)
+      ) {
+        return {
+          intent: "do_not_contact",
+          confidence: 0.95,
+          reason: "Local classifier found a do-not-contact request.",
+        };
       }
       if (/\b(out of office|ooo|on leave|vacation)\b/.test(text)) {
-        return { intent: "ooo", confidence: 0.8, reason: "Local classifier found an out-of-office pattern." };
+        return {
+          intent: "ooo",
+          confidence: 0.8,
+          reason: "Local classifier found an out-of-office pattern.",
+        };
       }
-      if (/\b(not interested|no thanks|not a priority|no budget)\b/.test(text)) {
-        return { intent: "negative", confidence: 0.78, reason: "Local classifier found a negative reply pattern." };
+      if (
+        /\b(not interested|no thanks|not a priority|no budget)\b/.test(text)
+      ) {
+        return {
+          intent: "negative",
+          confidence: 0.78,
+          reason: "Local classifier found a negative reply pattern.",
+        };
       }
-      if (/\b(book|meeting|calendar|chat|call|available|availability|time[s]?|schedule)\b/.test(text)) {
-        return { intent: "meeting_intent", confidence: 0.86, reason: "Local classifier found explicit scheduling intent." };
+      if (
+        /\b(book|meeting|calendar|chat|call|available|availability|time[s]?|schedule)\b/.test(
+          text,
+        )
+      ) {
+        return {
+          intent: "meeting_intent",
+          confidence: 0.86,
+          reason: "Local classifier found explicit scheduling intent.",
+        };
       }
       if (/\b(interested|send me|tell me more)\b/.test(text)) {
-        return { intent: "positive", confidence: 0.82, reason: "Local classifier found buying-interest language." };
+        return {
+          intent: "positive",
+          confidence: 0.82,
+          reason: "Local classifier found buying-interest language.",
+        };
       }
-      return { intent: "neutral", confidence: 0.55, reason: "Local classifier found no decisive reply intent." };
+      return {
+        intent: "neutral",
+        confidence: 0.55,
+        reason: "Local classifier found no decisive reply intent.",
+      };
     },
   };
 }
@@ -7234,7 +7924,9 @@ function createProductEmailTransport(): EmailTransport | undefined {
   if (resolveProductEmailTransportMode() === "resend") {
     return createResendEmailTransport({ apiKey: process.env.RESEND_API_KEY! });
   }
-  return isProductionProductRuntime() ? undefined : createDryRunEmailTransport();
+  return isProductionProductRuntime()
+    ? undefined
+    : createDryRunEmailTransport();
 }
 
 function createProductOutlookSender(
@@ -7274,14 +7966,21 @@ function createGovernedJudge(engine: ProductEngine, workspace_id: string) {
   const llm = createGovernedLLM(engine, workspace_id, "judge.hot_path");
   if (!llm) return fallback;
   return createFallbackJudge({
-    primary: createDeepSeekJudge({ llm, threshold: 0.6, throwOnMalformed: true }),
+    primary: createDeepSeekJudge({
+      llm,
+      threshold: 0.6,
+      throwOnMalformed: true,
+    }),
     fallback,
     shouldFallback: (error) =>
       isLLMBudgetExceededError(error) || isMalformedJudgeResponseError(error),
   });
 }
 
-function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: string): void {
+function registerSignalEmailWorkflow(
+  engine: ProductEngine,
+  workspace_id?: string,
+): void {
   const store = createPostgresVerticalSliceStore(engine.pool);
   const transport = createProductEmailTransport();
   const writerLlm = workspace_id
@@ -7297,7 +7996,11 @@ function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: strin
       memory: engine.memory,
       judge,
       writerLlm,
-      email: createDatabaseBackedEmailChannel(engine.pool, transport, engine.bus),
+      email: createDatabaseBackedEmailChannel(
+        engine.pool,
+        transport,
+        engine.bus,
+      ),
       bus: engine.bus,
       workspaceContextProvider: (input) =>
         getWorkflowWorkspaceContext(engine, input.workspace_id),
@@ -7307,7 +8010,10 @@ function registerSignalEmailWorkflow(engine: ProductEngine, workspace_id?: strin
   );
 }
 
-function registerReplyEmailWorkflow(engine: ProductEngine, workspace_id?: string): void {
+function registerReplyEmailWorkflow(
+  engine: ProductEngine,
+  workspace_id?: string,
+): void {
   const store = createPostgresVerticalSliceStore(engine.pool);
   const transport = createProductEmailTransport();
   const writerLlm = workspace_id
@@ -7323,7 +8029,11 @@ function registerReplyEmailWorkflow(engine: ProductEngine, workspace_id?: string
       memory: engine.memory,
       judge,
       writerLlm,
-      email: createDatabaseBackedEmailChannel(engine.pool, transport, engine.bus),
+      email: createDatabaseBackedEmailChannel(
+        engine.pool,
+        transport,
+        engine.bus,
+      ),
       bus: engine.bus,
       workspaceContextProvider: (input) =>
         getWorkflowWorkspaceContext(engine, input.workspace_id),
@@ -7552,7 +8262,10 @@ async function startSignalMatchingWorkflowForEvent(
   await engine.runtime.start<LeadMatchingGraphInput, BombsellLangGraphState>({
     workspace_id: input.workspace_id,
     workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
-    idempotency_key: signalMatchingIdempotencyKey(input.workspace_id, input.signal_id),
+    idempotency_key: signalMatchingIdempotencyKey(
+      input.workspace_id,
+      input.signal_id,
+    ),
     correlation_id: input.correlation_id,
     causation_id: input.event_id,
     input: {
@@ -7567,7 +8280,10 @@ async function startSignalMatchingWorkflowForEvent(
   return true;
 }
 
-function signalMatchingIdempotencyKey(workspace_id: string, signal_id: string): string {
+function signalMatchingIdempotencyKey(
+  workspace_id: string,
+  signal_id: string,
+): string {
   return `signal-match:${workspace_id}:${signal_id}`;
 }
 
@@ -7585,7 +8301,10 @@ async function getWorkflowWorkspaceContext(
   return context.markdown;
 }
 
-async function getWorkflowUserId(pool: Pool, workspace_id: string): Promise<string | null> {
+async function getWorkflowUserId(
+  pool: Pool,
+  workspace_id: string,
+): Promise<string | null> {
   const { rows } = await pool.query<{ user_id: string }>(
     `select user_id
        from workspace_members
@@ -7640,12 +8359,16 @@ function createProductEmbeddingClient(): EmbeddingClient {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (apiKey) return createOpenAIEmbeddingClient({ apiKey });
   if (isProductionProductRuntime()) {
-    throw new ProductEnvironmentError("signal ingestion embeddings", ["OPENAI_API_KEY"]);
+    throw new ProductEnvironmentError("signal ingestion embeddings", [
+      "OPENAI_API_KEY",
+    ]);
   }
   return createMockEmbeddingClient();
 }
 
-function registerSendingDomainProvisioningWorkflow(engine: ProductEngine): void {
+function registerSendingDomainProvisioningWorkflow(
+  engine: ProductEngine,
+): void {
   engine.runtime.register(
     createSendingDomainProvisioningWorkflow({
       bus: engine.bus,
@@ -7661,11 +8384,11 @@ function registerSendingDomainWarmupWorkflow(engine: ProductEngine): void {
   );
 }
 
-async function registerExaRecommendationWorkflows(engine: ProductEngine): Promise<void> {
-  const {
-    createExaAeoAuditWorkflow,
-    createExaContentOpportunityWorkflow,
-  } = await import("../exa/workflows.ts");
+async function registerExaRecommendationWorkflows(
+  engine: ProductEngine,
+): Promise<void> {
+  const { createExaAeoAuditWorkflow, createExaContentOpportunityWorkflow } =
+    await import("../exa/workflows.ts");
   engine.runtime.register(createExaContentOpportunityWorkflow());
   engine.runtime.register(createExaAeoAuditWorkflow());
 }
@@ -7752,8 +8475,16 @@ async function startSignalEmailPlay(
   const person = await store.getPerson(input.person_id);
   if (!person) throw new Error(`Person not found: ${input.person_id}`);
   const transport = createProductEmailTransport();
-  const email = createDatabaseBackedEmailChannel(engine.pool, transport, engine.bus);
-  const writerLlm = createGovernedLLM(engine, input.workspace_id, "writer.email");
+  const email = createDatabaseBackedEmailChannel(
+    engine.pool,
+    transport,
+    engine.bus,
+  );
+  const writerLlm = createGovernedLLM(
+    engine,
+    input.workspace_id,
+    "writer.email",
+  );
   const judge = createGovernedJudge(engine, input.workspace_id);
   engine.runtime.register(
     createSignalToEmailPlayWorkflow({
@@ -7775,7 +8506,11 @@ async function startSignalEmailPlay(
     workflow_name: SIGNAL_TO_EMAIL_PLAY_WORKFLOW,
     play_id: input.play_id,
     play_run_id,
-    idempotency_key: signalPlayIdempotencyKey(signal.id, input.play_id, input.repair_key),
+    idempotency_key: signalPlayIdempotencyKey(
+      signal.id,
+      input.play_id,
+      input.repair_key,
+    ),
     correlation_id: input.trigger_event_id ?? undefined,
     causation_id: input.trigger_event_id ?? undefined,
     input: {
@@ -7835,7 +8570,11 @@ async function startSignalLinkedInPlay(
     input.workspace_id,
     input.action,
   );
-  const writerLlm = createGovernedLLM(engine, input.workspace_id, "writer.linkedin");
+  const writerLlm = createGovernedLLM(
+    engine,
+    input.workspace_id,
+    "writer.linkedin",
+  );
   const judge = createGovernedJudge(engine, input.workspace_id);
   engine.runtime.register(
     createSignalToLinkedInPlayWorkflow({
@@ -7852,12 +8591,19 @@ async function startSignalLinkedInPlay(
     }),
   );
   const play_run_id = randomUUID();
-  return engine.runtime.start<SignalToLinkedInPlayInput, SignalToLinkedInPlayOutput>({
+  return engine.runtime.start<
+    SignalToLinkedInPlayInput,
+    SignalToLinkedInPlayOutput
+  >({
     workspace_id: input.workspace_id,
     workflow_name: SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
     play_id: input.play_id,
     play_run_id,
-    idempotency_key: signalPlayIdempotencyKey(signal.id, input.play_id, input.repair_key),
+    idempotency_key: signalPlayIdempotencyKey(
+      signal.id,
+      input.play_id,
+      input.repair_key,
+    ),
     correlation_id: input.trigger_event_id ?? undefined,
     causation_id: input.trigger_event_id ?? undefined,
     input: {
@@ -7905,9 +8651,10 @@ async function startContactResolution(
   });
 }
 
-function contactResolutionIdempotencyKey(input: ContactResolutionInput): string {
-  const base =
-    `contact:${input.signal_id}:play:${input.play_id}:channel:${input.channel}`;
+function contactResolutionIdempotencyKey(
+  input: ContactResolutionInput,
+): string {
+  const base = `contact:${input.signal_id}:play:${input.play_id}:channel:${input.channel}`;
   const repairKey = sanitizeContactResolutionRepairKey(input.repair_key);
   return repairKey ? `${base}:repair:${repairKey}` : base;
 }
@@ -7941,7 +8688,11 @@ function contactResolverRepairKey(row: {
   resolver_output: Record<string, unknown> | null;
 }): string | null {
   if (!row.resolver_run_id) return null;
-  if (row.resolver_idempotency_key?.endsWith(`:repair:${CONTACT_RESOLUTION_REPAIR_KEY}`)) {
+  if (
+    row.resolver_idempotency_key?.endsWith(
+      `:repair:${CONTACT_RESOLUTION_REPAIR_KEY}`,
+    )
+  ) {
     return null;
   }
   if (row.resolver_status === "failed") return CONTACT_RESOLUTION_REPAIR_KEY;
@@ -7970,9 +8721,12 @@ function signalPlayRepairKey(row: {
   return null;
 }
 
-function isRepairableDraftRejection(reason: string | null | undefined): boolean {
-  return /being an ai|as an ai|ai language model|language model|judge returned non-json response/i
-    .test(reason ?? "");
+function isRepairableDraftRejection(
+  reason: string | null | undefined,
+): boolean {
+  return /being an ai|as an ai|ai language model|language model|judge returned non-json response/i.test(
+    reason ?? "",
+  );
 }
 
 interface SignalDispatchRow {
@@ -8029,10 +8783,15 @@ function campaignDispatchStrategyFromPayload(
   const parsed = variants
     .map((variant) =>
       variant && typeof variant === "object" && !Array.isArray(variant)
-        ? campaignDispatchStrategyVariantFromRecord(variant as Record<string, unknown>)
-        : null
+        ? campaignDispatchStrategyVariantFromRecord(
+            variant as Record<string, unknown>,
+          )
+        : null,
     )
-    .filter((variant): variant is CampaignDispatchStrategy["variants"][number] => Boolean(variant));
+    .filter(
+      (variant): variant is CampaignDispatchStrategy["variants"][number] =>
+        Boolean(variant),
+    );
   if (parsed.length === 0) return null;
   return {
     recommendation_id: stringOrNull(payload?.recommendation_id),
@@ -8044,12 +8803,15 @@ function campaignDispatchStrategyFromPayload(
 function campaignDispatchStrategyVariantFromRecord(
   variant: Record<string, unknown>,
 ): CampaignDispatchStrategy["variants"][number] | null {
-  const recommendation = campaignOptimizerRecommendationValue(variant.recommendation);
+  const recommendation = campaignOptimizerRecommendationValue(
+    variant.recommendation,
+  );
   const play_id = stringOrNull(variant.play_id);
   const variant_key = stringOrNull(variant.variant_key);
   const skill_key = stringOrNull(variant.skill_key);
   const pattern_key = stringOrNull(variant.pattern_key);
-  if (!recommendation || !play_id || !variant_key || !skill_key || !pattern_key) return null;
+  if (!recommendation || !play_id || !variant_key || !skill_key || !pattern_key)
+    return null;
   return {
     variant_key,
     play_id,
@@ -8062,7 +8824,9 @@ function campaignDispatchStrategyVariantFromRecord(
   };
 }
 
-function campaignOptimizerRecommendationValue(value: unknown): CampaignOptimizerRecommendation | null {
+function campaignOptimizerRecommendationValue(
+  value: unknown,
+): CampaignOptimizerRecommendation | null {
   return value === "double_down" ||
     value === "hold" ||
     value === "reduce" ||
@@ -8071,10 +8835,13 @@ function campaignOptimizerRecommendationValue(value: unknown): CampaignOptimizer
     : null;
 }
 
-function signalDispatchCampaignCandidate(row: SignalDispatchRow): CampaignDispatchCandidate {
-  const action = row.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW
-    ? parseLinkedInAction(row.target_channel) ?? "linkedin_dm"
-    : null;
+function signalDispatchCampaignCandidate(
+  row: SignalDispatchRow,
+): CampaignDispatchCandidate {
+  const action =
+    row.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW
+      ? (parseLinkedInAction(row.target_channel) ?? "linkedin_dm")
+      : null;
   const channel = action ?? "email";
   const selectedSkill = selectOutreachSkill({
     channel: channel as OutreachSkillChannel,
@@ -8088,7 +8855,10 @@ function signalDispatchCampaignCandidate(row: SignalDispatchRow): CampaignDispat
     channel,
     skill_key: selectedSkill.skill_key,
     skill_version: selectedSkill.version,
-    segment_key: row.segment_key ?? stringOrNull(row.signal_audience_hint.icp_segment) ?? "all",
+    segment_key:
+      row.segment_key ??
+      stringOrNull(row.signal_audience_hint.icp_segment) ??
+      "all",
   };
 }
 
@@ -8144,7 +8914,9 @@ function stringOrNull(value: unknown): string | null {
 
 function numberOrDefault(value: unknown, fallback: number): number {
   const numeric = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : fallback;
+  return Number.isFinite(numeric)
+    ? Math.max(0, Math.min(1, numeric))
+    : fallback;
 }
 
 export async function dispatchSignalPlaysOnce(
@@ -8391,20 +9163,27 @@ export async function dispatchSignalPlaysOnce(
       row,
       original_index,
     };
-    const workspaceCandidates = candidatesByWorkspace.get(row.workspace_id) ?? [];
+    const workspaceCandidates =
+      candidatesByWorkspace.get(row.workspace_id) ?? [];
     workspaceCandidates.push(candidate);
     candidatesByWorkspace.set(row.workspace_id, workspaceCandidates);
   });
 
   const planned: Array<CampaignDispatchPlan<SignalDispatchCandidate>> = [];
   for (const [workspace_id, candidates] of candidatesByWorkspace) {
-    const strategy = await latestCampaignDispatchStrategy(engine.pool, workspace_id);
+    const strategy = await latestCampaignDispatchStrategy(
+      engine.pool,
+      workspace_id,
+    );
     planned.push(...planCampaignDispatchAllocations(candidates, strategy));
   }
   planned.sort((a, b) => {
-    const dispatchRank = Number(b.allocation.should_dispatch) - Number(a.allocation.should_dispatch);
+    const dispatchRank =
+      Number(b.allocation.should_dispatch) -
+      Number(a.allocation.should_dispatch);
     if (dispatchRank !== 0) return dispatchRank;
-    const weightRank = b.allocation.allocation_weight - a.allocation.allocation_weight;
+    const weightRank =
+      b.allocation.allocation_weight - a.allocation.allocation_weight;
     if (weightRank !== 0) return weightRank;
     return a.candidate.original_index - b.candidate.original_index;
   });
@@ -8412,10 +9191,17 @@ export async function dispatchSignalPlaysOnce(
   const skipped = new Set<string>();
   for (const plan of planned) {
     if (plan.allocation.should_dispatch) continue;
-    const key = signalDispatchCampaignSkipIdempotencyKey(plan.candidate.row, plan.allocation);
+    const key = signalDispatchCampaignSkipIdempotencyKey(
+      plan.candidate.row,
+      plan.allocation,
+    );
     if (skipped.has(key)) continue;
     skipped.add(key);
-    await publishCampaignDispatchSkipped(engine, plan.candidate.row, plan.allocation);
+    await publishCampaignDispatchSkipped(
+      engine,
+      plan.candidate.row,
+      plan.allocation,
+    );
   }
 
   let dispatched = 0;
@@ -8620,7 +9406,10 @@ export async function dispatchMeetingPrepOnce(
   return dispatched;
 }
 
-type ProductDispatchEventType = "signal.matched" | "contact.resolved" | "reply.classified";
+type ProductDispatchEventType =
+  | "signal.matched"
+  | "contact.resolved"
+  | "reply.classified";
 type SignalMatchingDispatchEventType = "signal.ingested";
 
 interface SignalMatchingWorkflowStarter {
@@ -8665,7 +9454,10 @@ export async function dispatchSignalMatchingWorkflowFromIngestedEvent(
     await deps.workflows.start<LeadMatchingGraphInput, BombsellLangGraphState>({
       workspace_id: event.workspace_id,
       workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
-      idempotency_key: signalMatchingIdempotencyKey(event.workspace_id, signal_id),
+      idempotency_key: signalMatchingIdempotencyKey(
+        event.workspace_id,
+        signal_id,
+      ),
       correlation_id,
       causation_id: event.id,
       input: {
@@ -8695,7 +9487,8 @@ export async function registerSignalMatchingEventDispatcher(
   opts: SignalMatchingEventDispatcherOptions = {},
 ): Promise<Subscription> {
   const dispatchSignalMatching =
-    opts.dispatchSignalMatching ?? dispatchSignalMatchingWorkflowFromIngestedEvent;
+    opts.dispatchSignalMatching ??
+    dispatchSignalMatchingWorkflowFromIngestedEvent;
   return adapter.subscribe(
     "signal.ingested",
     async (event) => {
@@ -8726,12 +9519,15 @@ export async function registerProductEventDispatchers(
   opts: ProductEventDispatcherOptions = {},
 ): Promise<Subscription[]> {
   const limit = opts.limit ?? 25;
-  const dispatchSignalPlays = opts.dispatchSignalPlays ?? dispatchSignalPlaysOnce;
+  const dispatchSignalPlays =
+    opts.dispatchSignalPlays ?? dispatchSignalPlaysOnce;
   const dispatchReplyEmailPlays =
     opts.dispatchReplyEmailPlays ?? dispatchReplyEmailPlaysOnce;
-  const dispatchMeetingPrep = opts.dispatchMeetingPrep ?? dispatchMeetingPrepOnce;
+  const dispatchMeetingPrep =
+    opts.dispatchMeetingPrep ?? dispatchMeetingPrepOnce;
   const dispatchSignalMatching =
-    opts.dispatchSignalMatching ?? dispatchSignalMatchingWorkflowFromIngestedEvent;
+    opts.dispatchSignalMatching ??
+    dispatchSignalMatchingWorkflowFromIngestedEvent;
 
   const signalMatchingSubscription = await adapter.subscribe(
     "signal.ingested",
@@ -8787,7 +9583,10 @@ interface RssSourceRow {
 }
 
 function pollIntervalMs(row: RssSourceRow): number {
-  const msCandidates = [row.config.poll_interval_ms, row.properties.poll_interval_ms];
+  const msCandidates = [
+    row.config.poll_interval_ms,
+    row.properties.poll_interval_ms,
+  ];
   const secondsCandidates = [
     row.config.poll_interval_seconds,
     row.properties.poll_interval_seconds,
@@ -8901,14 +9700,16 @@ export async function dispatchWorkspaceSourcePollsOnce(
   for (const row of rows) {
     const due =
       !row.last_polled_at ||
-      now.getTime() - row.last_polled_at.getTime() >= row.poll_cadence_sec * 1000;
+      now.getTime() - row.last_polled_at.getTime() >=
+        row.poll_cadence_sec * 1000;
     if (!due) continue;
-    const cadenceBucket = Math.floor(now.getTime() / (row.poll_cadence_sec * 1000));
+    const cadenceBucket = Math.floor(
+      now.getTime() / (row.poll_cadence_sec * 1000),
+    );
     await engine.runtime.start({
       workspace_id: row.workspace_id,
       workflow_name: WORKSPACE_POLL_WORKFLOW,
-      idempotency_key:
-        `workspace-source:${row.workspace_id}:${row.source_id}:bucket:${cadenceBucket}`,
+      idempotency_key: `workspace-source:${row.workspace_id}:${row.source_id}:bucket:${cadenceBucket}`,
       input: {
         workspace_id: row.workspace_id,
         source_id: row.source_id,
@@ -8937,7 +9738,9 @@ interface RecommendationResearchWorkspaceRow {
 type RecommendationResearchIntent = "content_research" | "aeo_audit";
 
 function recommendationResearchCadenceMs(): number {
-  const hours = Number(process.env.BOMBSELL_RECOMMENDATION_RESEARCH_CADENCE_HOURS);
+  const hours = Number(
+    process.env.BOMBSELL_RECOMMENDATION_RESEARCH_CADENCE_HOURS,
+  );
   if (!Number.isFinite(hours) || hours <= 0) {
     return DEFAULT_RECOMMENDATION_RESEARCH_CADENCE_MS;
   }
@@ -9139,7 +9942,11 @@ export async function dispatchWorkspaceRecommendationResearchOnce(
 export async function runWorkspaceSignalAggregatorOnce(
   opts: DispatchOptions = {},
   session?: ProductWorkspaceSession,
-): Promise<{ dispatched: number; resumed: number; projected: DurableProjectionTick | null }> {
+): Promise<{
+  dispatched: number;
+  resumed: number;
+  projected: DurableProjectionTick | null;
+}> {
   const engine = await getProductEngine();
   const dispatched = await dispatchWorkspaceSourcePollsOnce(opts, session);
   if (engine.substrateMode !== "postgres") {
@@ -9212,7 +10019,8 @@ export async function projectPendingProductEventsOnce(
 ): Promise<DurableProjectionTick> {
   const engine = await getProductEngine();
   const leaseOwner =
-    opts.leaseOwner ?? `product-projector:${process.pid}:${randomBytes(4).toString("hex")}`;
+    opts.leaseOwner ??
+    `product-projector:${process.pid}:${randomBytes(4).toString("hex")}`;
   return runDurableEventProjectionsOnce(
     engine.pool,
     createProductEventProjections(engine),
@@ -9230,7 +10038,8 @@ export async function resumeRunnableWorkflowsOnce(
   const engine = await getProductEngine();
   registerSignalIngestionWorkflows(engine);
   const leaseOwner =
-    opts.leaseOwner ?? `product-worker:${process.pid}:${randomBytes(4).toString("hex")}`;
+    opts.leaseOwner ??
+    `product-worker:${process.pid}:${randomBytes(4).toString("hex")}`;
   const leaseMs = opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS;
   await renewWorkflowRunLeases(engine.pool, {
     leaseOwner,
@@ -9266,9 +10075,13 @@ export async function resumeRunnableWorkflowsOnce(
       await registerWorkspaceEvalGateWorkflow(engine);
     } else if (row.workflow_name === WORKSPACE_MEETING_PREP_WORKFLOW) {
       await registerWorkspaceMeetingPrepWorkflow(engine);
-    } else if (row.workflow_name === WORKSPACE_MESSAGE_PERSONALIZATION_WORKFLOW) {
+    } else if (
+      row.workflow_name === WORKSPACE_MESSAGE_PERSONALIZATION_WORKFLOW
+    ) {
       await registerWorkspaceMessagePersonalizationWorkflow(engine);
-    } else if (row.workflow_name === WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW) {
+    } else if (
+      row.workflow_name === WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW
+    ) {
       await registerWorkspaceOutreachSkillSelectionWorkflow(engine);
     } else if (row.workflow_name === WORKSPACE_REPLY_TRIAGE_WORKFLOW) {
       await registerWorkspaceReplyTriageWorkflow(engine);
@@ -9320,7 +10133,10 @@ export async function renewWorkflowRunLeases(
   opts: Omit<WorkflowLeaseOptions, "limit">,
 ): Promise<number> {
   const workflowNames = [...(opts.workflowNames ?? RUNNABLE_WORKFLOW_NAMES)];
-  const leaseMs = Math.max(1000, Math.floor(opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS));
+  const leaseMs = Math.max(
+    1000,
+    Math.floor(opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS),
+  );
   const { rowCount } = await pool.query(
     `update workflow_runs
         set lease_expires_at = now() + ($3::int * interval '1 millisecond')
@@ -9338,7 +10154,10 @@ export async function claimRunnableWorkflowRuns(
 ): Promise<Array<{ id: string; workspace_id: string; workflow_name: string }>> {
   const workflowNames = [...(opts.workflowNames ?? RUNNABLE_WORKFLOW_NAMES)];
   const limit = opts.limit ?? 25;
-  const leaseMs = Math.max(1000, Math.floor(opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS));
+  const leaseMs = Math.max(
+    1000,
+    Math.floor(opts.leaseMs ?? DEFAULT_WORKFLOW_LEASE_MS),
+  );
   const { rows } = await pool.query<{
     id: string;
     workspace_id: string;
@@ -9412,7 +10231,9 @@ export async function retryFailedWorkflowRun(
     await registerWorkspaceMeetingPrepWorkflow(engine);
   } else if (run.workflow_name === WORKSPACE_MESSAGE_PERSONALIZATION_WORKFLOW) {
     await registerWorkspaceMessagePersonalizationWorkflow(engine);
-  } else if (run.workflow_name === WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW) {
+  } else if (
+    run.workflow_name === WORKSPACE_OUTREACH_SKILL_SELECTION_WORKFLOW
+  ) {
     await registerWorkspaceOutreachSkillSelectionWorkflow(engine);
   } else if (run.workflow_name === WORKSPACE_REPLY_TRIAGE_WORKFLOW) {
     await registerWorkspaceReplyTriageWorkflow(engine);
@@ -9507,14 +10328,20 @@ export async function listDeadLetteredEventDispatches(
 ): Promise<DeadLetteredDispatch[]> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  return listDeadLetteredDispatches(engine.pool, session.workspace_id, input.limit ?? 50);
+  return listDeadLetteredDispatches(
+    engine.pool,
+    session.workspace_id,
+    input.limit ?? 50,
+  );
 }
 
 function simulateOutcomeFromSignal(
   signalProperties: Record<string, unknown>,
 ): SignalToEmailPlayInput["simulate_outcome_kind"] {
   const value = signalProperties.simulate_outcome_kind;
-  return value === "positive_reply" || value === "meeting_booked" ? value : null;
+  return value === "positive_reply" || value === "meeting_booked"
+    ? value
+    : null;
 }
 
 export async function approveWorkflowApproval(
@@ -9578,7 +10405,9 @@ export function isStaleRestateApprovalResolutionError(error: unknown): boolean {
       : typeof error === "object" && error !== null && "body" in error
         ? String((error as { body?: unknown }).body ?? "")
         : "";
-  return /bad awakeable id|awakeable.*not found|not.*awakeable|unknown awakeable/i.test(body);
+  return /bad awakeable id|awakeable.*not found|not.*awakeable|unknown awakeable/i.test(
+    body,
+  );
 }
 
 async function rejectStaleWorkflowApproval(
@@ -9593,7 +10422,8 @@ async function rejectStaleWorkflowApproval(
 ): Promise<boolean> {
   const params: unknown[] = [
     input.decided_by,
-    input.note ?? "Rejected from dashboard after the approval runtime no longer had an active gate.",
+    input.note ??
+      "Rejected from dashboard after the approval runtime no longer had an active gate.",
     input.approval_id,
   ];
   const workspaceClause = input.workspace_id ? "and workspace_id = $4" : "";
@@ -9627,7 +10457,10 @@ async function rejectStaleWorkflowApproval(
   return true;
 }
 
-async function waitForApprovalDecision(pool: Pool, approval_id: string): Promise<boolean> {
+async function waitForApprovalDecision(
+  pool: Pool,
+  approval_id: string,
+): Promise<boolean> {
   const deadline = Date.now() + 2000;
   while (Date.now() < deadline) {
     const { rows } = await pool.query<{ decision: string }>(
@@ -9646,7 +10479,12 @@ export async function getProductReviewPulse(
   session: ProductWorkspaceSession,
 ): Promise<ProductReviewPulse> {
   await assertProductWorkspaceAccess(session, pool);
-  const [reviewEvents, recommendationFeedback, recommendationMutations, recommendationOutcomes] = await Promise.all([
+  const [
+    reviewEvents,
+    recommendationFeedback,
+    recommendationMutations,
+    recommendationOutcomes,
+  ] = await Promise.all([
     pool.query<{
       event_id: string;
       event_type: string;
@@ -9729,9 +10567,15 @@ export async function getProductReviewPulse(
       [session.workspace_id],
     ),
   ]);
-  const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
-  const recommendationMutationById = recommendationMutationState(recommendationMutations.rows);
-  const recommendationOutcomeById = recommendationOutcomeState(recommendationOutcomes.rows);
+  const recommendationFeedbackById = recommendationFeedbackState(
+    recommendationFeedback.rows,
+  );
+  const recommendationMutationById = recommendationMutationState(
+    recommendationMutations.rows,
+  );
+  const recommendationOutcomeById = recommendationOutcomeState(
+    recommendationOutcomes.rows,
+  );
   const contentReviews = applyRecommendationOutcomeState(
     productExaReviewState(
       reviewEvents.rows,
@@ -9778,7 +10622,12 @@ async function getProductRecommendationState(
   session: ProductWorkspaceSession,
 ): Promise<ProductRecommendationState> {
   await assertProductWorkspaceAccess(session, pool);
-  const [reviewEvents, recommendationFeedback, recommendationMutations, recommendationOutcomes] = await Promise.all([
+  const [
+    reviewEvents,
+    recommendationFeedback,
+    recommendationMutations,
+    recommendationOutcomes,
+  ] = await Promise.all([
     pool.query<{
       event_id: string;
       event_type: string;
@@ -9878,10 +10727,18 @@ async function getProductRecommendationState(
       [session.workspace_id],
     ),
   ]);
-  const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
-  const recommendationMutationById = recommendationMutationState(recommendationMutations.rows);
-  const recommendationOutcomeById = recommendationOutcomeState(recommendationOutcomes.rows);
-  const recommendationQuality = productRecommendationQualityState(recommendationFeedback.rows);
+  const recommendationFeedbackById = recommendationFeedbackState(
+    recommendationFeedback.rows,
+  );
+  const recommendationMutationById = recommendationMutationState(
+    recommendationMutations.rows,
+  );
+  const recommendationOutcomeById = recommendationOutcomeState(
+    recommendationOutcomes.rows,
+  );
+  const recommendationQuality = productRecommendationQualityState(
+    recommendationFeedback.rows,
+  );
   const content = applyRecommendationOutcomeState(
     productExaReviewState(
       reviewEvents.rows,
@@ -10111,7 +10968,10 @@ export async function getAppState(
           )
         order by wr.ended_at desc nulls last, wr.created_at desc
         limit 20`,
-      [boot.workspace_id, [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, RSS_SIGNAL_INGESTION_WORKFLOW]],
+      [
+        boot.workspace_id,
+        [SIGNAL_TO_EMAIL_PLAY_WORKFLOW, RSS_SIGNAL_INGESTION_WORKFLOW],
+      ],
     ),
     pool.query<{ id: string; event_type: string; occurred_at: Date }>(
       `select id, event_type, occurred_at
@@ -10285,7 +11145,10 @@ export async function getAppState(
         where gs.workspace_id = $1
         group by gs.id, latest.status, latest.created_at, latest.error
         order by gs.created_at desc`,
-      [boot.workspace_id, [RSS_SIGNAL_INGESTION_WORKFLOW, WORKSPACE_POLL_WORKFLOW]],
+      [
+        boot.workspace_id,
+        [RSS_SIGNAL_INGESTION_WORKFLOW, WORKSPACE_POLL_WORKFLOW],
+      ],
     ),
     pool.query<{
       id: string;
@@ -10414,10 +11277,18 @@ export async function getAppState(
       [boot.workspace_id],
     ),
   ]);
-  const recommendationFeedbackById = recommendationFeedbackState(recommendationFeedback.rows);
-  const recommendationMutationById = recommendationMutationState(recommendationMutations.rows);
-  const recommendationOutcomeById = recommendationOutcomeState(recommendationOutcomes.rows);
-  const recommendationQuality = productRecommendationQualityState(recommendationFeedback.rows);
+  const recommendationFeedbackById = recommendationFeedbackState(
+    recommendationFeedback.rows,
+  );
+  const recommendationMutationById = recommendationMutationState(
+    recommendationMutations.rows,
+  );
+  const recommendationOutcomeById = recommendationOutcomeState(
+    recommendationOutcomes.rows,
+  );
+  const recommendationQuality = productRecommendationQualityState(
+    recommendationFeedback.rows,
+  );
   const latestWorkflowRunId = sendTraces.rows[0]?.workflow_run_id;
   const eventTrace = latestWorkflowRunId
     ? await getEventTraceForCorrelation(pool, {
@@ -10458,18 +11329,24 @@ export async function getAppState(
     eventTrace,
     profile: productProfileState(profile.rows[0] ?? null),
     brief: productBriefState(brief.rows[0] ?? null),
-    content_reviews: applyRecommendationOutcomeState(productExaReviewState(
-      exaReviews.rows,
-      "content.opportunity.discovered",
-      recommendationFeedbackById,
-      recommendationMutationById,
-    ), recommendationOutcomeById),
-    aeo_reviews: applyRecommendationOutcomeState(productExaReviewState(
-      exaReviews.rows,
-      "aeo.audit.completed",
-      recommendationFeedbackById,
-      recommendationMutationById,
-    ), recommendationOutcomeById),
+    content_reviews: applyRecommendationOutcomeState(
+      productExaReviewState(
+        exaReviews.rows,
+        "content.opportunity.discovered",
+        recommendationFeedbackById,
+        recommendationMutationById,
+      ),
+      recommendationOutcomeById,
+    ),
+    aeo_reviews: applyRecommendationOutcomeState(
+      productExaReviewState(
+        exaReviews.rows,
+        "aeo.audit.completed",
+        recommendationFeedbackById,
+        recommendationMutationById,
+      ),
+      recommendationOutcomeById,
+    ),
     recommendation_quality: recommendationQuality,
     sendTraces: sendTraces.rows.map((row) => ({
       message_id: row.message_id,
@@ -10498,8 +11375,10 @@ export async function getAppState(
     channelAccounts: accounts.rows.map((row) => ({
       ...row,
       daily_window_start: row.daily_window_start?.toISOString() ?? null,
-      bounce_rate_24h: row.bounce_rate_24h == null ? null : Number(row.bounce_rate_24h),
-      complaint_rate_24h: row.complaint_rate_24h == null ? null : Number(row.complaint_rate_24h),
+      bounce_rate_24h:
+        row.bounce_rate_24h == null ? null : Number(row.bounce_rate_24h),
+      complaint_rate_24h:
+        row.complaint_rate_24h == null ? null : Number(row.complaint_rate_24h),
     })),
     llmUsage: {
       used_tokens_24h: Number(llmUsage.rows[0]?.used_tokens_24h ?? 0),
@@ -10516,9 +11395,14 @@ export async function getAppState(
         name: row.name,
         kind: row.kind,
         enabled: row.enabled,
-        url: stringStateValue(row.config.url ?? row.config.feed_url ?? row.config.rss_url),
-        signal_kind: stringStateValue(row.config.kind ?? row.config.signal_kind),
-        poll_interval_minutes: pollMs == null ? null : Math.round(pollMs / 60_000),
+        url: stringStateValue(
+          row.config.url ?? row.config.feed_url ?? row.config.rss_url,
+        ),
+        signal_kind: stringStateValue(
+          row.config.kind ?? row.config.signal_kind,
+        ),
+        poll_interval_minutes:
+          pollMs == null ? null : Math.round(pollMs / 60_000),
         last_polled_at: row.last_polled_at?.toISOString() ?? null,
         signal_count: Number(row.signal_count),
         latest_run_status: row.latest_run_status,
@@ -10529,14 +11413,16 @@ export async function getAppState(
   };
 }
 
-function productProfileState(row: {
-  id: string;
-  name: string;
-  domain: string | null;
-  industry: string | null;
-  description: string | null;
-  properties: Record<string, unknown>;
-} | null): AppState["profile"] {
+function productProfileState(
+  row: {
+    id: string;
+    name: string;
+    domain: string | null;
+    industry: string | null;
+    description: string | null;
+    properties: Record<string, unknown>;
+  } | null,
+): AppState["profile"] {
   if (!row) return null;
   const exaProfile = recordStateValue(row.properties.exa_profile);
   const intelligence = recordStateValue(exaProfile?.intelligence);
@@ -10551,21 +11437,29 @@ function productProfileState(row: {
     exa_summary: stringStateValue(exaProfile?.summary),
     exa_source_domains: arrayStringStateValue(intelligence?.source_domains),
     exa_market_terms: arrayStringStateValue(intelligence?.market_terms),
-    exa_positioning_notes: arrayStringStateValue(intelligence?.positioning_notes),
-    exa_competitor_mentions: arrayStringStateValue(intelligence?.competitor_mentions),
+    exa_positioning_notes: arrayStringStateValue(
+      intelligence?.positioning_notes,
+    ),
+    exa_competitor_mentions: arrayStringStateValue(
+      intelligence?.competitor_mentions,
+    ),
     exa_audience_terms: arrayStringStateValue(intelligence?.audience_terms),
     exa_proof_points: arrayStringStateValue(intelligence?.proof_points),
-    exa_evidence_cards: profileEvidenceCardsStateValue(intelligence?.evidence_cards),
+    exa_evidence_cards: profileEvidenceCardsStateValue(
+      intelligence?.evidence_cards,
+    ),
     exa_evidence_source_ids: evidenceIds,
     exa_result_count: numericConfigValue(exaProfile?.result_count) ?? 0,
     exa_enriched_at: stringStateValue(exaProfile?.enriched_at),
   };
 }
 
-function productBriefState(row: {
-  payload: Record<string, unknown>;
-  occurred_at: Date;
-} | null): AppState["brief"] {
+function productBriefState(
+  row: {
+    payload: Record<string, unknown>;
+    occurred_at: Date;
+  } | null,
+): AppState["brief"] {
   if (!row) return null;
   const payload = row.payload;
   return {
@@ -10602,33 +11496,62 @@ function productExaReviewState(
   return rows
     .filter((row) => row.event_type === eventType)
     .flatMap((row) => {
-      const key = eventType === "content.opportunity.discovered" ? "opportunities" : "gaps";
-      const payloadItems = briefItemsStateValue(row.payload[key] ?? row.payload.review_items);
+      const key =
+        eventType === "content.opportunity.discovered"
+          ? "opportunities"
+          : "gaps";
+      const payloadItems = briefItemsStateValue(
+        row.payload[key] ?? row.payload.review_items,
+      );
       if (payloadItems.length > 0) {
         return payloadItems.flatMap((item) =>
-          decorateProductReviewItem(row.event_id, eventType, item, feedbackById, mutationsById),
+          decorateProductReviewItem(
+            row.event_id,
+            eventType,
+            item,
+            feedbackById,
+            mutationsById,
+          ),
         );
       }
       const evidence = row.evidence[0];
       if (evidence) {
-        return decorateProductReviewItem(row.event_id, eventType, {
-          title: evidence.title ?? (eventType === "content.opportunity.discovered"
-            ? "Content angle to review"
-            : "Answer gap to review"),
-          detail: evidence.snippet ?? stringStateValue(row.payload.summary) ?? "",
-          url: evidence.url,
-          evidence_source_ids: [evidence.id],
-        }, feedbackById, mutationsById);
+        return decorateProductReviewItem(
+          row.event_id,
+          eventType,
+          {
+            title:
+              evidence.title ??
+              (eventType === "content.opportunity.discovered"
+                ? "Content angle to review"
+                : "Answer gap to review"),
+            detail:
+              evidence.snippet ?? stringStateValue(row.payload.summary) ?? "",
+            url: evidence.url,
+            evidence_source_ids: [evidence.id],
+          },
+          feedbackById,
+          mutationsById,
+        );
       }
       const summary = stringStateValue(row.payload.summary);
       return summary
-        ? decorateProductReviewItem(row.event_id, eventType, {
-          title: eventType === "content.opportunity.discovered"
-            ? "Content angle to review"
-            : "Answer gap to review",
-          detail: summary,
-          evidence_source_ids: arrayStringStateValue(row.payload.evidence_source_ids),
-        }, feedbackById, mutationsById)
+        ? decorateProductReviewItem(
+            row.event_id,
+            eventType,
+            {
+              title:
+                eventType === "content.opportunity.discovered"
+                  ? "Content angle to review"
+                  : "Answer gap to review",
+              detail: summary,
+              evidence_source_ids: arrayStringStateValue(
+                row.payload.evidence_source_ids,
+              ),
+            },
+            feedbackById,
+            mutationsById,
+          )
         : [];
     })
     .slice(0, limit);
@@ -10665,13 +11588,15 @@ interface ProductRecommendationOutcomeState {
   occurred_at: string;
 }
 
-function recommendationOutcomeState(rows: Array<{
-  review_id: string | null;
-  outcome_id: string;
-  kind: ProductRecommendationOutcomeKind | string;
-  external_ref: string | null;
-  occurred_at: Date;
-}>): Map<string, ProductRecommendationOutcomeState> {
+function recommendationOutcomeState(
+  rows: Array<{
+    review_id: string | null;
+    outcome_id: string;
+    kind: ProductRecommendationOutcomeKind | string;
+    external_ref: string | null;
+    occurred_at: Date;
+  }>,
+): Map<string, ProductRecommendationOutcomeState> {
   const outcomes = new Map<string, ProductRecommendationOutcomeState>();
   for (const row of rows) {
     if (!row.review_id) continue;
@@ -10697,7 +11622,9 @@ function applyRecommendationOutcomeState(
   outcomesByReviewId: Map<string, ProductRecommendationOutcomeState>,
 ): ProductBriefItem[] {
   return items.map((item) => {
-    const outcome = item.review_id ? outcomesByReviewId.get(item.review_id) : null;
+    const outcome = item.review_id
+      ? outcomesByReviewId.get(item.review_id)
+      : null;
     if (!outcome) return item;
     return {
       ...item,
@@ -10709,7 +11636,9 @@ function applyRecommendationOutcomeState(
   });
 }
 
-function productBriefItemsLatestActivity(items: ProductBriefItem[]): Date | null {
+function productBriefItemsLatestActivity(
+  items: ProductBriefItem[],
+): Date | null {
   const times = items
     .map((item) => item.outcome_recorded_at ?? item.reviewed_at)
     .filter((value): value is string => Boolean(value))
@@ -10734,17 +11663,27 @@ function defaultRecommendationQuality(): ProductRecommendationQuality {
   };
 }
 
-function productRecommendationQualityState(rows: Array<{
-  review_kind: ProductRecommendationKind | string | null;
-  decision: ProductRecommendationDecision | string;
-  occurred_at: Date;
-}>): ProductRecommendationQuality {
+function productRecommendationQualityState(
+  rows: Array<{
+    review_kind: ProductRecommendationKind | string | null;
+    decision: ProductRecommendationDecision | string;
+    occurred_at: Date;
+  }>,
+): ProductRecommendationQuality {
   const buckets = defaultRecommendationQuality();
   for (const row of rows) {
     if (row.decision !== "accepted" && row.decision !== "ignored") continue;
-    if (row.review_kind !== "content_opportunity" && row.review_kind !== "aeo_gap") continue;
+    if (
+      row.review_kind !== "content_opportunity" &&
+      row.review_kind !== "aeo_gap"
+    )
+      continue;
     applyRecommendationQualityDecision(buckets, row.decision, row.occurred_at);
-    applyRecommendationQualityDecision(buckets[row.review_kind], row.decision, row.occurred_at);
+    applyRecommendationQualityDecision(
+      buckets[row.review_kind],
+      row.decision,
+      row.occurred_at,
+    );
   }
   finalizeRecommendationQualityBucket(buckets);
   finalizeRecommendationQualityBucket(buckets.content_opportunity);
@@ -10769,18 +11708,21 @@ function applyRecommendationQualityDecision(
 function finalizeRecommendationQualityBucket(
   bucket: ProductRecommendationQualityBucket,
 ): void {
-  bucket.acceptance_rate = bucket.total_reviewed > 0
-    ? Number((bucket.accepted / bucket.total_reviewed).toFixed(2))
-    : null;
+  bucket.acceptance_rate =
+    bucket.total_reviewed > 0
+      ? Number((bucket.accepted / bucket.total_reviewed).toFixed(2))
+      : null;
 }
 
-function recommendationFeedbackState(rows: Array<{
-  review_id: string;
-  review_kind?: ProductRecommendationKind | string | null;
-  decision: ProductRecommendationDecision | string;
-  note: string | null;
-  occurred_at: Date;
-}>): Map<string, ProductRecommendationFeedbackState> {
+function recommendationFeedbackState(
+  rows: Array<{
+    review_id: string;
+    review_kind?: ProductRecommendationKind | string | null;
+    decision: ProductRecommendationDecision | string;
+    note: string | null;
+    occurred_at: Date;
+  }>,
+): Map<string, ProductRecommendationFeedbackState> {
   const feedback = new Map<string, ProductRecommendationFeedbackState>();
   for (const row of rows) {
     if (row.decision !== "accepted" && row.decision !== "ignored") continue;
@@ -10793,12 +11735,14 @@ function recommendationFeedbackState(rows: Array<{
   return feedback;
 }
 
-function recommendationMutationState(rows: Array<{
-  review_id: string;
-  event_type: "recommendation.updated" | "recommendation.deleted";
-  payload: Record<string, unknown>;
-  occurred_at: Date;
-}>): Map<string, ProductRecommendationMutationState> {
+function recommendationMutationState(
+  rows: Array<{
+    review_id: string;
+    event_type: "recommendation.updated" | "recommendation.deleted";
+    payload: Record<string, unknown>;
+    occurred_at: Date;
+  }>,
+): Map<string, ProductRecommendationMutationState> {
   const mutations = new Map<string, ProductRecommendationMutationState>();
   for (const row of rows) {
     if (!row.review_id) continue;
@@ -11023,7 +11967,9 @@ async function findAcceptedRecommendationReview(
       detail: payload.item?.detail ?? "",
       url: payload.item?.url ?? null,
       evidence_source_ids: Array.isArray(payload.item?.evidence_source_ids)
-        ? payload.item.evidence_source_ids.filter((id): id is string => typeof id === "string")
+        ? payload.item.evidence_source_ids.filter(
+            (id): id is string => typeof id === "string",
+          )
         : [],
     },
   };
@@ -11142,7 +12088,10 @@ async function findOrSeedRecommendationOutcomeAttribution(
   outcome_kind: ProductRecommendationOutcomeKind,
   external_ref: string | null,
 ): Promise<{ rep_id: string | null; exemplar_ids: string[] }> {
-  const { rows } = await engine.pool.query<{ rep_id: string; exemplar_id: string | null }>(
+  const { rows } = await engine.pool.query<{
+    rep_id: string;
+    exemplar_id: string | null;
+  }>(
     `select r.id::text as rep_id,
             rpm.id::text as exemplar_id
        from reps r
@@ -11218,7 +12167,9 @@ async function findOrSeedRecommendationOutcomeAttribution(
   };
 }
 
-function defaultRecommendationOutcomeScore(kind: ProductRecommendationOutcomeKind): number {
+function defaultRecommendationOutcomeScore(
+  kind: ProductRecommendationOutcomeKind,
+): number {
   if (kind === "post_published") return 0.55;
   if (kind === "follower_lift") return 0.65;
   return 0.6;
@@ -11241,37 +12192,48 @@ function decorateProductReviewItem(
   mutationsById: Map<string, ProductRecommendationMutationState>,
 ): ProductBriefItem[] {
   const review_kind = productRecommendationKindForEvent(eventType);
-  const review_id = productRecommendationReviewId(source_event_id, review_kind, item);
+  const review_id = productRecommendationReviewId(
+    source_event_id,
+    review_kind,
+    item,
+  );
   const mutation = mutationsById.get(review_id);
   if (mutation?.type === "deleted") return [];
   const feedback = feedbackById.get(review_id);
   if (feedback?.decision === "ignored") return [];
-  const effectiveItem = mutation?.type === "updated"
-    ? {
-        ...item,
-        title: mutation.item.title,
-        detail: mutation.item.detail,
-        url: mutation.item.url,
-        evidence_source_ids: mutation.item.evidence_source_ids.length > 0
-          ? mutation.item.evidence_source_ids
-          : item.evidence_source_ids,
-      }
-    : item;
-  return [{
-    ...effectiveItem,
-    review_id,
-    review_kind,
-    source_event_id,
-    decision: feedback?.decision,
-    reviewed_at: feedback?.occurred_at,
-    review_note: feedback?.note ?? (mutation?.type === "updated" ? mutation.note : null),
-  }];
+  const effectiveItem =
+    mutation?.type === "updated"
+      ? {
+          ...item,
+          title: mutation.item.title,
+          detail: mutation.item.detail,
+          url: mutation.item.url,
+          evidence_source_ids:
+            mutation.item.evidence_source_ids.length > 0
+              ? mutation.item.evidence_source_ids
+              : item.evidence_source_ids,
+        }
+      : item;
+  return [
+    {
+      ...effectiveItem,
+      review_id,
+      review_kind,
+      source_event_id,
+      decision: feedback?.decision,
+      reviewed_at: feedback?.occurred_at,
+      review_note:
+        feedback?.note ?? (mutation?.type === "updated" ? mutation.note : null),
+    },
+  ];
 }
 
 function productRecommendationKindForEvent(
   eventType: "content.opportunity.discovered" | "aeo.audit.completed",
 ): ProductRecommendationKind {
-  return eventType === "content.opportunity.discovered" ? "content_opportunity" : "aeo_gap";
+  return eventType === "content.opportunity.discovered"
+    ? "content_opportunity"
+    : "aeo_gap";
 }
 
 function productRecommendationReviewId(
@@ -11280,12 +12242,14 @@ function productRecommendationReviewId(
   item: ProductBriefItem,
 ): string {
   const digest = createHash("sha256")
-    .update(stableJson({
-      title: item.title,
-      detail: item.detail,
-      url: item.url ?? null,
-      evidence_source_ids: item.evidence_source_ids ?? [],
-    }))
+    .update(
+      stableJson({
+        title: item.title,
+        detail: item.detail,
+        url: item.url ?? null,
+        evidence_source_ids: item.evidence_source_ids ?? [],
+      }),
+    )
     .digest("hex")
     .slice(0, 16);
   return `${review_kind}:${source_event_id}:${digest}`;
@@ -11299,18 +12263,18 @@ async function findProductRecommendationForReview(
 ): Promise<ProductBriefItem | null> {
   const [reviewEvents, mutationEvents] = await Promise.all([
     pool.query<{
-    event_id: string;
-    event_type: string;
-    payload: Record<string, unknown>;
-    occurred_at: Date;
-    evidence: Array<{
-      id: string;
-      url: string | null;
-      title: string | null;
-      snippet: string | null;
-    }>;
-  }>(
-    `select e.id::text as event_id,
+      event_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      occurred_at: Date;
+      evidence: Array<{
+        id: string;
+        url: string | null;
+        title: string | null;
+        snippet: string | null;
+      }>;
+    }>(
+      `select e.id::text as event_id,
             e.event_type,
             e.payload,
             e.occurred_at,
@@ -11337,7 +12301,7 @@ async function findProductRecommendationForReview(
       group by e.id
       order by e.occurred_at desc
       limit 100`,
-    [workspace_id],
+      [workspace_id],
     ),
     pool.query<{
       review_id: string;
@@ -11359,25 +12323,30 @@ async function findProductRecommendationForReview(
     ),
   ]);
   const mutationsById = recommendationMutationState(mutationEvents.rows);
-  if (!opts.includeDeleted && mutationsById.get(review_id)?.type === "deleted") {
+  if (
+    !opts.includeDeleted &&
+    mutationsById.get(review_id)?.type === "deleted"
+  ) {
     return null;
   }
-  return [
-    ...productExaReviewState(
-      reviewEvents.rows,
-      "content.opportunity.discovered",
-      new Map(),
-      mutationsById,
-      100,
-    ),
-    ...productExaReviewState(
-      reviewEvents.rows,
-      "aeo.audit.completed",
-      new Map(),
-      mutationsById,
-      100,
-    ),
-  ].find((item) => item.review_id === review_id) ?? null;
+  return (
+    [
+      ...productExaReviewState(
+        reviewEvents.rows,
+        "content.opportunity.discovered",
+        new Map(),
+        mutationsById,
+        100,
+      ),
+      ...productExaReviewState(
+        reviewEvents.rows,
+        "aeo.audit.completed",
+        new Map(),
+        mutationsById,
+        100,
+      ),
+    ].find((item) => item.review_id === review_id) ?? null
+  );
 }
 
 function briefItemsStateValue(value: unknown): ProductBriefItem[] {
@@ -11386,43 +12355,56 @@ function briefItemsStateValue(value: unknown): ProductBriefItem[] {
     const record = recordStateValue(item);
     const title = stringStateValue(record?.title);
     if (!record || !title) return [];
-    return [{
-      title,
-      detail: stringStateValue(record.detail) ?? "",
-      url: stringStateValue(record.url),
-      evidence_source_ids: arrayStringStateValue(record.evidence_source_ids),
-    }];
+    return [
+      {
+        title,
+        detail: stringStateValue(record.detail) ?? "",
+        url: stringStateValue(record.url),
+        evidence_source_ids: arrayStringStateValue(record.evidence_source_ids),
+      },
+    ];
   });
 }
 
-function profileEvidenceCardsStateValue(value: unknown): AppState["profile"] extends infer P
-  ? P extends { exa_evidence_cards: infer C } ? C : never
+function profileEvidenceCardsStateValue(
+  value: unknown,
+): AppState["profile"] extends infer P
+  ? P extends { exa_evidence_cards: infer C }
+    ? C
+    : never
   : never {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    const card = recordStateValue(item);
-    const title = stringStateValue(card?.title);
-    const url = stringStateValue(card?.url);
-    if (!title || !url) return [];
-    return [{
-      title,
-      url,
-      source_domain: stringStateValue(card?.source_domain),
-      snippet: stringStateValue(card?.snippet),
-      published_at: stringStateValue(card?.published_at),
-    }];
-  }).slice(0, 8);
+  return value
+    .flatMap((item) => {
+      const card = recordStateValue(item);
+      const title = stringStateValue(card?.title);
+      const url = stringStateValue(card?.url);
+      if (!title || !url) return [];
+      return [
+        {
+          title,
+          url,
+          source_domain: stringStateValue(card?.source_domain),
+          snippet: stringStateValue(card?.snippet),
+          published_at: stringStateValue(card?.published_at),
+        },
+      ];
+    })
+    .slice(0, 8);
 }
 
 function recordStateValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : null;
 }
 
 function arrayStringStateValue(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    ? value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0,
+      )
     : [];
 }
 

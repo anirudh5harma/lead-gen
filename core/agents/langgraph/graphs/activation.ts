@@ -6,21 +6,13 @@ import type {
 } from "../../../substrate/events/index.ts";
 import type { RunContext } from "../../../substrate/workflows/index.ts";
 import { normalizeCompanyWebsiteUrl } from "../../../product/company-profile.ts";
-import {
-  createLangGraphMemoryCheckpoint,
-} from "../checkpoint.ts";
+import { createLangGraphMemoryCheckpoint } from "../checkpoint.ts";
 import {
   type BombsellLangGraphState,
   BombsellGraphStateAnnotation,
 } from "../state.ts";
-import {
-  invokeLangGraphTool,
-  type LangGraphToolOptions,
-} from "../tools.ts";
-import {
-  runLangGraphInWorkflowStep,
-  traceLangGraphNode,
-} from "../runtime.ts";
+import { invokeLangGraphTool, type LangGraphToolOptions } from "../tools.ts";
+import { runLangGraphInWorkflowStep, traceLangGraphNode } from "../runtime.ts";
 
 export const ACTIVATION_SETUP_GRAPH_NAME = "activation.setup_graph.v1";
 
@@ -84,7 +76,7 @@ export interface ActivationRepDraft {
   voice: string;
   story: string;
   daily_cap: number;
-  approval: "approve_first";
+  approval: "none";
 }
 
 export interface ActivationPlayDraft {
@@ -92,7 +84,7 @@ export interface ActivationPlayDraft {
   name: string;
   signal_kind: SignalKind;
   daily_cap: number;
-  approval: "approve_first";
+  approval: "none";
 }
 
 export interface ActivationSourcePlan {
@@ -181,7 +173,9 @@ const DEFAULT_TOOLS = {
   linkedInConnectUrlGet: "product.linkedin_account.connect_url.get",
 } as const;
 
-export function createActivationSetupGraph(opts: ActivationSetupGraphOptions = {}) {
+export function createActivationSetupGraph(
+  opts: ActivationSetupGraphOptions = {},
+) {
   const tools = { ...DEFAULT_TOOLS, ...opts.tools };
   const toolOptions = { ...opts.toolOptions, bus: opts.bus };
 
@@ -195,12 +189,18 @@ export function createActivationSetupGraph(opts: ActivationSetupGraphOptions = {
         handler: async (state: BombsellLangGraphState) => {
           const input = activationInputFromState(state);
           const website_url = normalizeOrThrow(input.website_url);
-          await publishActivationEvent(opts.bus, state, "workspace.activation.requested", {
-            website_url,
-            requested_by: input.user_id,
-            graph_name: ACTIVATION_SETUP_GRAPH_NAME,
-            run_id: state.run_id,
-          }, "requested");
+          await publishActivationEvent(
+            opts.bus,
+            state,
+            "workspace.activation.requested",
+            {
+              website_url,
+              requested_by: input.user_id,
+              graph_name: ACTIVATION_SETUP_GRAPH_NAME,
+              run_id: state.run_id,
+            },
+            "requested",
+          );
           return {
             attributes: mergeAttributes(state, {
               website_url,
@@ -221,16 +221,17 @@ export function createActivationSetupGraph(opts: ActivationSetupGraphOptions = {
         handler: async (state: BombsellLangGraphState) => {
           const input = activationInputFromState(state);
           const website_url = normalizedWebsiteFromState(state);
-          const profile = await invokeLangGraphTool<WebsiteProfileExtractResult | null>(
-            tools.websiteProfileExtract,
-            {
-              website_url,
-              company_hint: input.company_hint,
-              allowed_industries: input.allowed_industries,
-            },
-            state,
-            toolOptions,
-          );
+          const profile =
+            await invokeLangGraphTool<WebsiteProfileExtractResult | null>(
+              tools.websiteProfileExtract,
+              {
+                website_url,
+                company_hint: input.company_hint,
+                allowed_industries: input.allowed_industries,
+              },
+              state,
+              toolOptions,
+            );
           const fallback = fallbackProfile(website_url, input.company_hint);
           return {
             attributes: mergeAttributes(state, {
@@ -255,18 +256,30 @@ export function createActivationSetupGraph(opts: ActivationSetupGraphOptions = {
           const rep = repDraftFromProfile(profile);
           const plays = playDraftsFromProfile(profile);
           const sourcePlan = sourcePlanFromProfile(profile);
-          await publishActivationEvent(opts.bus, state, "workspace.profile.drafted", {
-            company_name: profile.company_name,
-            website_url: profile.website_url,
-            domain: profile.domain,
-            industry: profile.industry,
-            description: profile.description,
-            profile_source: profile.profile_source,
-            confidence: profile.confidence,
-            evidence: profile.evidence,
-            needs_review: profile.needs_review,
-          }, "profile-drafted");
-          await publishActivationEvent(opts.bus, state, "icp.drafted", icp, "icp-drafted");
+          await publishActivationEvent(
+            opts.bus,
+            state,
+            "workspace.profile.drafted",
+            {
+              company_name: profile.company_name,
+              website_url: profile.website_url,
+              domain: profile.domain,
+              industry: profile.industry,
+              description: profile.description,
+              profile_source: profile.profile_source,
+              confidence: profile.confidence,
+              evidence: profile.evidence,
+              needs_review: profile.needs_review,
+            },
+            "profile-drafted",
+          );
+          await publishActivationEvent(
+            opts.bus,
+            state,
+            "icp.drafted",
+            icp,
+            "icp-drafted",
+          );
           return {
             attributes: mergeAttributes(state, {
               profile_draft: profile,
@@ -286,44 +299,55 @@ export function createActivationSetupGraph(opts: ActivationSetupGraphOptions = {
         node_name: "configure",
         bus: opts.bus,
         handler: async (state: BombsellLangGraphState) => {
-          const profile = getAttribute<ActivationProfileDraft>(state, "profile_draft");
+          const profile = getAttribute<ActivationProfileDraft>(
+            state,
+            "profile_draft",
+          );
           const icp = getAttribute<ActivationIcpDraft>(state, "icp_draft");
           const rep = getAttribute<ActivationRepDraft>(state, "rep_draft");
-          const plays = getAttribute<ActivationPlayDraft[]>(state, "play_drafts");
-          const companyProfile = await invokeLangGraphTool<CompanyProfileConfigureResult>(
-            tools.companyProfileConfigure,
-            {
-              company_name: profile.company_name,
-              website_url: profile.website_url,
-              industry: profile.industry ?? undefined,
-              description: profile.description,
-              profile_source: profile.profile_source,
-            },
+          const plays = getAttribute<ActivationPlayDraft[]>(
             state,
-            toolOptions,
+            "play_drafts",
           );
-          const emailPlay = plays.find((play) => play.channel === "email") ?? plays[0]!;
-          const activation = await invokeLangGraphTool<ActivationConfigureResult>(
-            tools.activationConfigure,
-            {
-              rep,
-              icp: {
-                name: icp.name,
-                description: icp.description,
-                signal_kind: icp.signal_kind,
-                match_threshold: icp.match_threshold,
-                nice_to_haves: icp.nice_to_haves,
+          const companyProfile =
+            await invokeLangGraphTool<CompanyProfileConfigureResult>(
+              tools.companyProfileConfigure,
+              {
+                company_name: profile.company_name,
+                website_url: profile.website_url,
+                industry: profile.industry ?? undefined,
+                description: profile.description,
+                profile_source: profile.profile_source,
               },
-              play: {
-                name: emailPlay.name,
-                daily_cap: emailPlay.daily_cap,
-                approval: emailPlay.approval,
+              state,
+              toolOptions,
+            );
+          const emailPlay =
+            plays.find((play) => play.channel === "email") ?? plays[0]!;
+          const activation =
+            await invokeLangGraphTool<ActivationConfigureResult>(
+              tools.activationConfigure,
+              {
+                rep,
+                icp: {
+                  name: icp.name,
+                  description: icp.description,
+                  signal_kind: icp.signal_kind,
+                  match_threshold: icp.match_threshold,
+                  nice_to_haves: icp.nice_to_haves,
+                },
+                play: {
+                  name: emailPlay.name,
+                  daily_cap: emailPlay.daily_cap,
+                  approval: emailPlay.approval,
+                },
               },
-            },
-            { ...state, company_id: companyProfile.company_id },
-            toolOptions,
+              { ...state, company_id: companyProfile.company_id },
+              toolOptions,
+            );
+          const linkedInPlay = plays.find(
+            (play) => play.channel === "linkedin_dm",
           );
-          const linkedInPlay = plays.find((play) => play.channel === "linkedin_dm");
           const linkedIn = linkedInPlay
             ? await invokeLangGraphTool<PlayConfigureResult>(
                 tools.signalLinkedInPlayConfigure,
@@ -390,7 +414,10 @@ export function createActivationSetupGraph(opts: ActivationSetupGraphOptions = {
         node_name: "checklist",
         bus: opts.bus,
         handler: async (state: BombsellLangGraphState) => {
-          const profile = getAttribute<ActivationProfileDraft>(state, "profile_draft");
+          const profile = getAttribute<ActivationProfileDraft>(
+            state,
+            "profile_draft",
+          );
           const outlook = await invokeLangGraphTool<ConnectIntent>(
             tools.outlookConnectUrlGet,
             {},
@@ -403,7 +430,12 @@ export function createActivationSetupGraph(opts: ActivationSetupGraphOptions = {
             state,
             toolOptions,
           );
-          const checklist = launchChecklistFromState(state, profile, outlook, linkedIn);
+          const checklist = launchChecklistFromState(
+            state,
+            profile,
+            outlook,
+            linkedIn,
+          );
           return {
             attributes: mergeAttributes(state, {
               launch_checklist: checklist,
@@ -458,7 +490,8 @@ export async function runActivationSetupGraphInWorkflowStep(opts: {
     bus: opts.bus,
     state: {
       workspace_id,
-      thread_id: opts.input.thread_id ?? `activation:${workspace_id}:${opts.ctx.run_id}`,
+      thread_id:
+        opts.input.thread_id ?? `activation:${workspace_id}:${opts.ctx.run_id}`,
       run_id: opts.input.run_id ?? opts.ctx.run_id,
       correlation_id: opts.input.correlation_id ?? opts.ctx.correlation_id,
       causation_event_id: opts.input.causation_event_id ?? null,
@@ -475,7 +508,9 @@ export async function runActivationSetupGraphInWorkflowStep(opts: {
   });
 }
 
-function activationInputFromState(state: BombsellLangGraphState): ActivationSetupGraphInput {
+function activationInputFromState(
+  state: BombsellLangGraphState,
+): ActivationSetupGraphInput {
   return {
     workspace_id: state.workspace_id,
     user_id: String(state.attributes?.user_id ?? ""),
@@ -499,7 +534,10 @@ function normalizeOrThrow(value: unknown): string {
   return website_url;
 }
 
-function fallbackProfile(website_url: string, company_hint?: string): WebsiteProfileExtractResult {
+function fallbackProfile(
+  website_url: string,
+  company_hint?: string,
+): WebsiteProfileExtractResult {
   const domain = domainFromUrl(website_url);
   const companyName = company_hint?.trim() || titleizeDomain(domain);
   return {
@@ -510,13 +548,22 @@ function fallbackProfile(website_url: string, company_hint?: string): WebsitePro
   };
 }
 
-function profileDraftFromState(state: BombsellLangGraphState): ActivationProfileDraft {
-  const raw = getAttribute<WebsiteProfileExtractResult>(state, "website_profile");
+function profileDraftFromState(
+  state: BombsellLangGraphState,
+): ActivationProfileDraft {
+  const raw = getAttribute<WebsiteProfileExtractResult>(
+    state,
+    "website_profile",
+  );
   const website_url = normalizeOrThrow(raw.website_url);
   const domain = domainFromUrl(website_url);
   const company_name = raw.company_name?.trim() || titleizeDomain(domain);
-  const description = raw.description?.trim() || fallbackProfile(website_url, company_name).description!;
-  const profile_source = /could not read enough website content/i.test(description)
+  const description =
+    raw.description?.trim() ||
+    fallbackProfile(website_url, company_name).description!;
+  const profile_source = /could not read enough website content/i.test(
+    description,
+  )
     ? "fallback"
     : "firecrawl";
   return {
@@ -530,16 +577,22 @@ function profileDraftFromState(state: BombsellLangGraphState): ActivationProfile
     evidence: [
       { label: "Website", value: website_url, source_ref: website_url },
       ...(raw.industry ? [{ label: "Industry", value: raw.industry }] : []),
-      { label: "Description", value: description.slice(0, 280), source_ref: website_url },
+      {
+        label: "Description",
+        value: description.slice(0, 280),
+        source_ref: website_url,
+      },
     ],
     needs_review: [
-      "Confirm company positioning and voice before external outreach.",
-      "Confirm ICP assumptions before the first Play can leave approval mode.",
+      "Keep company positioning and voice editable before external outreach expands.",
+      "Keep ICP assumptions visible before the first Play scales volume.",
     ],
   };
 }
 
-function repDraftFromProfile(profile: ActivationProfileDraft): ActivationRepDraft {
+function repDraftFromProfile(
+  profile: ActivationProfileDraft,
+): ActivationRepDraft {
   return {
     name: "Sampark",
     role: "sdr",
@@ -547,11 +600,13 @@ function repDraftFromProfile(profile: ActivationProfileDraft): ActivationRepDraf
       "Clear, specific, low-hype, and useful. Never pretend to know more than the signal proves.",
     story: `Turns market movement around ${profile.company_name} into careful founder-led conversations.`,
     daily_cap: 15,
-    approval: "approve_first",
+    approval: "none",
   };
 }
 
-function icpDraftFromProfile(profile: ActivationProfileDraft): ActivationIcpDraft {
+function icpDraftFromProfile(
+  profile: ActivationProfileDraft,
+): ActivationIcpDraft {
   const market = profile.industry ?? "this market";
   return {
     name: `${profile.company_name} timing signals`,
@@ -574,26 +629,30 @@ function icpDraftFromProfile(profile: ActivationProfileDraft): ActivationIcpDraf
   };
 }
 
-function playDraftsFromProfile(profile: ActivationProfileDraft): ActivationPlayDraft[] {
+function playDraftsFromProfile(
+  profile: ActivationProfileDraft,
+): ActivationPlayDraft[] {
   return [
     {
       channel: "email",
       name: `${profile.company_name} Signal Email`,
       signal_kind: "press_mention",
       daily_cap: 15,
-      approval: "approve_first",
+      approval: "none",
     },
     {
       channel: "linkedin_dm",
       name: `${profile.company_name} Signal LinkedIn DM`,
       signal_kind: "press_mention",
       daily_cap: 8,
-      approval: "approve_first",
+      approval: "none",
     },
   ];
 }
 
-function sourcePlanFromProfile(profile: ActivationProfileDraft): ActivationSourcePlan {
+function sourcePlanFromProfile(
+  profile: ActivationProfileDraft,
+): ActivationSourcePlan {
   const market = profile.industry ?? "market";
   return {
     adapters: [
@@ -660,9 +719,12 @@ function launchChecklistFromState(
       id: "plays",
       primitive: "Play",
       label: "Email and LinkedIn Plays drafted",
-      status: getAttribute<string | null>(state, "linkedin_play_id") ? "complete" : "needs_review",
+      status: getAttribute<string | null>(state, "linkedin_play_id")
+        ? "complete"
+        : "needs_review",
       blocking: false,
-      detail: "First Plays are approval-first and cannot send until channel gates are healthy.",
+      detail:
+        "First Plays are approval-first and cannot send until channel gates are healthy.",
     },
     {
       id: "outlook_connection",
@@ -695,7 +757,9 @@ function launchChecklistFromState(
       detail: "Reply and meeting Outcomes will teach Play Skills after launch.",
     },
   ];
-  const send_blocked = items.some((item) => item.blocking && item.status !== "complete");
+  const send_blocked = items.some(
+    (item) => item.blocking && item.status !== "complete",
+  );
   return {
     ready_to_launch: !send_blocked,
     send_blocked,
@@ -762,7 +826,8 @@ function stringOrUndefined(value: unknown): string | undefined {
 function arrayOfStrings(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const strings = value.filter(
-    (item): item is string => typeof item === "string" && item.trim().length > 0,
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
   );
   return strings.length ? strings : undefined;
 }
