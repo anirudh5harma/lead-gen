@@ -194,8 +194,8 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pt-28 pb-8 md:px-10 md:pt-36 md:pb-12 lg:px-16 lg:pt-44 lg:pb-16">
-        <div className="mx-auto max-w-[720px] text-center">
+      <section className="relative z-10 flex min-h-[100dvh] flex-col items-center justify-center px-6 pt-16 pb-16 md:px-10 md:pt-20 md:pb-20 lg:px-16">
+        <div className="mx-auto w-full max-w-[720px] text-center">
           <ScrollReveal delay={0.1}>
             <p className="mono text-[var(--color-accent)] flex items-center justify-center gap-2">
               <span className="relative flex size-2">
