@@ -262,7 +262,7 @@ export default function Home() {
 
       {/* One Stack — Overlapping Cards */}
       <section className="relative z-10 border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
+        <div className="mx-auto w-full max-w-[1200px] px-6 pt-16 pb-24 md:px-10 md:pt-20 md:pb-32 lg:px-16 lg:pt-24 lg:pb-40">
           <ScrollReveal>
             <div className="mx-auto max-w-[640px] text-center mb-10">
               <p className="mono text-[var(--color-accent)]">One stack</p>
@@ -297,7 +297,7 @@ export default function Home() {
 
       {/* How it works */}
       <section className="relative z-10 border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
+        <div className="mx-auto w-full max-w-[1200px] px-6 pt-20 pb-16 md:px-10 md:pt-28 md:pb-20 lg:px-16 lg:pt-36 lg:pb-24">
           <ScrollReveal>
             <div className="mx-auto max-w-[640px] text-center mb-10">
               <p className="mono text-[var(--color-accent)]">How it works</p>
