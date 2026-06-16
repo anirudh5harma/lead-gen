@@ -1406,8 +1406,8 @@ select:focus, select:focus-visible {
 }
 
 @keyframes bs-pulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.65; }
 }
 
 .animated-bg {
@@ -1431,7 +1431,7 @@ select:focus, select:focus-visible {
   height: 800px;
   top: -15%;
   left: -10%;
-  background: rgba(38, 87, 94, 0.30);
+  background: rgba(38, 87, 94, 0.14);
   animation-delay: 0s;
 }
 
@@ -1440,7 +1440,7 @@ select:focus, select:focus-visible {
   height: 700px;
   top: 25%;
   right: -15%;
-  background: rgba(5, 150, 105, 0.24);
+  background: rgba(5, 150, 105, 0.11);
   animation-delay: -7s;
   animation-duration: 24s, 10s;
 }
@@ -1450,7 +1450,7 @@ select:focus, select:focus-visible {
   height: 600px;
   bottom: 5%;
   left: 25%;
-  background: rgba(38, 87, 94, 0.28);
+  background: rgba(38, 87, 94, 0.13);
   animation-delay: -14s;
   animation-duration: 18s, 12s;
 }
@@ -1460,13 +1460,13 @@ select:focus, select:focus-visible {
   height: 400px;
   top: 60%;
   right: 20%;
-  background: rgba(5, 150, 105, 0.18);
+  background: rgba(5, 150, 105, 0.08);
   animation-delay: -5s;
   animation-duration: 28s, 14s;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animated-bg-orb { animation: none; opacity: 0.5; }
+  .animated-bg-orb { animation: none; opacity: 0.3; }
 }
 
 /* ── Glassmorphism navbar ────────────────────────────────────── */

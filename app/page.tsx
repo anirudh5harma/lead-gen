@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import Icon from '@/components/Icon'
@@ -161,21 +161,6 @@ function ScrollReveal({
 }
 
 export default function Home() {
-  const [activeFeature, setActiveFeature] = useState(0)
-  const [isTransitioning, setIsTransitioning] = useState(false)
-
-  // Auto-advance feature carousel
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setIsTransitioning(true)
-      setTimeout(() => {
-        setActiveFeature((prev) => (prev + 1) % FEATURES.length)
-        setIsTransitioning(false)
-      }, 300)
-    }, 5000)
-    return () => clearInterval(timer)
-  }, [])
-
   return (
     <main className="monaco-canvas relative isolate min-h-[100dvh] overflow-hidden text-[var(--color-text-1)]">
       {/* Animated background */}
@@ -215,12 +200,12 @@ export default function Home() {
             <p className="mono text-[var(--color-accent)]">real-time signals</p>
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
-            <h1 className="display-serif mt-5 text-[clamp(2.25rem,5.5vw,4rem)] leading-[1.05] text-[var(--color-text-1)]">
+            <h1 className="display-serif mt-5 text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] text-[var(--color-text-1)]">
               autonomous outbound stack
             </h1>
           </ScrollReveal>
           <ScrollReveal delay={0.3}>
-            <p className="mx-auto mt-4 max-w-[560px] text-[16px] leading-[1.6] text-[var(--color-text-2)]">
+            <p className="mx-auto mt-4 max-w-[560px] text-[18px] leading-[1.6] text-[var(--color-text-2)]">
               Bombsell builds your prospect graph, watches for signals, runs guarded outreach plays, and learns from every outcome. No more stale lists or manual CRM work.
             </p>
           </ScrollReveal>
@@ -242,7 +227,7 @@ export default function Home() {
                   required
                   pattern="[a-zA-Z0-9][a-zA-Z0-9\-_.]*\.[a-zA-Z]{2,}"
                   title="Enter a valid domain like yourcompany.com"
-                  className="w-full rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] py-3 pl-10 pr-4 text-[14px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/10"
+                  className="w-full rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] py-3 pl-10 pr-4 text-[15px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/10"
                 />
               </div>
               <button type="submit" className="btn-solid whitespace-nowrap">
@@ -264,20 +249,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Marquee */}
-      <section className="relative z-10 py-6 border-y border-[var(--color-line-1)]">
-        <div className="marquee">
-          <div className="marquee-track">
-            {[...MARQUEE_ITEMS, ...MARQUEE_ITEMS].map((item, i) => (
-              <span key={i} className="flex items-center gap-2 text-[13px] text-[var(--color-text-3)] whitespace-nowrap">
-                <span className="size-1.5 rounded-full bg-[var(--color-accent)]" />
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Hero Product Visual */}
       <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
         <ScrollReveal>
@@ -287,90 +258,10 @@ export default function Home() {
         </ScrollReveal>
       </section>
 
-      {/* Feature Carousel */}
-      <section className="relative z-10 border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
-          <ScrollReveal>
-            <div className="flex items-center justify-between mb-8">
-              <p className="mono text-[var(--color-accent)]">How it works</p>
-              <div className="flex items-center gap-2">
-                {FEATURES.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setIsTransitioning(true)
-                      setTimeout(() => {
-                        setActiveFeature(i)
-                        setIsTransitioning(false)
-                      }, 300)
-                    }}
-                    className={`h-1.5 rounded-full transition-all duration-300 ${
-                      i === activeFeature ? 'w-8 bg-[var(--color-accent)]' : 'w-1.5 bg-[var(--color-line-2)] hover:bg-[var(--color-line-3)]'
-                    }`}
-                  />
-                ))}
-                <span className="ml-2 text-[12px] text-[var(--color-text-4)] font-mono">
-                  {activeFeature + 1}/{FEATURES.length}
-                </span>
-              </div>
-            </div>
-          </ScrollReveal>
-
-          <div className={`grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center carousel-fade ${isTransitioning ? 'opacity-0 translate-x-3' : 'opacity-100 translate-x-0'}`}>
-            <div>
-              <ScrollReveal>
-                <p className="mono text-[var(--color-accent)] mb-3">{FEATURES[activeFeature].eyebrow}</p>
-                <h2 className="display-serif text-[clamp(1.5rem,3vw,2.25rem)] leading-[1.1] text-[var(--color-text-1)]">
-                  {FEATURES[activeFeature].title}
-                </h2>
-                <p className="mt-4 max-w-[480px] text-[15px] leading-[1.65] text-[var(--color-text-2)]">
-                  {FEATURES[activeFeature].description}
-                </p>
-                <div className="mt-6 grid gap-3">
-                  {FEATURES[activeFeature].points.map((point) => (
-                    <div key={point.text} className="flex items-start gap-3">
-                      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
-                        <Icon name={point.icon} size={14} />
-                      </span>
-                      <p className="text-[14px] leading-[1.5] text-[var(--color-text-2)]">{point.text}</p>
-                    </div>
-                  ))}
-                </div>
-              </ScrollReveal>
-            </div>
-            <div>
-              <ScrollReveal delay={0.2}>
-                <BrowserMockup>
-                  <FeatureMockup feature={FEATURES[activeFeature].eyebrow} />
-                </BrowserMockup>
-              </ScrollReveal>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Stats */}
-      <section className="relative z-10 border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-12 md:px-10 md:py-16 lg:px-16">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {[
-              { value: '1,200+', label: 'Prospects found per week' },
-              { value: '8hrs', label: 'Saved on prospecting daily' },
-              { value: '<5min', label: 'From signup to running' },
-              { value: '94%', label: 'Lead accuracy score' },
-            ].map((stat, i) => (
-              <ScrollReveal key={i} delay={i * 0.1}>
-                <div className="text-center">
-                  <p className="text-[clamp(2rem,4vw,3rem)] font-semibold text-[var(--color-accent)] tabular-nums">
-                    {stat.value}
-                  </p>
-                  <p className="mt-1 text-[13px] text-[var(--color-text-3)]">{stat.label}</p>
-                </div>
-              </ScrollReveal>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Features */}
+      {FEATURES.map((feature, index) => (
+        <FeatureSection key={feature.eyebrow} feature={feature} reversed={index % 2 === 1} />
+      ))}
 
       {/* One Stack — Overlapping Cards */}
       <section className="relative z-10 border-t border-[var(--color-line-1)]">
@@ -423,8 +314,8 @@ export default function Home() {
               <ScrollReveal key={step.number} delay={i * 0.15}>
                 <div className="relative rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-6 depth-lift">
                   <span className="mono text-[var(--color-text-4)]">{step.number}</span>
-                  <h3 className="mt-3 text-[1.125rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
-                  <p className="mt-2 text-[14px] leading-[1.65] text-[var(--color-text-2)]">{step.description}</p>
+                  <h3 className="mt-3 text-[1.25rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
+                  <p className="mt-2 text-[16px] leading-[1.65] text-[var(--color-text-2)]">{step.description}</p>
                 </div>
               </ScrollReveal>
             ))}
@@ -440,7 +331,7 @@ export default function Home() {
               <h2 className="display-serif text-[clamp(1.75rem,3.5vw,2.75rem)] leading-[1.1] text-[var(--color-text-1)]">
                 Start growing your pipeline today
               </h2>
-              <p className="mt-4 text-[15px] leading-[1.65] text-[var(--color-text-2)]">
+              <p className="mt-4 text-[16px] leading-[1.65] text-[var(--color-text-2)]">
                 Free to start. No credit card required. Your first prospecting graph builds in minutes.
               </p>
               <div className="mt-8">
@@ -501,6 +392,45 @@ export default function Home() {
         </div>
       </footer>
     </main>
+  )
+}
+
+function FeatureSection({
+  feature,
+  reversed,
+}: {
+  feature: (typeof FEATURES)[number]
+  reversed: boolean
+}) {
+  return (
+    <section className="relative z-10 border-t border-[var(--color-line-1)]">
+      <div className="mx-auto grid w-full max-w-[1200px] grid-cols-1 items-center gap-12 px-6 py-16 md:px-10 md:py-20 lg:grid-cols-2 lg:gap-16 lg:px-16 lg:py-24">
+        <div className={reversed ? 'lg:order-2' : 'lg:order-1'}>
+          <p className="mono text-[var(--color-accent)]">{feature.eyebrow}</p>
+          <h2 className="display-serif mt-5 text-[clamp(1.5rem,3vw,2.25rem)] leading-[1.1] text-[var(--color-text-1)]">
+            {feature.title}
+          </h2>
+          <p className="mt-4 max-w-[480px] text-[16px] leading-[1.65] text-[var(--color-text-2)]">
+            {feature.description}
+          </p>
+          <div className="mt-8 grid gap-4">
+            {feature.points.map((point) => (
+              <div key={point.text} className="flex items-start gap-3">
+                <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+                  <Icon name={point.icon} size={14} />
+                </span>
+                <p className="text-[15px] leading-[1.5] text-[var(--color-text-2)]">{point.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className={reversed ? 'lg:order-1' : 'lg:order-2'}>
+          <BrowserMockup>
+            <FeatureMockup feature={feature.eyebrow} />
+          </BrowserMockup>
+        </div>
+      </div>
+    </section>
   )
 }
 
