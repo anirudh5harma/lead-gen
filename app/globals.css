@@ -248,7 +248,7 @@ html, body {
 /* Landing buttons — calm, 10px radius */
 .btn-solid {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  height: 46px; padding: 0 1.25rem;
+  min-height: 46px; padding: 0 1.25rem;
   background: var(--color-text-1);
   color: var(--color-ink-0);
   font-size: 0.9375rem; font-weight: 500;
@@ -273,7 +273,7 @@ html, body {
 
 .btn-quiet {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  height: 46px; padding: 0 1.25rem;
+  min-height: 46px; padding: 0 1.25rem;
   background: transparent;
   color: var(--color-text-1);
   font-size: 0.9375rem; font-weight: 500;
@@ -427,6 +427,14 @@ button:active, a:active {
   background-size: 96px 96px, 96px 96px, 34px 34px, auto;
   background-position: center top;
   background-attachment: fixed;
+}
+
+/* Monaco-style product surface — cleaner, no grid, pure dark */
+.monaco-canvas {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--color-ink-1);
+  background-image: linear-gradient(180deg, #0c0b09 0%, #070806 40%, #090806 100%);
 }
 
 /* ── Bombsell solar system (landing centerpiece) ────────────────
