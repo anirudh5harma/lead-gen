@@ -197,11 +197,17 @@ export default function Home() {
       <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 pt-28 pb-8 md:px-10 md:pt-36 md:pb-12 lg:px-16 lg:pt-44 lg:pb-16">
         <div className="mx-auto max-w-[720px] text-center">
           <ScrollReveal delay={0.1}>
-            <p className="mono text-[var(--color-accent)]">real-time signals</p>
+            <p className="mono text-[var(--color-accent)] flex items-center justify-center gap-2">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full rounded-full bg-[var(--color-pos)] opacity-75 animate-ping" />
+                <span className="relative inline-flex size-2 rounded-full bg-[var(--color-pos)]" />
+              </span>
+              real-time signals
+            </p>
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
             <h1 className="display-serif mt-5 text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] text-[var(--color-text-1)]">
-              autonomous outbound stack
+              Autonomous Outbound
             </h1>
           </ScrollReveal>
           <ScrollReveal delay={0.3}>
@@ -247,15 +253,6 @@ export default function Home() {
             </div>
           </ScrollReveal>
         </div>
-      </section>
-
-      {/* Hero Product Visual */}
-      <section className="relative z-10 mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
-        <ScrollReveal>
-          <BrowserMockup>
-            <DashboardPreview />
-          </BrowserMockup>
-        </ScrollReveal>
       </section>
 
       {/* Features */}
@@ -309,13 +306,18 @@ export default function Home() {
               </h2>
             </div>
           </ScrollReveal>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="relative grid gap-6 md:grid-cols-3">
+            {/* Connecting line on desktop */}
+            <div className="hidden md:block absolute top-10 left-[16.67%] right-[16.67%] h-[1px] bg-[var(--color-line-2)]" />
             {STEPS.map((step, i) => (
               <ScrollReveal key={step.number} delay={i * 0.15}>
-                <div className="relative rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-6 depth-lift">
-                  <span className="mono text-[var(--color-text-4)]">{step.number}</span>
-                  <h3 className="mt-3 text-[1.25rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
-                  <p className="mt-2 text-[16px] leading-[1.65] text-[var(--color-text-2)]">{step.description}</p>
+                <div className="relative text-center">
+                  {/* Step number circle */}
+                  <div className="mx-auto grid size-12 place-items-center rounded-full border-2 border-[var(--color-accent)] bg-[var(--color-ink-0)] text-[var(--color-accent)] font-mono text-[13px] font-semibold relative z-10">
+                    {step.number}
+                  </div>
+                  <h3 className="mt-5 text-[1.25rem] font-semibold text-[var(--color-text-1)]">{step.title}</h3>
+                  <p className="mt-2 text-[16px] leading-[1.65] text-[var(--color-text-2)] max-w-[320px] mx-auto">{step.description}</p>
                 </div>
               </ScrollReveal>
             ))}
