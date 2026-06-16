@@ -206,13 +206,13 @@ export default function Home() {
             </p>
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
-            <h1 className="display-serif mt-5 text-[clamp(2.5rem,6vw,4.5rem)] leading-[1.05] text-[var(--color-text-1)]">
+            <h1 className="display-serif mt-5 text-[clamp(2rem,5vw,3.5rem)] leading-[1.05] text-[var(--color-text-1)] whitespace-nowrap">
               Autonomous Outbound
             </h1>
           </ScrollReveal>
           <ScrollReveal delay={0.3}>
-            <p className="mx-auto mt-4 max-w-[560px] text-[18px] leading-[1.6] text-[var(--color-text-2)]">
-              Bombsell builds your prospect graph, watches for signals, runs guarded outreach plays, and learns from every outcome. No more stale lists or manual CRM work.
+            <p className="mx-auto mt-4 max-w-[480px] text-[17px] leading-[1.55] text-[var(--color-text-2)]">
+              Signal-led prospecting, AI-personalized outreach, and self-updating CRM — all in one platform.
             </p>
           </ScrollReveal>
 
