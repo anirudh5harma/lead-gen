@@ -67,6 +67,32 @@ const STEPS = [
   },
 ];
 
+const FOOTER_LINKS = {
+  Product: [
+    { label: "Features", href: "#" },
+    { label: "Pricing", href: "#" },
+    { label: "Changelog", href: "#" },
+    { label: "Roadmap", href: "#" },
+  ],
+  Resources: [
+    { label: "Documentation", href: "#" },
+    { label: "API Reference", href: "#" },
+    { label: "Blog", href: "#" },
+    { label: "Status", href: "#" },
+  ],
+  Company: [
+    { label: "About", href: "#" },
+    { label: "Careers", href: "#" },
+    { label: "Contact", href: "#" },
+    { label: "Partners", href: "#" },
+  ],
+  Legal: [
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
+    { label: "Security", href: "#" },
+  ],
+};
+
 export default function Home() {
   return (
     <main className="monaco-canvas relative isolate min-h-[100dvh] overflow-hidden text-[var(--color-text-1)]">
@@ -77,14 +103,18 @@ export default function Home() {
             <Image src="/logo.svg" alt="" width={28} height={28} priority unoptimized className="size-7" />
             Bombsell
           </Link>
-          <div className="flex items-center gap-3">
-            <Link href="/login" className="btn-quiet px-4 text-[13.5px]">
-              Log in
-            </Link>
-            <Link href="/onboarding" className="btn-solid px-4 text-[13.5px]">
-              Get started
-            </Link>
-          </div>
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3.5 py-2 text-[13px] font-medium text-[var(--color-text-2)] transition-colors hover:border-[var(--color-line-3)] hover:text-[var(--color-text-1)]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.15-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.85 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.67 2.84c.86-2.6 3.29-4.53 6.15-4.53z" fill="#EA4335"/>
+            </svg>
+            Log in
+          </Link>
         </div>
       </header>
 
@@ -98,14 +128,33 @@ export default function Home() {
           <p className="mx-auto mt-5 max-w-[560px] text-[17px] leading-[1.65] text-[var(--color-text-2)]">
             Bombsell builds your prospect graph, watches for signals, runs guarded outreach plays, and learns from every outcome. No more stale lists or manual CRM work.
           </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/onboarding" className="btn-solid">
-              Get started free
-            </Link>
-            <Link href="/login" className="btn-quiet">
-              Sign in
-            </Link>
-          </div>
+          
+          {/* URL Input + CTA */}
+          <form action="/onboarding" method="GET" className="mt-8 mx-auto flex w-full max-w-[480px] flex-col gap-3 sm:flex-row">
+            <div className="relative flex-1">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-4)]">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M2 12h20" />
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+              </div>
+              <input
+                type="url"
+                name="url"
+                placeholder="yourcompany.com"
+                required
+                className="w-full rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] py-3 pl-10 pr-4 text-[14px] text-[var(--color-text-1)] placeholder:text-[var(--color-text-4)] outline-none transition-colors focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/10"
+              />
+            </div>
+            <button
+              type="submit"
+              className="btn-solid whitespace-nowrap"
+            >
+              Get started
+            </button>
+          </form>
+          <p className="mt-3 text-[12px] text-[var(--color-text-4)]">Free to start. No credit card required.</p>
         </div>
       </section>
 
@@ -114,30 +163,6 @@ export default function Home() {
         <BrowserMockup>
           <DashboardPreview />
         </BrowserMockup>
-      </section>
-
-      {/* Stats */}
-      <section className="border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16 lg:py-24">
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
-            <div className="text-center">
-              <p className="text-[clamp(1.75rem,3vw,2.5rem)] font-semibold tabular-nums text-[var(--color-accent)]">60+</p>
-              <p className="mt-1 text-[13px] text-[var(--color-text-3)]">Prospects per day</p>
-            </div>
-            <div className="text-center">
-              <p className="text-[clamp(1.75rem,3vw,2.5rem)] font-semibold tabular-nums text-[var(--color-accent)]">17</p>
-              <p className="mt-1 text-[13px] text-[var(--color-text-3)]">Fresh signals daily</p>
-            </div>
-            <div className="text-center">
-              <p className="text-[clamp(1.75rem,3vw,2.5rem)] font-semibold tabular-nums text-[var(--color-accent)]">3x</p>
-              <p className="mt-1 text-[13px] text-[var(--color-text-3)]">Faster pipeline</p>
-            </div>
-            <div className="text-center">
-              <p className="text-[clamp(1.75rem,3vw,2.5rem)] font-semibold tabular-nums text-[var(--color-accent)]">0</p>
-              <p className="mt-1 text-[13px] text-[var(--color-text-3)]">Manual CRM updates</p>
-            </div>
-          </div>
-        </div>
       </section>
 
       {/* Features */}
@@ -186,26 +211,52 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[var(--color-line-1)]">
-        <div className="mx-auto w-full max-w-[1200px] px-6 py-12 md:px-10 md:py-16 lg:px-16">
-          <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
-            <div className="flex items-center gap-2.5 text-[1.0625rem] font-semibold text-[var(--color-text-1)]" style={{ fontFamily: "var(--font-display)" }}>
-              <Image src="/logo.svg" alt="" width={24} height={24} unoptimized className="size-6" />
-              Bombsell
+      <footer className="border-t border-[var(--color-line-1)] bg-[var(--color-ink-1)]">
+        <div className="mx-auto w-full max-w-[1200px] px-6 py-16 md:px-10 md:py-20 lg:px-16">
+          <div className="grid grid-cols-2 gap-8 md:grid-cols-6">
+            {/* Brand column */}
+            <div className="col-span-2">
+              <div className="flex items-center gap-2.5 text-[1.0625rem] font-semibold text-[var(--color-text-1)]" style={{ fontFamily: "var(--font-display)" }}>
+                <Image src="/logo.svg" alt="" width={24} height={24} unoptimized className="size-6" />
+                Bombsell
+              </div>
+              <p className="mt-4 max-w-[260px] text-[13px] leading-[1.6] text-[var(--color-text-3)]">
+                Signal-led outbound for modern GTM teams. Build the graph, watch for signals, run the plays.
+              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-6 text-[13px] text-[var(--color-text-3)]">
-              <Link href="/" className="transition-colors hover:text-[var(--color-text-1)]">Product</Link>
-              <Link href="/login" className="transition-colors hover:text-[var(--color-text-1)]">Log in</Link>
-              <Link href="/onboarding" className="transition-colors hover:text-[var(--color-text-1)]">Get started</Link>
-            </div>
+            
+            {/* Link columns */}
+            {Object.entries(FOOTER_LINKS).map(([category, links]) => (
+              <div key={category}>
+                <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-1)]">{category}</p>
+                <ul className="mt-4 grid gap-2.5">
+                  {links.map((link) => (
+                    <li key={link.label}>
+                      <Link href={link.href} className="text-[13px] text-[var(--color-text-3)] transition-colors hover:text-[var(--color-text-1)]">
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-          <div className="mt-10 flex flex-col items-start justify-between gap-4 border-t border-[var(--color-line-1)] pt-8 md:flex-row md:items-center">
+          
+          <div className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-[var(--color-line-1)] pt-8 md:flex-row">
             <p className="text-[12px] text-[var(--color-text-4)]">
               &copy; {new Date().getFullYear()} Bombsell. All rights reserved.
             </p>
-            <div className="flex items-center gap-6 text-[12px] text-[var(--color-text-4)]">
-              <Link href="/privacy" className="transition-colors hover:text-[var(--color-text-3)]">Privacy</Link>
-              <Link href="/terms" className="transition-colors hover:text-[var(--color-text-3)]">Terms</Link>
+            <div className="flex items-center gap-4">
+              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="text-[var(--color-text-4)] transition-colors hover:text-[var(--color-text-2)]">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+              </a>
+              <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-[var(--color-text-4)] transition-colors hover:text-[var(--color-text-2)]">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                </svg>
+              </a>
             </div>
           </div>
         </div>
