@@ -147,6 +147,81 @@
 
 :root { color-scheme: light; }
 
+/* ── Dark theme overrides ───────────────────────────────────────
+   Higher specificity than :root so html[data-theme="dark"] wins */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-ink-0: #0f172a;
+  --color-ink-1: #1e293b;
+  --color-ink-2: #334155;
+  --color-ink-3: #475569;
+  --color-ink-4: #64748b;
+
+  --color-line-1: #334155;
+  --color-line-2: #475569;
+  --color-line-3: #64748b;
+
+  --color-text-1: #f8fafc;
+  --color-text-2: #94a3b8;
+  --color-text-3: #64748b;
+  --color-text-4: #475569;
+
+  --color-accent-soft: #26575E4d;
+  --color-accent-bg: #26575E33;
+  --color-accent-hi: #3d7a82;
+  --color-accent-on: #ffffff;
+
+  --color-pos-bg: #05966933;
+  --color-warn-bg: #d9770633;
+  --color-neg-bg: #dc262633;
+
+  --color-surface: #0f172a;
+  --color-surface-bright: #1e293b;
+  --color-surface-dim: #334155;
+  --color-surface-container-lowest: #0f172a;
+  --color-surface-container-low: #1e293b;
+  --color-surface-container: #334155;
+  --color-surface-container-high: #475569;
+  --color-surface-container-highest: #64748b;
+  --color-on-surface: #f8fafc;
+  --color-on-surface-variant: #94a3b8;
+  --color-outline: #64748b;
+  --color-outline-variant: #334155;
+  --color-background: #0f172a;
+  --color-on-background: #f8fafc;
+
+  --color-primary: #3d7a82;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #26575E33;
+  --color-on-primary-container: #f8fafc;
+  --color-primary-fixed: #26575E33;
+  --color-primary-fixed-dim: #26575E55;
+  --color-inverse-primary: #1a3f44;
+
+  --color-secondary: #94a3b8;
+  --color-on-secondary: #0f172a;
+  --color-secondary-container: #334155;
+  --color-on-secondary-container: #f8fafc;
+  --color-secondary-fixed: #334155;
+  --color-secondary-fixed-dim: #475569;
+
+  --color-tertiary: #059669;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #05966933;
+  --color-on-tertiary-container: #a7f3d0;
+  --color-tertiary-fixed: #05966933;
+  --color-tertiary-fixed-dim: #05966955;
+
+  --color-error: #ef4444;
+  --color-on-error: #ffffff;
+  --color-error-container: #ef444433;
+  --color-on-error-container: #fca5a5;
+
+  --color-inverse-surface: #f8fafc;
+  --color-inverse-on-surface: #0f172a;
+  --color-surface-tint: #3d7a82;
+}
+
 html, body {
   background: var(--color-ink-1);
   color: var(--color-text-1);
@@ -159,8 +234,8 @@ html, body {
 /* Subtle scrollbars */
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
-*::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+*::-webkit-scrollbar-thumb { background: var(--color-ink-4); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--color-text-4); }
 
 /* Selection */
 ::selection { background: var(--color-accent); color: var(--color-accent-on); }
@@ -412,6 +487,15 @@ button:active, a:active {
 .codeblock .c-com { color: #94a3b8; }
 .codeblock .c-fn  { color: #0f172a; }
 
+html[data-theme="dark"] .codeblock {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+html[data-theme="dark"] .codeblock .c-key { color: #5eead4; }
+html[data-theme="dark"] .codeblock .c-str { color: #94a3b8; }
+html[data-theme="dark"] .codeblock .c-com { color: #64748b; }
+html[data-theme="dark"] .codeblock .c-fn  { color: #f1f5f9; }
+
 /* ── Canvas surfaces ─────────────────────────────────────────── */
 
 .canvas-bg {
@@ -425,6 +509,13 @@ button:active, a:active {
   background-size: 96px 96px, 96px 96px, auto;
   background-position: center top;
   background-attachment: fixed;
+}
+
+html[data-theme="dark"] .canvas-bg {
+  background-image:
+    linear-gradient(to right, rgba(38, 87, 94, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(38, 87, 94, 0.06) 1px, transparent 1px),
+    linear-gradient(180deg, #0f172a 0%, #1e293b 48%, #0f172a 100%);
 }
 
 /* Clean light product surface */
@@ -647,6 +738,19 @@ button:active, a:active {
   background:
     linear-gradient(112deg, transparent 0 22%, rgba(38, 87, 94, 0.04) 42%, transparent 64%);
   opacity: 0.28;
+}
+
+html[data-theme="dark"] .brief-canvas::before {
+  background:
+    linear-gradient(115deg, transparent 0 18%, rgba(38, 87, 94, 0.10) 38%, transparent 58%),
+    linear-gradient(22deg, transparent 0 30%, rgba(5, 150, 105, 0.08) 54%, transparent 74%);
+  opacity: 0.45;
+}
+
+html[data-theme="dark"] .brief-canvas::after {
+  background:
+    linear-gradient(112deg, transparent 0 22%, rgba(38, 87, 94, 0.08) 42%, transparent 64%);
+  opacity: 0.40;
 }
 
 .brief-node,
@@ -900,6 +1004,11 @@ button:active, a:active {
     linear-gradient(110deg, #f1f5f9, #e2e8f0, #f1f5f9);
   background-size: 220% 100%;
   animation: dashboard-loader-sheen 1.7s ease-in-out infinite;
+}
+
+html[data-theme="dark"] .dashboard-loader-skeleton {
+  background:
+    linear-gradient(110deg, #334155, #475569, #334155);
 }
 
 .dashboard-route-pending {
@@ -1475,6 +1584,11 @@ select:focus, select:focus-visible {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border-bottom: 1px solid rgba(226, 232, 240, 0.4);
+}
+
+html[data-theme="dark"] .glass-nav {
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(71, 85, 105, 0.4);
 }
 
 /* ── Scroll reveal animations ────────────────────────────────── */

@@ -7,6 +7,7 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface NavItem {
   href: string;
@@ -113,6 +114,7 @@ export function DashboardShell({
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             {workspaces.length > 1 ? (
               <form action={switchWorkspaceAction} className="hidden sm:block">
                 <label className="sr-only" htmlFor="workspace-switcher">

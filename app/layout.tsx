@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { Geist, Geist_Mono, Bricolage_Grotesque } from "next/font/google";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -41,10 +42,24 @@ export default function RootLayout({
     <html
       lang="en"
       className={`h-full antialiased ${geistSans.variable} ${geistMono.variable} ${bricolage.variable}`}
-      style={{ colorScheme: "light" }}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                const theme = localStorage.getItem('theme');
+                const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                document.documentElement.setAttribute('data-theme', theme || system);
+              })();
+            `,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-[var(--color-ink-1)] text-[var(--color-text-1)] font-sans">
-        {children}
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>
