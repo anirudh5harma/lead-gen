@@ -98,10 +98,10 @@ function EmailReadinessBanner({
   const hasOutlook = readiness.connected_outlook_accounts > 0;
   const needsReconnect = readiness.needs_reauth_outlook_accounts > 0;
   const actionHref = needsReconnect
-    ? "/api/auth/outlook"
+    ? "/api/auth/outlook?return_to=/dashboard/signals"
     : hasOutlook
       ? "/dashboard/deliverability"
-      : "/api/auth/outlook";
+      : "/api/auth/outlook?return_to=/dashboard/signals";
   const icon = needsReconnect ? "login" : hasOutlook ? "sync_problem" : "mail";
   return (
     <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-3">

@@ -275,8 +275,8 @@ const OPERATING_LOOP_META: Array<{
   {
     key: "prospects",
     step: "01",
-    name: "Prospect graph",
-    href: "/dashboard/prospects",
+    name: "Signal graph",
+    href: "/dashboard/signals",
     icon: "person",
     unit: (pulse) =>
       `${pulse.prospects.count} ${pulse.prospects.count === 1 ? "profile" : "profiles"}`,
@@ -289,7 +289,7 @@ const OPERATING_LOOP_META: Array<{
     key: "signals",
     step: "02",
     name: "Signals",
-    href: "/dashboard/prospects",
+    href: "/dashboard/signals",
     icon: "sensors",
     unit: (pulse) =>
       `${pulse.signals.count} ${pulse.signals.count === 1 ? "fresh Signal" : "fresh Signals"}`,
@@ -328,7 +328,7 @@ const OPERATING_LOOP_META: Array<{
     key: "outcomes",
     step: "05",
     name: "Outcomes",
-    href: "/dashboard/plays",
+    href: "/dashboard/outcomes",
     icon: "task_alt",
     unit: (_pulse, actions) => `${actions.useful_outcomes_7d} useful this week`,
     detail: (_pulse, actions) =>
@@ -414,10 +414,10 @@ function BriefView({
         <p className="mt-5 max-w-[72ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
           {totalPulse === 0
             ? "Start with the launch checklist. Once the Rep, Signals, channels, and Plays are ready, conversations and outcomes will appear here."
-            : `Prospects: ${pulse.prospects.count}. Fresh Signals: ${pulse.signals.count}. Active Conversations: ${pulse.outreach.count}. Play runs today: ${pulse.campaigns.count}. Useful Outcomes this week: ${actions.useful_outcomes_7d}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
+            : `Graph profiles: ${pulse.prospects.count}. Fresh Signals: ${pulse.signals.count}. Active Conversations: ${pulse.outreach.count}. Play runs today: ${pulse.campaigns.count}. Useful Outcomes this week: ${actions.useful_outcomes_7d}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
         </p>
         <div className="mt-7 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <BriefMetric label="Prospects" value={pulse.prospects.count} />
+          <BriefMetric label="Profiles" value={pulse.prospects.count} />
           <BriefMetric label="Signals" value={pulse.signals.count} />
           <BriefMetric label="Conversations" value={pulse.outreach.count} />
           <BriefMetric label="Outcomes" value={actions.useful_outcomes_7d} />
@@ -500,7 +500,7 @@ interface LaunchStep {
 
 const LAUNCH_STEPS: LaunchStep[] = [
   {
-    title: "Set the prospecting profile",
+    title: "Set the Signal profile",
     primitive: "Signal",
     href: "/dashboard/settings#profile",
     icon: "person",
@@ -892,7 +892,7 @@ function buildPriorityActions(
       detail: `${actions.useful_outcomes_7d} useful ${
         actions.useful_outcomes_7d === 1 ? "Outcome" : "Outcomes"
       } can sharpen the next Play.`,
-      href: "/dashboard/plays",
+      href: "/dashboard/outcomes",
       icon: "task_alt",
     });
   }
@@ -900,7 +900,7 @@ function buildPriorityActions(
     items.push({
       title: "Refresh Signals",
       detail: "No urgent work is waiting. Check the latest market movement.",
-      href: "/dashboard/prospects",
+      href: "/dashboard/signals",
       icon: "refresh",
     });
   }

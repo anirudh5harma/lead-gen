@@ -31,22 +31,34 @@ const NAV: NavItem[] = [
     ],
   },
   {
-    href: "/dashboard/prospects",
-    label: "Prospects",
+    href: "/dashboard/signals",
+    label: "Signals",
     matches: [
-      "/dashboard/prospects",
       "/dashboard/signals",
       "/dashboard/ingestion",
+      "/dashboard/prospects",
+    ],
+  },
+  {
+    href: "/dashboard/plays",
+    label: "Plays",
+    matches: [
+      "/dashboard/plays",
+      "/dashboard/campaigns",
     ],
   },
   {
     href: "/dashboard/conversations",
-    label: "Inbox",
+    label: "Conversations",
     matches: [
       "/dashboard/conversations",
       "/dashboard/review",
       "/dashboard/approvals",
     ],
+  },
+  {
+    href: "/dashboard/outcomes",
+    label: "Outcomes",
   },
 ];
 
@@ -76,7 +88,8 @@ export function DashboardShell({
     : false;
   const settingsActive =
     isActivePath(pathname, "/dashboard/settings") ||
-    isActivePath(pathname, "/dashboard/integrations");
+    isActivePath(pathname, "/dashboard/integrations") ||
+    isActivePath(pathname, "/dashboard/deliverability");
 
   function handleNavClick(
     event: MouseEvent<HTMLAnchorElement>,

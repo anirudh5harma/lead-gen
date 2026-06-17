@@ -11,18 +11,23 @@ test("dashboard navigation uses active product surface routes", () => {
 
   assert.match(shell, /href: "\/dashboard", label: "Dashboard"/);
   assert.match(shell, /href: "\/dashboard\/reps"/);
-  assert.match(shell, /href: "\/dashboard\/prospects"/);
+  assert.match(shell, /href: "\/dashboard\/signals"/);
+  assert.match(shell, /href: "\/dashboard\/plays"/);
   assert.match(shell, /href: "\/dashboard\/conversations"/);
+  assert.match(shell, /href: "\/dashboard\/outcomes"/);
   assert.match(shell, /href="\/dashboard\/settings"/);
   assert.match(shell, /Icon name="settings"/);
   assert.match(shell, /isActivePath\(pathname, "\/dashboard\/integrations"\)/);
+  assert.match(shell, /isActivePath\(pathname, "\/dashboard\/deliverability"\)/);
+  assert.doesNotMatch(shell, /label: "Prospects"/);
+  assert.doesNotMatch(shell, /label: "Inbox"/);
   assert.doesNotMatch(
     shell,
     /href: "\/dashboard\/prospecting", label: "Prospecting"/,
   );
   assert.doesNotMatch(
     shell,
-    /href: "\/dashboard\/signals", label: "Signals"/,
+    /href: "\/dashboard\/prospects", label: "Prospects"/,
   );
 });
 
@@ -65,15 +70,15 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
 
   assert.match(dashboard, /Launch checklist/);
   assert.match(dashboard, /Operating loop/);
-  assert.match(dashboard, /Prospect graph/);
+  assert.match(dashboard, /Signal graph/);
   assert.match(dashboard, /Prepare Signal-led outreach/);
   assert.match(dashboard, /Scale what produced Outcomes/);
   assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
   assert.match(dashboard, /href: "\/dashboard\/integrations"/);
-  assert.match(dashboard, /href: "\/dashboard\/prospects"/);
+  assert.match(dashboard, /href: "\/dashboard\/signals"/);
   assert.match(dashboard, /href: "\/dashboard\/plays"/);
+  assert.match(dashboard, /href: "\/dashboard\/outcomes"/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
-  assert.doesNotMatch(dashboard, /href: "\/dashboard\/signals"/);
 });
 
 test("Health presents agent observability from the event-sourced summary", () => {
@@ -142,6 +147,21 @@ test("Prospects open graph-backed profile pages with channel readiness", () => {
   assert.match(profile, /Connect Outlook/);
 });
 
+test("Outcomes have a first-class primitive surface", () => {
+  const outcomes = source("app/dashboard/outcomes/page.tsx");
+  const loading = source("app/dashboard/outcomes/loading.tsx");
+  const loader = source("components/dashboard/LoadingState.tsx");
+
+  assert.match(outcomes, /kicker="Outcomes"/);
+  assert.match(outcomes, /from outcomes o/);
+  assert.match(outcomes, /left join conversations c/);
+  assert.match(outcomes, /left join reps r/);
+  assert.match(outcomes, /left join signals s/);
+  assert.match(outcomes, /href=\{`\/dashboard\/conversations\/\$\{outcome\.conversation_id\}`\}/);
+  assert.match(loading, /surface="outcomes"/);
+  assert.match(loader, /outcomes: \{ kicker: "Outcomes"/);
+});
+
 test("Reps act as the profile and account readiness control plane", () => {
   const reps = source("app/dashboard/reps/page.tsx");
 
@@ -170,6 +190,8 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.doesNotMatch(signals, /runSignalIngestionAction/);
   assert.doesNotMatch(signals, /Ingest signals/);
   assert.doesNotMatch(signals, /Run ingestion/);
+  assert.match(signals, /\/api\/auth\/outlook\?return_to=\/dashboard\/signals/);
+  assert.doesNotMatch(signals, /"\/api\/auth\/outlook"/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
   assert.match(onboardingActions, /wait: false/);
   assert.match(capabilityMap, /Autonomous signal ingestion/);

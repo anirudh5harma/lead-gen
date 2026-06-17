@@ -258,16 +258,16 @@ export default async function RepsPage() {
                   </span>
                 </span>
               </Link>
-              <Link href="/dashboard/prospects" className="priority-action">
+              <Link href="/dashboard/signals" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="travel_explore" size={16} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Prospects and signals
+                    Signals and graph
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    People, companies, timing evidence, and conversations.
+                    Timing evidence, people, companies, and conversations.
                   </span>
                 </span>
               </Link>
