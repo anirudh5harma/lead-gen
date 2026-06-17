@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
+import {
+  loadWorkspaceLaunchReadiness,
+  type LaunchReadinessCheck,
+  type WorkspaceLaunchReadiness,
+} from "@/core/product/launch-readiness.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
@@ -211,6 +216,12 @@ async function loadBriefActionState(workspaceId: string): Promise<BriefActionSta
   };
 }
 
+async function loadLaunchReadiness(workspaceId: string): Promise<WorkspaceLaunchReadiness> {
+  return loadWorkspaceLaunchReadiness(getPool(), workspaceId, {
+    required_channel: "any",
+  });
+}
+
 function timeAgo(d: Date): string {
   const diff = Date.now() - d.getTime();
   const minutes = Math.floor(diff / 60_000);
@@ -240,6 +251,18 @@ const EMPTY_ACTION_STATE: BriefActionState = {
   meetings_7d: 0,
 };
 
+const EMPTY_LAUNCH_READINESS: WorkspaceLaunchReadiness = {
+  workspace_id: "",
+  checked_at: "",
+  required_channel: "any",
+  status: "blocked",
+  launch_ready: false,
+  next_action: "configure_profile",
+  checks: [],
+  blockers: ["workspace_profile"],
+  warnings: [],
+};
+
 const OPERATING_LOOP_META: Array<{
   key: keyof GtmPulse | "outcomes";
   step: string;
@@ -253,7 +276,7 @@ const OPERATING_LOOP_META: Array<{
     key: "prospects",
     step: "01",
     name: "Prospect graph",
-    href: "/dashboard/prospecting",
+    href: "/dashboard/prospects",
     icon: "person",
     unit: (pulse) =>
       `${pulse.prospects.count} ${pulse.prospects.count === 1 ? "profile" : "profiles"}`,
@@ -329,14 +352,16 @@ export default async function BriefPage() {
           campaigns: { count: 0, last_activity_at: null },
         }}
         actions={EMPTY_ACTION_STATE}
+        launchReadiness={EMPTY_LAUNCH_READINESS}
       />
     );
   }
-  const [running, outcomes, pulse, actions] = await Promise.all([
+  const [running, outcomes, pulse, actions, launchReadiness] = await Promise.all([
     loadRunning(session.workspace.id),
     loadOutcomes(session.workspace.id),
     loadGtmPulse(session.workspace.id),
     loadBriefActionState(session.workspace.id),
+    loadLaunchReadiness(session.workspace.id),
   ]);
   return (
     <BriefView
@@ -344,6 +369,7 @@ export default async function BriefPage() {
       outcomes={outcomes}
       pulse={pulse}
       actions={actions}
+      launchReadiness={launchReadiness}
     />
   );
 }
@@ -353,11 +379,13 @@ function BriefView({
   outcomes,
   pulse,
   actions,
+  launchReadiness,
 }: {
   running: RunningRow[];
   outcomes: OutcomeRow[];
   pulse: GtmPulse;
   actions: BriefActionState;
+  launchReadiness: WorkspaceLaunchReadiness;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
@@ -385,7 +413,7 @@ function BriefView({
         </h1>
         <p className="mt-5 max-w-[72ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
           {totalPulse === 0
-            ? "Nothing to surface yet. Define the prospecting profile once, then signal-led outreach will appear here."
+            ? "Start with the launch checklist. Once the Rep, Signals, channels, and Plays are ready, outreach movement will appear here."
             : `Prospects: ${pulse.prospects.count}. Fresh Signals: ${pulse.signals.count}. Active Conversations: ${pulse.outreach.count}. Play runs today: ${pulse.campaigns.count}. Useful Outcomes this week: ${actions.useful_outcomes_7d}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
         </p>
         <div className="mt-7 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -395,6 +423,8 @@ function BriefView({
           <BriefMetric label="Outcomes" value={actions.useful_outcomes_7d} />
         </div>
       </section>
+
+      <LaunchChecklist readiness={launchReadiness} />
 
       {/* Operating loop */}
       <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12">
@@ -452,6 +482,167 @@ function BriefView({
         </Feed>
       </section>
     </div>
+  );
+}
+
+type LaunchStepStatus = "ready" | "needs_attention" | "blocked";
+
+interface LaunchStep {
+  title: string;
+  primitive: "Rep" | "Signal" | "Play" | "Conversation";
+  href: string;
+  icon: string;
+  checkIds: LaunchReadinessCheck["id"][];
+  readyDetail: string;
+  blockedDetail: string;
+  actionLabel: string;
+}
+
+const LAUNCH_STEPS: LaunchStep[] = [
+  {
+    title: "Set the prospecting profile",
+    primitive: "Signal",
+    href: "/dashboard/prospecting",
+    icon: "person",
+    checkIds: ["workspace_profile", "icp"],
+    readyDetail: "Company context and ICP are ready for matching.",
+    blockedDetail: "Confirm the company profile and ICP before outreach can run.",
+    actionLabel: "Tune profile",
+  },
+  {
+    title: "Activate the Rep",
+    primitive: "Rep",
+    href: "/dashboard/reps",
+    icon: "badge",
+    checkIds: ["rep"],
+    readyDetail: "A Rep is ready to own the outbound motion.",
+    blockedDetail: "Configure a Rep voice, role, and channel limits.",
+    actionLabel: "Configure Rep",
+  },
+  {
+    title: "Connect email or LinkedIn",
+    primitive: "Conversation",
+    href: "/dashboard/setup",
+    icon: "forum",
+    checkIds: ["outreach_channel"],
+    readyDetail: "At least one outbound channel is healthy enough to launch.",
+    blockedDetail: "Connect Outlook or LinkedIn before a Play can reach prospects.",
+    actionLabel: "Connect channel",
+  },
+  {
+    title: "Launch the first Play",
+    primitive: "Play",
+    href: "/dashboard/campaigns",
+    icon: "science",
+    checkIds: ["signal_sources", "plays"],
+    readyDetail: "Signal sources and Plays are ready to turn timing into outreach.",
+    blockedDetail: "Enable a Signal source and an approval-safe Play.",
+    actionLabel: "Open Plays",
+  },
+];
+
+function LaunchChecklist({ readiness }: { readiness: WorkspaceLaunchReadiness }) {
+  const checks = new Map(readiness.checks.map((check) => [check.id, check]));
+  const steps = LAUNCH_STEPS.map((step) => launchStepView(step, checks));
+  const readyCount = steps.filter((step) => step.status === "ready").length;
+  const nextStep = steps.find((step) => step.status !== "ready") ?? steps.at(-1);
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Launch checklist
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Get from setup to live outreach.
+          </h2>
+        </div>
+        <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
+          {readyCount}/{steps.length} ready
+        </span>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-4">
+        {steps.map((step, index) => (
+          <Link
+            key={step.title}
+            href={step.href}
+            className="group flex min-h-[188px] flex-col rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-mono text-[11px] text-[var(--color-text-4)]">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <LaunchStatusPill status={step.status} />
+            </div>
+            <span className="mt-5 grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+              <Icon name={step.icon} size={17} />
+            </span>
+            <p className="mt-4 text-[15px] font-semibold leading-5 text-[var(--color-text-1)]">
+              {step.title}
+            </p>
+            <p className="mt-2 text-[12.5px] leading-5 text-[var(--color-text-3)]">
+              {step.detail}
+            </p>
+            <span className="mt-auto pt-4 text-[12px] font-medium text-[var(--color-accent)]">
+              {step.cta}
+            </span>
+          </Link>
+        ))}
+      </div>
+      {nextStep ? (
+        <p className="mt-3 text-[12.5px] leading-5 text-[var(--color-text-3)]">
+          Next: <span className="text-[var(--color-text-1)]">{nextStep.title}</span>.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function launchStepView(
+  step: LaunchStep,
+  checks: Map<LaunchReadinessCheck["id"], LaunchReadinessCheck>,
+): LaunchStep & { status: LaunchStepStatus; detail: string; cta: string } {
+  const related = step.checkIds
+    .map((id) => checks.get(id))
+    .filter((check): check is LaunchReadinessCheck => Boolean(check));
+  const nonReady = related.find((check) => check.status !== "ready");
+  const status = groupedLaunchStatus(related);
+  return {
+    ...step,
+    status,
+    detail:
+      status === "ready"
+        ? step.readyDetail
+        : nonReady?.detail ?? step.blockedDetail,
+    cta:
+      status === "ready"
+        ? `Open ${step.primitive}`
+        : nonReady?.action?.label ?? step.actionLabel,
+  };
+}
+
+function groupedLaunchStatus(checks: LaunchReadinessCheck[]): LaunchStepStatus {
+  if (checks.length === 0) return "blocked";
+  if (checks.some((check) => check.status === "needs_attention")) return "needs_attention";
+  return checks.every((check) => check.status === "ready") ? "ready" : "blocked";
+}
+
+function LaunchStatusPill({ status }: { status: LaunchStepStatus }) {
+  const copy =
+    status === "ready"
+      ? { label: "Ready", icon: "check_circle", tone: "bg-[var(--color-pos-bg)] text-[var(--color-pos)]" }
+      : status === "needs_attention"
+        ? { label: "Repair", icon: "error", tone: "bg-[var(--color-warn-bg)] text-[var(--color-warn)]" }
+        : { label: "Needed", icon: "lock", tone: "bg-[var(--color-ink-2)] text-[var(--color-text-3)]" };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-[8px] px-2 py-1 text-[11px] font-medium ${copy.tone}`}>
+      <Icon name={copy.icon} size={12} />
+      {copy.label}
+    </span>
   );
 }
 

@@ -5,6 +5,7 @@ type LoadingSurface =
   | "outreach"
   | "campaigns"
   | "prospecting"
+  | "prospects"
   | "signals"
   | "reps"
   | "plays"
@@ -17,6 +18,7 @@ const SURFACE_COPY: Record<LoadingSurface, { kicker: string; title: string; icon
   outreach: { kicker: "Outreach", title: "Loading conversations", icon: "forum" },
   campaigns: { kicker: "Campaigns", title: "Loading campaign signals", icon: "science" },
   prospecting: { kicker: "Prospecting", title: "Loading prospecting profile", icon: "person" },
+  prospects: { kicker: "Prospects", title: "Loading prospect graph", icon: "travel_explore" },
   signals: { kicker: "Signals", title: "Loading signal queue", icon: "sensors" },
   reps: { kicker: "Reps", title: "Loading rep memory", icon: "badge" },
   plays: { kicker: "Plays", title: "Loading workflow map", icon: "account_tree" },

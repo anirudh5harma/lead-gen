@@ -926,7 +926,7 @@ button:active, a:active {
   animation: dashboard-loader-sheen 1.7s ease-in-out infinite;
 }
 
-dashboard-route-pending {
+.dashboard-route-pending {
   position: fixed;
   left: 0;
   right: 0;

@@ -11,6 +11,7 @@ import PendingSubmitButton from "@/components/PendingSubmitButton";
 interface NavItem {
   href: string;
   label: string;
+  matches?: string[];
 }
 
 export interface ShellWorkspace {
@@ -19,18 +20,44 @@ export interface ShellWorkspace {
 }
 
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Brief" },
-  { href: "/dashboard/prospecting", label: "Prospecting" },
-  { href: "/dashboard/signals", label: "Signals" },
-  { href: "/dashboard/conversations", label: "Outreach" },
-  { href: "/dashboard/campaigns", label: "Campaigns" },
+  { href: "/dashboard", label: "Dashboard" },
+  {
+    href: "/dashboard/reps",
+    label: "Reps",
+    matches: [
+      "/dashboard/reps",
+      "/dashboard/prospecting",
+      "/dashboard/setup",
+    ],
+  },
+  {
+    href: "/dashboard/prospects",
+    label: "Prospects",
+    matches: [
+      "/dashboard/prospects",
+      "/dashboard/signals",
+      "/dashboard/ingestion",
+    ],
+  },
+  {
+    href: "/dashboard/conversations",
+    label: "Inbox",
+    matches: [
+      "/dashboard/conversations",
+      "/dashboard/review",
+      "/dashboard/approvals",
+    ],
+  },
 ];
 
-// Brief ("/dashboard") matches only its own page; section links match the
-// page and any nested route under it.
-function isActivePath(pathname: string, href: string): boolean {
+// Dashboard matches only its own page; section links can claim related
+// workflow routes that are no longer permanent top-level tabs.
+function isActivePath(pathname: string, href: string, matches?: string[]): boolean {
   if (href === "/dashboard") return pathname === "/dashboard";
-  return pathname === href || pathname.startsWith(href + "/");
+  const candidates = matches ?? [href];
+  return candidates.some(
+    (candidate) => pathname === candidate || pathname.startsWith(candidate + "/"),
+  );
 }
 
 export function DashboardShell({
@@ -49,7 +76,11 @@ export function DashboardShell({
     : false;
   const settingsActive = isActivePath(pathname, "/dashboard/settings");
 
-  function handleNavClick(event: MouseEvent<HTMLAnchorElement>, href: string) {
+  function handleNavClick(
+    event: MouseEvent<HTMLAnchorElement>,
+    href: string,
+    matches?: string[],
+  ) {
     if (
       event.defaultPrevented ||
       event.metaKey ||
@@ -57,7 +88,7 @@ export function DashboardShell({
       event.shiftKey ||
       event.altKey ||
       event.button !== 0 ||
-      isActivePath(pathname, href)
+      isActivePath(pathname, href, matches)
     ) {
       return;
     }
@@ -92,12 +123,12 @@ export function DashboardShell({
 
           <nav className="ml-2 hidden flex-1 items-center gap-1 md:flex">
             {NAV.map((item) => {
-              const active = isActivePath(pathname, item.href);
+              const active = isActivePath(pathname, item.href, item.matches);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={(event) => handleNavClick(event, item.href)}
+                  onClick={(event) => handleNavClick(event, item.href, item.matches)}
                   aria-current={active ? "page" : undefined}
                   className={
                     "rounded-[8px] px-2.5 py-1.5 text-[13.5px] transition-colors " +
@@ -167,12 +198,12 @@ export function DashboardShell({
       {/* Mobile sub-nav (visible <md) */}
       <nav className="glass-nav fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1200px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-1)] bg-[var(--color-ink-0)]/80 px-6 py-2 backdrop-blur-md md:hidden">
         {NAV.map((item) => {
-          const active = isActivePath(pathname, item.href);
+          const active = isActivePath(pathname, item.href, item.matches);
           return (
             <Link
               key={item.href}
               href={item.href}
-              onClick={(event) => handleNavClick(event, item.href)}
+              onClick={(event) => handleNavClick(event, item.href, item.matches)}
               aria-current={active ? "page" : undefined}
               className={
                 "shrink-0 rounded-[8px] px-2.5 py-1 text-[13px] transition-colors " +

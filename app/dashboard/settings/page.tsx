@@ -33,15 +33,25 @@ interface SettingsOutlookAccount {
   updated_at: Date;
 }
 
+interface SettingsLinkedInAccount {
+  id: string;
+  display_name: string;
+  status: string;
+  daily_cap: number | null;
+  last_error: string | null;
+  updated_at: Date;
+}
+
 interface SettingsState {
   settings: Record<string, unknown>;
   outlookAccount: SettingsOutlookAccount | null;
+  linkedInAccount: SettingsLinkedInAccount | null;
   approvals: string[];
 }
 
 async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
   const pool = getPool();
-  const [workspace, outlook, policies] = await Promise.all([
+  const [workspace, outlook, linkedIn, policies] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
          from workspaces
@@ -88,6 +98,22 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
         limit 1`,
       [workspaceId],
     ),
+    pool.query<SettingsLinkedInAccount>(
+      `select id,
+              display_name,
+              status::text as status,
+              daily_cap,
+              last_error,
+              updated_at
+         from channel_accounts
+        where workspace_id = $1
+          and kind in ('linkedin_session','linkedin_oauth')
+        order by case when status = 'connected' then 0 else 1 end,
+                 updated_at desc,
+                 created_at desc
+        limit 1`,
+      [workspaceId],
+    ),
     pool.query<{ autonomy: Record<string, unknown> | null }>(
       `select autonomy
          from reps
@@ -104,6 +130,7 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
   return {
     settings: workspace.rows[0]?.settings ?? {},
     outlookAccount: outlook.rows[0] ?? null,
+    linkedInAccount: linkedIn.rows[0] ?? null,
     approvals: policies.rows.flatMap((row) =>
       approvalsFromAutonomy(row.autonomy),
     ),
@@ -128,6 +155,9 @@ export default async function SettingsPage() {
   const outlookLabel = state.outlookAccount
     ? outlookMailbox(state.outlookAccount)
     : "Not connected";
+  const linkedInLabel = state.linkedInAccount
+    ? statusLabel(state.linkedInAccount.status)
+    : "Not connected";
 
   return (
     <div className="space-y-10">
@@ -146,6 +176,7 @@ export default async function SettingsPage() {
               value={profile?.company_name ?? "Needed"}
             />
             <HeroStat label="Outlook" value={outlookLabel} />
+            <HeroStat label="LinkedIn" value={linkedInLabel} />
             <HeroStat label="Mode" value={modeLabel(mode)} />
           </div>
         }
@@ -155,9 +186,12 @@ export default async function SettingsPage() {
         <ProfileSettingsForm profile={profile} />
       </SurfaceSection>
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-        <SurfaceSection title="Connected Outlook">
+      <section className="mt-6 grid gap-6 lg:grid-cols-2">
+        <SurfaceSection title="Connected accounts">
+          <div className="grid gap-3">
           <OutlookPanel account={state.outlookAccount} />
+            <LinkedInPanel account={state.linkedInAccount} />
+          </div>
         </SurfaceSection>
 
         <SurfaceSection title="Autonomy">
@@ -301,6 +335,46 @@ function OutlookPanel({ account }: { account: SettingsOutlookAccount | null }) {
       >
         <Icon name="mail" size={16} />
         {account ? "Reconnect Outlook" : "Connect Outlook"}
+      </Link>
+    </div>
+  );
+}
+
+function LinkedInPanel({
+  account,
+}: {
+  account: SettingsLinkedInAccount | null;
+}) {
+  return (
+    <div className="section-note grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+      <div className="flex min-w-0 gap-3">
+        <span className="brief-note-icon shrink-0">
+          <Icon
+            name={account?.status === "connected" ? "forum" : "sync_problem"}
+            size={18}
+          />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {account ? account.display_name : "LinkedIn account"}
+          </p>
+          <p className="mt-1 text-sm text-[var(--color-text-3)]">
+            {account
+              ? `${statusLabel(account.status)} - ${account.daily_cap ?? "unlimited"} daily ceiling`
+              : "Connect LinkedIn for connection requests, DMs, and warmup Plays."}
+          </p>
+          {account?.last_error ? (
+            <p className="mt-2 text-sm text-[#ffb4a8]">{account.last_error}</p>
+          ) : null}
+        </div>
+      </div>
+      <Link
+        href="/api/auth/linkedin"
+        prefetch={false}
+        className="btn-solid w-fit"
+      >
+        <Icon name="forum" size={16} />
+        {account ? "Reconnect LinkedIn" : "Connect LinkedIn"}
       </Link>
     </div>
   );
