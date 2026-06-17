@@ -10,7 +10,7 @@ test("dashboard navigation uses active product surface routes", () => {
   const shell = source("components/dashboard/Shell.tsx");
   const primaryNav = shell.slice(
     shell.indexOf("const NAV"),
-    shell.indexOf("const FLOW"),
+    shell.indexOf("function isActivePath"),
   );
 
   assert.match(primaryNav, /href: "\/dashboard",\s+label: "Dashboard"/);
@@ -35,55 +35,38 @@ test("dashboard navigation uses active product surface routes", () => {
     primaryNav,
     /href: "\/dashboard\/prospects", label: "Prospects"/,
   );
-  assert.match(shell, /ProductFlowRail/);
-  assert.match(shell, /aria-label="Product flow"/);
-  assert.match(shell, /href: "\/dashboard\/settings#profile"/);
-  assert.match(shell, /href: "\/dashboard\/agent#sources"/);
-  assert.match(shell, /href: "\/dashboard\/agent#opportunities"/);
-  assert.match(shell, /href: "\/dashboard\/agent#outreach"/);
-  assert.match(shell, /detail: "ICP \+ integrations"/);
-  assert.match(shell, /detail: "Signal strategy"/);
-  assert.match(shell, /detail: "Signal queue"/);
-  assert.match(shell, /detail: "Emails \+ DMs"/);
-  assert.match(shell, /metric: "profile"/);
-  assert.match(shell, /metric: "sources"/);
-  assert.match(shell, /metric: "signals"/);
-  assert.match(shell, /metric: "outreach"/);
-  assert.match(shell, /isActiveFlowItem/);
-  assert.match(shell, /window\.location\.hash/);
-  assert.match(shell, /hashchange/);
   assert.match(shell, /hrefPath\(href\) === pathname/);
   assert.match(shell, /candidate !== "\/dashboard"/);
+  assert.doesNotMatch(shell, /ProductFlowRail/);
+  assert.doesNotMatch(shell, /aria-label="Product flow"/);
+  assert.doesNotMatch(shell, /const FLOW/);
+  assert.doesNotMatch(shell, /isActiveFlowItem/);
+  assert.doesNotMatch(shell, /window\.location\.hash/);
+  assert.doesNotMatch(shell, /hashchange/);
 });
 
-test("dashboard product flow rail renders live status metrics safely", () => {
+test("dashboard shell keeps route chrome simple and avoids extra flow queries", () => {
   const shell = source("components/dashboard/Shell.tsx");
   const layout = source("app/dashboard/layout.tsx");
 
-  assert.match(shell, /export interface ProductFlowMetrics/);
-  assert.match(shell, /DEFAULT_FLOW_METRICS/);
-  assert.match(shell, /flowMetrics = DEFAULT_FLOW_METRICS/);
-  assert.match(shell, /flowMetrics\[item\.metric\]/);
-  assert.match(shell, /metric\.tone === "ready"/);
-  assert.match(shell, /metric\.tone === "waiting"/);
-  assert.match(shell, /grid-cols-\[32px_minmax\(0,1fr\)_auto\]/);
+  assert.match(shell, /DashboardShell/);
+  assert.match(shell, /const NAV/);
+  assert.match(shell, /label: "Dashboard"/);
+  assert.match(shell, /label: "Agent"/);
+  assert.match(shell, /label: "Profile"/);
+  assert.match(layout, /<DashboardShell/);
+  assert.match(layout, /getActiveWorkspaceSession/);
+  assert.match(layout, /listWorkspaces/);
 
-  assert.match(layout, /loadProductFlowMetrics/);
-  assert.match(layout, /try \{/);
-  assert.match(layout, /catch \(err\)/);
-  assert.match(layout, /return EMPTY_FLOW_METRICS/);
-  assert.match(layout, /from graph_companies gc/);
-  assert.match(layout, /properties->>'profile_role' = 'workspace_company'/);
-  assert.match(layout, /from channel_accounts ca/);
-  assert.match(layout, /'oauth_outlook'/);
-  assert.match(layout, /'linkedin_session'/);
-  assert.match(layout, /from workspace_source_configs wsc/);
-  assert.match(layout, /join graph_sources gs/);
-  assert.match(layout, /from signals s/);
-  assert.match(layout, /s\.status in \('matched','in_play'\)/);
-  assert.match(layout, /from messages m/);
-  assert.match(layout, /'linkedin_dm'/);
-  assert.match(layout, /outreach_sent_7d/);
+  assert.doesNotMatch(shell, /ProductFlowMetrics/);
+  assert.doesNotMatch(shell, /DEFAULT_FLOW_METRICS/);
+  assert.doesNotMatch(shell, /flowMetrics/);
+  assert.doesNotMatch(layout, /loadProductFlowMetrics/);
+  assert.doesNotMatch(layout, /EMPTY_FLOW_METRICS/);
+  assert.doesNotMatch(layout, /from graph_companies gc/);
+  assert.doesNotMatch(layout, /from workspace_source_configs wsc/);
+  assert.doesNotMatch(layout, /from signals s/);
+  assert.doesNotMatch(layout, /from messages m/);
 });
 
 test("Agent is the canonical dashboard surface route", () => {
