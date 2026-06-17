@@ -135,7 +135,9 @@ const FLOW: FlowItem[] = [
 function isActivePath(pathname: string, href: string, matches?: string[]): boolean {
   const candidates = matches ?? [href];
   return candidates.some(
-    (candidate) => pathname === candidate || pathname.startsWith(candidate + "/"),
+    (candidate) =>
+      pathname === candidate ||
+      (candidate !== "/dashboard" && pathname.startsWith(candidate + "/")),
   );
 }
 

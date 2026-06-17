@@ -53,6 +53,7 @@ test("dashboard navigation uses active product surface routes", () => {
   assert.match(shell, /window\.location\.hash/);
   assert.match(shell, /hashchange/);
   assert.match(shell, /hrefPath\(href\) === pathname/);
+  assert.match(shell, /candidate !== "\/dashboard"/);
 });
 
 test("dashboard product flow rail renders live status metrics safely", () => {
