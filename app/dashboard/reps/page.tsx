@@ -265,7 +265,7 @@ export default async function RepsPage() {
                   </span>
                 </span>
               </Link>
-              <Link href="/dashboard/campaigns" className="priority-action">
+              <Link href="/dashboard/plays" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="science" size={16} />
                 </span>
@@ -373,7 +373,7 @@ function MiniStat({ label, value }: { label: string; value: number }) {
 
 function launchReadinessCopy(readiness: WorkspaceLaunchReadiness): string {
   if (readiness.launch_ready) {
-    return "The required profile, Rep, Play, and channel gates are ready. Watch Inbox and Insights for movement.";
+    return "The required profile, Rep, Play, and channel gates are ready. Watch Inbox and Outcomes for movement.";
   }
   const next = readiness.checks.find(
     (check) => check.required && check.status !== "ready",

@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
+export { default } from "../campaigns/page";
 
-export default function PlaysPage() {
-  redirect("/dashboard/campaigns");
-}
+export const dynamic = "force-dynamic";

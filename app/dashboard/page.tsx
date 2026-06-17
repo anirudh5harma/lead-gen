@@ -302,7 +302,7 @@ const OPERATING_LOOP_META: Array<{
     key: "campaigns",
     step: "03",
     name: "Plays",
-    href: "/dashboard/campaigns",
+    href: "/dashboard/plays",
     icon: "science",
     unit: (pulse) =>
       `${pulse.campaigns.count} ${pulse.campaigns.count === 1 ? "run" : "runs"} today`,
@@ -328,7 +328,7 @@ const OPERATING_LOOP_META: Array<{
     key: "outcomes",
     step: "05",
     name: "Outcomes",
-    href: "/dashboard/campaigns",
+    href: "/dashboard/plays",
     icon: "task_alt",
     unit: (_pulse, actions) => `${actions.useful_outcomes_7d} useful this week`,
     detail: (_pulse, actions) =>
@@ -532,7 +532,7 @@ const LAUNCH_STEPS: LaunchStep[] = [
   {
     title: "Launch the first Play",
     primitive: "Play",
-    href: "/dashboard/campaigns",
+    href: "/dashboard/plays",
     icon: "science",
     checkIds: ["signal_sources", "plays"],
     readyDetail: "Signal sources and Plays are ready to turn timing into outreach.",
@@ -892,7 +892,7 @@ function buildPriorityActions(
       detail: `${actions.useful_outcomes_7d} useful ${
         actions.useful_outcomes_7d === 1 ? "Outcome" : "Outcomes"
       } can sharpen the next Play.`,
-      href: "/dashboard/campaigns",
+      href: "/dashboard/plays",
       icon: "task_alt",
     });
   }

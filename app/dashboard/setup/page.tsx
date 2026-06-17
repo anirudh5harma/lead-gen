@@ -150,7 +150,7 @@ export default async function SetupPage() {
             Tell Bombsell <em>who to chase</em>.
           </>
         }
-        description="Define your company, ICP, voice, timing signals, and channel pace. Email, LinkedIn, and campaigns work from this profile."
+        description="Define your company, ICP, voice, timing signals, and channel pace. Email, LinkedIn, and Plays work from this profile."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Ready" value={`${readyCount}/5`} />
@@ -514,9 +514,9 @@ const REP_META: Record<
     icon: "forum",
   },
   Prayog: {
-    role: "Campaigns",
+    role: "Plays",
     surface: "Turns Signals into small outbound Plays",
-    href: "/dashboard/campaigns",
+    href: "/dashboard/plays",
     icon: "science",
   },
 };

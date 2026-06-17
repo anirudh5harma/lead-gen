@@ -330,12 +330,12 @@ export async function createRecommendationDraftAction(formData: FormData) {
 
 export async function recordCampaignOutcomeAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/plays");
   const playRunId = value(formData, "play_run_id");
   if (!playRunId) {
     redirectWithToast(
       returnTo,
-      "Choose a campaign before recording an outcome.",
+      "Choose a Play before recording an outcome.",
       "error",
     );
   }
@@ -367,7 +367,7 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
 
 export async function optimizeCampaignStrategyAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/plays");
   await optimizeProductCampaignStrategy(
     {
       lookback_days: numberValue(formData, "lookback_days", 30),
@@ -376,12 +376,12 @@ export async function optimizeCampaignStrategyAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirectWithToast(returnTo, "Campaign strategy updated.");
+  redirectWithToast(returnTo, "Play strategy updated.");
 }
 
 export async function optimizePlaySkillsAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/campaigns");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/plays");
   await optimizeProductPlaySkills(
     {
       lookback_days: numberValue(formData, "lookback_days", 30),

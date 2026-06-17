@@ -436,7 +436,7 @@ function MiniStatus({ label, value }: { label: string; value: number }) {
 
 function surfaceFor(name: string): string {
   if (name === "Sampark") return "Sampark · Outreach";
-  if (name === "Prayog") return "Prayog · Campaigns";
+  if (name === "Prayog") return "Prayog · Plays";
   if (name === "Vaani" || name === "Bodh") return `${name} · Retired`;
   return "Prospecting";
 }

@@ -237,9 +237,9 @@ export default async function CampaignsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Campaigns"
+        kicker="Plays"
         title="No workspace yet."
-        description="Create a prospecting profile, then Signals can become email and LinkedIn campaign Plays."
+        description="Create a prospecting profile, then Signals can become email and LinkedIn Plays."
       />
     );
   }
@@ -255,7 +255,7 @@ export default async function CampaignsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Campaigns"
+        kicker="Plays"
         title={<>Run small bets. <em>Scale the winners.</em></>}
         description="Qualified signals become email and LinkedIn Plays. Approve a small bet, watch replies and meetings, then let outcomes sharpen the next run."
         meta={
@@ -270,7 +270,7 @@ export default async function CampaignsPage() {
       <SurfaceSection title="Strategy optimizer">
         <div className="flex flex-wrap items-center gap-2">
           <form action={optimizeCampaignStrategyAction}>
-            <input type="hidden" name="return_to" value="/dashboard/campaigns" />
+            <input type="hidden" name="return_to" value="/dashboard/plays" />
             <input type="hidden" name="lookback_days" value="30" />
             <input type="hidden" name="min_samples" value="3" />
             <PendingSubmitButton
@@ -292,7 +292,7 @@ export default async function CampaignsPage() {
         ) : (
           <EmptyState
             title="No strategy recommendation yet"
-            hint="Campaign learning will appear after outcomes are attributed to recent Play runs."
+            hint="Play learning will appear after outcomes are attributed to recent runs."
           />
         )}
       </SurfaceSection>
@@ -300,7 +300,7 @@ export default async function CampaignsPage() {
       <SurfaceSection title="Play Skill optimizer">
         <div className="flex flex-wrap items-center gap-2">
           <form action={optimizePlaySkillsAction}>
-            <input type="hidden" name="return_to" value="/dashboard/campaigns" />
+            <input type="hidden" name="return_to" value="/dashboard/plays" />
             <input type="hidden" name="lookback_days" value="30" />
             <input type="hidden" name="min_samples" value="3" />
             <PendingSubmitButton
@@ -322,12 +322,12 @@ export default async function CampaignsPage() {
         ) : (
           <EmptyState
             title="No Play Skill recommendation yet"
-            hint="After campaign outcomes and procedural memory accumulate, Bombsell will recommend which email and LinkedIn frameworks deserve more or less volume."
+            hint="After Play outcomes and procedural memory accumulate, Bombsell will recommend which email and LinkedIn frameworks deserve more or less volume."
           />
         )}
       </SurfaceSection>
 
-      <SurfaceSection title="Qualified signals worth a campaign">
+      <SurfaceSection title="Qualified signals worth a Play">
         {signals.length === 0 ? (
           <EmptyState
             title="No qualified signals yet"
@@ -343,11 +343,11 @@ export default async function CampaignsPage() {
         )}
       </SurfaceSection>
 
-      <SurfaceSection title="Campaign ideas in flight">
+      <SurfaceSection title="Play ideas in flight">
         {ideas.length === 0 ? (
           <EmptyState
-            title="No campaign ideas yet"
-            hint="A campaign Play will appear once a signal has enough fit, contact data, and channel confidence."
+            title="No Play ideas yet"
+            hint="A Play will appear once a signal has enough fit, contact data, and channel confidence."
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">
@@ -408,7 +408,7 @@ function SkillRecommendationCard({
         {humanizeSkillKey(recommendation.skill_key)}
       </h3>
       <p className="mt-1 text-xs text-[var(--color-text-3)]">
-        {recommendation.rep_name ?? "Campaign Rep"}
+        {recommendation.rep_name ?? "Play Rep"}
         {recommendation.channel ? ` · ${recommendation.channel}` : ""}
         {recommendation.segment_key !== "all" ? ` · ${recommendation.segment_key}` : ""}
         {` · ${recommendation.sample_count} samples`}
@@ -466,7 +466,7 @@ function StrategyVariantCard({ variant }: { variant: CampaignStrategyVariant }) 
         {variant.play_name}
       </h3>
       <p className="mt-1 text-xs text-[var(--color-text-3)]">
-        {variant.rep_name ?? "Campaign Rep"}
+        {variant.rep_name ?? "Play Rep"}
         {variant.channel ? ` · ${variant.channel}` : ""}
         {variant.segment_key !== "all" ? ` · ${variant.segment_key}` : ""}
         {` · ${variant.sample_count} samples`}
@@ -547,7 +547,7 @@ function CampaignOutcomeButton({
 }) {
   return (
     <form action={recordCampaignOutcomeAction}>
-      <input type="hidden" name="return_to" value="/dashboard/campaigns" />
+      <input type="hidden" name="return_to" value="/dashboard/plays" />
       <input type="hidden" name="play_run_id" value={playRunId} />
       <input type="hidden" name="outcome_kind" value={kind} />
       <PendingSubmitButton
@@ -577,7 +577,7 @@ function parseCampaignStrategy(payload: unknown): Omit<CampaignStrategyState, "o
     : [];
   return {
     recommendation_id: stringValue(record.recommendation_id) ?? "unknown",
-    summary: stringValue(record.summary) ?? "No campaign variants have enough activity yet.",
+    summary: stringValue(record.summary) ?? "No Play variants have enough activity yet.",
     generated_at: stringValue(record.generated_at) ?? new Date().toISOString(),
     variants,
   };
