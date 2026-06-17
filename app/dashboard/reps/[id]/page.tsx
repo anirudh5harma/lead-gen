@@ -151,7 +151,7 @@ export default async function RepDetailPage({
           <div>
             <p className="brief-kicker">{surfaceFor(rep.name)}</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              {rep.name}
+              {agentDisplayName(rep.name)}
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
               {rep.persona.story ??
@@ -268,7 +268,7 @@ export default async function RepDetailPage({
               Learning
             </h2>
             <p className="mt-1 text-sm text-[var(--color-text-3)]">
-              Patterns this Rep reuses in drafts, judges, and next moves.
+              Patterns this agent reuses in drafts, judges, and next moves.
             </p>
           </div>
         </div>
@@ -435,10 +435,8 @@ function MiniStatus({ label, value }: { label: string; value: number }) {
 }
 
 function surfaceFor(name: string): string {
-  if (name === "Sampark") return "Sampark · Conversations";
-  if (name === "Prayog") return "Prayog · Plays";
   if (name === "Vaani" || name === "Bodh") return `${name} · Retired`;
-  return "Prospecting";
+  return "Agent";
 }
 
 function messageStatusLabel(status: string): string {
@@ -464,10 +462,13 @@ function humanPattern(patternKey: string): string {
 }
 
 function iconFor(name: string): string {
-  if (name === "Sampark") return "forum";
-  if (name === "Prayog") return "science";
   if (name === "Vaani" || name === "Bodh") return "lock";
   return "person";
+}
+
+function agentDisplayName(name: string): string {
+  if (name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  return name;
 }
 
 function CanvasEmpty({ label, title }: { label: string; title: string }) {

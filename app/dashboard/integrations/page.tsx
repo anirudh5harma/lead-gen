@@ -83,7 +83,7 @@ export default async function IntegrationsPage() {
     return (
       <div className="space-y-10">
         <SurfaceHero
-          kicker="Integrations"
+          kicker="Profile"
           title="Create a workspace."
           description="Connected email, LinkedIn, and external-agent tools attach to the active workspace."
         />
@@ -117,13 +117,13 @@ export default async function IntegrationsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Integrations"
+        kicker="Profile"
         title={
           <>
-            Connect the channels Reps can <em>use</em>.
+            Connect the accounts your agent can <em>use</em>.
           </>
         }
-        description="Email, LinkedIn, owned-domain capacity, and MCP live here. Reps and Plays inherit these accounts plus their daily caps and health."
+        description="Email, LinkedIn, owned-domain capacity, and MCP live inside the workspace profile. The agent inherits these accounts plus their daily caps and health."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Connected" value={connectedCount} />
@@ -144,7 +144,7 @@ export default async function IntegrationsPage() {
           <ConnectCard
             account={outlookAccount}
             title="Outlook inbox"
-            description="Connect Microsoft 365 for native sending, reply sync, and thread-aware Conversations."
+            description="Connect Microsoft 365 for native sending, reply sync, and thread-aware outreach."
             href="/api/auth/outlook?return_to=/dashboard/integrations"
             icon="mail"
             connectLabel="Connect Outlook"
@@ -193,8 +193,8 @@ export default async function IntegrationsPage() {
                 MCP endpoint
               </p>
               <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-                External agents can use the same workspace tools that internal
-                Reps use.
+                External agents can use the same workspace tools as this
+                workspace agent.
               </p>
             </div>
             <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-xs text-[var(--color-text-2)]">

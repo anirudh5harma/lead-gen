@@ -299,7 +299,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
       </div>
       {!draft ? (
         <p className="mt-3 rounded-md border border-[var(--color-line-1)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
-          No email draft yet. Once contacts resolve, the Signal-to-email Play writes and judges the draft here.
+          No email draft yet. Once contacts resolve, the signal-to-email outreach run writes and judges the draft here.
         </p>
       ) : (
         <div className="mt-3">

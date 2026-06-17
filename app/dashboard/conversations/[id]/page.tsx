@@ -53,7 +53,7 @@ function TrustTracePanel({
     <div className="section-note">
       <p className="text-sm font-semibold text-[var(--color-text-1)]">Proof</p>
       <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-        Why Sampark moved, what was checked, and what came back.
+        Why the agent moved, what was checked, and what came back.
       </p>
       <div className="mt-4 grid gap-3">
         <TraceRow
@@ -334,7 +334,7 @@ function formatWhen(value: Date): string {
 }
 
 function messageDirectionLabel(direction: string): string {
-  if (direction === "outbound") return "Sampark";
+  if (direction === "outbound") return "Agent";
   if (direction === "inbound") return "Reply";
   return direction.replace(/_/g, " ");
 }

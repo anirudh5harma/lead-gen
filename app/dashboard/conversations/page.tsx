@@ -9,22 +9,19 @@ import { decideApprovalWithDraftAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-interface ConversationRow {
+interface OutboundMessageRow {
   id: string;
+  conversation_id: string;
   status: string;
-  topic: string | null;
-  started_at: Date;
-  last_activity_at: Date;
+  channel: string;
+  subject: string | null;
+  body: string | null;
+  sent_at: Date | null;
+  created_at: Date;
   counterparty_name: string | null;
   company_name: string | null;
-  rep_name: string | null;
   signal_title: string | null;
   signal_kind: string | null;
-  latest_message_body: string | null;
-  latest_message_subject: string | null;
-  latest_message_direction: string | null;
-  latest_message_status: string | null;
-  latest_message_created_at: Date | null;
   eval_score: string | null;
   eval_passed: boolean | null;
   pending_approval_id: string | null;
@@ -36,47 +33,44 @@ interface OutreachOutcomeStats {
   awaiting_reply: number;
 }
 
-async function loadConversations(workspaceId: string): Promise<ConversationRow[]> {
+async function loadOutboundMessages(workspaceId: string): Promise<OutboundMessageRow[]> {
   const pool = getPool();
-  const { rows } = await pool.query<ConversationRow>(
-    `select c.id, c.status::text as status, c.topic, c.started_at, c.last_activity_at,
+  const { rows } = await pool.query<OutboundMessageRow>(
+    `select m.id,
+            m.conversation_id,
+            m.status::text as status,
+            m.channel::text as channel,
+            m.subject,
+            m.body,
+            m.sent_at,
+            m.created_at,
             p.full_name as counterparty_name,
             co.name as company_name,
-            r.name as rep_name,
             s.title as signal_title,
             s.kind::text as signal_kind,
-            lm.body as latest_message_body,
-            lm.subject as latest_message_subject,
-            lm.direction::text as latest_message_direction,
-            lm.status::text as latest_message_status,
-            lm.created_at as latest_message_created_at,
-            lm.eval_score::text as eval_score,
-            lm.eval_passed,
+            m.eval_score::text as eval_score,
+            m.eval_passed,
             pending.id as pending_approval_id
-       from conversations c
+       from messages m
+       join conversations c on c.id = m.conversation_id
        left join graph_persons p on p.id = c.counterparty_person_id
        left join graph_companies co on co.id = c.counterparty_company_id
-       left join reps r on r.id = c.rep_id
        left join signals s on s.id = c.origin_signal_id
        left join lateral (
-         select m.id, m.body, m.subject, m.direction, m.status, m.created_at, m.eval_score, m.eval_passed
-           from messages m
-          where m.workspace_id = c.workspace_id and m.conversation_id = c.id
-          order by m.created_at desc
-          limit 1
-       ) lm on true
-       left join lateral (
          select a.id
-           from workflow_approvals a
-          where a.workspace_id = c.workspace_id
+          from workflow_approvals a
+         where a.workspace_id = m.workspace_id
             and a.decision = 'pending'
             and a.payload ? 'message_id'
-            and a.payload->>'message_id' = lm.id::text
+            and a.payload->>'message_id' = m.id::text
           order by a.created_at desc
           limit 1
        ) pending on true
-      where c.workspace_id = $1
-      order by c.last_activity_at desc
+      where m.workspace_id = $1
+        and m.direction = 'outbound'
+        and m.channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+        and m.status in ('sent','delivered','replied')
+      order by coalesce(m.sent_at, m.created_at) desc
       limit 100`,
     [workspaceId],
   );
@@ -109,6 +103,9 @@ async function loadOutreachStats(
 }
 
 const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
+  sent: { label: "Sent", tone: "bg-[var(--color-ink-2)] text-[var(--color-text-2)]" },
+  delivered: { label: "Delivered", tone: "bg-[var(--color-pos-bg)] text-[var(--color-pos)]" },
+  replied: { label: "Replied", tone: "bg-[var(--color-pos-bg)] text-[var(--color-pos)]" },
   open: { label: "Open", tone: "bg-[var(--color-ink-2)] text-[var(--color-text-2)]" },
   awaiting_us: {
     label: "Needs reply",
@@ -147,16 +144,16 @@ export default async function ConversationsPage() {
       />
     );
   }
-  const conversations = await loadConversations(workspace.id);
-  const awaitingReply = conversations.filter((c) => c.status === "awaiting_us").length;
+  const messages = await loadOutboundMessages(workspace.id);
+  const awaitingReply = messages.filter((m) => m.status === "sent" || m.status === "delivered").length;
   const stats = await loadOutreachStats(workspace.id, awaitingReply);
 
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Email + LinkedIn"
-        title={<>Move the <em>useful</em> conversations.</>}
-        description="Drafts, approvals, replies, and next moves across connected inboxes and LinkedIn. Everything is tied back to the signal that made now worth reaching out."
+        kicker="Outreach"
+        title={<>Sent email and LinkedIn <em>drafts</em>.</>}
+        description="Every outbound email, DM, and connection touch with the contact, company, signal, and draft you can inspect."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Awaiting reply" value={stats.awaiting_reply} />
@@ -166,17 +163,17 @@ export default async function ConversationsPage() {
         }
       />
 
-      <SurfaceSection title="Conversations">
-        {conversations.length === 0 ? (
+      <SurfaceSection title="Sent list">
+        {messages.length === 0 ? (
           <EmptyState
-            title="No conversations yet"
-            hint="Once a signal starts an email or LinkedIn Play, replies and review moments will appear here."
+            title="No outreach sent yet"
+            hint="Once a signal starts email or LinkedIn outreach, sent drafts will appear here."
             cta={{ href: "/dashboard/integrations", label: "Connect accounts", icon: "account_tree" }}
           />
         ) : (
           <div className="grid gap-2">
-            {conversations.map((conversation) => (
-              <ConversationLink key={conversation.id} conversation={conversation} />
+            {messages.map((message) => (
+              <OutboundMessageLink key={message.id} message={message} />
             ))}
           </div>
         )}
@@ -185,50 +182,50 @@ export default async function ConversationsPage() {
   );
 }
 
-function ConversationLink({ conversation }: { conversation: ConversationRow }) {
+function OutboundMessageLink({ message }: { message: OutboundMessageRow }) {
   const badge =
-    STATUS_LABEL[conversation.status] ?? {
-      label: conversation.status.replace(/_/g, " "),
+    STATUS_LABEL[message.status] ?? {
+      label: message.status.replace(/_/g, " "),
       tone: "bg-[var(--color-ink-2)] text-[var(--color-text-3)]",
     };
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
       <Link
-        href={`/dashboard/conversations/${conversation.id}`}
+        href={`/dashboard/conversations/${message.conversation_id}`}
         prefetch={false}
         className="min-w-0"
       >
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-            <Icon name={repIcon(conversation.rep_name)} size={16} />
+            <Icon name={channelIcon(message.channel)} size={16} />
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
-              {conversation.counterparty_name ?? "Unknown person"}
-              {conversation.company_name ? (
+              {message.counterparty_name ?? "Unknown person"}
+              {message.company_name ? (
                 <span className="font-normal text-[var(--color-text-3)]">
                   {" "}
-                  at {conversation.company_name}
+                  at {message.company_name}
                 </span>
               ) : null}
             </span>
             <span className="mt-0.5 block truncate text-xs text-[var(--color-text-3)]">
-              {conversation.rep_name ?? "Sampark"} · {messageDigest(conversation)}
+              {channelLabel(message.channel)} · {message.subject ?? messageDigest(message)}
             </span>
           </span>
         </div>
         <p className="mt-3 truncate text-sm text-[var(--color-text-2)]">
-          {conversation.topic ?? conversation.signal_title ?? "No topic yet"}
+          {message.body ?? "No draft body stored"}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {conversation.signal_title ? (
+          {message.signal_title ? (
             <span className="max-w-[320px] truncate rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-              Why now: {conversation.signal_title}
+              Why now: {message.signal_title}
             </span>
           ) : null}
-          {conversation.pending_approval_id || conversation.eval_passed != null ? (
+          {message.pending_approval_id || message.eval_passed != null ? (
             <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-              {conversation.pending_approval_id || conversation.eval_passed === false
+              {message.pending_approval_id || message.eval_passed === false
                 ? "Needs review"
                 : "Ready"}
             </span>
@@ -240,9 +237,9 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
           {badge.label}
         </span>
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
-          {freshWhen(conversation.latest_message_created_at ?? conversation.last_activity_at)}
+          {freshWhen(message.sent_at ?? message.created_at)}
         </span>
-        {conversation.pending_approval_id ? (
+        {message.pending_approval_id ? (
           <>
             <Link
               href="/dashboard/review"
@@ -254,7 +251,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
             </Link>
             <form action={decideApprovalWithDraftAction}>
               <input type="hidden" name="return_to" value="/dashboard/conversations" />
-              <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
+              <input type="hidden" name="approval_id" value={message.pending_approval_id} />
               <input type="hidden" name="decision" value="approved" />
               <PendingSubmitButton
                 className="btn-solid-sm"
@@ -267,7 +264,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
             </form>
             <form action={decideApprovalWithDraftAction}>
               <input type="hidden" name="return_to" value="/dashboard/conversations" />
-              <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
+              <input type="hidden" name="approval_id" value={message.pending_approval_id} />
               <input type="hidden" name="decision" value="rejected" />
               <PendingSubmitButton
                 className="btn-quiet-sm"
@@ -285,18 +282,9 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
   );
 }
 
-function messageDigest(conversation: ConversationRow): string {
-  const prefix =
-    conversation.latest_message_direction === "inbound"
-      ? "Reply"
-      : conversation.latest_message_status
-        ? conversation.latest_message_status.replace(/_/g, " ")
-        : "No message";
-  const text =
-    conversation.latest_message_subject ??
-    conversation.latest_message_body ??
-    conversation.topic ??
-    conversation.signal_title;
+function messageDigest(message: OutboundMessageRow): string {
+  const prefix = message.status ? message.status.replace(/_/g, " ") : "Draft";
+  const text = message.body ?? message.signal_title;
   if (!text) return prefix;
   return `${prefix}: ${text.length > 92 ? text.slice(0, 92) + "..." : text}`;
 }
@@ -311,8 +299,17 @@ function freshWhen(value: Date): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function repIcon(name: string | null): string {
-  if (name === "Sampark") return "forum";
-  if (name === "Prayog") return "science";
-  return "person";
+function channelIcon(channel: string): string {
+  if (channel === "email") return "mail";
+  if (channel.startsWith("linkedin")) return "forum";
+  return "send";
+}
+
+function channelLabel(channel: string): string {
+  if (channel === "email") return "Email";
+  if (channel === "linkedin_dm") return "LinkedIn DM";
+  if (channel === "linkedin_inmail") return "LinkedIn InMail";
+  if (channel === "linkedin_connection") return "LinkedIn connect";
+  if (channel === "linkedin_comment") return "LinkedIn comment";
+  return channel.replace(/_/g, " ");
 }

@@ -32,7 +32,7 @@ export function ProfileIntelligence({
             <p className="mt-4 text-[15px] leading-7 text-[var(--color-text-1)]">{profile.exa_summary}</p>
           ) : (
             <p className="mt-4 text-sm leading-6 text-[var(--color-text-3)]">
-              This profile was created from the company website. Reps will add deeper public context as work runs.
+              This profile was created from the company website. The agent will add deeper public context as work runs.
             </p>
           )}
           {profile.exa_market_terms.length > 0 ? (

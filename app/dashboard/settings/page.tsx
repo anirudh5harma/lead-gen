@@ -140,8 +140,7 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
          from reps
         where workspace_id = $1
           and status <> 'retired'
-        order by case name when 'Sampark' then 0 else 1 end,
-                 created_at asc
+        order by created_at asc
         limit 1`,
       [workspaceId],
     ),
@@ -204,13 +203,13 @@ export default async function SettingsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Settings"
+        kicker="Profile"
         title={
           <>
-            Workspace <em>controls</em>.
+            Company, audience, and <em>accounts</em>.
           </>
         }
-        description="Profile context, connected inbox, and the review posture for outbound Plays."
+        description="The agent uses this profile to decide who is worth contacting, what evidence matters, and which Outlook or LinkedIn account can send safely."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat
@@ -249,7 +248,7 @@ export default async function SettingsPage() {
       </div>
 
       <div id="motion">
-        <SurfaceSection title="Audience and Rep">
+        <SurfaceSection title="Audience and agent">
           <ActivationSettingsForm
             rep={state.rep}
             icp={state.icp}
@@ -309,8 +308,8 @@ export default async function SettingsPage() {
               </div>
               {mode === "custom" ? (
                 <p className="text-sm text-[var(--color-text-3)]">
-                  Current Rep and Play policies are mixed. Saving here applies one
-                  mode across the workspace.
+                  Current agent and outreach policies are mixed. Saving here
+                  applies one mode across the workspace.
                 </p>
               ) : null}
               <PendingSubmitButton
@@ -324,7 +323,7 @@ export default async function SettingsPage() {
           </SurfaceSection>
         </div>
 
-        <SurfaceSection title="Integrations">
+        <SurfaceSection title="Connected tools">
           <IntegrationPanel />
         </SurfaceSection>
       </section>
@@ -352,17 +351,17 @@ function SettingsChecklist({
       title: "Company profile",
       detail: profile?.company_name
         ? `${profile.company_name}${profileWebsite(profile) ? ` - ${profileWebsite(profile)}` : ""}`
-        : "Add the company and website that Reps should represent.",
+        : "Add the company and website the agent should represent.",
       href: "#profile",
       icon: "add_business",
       ready: Boolean(profile?.company_name && profileWebsite(profile)),
     },
     {
-      title: "Audience and Rep",
+      title: "Audience and agent",
       detail:
         rep && icp
-          ? `${rep.name} acts on ${icp.name}.`
-          : "Define the ICP, voice, daily ceiling, and first Rep.",
+          ? `${agentDisplayName(rep.name)} acts on ${icp.name}.`
+          : "Define the ICP, voice, daily ceiling, and agent.",
       href: "#motion",
       icon: "badge",
       ready: Boolean(rep && icp),
@@ -389,10 +388,10 @@ function SettingsChecklist({
       title: "Review posture",
       detail:
         mode === "custom"
-          ? "Rep and Play policies are mixed."
+          ? "Agent and outreach policies are mixed."
           : mode === "review_only"
             ? "Every outbound move waits for review."
-            : "Reps can move after evals, caps, and channel checks pass.",
+            : "The agent can move after evals, caps, and channel checks pass.",
       href: "#autonomy",
       icon: "task_alt",
       ready: mode !== "custom",
@@ -468,8 +467,8 @@ function SettingsSectionNav({
       ready: Boolean(profile?.company_name && profileWebsite(profile)),
     },
     {
-      title: "Rep",
-      detail: rep && icp ? `${rep.name} + ${icp.name}` : "Audience and voice",
+      title: "Agent",
+      detail: rep && icp ? `${agentDisplayName(rep.name)} + ${icp.name}` : "Audience and voice",
       href: "#motion",
       icon: "badge",
       ready: Boolean(rep && icp),
@@ -503,8 +502,8 @@ function SettingsSectionNav({
       ready: mode !== "custom",
     },
     {
-      title: "Integrations",
-      detail: "MCP and tools",
+      title: "Tools",
+      detail: "MCP and channel tools",
       href: "/dashboard/integrations",
       icon: "account_tree",
       ready: true,
@@ -619,7 +618,7 @@ function IntegrationPanel() {
       </div>
       <Link href="/dashboard/integrations" prefetch={false} className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
-        Manage integrations
+        Manage tools
       </Link>
     </div>
   );
@@ -721,7 +720,7 @@ function ActivationSettingsForm({
       />
       <TextArea
         name="rep_voice"
-        label="Rep voice"
+        label="Agent voice"
         rows={3}
         defaultValue={
           rep?.persona.voice ??
@@ -754,13 +753,13 @@ function ActivationSettingsForm({
         name="match_threshold"
         value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
       />
-      <input type="hidden" name="rep_name" value={rep?.name ?? "Sampark"} />
+      <input type="hidden" name="rep_name" value={rep?.name ?? "Outbound Agent"} />
       <PendingSubmitButton
         className="btn-solid w-fit"
         icon="check"
         pendingLabel="Saving motion"
       >
-        Save audience and Rep
+        Save audience and agent
       </PendingSubmitButton>
     </form>
   );
@@ -823,7 +822,7 @@ function LinkedInPanel({
           <p className="mt-1 text-sm text-[var(--color-text-3)]">
             {account
               ? `${statusLabel(account.status)} - ${account.daily_cap ?? "unlimited"} daily ceiling`
-              : "Connect LinkedIn for connection requests, DMs, and warmup Plays."}
+              : "Connect LinkedIn for connection requests, DMs, and warm outreach."}
           </p>
           {account?.last_error ? (
             <p className="mt-2 text-sm text-[#ffb4a8]">{account.last_error}</p>
@@ -1057,6 +1056,11 @@ function outlookMailbox(account: SettingsOutlookAccount): string {
 
 function statusLabel(status: string): string {
   return status.replace(/_/g, " ");
+}
+
+function agentDisplayName(name: string): string {
+  if (name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  return name;
 }
 
 function roleLabel(role: string): string {

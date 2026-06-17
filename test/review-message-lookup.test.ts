@@ -9,9 +9,9 @@ test("conversation review lookup uses indexed pending approval message lookup", 
   const page = readFileSync(join(root, "app/dashboard/conversations/page.tsx"), "utf8");
   const migration = readFileSync(join(root, "db/migrations/037_workflow_approval_message_lookup.sql"), "utf8");
 
-  assert.match(page, /a\.payload->>'message_id' = lm\.id::text/);
+  assert.match(page, /a\.payload->>'message_id' = m\.id::text/);
   assert.match(page, /a\.payload \? 'message_id'/);
-  assert.doesNotMatch(page, /\(a\.payload->>'message_id'\)::uuid = lm\.id/);
+  assert.doesNotMatch(page, /\(a\.payload->>'message_id'\)::uuid = m\.id/);
   assert.match(migration, /workflow_approvals_pending_message_idx/);
   assert.match(migration, /workspace_id, \(payload->>'message_id'\), created_at desc/);
 });

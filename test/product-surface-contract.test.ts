@@ -9,18 +9,18 @@ function source(path: string): string {
 test("dashboard navigation uses active product surface routes", () => {
   const shell = source("components/dashboard/Shell.tsx");
 
-  assert.match(shell, /href: "\/dashboard", label: "Dashboard"/);
-  assert.match(shell, /href: "\/dashboard\/reps"/);
-  assert.match(shell, /href: "\/dashboard\/signals"/);
-  assert.match(shell, /href: "\/dashboard\/plays"/);
-  assert.match(shell, /href: "\/dashboard\/conversations"/);
-  assert.match(shell, /href: "\/dashboard\/outcomes"/);
-  assert.match(shell, /href="\/dashboard\/settings"/);
-  assert.match(shell, /Icon name="settings"/);
-  assert.match(shell, /isActivePath\(pathname, "\/dashboard\/integrations"\)/);
-  assert.match(shell, /isActivePath\(pathname, "\/dashboard\/deliverability"\)/);
+  assert.match(shell, /href: "\/dashboard",\s+label: "Dashboard"/);
+  assert.match(shell, /href: "\/dashboard\/conversations",\s+label: "Outreach"/);
+  assert.match(shell, /href: "\/dashboard\/reps",\s+label: "Agent"/);
+  assert.match(shell, /href: "\/dashboard\/settings",\s+label: "Profile"/);
+  assert.match(shell, /"\/dashboard\/signals"/);
+  assert.match(shell, /"\/dashboard\/plays"/);
+  assert.match(shell, /"\/dashboard\/outcomes"/);
   assert.doesNotMatch(shell, /label: "Prospects"/);
   assert.doesNotMatch(shell, /label: "Inbox"/);
+  assert.doesNotMatch(shell, /label: "Signals"/);
+  assert.doesNotMatch(shell, /label: "Plays"/);
+  assert.doesNotMatch(shell, /label: "Outcomes"/);
   assert.doesNotMatch(
     shell,
     /href: "\/dashboard\/prospecting", label: "Prospecting"/,
@@ -68,16 +68,16 @@ test("retired product surfaces redirect to Plays", () => {
 test("Dashboard routes setup work through Settings and current surfaces", () => {
   const dashboard = source("app/dashboard/page.tsx");
 
-  assert.match(dashboard, /Launch checklist/);
-  assert.match(dashboard, /Operating loop/);
-  assert.match(dashboard, /Signal graph/);
-  assert.match(dashboard, /Prepare Signal-led outreach/);
-  assert.match(dashboard, /Scale what produced Outcomes/);
+  assert.match(dashboard, /Welcome back/);
+  assert.match(dashboard, /Qualified signals/);
+  assert.match(dashboard, /Emails sent/);
+  assert.match(dashboard, /LinkedIn DMs/);
+  assert.match(dashboard, /Replies \/ meetings/);
+  assert.match(dashboard, /Signal mix/);
+  assert.match(dashboard, /Outreach insight/);
   assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
-  assert.match(dashboard, /href: "\/dashboard\/integrations"/);
-  assert.match(dashboard, /href: "\/dashboard\/signals"/);
-  assert.match(dashboard, /href: "\/dashboard\/plays"/);
-  assert.match(dashboard, /href: "\/dashboard\/outcomes"/);
+  assert.match(dashboard, /href="\/dashboard\/conversations"/);
+  assert.match(dashboard, /href="\/dashboard\/signals"/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
 });
 
@@ -162,16 +162,20 @@ test("Outcomes have a first-class primitive surface", () => {
   assert.match(loader, /outcomes: \{ kicker: "Outcomes"/);
 });
 
-test("Reps act as the profile and account readiness control plane", () => {
+test("Agent surface shows live work and account readiness", () => {
   const reps = source("app/dashboard/reps/page.tsx");
 
+  assert.match(reps, /AgentActivityPanel/);
+  assert.match(reps, /events_last_hour/);
+  assert.match(reps, /active_workflows/);
+  assert.match(reps, /animate-pulse/);
   assert.match(reps, /workspaceChannelCoverage/);
   assert.match(reps, /firstChannelPolicy\(rep, \["linkedin_dm", "linkedin"\]\)/);
   assert.match(reps, /href="\/dashboard\/settings#motion"/);
   assert.match(reps, /Connect Outlook/);
   assert.match(reps, /Connect LinkedIn/);
-  assert.match(reps, /Open Rep/);
-  assert.match(reps, /Profile, accounts, and limits stay in\s+Settings/);
+  assert.match(reps, /Open agent/);
+  assert.match(reps, /Profile, accounts, and limits stay in\s+Profile/);
   assert.doesNotMatch(reps, /<RepCard key=\{rep\.id\} rep=\{rep\} \/>/);
 });
 
@@ -230,7 +234,7 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
     /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/,
   );
   assert.match(settings, /href="\/dashboard\/integrations"/);
-  assert.match(settings, /Audience and Rep/);
+  assert.match(settings, /Audience and agent/);
   assert.match(settings, /return_to" value="\/dashboard\/settings#motion"/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);

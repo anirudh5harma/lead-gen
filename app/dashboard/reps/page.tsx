@@ -59,15 +59,24 @@ interface ChannelCoverage {
   linkedIn: ChannelConnection;
 }
 
+interface AgentActivity {
+  active_workflows: number;
+  events_last_hour: number;
+  outbound_last_hour: number;
+  reviews_pending: number;
+  event_types: Array<{ event_type: string; count: number }>;
+}
+
 interface RepsState {
   reps: RepRow[];
   channels: ChannelRow[];
   readiness: WorkspaceLaunchReadiness;
+  activity: AgentActivity;
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
   const pool = getPool();
-  const [reps, channels, readiness] = await Promise.all([
+  const [reps, channels, readiness, activity] = await Promise.all([
     pool.query<RepRow>(
       `select r.id,
               r.name,
@@ -96,12 +105,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
          from reps r
         where r.workspace_id = $1
           and r.status <> 'retired'
-        order by case r.name
-                   when 'Sampark' then 0
-                   when 'Prayog' then 1
-                   else 2
-                 end,
-                 r.created_at asc`,
+        order by r.created_at asc`,
       [workspaceId],
     ),
     pool.query<ChannelRow>(
@@ -146,11 +150,61 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
       [workspaceId],
     ),
     loadWorkspaceLaunchReadiness(pool, workspaceId, { required_channel: "any" }),
+    loadAgentActivity(workspaceId),
   ]);
   return {
     reps: reps.rows,
     channels: channels.rows,
     readiness,
+    activity,
+  };
+}
+
+async function loadAgentActivity(workspaceId: string): Promise<AgentActivity> {
+  const pool = getPool();
+  const [summary, eventTypes] = await Promise.all([
+    pool.query<{
+      active_workflows: string;
+      events_last_hour: string;
+      outbound_last_hour: string;
+      reviews_pending: string;
+    }>(
+      `select
+         (select count(*)::text from workflow_runs wr
+            where wr.workspace_id = $1
+              and wr.status in ('pending','running','awaiting_approval','awaiting_event')) as active_workflows,
+         (select count(*)::text from events e
+            where e.workspace_id = $1
+              and e.occurred_at >= now() - interval '1 hour') as events_last_hour,
+         (select count(*)::text from messages m
+            where m.workspace_id = $1
+              and m.direction = 'outbound'
+              and m.created_at >= now() - interval '1 hour') as outbound_last_hour,
+         (select count(*)::text from workflow_approvals a
+            where a.workspace_id = $1
+              and a.decision = 'pending') as reviews_pending`,
+      [workspaceId],
+    ),
+    pool.query<{ event_type: string; count: string }>(
+      `select e.event_type, count(*)::text as count
+         from events e
+        where e.workspace_id = $1
+          and e.occurred_at >= now() - interval '1 hour'
+        group by e.event_type
+        order by count(*) desc, e.event_type asc
+        limit 5`,
+      [workspaceId],
+    ),
+  ]);
+  return {
+    active_workflows: Number(summary.rows[0]?.active_workflows ?? 0),
+    events_last_hour: Number(summary.rows[0]?.events_last_hour ?? 0),
+    outbound_last_hour: Number(summary.rows[0]?.outbound_last_hour ?? 0),
+    reviews_pending: Number(summary.rows[0]?.reviews_pending ?? 0),
+    event_types: eventTypes.rows.map((row) => ({
+      event_type: row.event_type,
+      count: Number(row.count),
+    })),
   };
 }
 
@@ -159,7 +213,7 @@ export default async function RepsPage() {
   if (!active) return <NoWorkspaceReps />;
 
   const state = await loadRepsState(active.workspace.id);
-  const activeReps = state.reps.filter((rep) => rep.status === "active").length;
+  const activeAgents = state.reps.filter((rep) => rep.status === "active").length;
   const connectedChannels = state.channels.filter(
     (channel) => channel.status === "connected",
   ).length;
@@ -168,16 +222,16 @@ export default async function RepsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Reps"
+        kicker="Agent"
         title={
           <>
-            Your outbound <em>operators</em>.
+            Run email and LinkedIn <em>outreach</em>.
           </>
         }
-        description="Configure the voices that turn Signals into email and LinkedIn conversations. Channels and limits stay visible here so a Rep never launches blind."
+        description="One place for the agent, outreach queue, replies, learning, and channel readiness. Quality signals turn into verified contacts, judged drafts, and email or LinkedIn next moves."
         meta={
           <div className="flex flex-wrap gap-2">
-            <HeroStat label="Active Reps" value={activeReps} />
+            <HeroStat label="Active agents" value={activeAgents} />
             <HeroStat label="Channels" value={connectedChannels} />
             <HeroStat
               label="Launch"
@@ -187,22 +241,24 @@ export default async function RepsPage() {
         }
       />
 
+      <AgentActivityPanel activity={state.activity} />
+
       <SurfaceSection
-        title="Rep roster"
+        title="Agent"
         action={
           <Link href="/dashboard/settings#motion" className="btn-solid-sm">
             <Icon name="edit_note" size={14} />
-            Tune Rep
+            Tune agent
           </Link>
         }
       >
         {state.reps.length === 0 ? (
           <EmptyState
-            title="No Reps configured yet."
+            title="No agent configured yet."
             hint="Start by defining the workspace profile, audience, voice, and approval mode."
             cta={{
               href: "/dashboard/settings#motion",
-              label: "Configure first Rep",
+              label: "Configure agent",
               icon: "badge",
             }}
           />
@@ -216,13 +272,13 @@ export default async function RepsPage() {
       </SurfaceSection>
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12">
-        <SurfaceSection title="Connected channels">
+        <SurfaceSection title="Outreach accounts">
           {state.channels.length === 0 ? (
             <EmptyState
               title="No outbound accounts connected."
-              hint="Connect Outlook or LinkedIn before any Rep can move a conversation."
+              hint="Connect Outlook or LinkedIn before the agent can move a conversation."
               cta={{
-                href: "/dashboard/integrations",
+                href: "/dashboard/settings#email",
                 label: "Connect accounts",
                 icon: "account_tree",
               }}
@@ -251,10 +307,10 @@ export default async function RepsPage() {
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Profile and audience
+                    Profile and accounts
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Company, ICP, voice, and review mode.
+                    Company, ICP, email, LinkedIn, and review mode.
                   </span>
                 </span>
               </Link>
@@ -264,36 +320,36 @@ export default async function RepsPage() {
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Signals and graph
+                    Quality signals
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Timing evidence, people, companies, and conversations.
+                    Timing evidence with verified contacts and drafts.
                   </span>
                 </span>
               </Link>
-              <Link href="/dashboard/integrations" className="priority-action">
+              <Link href="/dashboard/settings#email" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="settings" size={16} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Accounts and limits
+                    Connected accounts
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Outlook, LinkedIn, and workspace posture.
+                    Outlook, LinkedIn, and daily ceilings.
                   </span>
                 </span>
               </Link>
-              <Link href="/dashboard/plays" className="priority-action">
+              <Link href="/dashboard/conversations" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="science" size={16} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Plays and learning
+                    Replies and learning
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Signal-led workflows and outcome feedback.
+                    Email, LinkedIn, replies, meetings, and feedback.
                   </span>
                 </span>
               </Link>
@@ -302,6 +358,74 @@ export default async function RepsPage() {
         </SurfaceSection>
       </section>
     </div>
+  );
+}
+
+function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
+  const active =
+    activity.active_workflows > 0 ||
+    activity.events_last_hour > 0 ||
+    activity.outbound_last_hour > 0;
+  return (
+    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              {active ? "Working now" : "Idle right now"}
+            </p>
+            <p className="mt-1 text-sm text-[var(--color-text-3)]">
+              Last hour: {activity.events_last_hour} system events,{" "}
+              {activity.outbound_last_hour} outreach drafts or sends,{" "}
+              {activity.reviews_pending} waiting for review.
+            </p>
+          </div>
+          <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1 text-xs font-medium text-[var(--color-accent)]">
+            {activity.active_workflows} active
+          </span>
+        </div>
+        <div className="mt-6 grid h-24 grid-cols-12 items-end gap-1 overflow-hidden rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+          {Array.from({ length: 12 }, (_, index) => {
+            const height = 18 + ((activity.events_last_hour + index * 7) % 58);
+            const delay = `${index * 80}ms`;
+            return (
+              <span
+                key={index}
+                className="animate-pulse rounded-t-[4px] bg-[var(--color-accent)]/70"
+                style={{ height: `${height}%`, animationDelay: delay }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <aside className="section-note h-fit">
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          System activity
+        </p>
+        <div className="mt-4 grid gap-2">
+          {activity.event_types.length === 0 ? (
+            <p className="text-sm leading-6 text-[var(--color-text-3)]">
+              No event activity in the last hour.
+            </p>
+          ) : (
+            activity.event_types.map((event) => (
+              <div
+                key={event.event_type}
+                className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2"
+              >
+                <span className="truncate text-xs text-[var(--color-text-2)]">
+                  {event.event_type.replace(/\./g, " ")}
+                </span>
+                <span className="font-mono text-xs text-[var(--color-text-3)]">
+                  {event.count}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </aside>
+    </section>
   );
 }
 
@@ -326,7 +450,7 @@ function RepCard({
               href={`/dashboard/reps/${rep.id}`}
               className="text-[18px] font-semibold text-[var(--color-text-1)] transition-colors hover:text-[var(--color-accent)]"
             >
-              {rep.name}
+              {agentDisplayName(rep.name)}
             </Link>
             <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
               {rep.role.replace(/_/g, " ")}
@@ -334,7 +458,7 @@ function RepCard({
           </div>
           <p className="mt-2 text-sm leading-6 text-[var(--color-text-2)]">
             {rep.persona.story ??
-              "Configure this Rep with a clear voice and launch guardrails."}
+              "Configure this agent with a clear voice and launch guardrails."}
           </p>
         </div>
       </div>
@@ -360,11 +484,11 @@ function RepCard({
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--color-text-3)]">
         <span>
           {statusLabel(rep.status)} / Profile, accounts, and limits stay in
-          Settings
+          Profile
         </span>
         <Link href={`/dashboard/reps/${rep.id}`} className="btn-quiet-sm">
           <Icon name="arrow_forward" size={14} />
-          Open Rep
+          Open agent
         </Link>
       </div>
     </article>
@@ -459,7 +583,7 @@ function MiniStat({ label, value }: { label: string; value: number }) {
 
 function launchReadinessCopy(readiness: WorkspaceLaunchReadiness): string {
   if (readiness.launch_ready) {
-    return "The required profile, Rep, Play, and channel gates are ready. Watch Inbox and Outcomes for movement.";
+    return "The required profile, agent, and channel gates are ready. Watch outreach and replies for movement.";
   }
   const next = readiness.checks.find(
     (check) => check.required && check.status !== "ready",
@@ -527,10 +651,13 @@ function firstChannelPolicy(
   return undefined;
 }
 
-function repIcon(rep: RepRow): string {
-  if (rep.name === "Sampark") return "forum";
-  if (rep.name === "Prayog") return "science";
+function repIcon(_rep: RepRow): string {
   return "badge";
+}
+
+function agentDisplayName(name: string): string {
+  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
+  return name;
 }
 
 function channelIcon(kind: string): string {
@@ -565,13 +692,13 @@ function NoWorkspaceReps() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Reps"
+        kicker="Agent"
         title="Create a workspace."
-        description="Reps need a workspace profile, channels, and launch guardrails before they can act."
+        description="The agent needs a workspace profile, channels, and launch guardrails before it can act."
       />
       <EmptyState
         title="No workspace selected."
-        hint="Create or select a workspace before configuring Reps."
+        hint="Create or select a workspace before configuring the agent."
         cta={{
           href: "/dashboard/settings#profile",
           label: "Start setup",

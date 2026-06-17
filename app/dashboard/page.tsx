@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
-import {
-  loadWorkspaceLaunchReadiness,
-  type LaunchReadinessCheck,
-  type WorkspaceLaunchReadiness,
-} from "@/core/product/launch-readiness.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
+import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
 
 export const metadata: Metadata = {
   title: "Dashboard | Bombsell",
@@ -17,129 +12,27 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-interface RunningRow {
-  id: string;
-  kind: string;
-  title: string;
-  freshness_at: Date;
-}
-
-interface OutcomeRow {
-  id: string;
-  status: string;
-  topic: string | null;
-  last_activity_at: Date;
-  counterparty_name: string | null;
-  rep_name: string | null;
-}
-
-interface GtmPulse {
-  prospects: PulseMetric;
-  signals: PulseMetric;
-  outreach: PulseMetric;
-  campaigns: PulseMetric;
-}
-
-interface PulseMetric {
-  count: number;
-  last_activity_at: Date | null;
-}
-
 interface BriefActionState {
   pending_reviews: number;
   unhealthy_channels: number;
   bounced_24h: number;
   useful_outcomes_7d: number;
   meetings_7d: number;
+  qualified_signals_24h: number;
+  qualified_signals_7d: number;
+  emails_sent_24h: number;
+  emails_sent_7d: number;
+  dms_sent_24h: number;
+  dms_sent_7d: number;
+  replies_24h: number;
+  replies_7d: number;
+  meetings_24h: number;
 }
 
-async function loadRunning(workspaceId: string): Promise<RunningRow[]> {
-  const pool = getPool();
-  const { rows } = await pool.query<RunningRow>(
-    `select id, kind::text as kind, title, freshness_at
-       from signals
-      where workspace_id = $1
-        and status = 'matched'
-      order by freshness_at desc
-      limit 7`,
-    [workspaceId],
-  );
-  return rows;
-}
-
-async function loadOutcomes(workspaceId: string): Promise<OutcomeRow[]> {
-  const pool = getPool();
-  const { rows } = await pool.query<OutcomeRow>(
-    `select c.id, c.status::text as status, c.topic, c.last_activity_at,
-            p.full_name as counterparty_name,
-            r.name as rep_name
-       from conversations c
-       left join graph_persons p on p.id = c.counterparty_person_id
-       left join reps r on r.id = c.rep_id
-      where c.workspace_id = $1
-      order by c.last_activity_at desc
-      limit 7`,
-    [workspaceId],
-  );
-  return rows;
-}
-
-async function loadGtmPulse(workspaceId: string): Promise<GtmPulse> {
-  const pool = getPool();
-  const { rows } = await pool.query<{
-    prospects: string;
-    prospects_last_activity_at: Date | null;
-    signals: string;
-    signals_last_activity_at: Date | null;
-    outreach: string;
-    outreach_last_activity_at: Date | null;
-    campaigns: string;
-    campaigns_last_activity_at: Date | null;
-  }>(
-    `select
-       (select count(*)::text from graph_persons p
-          where p.workspace_id = $1) as prospects,
-       (select max(p.updated_at) from graph_persons p
-          where p.workspace_id = $1) as prospects_last_activity_at,
-       (select count(*)::text from signals s
-          where s.workspace_id = $1
-            and s.status in ('ingested','matched','in_play')
-            and s.ingested_at >= now() - interval '24 hours') as signals,
-       (select max(s.ingested_at) from signals s
-          where s.workspace_id = $1
-            and s.status in ('ingested','matched','in_play')) as signals_last_activity_at,
-       (select count(*)::text from conversations c
-          where c.workspace_id = $1
-            and c.status in ('open','awaiting_them','awaiting_us')) as outreach,
-       (select max(c.last_activity_at) from conversations c
-          where c.workspace_id = $1
-            and c.status in ('open','awaiting_them','awaiting_us')) as outreach_last_activity_at,
-       (select count(*)::text from play_runs pr
-          where pr.workspace_id = $1
-            and pr.created_at >= now() - interval '24 hours') as campaigns,
-       (select max(pr.created_at) from play_runs pr
-          where pr.workspace_id = $1
-            and pr.created_at >= now() - interval '24 hours') as campaigns_last_activity_at`,
-    [workspaceId],
-  );
-  return {
-    prospects: {
-      count: Number(rows[0]?.prospects ?? 0),
-      last_activity_at: rows[0]?.prospects_last_activity_at ?? null,
-    },
-    signals: {
-      count: Number(rows[0]?.signals ?? 0),
-      last_activity_at: rows[0]?.signals_last_activity_at ?? null,
-    },
-    outreach: {
-      count: Number(rows[0]?.outreach ?? 0),
-      last_activity_at: rows[0]?.outreach_last_activity_at ?? null,
-    },
-    campaigns: {
-      count: Number(rows[0]?.campaigns ?? 0),
-      last_activity_at: rows[0]?.campaigns_last_activity_at ?? null,
-    },
-  };
+interface SignalKindMetric {
+  kind: string;
+  count_24h: number;
+  count_7d: number;
 }
 
 async function loadBriefActionState(workspaceId: string): Promise<BriefActionState> {
@@ -150,6 +43,15 @@ async function loadBriefActionState(workspaceId: string): Promise<BriefActionSta
     bounced_24h: string;
     useful_outcomes_7d: string;
     meetings_7d: string;
+    qualified_signals_24h: string;
+    qualified_signals_7d: string;
+    emails_sent_24h: string;
+    emails_sent_7d: string;
+    dms_sent_24h: string;
+    dms_sent_7d: string;
+    replies_24h: string;
+    replies_7d: string;
+    meetings_24h: string;
   }>(
     `with outlook_accounts as (
        select coalesce(
@@ -204,7 +106,51 @@ async function loadBriefActionState(workspaceId: string): Promise<BriefActionSta
        (select count(*)::text from outcomes o
           where o.workspace_id = $1
             and o.kind = 'meeting_booked'
-            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as meetings_7d`,
+            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as meetings_7d,
+       (select count(*)::text from signals s
+          where s.workspace_id = $1
+            and s.status in ('matched','in_play')
+            and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '24 hours') as qualified_signals_24h,
+       (select count(*)::text from signals s
+          where s.workspace_id = $1
+            and s.status in ('matched','in_play')
+            and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days') as qualified_signals_7d,
+       (select count(*)::text from messages m
+          where m.workspace_id = $1
+            and m.direction = 'outbound'
+            and m.channel = 'email'
+            and m.status in ('sent','delivered','replied')
+            and coalesce(m.sent_at, m.created_at) >= now() - interval '24 hours') as emails_sent_24h,
+       (select count(*)::text from messages m
+          where m.workspace_id = $1
+            and m.direction = 'outbound'
+            and m.channel = 'email'
+            and m.status in ('sent','delivered','replied')
+            and coalesce(m.sent_at, m.created_at) >= now() - interval '7 days') as emails_sent_7d,
+       (select count(*)::text from messages m
+          where m.workspace_id = $1
+            and m.direction = 'outbound'
+            and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+            and m.status in ('sent','delivered','replied')
+            and coalesce(m.sent_at, m.created_at) >= now() - interval '24 hours') as dms_sent_24h,
+       (select count(*)::text from messages m
+          where m.workspace_id = $1
+            and m.direction = 'outbound'
+            and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+            and m.status in ('sent','delivered','replied')
+            and coalesce(m.sent_at, m.created_at) >= now() - interval '7 days') as dms_sent_7d,
+       (select count(*)::text from outcomes o
+          where o.workspace_id = $1
+            and o.kind = 'positive_reply'
+            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '24 hours') as replies_24h,
+       (select count(*)::text from outcomes o
+          where o.workspace_id = $1
+            and o.kind = 'positive_reply'
+            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as replies_7d,
+       (select count(*)::text from outcomes o
+          where o.workspace_id = $1
+            and o.kind = 'meeting_booked'
+            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '24 hours') as meetings_24h`,
     [workspaceId],
   );
   return {
@@ -213,35 +159,47 @@ async function loadBriefActionState(workspaceId: string): Promise<BriefActionSta
     bounced_24h: Number(rows[0]?.bounced_24h ?? 0),
     useful_outcomes_7d: Number(rows[0]?.useful_outcomes_7d ?? 0),
     meetings_7d: Number(rows[0]?.meetings_7d ?? 0),
+    qualified_signals_24h: Number(rows[0]?.qualified_signals_24h ?? 0),
+    qualified_signals_7d: Number(rows[0]?.qualified_signals_7d ?? 0),
+    emails_sent_24h: Number(rows[0]?.emails_sent_24h ?? 0),
+    emails_sent_7d: Number(rows[0]?.emails_sent_7d ?? 0),
+    dms_sent_24h: Number(rows[0]?.dms_sent_24h ?? 0),
+    dms_sent_7d: Number(rows[0]?.dms_sent_7d ?? 0),
+    replies_24h: Number(rows[0]?.replies_24h ?? 0),
+    replies_7d: Number(rows[0]?.replies_7d ?? 0),
+    meetings_24h: Number(rows[0]?.meetings_24h ?? 0),
   };
 }
 
-async function loadLaunchReadiness(workspaceId: string): Promise<WorkspaceLaunchReadiness> {
-  return loadWorkspaceLaunchReadiness(getPool(), workspaceId, {
-    required_channel: "any",
-  });
+async function loadSignalKindMetrics(workspaceId: string): Promise<SignalKindMetric[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    kind: string;
+    count_24h: string;
+    count_7d: string;
+  }>(
+    `select s.kind::text as kind,
+            count(*) filter (
+              where coalesce(s.ingested_at, s.freshness_at) >= now() - interval '24 hours'
+            )::text as count_24h,
+            count(*) filter (
+              where coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+            )::text as count_7d
+       from signals s
+      where s.workspace_id = $1
+        and s.status in ('matched','in_play')
+        and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+      group by s.kind
+      order by count(*) desc, s.kind asc
+      limit 6`,
+    [workspaceId],
+  );
+  return rows.map((row) => ({
+    kind: row.kind,
+    count_24h: Number(row.count_24h),
+    count_7d: Number(row.count_7d),
+  }));
 }
-
-function timeAgo(d: Date): string {
-  const diff = Date.now() - d.getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-const STATUS_TONE: Record<string, { label: string; tone: "pos" | "warn" | "neutral" }> = {
-  awaiting_us: { label: "Needs reply", tone: "warn" },
-  awaiting_them: { label: "Sent", tone: "neutral" },
-  open: { label: "Open", tone: "neutral" },
-  closed_positive: { label: "Won", tone: "pos" },
-  closed_negative: { label: "Closed", tone: "neutral" },
-  closed_no_response: { label: "Quiet", tone: "neutral" },
-  booked: { label: "Booked", tone: "pos" },
-  replied: { label: "Replied", tone: "pos" },
-};
 
 const EMPTY_ACTION_STATE: BriefActionState = {
   pending_reviews: 0,
@@ -249,660 +207,188 @@ const EMPTY_ACTION_STATE: BriefActionState = {
   bounced_24h: 0,
   useful_outcomes_7d: 0,
   meetings_7d: 0,
+  qualified_signals_24h: 0,
+  qualified_signals_7d: 0,
+  emails_sent_24h: 0,
+  emails_sent_7d: 0,
+  dms_sent_24h: 0,
+  dms_sent_7d: 0,
+  replies_24h: 0,
+  replies_7d: 0,
+  meetings_24h: 0,
 };
-
-const EMPTY_LAUNCH_READINESS: WorkspaceLaunchReadiness = {
-  workspace_id: "",
-  checked_at: "",
-  required_channel: "any",
-  status: "blocked",
-  launch_ready: false,
-  next_action: "configure_profile",
-  checks: [],
-  blockers: ["workspace_profile"],
-  warnings: [],
-};
-
-const OPERATING_LOOP_META: Array<{
-  key: keyof GtmPulse | "outcomes";
-  step: string;
-  name: string;
-  href: string;
-  icon: string;
-  unit: (pulse: GtmPulse, actions: BriefActionState) => string;
-  detail: (pulse: GtmPulse, actions: BriefActionState) => string;
-}> = [
-  {
-    key: "prospects",
-    step: "01",
-    name: "Signal graph",
-    href: "/dashboard/signals",
-    icon: "person",
-    unit: (pulse) =>
-      `${pulse.prospects.count} ${pulse.prospects.count === 1 ? "profile" : "profiles"}`,
-    detail: (pulse) =>
-      pulse.prospects.last_activity_at
-        ? `Updated ${timeAgo(pulse.prospects.last_activity_at)}`
-        : "Define the market once",
-  },
-  {
-    key: "signals",
-    step: "02",
-    name: "Signals",
-    href: "/dashboard/signals",
-    icon: "sensors",
-    unit: (pulse) =>
-      `${pulse.signals.count} ${pulse.signals.count === 1 ? "fresh Signal" : "fresh Signals"}`,
-    detail: (pulse) =>
-      pulse.signals.last_activity_at
-        ? `Last matched ${timeAgo(pulse.signals.last_activity_at)}`
-        : "Waiting for timing evidence",
-  },
-  {
-    key: "campaigns",
-    step: "03",
-    name: "Plays",
-    href: "/dashboard/plays",
-    icon: "science",
-    unit: (pulse) =>
-      `${pulse.campaigns.count} ${pulse.campaigns.count === 1 ? "run" : "runs"} today`,
-    detail: (pulse) =>
-      pulse.campaigns.last_activity_at
-        ? `Started ${timeAgo(pulse.campaigns.last_activity_at)}`
-        : "Small bets before scale",
-  },
-  {
-    key: "outreach",
-    step: "04",
-    name: "Conversations",
-    href: "/dashboard/conversations",
-    icon: "forum",
-    unit: (pulse, actions) =>
-      `${pulse.outreach.count} moving · ${actions.pending_reviews} review`,
-    detail: (pulse) =>
-      pulse.outreach.last_activity_at
-        ? `Last activity ${timeAgo(pulse.outreach.last_activity_at)}`
-        : "Replies collect here",
-  },
-  {
-    key: "outcomes",
-    step: "05",
-    name: "Outcomes",
-    href: "/dashboard/outcomes",
-    icon: "task_alt",
-    unit: (_pulse, actions) => `${actions.useful_outcomes_7d} useful this week`,
-    detail: (_pulse, actions) =>
-      actions.meetings_7d > 0
-        ? `${actions.meetings_7d} ${actions.meetings_7d === 1 ? "meeting" : "meetings"} booked`
-        : "Learning waits for proof",
-  },
-];
 
 export default async function BriefPage() {
   const session = await getActiveWorkspaceSession();
   if (!session) {
     return (
       <BriefView
-        running={[]}
-        outcomes={[]}
-        pulse={{
-          prospects: { count: 0, last_activity_at: null },
-          signals: { count: 0, last_activity_at: null },
-          outreach: { count: 0, last_activity_at: null },
-          campaigns: { count: 0, last_activity_at: null },
-        }}
         actions={EMPTY_ACTION_STATE}
-        launchReadiness={EMPTY_LAUNCH_READINESS}
+        signalKinds={[]}
+        workspaceName="there"
       />
     );
   }
-  const [running, outcomes, pulse, actions, launchReadiness] = await Promise.all([
-    loadRunning(session.workspace.id),
-    loadOutcomes(session.workspace.id),
-    loadGtmPulse(session.workspace.id),
+  const [actions, signalKinds] = await Promise.all([
     loadBriefActionState(session.workspace.id),
-    loadLaunchReadiness(session.workspace.id),
+    loadSignalKindMetrics(session.workspace.id),
   ]);
   return (
     <BriefView
-      running={running}
-      outcomes={outcomes}
-      pulse={pulse}
       actions={actions}
-      launchReadiness={launchReadiness}
+      signalKinds={signalKinds}
+      workspaceName={session.workspace.name}
     />
   );
 }
 
 function BriefView({
-  running,
-  outcomes,
-  pulse,
   actions,
-  launchReadiness,
+  signalKinds,
+  workspaceName,
 }: {
-  running: RunningRow[];
-  outcomes: OutcomeRow[];
-  pulse: GtmPulse;
   actions: BriefActionState;
-  launchReadiness: WorkspaceLaunchReadiness;
+  signalKinds: SignalKindMetric[];
+  workspaceName: string;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
-  const totalPulse =
-    pulse.prospects.count + pulse.signals.count + pulse.outreach.count + pulse.campaigns.count;
-  const lastMovement = latestPulseDate(pulse);
-  const priorityActions = buildPriorityActions(pulse, actions);
+  const totalSent24h = actions.emails_sent_24h + actions.dms_sent_24h;
+  const totalSent7d = actions.emails_sent_7d + actions.dms_sent_7d;
+  const replyRate =
+    totalSent7d > 0 ? Math.round((actions.replies_7d / totalSent7d) * 100) : 0;
 
   return (
-    <div className="space-y-10">
-      <section className="relative overflow-hidden rounded-[12px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 sm:p-7 lg:p-8">
+    <div className="space-y-8">
+      <section className="rounded-[12px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 sm:p-7">
         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
           {today}
         </p>
         <h1
-          className="display-serif mt-5 max-w-[980px] break-words text-[2.25rem] text-[var(--color-text-1)] sm:text-[clamp(2.5rem,5.4vw,4.5rem)]"
-          style={{ fontWeight: 500, letterSpacing: 0, lineHeight: 1.02 }}
+          className="mt-4 text-[2rem] font-semibold leading-tight text-[var(--color-text-1)] sm:text-[3rem]"
+          style={{ fontFamily: "var(--font-display)", letterSpacing: 0 }}
         >
-          <span className="block">Your GTM runs from</span>
-          {" "}
-          <em>Signal to Outcome.</em>
+          Welcome back, {workspaceName}.
         </h1>
-        <p className="mt-5 max-w-[72ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
-          {totalPulse === 0
-            ? "Start with the launch checklist. Once the Rep, Signals, channels, and Plays are ready, conversations and outcomes will appear here."
-            : `Graph profiles: ${pulse.prospects.count}. Fresh Signals: ${pulse.signals.count}. Active Conversations: ${pulse.outreach.count}. Play runs today: ${pulse.campaigns.count}. Useful Outcomes this week: ${actions.useful_outcomes_7d}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
+        <p className="mt-3 max-w-[72ch] text-[15px] leading-7 text-[var(--color-text-2)]">
+          Your agent found {actions.qualified_signals_24h} qualified signals in
+          the last day, sent {totalSent24h} emails or LinkedIn DMs, and produced{" "}
+          {actions.replies_24h} replies with {actions.meetings_24h} meetings.
         </p>
-        <div className="mt-7 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <BriefMetric label="Profiles" value={pulse.prospects.count} />
-          <BriefMetric label="Signals" value={pulse.signals.count} />
-          <BriefMetric label="Conversations" value={pulse.outreach.count} />
-          <BriefMetric label="Outcomes" value={actions.useful_outcomes_7d} />
-        </div>
       </section>
 
-      <LaunchChecklist readiness={launchReadiness} />
-
-      {/* Operating loop */}
-      <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12">
-        <OperatingLoop pulse={pulse} actions={actions} />
-        <PriorityActions actions={priorityActions} />
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <DashboardMetric
+          icon="sensors"
+          label="Qualified signals"
+          day={actions.qualified_signals_24h}
+          week={actions.qualified_signals_7d}
+        />
+        <DashboardMetric
+          icon="mail"
+          label="Emails sent"
+          day={actions.emails_sent_24h}
+          week={actions.emails_sent_7d}
+        />
+        <DashboardMetric
+          icon="forum"
+          label="LinkedIn DMs"
+          day={actions.dms_sent_24h}
+          week={actions.dms_sent_7d}
+        />
+        <DashboardMetric
+          icon="event_available"
+          label="Replies / meetings"
+          day={actions.replies_24h + actions.meetings_24h}
+          week={actions.replies_7d + actions.meetings_7d}
+        />
       </section>
 
-      {/* Two feeds */}
-      <section className="grid gap-12 lg:grid-cols-2 lg:gap-16">
-        <Feed
-          eyebrow="Signals"
-          title="Qualified signals"
-          empty={
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <SurfaceSection title="Signal mix">
+          {signalKinds.length === 0 ? (
             <EmptyState
-              title="No signals yet."
-              hint="Bombsell will surface good-fit opportunities after prospecting is tuned."
-              cta={{ href: "/dashboard/settings#profile", label: "Update profile", icon: "person" }}
+              title="No qualified signals yet"
+              hint="Complete the profile and connected accounts so the agent can qualify real timing signals."
+              cta={{ href: "/dashboard/settings#profile", label: "Open profile", icon: "person" }}
             />
-          }
-        >
-          {running.map((r) => (
-            <FeedRow
-              key={r.id}
-              icon="sensors"
-              title={r.title}
-              meta={`Qualified · ${timeAgo(new Date(r.freshness_at))}`}
-            />
-          ))}
-        </Feed>
-
-        <Feed
-          eyebrow="Outcomes"
-          title="Replies and outcomes"
-          empty={
-            <EmptyState
-              title="No outcomes yet."
-              hint="Replies, bookings and won conversations will land here as they happen."
-              cta={{ href: "/dashboard/conversations", label: "Open Inbox", icon: "forum" }}
-            />
-          }
-        >
-          {outcomes.map((c) => {
-            const tone = STATUS_TONE[c.status] ?? { label: c.status, tone: "neutral" as const };
-            return (
-              <FeedRow
-                key={c.id}
-                icon="mark_email_read"
-                href={`/dashboard/conversations/${c.id}`}
-                title={c.counterparty_name ?? c.topic ?? "Conversation"}
-                meta={`${c.rep_name ?? "Rep"} · ${timeAgo(new Date(c.last_activity_at))}`}
-                pill={tone}
-              />
-            );
-          })}
-        </Feed>
-      </section>
-    </div>
-  );
-}
-
-type LaunchStepStatus = "ready" | "needs_attention" | "blocked";
-
-interface LaunchStep {
-  title: string;
-  primitive: "Rep" | "Signal" | "Play" | "Conversation";
-  href: string;
-  icon: string;
-  checkIds: LaunchReadinessCheck["id"][];
-  readyDetail: string;
-  blockedDetail: string;
-  actionLabel: string;
-}
-
-const LAUNCH_STEPS: LaunchStep[] = [
-  {
-    title: "Set the Signal profile",
-    primitive: "Signal",
-    href: "/dashboard/settings#profile",
-    icon: "person",
-    checkIds: ["workspace_profile", "icp"],
-    readyDetail: "Company context and ICP are ready for matching.",
-    blockedDetail: "Confirm the company profile and ICP before outreach can run.",
-    actionLabel: "Tune profile",
-  },
-  {
-    title: "Activate the Rep",
-    primitive: "Rep",
-    href: "/dashboard/reps",
-    icon: "badge",
-    checkIds: ["rep"],
-    readyDetail: "A Rep is ready to own the outbound motion.",
-    blockedDetail: "Configure a Rep voice, role, and channel limits.",
-    actionLabel: "Configure Rep",
-  },
-  {
-    title: "Connect email or LinkedIn",
-    primitive: "Conversation",
-    href: "/dashboard/integrations",
-    icon: "forum",
-    checkIds: ["outreach_channel"],
-    readyDetail: "At least one outbound channel is healthy enough to launch.",
-    blockedDetail: "Connect Outlook or LinkedIn before a Play can reach prospects.",
-    actionLabel: "Connect channel",
-  },
-  {
-    title: "Launch the first Play",
-    primitive: "Play",
-    href: "/dashboard/plays",
-    icon: "science",
-    checkIds: ["signal_sources", "plays"],
-    readyDetail: "Signal sources and Plays are ready to turn timing into outreach.",
-    blockedDetail: "Enable a Signal source and an approval-safe Play.",
-    actionLabel: "Open Plays",
-  },
-];
-
-function LaunchChecklist({ readiness }: { readiness: WorkspaceLaunchReadiness }) {
-  const checks = new Map(readiness.checks.map((check) => [check.id, check]));
-  const steps = LAUNCH_STEPS.map((step) => launchStepView(step, checks));
-  const readyCount = steps.filter((step) => step.status === "ready").length;
-  const nextStep = steps.find((step) => step.status !== "ready") ?? steps.at(-1);
-
-  return (
-    <section>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-            Launch checklist
-          </p>
-          <h2
-            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            Get from setup to live outreach.
-          </h2>
-        </div>
-        <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
-          {readyCount}/{steps.length} ready
-        </span>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-4">
-        {steps.map((step, index) => (
-          <Link
-            key={step.title}
-            href={step.href}
-            className="group flex min-h-[188px] flex-col rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-mono text-[11px] text-[var(--color-text-4)]">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <LaunchStatusPill status={step.status} />
+          ) : (
+            <div className="grid gap-2">
+              {signalKinds.map((signal) => (
+                <SignalKindRow key={signal.kind} signal={signal} />
+              ))}
             </div>
-            <span className="mt-5 grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-              <Icon name={step.icon} size={17} />
-            </span>
-            <p className="mt-4 text-[15px] font-semibold leading-5 text-[var(--color-text-1)]">
-              {step.title}
-            </p>
-            <p className="mt-2 text-[12.5px] leading-5 text-[var(--color-text-3)]">
-              {step.detail}
-            </p>
-            <span className="mt-auto pt-4 text-[12px] font-medium text-[var(--color-accent)]">
-              {step.cta}
-            </span>
+          )}
+        </SurfaceSection>
+
+        <aside className="section-note h-fit">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Outreach insight
+          </p>
+          <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
+            {totalSent7d === 0
+              ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals create reviewed drafts."
+              : `${totalSent7d} emails or DMs went out in the last week. ${actions.replies_7d} got useful replies, ${actions.meetings_7d} became meetings, and the current reply rate is ${replyRate}%.`}
+          </p>
+          <Link href="/dashboard/conversations" className="btn-solid-sm mt-4 w-fit">
+            <Icon name="arrow_forward" size={14} />
+            Open outreach
           </Link>
-        ))}
-      </div>
-      {nextStep ? (
-        <p className="mt-3 text-[12.5px] leading-5 text-[var(--color-text-3)]">
-          Next: <span className="text-[var(--color-text-1)]">{nextStep.title}</span>.
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-function launchStepView(
-  step: LaunchStep,
-  checks: Map<LaunchReadinessCheck["id"], LaunchReadinessCheck>,
-): LaunchStep & { status: LaunchStepStatus; detail: string; cta: string } {
-  const related = step.checkIds
-    .map((id) => checks.get(id))
-    .filter((check): check is LaunchReadinessCheck => Boolean(check));
-  const nonReady = related.find((check) => check.status !== "ready");
-  const status = groupedLaunchStatus(related);
-  return {
-    ...step,
-    status,
-    detail:
-      status === "ready"
-        ? step.readyDetail
-        : nonReady?.detail ?? step.blockedDetail,
-    cta:
-      status === "ready"
-        ? `Open ${step.primitive}`
-        : nonReady?.action?.label ?? step.actionLabel,
-  };
-}
-
-function groupedLaunchStatus(checks: LaunchReadinessCheck[]): LaunchStepStatus {
-  if (checks.length === 0) return "blocked";
-  if (checks.some((check) => check.status === "needs_attention")) return "needs_attention";
-  return checks.every((check) => check.status === "ready") ? "ready" : "blocked";
-}
-
-function LaunchStatusPill({ status }: { status: LaunchStepStatus }) {
-  const copy =
-    status === "ready"
-      ? { label: "Ready", icon: "check_circle", tone: "bg-[var(--color-pos-bg)] text-[var(--color-pos)]" }
-      : status === "needs_attention"
-        ? { label: "Repair", icon: "error", tone: "bg-[var(--color-warn-bg)] text-[var(--color-warn)]" }
-        : { label: "Needed", icon: "lock", tone: "bg-[var(--color-ink-2)] text-[var(--color-text-3)]" };
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-[8px] px-2 py-1 text-[11px] font-medium ${copy.tone}`}>
-      <Icon name={copy.icon} size={12} />
-      {copy.label}
-    </span>
-  );
-}
-
-function latestPulseDate(pulse: GtmPulse): Date | null {
-  const times = Object.values(pulse)
-    .map((metric) => metric.last_activity_at?.getTime() ?? null)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  if (times.length === 0) return null;
-  return new Date(Math.max(...times));
-}
-
-function BriefMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-3">
-      <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-text-3)]">
-        {label}
-      </span>
-      <strong className="mt-2 block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
-        {value}
-      </strong>
+        </aside>
+      </section>
     </div>
   );
 }
 
-function Feed({
-  eyebrow,
-  title,
-  empty,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  empty: ReactNode;
-  children: ReactNode;
-}) {
-  const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
-  return (
-    <div className="rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4">
-      <div className="mb-4 flex items-baseline justify-between border-b border-[var(--color-line-1)] pb-3">
-        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-          {eyebrow}
-        </p>
-        <h2
-          className="text-[15px] font-medium text-[var(--color-text-2)]"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          {title}
-        </h2>
-      </div>
-      {hasChildren ? <ul className="divide-y divide-[color:var(--color-line-1)]">{children}</ul> : empty}
-    </div>
-  );
-}
-
-function FeedRow({
+function DashboardMetric({
   icon,
-  title,
-  meta,
-  pill,
-  href,
+  label,
+  day,
+  week,
 }: {
   icon: string;
-  title: string;
-  meta: string;
-  pill?: { label: string; tone: "pos" | "warn" | "neutral" };
-  href?: string;
+  label: string;
+  day: number;
+  week: number;
 }) {
-  const inner = (
-    <div className="flex items-start gap-3 px-1 py-3.5">
-      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-        <Icon name={icon} size={16} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] font-medium text-[var(--color-text-1)]">
-          {title}
-        </div>
-        <div className="mt-0.5 truncate text-[12.5px] text-[var(--color-text-3)]">
-          {meta}
-        </div>
-      </div>
-      {pill ? (
-        <span
-          className={
-            "shrink-0 rounded-[8px] px-2 py-0.5 text-[10.5px] font-medium " +
-            (pill.tone === "pos"
-              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-              : pill.tone === "warn"
-                ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
-                : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
-          }
-        >
-          {pill.label}
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name={icon} size={17} />
         </span>
-      ) : null}
-    </div>
-  );
-  if (href) {
-    return (
-      <li>
-        <Link
-          href={href}
-          className="block rounded-[8px] transition-colors hover:bg-[var(--color-ink-2)]/70"
-        >
-          {inner}
-        </Link>
-      </li>
-    );
-  }
-  return <li>{inner}</li>;
-}
-
-function OperatingLoop({
-  pulse,
-  actions,
-}: {
-  pulse: GtmPulse;
-  actions: BriefActionState;
-}) {
-  return (
-    <div>
-      <div className="mb-5 flex items-baseline justify-between">
-        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-          Operating loop
-        </p>
-        <h2
-          className="text-[15px] font-medium text-[var(--color-text-2)]"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          Prospecting to learning
-        </h2>
+        <span className="text-[11px] text-[var(--color-text-3)]">24h / 7d</span>
       </div>
-      <div className="operating-loop">
-        {OPERATING_LOOP_META.map((item) => (
-          <Link key={item.name} href={item.href} className="operating-loop-step">
-            <span className="operating-loop-index">{item.step}</span>
-            <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-              <Icon name={item.icon} size={16} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[14px] font-semibold text-[var(--color-text-1)]">
-                {item.name}
-              </span>
-              <span className="mt-0.5 block truncate text-[12.5px] text-[var(--color-text-3)]">
-                {item.unit(pulse, actions)}
-              </span>
-            </span>
-            <span className="ml-auto hidden text-right text-[12px] text-[var(--color-text-3)] md:block">
-              {item.detail(pulse, actions)}
-            </span>
-          </Link>
-        ))}
-      </div>
+      <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
+        {day} <span className="text-sm font-medium text-[var(--color-text-3)]">/ {week}</span>
+      </p>
     </div>
   );
 }
 
-function PriorityActions({ actions }: { actions: PriorityAction[] }) {
+function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
   return (
-    <aside className="section-note h-fit">
-      <p className="text-sm font-semibold text-[var(--color-text-1)]">Next useful moves</p>
-      <div className="mt-4 grid gap-2">
-        {actions.map((action) => (
-          <Link key={action.title} href={action.href} className="priority-action">
-            <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-              <Icon name={action.icon} size={16} />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                {action.title}
-              </span>
-              <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                {action.detail}
-              </span>
-            </span>
-          </Link>
-        ))}
-      </div>
-    </aside>
+    <Link
+      href="/dashboard/signals"
+      className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 transition-colors hover:border-[var(--color-line-3)]"
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+          {signal.kind.replace(/_/g, " ")}
+        </span>
+        <span className="mt-0.5 block text-xs text-[var(--color-text-3)]">
+          {signal.count_24h} in 24h
+        </span>
+      </span>
+      <span className="font-mono text-sm text-[var(--color-text-2)]">
+        {signal.count_7d}
+      </span>
+    </Link>
   );
-}
-
-interface PriorityAction {
-  title: string;
-  detail: string;
-  href: string;
-  icon: string;
-}
-
-function buildPriorityActions(
-  pulse: GtmPulse,
-  actions: BriefActionState,
-): PriorityAction[] {
-  const items: PriorityAction[] = [];
-  if (pulse.prospects.count === 0) {
-    items.push({
-      title: "Build the prospect graph",
-      detail: "Profile, ICP, voice, and channel pace are the first inputs.",
-      href: "/dashboard/settings#profile",
-      icon: "person",
-    });
-  }
-  if (actions.unhealthy_channels > 0 || actions.bounced_24h > 0) {
-    items.push({
-      title: "Restore channel health",
-      detail: `${actions.unhealthy_channels} channel ${
-        actions.unhealthy_channels === 1 ? "account needs" : "accounts need"
-      } attention. ${actions.bounced_24h} ${
-        actions.bounced_24h === 1 ? "bounce" : "bounces"
-      } today.`,
-      href: "/dashboard/deliverability",
-      icon: "health_and_safety",
-    });
-  }
-  if (actions.pending_reviews > 0) {
-    items.push({
-      title: "Review judged drafts",
-      detail: `${actions.pending_reviews} ${
-        actions.pending_reviews === 1 ? "draft is" : "drafts are"
-      } waiting for a human decision.`,
-      href: "/dashboard/review",
-      icon: "rate_review",
-    });
-  }
-  if (pulse.signals.count > 0) {
-    items.push({
-      title: "Prepare Signal-led outreach",
-      detail: `${pulse.signals.count} fresh ${
-        pulse.signals.count === 1 ? "Signal has" : "Signals have"
-      } timing evidence.`,
-      href: "/dashboard/plays",
-      icon: "sensors",
-    });
-  }
-  if (pulse.outreach.count > 0) {
-    items.push({
-      title: "Move active Conversations",
-      detail: `${pulse.outreach.count} ${
-        pulse.outreach.count === 1 ? "thread is" : "threads are"
-      } still open across email and LinkedIn.`,
-      href: "/dashboard/conversations",
-      icon: "forum",
-    });
-  }
-  if (actions.useful_outcomes_7d > 0) {
-    items.push({
-      title: "Scale what produced Outcomes",
-      detail: `${actions.useful_outcomes_7d} useful ${
-        actions.useful_outcomes_7d === 1 ? "Outcome" : "Outcomes"
-      } can sharpen the next Play.`,
-      href: "/dashboard/outcomes",
-      icon: "task_alt",
-    });
-  }
-  if (items.length === 0) {
-    items.push({
-      title: "Refresh Signals",
-      detail: "No urgent work is waiting. Check the latest market movement.",
-      href: "/dashboard/signals",
-      icon: "refresh",
-    });
-  }
-  return items.slice(0, 4);
 }

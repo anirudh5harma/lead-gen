@@ -503,7 +503,7 @@ function CampaignIdeaNote({ idea }: { idea: CampaignIdeaRow }) {
     <article className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
-          {idea.rep_name ?? "Prayog"}
+          {agentDisplayName(idea.rep_name)}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">{ended}</span>
       </div>
@@ -763,6 +763,11 @@ function percentRate(value: number): string {
 
 function clampRate(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function agentDisplayName(name: string | null): string {
+  if (!name || name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  return name;
 }
 
 function SignalRow({ signal }: { signal: QualifiedSignalRow }) {

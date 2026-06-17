@@ -144,13 +144,13 @@ export default async function SetupPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Prospecting"
+        kicker="Profile"
         title={
           <>
-            Tell Bombsell <em>who to chase</em>.
+            Tell Bombsell <em>who to reach</em>.
           </>
         }
-        description="Define your company, ICP, voice, timing signals, and channel pace. Email, LinkedIn, and Plays work from this profile."
+        description="Define your company, audience, voice, timing signals, and channel pace. Email and LinkedIn outreach work from this profile."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Ready" value={`${readyCount}/5`} />
@@ -162,7 +162,7 @@ export default async function SetupPage() {
         }
       />
 
-      <RepRoster reps={state.reps} />
+      <AgentSummary reps={state.reps} />
 
       <SurfaceSection title="Company context">
         <form
@@ -278,7 +278,7 @@ export default async function SetupPage() {
             name="match_threshold"
             value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
           />
-          <input type="hidden" name="rep_name" value={rep?.name ?? "Sampark"} />
+          <input type="hidden" name="rep_name" value={rep?.name ?? "Outbound Agent"} />
           <PendingSubmitButton
             className="btn-solid w-fit"
             icon="check"
@@ -303,7 +303,7 @@ export default async function SetupPage() {
           <ChannelConnectRow
             account={linkedInAccount}
             title="LinkedIn account"
-            description="Connect the native LinkedIn channel for connection requests, DMs, and comment-led warmup Plays."
+            description="Connect the native LinkedIn channel for connection requests, DMs, and comment-led warmup."
             href="/api/auth/linkedin?return_to=/dashboard/integrations"
             icon="forum"
             connectLabel="Connect LinkedIn"
@@ -380,7 +380,7 @@ function NoWorkspaceSetup() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Prospecting"
+        kicker="Profile"
         title="Create a workspace."
         description="Start with a named workspace. Then define the prospecting profile and channels."
       />
@@ -503,41 +503,43 @@ function Select({
   );
 }
 
-const REP_META: Record<
+const AGENT_META: Record<
   string,
   { role: string; surface: string; href: string; icon: string }
 > = {
-  Sampark: {
+  "Outbound Agent": {
     role: "Email + LinkedIn",
-    surface: "Researches prospects and moves conversations",
+    surface: "Researches prospects and moves outreach",
     href: "/dashboard/conversations",
     icon: "forum",
   },
-  Prayog: {
-    role: "Plays",
-    surface: "Turns Signals into small outbound Plays",
+  Learning: {
+    role: "Learning",
+    surface: "Sharpens what gets replies and meetings",
     href: "/dashboard/plays",
-    icon: "science",
+    icon: "task_alt",
   },
 };
 
-const REP_ORDER = ["Sampark", "Prayog"];
+const AGENT_ORDER = ["Outbound Agent", "Learning"];
 const HIDDEN_REP_NAMES = new Set(["Vaani", "Bodh"]);
 
-function RepRoster({ reps }: { reps: SetupRepRow[] }) {
-  const byName = new Map(reps.map((r) => [r.name, r]));
+function AgentSummary({ reps }: { reps: SetupRepRow[] }) {
+  const byName = new Map(reps.map((r) => [agentDisplayName(r.name), r]));
   const ordered = [
-    ...REP_ORDER.map((name) => byName.get(name) ?? null),
+    ...AGENT_ORDER.map((name) => byName.get(name) ?? null),
     ...reps.filter(
-      (rep) => !REP_ORDER.includes(rep.name) && !HIDDEN_REP_NAMES.has(rep.name),
+      (rep) =>
+        !AGENT_ORDER.includes(agentDisplayName(rep.name)) &&
+        !HIDDEN_REP_NAMES.has(rep.name),
     ),
   ];
   return (
-    <SurfaceSection title="Outbound motion">
+    <SurfaceSection title="Agent motion">
       <div className="grid gap-3 sm:grid-cols-2">
         {ordered.map((r, index) => {
-          const name = r?.name ?? REP_ORDER[index];
-          const meta = REP_META[name] ?? {
+          const name = r ? agentDisplayName(r.name) : AGENT_ORDER[index];
+          const meta = AGENT_META[name] ?? {
             role: r?.role ?? "Custom",
             surface: r?.persona.story ?? "Custom work pattern",
             href: "/dashboard/reps",
@@ -581,4 +583,9 @@ function RepRoster({ reps }: { reps: SetupRepRow[] }) {
       </div>
     </SurfaceSection>
   );
+}
+
+function agentDisplayName(name: string): string {
+  if (name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  return name;
 }

@@ -20,52 +20,46 @@ export interface ShellWorkspace {
 }
 
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard" },
   {
-    href: "/dashboard/reps",
-    label: "Reps",
-    matches: [
-      "/dashboard/reps",
-      "/dashboard/prospecting",
-      "/dashboard/setup",
-    ],
+    href: "/dashboard",
+    label: "Dashboard",
   },
   {
-    href: "/dashboard/signals",
-    label: "Signals",
+    href: "/dashboard/conversations",
+    label: "Outreach",
     matches: [
+      "/dashboard/conversations",
+      "/dashboard/review",
+      "/dashboard/approvals",
       "/dashboard/signals",
       "/dashboard/ingestion",
       "/dashboard/prospects",
     ],
   },
   {
-    href: "/dashboard/plays",
-    label: "Plays",
+    href: "/dashboard/reps",
+    label: "Agent",
     matches: [
+      "/dashboard/reps",
       "/dashboard/plays",
       "/dashboard/campaigns",
+      "/dashboard/outcomes",
     ],
   },
   {
-    href: "/dashboard/conversations",
-    label: "Conversations",
+    href: "/dashboard/settings",
+    label: "Profile",
     matches: [
-      "/dashboard/conversations",
-      "/dashboard/review",
-      "/dashboard/approvals",
+      "/dashboard/settings",
+      "/dashboard/integrations",
+      "/dashboard/deliverability",
+      "/dashboard/prospecting",
+      "/dashboard/setup",
     ],
-  },
-  {
-    href: "/dashboard/outcomes",
-    label: "Outcomes",
   },
 ];
 
-// Dashboard matches only its own page; section links can claim related
-// workflow routes that are no longer permanent top-level tabs.
 function isActivePath(pathname: string, href: string, matches?: string[]): boolean {
-  if (href === "/dashboard") return pathname === "/dashboard";
   const candidates = matches ?? [href];
   return candidates.some(
     (candidate) => pathname === candidate || pathname.startsWith(candidate + "/"),
@@ -86,11 +80,6 @@ export function DashboardShell({
   const routePending = pendingHref
     ? !isActivePath(pathname, pendingHref)
     : false;
-  const settingsActive =
-    isActivePath(pathname, "/dashboard/settings") ||
-    isActivePath(pathname, "/dashboard/integrations") ||
-    isActivePath(pathname, "/dashboard/deliverability");
-
   function handleNavClick(
     event: MouseEvent<HTMLAnchorElement>,
     href: string,
@@ -181,21 +170,6 @@ export function DashboardShell({
                 </select>
               </form>
             ) : null}
-            <Link
-              href="/dashboard/settings"
-              aria-label="Settings"
-              title="Settings"
-              onClick={(event) => handleNavClick(event, "/dashboard/settings")}
-              aria-current={settingsActive ? "page" : undefined}
-              className={
-                "relative grid size-8 place-items-center rounded-[8px] transition-colors " +
-                (settingsActive
-                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
-                  : "text-[var(--color-text-3)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
-              }
-            >
-              <Icon name="settings" size={17} />
-            </Link>
             <form action="/auth/sign-out" method="post">
               <PendingSubmitButton
                 aria-label="Sign out"

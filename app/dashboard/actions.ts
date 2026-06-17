@@ -175,7 +175,7 @@ export async function configureActivationAction(formData: FormData) {
   await configureActivationSetup(
     {
       rep: {
-        name: value(formData, "rep_name") || "Sampark",
+        name: value(formData, "rep_name") || "Outbound Agent",
         role: "sdr",
         voice:
           value(formData, "rep_voice") ||
@@ -213,7 +213,7 @@ export async function configureRepAction(formData: FormData) {
     formData,
     repId ? `/dashboard/reps/${repId}` : "/dashboard/reps",
   );
-  const name = value(formData, "rep_name") || "Sampark";
+  const name = value(formData, "rep_name") || "Outbound Agent";
   await configureRep(
     {
       name,
@@ -231,7 +231,7 @@ export async function configureRepAction(formData: FormData) {
   );
   revalidateProductPaths();
   if (repId) revalidatePath(`/dashboard/reps/${repId}`);
-  redirectWithToast(returnTo, "Rep guidance saved.");
+  redirectWithToast(returnTo, "Agent guidance saved.");
 }
 
 export async function reviewRecommendationAction(formData: FormData) {
@@ -336,7 +336,7 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
   if (!playRunId) {
     redirectWithToast(
       returnTo,
-      "Choose a Play before recording an outcome.",
+      "Choose an outreach run before recording an outcome.",
       "error",
     );
   }
@@ -363,7 +363,7 @@ export async function recordCampaignOutcomeAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirectWithToast(returnTo, "Outcome recorded.");
+  redirectWithToast(returnTo, "Result recorded.");
 }
 
 export async function optimizeCampaignStrategyAction(formData: FormData) {
@@ -377,7 +377,7 @@ export async function optimizeCampaignStrategyAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirectWithToast(returnTo, "Play strategy updated.");
+  redirectWithToast(returnTo, "Outreach strategy updated.");
 }
 
 export async function optimizePlaySkillsAction(formData: FormData) {
@@ -391,7 +391,7 @@ export async function optimizePlaySkillsAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirectWithToast(returnTo, "Play skills updated.");
+  redirectWithToast(returnTo, "Outreach learning updated.");
 }
 
 export async function prepareQualifiedSignalsAction(formData: FormData) {
