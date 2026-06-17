@@ -12,6 +12,8 @@ import {
   type ProductCompanyProfile,
 } from "@/core/product/app";
 import { getPool } from "@/core/substrate/storage/index.ts";
+import { getRequestAuthIdentity } from "@/lib/auth";
+import type { RequestAuthIdentity } from "@/lib/auth";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
   createWorkspaceAction,
@@ -150,6 +152,7 @@ export default async function SettingsPage() {
     getProductCompanyProfile(pool, productSession),
     loadSettingsState(active.workspace.id),
   ]);
+  const identity = await getRequestAuthIdentity();
   const mode = settingsMode(state.settings, state.approvals);
   const formMode = mode === "review_only" ? "review_only" : "autonomous";
   const outlookLabel = state.outlookAccount
@@ -182,54 +185,256 @@ export default async function SettingsPage() {
         }
       />
 
-      <SurfaceSection title="Profile">
-        <ProfileSettingsForm profile={profile} />
-      </SurfaceSection>
+      <SettingsChecklist
+        profile={profile}
+        outlookAccount={state.outlookAccount}
+        linkedInAccount={state.linkedInAccount}
+        mode={mode}
+      />
+
+      <div id="profile">
+        <SurfaceSection title="Profile">
+          <ProfileSettingsForm profile={profile} />
+        </SurfaceSection>
+      </div>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-2">
+        <SurfaceSection title="Account">
+          <AccountPanel
+            identity={identity}
+            workspaceName={active.workspace.name}
+            workspaceSlug={active.workspace.slug}
+            role={active.role}
+          />
+        </SurfaceSection>
+
         <SurfaceSection title="Connected accounts">
           <div className="grid gap-3">
-          <OutlookPanel account={state.outlookAccount} />
+            <OutlookPanel account={state.outlookAccount} />
             <LinkedInPanel account={state.linkedInAccount} />
           </div>
         </SurfaceSection>
+      </section>
 
-        <SurfaceSection title="Autonomy">
-          <form
-            action={updateWorkspaceAutonomyAction}
-            className="section-note grid gap-5"
-          >
-            <input type="hidden" name="return_to" value="/dashboard/settings" />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <AutonomyOption
-                value="autonomous"
-                title="Autonomous"
-                description="Move after evals, caps, and channel checks pass."
-                defaultChecked={formMode === "autonomous"}
-              />
-              <AutonomyOption
-                value="review_only"
-                title="Review-only"
-                description="Hold outbound moves for human review every time."
-                defaultChecked={formMode === "review_only"}
-              />
-            </div>
-            {mode === "custom" ? (
-              <p className="text-sm text-[var(--color-text-3)]">
-                Current Rep and Play policies are mixed. Saving here applies one
-                mode across the workspace.
-              </p>
-            ) : null}
-            <PendingSubmitButton
-              className="btn-solid w-fit"
-              icon="check"
-              pendingLabel="Saving mode"
+      <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div id="autonomy">
+          <SurfaceSection title="Autonomy">
+            <form
+              action={updateWorkspaceAutonomyAction}
+              className="section-note grid gap-5"
             >
-              Save mode
-            </PendingSubmitButton>
-          </form>
+              <input type="hidden" name="return_to" value="/dashboard/settings" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <AutonomyOption
+                  value="autonomous"
+                  title="Autonomous"
+                  description="Move after evals, caps, and channel checks pass."
+                  defaultChecked={formMode === "autonomous"}
+                />
+                <AutonomyOption
+                  value="review_only"
+                  title="Review-only"
+                  description="Hold outbound moves for human review every time."
+                  defaultChecked={formMode === "review_only"}
+                />
+              </div>
+              {mode === "custom" ? (
+                <p className="text-sm text-[var(--color-text-3)]">
+                  Current Rep and Play policies are mixed. Saving here applies one
+                  mode across the workspace.
+                </p>
+              ) : null}
+              <PendingSubmitButton
+                className="btn-solid w-fit"
+                icon="check"
+                pendingLabel="Saving mode"
+              >
+                Save mode
+              </PendingSubmitButton>
+            </form>
+          </SurfaceSection>
+        </div>
+
+        <SurfaceSection title="Integrations">
+          <IntegrationPanel />
         </SurfaceSection>
       </section>
+    </div>
+  );
+}
+
+function SettingsChecklist({
+  profile,
+  outlookAccount,
+  linkedInAccount,
+  mode,
+}: {
+  profile: ProductCompanyProfile | null;
+  outlookAccount: SettingsOutlookAccount | null;
+  linkedInAccount: SettingsLinkedInAccount | null;
+  mode: SettingsAutonomyMode;
+}) {
+  const steps = [
+    {
+      title: "Company profile",
+      detail: profile?.company_name
+        ? `${profile.company_name}${profileWebsite(profile) ? ` - ${profileWebsite(profile)}` : ""}`
+        : "Add the company and website that Reps should represent.",
+      href: "#profile",
+      icon: "add_business",
+      ready: Boolean(profile?.company_name && profileWebsite(profile)),
+    },
+    {
+      title: "Email account",
+      detail: outlookAccount
+        ? `${outlookMailbox(outlookAccount)} - ${statusLabel(outlookAccount.status)}`
+        : "Connect Outlook for native email threads and reply sync.",
+      href: "/api/auth/outlook",
+      icon: "mail",
+      ready: outlookAccount?.status === "connected",
+    },
+    {
+      title: "LinkedIn account",
+      detail: linkedInAccount
+        ? `${linkedInAccount.display_name} - ${statusLabel(linkedInAccount.status)}`
+        : "Connect LinkedIn for connection requests and DMs.",
+      href: "/api/auth/linkedin",
+      icon: "forum",
+      ready: linkedInAccount?.status === "connected",
+    },
+    {
+      title: "Review posture",
+      detail:
+        mode === "custom"
+          ? "Rep and Play policies are mixed."
+          : mode === "review_only"
+            ? "Every outbound move waits for review."
+            : "Reps can move after evals, caps, and channel checks pass.",
+      href: "#autonomy",
+      icon: "task_alt",
+      ready: mode !== "custom",
+    },
+  ];
+  const readyCount = steps.filter((step) => step.ready).length;
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Setup
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Profile, channels, and guardrails.
+          </h2>
+        </div>
+        <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
+          {readyCount}/{steps.length} ready
+        </span>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-4">
+        {steps.map((step) => (
+          <Link
+            key={step.title}
+            href={step.href}
+            prefetch={false}
+            className="group flex min-h-[142px] flex-col rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+                <Icon name={step.icon} size={16} />
+              </span>
+              <StatusPill ready={step.ready} />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
+              {step.title}
+            </p>
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+              {step.detail}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StatusPill({ ready }: { ready: boolean }) {
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1 rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+        (ready
+          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+          : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+      }
+    >
+      <Icon name={ready ? "check_circle" : "lock"} size={12} />
+      {ready ? "Ready" : "Needed"}
+    </span>
+  );
+}
+
+function AccountPanel({
+  identity,
+  workspaceName,
+  workspaceSlug,
+  role,
+}: {
+  identity: RequestAuthIdentity | null;
+  workspaceName: string;
+  workspaceSlug: string;
+  role: string;
+}) {
+  const email = identity?.email ?? "Signed in";
+  return (
+    <div className="section-note grid gap-5">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-sm font-semibold text-[var(--color-text-2)]">
+          {accountInitials(email)}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {email}
+          </p>
+          <p className="mt-1 text-sm text-[var(--color-text-3)]">
+            {roleLabel(role)} in {workspaceName}
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <ProfileFact label="Workspace" value={workspaceName} />
+        <ProfileFact label="Slug" value={workspaceSlug} />
+      </div>
+    </div>
+  );
+}
+
+function IntegrationPanel() {
+  return (
+    <div className="section-note grid gap-4">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon shrink-0">
+          <Icon name="account_tree" size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            MCP server
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+            External agents can use the same workspace tools through the MCP endpoint.
+          </p>
+        </div>
+      </div>
+      <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-xs text-[var(--color-text-2)]">
+        /api/mcp
+      </div>
+      <Link href="/api/mcp" prefetch={false} className="btn-quiet-sm w-fit">
+        <Icon name="arrow_forward" size={14} />
+        Open endpoint
+      </Link>
     </div>
   );
 }
@@ -564,6 +769,19 @@ function outlookMailbox(account: SettingsOutlookAccount): string {
 
 function statusLabel(status: string): string {
   return status.replace(/_/g, " ");
+}
+
+function roleLabel(role: string): string {
+  if (role === "owner") return "Owner";
+  if (role === "admin") return "Admin";
+  return "Member";
+}
+
+function accountInitials(value: string): string {
+  const [first = "B", second = "S"] = value
+    .split(/[\s@._-]+/)
+    .filter(Boolean);
+  return `${first[0] ?? "B"}${second[0] ?? "S"}`.toUpperCase();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
