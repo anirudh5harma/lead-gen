@@ -360,7 +360,7 @@ export default async function ConversationDetailPage({
   if (!workspace) {
     return (
       <section className="section-canvas p-6">
-        <p className="brief-kicker">Inbox</p>
+        <p className="brief-kicker">Agent</p>
         <h1 className="mt-4 text-[34px] font-semibold leading-tight text-[var(--color-text-1)]">
           No workspace selected.
         </h1>
@@ -388,7 +388,7 @@ export default async function ConversationDetailPage({
     <div className="space-y-10">
       <section className="section-canvas min-h-[300px] p-5 sm:p-8">
         <div className="section-thread section-thread-a" />
-        <p className="brief-kicker">Inbox</p>
+        <p className="brief-kicker">Agent</p>
         <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
           {conv.counterparty_name ?? "Unknown contact"}
         </h1>
@@ -516,7 +516,7 @@ export default async function ConversationDetailPage({
               prefetch={false}
               className="hover:text-[var(--color-text-1)]"
             >
-              Back to Inbox
+              Back to sent outreach
             </Link>
           </p>
         </aside>

@@ -245,10 +245,20 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   const outreach = source("app/dashboard/conversations/page.tsx");
   const detail = source("app/dashboard/conversations/[id]/page.tsx");
 
+  assert.match(outreach, /kicker="Agent"/);
+  assert.match(outreach, /Sent email and LinkedIn <em>outreach<\/em>/);
+  assert.match(outreach, /<SurfaceSection title="Sent outreach">/);
   assert.match(outreach, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
   assert.match(outreach, /#message-\$\{messageId\}/);
+  assert.doesNotMatch(outreach, /kicker="Outreach"/);
+  assert.doesNotMatch(outreach, /kicker="Inbox"/);
+  assert.doesNotMatch(outreach, /Sent list/);
+  assert.match(detail, /brief-kicker">Agent/);
   assert.match(detail, /id=\{`message-\$\{m\.id\}`\}/);
   assert.match(detail, /target:ring-\[var\(--color-accent\)\]/);
+  assert.match(detail, /Back to sent outreach/);
+  assert.doesNotMatch(detail, /brief-kicker">Inbox/);
+  assert.doesNotMatch(detail, /Back to Inbox/);
 });
 
 test("loading states use simplified product surface labels", () => {

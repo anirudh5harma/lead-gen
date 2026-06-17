@@ -138,9 +138,9 @@ export default async function ConversationsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Inbox"
+        kicker="Agent"
         title="No workspace selected."
-        description="Create a profile first, then email and LinkedIn replies collect here."
+        description="Create a profile first, then sent email, LinkedIn touches, and replies appear here."
       />
     );
   }
@@ -151,8 +151,8 @@ export default async function ConversationsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Outreach"
-        title={<>Sent email and LinkedIn <em>drafts</em>.</>}
+        kicker="Agent"
+        title={<>Sent email and LinkedIn <em>outreach</em>.</>}
         description="Every outbound email, DM, and connection touch with the contact, company, signal, and draft you can inspect."
         meta={
           <div className="flex flex-wrap gap-2">
@@ -163,7 +163,7 @@ export default async function ConversationsPage() {
         }
       />
 
-      <SurfaceSection title="Sent list">
+      <SurfaceSection title="Sent outreach">
         {messages.length === 0 ? (
           <EmptyState
             title="No outreach sent yet"
