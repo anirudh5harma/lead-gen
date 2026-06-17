@@ -29,7 +29,7 @@ export default function UrlStart() {
         </PendingSubmitButton>
       </div>
       <p className="mt-2.5 max-w-full pl-1 text-[12.5px] leading-5 text-[var(--color-text-3)]">
-        We read your site to draft your prospecting profile, audience, and voice.
+        We read your site to draft your profile, audience, and voice.
       </p>
     </form>
   );

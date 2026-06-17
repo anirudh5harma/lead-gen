@@ -68,6 +68,8 @@ test("retired product surfaces redirect to Plays", () => {
 
 test("Dashboard routes setup work through Settings and current surfaces", () => {
   const dashboard = source("app/dashboard/page.tsx");
+  const appLayout = source("app/layout.tsx");
+  const urlStart = source("components/UrlStart.tsx");
 
   assert.match(dashboard, /Welcome back/);
   assert.match(dashboard, /Qualified signals/);
@@ -80,6 +82,10 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /href="\/dashboard\/reps#outreach"/);
   assert.match(dashboard, /href="\/dashboard\/reps#verified-contacts"/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
+  assert.match(appLayout, /Profile, quality signals, verified contacts/);
+  assert.doesNotMatch(appLayout, /Prospecting, signal ingestion/);
+  assert.match(urlStart, /draft your profile, audience, and voice/);
+  assert.doesNotMatch(urlStart, /prospecting profile/);
 });
 
 test("Health presents agent observability from the event-sourced summary", () => {
@@ -89,6 +95,8 @@ test("Health presents agent observability from the event-sourced summary", () =>
   assert.match(health, /Agent observability/);
   assert.match(health, /redacted traces/);
   assert.match(health, /eval cases/);
+  assert.match(health, /Everyday outreach stays with the agent/);
+  assert.doesNotMatch(health, /Everyday outcomes stay with the Reps/);
 });
 
 test("Setup presents separate Outlook and LinkedIn connection gates", () => {
@@ -250,9 +258,11 @@ test("loading states use simplified product surface labels", () => {
   assert.match(loader, /plays: \{ kicker: "Agent"/);
   assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
   assert.match(loader, /prospecting: \{ kicker: "Profile"/);
+  assert.match(loader, /title: "Loading profile"/);
   assert.doesNotMatch(loader, /kicker: "Reps"/);
   assert.doesNotMatch(loader, /kicker: "Plays"/);
   assert.doesNotMatch(loader, /kicker: "Outcomes"/);
+  assert.doesNotMatch(loader, /Loading prospecting profile/);
 });
 
 test("dashboard Signal surfaces do not expose manual ingestion controls", () => {

@@ -20,7 +20,7 @@ const SURFACE_COPY: Record<LoadingSurface, { kicker: string; title: string; icon
   brief: { kicker: "Dashboard", title: "Gathering the morning view", icon: "dashboard" },
   outreach: { kicker: "Agent", title: "Loading sent outreach", icon: "forum" },
   campaigns: { kicker: "Agent", title: "Loading outreach learning", icon: "science" },
-  prospecting: { kicker: "Profile", title: "Loading prospecting profile", icon: "person" },
+  prospecting: { kicker: "Profile", title: "Loading profile", icon: "person" },
   prospects: { kicker: "Agent", title: "Loading verified contacts", icon: "travel_explore" },
   signals: { kicker: "Agent", title: "Loading qualified signals", icon: "sensors" },
   reps: { kicker: "Agent", title: "Loading live work", icon: "badge" },

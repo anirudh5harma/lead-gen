@@ -96,7 +96,7 @@ export default async function HealthPage() {
               Quiet systems, clear exceptions.
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
-              Platform readiness and owner-only recovery moments. Everyday outcomes stay with the Reps.
+              Platform readiness and owner-only recovery moments. Everyday outreach stays with the agent.
             </p>
           </div>
           <div className="section-note">

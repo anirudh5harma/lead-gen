@@ -23,7 +23,7 @@ const bricolage = Bricolage_Grotesque({
 export const metadata: Metadata = {
   title: "Bombsell | Signal-led outbound",
   description:
-    "Prospecting, signal ingestion, email and LinkedIn outreach, and campaign learning for founders and lean teams.",
+    "Profile, quality signals, verified contacts, and email or LinkedIn outreach for founders and lean teams.",
 };
 
 export const viewport: Viewport = {
