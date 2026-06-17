@@ -41,9 +41,13 @@ test("activation setup graph: turns a website URL into a gated setup draft witho
   const email_play_id = randomUUID();
   const linkedin_play_id = randomUUID();
   const toolCalls: string[] = [];
+  const emailSignalKinds: string[] = [];
+  const linkedInSignalKinds: string[] = [];
 
   registerActivationStubTools({
     toolCalls,
+    emailSignalKinds,
+    linkedInSignalKinds,
     company_id,
     rep_id,
     icp_id,
@@ -107,9 +111,19 @@ test("activation setup graph: turns a website URL into a gated setup draft witho
     "product.company.profile.configure",
     "product.activation.configure",
     "product.play.signal_linkedin.configure",
+    "product.play.signal_email.configure",
+    "product.play.signal_email.configure",
+    "product.play.signal_linkedin.configure",
+    "product.play.signal_linkedin.configure",
     "product.sources.default_aggregator.configure",
     "product.outlook_account.connect_url.get",
     "product.linkedin_account.connect_url.get",
+  ]);
+  assert.deepEqual(emailSignalKinds, ["product_launch", "hiring"]);
+  assert.deepEqual(linkedInSignalKinds, [
+    "press_mention",
+    "product_launch",
+    "hiring",
   ]);
 
   for (const expected of [
@@ -150,6 +164,8 @@ test("activation setup graph: turns a website URL into a gated setup draft witho
 
 function registerActivationStubTools(opts: {
   toolCalls: string[];
+  emailSignalKinds: string[];
+  linkedInSignalKinds: string[];
   company_id: string;
   rep_id: string;
   icp_id: string;
@@ -239,6 +255,30 @@ function registerActivationStubTools(opts: {
   });
 
   registerTool({
+    name: "product.play.signal_email.configure",
+    description: "Configure an email Play.",
+    kind: "write",
+    input: z.object({
+      rep_id: z.string().uuid(),
+      name: z.string().optional(),
+      signal_kind: z.string().optional(),
+      icp_name: z.string().optional(),
+      daily_cap: z.number().optional(),
+      approval: z.string().optional(),
+    }),
+    output: z.object({
+      workspace_id: z.string().uuid(),
+      play_id: z.string().uuid(),
+    }),
+    async handler(input, ctx) {
+      opts.toolCalls.push("product.play.signal_email.configure");
+      assert.equal(input.rep_id, opts.rep_id);
+      opts.emailSignalKinds.push(input.signal_kind ?? "");
+      return { workspace_id: ctx.workspace_id, play_id: opts.email_play_id };
+    },
+  });
+
+  registerTool({
     name: "product.play.signal_linkedin.configure",
     description: "Configure a LinkedIn Play.",
     kind: "write",
@@ -259,6 +299,7 @@ function registerActivationStubTools(opts: {
       opts.toolCalls.push("product.play.signal_linkedin.configure");
       assert.equal(input.rep_id, opts.rep_id);
       assert.equal(input.action, "linkedin_dm");
+      opts.linkedInSignalKinds.push(input.signal_kind ?? "");
       return { workspace_id: ctx.workspace_id, play_id: opts.linkedin_play_id };
     },
   });

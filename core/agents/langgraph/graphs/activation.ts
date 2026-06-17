@@ -141,6 +141,7 @@ export interface ActivationSetupGraphOptions {
     websiteProfileExtract: string;
     companyProfileConfigure: string;
     activationConfigure: string;
+    signalEmailPlayConfigure: string;
     signalLinkedInPlayConfigure: string;
     defaultAggregatorConfigure: string;
     outlookConnectUrlGet: string;
@@ -191,6 +192,7 @@ const DEFAULT_TOOLS = {
   websiteProfileExtract: "product.company.website_profile.extract",
   companyProfileConfigure: "product.company.profile.configure",
   activationConfigure: "product.activation.configure",
+  signalEmailPlayConfigure: "product.play.signal_email.configure",
   signalLinkedInPlayConfigure: "product.play.signal_linkedin.configure",
   defaultAggregatorConfigure: "product.sources.default_aggregator.configure",
   outlookConnectUrlGet: "product.outlook_account.connect_url.get",
@@ -417,6 +419,51 @@ export function createActivationSetupGraph(
                 toolOptions,
               )
             : null;
+          const additionalEmailPlays = await configureAdditionalSignalPlays(
+            tools.signalEmailPlayConfigure,
+            plays.filter(
+              (play) =>
+                play.channel === "email" &&
+                play.signal_kind !== emailPlay.signal_kind,
+            ),
+            activation.rep_id,
+            icp.name,
+            {
+              ...state,
+              rep_id: activation.rep_id,
+              play_id: linkedIn?.play_id ?? activation.play_id,
+              company_id: companyProfile.company_id,
+            },
+            toolOptions,
+          );
+          const primaryLinkedInSignalKind = linkedInPlay?.signal_kind ?? null;
+          const additionalLinkedInPlays = linkedIn
+            ? await configureAdditionalSignalPlays(
+                tools.signalLinkedInPlayConfigure,
+                plays.filter(
+                  (play) =>
+                    play.channel === "linkedin_dm" &&
+                    play.signal_kind !== primaryLinkedInSignalKind,
+                ),
+                activation.rep_id,
+                icp.name,
+                {
+                  ...state,
+                  rep_id: activation.rep_id,
+                  play_id: linkedIn.play_id,
+                  company_id: companyProfile.company_id,
+                },
+                toolOptions,
+              )
+            : [];
+          const configuredPlayIds = [
+            activation.play_id,
+            ...(linkedIn ? [linkedIn.play_id] : []),
+            ...additionalEmailPlays.map((play) => play.play_id),
+            ...additionalLinkedInPlays.map((play) => play.play_id),
+          ];
+          const latestPlayId =
+            configuredPlayIds[configuredPlayIds.length - 1] ?? activation.play_id;
           const sources = await invokeLangGraphTool<SourceConfigureResult>(
             tools.defaultAggregatorConfigure,
             {
@@ -431,26 +478,36 @@ export function createActivationSetupGraph(
             {
               ...state,
               rep_id: activation.rep_id,
-              play_id: linkedIn?.play_id ?? activation.play_id,
+              play_id: latestPlayId,
               company_id: companyProfile.company_id,
             },
             toolOptions,
           );
           return {
             rep_id: activation.rep_id,
-            play_id: linkedIn?.play_id ?? activation.play_id,
+            play_id: latestPlayId,
             company_id: companyProfile.company_id,
             attributes: mergeAttributes(state, {
               activation_result: activation,
               company_profile_result: companyProfile,
               email_play_id: activation.play_id,
               linkedin_play_id: linkedIn?.play_id ?? null,
+              email_play_ids: [
+                activation.play_id,
+                ...additionalEmailPlays.map((play) => play.play_id),
+              ],
+              linkedin_play_ids: [
+                ...(linkedIn ? [linkedIn.play_id] : []),
+                ...additionalLinkedInPlays.map((play) => play.play_id),
+              ],
               source_result: sources,
             }),
             tool_results: {
               company_profile_configure: companyProfile,
               activation_configure: activation,
               linkedin_play_configure: linkedIn,
+              additional_email_play_configure: additionalEmailPlays,
+              additional_linkedin_play_configure: additionalLinkedInPlays,
               default_aggregator_configure: sources,
             },
           };
@@ -736,22 +793,23 @@ function splitSetupLines(value: string | null | undefined): string[] {
 function playDraftsFromProfile(
   profile: ActivationProfileDraft,
 ): ActivationPlayDraft[] {
-  return [
+  const signalKinds = defaultOutreachSignalKinds();
+  return signalKinds.flatMap((signalKind) => [
     {
-      channel: "email",
-      name: `${profile.company_name} Signal Email`,
-      signal_kind: "press_mention",
+      channel: "email" as const,
+      name: `${profile.company_name} ${signalKindLabel(signalKind)} Email`,
+      signal_kind: signalKind,
       daily_cap: 15,
-      approval: "none",
+      approval: "none" as const,
     },
     {
-      channel: "linkedin_dm",
-      name: `${profile.company_name} Signal LinkedIn DM`,
-      signal_kind: "press_mention",
+      channel: "linkedin_dm" as const,
+      name: `${profile.company_name} ${signalKindLabel(signalKind)} LinkedIn DM`,
+      signal_kind: signalKind,
       daily_cap: 8,
-      approval: "none",
+      approval: "none" as const,
     },
-  ];
+  ]);
 }
 
 function sourcePlanFromProfile(
@@ -782,6 +840,46 @@ function sourcePlanFromProfile(
       },
     ],
   };
+}
+
+function defaultOutreachSignalKinds(): SignalKind[] {
+  return ["press_mention", "product_launch", "hiring"];
+}
+
+function signalKindLabel(kind: SignalKind): string {
+  return kind
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+async function configureAdditionalSignalPlays(
+  toolName: string,
+  plays: ActivationPlayDraft[],
+  rep_id: string,
+  icp_name: string,
+  state: BombsellLangGraphState,
+  toolOptions: LangGraphToolOptions,
+): Promise<PlayConfigureResult[]> {
+  const results: PlayConfigureResult[] = [];
+  for (const play of plays) {
+    const result = await invokeLangGraphTool<PlayConfigureResult>(
+      toolName,
+      {
+        rep_id,
+        name: play.name,
+        signal_kind: play.signal_kind,
+        icp_name,
+        ...(play.channel === "linkedin_dm" ? { action: "linkedin_dm" } : {}),
+        daily_cap: play.daily_cap,
+        approval: play.approval,
+      },
+      state,
+      toolOptions,
+    );
+    results.push(result);
+  }
+  return results;
 }
 
 function launchChecklistFromState(

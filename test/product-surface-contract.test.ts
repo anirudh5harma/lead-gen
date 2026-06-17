@@ -655,6 +655,10 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(activationGraph, /outreach_goal/);
   assert.match(activationGraph, /message_tone/);
   assert.match(activationGraph, /name: "Outbound agent"/);
+  assert.match(activationGraph, /defaultOutreachSignalKinds/);
+  assert.match(activationGraph, /\["press_mention", "product_launch", "hiring"\]/);
+  assert.match(activationGraph, /signalEmailPlayConfigure/);
+  assert.match(activationGraph, /additional_linkedin_play_configure/);
   assert.doesNotMatch(activationGraph, /name: "Sampark"/);
   assert.match(productApp, /input\.name\.trim\(\) \|\| "Outbound agent"/);
   assert.match(productApp, /name: "Outbound agent"/);
