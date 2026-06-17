@@ -364,7 +364,8 @@ export default async function SettingsPage() {
         </SurfaceSection>
       </div>
 
-      <div id="motion">
+      <span id="motion" className="block scroll-mt-28" aria-hidden="true" />
+      <div id="agent">
         <SurfaceSection title="Agent inputs and outreach templates">
           <ActivationSettingsForm
             rep={state.rep}
@@ -498,7 +499,7 @@ function SettingsChecklist({
         rep && icp
           ? `${agentDisplayName(rep.role)} acts on ${icp.name}.`
           : "Define the ICP, voice, daily ceiling, and agent.",
-      href: "#motion",
+      href: "#agent",
       icon: "badge",
       ready: Boolean(rep && icp),
     },
@@ -609,7 +610,7 @@ function SettingsSectionNav({
     {
       title: "Agent",
       detail: rep && icp ? `${agentDisplayName(rep.role)} + ${icp.name}` : "Audience and voice",
-      href: "#motion",
+      href: "#agent",
       icon: "badge",
       ready: Boolean(rep && icp),
     },
@@ -1017,7 +1018,7 @@ function ActivationSettingsForm({
   const approval = rep?.autonomy?.channels?.email?.approval ?? "none";
   return (
     <form action={configureActivationAction} className="section-note grid gap-5">
-      <input type="hidden" name="return_to" value="/dashboard/settings#motion" />
+      <input type="hidden" name="return_to" value="/dashboard/settings#agent" />
       <TextArea
         name="icp_description"
         label="Target companies and people"
@@ -1085,7 +1086,7 @@ function ActivationSettingsForm({
       <PendingSubmitButton
         className="btn-solid w-fit"
         icon="check"
-        pendingLabel="Saving motion"
+        pendingLabel="Saving agent"
       >
         Save audience and agent
       </PendingSubmitButton>

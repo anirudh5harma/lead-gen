@@ -818,7 +818,7 @@ export default async function RepsPage() {
       <SurfaceSection
         title="Agent setup"
         action={
-          <Link href="/dashboard/settings#motion" className="btn-solid-sm">
+          <Link href="/dashboard/settings#agent" className="btn-solid-sm">
             <Icon name="edit_note" size={14} />
             Tune in Profile
           </Link>
@@ -829,7 +829,7 @@ export default async function RepsPage() {
             title="No agent configured yet."
             hint="Start by defining the workspace profile, audience, voice, and approval mode."
             cta={{
-              href: "/dashboard/settings#motion",
+              href: "/dashboard/settings#agent",
               label: "Configure agent",
               icon: "badge",
             }}
@@ -1194,7 +1194,7 @@ function AgentSequencePanel({ sequence }: { sequence: AgentSequenceStep[] }) {
     <SurfaceSection
       title="Sequence"
       action={
-        <Link href="/dashboard/settings#motion" className="btn-quiet-sm">
+        <Link href="/dashboard/settings#agent" className="btn-quiet-sm">
           <Icon name="rule" size={14} />
           Review limits
         </Link>
@@ -1205,7 +1205,7 @@ function AgentSequencePanel({ sequence }: { sequence: AgentSequenceStep[] }) {
           title="No outreach sequence yet"
           hint="The agent needs active email or LinkedIn plays before it can move qualified signals into outreach."
           cta={{
-            href: "/dashboard/settings#motion",
+            href: "/dashboard/settings#agent",
             label: "Configure agent",
             icon: "rule",
           }}
@@ -1898,7 +1898,7 @@ function readinessNextAction(readiness: WorkspaceLaunchReadiness): {
 
 function readinessFallbackHref(check: LaunchReadinessCheck): string {
   if (check.id === "workspace_profile") return "/dashboard/settings#profile";
-  if (check.id === "icp") return "/dashboard/settings#motion";
+  if (check.id === "icp") return "/dashboard/settings#agent";
   if (check.id === "rep") return "/dashboard/agent";
   if (check.id === "signal_sources") return "/dashboard/agent#sources";
   if (check.id === "plays") return "/dashboard/agent#outreach";
@@ -2271,7 +2271,7 @@ function AgentSetupSummary({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-line-1)] pt-3 text-xs text-[var(--color-text-3)]">
           <span>Voice, accounts, and limits stay in Profile.</span>
-          <Link href="/dashboard/settings#motion" className="btn-quiet-sm">
+          <Link href="/dashboard/settings#agent" className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
             Edit voice
           </Link>

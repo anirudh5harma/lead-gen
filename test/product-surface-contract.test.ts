@@ -472,7 +472,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Tune in Profile/);
   assert.match(reps, /Voice, accounts, and limits stay in Profile/);
   assert.match(reps, /Channels and limits/);
-  assert.match(reps, /href="\/dashboard\/settings#motion"/);
+  assert.match(reps, /href="\/dashboard\/settings#agent"/);
   assert.match(reps, /\/dashboard\/settings#email/);
   assert.match(reps, /\/dashboard\/settings#linkedin/);
   assert.match(reps, /Connect Outlook/);
@@ -674,18 +674,22 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
     /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/,
   );
   assert.match(settings, /href: "#tools"/);
+  assert.match(settings, /href: "#agent"/);
+  assert.match(settings, /id="agent"/);
+  assert.match(settings, /id="motion"/);
   assert.match(settings, /id="tools"/);
   assert.match(settings, /href="\/api\/mcp"/);
   assert.match(settings, /Agent inputs and outreach templates/);
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);
   assert.match(settings, /verified contact or LinkedIn profile/);
-  assert.match(settings, /return_to" value="\/dashboard\/settings#motion"/);
+  assert.match(settings, /return_to" value="\/dashboard\/settings#agent"/);
+  assert.match(settings, /Saving agent/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);
   assert.match(settings, /row_number\(\) over/);
   assert.match(settings, /properties ->> 'mailbox_email'/);
-  assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/settings#motion"\)/);
+  assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/settings#agent"\)/);
   assert.match(actions, /value_proposition/);
   assert.match(actions, /customer_pain_points/);
   assert.match(actions, /target_titles/);

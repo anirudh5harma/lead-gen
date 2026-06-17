@@ -199,7 +199,7 @@ export function buildWorkspaceLaunchReadiness(
       count: counts.enabledIcps,
       detailReady: `${counts.enabledIcps} ICP segment${plural(counts.enabledIcps)} enabled.`,
       detailBlocked: "No enabled ICP segment is available for lead matching.",
-      action: action("Configure ICP", ["product.icp.configure"], "/dashboard/settings#motion"),
+      action: action("Configure ICP", ["product.icp.configure"], "/dashboard/settings#agent"),
     }),
     countCheck({
       id: "rep",

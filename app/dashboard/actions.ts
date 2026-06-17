@@ -197,7 +197,7 @@ export async function updateWorkspaceAutonomyAction(formData: FormData) {
 
 export async function configureActivationAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
-  const returnTo = dashboardReturnPath(formData, "/dashboard/settings#motion");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/settings#agent");
   const signalKind = value(formData, "signal_kind") || "hiring";
   const approval = approvalValue(formData, "approval");
   const repName = await repNameFromForm(formData, session);
