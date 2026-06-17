@@ -161,7 +161,7 @@ export default function Home() {
           </ScrollReveal>
 
           <ScrollReveal delay={0.4}>
-            <form action="/onboarding" method="GET" className="mt-6 mx-auto flex w-full max-w-[480px] flex-col gap-3 sm:flex-row">
+            <form action="/auth/start" method="GET" className="mt-6 mx-auto flex w-full max-w-[480px] flex-col gap-3 sm:flex-row">
               <div className="relative flex-1">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-4)]">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

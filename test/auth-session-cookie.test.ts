@@ -73,8 +73,13 @@ test("auth route redirects replay Supabase cookie writes", () => {
 
 test("public entry sends login directly to Google OAuth", () => {
   const body = readFileSync("app/page.tsx", "utf8");
+  const authStart = readFileSync("app/auth/start/route.ts", "utf8");
   assert.match(body, /href=\{googleAuthPath\(PRODUCT_HOME_PATH\)\}/);
+  assert.match(body, /action="\/auth\/start"/);
+  assert.doesNotMatch(body, /action="\/onboarding"/);
   assert.doesNotMatch(body, /href="\/login"/);
+  assert.match(authStart, /googleAuthPath\(next\)/);
+  assert.match(authStart, /onboardingPathForWebsite\(searchParams\.get\("url"\)\)/);
 });
 
 test("auth failures stay on the direct Google auth surface", () => {
