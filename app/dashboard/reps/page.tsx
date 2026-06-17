@@ -77,9 +77,20 @@ interface ChannelCoverage {
 interface AgentActivity {
   active_workflows: number;
   events_last_hour: number;
+  signals_last_hour: number;
+  contacts_last_hour: number;
+  drafts_last_hour: number;
   outbound_last_hour: number;
+  replies_last_hour: number;
   reviews_pending: number;
   event_types: Array<{ event_type: string; count: number }>;
+}
+
+interface AgentWorkStageData {
+  key: string;
+  label: string;
+  value: number;
+  icon: string;
 }
 
 interface AgentOutreachRow {
@@ -449,7 +460,11 @@ async function loadAgentActivity(workspaceId: string): Promise<AgentActivity> {
     pool.query<{
       active_workflows: string;
       events_last_hour: string;
+      signals_last_hour: string;
+      contacts_last_hour: string;
+      drafts_last_hour: string;
       outbound_last_hour: string;
+      replies_last_hour: string;
       reviews_pending: string;
     }>(
       `select
@@ -459,10 +474,30 @@ async function loadAgentActivity(workspaceId: string): Promise<AgentActivity> {
          (select count(*)::text from events e
             where e.workspace_id = $1
               and e.occurred_at >= now() - interval '1 hour') as events_last_hour,
+         (select count(*)::text from signals s
+            where s.workspace_id = $1
+              and s.status in ('ingested','matched','in_play')
+              and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '1 hour') as signals_last_hour,
+         (select count(*)::text from graph_persons p
+            where p.workspace_id = $1
+              and p.updated_at >= now() - interval '1 hour'
+              and (
+                cardinality(coalesce(p.emails, '{}'::text[])) > 0
+                or p.linkedin_url is not null
+              )) as contacts_last_hour,
+         (select count(*)::text from messages m
+            where m.workspace_id = $1
+              and m.direction = 'outbound'
+              and m.status not in ('sent','delivered','replied','bounced')
+              and m.created_at >= now() - interval '1 hour') as drafts_last_hour,
          (select count(*)::text from messages m
             where m.workspace_id = $1
               and m.direction = 'outbound'
               and m.created_at >= now() - interval '1 hour') as outbound_last_hour,
+         (select count(*)::text from outcomes o
+            where o.workspace_id = $1
+              and o.kind in ('positive_reply','meeting_booked')
+              and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '1 hour') as replies_last_hour,
          (select count(*)::text from workflow_approvals a
             where a.workspace_id = $1
               and a.decision = 'pending') as reviews_pending`,
@@ -482,7 +517,11 @@ async function loadAgentActivity(workspaceId: string): Promise<AgentActivity> {
   return {
     active_workflows: Number(summary.rows[0]?.active_workflows ?? 0),
     events_last_hour: Number(summary.rows[0]?.events_last_hour ?? 0),
+    signals_last_hour: Number(summary.rows[0]?.signals_last_hour ?? 0),
+    contacts_last_hour: Number(summary.rows[0]?.contacts_last_hour ?? 0),
+    drafts_last_hour: Number(summary.rows[0]?.drafts_last_hour ?? 0),
     outbound_last_hour: Number(summary.rows[0]?.outbound_last_hour ?? 0),
+    replies_last_hour: Number(summary.rows[0]?.replies_last_hour ?? 0),
     reviews_pending: Number(summary.rows[0]?.reviews_pending ?? 0),
     event_types: eventTypes.rows.map((row) => ({
       event_type: row.event_type,
@@ -814,7 +853,11 @@ function emptyRepsState(workspaceId: string): RepsState {
     activity: {
       active_workflows: 0,
       events_last_hour: 0,
+      signals_last_hour: 0,
+      contacts_last_hour: 0,
+      drafts_last_hour: 0,
       outbound_last_hour: 0,
+      replies_last_hour: 0,
       reviews_pending: 0,
       event_types: [],
     },
@@ -1522,10 +1565,13 @@ function ContactPill({
 }
 
 function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
+  const workStages = agentLastHourStages(activity);
+  const workVolume = workStages.reduce((sum, stage) => sum + stage.value, 0);
   const active =
     activity.active_workflows > 0 ||
+    workVolume > 0 ||
     activity.events_last_hour > 0 ||
-    activity.outbound_last_hour > 0;
+    activity.reviews_pending > 0;
   const currentWork = agentCurrentWork(activity);
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -1548,10 +1594,15 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
           <MiniStat label="Outreach last hour" value={activity.outbound_last_hour} />
           <MiniStat label="Needs review" value={activity.reviews_pending} />
         </div>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {workStages.map((stage) => (
+            <AgentWorkStage key={stage.key} stage={stage} />
+          ))}
+        </div>
         <div className="relative mt-6 grid h-28 grid-cols-12 items-end gap-1 overflow-hidden rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
           <span className="agent-work-sweep" aria-hidden="true" />
           {Array.from({ length: 12 }, (_, index) => {
-            const height = 18 + ((activity.events_last_hour + index * 7) % 58);
+            const height = 18 + ((workVolume + activity.events_last_hour + index * 7) % 58);
             const delay = `${index * 80}ms`;
             return (
               <span
@@ -1592,6 +1643,57 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
       </aside>
     </section>
   );
+}
+
+function AgentWorkStage({ stage }: { stage: AgentWorkStageData }) {
+  return (
+    <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-3">
+      <span className="flex items-center justify-between gap-2">
+        <Icon name={stage.icon} size={14} />
+        <strong className="text-base font-semibold tabular-nums text-[var(--color-text-1)]">
+          {stage.value}
+        </strong>
+      </span>
+      <span className="mt-2 block truncate text-[11px] text-[var(--color-text-3)]">
+        {stage.label}
+      </span>
+    </div>
+  );
+}
+
+function agentLastHourStages(activity: AgentActivity): AgentWorkStageData[] {
+  return [
+    {
+      key: "signals",
+      label: "Signals checked",
+      value: activity.signals_last_hour,
+      icon: "fact_check",
+    },
+    {
+      key: "contacts",
+      label: "Contacts resolved",
+      value: activity.contacts_last_hour,
+      icon: "person_search",
+    },
+    {
+      key: "drafts",
+      label: "Drafts prepared",
+      value: activity.drafts_last_hour,
+      icon: "rate_review",
+    },
+    {
+      key: "outreach",
+      label: "Outreach sent",
+      value: activity.outbound_last_hour,
+      icon: "send",
+    },
+    {
+      key: "replies",
+      label: "Replies / meetings",
+      value: activity.replies_last_hour,
+      icon: "event_available",
+    },
+  ];
 }
 
 function agentCurrentWork(activity: AgentActivity): string {

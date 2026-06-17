@@ -371,6 +371,17 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /play\.skill\.optimization\.recommended/);
   assert.match(reps, /events_last_hour/);
   assert.match(reps, /active_workflows/);
+  assert.match(reps, /signals_last_hour/);
+  assert.match(reps, /contacts_last_hour/);
+  assert.match(reps, /drafts_last_hour/);
+  assert.match(reps, /replies_last_hour/);
+  assert.match(reps, /AgentWorkStage/);
+  assert.match(reps, /agentLastHourStages/);
+  assert.match(reps, /Signals checked/);
+  assert.match(reps, /Contacts resolved/);
+  assert.match(reps, /Drafts prepared/);
+  assert.match(reps, /Outreach sent/);
+  assert.match(reps, /Replies \/ meetings/);
   assert.match(reps, /animate-pulse/);
   assert.match(reps, /workspaceChannelCoverage/);
   assert.match(reps, /firstChannelPolicy\(rep, \["linkedin_dm", "linkedin"\]\)/);
