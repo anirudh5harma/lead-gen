@@ -11,6 +11,12 @@ import {
   loadWorkspaceLaunchReadiness,
   type WorkspaceLaunchReadiness,
 } from "@/core/product/launch-readiness.ts";
+import {
+  loadQualifiedSignalWorkbench,
+  type QualifiedSignalContact,
+  type QualifiedSignalItem,
+  type QualifiedSignalWorkbench,
+} from "@/core/product/qualified-signals.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 
@@ -115,13 +121,22 @@ interface RepsState {
   channels: ChannelRow[];
   readiness: WorkspaceLaunchReadiness;
   activity: AgentActivity;
+  opportunities: QualifiedSignalWorkbench;
   outreach: AgentOutreachSummary;
   contacts: AgentContactSummary;
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
   const pool = getPool();
-  const [reps, channels, readiness, activity, outreach, contacts] = await Promise.all([
+  const [
+    reps,
+    channels,
+    readiness,
+    activity,
+    opportunities,
+    outreach,
+    contacts,
+  ] = await Promise.all([
     pool.query<RepRow>(
       `select r.id,
               r.name,
@@ -196,6 +211,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     ),
     loadWorkspaceLaunchReadiness(pool, workspaceId, { required_channel: "any" }),
     loadAgentActivity(workspaceId),
+    loadQualifiedSignalWorkbench(pool, workspaceId, { limit: 5 }),
     loadAgentOutreachSummary(workspaceId),
     loadAgentContactSummary(workspaceId),
   ]);
@@ -204,6 +220,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     channels: channels.rows,
     readiness,
     activity,
+    opportunities,
     outreach,
     contacts,
   };
@@ -442,6 +459,8 @@ export default async function RepsPage() {
 
       <AgentActivityPanel activity={state.activity} />
 
+      <AgentOpportunityPanel opportunities={state.opportunities} />
+
       <AgentOutreachPanel outreach={state.outreach} />
 
       <AgentContactsPanel contacts={state.contacts} />
@@ -514,6 +533,15 @@ function emptyRepsState(workspaceId: string): RepsState {
       linkedin_sent_7d: 0,
       awaiting_reply: 0,
     },
+    opportunities: {
+      signals: [],
+      stats: {
+        qualified: 0,
+        with_verified_contacts: 0,
+        with_email_draft: 0,
+        ready_for_review: 0,
+      },
+    },
     contacts: {
       recent: [],
       reachable: 0,
@@ -522,6 +550,175 @@ function emptyRepsState(workspaceId: string): RepsState {
       fresh_signals: 0,
     },
   };
+}
+
+function AgentOpportunityPanel({
+  opportunities,
+}: {
+  opportunities: QualifiedSignalWorkbench;
+}) {
+  return (
+    <SurfaceSection
+      title="Opportunities"
+      action={
+        <Link href="/dashboard/signals" className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          Open signals
+        </Link>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Signal-to-outreach queue
+          </p>
+          <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
+            <MiniStat label="Qualified" value={opportunities.stats.qualified} />
+            <MiniStat
+              label="Verified contacts"
+              value={opportunities.stats.with_verified_contacts}
+            />
+            <MiniStat
+              label="Drafted"
+              value={opportunities.stats.with_email_draft}
+            />
+            <MiniStat
+              label="Needs review"
+              value={opportunities.stats.ready_for_review}
+            />
+          </div>
+          <p className="text-xs leading-5 text-[var(--color-text-3)]">
+            The agent ranks qualified signals by fit, checks reachable people,
+            and prepares judged outreach before anything leaves a channel.
+          </p>
+        </aside>
+
+        {opportunities.signals.length === 0 ? (
+          <EmptyState
+            title="No opportunities ready yet"
+            hint="Complete the profile, define targeting, and connect accounts so qualified signals can turn into verified outreach."
+            cta={{
+              href: "/dashboard/settings#profile",
+              label: "Tune profile",
+              icon: "person_search",
+            }}
+          />
+        ) : (
+          <div className="grid gap-2">
+            {opportunities.signals.map((signal) => (
+              <AgentOpportunityLink key={signal.id} signal={signal} />
+            ))}
+          </div>
+        )}
+      </div>
+    </SurfaceSection>
+  );
+}
+
+function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
+  const contact = signal.contacts[0];
+  const company = signal.company.name ?? signal.company.domain ?? "Unknown company";
+  const score = signal.match_score == null ? null : Math.round(signal.match_score * 100);
+  const href = opportunityHref(signal, contact);
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+    >
+      <span className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+          <Icon name="sensors" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {company}
+            <span className="font-normal text-[var(--color-text-3)]">
+              {" "}
+              / {signal.kind.replace(/_/g, " ")}
+            </span>
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {signal.title}
+          </span>
+          <span className="mt-2 flex flex-wrap gap-2">
+            {score == null ? null : (
+              <OpportunityPill tone="fit">{score}% fit</OpportunityPill>
+            )}
+            <OpportunityPill tone={contact ? "ready" : "waiting"}>
+              {contact ? contactLabel(contact) : "Resolving contact"}
+            </OpportunityPill>
+            <OpportunityPill tone={signal.email_draft ? "ready" : "waiting"}>
+              {signal.email_draft
+                ? draftOpportunityLabel(signal.email_draft.status)
+                : "Draft pending"}
+            </OpportunityPill>
+          </span>
+          {signal.match_reason ? (
+            <span className="mt-2 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+              {signal.match_reason}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {statusLabel(signal.status)}
+        </span>
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(signal.freshness_at)}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function OpportunityPill({
+  tone,
+  children,
+}: {
+  tone: "fit" | "ready" | "waiting";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "fit"
+      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+      : tone === "ready"
+        ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+        : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]";
+  return (
+    <span className={"rounded-[8px] px-2.5 py-1 text-xs " + toneClass}>
+      {children}
+    </span>
+  );
+}
+
+function contactLabel(contact: QualifiedSignalContact): string {
+  if (contact.verification.email_verified) return "Verified email";
+  if (contact.linkedin_url) return "LinkedIn profile";
+  if (contact.emails.length > 0) return "Email found";
+  return "Contact found";
+}
+
+function draftOpportunityLabel(status: string): string {
+  if (status === "draft") return "Draft ready";
+  if (status === "deferred") return "Draft deferred";
+  if (status === "sent" || status === "delivered") return "Sent";
+  return statusLabel(status);
+}
+
+function opportunityHref(
+  signal: QualifiedSignalItem,
+  contact?: QualifiedSignalContact,
+): string {
+  if (signal.email_draft) {
+    return sentDraftHref(
+      signal.email_draft.conversation_id,
+      signal.email_draft.message_id,
+    );
+  }
+  if (contact?.person_id) return `/dashboard/prospects/${contact.person_id}`;
+  return "/dashboard/signals";
 }
 
 function AgentContactsPanel({
