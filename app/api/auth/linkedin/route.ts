@@ -18,10 +18,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     return new Response("LINKEDIN_PROVIDER_AUTH_URL is not set", { status: 500 });
   }
 
+  const returnTo = safeReturnTo(req.nextUrl.searchParams.get("return_to"));
   const state = createLinkedInOAuthState(
     {
       workspace_id: session.workspace.id,
       user_id: session.user_id,
+      ...(returnTo ? { return_to: returnTo } : {}),
     },
     sessionSecret,
   );
@@ -40,4 +42,11 @@ function appOrigin(req: NextRequest): string {
     headers: req.headers,
     requestUrl: req.url,
   });
+}
+
+function safeReturnTo(value: string | null): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/dashboard")) return null;
+  if (value.startsWith("//")) return null;
+  return value;
 }

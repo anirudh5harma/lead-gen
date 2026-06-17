@@ -69,10 +69,9 @@ export async function GET(req: NextRequest): Promise<Response> {
     await bus.close();
   }
 
-  const dest = new URL(
-    `/dashboard/prospecting?status=linkedin_connecting&channel_account_id=${channelAccountId}`,
-    appOrigin(req),
-  );
+  const dest = new URL(state.return_to ?? "/dashboard/integrations", appOrigin(req));
+  dest.searchParams.set("status", "linkedin_connecting");
+  dest.searchParams.set("channel_account_id", channelAccountId);
   return Response.redirect(dest.toString(), 302);
 }
 

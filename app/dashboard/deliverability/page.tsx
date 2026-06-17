@@ -235,7 +235,7 @@ export default async function DeliverabilityPage() {
         <HealthPanel title="Connected inboxes" icon="mail">
           <div className="mb-3">
             <Link
-              href="/api/auth/outlook"
+              href="/api/auth/outlook?return_to=/dashboard/deliverability"
               prefetch={false}
               className="btn-solid"
             >

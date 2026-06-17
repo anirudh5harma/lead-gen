@@ -233,6 +233,15 @@ export default async function SettingsPage() {
         mode={mode}
       />
 
+      <SettingsSectionNav
+        profile={profile}
+        outlookAccount={state.outlookAccount}
+        linkedInAccount={state.linkedInAccount}
+        rep={state.rep}
+        icp={state.icp}
+        mode={mode}
+      />
+
       <div id="profile">
         <SurfaceSection title="Profile">
           <ProfileSettingsForm profile={profile} />
@@ -249,22 +258,31 @@ export default async function SettingsPage() {
         </SurfaceSection>
       </div>
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-2">
-        <SurfaceSection title="Account">
-          <AccountPanel
-            identity={identity}
-            workspaceName={active.workspace.name}
-            workspaceSlug={active.workspace.slug}
-            role={active.role}
-          />
-        </SurfaceSection>
+      <section className="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <div id="account">
+          <SurfaceSection title="Account">
+            <AccountPanel
+              identity={identity}
+              workspaceName={active.workspace.name}
+              workspaceSlug={active.workspace.slug}
+              role={active.role}
+            />
+          </SurfaceSection>
+        </div>
 
-        <SurfaceSection title="Connected accounts">
-          <div className="grid gap-3">
-            <OutlookPanel account={state.outlookAccount} />
-            <LinkedInPanel account={state.linkedInAccount} />
+        <section className="grid gap-6 md:grid-cols-2">
+          <div id="email">
+            <SurfaceSection title="Email accounts">
+              <OutlookPanel account={state.outlookAccount} />
+            </SurfaceSection>
           </div>
-        </SurfaceSection>
+
+          <div id="linkedin">
+            <SurfaceSection title="LinkedIn accounts">
+              <LinkedInPanel account={state.linkedInAccount} />
+            </SurfaceSection>
+          </div>
+        </section>
       </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -354,7 +372,7 @@ function SettingsChecklist({
       detail: outlookAccount
         ? `${outlookMailbox(outlookAccount)} - ${statusLabel(outlookAccount.status)}`
         : "Connect Outlook for native email threads and reply sync.",
-      href: "/api/auth/outlook",
+      href: "#email",
       icon: "mail",
       ready: outlookAccount?.status === "connected",
     },
@@ -363,7 +381,7 @@ function SettingsChecklist({
       detail: linkedInAccount
         ? `${linkedInAccount.display_name} - ${statusLabel(linkedInAccount.status)}`
         : "Connect LinkedIn for connection requests and DMs.",
-      href: "/api/auth/linkedin",
+      href: "#linkedin",
       icon: "forum",
       ready: linkedInAccount?.status === "connected",
     },
@@ -423,6 +441,109 @@ function SettingsChecklist({
         ))}
       </div>
     </section>
+  );
+}
+
+function SettingsSectionNav({
+  profile,
+  outlookAccount,
+  linkedInAccount,
+  rep,
+  icp,
+  mode,
+}: {
+  profile: ProductCompanyProfile | null;
+  outlookAccount: SettingsOutlookAccount | null;
+  linkedInAccount: SettingsLinkedInAccount | null;
+  rep: SettingsRepRow | null;
+  icp: SettingsIcpRow | null;
+  mode: SettingsAutonomyMode;
+}) {
+  const sections = [
+    {
+      title: "Workspace",
+      detail: profile?.company_name ?? "Company profile",
+      href: "#profile",
+      icon: "add_business",
+      ready: Boolean(profile?.company_name && profileWebsite(profile)),
+    },
+    {
+      title: "Rep",
+      detail: rep && icp ? `${rep.name} + ${icp.name}` : "Audience and voice",
+      href: "#motion",
+      icon: "badge",
+      ready: Boolean(rep && icp),
+    },
+    {
+      title: "Account",
+      detail: "User and workspace",
+      href: "#account",
+      icon: "person",
+      ready: true,
+    },
+    {
+      title: "Email",
+      detail: outlookAccount ? outlookMailbox(outlookAccount) : "Connect Outlook",
+      href: "#email",
+      icon: "mail",
+      ready: outlookAccount?.status === "connected",
+    },
+    {
+      title: "LinkedIn",
+      detail: linkedInAccount ? linkedInAccount.display_name : "Connect account",
+      href: "#linkedin",
+      icon: "forum",
+      ready: linkedInAccount?.status === "connected",
+    },
+    {
+      title: "Autonomy",
+      detail: modeLabel(mode),
+      href: "#autonomy",
+      icon: "task_alt",
+      ready: mode !== "custom",
+    },
+    {
+      title: "Integrations",
+      detail: "MCP and tools",
+      href: "/dashboard/integrations",
+      icon: "account_tree",
+      ready: true,
+    },
+  ];
+  return (
+    <nav
+      aria-label="Settings sections"
+      className="section-note flex gap-2 overflow-x-auto p-2"
+    >
+      {sections.map((section) => (
+        <Link
+          key={section.title}
+          href={section.href}
+          prefetch={false}
+          className="group flex min-w-[154px] items-center gap-3 rounded-[8px] px-3 py-2 transition-colors hover:bg-[var(--color-ink-0)]"
+        >
+          <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+            <Icon name={section.icon} size={15} />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-1)]">
+              {section.title}
+              <span
+                className={
+                  "size-1.5 rounded-full " +
+                  (section.ready
+                    ? "bg-[var(--color-pos)]"
+                    : "bg-[var(--color-text-4)]")
+                }
+              />
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-[var(--color-text-3)]">
+              {section.detail}
+            </span>
+          </span>
+        </Link>
+      ))}
+    </nav>
   );
 }
 
@@ -670,7 +791,7 @@ function OutlookPanel({ account }: { account: SettingsOutlookAccount | null }) {
         </div>
       </div>
       <Link
-        href="/api/auth/outlook"
+        href="/api/auth/outlook?return_to=%2Fdashboard%2Fsettings%23email"
         prefetch={false}
         className="btn-solid w-fit"
       >
@@ -710,7 +831,7 @@ function LinkedInPanel({
         </div>
       </div>
       <Link
-        href="/api/auth/linkedin"
+        href="/api/auth/linkedin?return_to=%2Fdashboard%2Fsettings%23linkedin"
         prefetch={false}
         className="btn-solid w-fit"
       >

@@ -154,7 +154,7 @@ export default async function IntegrationsPage() {
             account={linkedInAccount}
             title="LinkedIn account"
             description="Connect LinkedIn for connection requests, DMs, and warm engagement before outreach."
-            href="/api/auth/linkedin"
+            href="/api/auth/linkedin?return_to=/dashboard/integrations"
             icon="forum"
             connectLabel="Connect LinkedIn"
             reconnectLabel="Reconnect LinkedIn"

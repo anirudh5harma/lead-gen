@@ -3,6 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 export interface LinkedInOAuthState {
   workspace_id: string;
   user_id: string;
+  return_to?: string;
   nonce: string;
   iat: number;
 }
