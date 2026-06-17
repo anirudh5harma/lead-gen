@@ -19,6 +19,7 @@ import {
   recordProductCampaignOutcome,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
+  runWorkspaceSignalIngestion,
   updateProductRecommendation,
   verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
@@ -431,6 +432,29 @@ export async function prepareQualifiedSignalsAction(formData: FormData) {
   );
   revalidateProductPaths();
   redirectWithToast(returnTo, "Preparing verified contacts and email drafts.");
+}
+
+export async function checkAgentSourcesAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/reps");
+  try {
+    await runWorkspaceSignalIngestion(
+      {
+        limit: numberValue(formData, "limit", 25),
+      },
+      session,
+      { wait: false },
+    );
+  } catch (error) {
+    console.error("Agent source check failed", error);
+    redirectWithToast(
+      returnTo,
+      "Could not start the source check yet. Refresh and try again.",
+      "error",
+    );
+  }
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Source check started.");
 }
 
 export async function generateMeetingPrepAction(formData: FormData) {

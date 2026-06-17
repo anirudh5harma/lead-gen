@@ -324,17 +324,23 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   const campaigns = source("app/dashboard/campaigns/page.tsx");
   const signals = source("app/dashboard/ingestion/page.tsx");
   const actions = source("app/dashboard/actions.ts");
+  const reps = source("app/dashboard/reps/page.tsx");
   const onboardingActions = source("app/onboarding/actions.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
   assert.doesNotMatch(actions, /runWorkspaceSignalAggregatorOnce/);
   assert.doesNotMatch(actions, /runSignalIngestionAction/);
-  assert.doesNotMatch(actions, /runWorkspaceSignalIngestion/);
   assert.doesNotMatch(campaigns, /runSignalIngestionAction/);
   assert.doesNotMatch(campaigns, /Run signal ingestion/);
   assert.doesNotMatch(signals, /runSignalIngestionAction/);
   assert.doesNotMatch(signals, /Ingest signals/);
   assert.doesNotMatch(signals, /Run ingestion/);
+  assert.match(actions, /checkAgentSourcesAction/);
+  assert.match(actions, /runWorkspaceSignalIngestion/);
+  assert.match(actions, /wait: false/);
+  assert.match(reps, /checkAgentSourcesAction/);
+  assert.match(reps, /Check sources/);
+  assert.match(reps, /name="limit" value="25"/);
   assert.match(signals, /kicker="Agent"/);
   assert.match(signals, /Quality signals ready for <em>outreach<\/em>/);
   assert.match(signals, /verified emails or LinkedIn profiles/);

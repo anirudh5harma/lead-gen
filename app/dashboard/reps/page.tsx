@@ -19,7 +19,10 @@ import {
 } from "@/core/product/qualified-signals.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
-import { dismissQualifiedSignalAction } from "../actions";
+import {
+  checkAgentSourcesAction,
+  dismissQualifiedSignalAction,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -780,10 +783,20 @@ function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
     <SurfaceSection
       title="Source strategy"
       action={
-        <Link href="/dashboard/settings#profile" className="btn-quiet-sm">
-          <Icon name="edit_note" size={14} />
-          Tune profile
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <form action={checkAgentSourcesAction}>
+            <input type="hidden" name="return_to" value="/dashboard/reps" />
+            <input type="hidden" name="limit" value="25" />
+            <button type="submit" className="btn-solid-sm">
+              <Icon name="sync_alt" size={14} />
+              Check sources
+            </button>
+          </form>
+          <Link href="/dashboard/settings#profile" className="btn-quiet-sm">
+            <Icon name="edit_note" size={14} />
+            Tune profile
+          </Link>
+        </div>
       }
     >
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
