@@ -616,7 +616,9 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /href: "#contact-quality"/);
   assert.match(settings, /href: "#blocklist"/);
   assert.match(settings, /Profile and <em>integrations<\/em>/);
-  assert.match(settings, /integrationCount\(state\)/);
+  assert.match(settings, /Channels ready/);
+  assert.match(settings, /channelReadinessCount\(state\)/);
+  assert.match(settings, /return `\$\{ready\}\/2 ready`/);
   assert.match(settings, /Email integration/);
   assert.match(settings, /LinkedIn integration/);
   assert.match(settings, /linkedInAccounts: linkedIn\.rows/);

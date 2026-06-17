@@ -333,7 +333,10 @@ export default async function SettingsPage() {
             />
             <HeroStat label="Email" value={outlookLabel} />
             <HeroStat label="LinkedIn" value={linkedInLabel} />
-            <HeroStat label="Integrations" value={integrationCount(state)} />
+            <HeroStat
+              label="Channels ready"
+              value={channelReadinessCount(state)}
+            />
           </div>
         }
       />
@@ -714,12 +717,11 @@ function SettingsSectionNav({
   );
 }
 
-function integrationCount(state: SettingsState): string {
-  const count =
+function channelReadinessCount(state: SettingsState): string {
+  const ready =
     (state.outlookAccount?.status === "connected" ? 1 : 0) +
-    (state.linkedInAccount?.status === "connected" ? 1 : 0) +
-    1;
-  return `${count}/3 ready`;
+    (state.linkedInAccount?.status === "connected" ? 1 : 0);
+  return `${ready}/2 ready`;
 }
 
 function StatusPill({ ready }: { ready: boolean }) {
