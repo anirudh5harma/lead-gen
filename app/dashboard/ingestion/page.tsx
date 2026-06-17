@@ -24,9 +24,9 @@ export default async function SignalsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Qualified signals"
+        kicker="Agent"
         title="No workspace selected."
-        description="Create a profile first. Qualified signals, verified contacts, and email drafts will appear here."
+        description="Create a profile first. Quality signals, verified contacts, and judged outreach drafts will appear here."
       />
     );
   }
@@ -40,9 +40,9 @@ export default async function SignalsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Qualified signals"
-        title={<>Signals worth <em>emailing now</em>.</>}
-        description="The useful list: qualified timing signals, the top verified contacts at that company, and the personalized email draft tied to the evidence."
+        kicker="Agent"
+        title={<>Quality signals ready for <em>outreach</em>.</>}
+        description="Qualified timing signals with verified contacts, LinkedIn profiles, and judged email drafts tied to the evidence."
         meta={
           <div className="grid gap-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -50,7 +50,7 @@ export default async function SignalsPage() {
               <HeroStat label="With contacts" value={workbench.stats.with_verified_contacts} />
               <HeroStat label="Drafted" value={workbench.stats.with_email_draft} />
               <HeroStat label="Review" value={workbench.stats.ready_for_review} />
-              <HeroStat label="Inbox" value={emailReadiness.status_label} />
+              <HeroStat label="Outlook" value={emailReadiness.status_label} />
             </div>
             <div className="flex flex-wrap gap-2">
               <form action={prepareQualifiedSignalsAction}>
@@ -61,7 +61,7 @@ export default async function SignalsPage() {
                   icon="send"
                   pendingLabel="Preparing"
                 >
-                  Prepare contacts + drafts
+                  Prepare outreach
                 </PendingSubmitButton>
               </form>
             </div>
@@ -71,7 +71,7 @@ export default async function SignalsPage() {
 
       {!emailReadiness.ready ? <EmailReadinessBanner readiness={emailReadiness} /> : null}
 
-      <SurfaceSection title="Qualified list">
+      <SurfaceSection title="Quality signals">
         {workbench.signals.length === 0 ? (
           <EmptyState
             title="No qualified signals yet"
@@ -231,7 +231,7 @@ function ContactPanel({
         <p className="mt-3 rounded-md border border-[var(--color-line-1)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
           {deferReason
             ? `Contact resolution paused: ${deferReason.replace(/_/g, " ")}.`
-            : "No verified email contacts yet. Prepare contacts to run the Exa/Hunter/ZeroBounce waterfall."}
+            : "No verified contacts yet. Prepare outreach to resolve emails and LinkedIn profiles."}
         </p>
       ) : (
         <ol className="mt-3 grid gap-2">
@@ -269,6 +269,16 @@ function ContactPanel({
                     {contact.emails[0]}
                   </span>
                 ) : null}
+                {contact.linkedin_url ? (
+                  <a
+                    href={contact.linkedin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)] transition-colors hover:text-[var(--color-text-1)]"
+                  >
+                    LinkedIn profile
+                  </a>
+                ) : null}
                 <span className="rounded-full bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
                   {contact.verification.email_verified
                     ? contact.verification.email_status ?? "verified"
@@ -289,7 +299,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
     <div className="border-t border-[var(--color-line-1)] pt-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-[var(--color-text-1)]">
-          Personalized email
+          Judged email draft
         </h3>
         {draft ? (
           <span className="text-xs text-[var(--color-text-3)]">
@@ -299,7 +309,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
       </div>
       {!draft ? (
         <p className="mt-3 rounded-md border border-[var(--color-line-1)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
-          No email draft yet. Once contacts resolve, the signal-to-email outreach run writes and judges the draft here.
+          No email draft yet. Once contacts resolve, the agent writes and judges the outreach draft here.
         </p>
       ) : (
         <div className="mt-3">
@@ -381,7 +391,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                 className="btn-quiet-sm"
               >
                 <Icon name="forum" size={14} />
-                Open conversation
+                Open sent outreach
               </Link>
             ) : null}
           </div>
