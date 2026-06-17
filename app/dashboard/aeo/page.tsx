@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function LegacyAeoPage() {
-  redirect("/dashboard/plays");
+  redirect("/dashboard/agent");
 }

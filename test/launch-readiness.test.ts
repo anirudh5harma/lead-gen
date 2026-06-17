@@ -37,10 +37,48 @@ test("launch readiness: blocks launch until setup and one channel are ready", ()
   assert.ok(readiness.blockers.includes("signal_sources"));
   assert.ok(readiness.blockers.includes("outreach_channel"));
   assert.ok(readiness.warnings.includes("linkedin"));
+  assert.equal(readiness.checks.find((check) => check.id === "rep")?.label, "Agent");
+  assert.equal(
+    readiness.checks.find((check) => check.id === "plays")?.label,
+    "Outreach sequence",
+  );
+  assert.equal(
+    readiness.checks.find((check) => check.id === "signal_sources")?.action?.surface,
+    "/dashboard/agent#sources",
+  );
   assert.equal(
     readiness.checks.find((check) => check.id === "linkedin")?.status,
     "needs_attention",
   );
+});
+
+test("launch readiness: sequence setup points users back to Agent", () => {
+  const readiness = buildWorkspaceLaunchReadiness(
+    randomUUID(),
+    {
+      workspace_profiles: 1,
+      enabled_icps: 1,
+      active_reps: 1,
+      enabled_sources: 1,
+      active_plays: 0,
+      connected_outlook: 1,
+      active_outlook_subscriptions: 1,
+      needs_reauth_outlook: 0,
+      errored_outlook: 0,
+      connected_linkedin: 0,
+      rate_limited_linkedin: 0,
+      needs_reauth_linkedin: 0,
+      suspended_linkedin: 0,
+      disconnected_linkedin: 0,
+    },
+    { now: new Date("2026-06-15T10:00:00.000Z") },
+  );
+
+  const sequence = readiness.checks.find((check) => check.id === "plays");
+  assert.equal(sequence?.label, "Outreach sequence");
+  assert.equal(sequence?.detail, "No active outreach sequence is available for matched Signals.");
+  assert.equal(sequence?.action?.label, "Configure sequence");
+  assert.equal(sequence?.action?.surface, "/dashboard/agent#outreach");
 });
 
 test("launch readiness: requires both channels when a Play needs both", () => {

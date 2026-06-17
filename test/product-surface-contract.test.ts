@@ -143,14 +143,14 @@ test("canonical Prospecting and Signals routes preserve old implementations", ()
   assert.match(actions, /revalidatePath\("\/dashboard\/signals"\)/);
 });
 
-test("retired product surfaces redirect to Plays", () => {
+test("retired product surfaces redirect to Agent", () => {
   assert.match(
     source("app/dashboard/content/page.tsx"),
-    /redirect\("\/dashboard\/plays"\)/,
+    /redirect\("\/dashboard\/agent"\)/,
   );
   assert.match(
     source("app/dashboard/aeo/page.tsx"),
-    /redirect\("\/dashboard\/plays"\)/,
+    /redirect\("\/dashboard\/agent"\)/,
   );
 });
 
@@ -224,6 +224,7 @@ test("Agent learning surface presents message optimization from reply evidence",
   const campaigns = source("app/dashboard/campaigns/page.tsx");
   const plays = source("app/dashboard/plays/page.tsx");
   const actions = source("app/dashboard/actions.ts");
+  const readiness = source("core/product/launch-readiness.ts");
 
   assert.match(plays, /from "\.\.\/campaigns\/page"/);
   assert.match(actions, /optimizeProductPlaySkills/);
@@ -235,6 +236,13 @@ test("Agent learning surface presents message optimization from reply evidence",
   assert.match(campaigns, /Outreach ideas in flight/);
   assert.match(campaigns, /play\.skill\.optimization\.recommended/);
   assert.match(campaigns, /Optimize skills/);
+  assert.match(readiness, /label: "Agent"/);
+  assert.match(readiness, /label: "Outreach sequence"/);
+  assert.match(readiness, /"\/dashboard\/agent#sources"/);
+  assert.match(readiness, /"\/dashboard\/agent#outreach"/);
+  assert.doesNotMatch(readiness, /label: "Rep"/);
+  assert.doesNotMatch(readiness, /label: "Plays"/);
+  assert.doesNotMatch(readiness, /"\/dashboard\/campaigns"/);
   assert.doesNotMatch(campaigns, /kicker="Plays"/);
   assert.doesNotMatch(campaigns, /Play Skill optimizer/);
   assert.doesNotMatch(campaigns, /No Play/);
