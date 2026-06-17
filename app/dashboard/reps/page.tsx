@@ -27,6 +27,7 @@ import {
   dismissQualifiedSignalAction,
   optimizeCampaignStrategyAction,
   optimizePlaySkillsAction,
+  prepareQualifiedSignalsAction,
   runAgentSourceNowAction,
 } from "../actions";
 
@@ -124,6 +125,9 @@ interface AgentContactRow {
   linkedin_url: string | null;
   company_name: string | null;
   company_domain: string | null;
+  latest_signal_title: string | null;
+  latest_signal_kind: string | null;
+  last_signal_at: Date | null;
   fresh_signals: string;
   conversations: string;
   updated_at: Date;
@@ -545,6 +549,9 @@ async function loadAgentContactSummary(
               p.linkedin_url,
               co.name as company_name,
               co.domain::text as company_domain,
+              latest_signal.title as latest_signal_title,
+              latest_signal.kind as latest_signal_kind,
+              latest_signal.ingested_at as last_signal_at,
               p.updated_at,
               (select count(*)::text
                  from signals s
@@ -561,16 +568,24 @@ async function loadAgentContactSummary(
                   and c.counterparty_person_id = p.id) as conversations
          from graph_persons p
          left join graph_companies co on co.id = p.company_id
+         left join lateral (
+           select s.title,
+                  s.kind::text as kind,
+                  coalesce(s.ingested_at, s.freshness_at) as ingested_at
+             from signals s
+            where s.workspace_id = $1
+              and s.status in ('ingested','matched','in_play')
+              and (
+                s.related_person_id = p.id
+                or (p.company_id is not null and s.related_company_id = p.company_id)
+              )
+            order by coalesce(s.ingested_at, s.freshness_at) desc
+            limit 1
+         ) latest_signal on true
         where p.workspace_id = $1
           and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
         order by coalesce(
-                   (select max(s.ingested_at)
-                      from signals s
-                     where s.workspace_id = $1
-                       and (
-                         s.related_person_id = p.id
-                         or (p.company_id is not null and s.related_company_id = p.company_id)
-                       )),
+                   latest_signal.ingested_at,
                    (select max(c.last_activity_at)
                       from conversations c
                      where c.workspace_id = $1
@@ -1261,10 +1276,24 @@ function AgentOpportunityPanel({
       <SurfaceSection
         title="Qualified signals"
         action={
-          <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
-            <Icon name="arrow_forward" size={14} />
-            View contacts
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <form action={prepareQualifiedSignalsAction}>
+              <input type="hidden" name="limit" value="25" />
+              <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+              <PendingSubmitButton
+                className="btn-solid-sm"
+                icon="send"
+                iconSize={14}
+                pendingLabel="Preparing"
+              >
+                Prepare contacts + drafts
+              </PendingSubmitButton>
+            </form>
+            <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
+              <Icon name="arrow_forward" size={14} />
+              View contacts
+            </Link>
+          </div>
         }
       >
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -1492,7 +1521,7 @@ function AgentContactsPanel({
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              Signal-ready contacts
+              Contact workbench
             </p>
             <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
               <MiniStat label="Reachable" value={contacts.reachable} />
@@ -1501,8 +1530,8 @@ function AgentContactsPanel({
               <MiniStat label="Signals 14d" value={contacts.fresh_signals} />
             </div>
             <p className="text-xs leading-5 text-[var(--color-text-3)]">
-              The agent uses these verified emails and LinkedIn profiles when a
-              qualified signal is ready to become outreach.
+              Signal-ready contacts show why now, verified emails, LinkedIn
+              profiles, and outreach history before the agent sends.
             </p>
           </aside>
 
@@ -1533,6 +1562,10 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
   const company = contact.company_name ?? contact.company_domain ?? "Unknown company";
   const signals = Number(contact.fresh_signals);
   const conversations = Number(contact.conversations);
+  const latestSignalKind = contact.latest_signal_kind?.replace(/_/g, " ");
+  const latestSignalAt = contact.last_signal_at
+    ? freshWhen(contact.last_signal_at)
+    : freshWhen(contact.updated_at);
   return (
     <Link
       href={`/dashboard/prospects/${contact.id}`}
@@ -1554,6 +1587,11 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
           <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
             {contact.title ?? "Role unknown"}
           </span>
+          <span className="mt-2 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+            <span className="font-medium text-[var(--color-text-2)]">Why now:</span>{" "}
+            {contact.latest_signal_title ??
+              "Verified contact ready for the next qualified signal."}
+          </span>
           <span className="mt-2 flex flex-wrap gap-2">
             <ContactPill ready={contact.emails.length > 0} icon="mail">
               {contact.emails[0] ?? "No email"}
@@ -1565,11 +1603,19 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
         </span>
       </span>
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        {latestSignalKind ? (
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            {latestSignalKind}
+          </span>
+        ) : null}
         {signals > 0 ? (
           <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs text-[var(--color-accent)]">
             {signals} signal{signals === 1 ? "" : "s"}
           </span>
         ) : null}
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {latestSignalAt}
+        </span>
         {conversations > 0 ? (
           <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
             {conversations} conversation{conversations === 1 ? "" : "s"}

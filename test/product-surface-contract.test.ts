@@ -305,7 +305,8 @@ test("Verified contacts open graph-backed profile pages with channel readiness",
   assert.match(prospects, /redirect\("\/dashboard\/agent#verified-contacts"\)/);
   assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
   assert.match(reps, /Verified contacts/);
-  assert.match(reps, /Signal-ready contacts/);
+  assert.match(reps, /Contact workbench/);
+  assert.match(reps, /Signal-ready contacts show why now/);
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(profile, /Verified contact/);
   assert.match(profile, /Timing evidence, channel handles, outreach, replies, and meetings/);
@@ -382,6 +383,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /name="source_id" value=\{source\.id\}/);
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /The agent ranks qualified signals/);
+  assert.match(reps, /prepareQualifiedSignalsAction/);
+  assert.match(reps, /Prepare contacts \+ drafts/);
   assert.match(reps, /Verified email/);
   assert.match(reps, /Draft ready/);
   assert.match(reps, /opportunityHref\(signal, contact\)/);
@@ -390,8 +393,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /dismissQualifiedSignalAction/);
   assert.match(reps, /Skip opportunity/);
   assert.match(reps, /name="signal_id" value=\{signal\.id\}/);
-  assert.match(reps, /Signal-ready contacts/);
-  assert.match(reps, /verified emails and LinkedIn profiles/);
+  assert.match(reps, /Contact workbench/);
+  assert.match(reps, /Signal-ready contacts show why now/);
+  assert.match(reps, /latest_signal_title/);
+  assert.match(reps, /left join lateral/);
+  assert.match(reps, /Why now:/);
+  assert.match(reps, /verified emails, LinkedIn\s+profiles/);
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(reps, /id="verified-contacts" className="scroll-mt-28"/);
   assert.match(reps, /id="outreach" className="scroll-mt-28"/);
@@ -522,7 +529,7 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(productApp, /workspace-source-manual/);
   assert.match(signals, /redirect\("\/dashboard\/agent#opportunities"\)/);
   assert.match(reps, /Qualified signals/);
-  assert.match(reps, /verified emails and LinkedIn profiles/);
+  assert.match(reps, /verified emails, LinkedIn\s+profiles/);
   assert.match(reps, /LinkedIn profile/);
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /email or\s+LinkedIn drafts/);
