@@ -767,7 +767,7 @@ export default async function RepsPage() {
 
   const state = await loadSafeRepsState(active.workspace.id);
   const visibleReps = state.reps.filter(isVisibleProductAgent);
-  const activeAgents = visibleReps.filter((rep) => rep.status === "active").length;
+  const primaryAgent = visibleReps[0] ?? null;
   const connectedChannels = state.channels.filter(
     (channel) => channel.status === "connected",
   ).length;
@@ -789,7 +789,7 @@ export default async function RepsPage() {
         description="Live work, sent emails and DMs, verified contacts, and reply learning in one focused workspace."
         meta={
           <div className="flex flex-wrap gap-2">
-            <HeroStat label="Active agents" value={activeAgents} />
+            <HeroStat label="Outreach paths" value={sequence.length} />
             <HeroStat label="Channels" value={connectedChannels} />
             <HeroStat
               label="Launch"
@@ -816,15 +816,15 @@ export default async function RepsPage() {
       <AgentContactsPanel contacts={state.contacts} />
 
       <SurfaceSection
-        title="Agent"
+        title="Agent setup"
         action={
           <Link href="/dashboard/settings#motion" className="btn-solid-sm">
             <Icon name="edit_note" size={14} />
-            Tune agent
+            Tune in Profile
           </Link>
         }
       >
-        {visibleReps.length === 0 ? (
+        {!primaryAgent ? (
           <EmptyState
             title="No agent configured yet."
             hint="Start by defining the workspace profile, audience, voice, and approval mode."
@@ -835,11 +835,11 @@ export default async function RepsPage() {
             }}
           />
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {visibleReps.map((rep) => (
-              <RepCard key={rep.id} rep={rep} coverage={coverage} />
-            ))}
-          </div>
+          <AgentSetupSummary
+            rep={primaryAgent}
+            reps={visibleReps}
+            coverage={coverage}
+          />
         )}
       </SurfaceSection>
     </div>
@@ -2228,70 +2228,90 @@ function sentDraftHref(conversationId: string, messageId: string): string {
   return `/dashboard/conversations/${conversationId}#message-${messageId}`;
 }
 
-function RepCard({
+function AgentSetupSummary({
   rep,
+  reps,
   coverage,
 }: {
   rep: RepRow;
+  reps: RepRow[];
   coverage: ChannelCoverage;
 }) {
   const emailPolicy = rep.autonomy?.channels?.email;
   const linkedInPolicy = firstChannelPolicy(rep, ["linkedin_dm", "linkedin"]);
+  const openConversations = sumRepMetric(reps, "open_conversations");
+  const sent7d = sumRepMetric(reps, "sent_7d");
+  const replies7d = sumRepMetric(reps, "outcomes_7d");
   return (
-    <article className="group grid gap-5 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50">
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-          <Icon name={repIcon(rep)} size={18} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/dashboard/agent/${rep.id}`}
-              className="text-[18px] font-semibold text-[var(--color-text-1)] transition-colors hover:text-[var(--color-accent)]"
-            >
-              {agentDisplayName(rep.role)}
-            </Link>
-            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
-              {rep.role.replace(/_/g, " ")}
-            </span>
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+      <article className="grid gap-5 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+            <Icon name="auto_awesome" size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[18px] font-semibold text-[var(--color-text-1)]">
+                Outbound agent
+              </h3>
+              <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+                {statusLabel(rep.status)}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-2)]">
+              {rep.persona.story ??
+                "Uses your Profile, connected accounts, and approval rules to turn qualified signals into email and LinkedIn outreach."}
+            </p>
           </div>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-text-2)]">
-            {rep.persona.story ??
-              "Configure this agent with a clear voice and launch guardrails."}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <MiniStat label="Open" value={openConversations} />
+          <MiniStat label="Sent 7d" value={sent7d} />
+          <MiniStat label="Replies 7d" value={replies7d} />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-line-1)] pt-3 text-xs text-[var(--color-text-3)]">
+          <span>Voice, accounts, and limits stay in Profile.</span>
+          <Link href="/dashboard/settings#motion" className="btn-quiet-sm">
+            <Icon name="arrow_forward" size={14} />
+            Edit voice
+          </Link>
+        </div>
+      </article>
+
+      <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--color-text-1)]">
+            Channels and limits
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            Outreach only moves when the destination channel is connected,
+            capped, and allowed by the current approval gate.
           </p>
         </div>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <MiniStat label="Open" value={Number(rep.open_conversations)} />
-        <MiniStat label="Sent 7d" value={Number(rep.sent_7d)} />
-        <MiniStat label="Replies 7d" value={Number(rep.outcomes_7d)} />
-      </div>
-      <div className="grid gap-2 border-t border-[var(--color-line-1)] pt-3 sm:grid-cols-2">
-        <RepChannelPill
-          title="Email"
-          icon="mail"
-          connection={coverage.email}
-          policy={emailPolicy}
-        />
-        <RepChannelPill
-          title="LinkedIn"
-          icon="linkedin"
-          connection={coverage.linkedIn}
-          policy={linkedInPolicy}
-        />
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--color-text-3)]">
-        <span>
-          {statusLabel(rep.status)} / Profile, accounts, and limits stay in
-          Profile
-        </span>
-        <Link href={`/dashboard/agent/${rep.id}`} className="btn-quiet-sm">
-          <Icon name="arrow_forward" size={14} />
-          Open agent
-        </Link>
-      </div>
-    </article>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+          <RepChannelPill
+            title="Email"
+            icon="mail"
+            connection={coverage.email}
+            policy={emailPolicy}
+          />
+          <RepChannelPill
+            title="LinkedIn"
+            icon="linkedin"
+            connection={coverage.linkedIn}
+            policy={linkedInPolicy}
+          />
+        </div>
+      </article>
+    </div>
   );
+}
+
+function sumRepMetric(
+  reps: RepRow[],
+  key: "open_conversations" | "sent_7d" | "outcomes_7d",
+): number {
+  return reps.reduce((sum, rep) => sum + Number(rep[key]), 0);
 }
 
 function RepChannelPill({
@@ -2487,10 +2507,6 @@ function fallbackSequenceFromReps(reps: RepRow[]): AgentSequenceStep[] {
     });
   }
   return sequence;
-}
-
-function repIcon(_rep: RepRow): string {
-  return "badge";
 }
 
 function agentDisplayName(role: string): string {
