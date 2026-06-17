@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
@@ -19,6 +19,7 @@ interface FlowItem {
   label: string;
   detail: string;
   icon: string;
+  metric: keyof ProductFlowMetrics;
   matches: string[];
 }
 
@@ -26,6 +27,27 @@ export interface ShellWorkspace {
   id: string;
   name: string;
 }
+
+export type ProductFlowTone = "ready" | "waiting" | "neutral";
+
+export interface ProductFlowMetric {
+  value: string;
+  tone: ProductFlowTone;
+}
+
+export interface ProductFlowMetrics {
+  profile: ProductFlowMetric;
+  sources: ProductFlowMetric;
+  signals: ProductFlowMetric;
+  outreach: ProductFlowMetric;
+}
+
+const DEFAULT_FLOW_METRICS: ProductFlowMetrics = {
+  profile: { value: "Connect", tone: "waiting" },
+  sources: { value: "Add sources", tone: "waiting" },
+  signals: { value: "0 qualified", tone: "neutral" },
+  outreach: { value: "0 sent 7d", tone: "neutral" },
+};
 
 const NAV: NavItem[] = [
   {
@@ -67,6 +89,7 @@ const FLOW: FlowItem[] = [
     label: "Profile",
     detail: "ICP + integrations",
     icon: "person_search",
+    metric: "profile",
     matches: [
       "/dashboard/settings",
       "/dashboard/integrations",
@@ -80,6 +103,7 @@ const FLOW: FlowItem[] = [
     label: "Sources",
     detail: "Signal strategy",
     icon: "sensors",
+    metric: "sources",
     matches: ["/dashboard/reps"],
   },
   {
@@ -87,6 +111,7 @@ const FLOW: FlowItem[] = [
     label: "Signals",
     detail: "Qualified contacts",
     icon: "fact_check",
+    metric: "signals",
     matches: ["/dashboard/signals", "/dashboard/ingestion", "/dashboard/prospects"],
   },
   {
@@ -94,6 +119,7 @@ const FLOW: FlowItem[] = [
     label: "Outreach",
     detail: "Emails + DMs",
     icon: "send",
+    metric: "outreach",
     matches: [
       "/dashboard/conversations",
       "/dashboard/review",
@@ -112,19 +138,44 @@ function isActivePath(pathname: string, href: string, matches?: string[]): boole
   );
 }
 
+function hrefHash(href: string): string {
+  const hashIndex = href.indexOf("#");
+  return hashIndex >= 0 ? href.slice(hashIndex) : "";
+}
+
+function hrefPath(href: string): string {
+  const hashIndex = href.indexOf("#");
+  return hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+}
+
+function isActiveFlowItem(pathname: string, hash: string, item: FlowItem): boolean {
+  const itemPath = hrefPath(item.href);
+  const itemHash = hrefHash(item.href);
+  if (pathname === itemPath && itemHash) {
+    return hash === itemHash || (itemHash === "#sources" && hash === "");
+  }
+  if (pathname === itemPath && hash) {
+    return itemHash === hash;
+  }
+  return isActivePath(pathname, item.href, item.matches);
+}
+
 export function DashboardShell({
   children,
   workspaces = [],
   activeWorkspaceId,
+  flowMetrics = DEFAULT_FLOW_METRICS,
 }: {
   children: ReactNode;
   workspaces?: ShellWorkspace[];
   activeWorkspaceId?: string;
+  flowMetrics?: ProductFlowMetrics;
 }) {
   const pathname = usePathname() ?? "/dashboard";
+  const [hash, setHash] = useState("");
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const routePending = pendingHref
-    ? !isActivePath(pathname, pendingHref)
+    ? !isActivePath(pathname, hrefPath(pendingHref))
     : false;
   function handleNavClick(
     event: MouseEvent<HTMLAnchorElement>,
@@ -138,12 +189,22 @@ export function DashboardShell({
       event.shiftKey ||
       event.altKey ||
       event.button !== 0 ||
+      hrefPath(href) === pathname ||
       isActivePath(pathname, href, matches)
     ) {
       return;
     }
     setPendingHref(href);
   }
+
+  useEffect(() => {
+    function syncHash() {
+      setHash(window.location.hash);
+    }
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, [pathname]);
 
   return (
     <div className="canvas-bg relative isolate min-h-[100dvh] overflow-x-clip text-[var(--color-text-1)]">
@@ -254,7 +315,12 @@ export function DashboardShell({
       </nav>
 
       <main className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] overflow-x-clip px-6 pb-16 pt-[108px] md:px-10 md:pt-[80px] lg:px-16">
-        <ProductFlowRail pathname={pathname} onNavClick={handleNavClick} />
+        <ProductFlowRail
+          pathname={pathname}
+          hash={hash}
+          flowMetrics={flowMetrics}
+          onNavClick={handleNavClick}
+        />
         {children}
       </main>
     </div>
@@ -263,9 +329,13 @@ export function DashboardShell({
 
 function ProductFlowRail({
   pathname,
+  hash,
+  flowMetrics,
   onNavClick,
 }: {
   pathname: string;
+  hash: string;
+  flowMetrics: ProductFlowMetrics;
   onNavClick: (
     event: MouseEvent<HTMLAnchorElement>,
     href: string,
@@ -279,7 +349,8 @@ function ProductFlowRail({
     >
       <div className="grid min-w-[720px] grid-cols-4 gap-1">
         {FLOW.map((item) => {
-          const active = isActivePath(pathname, item.href, item.matches);
+          const active = isActiveFlowItem(pathname, hash, item);
+          const metric = flowMetrics[item.metric];
           return (
             <Link
               key={item.label}
@@ -287,7 +358,7 @@ function ProductFlowRail({
               onClick={(event) => onNavClick(event, item.href, item.matches)}
               aria-current={active ? "step" : undefined}
               className={
-                "grid grid-cols-[32px_1fr] items-center gap-2 rounded-[8px] px-3 py-2 transition-colors " +
+                "grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2 rounded-[8px] px-3 py-2 transition-colors " +
                 (active
                   ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
                   : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
@@ -310,6 +381,20 @@ function ProductFlowRail({
                 <span className="block truncate text-[11px] text-[var(--color-text-3)]">
                   {item.detail}
                 </span>
+              </span>
+              <span
+                className={
+                  "shrink-0 rounded-full border px-2 py-0.5 text-[10.5px] font-medium " +
+                  (active
+                    ? "border-[color:var(--color-accent)]/20 bg-[var(--color-ink-0)] text-[var(--color-accent)]"
+                    : metric.tone === "ready"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : metric.tone === "waiting"
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : "border-[var(--color-line-1)] bg-[var(--color-ink-1)] text-[var(--color-text-3)]")
+                }
+              >
+                {metric.value}
               </span>
             </Link>
           );

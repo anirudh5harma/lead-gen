@@ -44,6 +44,44 @@ test("dashboard navigation uses active product surface routes", () => {
   assert.match(shell, /detail: "Signal strategy"/);
   assert.match(shell, /detail: "Qualified contacts"/);
   assert.match(shell, /detail: "Emails \+ DMs"/);
+  assert.match(shell, /metric: "profile"/);
+  assert.match(shell, /metric: "sources"/);
+  assert.match(shell, /metric: "signals"/);
+  assert.match(shell, /metric: "outreach"/);
+  assert.match(shell, /isActiveFlowItem/);
+  assert.match(shell, /window\.location\.hash/);
+  assert.match(shell, /hashchange/);
+  assert.match(shell, /hrefPath\(href\) === pathname/);
+});
+
+test("dashboard product flow rail renders live status metrics safely", () => {
+  const shell = source("components/dashboard/Shell.tsx");
+  const layout = source("app/dashboard/layout.tsx");
+
+  assert.match(shell, /export interface ProductFlowMetrics/);
+  assert.match(shell, /DEFAULT_FLOW_METRICS/);
+  assert.match(shell, /flowMetrics = DEFAULT_FLOW_METRICS/);
+  assert.match(shell, /flowMetrics\[item\.metric\]/);
+  assert.match(shell, /metric\.tone === "ready"/);
+  assert.match(shell, /metric\.tone === "waiting"/);
+  assert.match(shell, /grid-cols-\[32px_minmax\(0,1fr\)_auto\]/);
+
+  assert.match(layout, /loadProductFlowMetrics/);
+  assert.match(layout, /try \{/);
+  assert.match(layout, /catch \(err\)/);
+  assert.match(layout, /return EMPTY_FLOW_METRICS/);
+  assert.match(layout, /from graph_companies gc/);
+  assert.match(layout, /properties->>'profile_role' = 'workspace_company'/);
+  assert.match(layout, /from channel_accounts ca/);
+  assert.match(layout, /'oauth_outlook'/);
+  assert.match(layout, /'linkedin_session'/);
+  assert.match(layout, /from workspace_source_configs wsc/);
+  assert.match(layout, /join graph_sources gs/);
+  assert.match(layout, /from signals s/);
+  assert.match(layout, /s\.status in \('matched','in_play'\)/);
+  assert.match(layout, /from messages m/);
+  assert.match(layout, /'linkedin_dm'/);
+  assert.match(layout, /outreach_sent_7d/);
 });
 
 test("canonical Prospecting and Signals routes preserve old implementations", () => {
