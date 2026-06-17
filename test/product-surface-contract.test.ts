@@ -221,22 +221,31 @@ test("Outlook connection surfaces collapse duplicate rows by mailbox identity", 
   assert.match(brief, /has_blocked_status and not has_connected/);
 });
 
-test("Agent learning surface presents message optimization from reply evidence", () => {
+test("Agent learning surface owns message optimization from reply evidence", () => {
   const campaigns = source("app/dashboard/campaigns/page.tsx");
   const plays = source("app/dashboard/plays/page.tsx");
+  const campaignsLoading = source("app/dashboard/campaigns/loading.tsx");
+  const playsLoading = source("app/dashboard/plays/loading.tsx");
+  const nextConfig = source("next.config.ts");
+  const reps = source("app/dashboard/reps/page.tsx");
   const actions = source("app/dashboard/actions.ts");
   const readiness = source("core/product/launch-readiness.ts");
 
-  assert.match(plays, /from "\.\.\/campaigns\/page"/);
+  assert.match(nextConfig, /source: "\/dashboard\/campaigns"/);
+  assert.match(nextConfig, /source: "\/dashboard\/plays"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent#learning"/);
+  assert.match(campaigns, /redirect\("\/dashboard\/agent#learning"\)/);
+  assert.match(plays, /redirect\("\/dashboard\/agent#learning"\)/);
+  assert.match(campaignsLoading, /surface="reps"/);
+  assert.match(playsLoading, /surface="reps"/);
   assert.match(actions, /optimizeProductPlaySkills/);
-  assert.match(campaigns, /optimizePlaySkillsAction/);
-  assert.match(campaigns, /kicker="Agent"/);
-  assert.match(campaigns, /Learn from outreach/);
-  assert.match(campaigns, /Message optimizer/);
-  assert.match(campaigns, /Qualified signals ready for outreach/);
-  assert.match(campaigns, /Outreach ideas in flight/);
-  assert.match(campaigns, /play\.skill\.optimization\.recommended/);
-  assert.match(campaigns, /Optimize skills/);
+  assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/agent#learning"\)/);
+  assert.match(reps, /optimizePlaySkillsAction/);
+  assert.match(reps, /optimizeCampaignStrategyAction/);
+  assert.match(reps, /title="Learning"/);
+  assert.match(reps, /Message recommendation/);
+  assert.match(reps, /play\.skill\.optimization\.recommended/);
+  assert.match(reps, /Optimize messages/);
   assert.match(readiness, /label: "Agent"/);
   assert.match(readiness, /label: "Outreach sequence"/);
   assert.match(readiness, /"\/dashboard\/agent#sources"/);
@@ -245,6 +254,8 @@ test("Agent learning surface presents message optimization from reply evidence",
   assert.doesNotMatch(readiness, /label: "Plays"/);
   assert.doesNotMatch(readiness, /"\/dashboard\/campaigns"/);
   assert.doesNotMatch(campaigns, /kicker="Plays"/);
+  assert.doesNotMatch(campaigns, /Learn from outreach/);
+  assert.doesNotMatch(campaigns, /Message optimizer/);
   assert.doesNotMatch(campaigns, /Play Skill optimizer/);
   assert.doesNotMatch(campaigns, /No Play/);
   assert.doesNotMatch(campaigns, /worth a Play/);
