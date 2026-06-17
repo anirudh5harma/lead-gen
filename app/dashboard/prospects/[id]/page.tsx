@@ -274,7 +274,7 @@ export default async function ProspectProfilePage({
           <Icon name="arrow_back" size={14} />
           Back to contacts
         </Link>
-        <Link href="/dashboard/settings#channels" className="btn-solid-sm">
+        <Link href="/dashboard/profile#channels" className="btn-solid-sm">
           <Icon name="account_tree" size={14} />
           Connect accounts
         </Link>
@@ -331,7 +331,7 @@ export default async function ProspectProfilePage({
                 title="No Signals on this profile yet."
                 hint="When a source finds timing evidence for this person or company, it will collect here."
                 cta={{
-                  href: "/dashboard/settings#profile",
+                  href: "/dashboard/profile#profile",
                   label: "Update profile",
                   icon: "person",
                 }}

@@ -16,22 +16,22 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/dashboard/integrations",
-        destination: "/dashboard/settings#channels",
+        destination: "/dashboard/profile#channels",
         permanent: false,
       },
       {
         source: "/dashboard/deliverability",
-        destination: "/dashboard/settings#channels",
+        destination: "/dashboard/profile#channels",
         permanent: false,
       },
       {
         source: "/dashboard/prospecting",
-        destination: "/dashboard/settings#profile",
+        destination: "/dashboard/profile#profile",
         permanent: false,
       },
       {
         source: "/dashboard/setup",
-        destination: "/dashboard/settings#profile",
+        destination: "/dashboard/profile#profile",
         permanent: false,
       },
       {

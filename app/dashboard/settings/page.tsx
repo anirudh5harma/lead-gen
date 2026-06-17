@@ -419,7 +419,7 @@ export default async function SettingsPage() {
                 action={updateWorkspaceAutonomyAction}
                 className="section-note grid gap-5"
               >
-                <input type="hidden" name="return_to" value="/dashboard/settings" />
+                <input type="hidden" name="return_to" value="/dashboard/profile" />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <AutonomyOption
                     value="autonomous"
@@ -810,7 +810,7 @@ function ProfileSettingsForm({
   const website = profileWebsite(profile);
   return (
     <form action={editCompanyProfileAction} className="section-note grid gap-5">
-      <input type="hidden" name="return_to" value="/dashboard/settings" />
+      <input type="hidden" name="return_to" value="/dashboard/profile" />
       <div className="grid gap-4 md:grid-cols-2">
         <Field
           name="company_name"
@@ -1020,7 +1020,7 @@ function ActivationSettingsForm({
   const approval = rep?.autonomy?.channels?.email?.approval ?? "none";
   return (
     <form action={configureActivationAction} className="section-note grid gap-5">
-      <input type="hidden" name="return_to" value="/dashboard/settings#agent" />
+      <input type="hidden" name="return_to" value="/dashboard/profile#agent" />
       <TextArea
         name="icp_description"
         label="Target companies and people"
@@ -1541,7 +1541,7 @@ function NoWorkspaceSettings() {
           action={createWorkspaceAction}
           className="section-note grid gap-4 md:max-w-xl"
         >
-          <input type="hidden" name="return_to" value="/dashboard/settings" />
+          <input type="hidden" name="return_to" value="/dashboard/profile" />
           <Field
             name="workspace_name"
             label="Workspace name"

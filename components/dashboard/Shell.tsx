@@ -46,10 +46,11 @@ const NAV: NavItem[] = [
     ],
   },
   {
-    href: "/dashboard/settings",
+    href: "/dashboard/profile",
     label: "Profile",
     icon: "person",
     matches: [
+      "/dashboard/profile",
       "/dashboard/settings",
       "/dashboard/integrations",
       "/dashboard/deliverability",

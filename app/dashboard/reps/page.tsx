@@ -826,7 +826,7 @@ export default async function RepsPage() {
       <SurfaceSection
         title="Agent setup"
         action={
-          <Link href="/dashboard/settings#agent" className="btn-solid-sm">
+          <Link href="/dashboard/profile#agent" className="btn-solid-sm">
             <Icon name="edit_note" size={14} />
             Tune in Profile
           </Link>
@@ -837,7 +837,7 @@ export default async function RepsPage() {
             title="No agent configured yet."
             hint="Start by defining the workspace profile, audience, voice, and approval mode."
             cta={{
-              href: "/dashboard/settings#agent",
+              href: "/dashboard/profile#agent",
               label: "Configure agent",
               icon: "badge",
             }}
@@ -960,7 +960,7 @@ function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
                 Check sources
               </button>
             </form>
-            <Link href="/dashboard/settings#profile" className="btn-quiet-sm">
+            <Link href="/dashboard/profile#profile" className="btn-quiet-sm">
               <Icon name="edit_note" size={14} />
               Tune profile
             </Link>
@@ -1029,7 +1029,7 @@ function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
               title="No signal sources yet"
               hint="Profile setup creates source configs for launch, hiring, funding, and market movement signals."
               cta={{
-                href: "/dashboard/settings#profile",
+                href: "/dashboard/profile#profile",
                 label: "Tune profile",
                 icon: "edit_note",
               }}
@@ -1202,7 +1202,7 @@ function AgentSequencePanel({ sequence }: { sequence: AgentSequenceStep[] }) {
     <SurfaceSection
       title="Sequence"
       action={
-        <Link href="/dashboard/settings#agent" className="btn-quiet-sm">
+        <Link href="/dashboard/profile#agent" className="btn-quiet-sm">
           <Icon name="rule" size={14} />
           Review limits
         </Link>
@@ -1213,7 +1213,7 @@ function AgentSequencePanel({ sequence }: { sequence: AgentSequenceStep[] }) {
           title="No outreach sequence yet"
           hint="The agent needs active email or LinkedIn plays before it can move qualified signals into outreach."
           cta={{
-            href: "/dashboard/settings#agent",
+            href: "/dashboard/profile#agent",
             label: "Configure agent",
             icon: "rule",
           }}
@@ -1339,7 +1339,7 @@ function AgentOpportunityPanel({
               title="No qualified signals ready yet"
               hint="Complete the profile, define targeting, and connect accounts so qualified signals can turn into verified outreach."
               cta={{
-                href: "/dashboard/settings#profile",
+                href: "/dashboard/profile#profile",
                 label: "Tune profile",
                 icon: "person_search",
               }}
@@ -1526,7 +1526,7 @@ function AgentContactsPanel({
       <SurfaceSection
         title="Verified contacts"
         action={
-          <Link href="/dashboard/settings#contact-quality" className="btn-quiet-sm">
+          <Link href="/dashboard/profile#contact-quality" className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
             Contact quality
           </Link>
@@ -1554,7 +1554,7 @@ function AgentContactsPanel({
               title="No verified contacts yet"
               hint="Tune the profile and connect accounts so the agent can resolve emails and LinkedIn profiles from qualified signals."
               cta={{
-                href: "/dashboard/settings#profile",
+                href: "/dashboard/profile#profile",
                 label: "Update profile",
                 icon: "person",
               }}
@@ -1817,7 +1817,7 @@ function AgentOperatingLoopPanel({
     <SurfaceSection
       title="Signal-to-outreach operating loop"
       action={
-        <Link href="/dashboard/settings#linkedin" className="btn-quiet-sm">
+        <Link href="/dashboard/profile#linkedin" className="btn-quiet-sm">
           <Icon name="account_tree" size={14} />
           Connect channels
         </Link>
@@ -2078,23 +2078,24 @@ function readinessNextAction(readiness: WorkspaceLaunchReadiness): {
     };
   }
   return {
-    href: "/dashboard/settings#profile",
+    href: "/dashboard/profile#profile",
     icon: "edit_note",
     label: "Review Profile",
   };
 }
 
 function readinessFallbackHref(check: LaunchReadinessCheck): string {
-  if (check.id === "workspace_profile") return "/dashboard/settings#profile";
-  if (check.id === "icp") return "/dashboard/settings#agent";
+  if (check.id === "workspace_profile") return "/dashboard/profile#profile";
+  if (check.id === "icp") return "/dashboard/profile#agent";
   if (check.id === "rep") return "/dashboard/agent";
   if (check.id === "signal_sources") return "/dashboard/agent#sources";
   if (check.id === "plays") return "/dashboard/agent#outreach";
-  if (check.id === "linkedin") return "/dashboard/settings#linkedin";
-  if (check.id === "outlook" || check.id === "outreach_channel") {
-    return "/dashboard/settings#email";
+  if (check.id === "linkedin") return "/dashboard/profile#linkedin";
+  if (check.id === "outlook") {
+    return "/dashboard/profile#email";
   }
-  return "/dashboard/settings#channels";
+  if (check.id === "outreach_channel") return "/dashboard/profile#channels";
+  return "/dashboard/profile#channels";
 }
 
 function readinessActionIcon(check: LaunchReadinessCheck): string {
@@ -2206,7 +2207,7 @@ function AgentOutreachPanel({
               title="No sent outreach yet"
               hint="When the agent sends an email or LinkedIn touch, the contact and draft will appear here."
               cta={{
-                href: "/dashboard/settings#linkedin",
+                href: "/dashboard/profile#linkedin",
                 label: "Connect accounts",
                 icon: "account_tree",
               }}
@@ -2462,7 +2463,7 @@ function AgentSetupSummary({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-line-1)] pt-3 text-xs text-[var(--color-text-3)]">
           <span>Voice, accounts, and limits stay in Profile.</span>
-          <Link href="/dashboard/settings#agent" className="btn-quiet-sm">
+          <Link href="/dashboard/profile#agent" className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
             Edit voice
           </Link>
@@ -2600,11 +2601,11 @@ function workspaceChannelCoverage(channels: ChannelRow[]): ChannelCoverage {
     ),
   );
   return {
-    email: channelConnection(email, "Connect Outlook", "/dashboard/settings#email"),
+    email: channelConnection(email, "Connect Outlook", "/dashboard/profile#email"),
     linkedIn: channelConnection(
       linkedIn,
       "Connect LinkedIn",
-      "/dashboard/settings#linkedin",
+      "/dashboard/profile#linkedin",
     ),
   };
 }
@@ -2859,7 +2860,7 @@ function NoWorkspaceReps() {
         title="No workspace selected."
         hint="Create or select a workspace before configuring the agent."
         cta={{
-          href: "/dashboard/settings#profile",
+          href: "/dashboard/profile#profile",
           label: "Start setup",
           icon: "add_business",
         }}

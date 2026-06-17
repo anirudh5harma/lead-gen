@@ -332,7 +332,7 @@ async function startOutlookSubscriptionRepair(
 }
 
 function outlookErrorRedirect(req: NextRequest): Response {
-  const dest = new URL("/dashboard/settings", appOrigin(req));
+  const dest = new URL("/dashboard/profile", appOrigin(req));
   dest.searchParams.set("outlook", "error");
   dest.searchParams.set("reason", "callback");
   dest.hash = "email";

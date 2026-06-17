@@ -159,8 +159,9 @@ async function repNameFromForm(
 export async function createWorkspaceAction(formData: FormData) {
   await requireDashboardSession(formData);
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/profile");
   revalidatePath("/dashboard/settings");
-  redirectWithToast("/dashboard/settings#profile", "Workspace created.");
+  redirectWithToast("/dashboard/profile#profile", "Workspace created.");
 }
 
 export async function switchWorkspaceAction(formData: FormData) {
@@ -179,13 +180,14 @@ export async function switchWorkspaceAction(formData: FormData) {
 
 export async function updateWorkspaceAutonomyAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
-  const returnTo = dashboardReturnPath(formData, "/dashboard/settings");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/profile");
   const mode =
     value(formData, "autonomy_mode") === "review_only"
       ? "review_only"
       : "autonomous";
   await configureWorkspaceAutonomyMode({ mode }, session);
   revalidateProductPaths();
+  revalidatePath("/dashboard/profile");
   revalidatePath("/dashboard/settings");
   redirectWithToast(
     returnTo,
@@ -197,7 +199,7 @@ export async function updateWorkspaceAutonomyAction(formData: FormData) {
 
 export async function configureActivationAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
-  const returnTo = dashboardReturnPath(formData, "/dashboard/settings#agent");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/profile#agent");
   const signalKind = value(formData, "signal_kind") || "hiring";
   const approval = approvalValue(formData, "approval");
   const repName = await repNameFromForm(formData, session);
@@ -543,7 +545,7 @@ export async function dismissQualifiedSignalAction(formData: FormData) {
 
 export async function editCompanyProfileAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/settings#profile");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/profile#profile");
   const company_name = value(formData, "company_name");
   const website_url = value(formData, "website_url");
   if (!company_name || !website_url) {
@@ -657,5 +659,6 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard/reps");
   revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/health");
+  revalidatePath("/dashboard/profile");
   revalidatePath("/dashboard/settings");
 }

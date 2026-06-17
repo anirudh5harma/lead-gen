@@ -24,7 +24,7 @@ export interface OnboardingActionState {
   error: string | null;
 }
 
-const POST_ONBOARDING_PATH = "/dashboard/settings#channels";
+const POST_ONBOARDING_PATH = "/dashboard/profile#channels";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
@@ -140,6 +140,7 @@ async function createActivationSetup(formData: FormData): Promise<void> {
   await runWorkspaceSignalIngestion({ limit: 4 }, session, { wait: false });
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/profile");
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard/agent");
 }

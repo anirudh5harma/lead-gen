@@ -9,7 +9,7 @@ test("Outlook OAuth callback lands on Profile email settings", () => {
 
   assert.equal(
     path,
-    "/dashboard/settings?outlook=connecting&channel_account_id=11111111-1111-4111-8111-111111111111#email",
+    "/dashboard/profile?outlook=connecting&channel_account_id=11111111-1111-4111-8111-111111111111#email",
   );
   assert.ok(!path.startsWith("/onboarding/outlook"));
 });

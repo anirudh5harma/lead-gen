@@ -3,5 +3,5 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export default function IntegrationsPage() {
-  redirect("/dashboard/settings#channels");
+  redirect("/dashboard/profile#channels");
 }

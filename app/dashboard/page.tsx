@@ -411,7 +411,7 @@ function BriefView({
             <EmptyState
               title="No qualified signals yet"
               hint="Complete the profile and connected accounts so the agent can qualify real timing signals."
-              cta={{ href: "/dashboard/settings#profile", label: "Open profile", icon: "person" }}
+              cta={{ href: "/dashboard/profile#profile", label: "Open profile", icon: "person" }}
             />
           ) : (
             <div className="grid gap-2">
@@ -477,7 +477,7 @@ function briefPriority(actions: BriefActionState, totalSent7d: number) {
       detail: `${actions.unhealthy_channels} connected ${
         actions.unhealthy_channels === 1 ? "account needs" : "accounts need"
       } attention before the agent can send reliably.`,
-      href: "/dashboard/settings#channels",
+      href: "/dashboard/profile#channels",
       icon: "sync_problem",
       label: "Fix accounts",
     };

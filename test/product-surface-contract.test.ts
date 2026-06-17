@@ -21,7 +21,7 @@ test("dashboard navigation uses active product surface routes", () => {
   assert.match(primaryNav, /matches: \["\/dashboard\/brief", "\/dashboard"\]/);
   assert.match(primaryNav, /href: "\/dashboard\/agent",\s+label: "Agent"/);
   assert.match(primaryNav, /"\/dashboard\/reps"/);
-  assert.match(primaryNav, /href: "\/dashboard\/settings",\s+label: "Profile"/);
+  assert.match(primaryNav, /href: "\/dashboard\/profile",\s+label: "Profile"/);
   assert.match(primaryNav, /"\/dashboard\/conversations"/);
   assert.match(primaryNav, /"\/dashboard\/signals"/);
   assert.match(primaryNav, /"\/dashboard\/plays"/);
@@ -84,7 +84,12 @@ test("Agent is the canonical dashboard surface route", () => {
   assert.match(agentDetailPage, /from "\.\.\/\.\.\/reps\/\[id\]\/page"/);
   assert.equal(exists("app/dashboard/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/loading.tsx"), false);
+  assert.equal(exists("app/dashboard/profile/page.tsx"), true);
   assert.equal(exists("app/dashboard/settings/loading.tsx"), false);
+  assert.match(
+    source("app/dashboard/profile/page.tsx"),
+    /from "\.\.\/settings\/page"/,
+  );
   assert.match(
     source("app/dashboard/agent/[id]/loading.tsx"),
     /from "\.\.\/\.\.\/reps\/\[id\]\/loading"/,
@@ -113,15 +118,15 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
 
   assert.match(
     source("app/dashboard/prospecting/page.tsx"),
-    /redirect\("\/dashboard\/settings#profile"\)/,
+    /redirect\("\/dashboard\/profile#profile"\)/,
   );
   assert.match(
     source("app/dashboard/setup/page.tsx"),
-    /redirect\("\/dashboard\/settings#profile"\)/,
+    /redirect\("\/dashboard\/profile#profile"\)/,
   );
   assert.match(
     source("app/dashboard/deliverability/page.tsx"),
-    /redirect\("\/dashboard\/settings#channels"\)/,
+    /redirect\("\/dashboard\/profile#channels"\)/,
   );
   assert.match(
     source("app/dashboard/signals/page.tsx"),
@@ -169,13 +174,14 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
   assert.match(nextConfig, /destination: "\/dashboard\/brief"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/settings#profile"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/settings#channels"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/profile#profile"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/profile#channels"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#opportunities"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#outreach"/);
 
   const actions = source("app/dashboard/actions.ts");
+  assert.match(actions, /revalidatePath\("\/dashboard\/profile"\)/);
   assert.match(actions, /revalidatePath\("\/dashboard\/settings"\)/);
   assert.match(actions, /revalidatePath\("\/dashboard\/agent"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/prospecting"\)/);
@@ -216,7 +222,7 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /left join conversations c/);
   assert.match(dashboard, /left join signals s/);
   assert.match(dashboard, /OutcomeInsightRow/);
-  assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
+  assert.match(dashboard, /href: "\/dashboard\/profile#profile"/);
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
   assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
   assert.match(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
@@ -479,9 +485,10 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Tune in Profile/);
   assert.match(reps, /Voice, accounts, and limits stay in Profile/);
   assert.match(reps, /Channels and limits/);
-  assert.match(reps, /href="\/dashboard\/settings#agent"/);
-  assert.match(reps, /\/dashboard\/settings#email/);
-  assert.match(reps, /\/dashboard\/settings#linkedin/);
+  assert.match(reps, /href="\/dashboard\/profile#agent"/);
+  assert.match(reps, /\/dashboard\/profile#channels/);
+  assert.match(reps, /\/dashboard\/profile#email/);
+  assert.match(reps, /\/dashboard\/profile#linkedin/);
   assert.match(reps, /Connect Outlook/);
   assert.match(reps, /Connect LinkedIn/);
   assert.match(reps, /Edit voice/);
@@ -692,13 +699,13 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);
   assert.match(settings, /verified contact or LinkedIn profile/);
-  assert.match(settings, /return_to" value="\/dashboard\/settings#agent"/);
+  assert.match(settings, /return_to" value="\/dashboard\/profile#agent"/);
   assert.match(settings, /Saving agent/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);
   assert.match(settings, /row_number\(\) over/);
   assert.match(settings, /properties ->> 'mailbox_email'/);
-  assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/settings#agent"\)/);
+  assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/profile#agent"\)/);
   assert.match(actions, /value_proposition/);
   assert.match(actions, /customer_pain_points/);
   assert.match(actions, /target_titles/);
@@ -723,7 +730,7 @@ test("Integrations route folds into Profile", () => {
   const outlook = source("app/api/auth/outlook/route.ts");
   const linkedIn = source("app/api/auth/linkedin/route.ts");
 
-  assert.match(integrations, /redirect\("\/dashboard\/settings#channels"\)/);
+  assert.match(integrations, /redirect\("\/dashboard\/profile#channels"\)/);
   assert.doesNotMatch(integrations, /Connect Outlook/);
   assert.doesNotMatch(integrations, /Connect LinkedIn/);
   assert.doesNotMatch(integrations, /href="\/api\/mcp"/);
@@ -741,7 +748,7 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
 
   assert.match(linkedInState, /return_to\?: string/);
   assert.match(linkedInRoute, /safeReturnTo\(req\.nextUrl\.searchParams\.get\("return_to"\)\)/);
-  assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/settings#linkedin"/);
+  assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/profile#linkedin"/);
   assert.match(linkedInCallback, /dest\.searchParams\.set\("status", "linkedin_connecting"\)/);
   assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
   assert.match(settings, /id="channels"/);
@@ -904,7 +911,7 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingActions, /preferred_language/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
   assert.match(onboardingActions, /wait: false/);
-  assert.match(onboardingActions, /POST_ONBOARDING_PATH = "\/dashboard\/settings#channels"/);
+  assert.match(onboardingActions, /POST_ONBOARDING_PATH = "\/dashboard\/profile#channels"/);
   assert.match(onboardingActions, /redirect\(POST_ONBOARDING_PATH\)/);
   assert.doesNotMatch(onboardingActions, /runWorkspaceSignalAggregatorOnce/);
   assert.match(activationGraph, /description_hint/);

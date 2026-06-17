@@ -190,7 +190,7 @@ export function buildWorkspaceLaunchReadiness(
       count: counts.workspaceProfiles,
       detailReady: "Company profile is available for matching and personalization.",
       detailBlocked: "No workspace company profile is available from the website setup.",
-      action: action("Configure profile", ["product.company.profile.configure"], "/dashboard/settings#profile"),
+      action: action("Configure profile", ["product.company.profile.configure"], "/dashboard/profile#profile"),
     }),
     countCheck({
       id: "icp",
@@ -199,7 +199,7 @@ export function buildWorkspaceLaunchReadiness(
       count: counts.enabledIcps,
       detailReady: `${counts.enabledIcps} ICP segment${plural(counts.enabledIcps)} enabled.`,
       detailBlocked: "No enabled ICP segment is available for lead matching.",
-      action: action("Configure ICP", ["product.icp.configure"], "/dashboard/settings#agent"),
+      action: action("Configure ICP", ["product.icp.configure"], "/dashboard/profile#agent"),
     }),
     countCheck({
       id: "rep",
@@ -324,7 +324,7 @@ function outlookCheck(
     action: ready ? null : action(
       counts.connectedOutlook > 0 ? "Review Outlook sync" : "Connect Outlook",
       ["product.outlook_account.connect_url.get"],
-      "/dashboard/settings#email",
+      "/dashboard/profile#email",
     ),
   };
 }
@@ -367,7 +367,7 @@ function linkedInCheck(
     action: ready ? null : action(
       "Connect LinkedIn",
       ["product.linkedin_account.connect_url.get"],
-      "/dashboard/settings#linkedin",
+      "/dashboard/profile#linkedin",
     ),
   };
 }
@@ -408,7 +408,7 @@ function outreachChannelCheck(input: {
         "product.outlook_account.connect_url.get",
         "product.linkedin_account.connect_url.get",
       ],
-      "/dashboard/settings#email",
+      "/dashboard/profile#channels",
     ),
   };
 }
