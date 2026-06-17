@@ -11,6 +11,7 @@ import PendingSubmitButton from "@/components/PendingSubmitButton";
 interface NavItem {
   href: string;
   label: string;
+  icon: string;
   matches?: string[];
 }
 
@@ -23,10 +24,12 @@ const NAV: NavItem[] = [
   {
     href: "/dashboard",
     label: "Dashboard",
+    icon: "dashboard",
   },
   {
     href: "/dashboard/agent",
     label: "Agent",
+    icon: "auto_awesome",
     matches: [
       "/dashboard/agent",
       "/dashboard/reps",
@@ -44,6 +47,7 @@ const NAV: NavItem[] = [
   {
     href: "/dashboard/settings",
     label: "Profile",
+    icon: "person",
     matches: [
       "/dashboard/settings",
       "/dashboard/integrations",
@@ -138,12 +142,13 @@ export function DashboardShell({
                   onClick={(event) => handleNavClick(event, item.href, item.matches)}
                   aria-current={active ? "page" : undefined}
                   className={
-                    "rounded-[8px] px-2.5 py-1.5 text-[13.5px] transition-colors " +
+                    "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[13.5px] transition-colors " +
                     (active
                       ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
                       : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                   }
                 >
+                  <Icon name={item.icon} size={14} />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -198,12 +203,13 @@ export function DashboardShell({
               onClick={(event) => handleNavClick(event, item.href, item.matches)}
               aria-current={active ? "page" : undefined}
               className={
-                "shrink-0 rounded-[8px] px-2.5 py-1 text-[13px] transition-colors " +
+                "inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-[13px] transition-colors " +
                 (active
                   ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
                   : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
               }
             >
+              <Icon name={item.icon} size={14} />
               <span>{item.label}</span>
             </Link>
           );

@@ -904,7 +904,9 @@ test("visual system uses the clean light operating surface", () => {
 
 test("dashboard icon names resolve to first-party SVG symbols", () => {
   const iconSource = source("components/Icon.tsx");
+  const brandIconSource = source("components/BrandIcon.tsx");
   const surfaces = [
+    source("app/page.tsx"),
     source("components/dashboard/Shell.tsx"),
     source("app/onboarding/OnboardingForm.tsx"),
     source("app/dashboard/page.tsx"),
@@ -919,6 +921,14 @@ test("dashboard icon names resolve to first-party SVG symbols", () => {
   const defined = new Set(
     Array.from(iconSource.matchAll(/^  ([a-z0-9_]+):/gm), (match) => match[1]),
   );
+  const brandDefined = new Set(
+    Array.from(
+      brandIconSource.matchAll(/type BrandIconName = ([^;]+);/g),
+      (match) => match[1],
+    )
+      .flatMap((value) => value.match(/"([a-z0-9_]+)"/g) ?? [])
+      .map((value) => value.replace(/"/g, "")),
+  );
   const used = new Set(
     Array.from(
       surfaces.matchAll(/(?:Icon name|icon)="([a-z0-9_]+)"/g),
@@ -926,10 +936,11 @@ test("dashboard icon names resolve to first-party SVG symbols", () => {
     ),
   );
   const missing = Array.from(used)
-    .filter((name) => !defined.has(name))
+    .filter((name) => !defined.has(name) && !brandDefined.has(name))
     .sort();
 
   assert.deepEqual(missing, []);
+  assert.match(brandIconSource, /"google" \| "linkedin" \| "microsoft"/);
   assert.match(iconSource, /person_search:/);
   assert.match(iconSource, /radar:/);
   assert.match(iconSource, /verified:/);

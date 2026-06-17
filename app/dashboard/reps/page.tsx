@@ -6,6 +6,7 @@ import {
   SurfaceHero,
   SurfaceSection,
 } from "@/components/dashboard/SurfaceHero";
+import BrandIcon from "@/components/BrandIcon";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
@@ -1213,7 +1214,7 @@ function SequenceStepCard({
     <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-start justify-between gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-          <Icon name={step.channel === "email" ? "mail" : "forum"} size={17} />
+          <ChannelMark channel={step.channel} size={17} />
         </span>
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
           Step {index + 1}
@@ -1597,7 +1598,11 @@ function ContactPill({
           : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
       }
     >
-      <Icon name={icon} size={13} />
+      {icon === "linkedin" ? (
+        <BrandIcon name="linkedin" size={13} />
+      ) : (
+        <Icon name={icon} size={13} />
+      )}
       <span className="truncate">{children}</span>
     </span>
   );
@@ -1949,7 +1954,7 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
     >
       <span className="flex min-w-0 items-start gap-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-          <Icon name={message.channel === "email" ? "mail" : "forum"} size={17} />
+          <ChannelMark channel={message.channel} size={17} />
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
@@ -2082,7 +2087,11 @@ function RepChannelPill({
     >
       <span className="flex items-center justify-between gap-3">
         <span className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
-          <Icon name={icon} size={14} />
+          {icon === "linkedin" ? (
+            <BrandIcon name="linkedin" size={14} />
+          ) : (
+            <Icon name={icon} size={14} />
+          )}
           {title}
         </span>
         <span
@@ -2299,6 +2308,13 @@ function channelLabel(channel: string): string {
   if (channel === "linkedin_connection") return "LinkedIn connect";
   if (channel === "linkedin_comment") return "LinkedIn comment";
   return channel.replace(/_/g, " ");
+}
+
+function ChannelMark({ channel, size }: { channel: string; size: number }) {
+  if (channel.startsWith("linkedin")) {
+    return <BrandIcon name="linkedin" size={size} />;
+  }
+  return <Icon name="mail" size={size} />;
 }
 
 function sequenceStepFromPlay(row: {

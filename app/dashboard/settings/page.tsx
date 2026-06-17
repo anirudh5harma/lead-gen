@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BrandIcon from "@/components/BrandIcon";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
@@ -1097,10 +1098,7 @@ function OutlookPanel({ account }: { account: SettingsOutlookAccount | null }) {
     <div className="section-note grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
       <div className="flex min-w-0 gap-3">
         <span className="brief-note-icon shrink-0">
-          <Icon
-            name={account?.status === "connected" ? "mail" : "sync_problem"}
-            size={18}
-          />
+          <BrandIcon name="microsoft" size={18} />
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
@@ -1121,7 +1119,7 @@ function OutlookPanel({ account }: { account: SettingsOutlookAccount | null }) {
         prefetch={false}
         className="btn-solid w-fit"
       >
-        <Icon name="mail" size={16} />
+        <BrandIcon name="microsoft" size={16} />
         {account ? "Reconnect Outlook" : "Connect Outlook"}
       </Link>
     </div>
@@ -1138,7 +1136,7 @@ function LinkedInPanel({
     <div className="section-note grid gap-4">
       <div className="flex items-start gap-3">
         <span className="brief-note-icon shrink-0">
-          <Icon name="linkedin" size={18} />
+          <BrandIcon name="linkedin" size={18} />
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[var(--color-text-1)]">
@@ -1206,7 +1204,7 @@ function LinkedInAccountSlot({
         prefetch={false}
         className={account ? "btn-quiet-sm w-fit" : "btn-solid-sm w-fit"}
       >
-        <Icon name="linkedin" size={14} />
+        <BrandIcon name="linkedin" size={14} />
         {account ? "Reconnect account" : "Connect account"}
       </Link>
     </article>
