@@ -310,6 +310,7 @@ test("Agent surface shows live work and account readiness", () => {
 
   assert.match(reps, /AgentActivityPanel/);
   assert.match(reps, /AgentContactsPanel/);
+  assert.match(reps, /AgentLearningPanel/);
   assert.match(reps, /AgentOutreachPanel/);
   assert.match(reps, /AgentOpportunityPanel/);
   assert.match(reps, /AgentStrategyPanel/);
@@ -317,6 +318,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /loadAgentSourceStrategy/);
   assert.match(reps, /loadQualifiedSignalWorkbench/);
   assert.match(reps, /loadAgentContactSummary/);
+  assert.match(reps, /loadAgentLearningSummary/);
   assert.match(reps, /loadAgentOutreachSummary/);
   assert.match(reps, /visibleReps = state\.reps\.filter\(isVisibleProductAgent\)/);
   assert.match(reps, /return rep\.role === "sdr"/);
@@ -355,6 +357,15 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /href="\/dashboard\/conversations"/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
   assert.match(reps, /#message-\$\{messageId\}/);
+  assert.match(reps, /id="learning" className="scroll-mt-28"/);
+  assert.match(reps, /Reply evidence/);
+  assert.match(reps, /Strategy recommendation/);
+  assert.match(reps, /Message recommendation/);
+  assert.match(reps, /optimizeCampaignStrategyAction/);
+  assert.match(reps, /optimizePlaySkillsAction/);
+  assert.match(reps, /value="\/dashboard\/agent#learning"/);
+  assert.match(reps, /campaign\.strategy\.recommended/);
+  assert.match(reps, /play\.skill\.optimization\.recommended/);
   assert.match(reps, /events_last_hour/);
   assert.match(reps, /active_workflows/);
   assert.match(reps, /animate-pulse/);

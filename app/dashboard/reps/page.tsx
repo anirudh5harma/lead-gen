@@ -7,6 +7,7 @@ import {
   SurfaceSection,
 } from "@/components/dashboard/SurfaceHero";
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   loadWorkspaceLaunchReadiness,
   type WorkspaceLaunchReadiness,
@@ -22,6 +23,8 @@ import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
   dismissQualifiedSignalAction,
+  optimizeCampaignStrategyAction,
+  optimizePlaySkillsAction,
   runAgentSourceNowAction,
 } from "../actions";
 
@@ -121,6 +124,17 @@ interface AgentContactSummary {
   fresh_signals: number;
 }
 
+interface AgentLearningSummary {
+  positive_replies_7d: number;
+  meetings_7d: number;
+  useful_outcomes_30d: number;
+  strategy_summary: string | null;
+  strategy_updated_at: Date | null;
+  skill_summary: string | null;
+  skill_updated_at: Date | null;
+  recommended_patterns: number;
+}
+
 interface AgentSourceRow {
   id: string;
   name: string;
@@ -179,6 +193,7 @@ interface RepsState {
   opportunities: QualifiedSignalWorkbench;
   outreach: AgentOutreachSummary;
   contacts: AgentContactSummary;
+  learning: AgentLearningSummary;
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
@@ -192,6 +207,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     opportunities,
     outreach,
     contacts,
+    learning,
   ] = await Promise.all([
     pool.query<RepRow>(
       `select r.id,
@@ -271,6 +287,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     loadQualifiedSignalWorkbench(pool, workspaceId, { limit: 5 }),
     loadAgentOutreachSummary(workspaceId),
     loadAgentContactSummary(workspaceId),
+    loadAgentLearningSummary(workspaceId),
   ]);
   return {
     reps: reps.rows,
@@ -281,6 +298,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     opportunities,
     outreach,
     contacts,
+    learning,
   };
 }
 
@@ -557,6 +575,70 @@ async function loadAgentContactSummary(
   };
 }
 
+async function loadAgentLearningSummary(
+  workspaceId: string,
+): Promise<AgentLearningSummary> {
+  const pool = getPool();
+  const [outcomes, events] = await Promise.all([
+    pool.query<{
+      positive_replies_7d: string;
+      meetings_7d: string;
+      useful_outcomes_30d: string;
+    }>(
+      `select
+         (select count(*)::text from outcomes
+            where workspace_id = $1
+              and kind = 'positive_reply'
+              and coalesce(recorded_at, occurred_at) >= now() - interval '7 days') as positive_replies_7d,
+         (select count(*)::text from outcomes
+            where workspace_id = $1
+              and kind = 'meeting_booked'
+              and coalesce(recorded_at, occurred_at) >= now() - interval '7 days') as meetings_7d,
+         (select count(*)::text from outcomes
+            where workspace_id = $1
+              and kind in ('positive_reply','opportunity_created','meeting_booked','deal_won')
+              and coalesce(recorded_at, occurred_at) >= now() - interval '30 days') as useful_outcomes_30d`,
+      [workspaceId],
+    ),
+    pool.query<{
+      event_type: string;
+      payload: unknown;
+      occurred_at: Date;
+    }>(
+      `select event_type, payload, occurred_at
+         from events
+        where workspace_id = $1
+          and event_type in (
+            'campaign.strategy.recommended',
+            'play.skill.optimization.recommended'
+          )
+        order by occurred_at desc
+        limit 6`,
+      [workspaceId],
+    ),
+  ]);
+  const latestStrategy = events.rows.find(
+    (event) => event.event_type === "campaign.strategy.recommended",
+  );
+  const latestSkill = events.rows.find(
+    (event) => event.event_type === "play.skill.optimization.recommended",
+  );
+  const strategy = recordPayload(latestStrategy?.payload);
+  const skill = recordPayload(latestSkill?.payload);
+  return {
+    positive_replies_7d: Number(outcomes.rows[0]?.positive_replies_7d ?? 0),
+    meetings_7d: Number(outcomes.rows[0]?.meetings_7d ?? 0),
+    useful_outcomes_30d: Number(outcomes.rows[0]?.useful_outcomes_30d ?? 0),
+    strategy_summary: stringPayload(strategy, "summary"),
+    strategy_updated_at: latestStrategy?.occurred_at ?? null,
+    skill_summary: stringPayload(skill, "summary"),
+    skill_updated_at: latestSkill?.occurred_at ?? null,
+    recommended_patterns:
+      arrayPayloadLength(skill, "recommendations") ||
+      arrayPayloadLength(strategy, "variants"),
+  };
+}
+
 async function loadAgentOutreachSummary(
   workspaceId: string,
 ): Promise<AgentOutreachSummary> {
@@ -670,6 +752,8 @@ export default async function RepsPage() {
 
       <AgentOutreachPanel outreach={state.outreach} />
 
+      <AgentLearningPanel learning={state.learning} />
+
       <AgentContactsPanel contacts={state.contacts} />
 
       <SurfaceSection
@@ -767,6 +851,16 @@ function emptyRepsState(workspaceId: string): RepsState {
       with_email: 0,
       with_linkedin: 0,
       fresh_signals: 0,
+    },
+    learning: {
+      positive_replies_7d: 0,
+      meetings_7d: 0,
+      useful_outcomes_30d: 0,
+      strategy_summary: null,
+      strategy_updated_at: null,
+      skill_summary: null,
+      skill_updated_at: null,
+      recommended_patterns: 0,
     },
   };
 }
@@ -1569,6 +1663,146 @@ function AgentOutreachPanel({
   );
 }
 
+function AgentLearningPanel({
+  learning,
+}: {
+  learning: AgentLearningSummary;
+}) {
+  const hasRecommendation = Boolean(
+    learning.strategy_summary || learning.skill_summary,
+  );
+  return (
+    <div id="learning" className="scroll-mt-28">
+      <SurfaceSection
+        title="Learning"
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <form action={optimizeCampaignStrategyAction}>
+              <input type="hidden" name="return_to" value="/dashboard/agent#learning" />
+              <input type="hidden" name="lookback_days" value="30" />
+              <input type="hidden" name="min_samples" value="3" />
+              <PendingSubmitButton
+                className="btn-quiet-sm"
+                icon="auto_graph"
+                iconSize={14}
+                pendingLabel="Optimizing"
+              >
+                Optimize strategy
+              </PendingSubmitButton>
+            </form>
+            <form action={optimizePlaySkillsAction}>
+              <input type="hidden" name="return_to" value="/dashboard/agent#learning" />
+              <input type="hidden" name="lookback_days" value="30" />
+              <input type="hidden" name="min_samples" value="3" />
+              <PendingSubmitButton
+                className="btn-solid-sm"
+                icon="science"
+                iconSize={14}
+                pendingLabel="Optimizing"
+              >
+                Optimize messages
+              </PendingSubmitButton>
+            </form>
+          </div>
+        }
+      >
+        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Reply evidence
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+              <MiniStat label="Replies 7d" value={learning.positive_replies_7d} />
+              <MiniStat label="Meetings 7d" value={learning.meetings_7d} />
+              <MiniStat label="Useful 30d" value={learning.useful_outcomes_30d} />
+            </div>
+            <p className="text-xs leading-5 text-[var(--color-text-3)]">
+              Reply and meeting outcomes teach the agent which signals,
+              channels, and message patterns deserve more volume.
+            </p>
+          </aside>
+
+          {hasRecommendation ? (
+            <div className="grid gap-2">
+              <LearningSummaryCard
+                icon="auto_graph"
+                title="Strategy recommendation"
+                summary={learning.strategy_summary}
+                updatedAt={learning.strategy_updated_at}
+                empty="No strategy recommendation yet."
+              />
+              <LearningSummaryCard
+                icon="science"
+                title="Message recommendation"
+                summary={learning.skill_summary}
+                updatedAt={learning.skill_updated_at}
+                empty="No message recommendation yet."
+                badge={
+                  learning.recommended_patterns > 0
+                    ? `${learning.recommended_patterns} patterns`
+                    : undefined
+                }
+              />
+            </div>
+          ) : (
+            <EmptyState
+              title="No learning recommendation yet"
+              hint="Once replies and meetings are attributed, the agent can recommend which sources, channels, and message patterns to scale."
+              cta={{
+                href: "/dashboard/agent#outreach",
+                label: "Review sent outreach",
+                icon: "arrow_forward",
+              }}
+            />
+          )}
+        </div>
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function LearningSummaryCard({
+  icon,
+  title,
+  summary,
+  updatedAt,
+  empty,
+  badge,
+}: {
+  icon: string;
+  title: string;
+  summary: string | null;
+  updatedAt: Date | null;
+  empty: string;
+  badge?: string;
+}) {
+  return (
+    <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name={icon} size={15} />
+        </span>
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          {title}
+        </p>
+        {badge ? (
+          <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-2 py-1 text-[11px] font-medium text-[var(--color-accent)]">
+            {badge}
+          </span>
+        ) : null}
+        {updatedAt ? (
+          <span className="ml-auto text-xs text-[var(--color-text-3)]">
+            Updated {freshWhen(updatedAt)}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[var(--color-text-2)]">
+        {summary ?? empty}
+      </p>
+    </article>
+  );
+}
+
 function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
   return (
     <Link
@@ -1733,6 +1967,28 @@ function RepChannelPill({
       </span>
     </Link>
   );
+}
+
+function recordPayload(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringPayload(
+  payload: Record<string, unknown> | null,
+  key: string,
+): string | null {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function arrayPayloadLength(
+  payload: Record<string, unknown> | null,
+  key: string,
+): number {
+  const value = payload?.[key];
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function MiniStat({ label, value }: { label: string; value: number }) {
