@@ -77,6 +77,14 @@ interface SettingsSuppressionRow {
   company_name: string | null;
 }
 
+interface SettingsContactQuality {
+  people: number;
+  emailHandles: number;
+  verifiedEmails: number;
+  linkedInProfiles: number;
+  reachable: number;
+}
+
 interface SettingsState {
   settings: Record<string, unknown>;
   outlookAccount: SettingsOutlookAccount | null;
@@ -86,6 +94,7 @@ interface SettingsState {
   approvals: string[];
   suppressionStats: SettingsSuppressionStats;
   recentSuppressions: SettingsSuppressionRow[];
+  contactQuality: SettingsContactQuality;
 }
 
 async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
@@ -99,6 +108,7 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
     policies,
     suppressionStats,
     recentSuppressions,
+    contactQuality,
   ] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
@@ -223,8 +233,35 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
         limit 5`,
       [workspaceId],
     ),
+    pool.query<{
+      people: string;
+      email_handles: string;
+      verified_emails: string;
+      linkedin_profiles: string;
+      reachable: string;
+    }>(
+      `select count(*)::text as people,
+              count(*) filter (where cardinality(p.emails) > 0)::text as email_handles,
+              count(*) filter (
+                where exists (
+                  select 1
+                    from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                   where lower(coalesce(ev.meta->>'verified', '')) = 'true'
+                      or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
+                )
+              )::text as verified_emails,
+              count(*) filter (where p.linkedin_url is not null)::text as linkedin_profiles,
+              count(*) filter (
+                where cardinality(p.emails) > 0
+                   or p.linkedin_url is not null
+              )::text as reachable
+         from graph_persons p
+        where p.workspace_id = $1`,
+      [workspaceId],
+    ),
   ]);
   const suppressions = suppressionStats.rows[0];
+  const contacts = contactQuality.rows[0];
   return {
     settings: workspace.rows[0]?.settings ?? {},
     outlookAccount: outlook.rows[0] ?? null,
@@ -241,6 +278,13 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
       doNotContact: Number(suppressions?.do_not_contact ?? 0),
     },
     recentSuppressions: recentSuppressions.rows,
+    contactQuality: {
+      people: Number(contacts?.people ?? 0),
+      emailHandles: Number(contacts?.email_handles ?? 0),
+      verifiedEmails: Number(contacts?.verified_emails ?? 0),
+      linkedInProfiles: Number(contacts?.linkedin_profiles ?? 0),
+      reachable: Number(contacts?.reachable ?? 0),
+    },
   };
 }
 
@@ -307,6 +351,7 @@ export default async function SettingsPage() {
         icp={state.icp}
         mode={mode}
         suppressionStats={state.suppressionStats}
+        contactQuality={state.contactQuality}
       />
 
       <div id="profile">
@@ -322,6 +367,12 @@ export default async function SettingsPage() {
             icp={state.icp}
             outlookAccount={state.outlookAccount}
           />
+        </SurfaceSection>
+      </div>
+
+      <div id="contact-quality">
+        <SurfaceSection title="Contact quality">
+          <ContactQualityPanel stats={state.contactQuality} />
         </SurfaceSection>
       </div>
 
@@ -530,6 +581,7 @@ function SettingsSectionNav({
   icp,
   mode,
   suppressionStats,
+  contactQuality,
 }: {
   profile: ProductCompanyProfile | null;
   outlookAccount: SettingsOutlookAccount | null;
@@ -538,6 +590,7 @@ function SettingsSectionNav({
   icp: SettingsIcpRow | null;
   mode: SettingsAutonomyMode;
   suppressionStats: SettingsSuppressionStats;
+  contactQuality: SettingsContactQuality;
 }) {
   const sections = [
     {
@@ -560,6 +613,16 @@ function SettingsSectionNav({
       href: "#templates",
       icon: "edit_note",
       ready: Boolean(rep?.persona.story || rep?.persona.voice),
+    },
+    {
+      title: "Contact quality",
+      detail:
+        contactQuality.reachable > 0
+          ? `${contactQuality.reachable} reachable`
+          : "Email and LinkedIn coverage",
+      href: "#contact-quality",
+      icon: "verified",
+      ready: contactQuality.reachable > 0,
     },
     {
       title: "Account",
@@ -951,6 +1014,107 @@ function LinkedInPanel({
         {account ? "Reconnect LinkedIn" : "Connect LinkedIn"}
       </Link>
     </div>
+  );
+}
+
+function ContactQualityPanel({
+  stats,
+}: {
+  stats: SettingsContactQuality;
+}) {
+  const coverage =
+    stats.people > 0 ? `${Math.round((stats.reachable / stats.people) * 100)}%` : "0%";
+  return (
+    <div className="section-note grid gap-5">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon shrink-0">
+          <Icon name="verified" size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Email and LinkedIn readiness
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+            The agent resolves contacts from the graph first, enriches missing
+            emails, verifies deliverability evidence, and avoids duplicate
+            outreach before drafting.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-5">
+        <ProfileFact label="People" value={String(stats.people)} />
+        <ProfileFact label="Reachable" value={String(stats.reachable)} />
+        <ProfileFact label="Email handles" value={String(stats.emailHandles)} />
+        <ProfileFact label="Verified emails" value={String(stats.verifiedEmails)} />
+        <ProfileFact label="LinkedIn profiles" value={String(stats.linkedInProfiles)} />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <PreferenceStatus
+          icon="travel_explore"
+          title="Email enrichment"
+          detail="Graph cache, provider discovery, and verification run before email outreach."
+          status={stats.emailHandles > 0 ? `${stats.emailHandles} found` : "Ready to run"}
+        />
+        <PreferenceStatus
+          icon="forum"
+          title="LinkedIn fallback"
+          detail="LinkedIn profiles keep outreach available when an email is not ready."
+          status={
+            stats.linkedInProfiles > 0
+              ? `${stats.linkedInProfiles} profiles`
+              : "Connect account"
+          }
+        />
+        <PreferenceStatus
+          icon="hub"
+          title="Duplicate protection"
+          detail="Graph identity and recipient frequency caps keep the same contact from being worked twice."
+          status={`${coverage} coverage`}
+        />
+      </div>
+
+      <Link href="/dashboard/prospects" prefetch={false} className="btn-quiet-sm w-fit">
+        <Icon name="arrow_forward" size={14} />
+        Open prospect graph
+      </Link>
+    </div>
+  );
+}
+
+function PreferenceStatus({
+  icon,
+  title,
+  detail,
+  status,
+}: {
+  icon: string;
+  title: string;
+  detail: string;
+  status: string;
+}) {
+  return (
+    <article className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3">
+      <div className="flex items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name={icon} size={15} />
+        </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              {title}
+            </p>
+            <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2 py-1 text-[11px] font-medium text-[var(--color-pos)]">
+              {status}
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+            {detail}
+          </p>
+        </div>
+      </div>
+    </article>
   );
 }
 

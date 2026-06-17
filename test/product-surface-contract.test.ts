@@ -224,9 +224,19 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /href: "#email"/);
   assert.match(settings, /href: "#linkedin"/);
   assert.match(settings, /href: "#templates"/);
+  assert.match(settings, /href: "#contact-quality"/);
   assert.match(settings, /href: "#blocklist"/);
   assert.match(settings, /Email accounts/);
   assert.match(settings, /LinkedIn accounts/);
+  assert.match(settings, /Contact quality/);
+  assert.match(settings, /Email and LinkedIn readiness/);
+  assert.match(settings, /Email enrichment/);
+  assert.match(settings, /Duplicate protection/);
+  assert.match(
+    settings,
+    /jsonb_each\(coalesce\(p\.properties->'email_verification'/,
+  );
+  assert.match(settings, /Open prospect graph/);
   assert.match(settings, /Blocklist/);
   assert.match(
     settings,
