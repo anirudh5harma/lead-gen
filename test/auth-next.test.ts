@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  authCallbackOrigin,
   googleAuthPath,
   onboardingPathForWebsite,
   postAuthDestination,
@@ -24,6 +25,36 @@ test("googleAuthPath encodes sanitized next path", () => {
     "/auth/google?next=%2Fonboarding%3Furl%3Dhttps%253A%252F%252Facme.com",
   );
   assert.equal(googleAuthPath("https://evil.example"), "/auth/google?next=%2Fdashboard");
+});
+
+test("authCallbackOrigin uses loopback request origin during local development", () => {
+  assert.equal(
+    authCallbackOrigin({
+      appOrigin: "https://www.bombsell.com",
+      headers: new Headers({
+        host: "localhost:3020",
+        "x-forwarded-proto": "http",
+      }),
+      nodeEnv: "development",
+      requestUrl: "http://localhost:3020/auth/google?next=%2Fdashboard",
+    }),
+    "http://localhost:3020",
+  );
+});
+
+test("authCallbackOrigin honors APP_ORIGIN away from local development", () => {
+  assert.equal(
+    authCallbackOrigin({
+      appOrigin: "https://www.bombsell.com/",
+      headers: new Headers({
+        host: "localhost:3020",
+        "x-forwarded-proto": "http",
+      }),
+      nodeEnv: "production",
+      requestUrl: "http://localhost:3020/auth/google?next=%2Fdashboard",
+    }),
+    "https://www.bombsell.com",
+  );
 });
 
 test("onboardingPathForWebsite normalizes company URLs for auth handoff", () => {

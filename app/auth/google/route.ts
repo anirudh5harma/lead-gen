@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { safeNextPath } from "@/lib/auth/next";
+import { authCallbackOrigin, safeNextPath } from "@/lib/auth/next";
 import {
   applySupabaseCookieCapture,
   createServerSupabaseClient,
@@ -20,9 +20,10 @@ export async function GET(request: Request) {
   let originBase: string;
   try {
     const h = await headers();
-    originBase =
-      process.env.APP_ORIGIN?.replace(/\/$/, "") ??
-      `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host") ?? new URL(request.url).host}`;
+    originBase = authCallbackOrigin({
+      headers: h,
+      requestUrl: request.url,
+    });
   } catch (err) {
     console.error("[auth/google] origin resolve failed", err);
     return authFailureResponse(next, "origin");

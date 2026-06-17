@@ -27,6 +27,24 @@ export function googleAuthPath(next: string): string {
   return `/auth/google?next=${encodeURIComponent(safeNextPath(next))}`;
 }
 
+export function authCallbackOrigin({
+  appOrigin = process.env.APP_ORIGIN,
+  headers,
+  nodeEnv = process.env.NODE_ENV,
+  requestUrl,
+}: {
+  appOrigin?: string;
+  headers: Pick<Headers, "get">;
+  nodeEnv?: string;
+  requestUrl: string;
+}): string {
+  const requestOrigin = originFromRequest(requestUrl, headers);
+  if (nodeEnv !== "production" && isLoopbackOrigin(requestOrigin)) {
+    return requestOrigin;
+  }
+  return appOrigin?.replace(/\/$/, "") || requestOrigin;
+}
+
 export function onboardingPathForWebsite(value: string | null | undefined): string {
   const normalized = normalizeWebsiteInput(value);
   if (!normalized) return ONBOARDING_PATH;
@@ -59,4 +77,33 @@ function requiresOnboarding(value: string): boolean {
 
 function pathnameFor(value: string): string {
   return new URL(value, "https://bombsell.local").pathname;
+}
+
+function originFromRequest(requestUrl: string, headers: Pick<Headers, "get">): string {
+  const url = new URL(requestUrl);
+  const host =
+    headers.get("x-forwarded-host") ??
+    headers.get("host") ??
+    url.host;
+  const proto =
+    headers.get("x-forwarded-proto") ??
+    url.protocol.replace(/:$/, "") ??
+    "https";
+  return `${proto}://${host}`.replace(/\/$/, "");
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const hostname = new URL(origin).hostname;
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname === "::1" ||
+      hostname === "[::1]" ||
+      hostname.endsWith(".localhost")
+    );
+  } catch {
+    return false;
+  }
 }
