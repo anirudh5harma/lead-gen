@@ -295,7 +295,7 @@ export default async function SetupPage() {
             account={outlookAccount}
             title="Outlook inbox"
             description="Use the customer's Microsoft 365 mailbox for founder-led outbound, native threading, and reply sync."
-            href="/api/auth/outlook?return_to=/dashboard/integrations"
+            href="/api/auth/outlook?return_to=%2Fdashboard%2Fsettings%23email"
             icon="mail"
             connectLabel="Connect Outlook"
             reconnectLabel="Reconnect Outlook"
@@ -304,7 +304,7 @@ export default async function SetupPage() {
             account={linkedInAccount}
             title="LinkedIn account"
             description="Connect the native LinkedIn channel for connection requests, DMs, and comment-led warmup."
-            href="/api/auth/linkedin?return_to=/dashboard/integrations"
+            href="/api/auth/linkedin?return_to=%2Fdashboard%2Fsettings%23linkedin"
             icon="forum"
             connectLabel="Connect LinkedIn"
             reconnectLabel="Reconnect LinkedIn"

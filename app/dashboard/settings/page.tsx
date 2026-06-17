@@ -453,9 +453,11 @@ export default async function SettingsPage() {
           </div>
         </div>
 
-        <SurfaceSection title="Connected tools">
-          <IntegrationPanel />
-        </SurfaceSection>
+        <div id="tools">
+          <SurfaceSection title="Connected tools">
+            <IntegrationPanel />
+          </SurfaceSection>
+        </div>
       </section>
     </div>
   );
@@ -665,7 +667,7 @@ function SettingsSectionNav({
     {
       title: "Tools",
       detail: "MCP and channel tools",
-      href: "/dashboard/integrations",
+      href: "#tools",
       icon: "account_tree",
       ready: true,
     },
@@ -777,9 +779,9 @@ function IntegrationPanel() {
       <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-xs text-[var(--color-text-2)]">
         /api/mcp
       </div>
-      <Link href="/dashboard/integrations" prefetch={false} className="btn-quiet-sm w-fit">
+      <Link href="/api/mcp" prefetch={false} className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
-        Manage tools
+        Open endpoint
       </Link>
     </div>
   );

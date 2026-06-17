@@ -3,5 +3,5 @@ export function outlookConnectedRedirectPath(channelAccountId: string): string {
     outlook: "connecting",
     channel_account_id: channelAccountId,
   });
-  return `/dashboard/deliverability?${params.toString()}`;
+  return `/dashboard/settings?${params.toString()}#email`;
 }

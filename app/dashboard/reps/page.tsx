@@ -747,7 +747,7 @@ function ChannelCard({ channel }: { channel: ChannelRow }) {
           ) : null}
         </div>
       </div>
-      <Link href="/dashboard/integrations" className="btn-solid-sm w-fit">
+      <Link href="/dashboard/settings#email" className="btn-solid-sm w-fit">
         <Icon name="settings" size={14} />
         Manage
       </Link>
@@ -789,11 +789,11 @@ function workspaceChannelCoverage(channels: ChannelRow[]): ChannelCoverage {
     ),
   );
   return {
-    email: channelConnection(email, "Connect Outlook", "/dashboard/integrations"),
+    email: channelConnection(email, "Connect Outlook", "/dashboard/settings#email"),
     linkedIn: channelConnection(
       linkedIn,
       "Connect LinkedIn",
-      "/dashboard/integrations",
+      "/dashboard/settings#linkedin",
     ),
   };
 }

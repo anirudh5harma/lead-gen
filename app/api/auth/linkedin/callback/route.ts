@@ -69,7 +69,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     await bus.close();
   }
 
-  const dest = new URL(state.return_to ?? "/dashboard/integrations", appOrigin(req));
+  const dest = new URL(state.return_to ?? "/dashboard/settings#linkedin", appOrigin(req));
   dest.searchParams.set("status", "linkedin_connecting");
   dest.searchParams.set("channel_account_id", channelAccountId);
   return Response.redirect(dest.toString(), 302);

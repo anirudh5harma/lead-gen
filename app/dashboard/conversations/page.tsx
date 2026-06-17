@@ -168,7 +168,7 @@ export default async function ConversationsPage() {
           <EmptyState
             title="No outreach sent yet"
             hint="Once a signal starts email or LinkedIn outreach, sent drafts will appear here."
-            cta={{ href: "/dashboard/integrations", label: "Connect accounts", icon: "account_tree" }}
+            cta={{ href: "/dashboard/settings#email", label: "Connect accounts", icon: "account_tree" }}
           />
         ) : (
           <div className="grid gap-2">

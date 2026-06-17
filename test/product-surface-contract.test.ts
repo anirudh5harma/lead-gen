@@ -94,8 +94,8 @@ test("Health presents agent observability from the event-sourced summary", () =>
 test("Setup presents separate Outlook and LinkedIn connection gates", () => {
   const setup = source("app/dashboard/setup/page.tsx");
 
-  assert.match(setup, /href="\/api\/auth\/outlook\?return_to=\/dashboard\/integrations"/);
-  assert.match(setup, /href="\/api\/auth\/linkedin\?return_to=\/dashboard\/integrations"/);
+  assert.match(setup, /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fsettings%23email"/);
+  assert.match(setup, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
   assert.match(
     setup,
     /kind in \('email_domain','oauth_outlook','linkedin_session','linkedin_oauth'\)/,
@@ -262,7 +262,9 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
     settings,
     /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/,
   );
-  assert.match(settings, /href="\/dashboard\/integrations"/);
+  assert.match(settings, /href: "#tools"/);
+  assert.match(settings, /id="tools"/);
+  assert.match(settings, /href="\/api\/mcp"/);
   assert.match(settings, /Audience, agent, and templates/);
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);
@@ -280,15 +282,15 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(registry, /"workspace\.configured": WorkspaceConfigured/);
 });
 
-test("Integrations exposes direct Outlook, LinkedIn, and MCP connection paths", () => {
+test("Integrations route folds into Profile", () => {
   const integrations = source("app/dashboard/integrations/page.tsx");
   const outlook = source("app/api/auth/outlook/route.ts");
   const linkedIn = source("app/api/auth/linkedin/route.ts");
 
-  assert.match(integrations, /Connect Outlook/);
-  assert.match(integrations, /Connect LinkedIn/);
-  assert.match(integrations, /href="\/api\/mcp"/);
-  assert.match(integrations, /kind in \('oauth_outlook','linkedin_session','linkedin_oauth','email_domain'\)/);
+  assert.match(integrations, /redirect\("\/dashboard\/settings#email"\)/);
+  assert.doesNotMatch(integrations, /Connect Outlook/);
+  assert.doesNotMatch(integrations, /Connect LinkedIn/);
+  assert.doesNotMatch(integrations, /href="\/api\/mcp"/);
   assert.match(outlook, /authCallbackOrigin/);
   assert.match(linkedIn, /authCallbackOrigin/);
   assert.match(linkedIn, /safeReturnTo/);
@@ -299,13 +301,13 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   const linkedInRoute = source("app/api/auth/linkedin/route.ts");
   const linkedInCallback = source("app/api/auth/linkedin/callback/route.ts");
   const linkedInState = source("app/api/auth/linkedin/state.ts");
-  const integrations = source("app/dashboard/integrations/page.tsx");
+  const setup = source("app/dashboard/setup/page.tsx");
 
   assert.match(linkedInState, /return_to\?: string/);
   assert.match(linkedInRoute, /safeReturnTo\(req\.nextUrl\.searchParams\.get\("return_to"\)\)/);
-  assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/integrations"/);
+  assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/settings#linkedin"/);
   assert.match(linkedInCallback, /dest\.searchParams\.set\("status", "linkedin_connecting"\)/);
-  assert.match(integrations, /href="\/api\/auth\/linkedin\?return_to=\/dashboard\/integrations"/);
+  assert.match(setup, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
   assert.doesNotMatch(linkedInCallback, /\/dashboard\/prospecting/);
 });
 
@@ -315,12 +317,17 @@ test("account connection entry points carry explicit product return targets", ()
     source("app/dashboard/integrations/page.tsx"),
     source("app/dashboard/setup/page.tsx"),
     source("app/dashboard/deliverability/page.tsx"),
+    source("app/dashboard/reps/page.tsx"),
+    source("app/dashboard/conversations/page.tsx"),
+    source("app/dashboard/prospects/[id]/page.tsx"),
   ].join("\n");
 
   assert.doesNotMatch(surfaces, /href="\/api\/auth\/outlook"/);
   assert.doesNotMatch(surfaces, /href="\/api\/auth\/linkedin"/);
   assert.match(surfaces, /\/api\/auth\/outlook\?return_to=/);
   assert.match(surfaces, /\/api\/auth\/linkedin\?return_to=/);
+  assert.doesNotMatch(surfaces, /\/dashboard\/integrations/);
+  assert.doesNotMatch(surfaces, /\/api\/auth\/outlook\?return_to=\/dashboard\/deliverability/);
 });
 
 test("new product defaults are autonomous after checks", () => {

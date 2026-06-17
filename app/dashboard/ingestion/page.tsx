@@ -100,7 +100,7 @@ function EmailReadinessBanner({
   const actionHref = needsReconnect
     ? "/api/auth/outlook?return_to=/dashboard/signals"
     : hasOutlook
-      ? "/dashboard/deliverability"
+      ? "/dashboard/settings#email"
       : "/api/auth/outlook?return_to=/dashboard/signals";
   const icon = needsReconnect ? "login" : hasOutlook ? "sync_problem" : "mail";
   return (

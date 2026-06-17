@@ -274,7 +274,7 @@ export default async function ProspectProfilePage({
           <Icon name="arrow_back" size={14} />
           Back to prospects
         </Link>
-        <Link href="/dashboard/integrations" className="btn-solid-sm">
+        <Link href="/dashboard/settings#email" className="btn-solid-sm">
           <Icon name="account_tree" size={14} />
           Connect accounts
         </Link>

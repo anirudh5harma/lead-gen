@@ -4,12 +4,12 @@ import { test } from "node:test";
 import { outlookConnectedRedirectPath } from "../app/api/auth/outlook/destination.ts";
 import { callbackRedirectUri } from "../app/api/auth/outlook/callback/redirect-uri.ts";
 
-test("Outlook OAuth callback lands on an existing deliverability surface", () => {
+test("Outlook OAuth callback lands on Profile email settings", () => {
   const path = outlookConnectedRedirectPath("11111111-1111-4111-8111-111111111111");
 
   assert.equal(
     path,
-    "/dashboard/deliverability?outlook=connecting&channel_account_id=11111111-1111-4111-8111-111111111111",
+    "/dashboard/settings?outlook=connecting&channel_account_id=11111111-1111-4111-8111-111111111111#email",
   );
   assert.ok(!path.startsWith("/onboarding/outlook"));
 });
