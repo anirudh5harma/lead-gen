@@ -326,16 +326,16 @@ function BriefView({
 
         <aside className="section-note h-fit">
           <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Outreach insight
+            Agent insight
           </p>
           <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
             {totalSent7d === 0
-              ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals create reviewed drafts."
+              ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals become verified contacts and judged drafts."
               : `${totalSent7d} emails or DMs went out in the last week. ${actions.replies_7d} got useful replies, ${actions.meetings_7d} became meetings, and the current reply rate is ${replyRate}%.`}
           </p>
-          <Link href="/dashboard/conversations" className="btn-solid-sm mt-4 w-fit">
+          <Link href="/dashboard/reps#outreach" className="btn-solid-sm mt-4 w-fit">
             <Icon name="arrow_forward" size={14} />
-            Open outreach
+            Open Agent
           </Link>
         </aside>
       </section>
@@ -375,7 +375,7 @@ function DashboardMetric({
 function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
   return (
     <Link
-      href="/dashboard/signals"
+      href="/dashboard/reps#verified-contacts"
       className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 transition-colors hover:border-[var(--color-line-3)]"
     >
       <span className="min-w-0">

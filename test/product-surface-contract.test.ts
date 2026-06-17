@@ -75,10 +75,10 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /LinkedIn DMs/);
   assert.match(dashboard, /Replies \/ meetings/);
   assert.match(dashboard, /Signal mix/);
-  assert.match(dashboard, /Outreach insight/);
+  assert.match(dashboard, /Agent insight/);
   assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
-  assert.match(dashboard, /href="\/dashboard\/conversations"/);
-  assert.match(dashboard, /href="\/dashboard\/signals"/);
+  assert.match(dashboard, /href="\/dashboard\/reps#outreach"/);
+  assert.match(dashboard, /href="\/dashboard\/reps#verified-contacts"/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
 });
 
@@ -174,6 +174,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Verified contacts/);
   assert.match(reps, /Signal-ready contacts/);
   assert.match(reps, /verified emails and LinkedIn profiles/);
+  assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
+  assert.match(reps, /id="outreach"/);
   assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /Qualified signals become verified contacts/);

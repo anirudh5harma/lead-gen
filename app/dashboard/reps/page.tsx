@@ -266,7 +266,7 @@ async function loadAgentContactSummary(
       `select p.id,
               p.full_name,
               p.title,
-              p.emails::text[] as emails,
+              coalesce(p.emails, '{}'::text[]) as emails,
               p.linkedin_url,
               co.name as company_name,
               co.domain::text as company_domain,
@@ -287,7 +287,7 @@ async function loadAgentContactSummary(
          from graph_persons p
          left join graph_companies co on co.id = p.company_id
         where p.workspace_id = $1
-          and (cardinality(p.emails) > 0 or p.linkedin_url is not null)
+          and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
         order by coalesce(
                    (select max(s.ingested_at)
                       from signals s
@@ -315,11 +315,11 @@ async function loadAgentContactSummary(
          (select count(*)::text
             from graph_persons p
            where p.workspace_id = $1
-             and (cardinality(p.emails) > 0 or p.linkedin_url is not null)) as reachable,
+             and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)) as reachable,
          (select count(*)::text
             from graph_persons p
            where p.workspace_id = $1
-             and cardinality(p.emails) > 0) as with_email,
+             and cardinality(coalesce(p.emails, '{}'::text[])) > 0) as with_email,
          (select count(*)::text
             from graph_persons p
            where p.workspace_id = $1
@@ -768,50 +768,52 @@ function AgentOutreachPanel({
   outreach: AgentOutreachSummary;
 }) {
   return (
-    <SurfaceSection
-      title="Outreach"
-      action={
-        <Link href="/dashboard/conversations" className="btn-quiet-sm">
-          <Icon name="arrow_forward" size={14} />
-          Open sent list
-        </Link>
-      }
-    >
-      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-          <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Agent outreach, last 7 days
-          </p>
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
-            <MiniStat label="Emails sent" value={outreach.email_sent_7d} />
-            <MiniStat label="LinkedIn sent" value={outreach.linkedin_sent_7d} />
-            <MiniStat label="Awaiting reply" value={outreach.awaiting_reply} />
-          </div>
-          <p className="text-xs leading-5 text-[var(--color-text-3)]">
-            Qualified signals become verified contacts, then judged email or
-            LinkedIn drafts. Click any contact to inspect the sent draft.
-          </p>
-        </aside>
+    <div id="outreach">
+      <SurfaceSection
+        title="Outreach"
+        action={
+          <Link href="/dashboard/conversations" className="btn-quiet-sm">
+            <Icon name="arrow_forward" size={14} />
+            Open sent list
+          </Link>
+        }
+      >
+        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Agent outreach, last 7 days
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+              <MiniStat label="Emails sent" value={outreach.email_sent_7d} />
+              <MiniStat label="LinkedIn sent" value={outreach.linkedin_sent_7d} />
+              <MiniStat label="Awaiting reply" value={outreach.awaiting_reply} />
+            </div>
+            <p className="text-xs leading-5 text-[var(--color-text-3)]">
+              Qualified signals become verified contacts, then judged email or
+              LinkedIn drafts. Click any contact to inspect the sent draft.
+            </p>
+          </aside>
 
-        {outreach.recent.length === 0 ? (
-          <EmptyState
-            title="No sent outreach yet"
-            hint="When the agent sends an email or LinkedIn touch, the contact and draft will appear here."
-            cta={{
-              href: "/dashboard/settings#linkedin",
-              label: "Connect accounts",
-              icon: "account_tree",
-            }}
-          />
-        ) : (
-          <div className="grid gap-2">
-            {outreach.recent.map((message) => (
-              <AgentOutreachLink key={message.id} message={message} />
-            ))}
-          </div>
-        )}
-      </div>
-    </SurfaceSection>
+          {outreach.recent.length === 0 ? (
+            <EmptyState
+              title="No sent outreach yet"
+              hint="When the agent sends an email or LinkedIn touch, the contact and draft will appear here."
+              cta={{
+                href: "/dashboard/settings#linkedin",
+                label: "Connect accounts",
+                icon: "account_tree",
+              }}
+            />
+          ) : (
+            <div className="grid gap-2">
+              {outreach.recent.map((message) => (
+                <AgentOutreachLink key={message.id} message={message} />
+              ))}
+            </div>
+          )}
+        </div>
+      </SurfaceSection>
+    </div>
   );
 }
 
