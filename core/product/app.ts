@@ -680,7 +680,15 @@ export interface ConfigureWorkspaceProfileInput {
   company_name: string;
   website_url: string;
   industry?: string | null;
+  size_bucket?: string | null;
   description?: string | null;
+  value_proposition?: string | null;
+  customer_pain_points?: string | null;
+  key_features?: string | null;
+  social_proof?: string | null;
+  linkedin_company_url?: string | null;
+  auto_enrich_email_addresses?: boolean;
+  prevent_team_contact_duplication?: boolean;
   profile_source?: "manual" | "firecrawl" | "fallback";
 }
 
@@ -1053,7 +1061,15 @@ export interface ProductCompanyProfile {
   domain: string | null;
   website_url: string | null;
   industry: string | null;
+  company_size?: string | null;
   description: string | null;
+  value_proposition?: string | null;
+  customer_pain_points?: string | null;
+  key_features?: string | null;
+  social_proof?: string | null;
+  linkedin_company_url?: string | null;
+  auto_enrich_email_addresses?: boolean;
+  prevent_team_contact_duplication?: boolean;
   exa_summary: string | null;
   exa_source_domains: string[];
   exa_market_terms: string[];
@@ -2540,7 +2556,16 @@ export async function configureWorkspaceCompanyProfile(
     domain,
     website_url: websiteUrl,
     industry: blankToNull(input.industry ?? undefined),
+    size_bucket: blankToNull(input.size_bucket ?? undefined),
     description: blankToNull(input.description ?? undefined),
+    value_proposition: blankToNull(input.value_proposition ?? undefined),
+    customer_pain_points: blankToNull(input.customer_pain_points ?? undefined),
+    key_features: blankToNull(input.key_features ?? undefined),
+    social_proof: blankToNull(input.social_proof ?? undefined),
+    linkedin_company_url: blankToNull(input.linkedin_company_url ?? undefined),
+    auto_enrich_email_addresses: input.auto_enrich_email_addresses ?? true,
+    prevent_team_contact_duplication:
+      input.prevent_team_contact_duplication ?? true,
     profile_source: input.profile_source ?? "manual",
   };
   const event = await engine.bus.publish({
@@ -4937,19 +4962,28 @@ async function projectWorkspaceCompanyProfiled(
     domain: string | null;
     website_url: string;
     industry: string | null;
+    size_bucket?: string | null;
     description: string | null;
+    value_proposition?: string | null;
+    customer_pain_points?: string | null;
+    key_features?: string | null;
+    social_proof?: string | null;
+    linkedin_company_url?: string | null;
+    auto_enrich_email_addresses?: boolean;
+    prevent_team_contact_duplication?: boolean;
     profile_source?: "manual" | "firecrawl" | "fallback";
   };
   await pool.query(
     `insert into graph_companies (
-       id, workspace_id, name, domain, industry, description, properties, provenance
+       id, workspace_id, name, domain, industry, size_bucket, description, properties, provenance
      ) values (
-       $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb
+       $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb
      )
      on conflict (id) do update set
        name = excluded.name,
        domain = coalesce(excluded.domain, graph_companies.domain),
        industry = excluded.industry,
+       size_bucket = excluded.size_bucket,
        description = excluded.description,
        properties = case
          when excluded.properties->>'profile_source' = 'manual'
@@ -4964,10 +4998,20 @@ async function projectWorkspaceCompanyProfiled(
       payload.name,
       payload.domain,
       payload.industry,
+      payload.size_bucket ?? null,
       payload.description,
       JSON.stringify({
         profile_role: "workspace_company",
         website_url: payload.website_url,
+        value_proposition: payload.value_proposition ?? null,
+        customer_pain_points: payload.customer_pain_points ?? null,
+        key_features: payload.key_features ?? null,
+        social_proof: payload.social_proof ?? null,
+        linkedin_company_url: payload.linkedin_company_url ?? null,
+        auto_enrich_email_addresses:
+          payload.auto_enrich_email_addresses ?? true,
+        prevent_team_contact_duplication:
+          payload.prevent_team_contact_duplication ?? true,
         profile_source: payload.profile_source ?? event.source,
         profile_updated_at: event.occurred_at,
       }),
@@ -10814,10 +10858,11 @@ export async function getProductCompanyProfile(
     name: string;
     domain: string | null;
     industry: string | null;
+    size_bucket: string | null;
     description: string | null;
     properties: Record<string, unknown>;
   }>(
-    `select id, name, domain::text as domain, industry, description, properties
+    `select id, name, domain::text as domain, industry, size_bucket, description, properties
        from graph_companies
       where workspace_id = $1
         and properties->>'profile_role' = 'workspace_company'
@@ -11188,10 +11233,11 @@ export async function getAppState(
       name: string;
       domain: string | null;
       industry: string | null;
+      size_bucket: string | null;
       description: string | null;
       properties: Record<string, unknown>;
     }>(
-      `select id, name, domain::text as domain, industry, description, properties
+      `select id, name, domain::text as domain, industry, size_bucket, description, properties
          from graph_companies
         where workspace_id = $1
           and properties->>'profile_role' = 'workspace_company'
@@ -11452,6 +11498,7 @@ function productProfileState(
     name: string;
     domain: string | null;
     industry: string | null;
+    size_bucket: string | null;
     description: string | null;
     properties: Record<string, unknown>;
   } | null,
@@ -11466,7 +11513,17 @@ function productProfileState(
     domain: row.domain,
     website_url: stringStateValue(row.properties.website_url),
     industry: row.industry,
+    company_size: row.size_bucket,
     description: row.description,
+    value_proposition: stringStateValue(row.properties.value_proposition),
+    customer_pain_points: stringStateValue(row.properties.customer_pain_points),
+    key_features: stringStateValue(row.properties.key_features),
+    social_proof: stringStateValue(row.properties.social_proof),
+    linkedin_company_url: stringStateValue(row.properties.linkedin_company_url),
+    auto_enrich_email_addresses:
+      booleanStateValue(row.properties.auto_enrich_email_addresses) ?? true,
+    prevent_team_contact_duplication:
+      booleanStateValue(row.properties.prevent_team_contact_duplication) ?? true,
     exa_summary: stringStateValue(exaProfile?.summary),
     exa_source_domains: arrayStringStateValue(intelligence?.source_domains),
     exa_market_terms: arrayStringStateValue(intelligence?.market_terms),
@@ -12443,4 +12500,8 @@ function arrayStringStateValue(value: unknown): string[] {
 
 function stringStateValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function booleanStateValue(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }

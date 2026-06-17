@@ -33,6 +33,10 @@ function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
 }
 
+function checked(formData: FormData, key: string): boolean {
+  return formData.get(key) === "on";
+}
+
 type ToastVariant = "success" | "error" | "info";
 
 function dashboardReturnPath(formData: FormData, fallback: string): string {
@@ -471,7 +475,21 @@ export async function editCompanyProfileAction(formData: FormData) {
         company_name,
         website_url,
         industry: value(formData, "industry") || null,
+        size_bucket: value(formData, "company_size") || null,
         description: value(formData, "description") || null,
+        value_proposition: value(formData, "value_proposition") || null,
+        customer_pain_points: value(formData, "customer_pain_points") || null,
+        key_features: value(formData, "key_features") || null,
+        social_proof: value(formData, "social_proof") || null,
+        linkedin_company_url: value(formData, "linkedin_company_url") || null,
+        auto_enrich_email_addresses: checked(
+          formData,
+          "auto_enrich_email_addresses",
+        ),
+        prevent_team_contact_duplication: checked(
+          formData,
+          "prevent_team_contact_duplication",
+        ),
         profile_source: "manual",
       },
       session,

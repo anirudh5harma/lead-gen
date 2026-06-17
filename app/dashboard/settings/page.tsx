@@ -794,59 +794,95 @@ function ProfileSettingsForm({
   profile: ProductCompanyProfile | null;
 }) {
   const website = profileWebsite(profile);
-  const profileReady = Boolean(profile?.company_name && website);
   return (
     <form action={editCompanyProfileAction} className="section-note grid gap-5">
       <input type="hidden" name="return_to" value="/dashboard/settings" />
-      {profileReady ? (
-        <>
-          <input
-            type="hidden"
-            name="company_name"
-            value={profile!.company_name}
-          />
-          <input type="hidden" name="website_url" value={website} />
-          <input
-            type="hidden"
-            name="industry"
-            value={profile?.industry ?? ""}
-          />
-          <div className="grid gap-3 md:grid-cols-3">
-            <ProfileFact label="Company" value={profile!.company_name} />
-            <ProfileFact label="Website" value={website} />
-            <ProfileFact
-              label="Industry"
-              value={profile?.industry ?? "Unspecified"}
-            />
-          </div>
-        </>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field
-            name="company_name"
-            label="Company"
-            defaultValue={profile?.company_name ?? ""}
-            required
-          />
-          <Field
-            name="website_url"
-            label="Website"
-            defaultValue={website}
-            required
-          />
-          <Field
-            name="industry"
-            label="Industry"
-            defaultValue={profile?.industry ?? ""}
-          />
-        </div>
-      )}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field
+          name="company_name"
+          label="Company"
+          defaultValue={profile?.company_name ?? ""}
+          required
+        />
+        <Field
+          name="website_url"
+          label="Website"
+          defaultValue={website}
+          required
+        />
+        <Field
+          name="industry"
+          label="Industry"
+          defaultValue={profile?.industry ?? ""}
+        />
+        <Select
+          name="company_size"
+          label="Company size"
+          defaultValue={profile?.company_size ?? ""}
+          options={[
+            ["", "Unspecified"],
+            ["1-10", "1-10 employees"],
+            ["11-50", "11-50 employees"],
+            ["51-200", "51-200 employees"],
+            ["201-500", "201-500 employees"],
+            ["501-1000", "501-1000 employees"],
+            ["1001-5000", "1001-5000 employees"],
+            ["5001-10000", "5001-10000 employees"],
+            ["10000+", "10000+ employees"],
+          ]}
+        />
+      </div>
       <TextArea
         name="description"
         label="Company description"
         defaultValue={profile?.description ?? ""}
         rows={5}
       />
+      <TextArea
+        name="value_proposition"
+        label="Value proposition"
+        defaultValue={profile?.value_proposition ?? ""}
+        rows={3}
+      />
+      <TextArea
+        name="customer_pain_points"
+        label="Customer pain points"
+        defaultValue={profile?.customer_pain_points ?? ""}
+        rows={3}
+      />
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextArea
+          name="key_features"
+          label="Key features"
+          defaultValue={profile?.key_features ?? ""}
+          rows={4}
+        />
+        <TextArea
+          name="social_proof"
+          label="Social proof"
+          defaultValue={profile?.social_proof ?? ""}
+          rows={4}
+        />
+      </div>
+      <Field
+        name="linkedin_company_url"
+        label="LinkedIn company page"
+        defaultValue={profile?.linkedin_company_url ?? ""}
+      />
+      <div className="grid gap-3 md:grid-cols-2">
+        <ProfilePreferenceCheckbox
+          name="auto_enrich_email_addresses"
+          title="Auto-enrich email addresses"
+          detail="Find and verify missing emails before outreach drafts can send."
+          defaultChecked={profile?.auto_enrich_email_addresses ?? true}
+        />
+        <ProfilePreferenceCheckbox
+          name="prevent_team_contact_duplication"
+          title="Prevent duplicate contacts"
+          detail="Keep the same reachable person from being worked twice across the workspace."
+          defaultChecked={profile?.prevent_team_contact_duplication ?? true}
+        />
+      </div>
       <PendingSubmitButton
         className="btn-solid w-fit"
         icon="save"
@@ -855,6 +891,37 @@ function ProfileSettingsForm({
         Save profile
       </PendingSubmitButton>
     </form>
+  );
+}
+
+function ProfilePreferenceCheckbox({
+  name,
+  title,
+  detail,
+  defaultChecked,
+}: {
+  name: string;
+  title: string;
+  detail: string;
+  defaultChecked: boolean;
+}) {
+  return (
+    <label className="flex gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3">
+      <input
+        type="checkbox"
+        name={name}
+        defaultChecked={defaultChecked}
+        className="mt-1 size-4 accent-[var(--color-accent)]"
+      />
+      <span>
+        <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+          {title}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+          {detail}
+        </span>
+      </span>
+    </label>
   );
 }
 

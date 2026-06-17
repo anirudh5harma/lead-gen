@@ -362,6 +362,13 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /LinkedIn accounts/);
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Email and LinkedIn readiness/);
+  assert.match(settings, /Value proposition/);
+  assert.match(settings, /Customer pain points/);
+  assert.match(settings, /Key features/);
+  assert.match(settings, /Social proof/);
+  assert.match(settings, /LinkedIn company page/);
+  assert.match(settings, /Auto-enrich email addresses/);
+  assert.match(settings, /Prevent duplicate contacts/);
   assert.match(settings, /Email enrichment/);
   assert.match(settings, /Duplicate protection/);
   assert.match(
@@ -403,6 +410,9 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /row_number\(\) over/);
   assert.match(settings, /properties ->> 'mailbox_email'/);
   assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/settings#motion"\)/);
+  assert.match(actions, /value_proposition/);
+  assert.match(actions, /customer_pain_points/);
+  assert.match(actions, /prevent_team_contact_duplication/);
   assert.match(actions, /configureWorkspaceAutonomyMode/);
   assert.match(productApp, /event_type: "workspace\.configured"/);
   assert.match(productApp, /event_type: "rep\.configured"/);

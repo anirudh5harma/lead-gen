@@ -99,7 +99,13 @@ interface ContextProfile {
   domain: string | null;
   website_url: string | null;
   industry: string | null;
+  company_size?: string | null;
   description: string | null;
+  value_proposition?: string | null;
+  customer_pain_points?: string | null;
+  key_features?: string | null;
+  social_proof?: string | null;
+  linkedin_company_url?: string | null;
   exa_summary: string | null;
   exa_source_domains: string[];
   exa_market_terms: string[];
@@ -126,7 +132,13 @@ interface ContextProfileRow {
   domain: string | null;
   website_url: string | null;
   industry: string | null;
+  company_size: string | null;
   description: string | null;
+  value_proposition: string | null;
+  customer_pain_points: string | null;
+  key_features: string | null;
+  social_proof: string | null;
+  linkedin_company_url: string | null;
   exa_summary: string | null;
   exa_source_domains: unknown;
   exa_market_terms: unknown;
@@ -236,7 +248,13 @@ export async function getWorkspaceAgentContext(
               domain::text as domain,
               properties->>'website_url' as website_url,
               industry,
+              size_bucket as company_size,
               description,
+              properties->>'value_proposition' as value_proposition,
+              properties->>'customer_pain_points' as customer_pain_points,
+              properties->>'key_features' as key_features,
+              properties->>'social_proof' as social_proof,
+              properties->>'linkedin_company_url' as linkedin_company_url,
               properties #>> '{exa_profile,summary}' as exa_summary,
               coalesce(properties #> '{exa_profile,intelligence,source_domains}', properties #> '{exa_profile,source_domains}', '[]'::jsonb) as exa_source_domains,
               coalesce(properties #> '{exa_profile,intelligence,market_terms}', properties #> '{exa_profile,market_terms}', '[]'::jsonb) as exa_market_terms,
@@ -515,7 +533,13 @@ export function formatProfileIntelligence(profile: ContextProfile | null): strin
     `- Domain: ${profile.domain ?? "-"}`,
     `- Website: ${profile.website_url ?? "-"}`,
     `- Industry: ${line(profile.industry)}`,
+    `- Company size: ${line(profile.company_size)}`,
     `- Description: ${line(profile.description)}`,
+    `- Value proposition: ${line(profile.value_proposition)}`,
+    `- Customer pain points: ${line(profile.customer_pain_points)}`,
+    `- Key features: ${line(profile.key_features)}`,
+    `- Social proof: ${line(profile.social_proof)}`,
+    `- LinkedIn company page: ${profile.linkedin_company_url ?? "-"}`,
     `- Public-web summary: ${line(profile.exa_summary)}`,
     `- Market terms: ${profile.exa_market_terms.length > 0 ? profile.exa_market_terms.join(", ") : "-"}`,
     `- Positioning: ${profile.exa_positioning_notes.length > 0 ? profile.exa_positioning_notes.join(" | ") : "-"}`,
@@ -592,7 +616,13 @@ function mapContextProfile(row: ContextProfileRow | null): ContextProfile | null
     domain: row.domain,
     website_url: row.website_url,
     industry: row.industry,
+    company_size: row.company_size,
     description: row.description,
+    value_proposition: row.value_proposition,
+    customer_pain_points: row.customer_pain_points,
+    key_features: row.key_features,
+    social_proof: row.social_proof,
+    linkedin_company_url: row.linkedin_company_url,
     exa_summary: row.exa_summary,
     exa_source_domains: stringArray(row.exa_source_domains),
     exa_market_terms: stringArray(row.exa_market_terms),
