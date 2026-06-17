@@ -11,7 +11,7 @@ import { googleAuthPath, PRODUCT_HOME_PATH } from "@/lib/auth/next";
 import OnboardingForm from "./OnboardingForm";
 
 export const metadata: Metadata = {
-  title: "Create Outreach Agent | Bombsell",
+  title: "Create Profile | Bombsell",
 };
 
 export const dynamic = "force-dynamic";
@@ -47,20 +47,20 @@ export default async function OnboardingPage({
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
             <h1 className="display-serif mt-4 max-w-xl text-[clamp(2rem,4vw,3.5rem)] text-[var(--color-text-1)]">
-              Create your first Outreach Agent.
+              Create your workspace profile.
             </h1>
           </ScrollReveal>
           <ScrollReveal delay={0.3}>
             <p className="mt-5 max-w-md text-[17px] leading-[1.6] text-[var(--color-text-2)]">
-              Add your website. Bombsell builds the company profile, finds qualified signals, verifies contacts, and prepares email or LinkedIn outreach for review.
+              Add your website. Bombsell builds the profile, finds qualified signals, verifies contacts, and prepares email or LinkedIn outreach for review.
             </p>
           </ScrollReveal>
           <ScrollReveal delay={0.4}>
             <div className="mt-8 grid gap-3">
-              <FlowStep number="1" label="Website" text="Your public site becomes profile, audience, and voice context." />
-              <FlowStep number="2" label="Signals" text="The agent looks for timing signals worth acting on." />
-              <FlowStep number="3" label="Contacts" text="Email and LinkedIn profiles are resolved before outreach." />
-              <FlowStep number="4" label="Agent" text="Drafts wait behind your channel limits and review posture." />
+              <FlowStep number="1" label="Profile" text="Your public site becomes company, audience, and voice context." />
+              <FlowStep number="2" label="Accounts" text="Connect email and LinkedIn from Profile when the workspace is ready." />
+              <FlowStep number="3" label="Contacts" text="Qualified signals resolve verified emails and LinkedIn profiles." />
+              <FlowStep number="4" label="Agent" text="The Agent drafts outreach behind channel limits and review posture." />
             </div>
           </ScrollReveal>
         </div>
@@ -85,10 +85,10 @@ export default async function OnboardingPage({
               </span>
               <div className="min-w-0">
                 <h2 className="font-sans text-2xl font-semibold leading-tight text-[var(--color-text-1)]">
-                  Create Outreach Agent
+                  Create profile
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-                  Website first. Email and LinkedIn connections come next.
+                  Website first. Email and LinkedIn connect from Profile.
                 </p>
               </div>
             </div>

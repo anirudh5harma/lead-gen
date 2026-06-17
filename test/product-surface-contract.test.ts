@@ -555,12 +555,15 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   const productTools = source("core/product/tools.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
-  assert.match(onboardingPage, /Create your first Outreach Agent/);
+  assert.match(onboardingPage, /Create your workspace profile/);
   assert.match(onboardingPage, /Step 1 of 4/);
   assert.match(onboardingPage, /finds qualified signals/);
   assert.match(onboardingPage, /verifies contacts/);
   assert.match(onboardingPage, /prepares email or LinkedIn outreach/);
-  assert.match(onboardingForm, /Create Outreach Agent/);
+  assert.match(onboardingPage, /Connect email and LinkedIn from Profile/);
+  assert.match(onboardingForm, /Create profile/);
+  assert.doesNotMatch(onboardingPage, /Create Outreach Agent/);
+  assert.doesNotMatch(onboardingForm, /Create Outreach Agent/);
   assert.match(onboardingActions, /runWorkspaceActivationSetup/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
   assert.match(onboardingActions, /wait: false/);
