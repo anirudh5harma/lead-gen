@@ -1300,7 +1300,7 @@ function AgentContactsPanel({
   contacts: AgentContactSummary;
 }) {
   return (
-    <div id="verified-contacts">
+    <div id="verified-contacts" className="scroll-mt-28">
       <SurfaceSection
         title="Verified contacts"
         action={
@@ -1520,7 +1520,7 @@ function AgentOutreachPanel({
   outreach: AgentOutreachSummary;
 }) {
   return (
-    <div id="outreach">
+    <div id="outreach" className="scroll-mt-28">
       <SurfaceSection
         title="Sent outreach"
         action={

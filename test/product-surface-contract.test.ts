@@ -321,7 +321,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /workspace_source_configs/);
   assert.match(reps, /graph_sources/);
   assert.match(reps, /coalesce\(compiled->>'channel', ''\)/);
-  assert.match(reps, /id="sources"/);
+  assert.match(reps, /id="sources" className="scroll-mt-28"/);
   assert.match(reps, /runAgentSourceNowAction/);
   assert.match(reps, /Run now/);
   assert.match(reps, /name="source_id" value=\{source\.id\}/);
@@ -337,7 +337,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Signal-ready contacts/);
   assert.match(reps, /verified emails and LinkedIn profiles/);
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
-  assert.match(reps, /id="outreach"/);
+  assert.match(reps, /id="verified-contacts" className="scroll-mt-28"/);
+  assert.match(reps, /id="outreach" className="scroll-mt-28"/);
   assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
   assert.match(reps, /title="Sent outreach"/);
   assert.match(reps, /Agent outreach, last 7 days/);
