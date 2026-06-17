@@ -167,8 +167,14 @@ test("Agent surface shows live work and account readiness", () => {
   const reps = source("app/dashboard/reps/page.tsx");
 
   assert.match(reps, /AgentActivityPanel/);
+  assert.match(reps, /AgentContactsPanel/);
   assert.match(reps, /AgentOutreachPanel/);
+  assert.match(reps, /loadAgentContactSummary/);
   assert.match(reps, /loadAgentOutreachSummary/);
+  assert.match(reps, /Verified contacts/);
+  assert.match(reps, /Signal-ready contacts/);
+  assert.match(reps, /verified emails and LinkedIn profiles/);
+  assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /Qualified signals become verified contacts/);
   assert.match(reps, /href="\/dashboard\/conversations"/);

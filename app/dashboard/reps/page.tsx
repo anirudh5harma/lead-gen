@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { EmptyState } from "@/components/dashboard/Shell";
 import {
   HeroStat,
@@ -88,17 +89,39 @@ interface AgentOutreachSummary {
   awaiting_reply: number;
 }
 
+interface AgentContactRow {
+  id: string;
+  full_name: string;
+  title: string | null;
+  emails: string[];
+  linkedin_url: string | null;
+  company_name: string | null;
+  company_domain: string | null;
+  fresh_signals: string;
+  conversations: string;
+  updated_at: Date;
+}
+
+interface AgentContactSummary {
+  recent: AgentContactRow[];
+  reachable: number;
+  with_email: number;
+  with_linkedin: number;
+  fresh_signals: number;
+}
+
 interface RepsState {
   reps: RepRow[];
   channels: ChannelRow[];
   readiness: WorkspaceLaunchReadiness;
   activity: AgentActivity;
   outreach: AgentOutreachSummary;
+  contacts: AgentContactSummary;
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
   const pool = getPool();
-  const [reps, channels, readiness, activity, outreach] = await Promise.all([
+  const [reps, channels, readiness, activity, outreach, contacts] = await Promise.all([
     pool.query<RepRow>(
       `select r.id,
               r.name,
@@ -174,6 +197,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     loadWorkspaceLaunchReadiness(pool, workspaceId, { required_channel: "any" }),
     loadAgentActivity(workspaceId),
     loadAgentOutreachSummary(workspaceId),
+    loadAgentContactSummary(workspaceId),
   ]);
   return {
     reps: reps.rows,
@@ -181,6 +205,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     readiness,
     activity,
     outreach,
+    contacts,
   };
 }
 
@@ -229,6 +254,90 @@ async function loadAgentActivity(workspaceId: string): Promise<AgentActivity> {
       event_type: row.event_type,
       count: Number(row.count),
     })),
+  };
+}
+
+async function loadAgentContactSummary(
+  workspaceId: string,
+): Promise<AgentContactSummary> {
+  const pool = getPool();
+  const [recent, summary] = await Promise.all([
+    pool.query<AgentContactRow>(
+      `select p.id,
+              p.full_name,
+              p.title,
+              p.emails::text[] as emails,
+              p.linkedin_url,
+              co.name as company_name,
+              co.domain::text as company_domain,
+              p.updated_at,
+              (select count(*)::text
+                 from signals s
+                where s.workspace_id = $1
+                  and s.status in ('ingested','matched','in_play')
+                  and (
+                    s.related_person_id = p.id
+                    or (p.company_id is not null and s.related_company_id = p.company_id)
+                  )
+                  and s.ingested_at >= now() - interval '14 days') as fresh_signals,
+              (select count(*)::text
+                 from conversations c
+                where c.workspace_id = $1
+                  and c.counterparty_person_id = p.id) as conversations
+         from graph_persons p
+         left join graph_companies co on co.id = p.company_id
+        where p.workspace_id = $1
+          and (cardinality(p.emails) > 0 or p.linkedin_url is not null)
+        order by coalesce(
+                   (select max(s.ingested_at)
+                      from signals s
+                     where s.workspace_id = $1
+                       and (
+                         s.related_person_id = p.id
+                         or (p.company_id is not null and s.related_company_id = p.company_id)
+                       )),
+                   (select max(c.last_activity_at)
+                      from conversations c
+                     where c.workspace_id = $1
+                       and c.counterparty_person_id = p.id),
+                   p.updated_at
+                 ) desc
+        limit 5`,
+      [workspaceId],
+    ),
+    pool.query<{
+      reachable: string;
+      with_email: string;
+      with_linkedin: string;
+      fresh_signals: string;
+    }>(
+      `select
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
+             and (cardinality(p.emails) > 0 or p.linkedin_url is not null)) as reachable,
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
+             and cardinality(p.emails) > 0) as with_email,
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
+             and p.linkedin_url is not null) as with_linkedin,
+         (select count(*)::text
+            from signals s
+           where s.workspace_id = $1
+             and s.status in ('ingested','matched','in_play')
+             and s.ingested_at >= now() - interval '14 days') as fresh_signals`,
+      [workspaceId],
+    ),
+  ]);
+  return {
+    recent: recent.rows,
+    reachable: Number(summary.rows[0]?.reachable ?? 0),
+    with_email: Number(summary.rows[0]?.with_email ?? 0),
+    with_linkedin: Number(summary.rows[0]?.with_linkedin ?? 0),
+    fresh_signals: Number(summary.rows[0]?.fresh_signals ?? 0),
   };
 }
 
@@ -332,6 +441,8 @@ export default async function RepsPage() {
 
       <AgentActivityPanel activity={state.activity} />
 
+      <AgentContactsPanel contacts={state.contacts} />
+
       <AgentOutreachPanel outreach={state.outreach} />
 
       <SurfaceSection
@@ -405,19 +516,19 @@ export default async function RepsPage() {
                   </span>
                 </span>
               </Link>
-              <Link href="/dashboard/signals" className="priority-action">
+              <a href="#verified-contacts" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="travel_explore" size={16} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Quality signals
+                    Verified contacts
                   </span>
                   <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Timing evidence with verified contacts and drafts.
+                    Email and LinkedIn profiles ready for outreach.
                   </span>
                 </span>
-              </Link>
+              </a>
               <Link href="/dashboard/settings#email" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="settings" size={16} />
@@ -449,6 +560,137 @@ export default async function RepsPage() {
         </SurfaceSection>
       </section>
     </div>
+  );
+}
+
+function AgentContactsPanel({
+  contacts,
+}: {
+  contacts: AgentContactSummary;
+}) {
+  return (
+    <div id="verified-contacts">
+      <SurfaceSection
+        title="Verified contacts"
+        action={
+          <Link href="/dashboard/settings#contact-quality" className="btn-quiet-sm">
+            <Icon name="arrow_forward" size={14} />
+            Contact quality
+          </Link>
+        }
+      >
+        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Signal-ready contacts
+            </p>
+            <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
+              <MiniStat label="Reachable" value={contacts.reachable} />
+              <MiniStat label="Email handles" value={contacts.with_email} />
+              <MiniStat label="LinkedIn profiles" value={contacts.with_linkedin} />
+              <MiniStat label="Signals 14d" value={contacts.fresh_signals} />
+            </div>
+            <p className="text-xs leading-5 text-[var(--color-text-3)]">
+              The agent uses these verified emails and LinkedIn profiles when a
+              qualified signal is ready to become outreach.
+            </p>
+          </aside>
+
+          {contacts.recent.length === 0 ? (
+            <EmptyState
+              title="No verified contacts yet"
+              hint="Tune the profile and connect accounts so the agent can resolve emails and LinkedIn profiles from qualified signals."
+              cta={{
+                href: "/dashboard/settings#profile",
+                label: "Update profile",
+                icon: "person",
+              }}
+            />
+          ) : (
+            <div className="grid gap-2">
+              {contacts.recent.map((contact) => (
+                <AgentContactLink key={contact.id} contact={contact} />
+              ))}
+            </div>
+          )}
+        </div>
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function AgentContactLink({ contact }: { contact: AgentContactRow }) {
+  const company = contact.company_name ?? contact.company_domain ?? "Unknown company";
+  const signals = Number(contact.fresh_signals);
+  const conversations = Number(contact.conversations);
+  return (
+    <Link
+      href={`/dashboard/prospects/${contact.id}`}
+      prefetch={false}
+      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
+    >
+      <span className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name="person" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {contact.full_name}
+            <span className="font-normal text-[var(--color-text-3)]">
+              {" "}
+              at {company}
+            </span>
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {contact.title ?? "Role unknown"}
+          </span>
+          <span className="mt-2 flex flex-wrap gap-2">
+            <ContactPill ready={contact.emails.length > 0} icon="mail">
+              {contact.emails[0] ?? "No email"}
+            </ContactPill>
+            <ContactPill ready={Boolean(contact.linkedin_url)} icon="forum">
+              {contact.linkedin_url ? "LinkedIn profile" : "No LinkedIn"}
+            </ContactPill>
+          </span>
+        </span>
+      </span>
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        {signals > 0 ? (
+          <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs text-[var(--color-accent)]">
+            {signals} signal{signals === 1 ? "" : "s"}
+          </span>
+        ) : null}
+        {conversations > 0 ? (
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            {conversations} conversation{conversations === 1 ? "" : "s"}
+          </span>
+        ) : null}
+      </span>
+    </Link>
+  );
+}
+
+function ContactPill({
+  ready,
+  icon,
+  children,
+}: {
+  ready: boolean;
+  icon: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={
+        "inline-flex max-w-full items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-xs " +
+        (ready
+          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+          : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+      }
+    >
+      <Icon name={icon} size={13} />
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
