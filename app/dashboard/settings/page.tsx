@@ -248,7 +248,7 @@ export default async function SettingsPage() {
       </div>
 
       <div id="motion">
-        <SurfaceSection title="Audience and agent">
+        <SurfaceSection title="Audience, agent, and templates">
           <ActivationSettingsForm
             rep={state.rep}
             icp={state.icp}
@@ -472,6 +472,13 @@ function SettingsSectionNav({
       href: "#motion",
       icon: "badge",
       ready: Boolean(rep && icp),
+    },
+    {
+      title: "Templates",
+      detail: "AI outreach templates",
+      href: "#templates",
+      icon: "edit_note",
+      ready: Boolean(rep?.persona.story || rep?.persona.voice),
     },
     {
       title: "Account",
@@ -727,6 +734,21 @@ function ActivationSettingsForm({
           "Direct, warm, specific, and allergic to generic sales fluff."
         }
       />
+      <div id="templates" className="grid gap-3">
+        <TextArea
+          name="rep_story"
+          label="AI outreach template"
+          rows={4}
+          defaultValue={
+            rep?.persona.story ??
+            "Open with the qualified signal, name the verified contact or LinkedIn profile, tie it to one relevant business reason, and ask for one concrete next step."
+          }
+        />
+        <p className="text-xs leading-5 text-[var(--color-text-3)]">
+          Used by email and LinkedIn draft generation before hot-path quality
+          checks decide whether anything can move.
+        </p>
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Field
           name="daily_cap"

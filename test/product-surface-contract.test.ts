@@ -223,6 +223,7 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /id="linkedin"/);
   assert.match(settings, /href: "#email"/);
   assert.match(settings, /href: "#linkedin"/);
+  assert.match(settings, /href: "#templates"/);
   assert.match(settings, /Email accounts/);
   assert.match(settings, /LinkedIn accounts/);
   assert.match(
@@ -234,7 +235,10 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
     /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/,
   );
   assert.match(settings, /href="\/dashboard\/integrations"/);
-  assert.match(settings, /Audience and agent/);
+  assert.match(settings, /Audience, agent, and templates/);
+  assert.match(settings, /AI outreach template/);
+  assert.match(settings, /name="rep_story"/);
+  assert.match(settings, /verified contact or LinkedIn profile/);
   assert.match(settings, /return_to" value="\/dashboard\/settings#motion"/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);
