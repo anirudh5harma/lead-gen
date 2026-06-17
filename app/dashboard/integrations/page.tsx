@@ -91,7 +91,7 @@ export default async function IntegrationsPage() {
           title="No workspace selected."
           hint="Create a workspace before connecting outbound accounts."
           cta={{
-            href: "/dashboard/prospecting",
+            href: "/dashboard/settings#profile",
             label: "Start setup",
             icon: "add_business",
           }}

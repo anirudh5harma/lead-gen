@@ -132,7 +132,7 @@ export async function createWorkspaceAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/prospecting");
   revalidatePath("/dashboard/setup");
-  redirectWithToast("/dashboard/prospecting", "Workspace created.");
+  redirectWithToast("/dashboard/settings#profile", "Workspace created.");
 }
 
 export async function switchWorkspaceAction(formData: FormData) {
@@ -169,6 +169,7 @@ export async function updateWorkspaceAutonomyAction(formData: FormData) {
 
 export async function configureActivationAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
+  const returnTo = dashboardReturnPath(formData, "/dashboard/settings#motion");
   const signalKind = value(formData, "signal_kind") || "hiring";
   const approval = approvalValue(formData, "approval");
   await configureActivationSetup(
@@ -202,7 +203,7 @@ export async function configureActivationAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirectWithToast("/dashboard/prospecting", "Guidance saved.");
+  redirectWithToast(returnTo, "Guidance saved.");
 }
 
 export async function configureRepAction(formData: FormData) {
@@ -431,7 +432,7 @@ export async function generateMeetingPrepAction(formData: FormData) {
 
 export async function editCompanyProfileAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/prospecting");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/settings#profile");
   const company_name = value(formData, "company_name");
   const website_url = value(formData, "website_url");
   if (!company_name || !website_url) {

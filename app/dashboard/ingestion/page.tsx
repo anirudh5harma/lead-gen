@@ -76,7 +76,7 @@ export default async function SignalsPage() {
           <EmptyState
             title="No qualified signals yet"
             hint="Tune the prospecting profile so matched company signals have enough context to qualify."
-            cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
+            cta={{ href: "/dashboard/settings#profile", label: "Update profile", icon: "person" }}
           />
         ) : (
           <div className="grid gap-3">

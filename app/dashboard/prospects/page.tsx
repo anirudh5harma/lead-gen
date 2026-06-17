@@ -192,9 +192,9 @@ export default async function ProspectsPage() {
       <SurfaceSection
         title="Prospect graph"
         action={
-          <Link href="/dashboard/prospecting" className="btn-solid-sm">
+          <Link href="/dashboard/settings#profile" className="btn-solid-sm">
             <Icon name="tune" size={14} />
-            Tune ICP
+            Update profile
           </Link>
         }
       >
@@ -203,8 +203,8 @@ export default async function ProspectsPage() {
             title="No prospects in the graph yet."
             hint="Tune the company profile and signal sources so Bombsell can start collecting target people and companies."
             cta={{
-              href: "/dashboard/prospecting",
-              label: "Tune prospecting",
+              href: "/dashboard/settings#profile",
+              label: "Update profile",
               icon: "person",
             }}
           />

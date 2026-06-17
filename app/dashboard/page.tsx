@@ -289,7 +289,7 @@ const OPERATING_LOOP_META: Array<{
     key: "signals",
     step: "02",
     name: "Signals",
-    href: "/dashboard/signals",
+    href: "/dashboard/prospects",
     icon: "sensors",
     unit: (pulse) =>
       `${pulse.signals.count} ${pulse.signals.count === 1 ? "fresh Signal" : "fresh Signals"}`,
@@ -441,7 +441,7 @@ function BriefView({
             <EmptyState
               title="No signals yet."
               hint="Bombsell will surface good-fit opportunities after prospecting is tuned."
-              cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
+              cta={{ href: "/dashboard/settings#profile", label: "Update profile", icon: "person" }}
             />
           }
         >
@@ -502,7 +502,7 @@ const LAUNCH_STEPS: LaunchStep[] = [
   {
     title: "Set the prospecting profile",
     primitive: "Signal",
-    href: "/dashboard/prospecting",
+    href: "/dashboard/settings#profile",
     icon: "person",
     checkIds: ["workspace_profile", "icp"],
     readyDetail: "Company context and ICP are ready for matching.",
@@ -522,7 +522,7 @@ const LAUNCH_STEPS: LaunchStep[] = [
   {
     title: "Connect email or LinkedIn",
     primitive: "Conversation",
-    href: "/dashboard/setup",
+    href: "/dashboard/integrations",
     icon: "forum",
     checkIds: ["outreach_channel"],
     readyDetail: "At least one outbound channel is healthy enough to launch.",
@@ -840,7 +840,7 @@ function buildPriorityActions(
     items.push({
       title: "Build the prospect graph",
       detail: "Profile, ICP, voice, and channel pace are the first inputs.",
-      href: "/dashboard/prospecting",
+      href: "/dashboard/settings#profile",
       icon: "person",
     });
   }
@@ -872,7 +872,7 @@ function buildPriorityActions(
       detail: `${pulse.signals.count} fresh ${
         pulse.signals.count === 1 ? "Signal has" : "Signals have"
       } timing evidence.`,
-      href: "/dashboard/signals",
+      href: "/dashboard/plays",
       icon: "sensors",
     });
   }
@@ -900,7 +900,7 @@ function buildPriorityActions(
     items.push({
       title: "Refresh Signals",
       detail: "No urgent work is waiting. Check the latest market movement.",
-      href: "/dashboard/signals",
+      href: "/dashboard/prospects",
       icon: "refresh",
     });
   }

@@ -331,8 +331,8 @@ export default async function ProspectProfilePage({
                 title="No Signals on this profile yet."
                 hint="When a source finds timing evidence for this person or company, it will collect here."
                 cta={{
-                  href: "/dashboard/prospecting",
-                  label: "Tune prospecting",
+                  href: "/dashboard/settings#profile",
+                  label: "Update profile",
                   icon: "person",
                 }}
               />

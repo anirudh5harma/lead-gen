@@ -332,7 +332,7 @@ export default async function CampaignsPage() {
           <EmptyState
             title="No qualified signals yet"
             hint="Tune prospecting once, then good-fit timing signals will appear here."
-            cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
+            cta={{ href: "/dashboard/settings#profile", label: "Update profile", icon: "person" }}
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">

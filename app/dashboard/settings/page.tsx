@@ -16,6 +16,7 @@ import { getRequestAuthIdentity } from "@/lib/auth";
 import type { RequestAuthIdentity } from "@/lib/auth";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
+  configureActivationAction,
   createWorkspaceAction,
   editCompanyProfileAction,
   updateWorkspaceAutonomyAction,
@@ -44,16 +45,34 @@ interface SettingsLinkedInAccount {
   updated_at: Date;
 }
 
+interface SettingsRepRow {
+  id: string;
+  name: string;
+  persona: { voice?: string; story?: string };
+  autonomy: {
+    channels?: { email?: { daily_cap?: number; approval?: string } };
+  } | null;
+}
+
+interface SettingsIcpRow {
+  id: string;
+  name: string;
+  description: string;
+  match_threshold: string;
+}
+
 interface SettingsState {
   settings: Record<string, unknown>;
   outlookAccount: SettingsOutlookAccount | null;
   linkedInAccount: SettingsLinkedInAccount | null;
+  rep: SettingsRepRow | null;
+  icp: SettingsIcpRow | null;
   approvals: string[];
 }
 
 async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
   const pool = getPool();
-  const [workspace, outlook, linkedIn, policies] = await Promise.all([
+  const [workspace, outlook, linkedIn, rep, icp, policies] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
          from workspaces
@@ -116,6 +135,24 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
         limit 1`,
       [workspaceId],
     ),
+    pool.query<SettingsRepRow>(
+      `select id, name, persona, autonomy
+         from reps
+        where workspace_id = $1
+          and status <> 'retired'
+        order by case name when 'Sampark' then 0 else 1 end,
+                 created_at asc
+        limit 1`,
+      [workspaceId],
+    ),
+    pool.query<SettingsIcpRow>(
+      `select id, name, description, match_threshold::text as match_threshold
+         from workspace_icps
+        where workspace_id = $1
+        order by created_at asc
+        limit 1`,
+      [workspaceId],
+    ),
     pool.query<{ autonomy: Record<string, unknown> | null }>(
       `select autonomy
          from reps
@@ -133,6 +170,8 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
     settings: workspace.rows[0]?.settings ?? {},
     outlookAccount: outlook.rows[0] ?? null,
     linkedInAccount: linkedIn.rows[0] ?? null,
+    rep: rep.rows[0] ?? null,
+    icp: icp.rows[0] ?? null,
     approvals: policies.rows.flatMap((row) =>
       approvalsFromAutonomy(row.autonomy),
     ),
@@ -189,12 +228,24 @@ export default async function SettingsPage() {
         profile={profile}
         outlookAccount={state.outlookAccount}
         linkedInAccount={state.linkedInAccount}
+        rep={state.rep}
+        icp={state.icp}
         mode={mode}
       />
 
       <div id="profile">
         <SurfaceSection title="Profile">
           <ProfileSettingsForm profile={profile} />
+        </SurfaceSection>
+      </div>
+
+      <div id="motion">
+        <SurfaceSection title="Audience and Rep">
+          <ActivationSettingsForm
+            rep={state.rep}
+            icp={state.icp}
+            outlookAccount={state.outlookAccount}
+          />
         </SurfaceSection>
       </div>
 
@@ -267,11 +318,15 @@ function SettingsChecklist({
   profile,
   outlookAccount,
   linkedInAccount,
+  rep,
+  icp,
   mode,
 }: {
   profile: ProductCompanyProfile | null;
   outlookAccount: SettingsOutlookAccount | null;
   linkedInAccount: SettingsLinkedInAccount | null;
+  rep: SettingsRepRow | null;
+  icp: SettingsIcpRow | null;
   mode: SettingsAutonomyMode;
 }) {
   const steps = [
@@ -283,6 +338,16 @@ function SettingsChecklist({
       href: "#profile",
       icon: "add_business",
       ready: Boolean(profile?.company_name && profileWebsite(profile)),
+    },
+    {
+      title: "Audience and Rep",
+      detail:
+        rep && icp
+          ? `${rep.name} acts on ${icp.name}.`
+          : "Define the ICP, voice, daily ceiling, and first Rep.",
+      href: "#motion",
+      icon: "badge",
+      ready: Boolean(rep && icp),
     },
     {
       title: "Email account",
@@ -334,7 +399,7 @@ function SettingsChecklist({
           {readyCount}/{steps.length} ready
         </span>
       </div>
-      <div className="grid gap-3 lg:grid-cols-4">
+      <div className="grid gap-3 lg:grid-cols-5">
         {steps.map((step) => (
           <Link
             key={step.title}
@@ -504,6 +569,77 @@ function ProfileSettingsForm({
         pendingLabel="Saving profile"
       >
         Save profile
+      </PendingSubmitButton>
+    </form>
+  );
+}
+
+function ActivationSettingsForm({
+  rep,
+  icp,
+  outlookAccount,
+}: {
+  rep: SettingsRepRow | null;
+  icp: SettingsIcpRow | null;
+  outlookAccount: SettingsOutlookAccount | null;
+}) {
+  const dailyCap =
+    rep?.autonomy?.channels?.email?.daily_cap ?? outlookAccount?.daily_cap ?? 25;
+  const approval = rep?.autonomy?.channels?.email?.approval ?? "none";
+  return (
+    <form action={configureActivationAction} className="section-note grid gap-5">
+      <input type="hidden" name="return_to" value="/dashboard/settings#motion" />
+      <TextArea
+        name="icp_description"
+        label="Target companies and people"
+        rows={3}
+        defaultValue={
+          icp?.description ??
+          "Companies showing fresh hiring intent around GTM, operations, or revenue roles."
+        }
+      />
+      <TextArea
+        name="rep_voice"
+        label="Rep voice"
+        rows={3}
+        defaultValue={
+          rep?.persona.voice ??
+          "Direct, warm, specific, and allergic to generic sales fluff."
+        }
+      />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field
+          name="daily_cap"
+          label="Daily ceiling"
+          type="number"
+          defaultValue={String(dailyCap)}
+        />
+        <Select
+          name="approval"
+          label="Review mode"
+          defaultValue={approval}
+          options={[
+            ["none", "Autonomous after checks"],
+            ["always", "Review every move"],
+            ["approve_first", "Review the first move"],
+            ["research_only", "Research only"],
+          ]}
+        />
+      </div>
+      <input type="hidden" name="icp_name" value={icp?.name ?? "Default audience"} />
+      <input type="hidden" name="signal_kind" value="hiring" />
+      <input
+        type="hidden"
+        name="match_threshold"
+        value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
+      />
+      <input type="hidden" name="rep_name" value={rep?.name ?? "Sampark"} />
+      <PendingSubmitButton
+        className="btn-solid w-fit"
+        icon="check"
+        pendingLabel="Saving motion"
+      >
+        Save audience and Rep
       </PendingSubmitButton>
     </form>
   );
@@ -681,6 +817,37 @@ function TextArea({
         defaultValue={defaultValue}
         className="rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
       />
+    </label>
+  );
+}
+
+function Select({
+  name,
+  label,
+  defaultValue,
+  options,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+  options: Array<[string, string]>;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-medium text-[var(--color-text-3)]">
+        {label}
+      </span>
+      <select
+        name={name}
+        defaultValue={defaultValue}
+        className="min-h-10 rounded-[8px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
+      >
+        {options.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

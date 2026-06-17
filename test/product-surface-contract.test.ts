@@ -60,7 +60,7 @@ test("retired product surfaces redirect to Plays", () => {
   );
 });
 
-test("Dashboard presents setup, operating loop, and priority moves", () => {
+test("Dashboard routes setup work through Settings and current surfaces", () => {
   const dashboard = source("app/dashboard/page.tsx");
 
   assert.match(dashboard, /Launch checklist/);
@@ -68,8 +68,12 @@ test("Dashboard presents setup, operating loop, and priority moves", () => {
   assert.match(dashboard, /Prospect graph/);
   assert.match(dashboard, /Prepare Signal-led outreach/);
   assert.match(dashboard, /Scale what produced Outcomes/);
-  assert.match(dashboard, /href: "\/dashboard\/prospecting"/);
-  assert.match(dashboard, /href: "\/dashboard\/signals"/);
+  assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
+  assert.match(dashboard, /href: "\/dashboard\/integrations"/);
+  assert.match(dashboard, /href: "\/dashboard\/prospects"/);
+  assert.match(dashboard, /href: "\/dashboard\/plays"/);
+  assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
+  assert.doesNotMatch(dashboard, /href: "\/dashboard\/signals"/);
 });
 
 test("Health presents agent observability from the event-sourced summary", () => {
@@ -164,20 +168,24 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(capabilityMap, /`product\.signal\.ingestion\.run`/);
 });
 
-test("Settings exposes profile, Outlook, and workspace autonomy controls", () => {
+test("Settings exposes profile, activation, Outlook, and workspace autonomy controls", () => {
   const settings = source("app/dashboard/settings/page.tsx");
   const actions = source("app/dashboard/actions.ts");
   const productApp = source("core/product/app.ts");
   const registry = source("core/substrate/events/registry.ts");
 
   assert.match(settings, /editCompanyProfileAction/);
+  assert.match(settings, /configureActivationAction/);
   assert.match(settings, /updateWorkspaceAutonomyAction/);
   assert.match(settings, /href="\/api\/auth\/outlook"/);
   assert.match(settings, /href="\/dashboard\/integrations"/);
+  assert.match(settings, /Audience and Rep/);
+  assert.match(settings, /return_to" value="\/dashboard\/settings#motion"/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);
   assert.match(settings, /row_number\(\) over/);
   assert.match(settings, /properties ->> 'mailbox_email'/);
+  assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/settings#motion"\)/);
   assert.match(actions, /configureWorkspaceAutonomyMode/);
   assert.match(productApp, /event_type: "workspace\.configured"/);
   assert.match(productApp, /event_type: "rep\.configured"/);

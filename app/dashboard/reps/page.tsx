@@ -171,9 +171,9 @@ export default async function RepsPage() {
       <SurfaceSection
         title="Rep roster"
         action={
-          <Link href="/dashboard/prospecting" className="btn-solid-sm">
+          <Link href="/dashboard/settings#profile" className="btn-solid-sm">
             <Icon name="edit_note" size={14} />
-            Tune setup
+            Tune profile
           </Link>
         }
       >
@@ -182,7 +182,7 @@ export default async function RepsPage() {
             title="No Reps configured yet."
             hint="Start by defining the workspace profile, audience, voice, and approval mode."
             cta={{
-              href: "/dashboard/prospecting",
+              href: "/dashboard/settings#profile",
               label: "Configure first Rep",
               icon: "badge",
             }}
@@ -226,7 +226,7 @@ export default async function RepsPage() {
               {launchReadinessCopy(state.readiness)}
             </p>
             <div className="mt-4 grid gap-2">
-              <Link href="/dashboard/prospecting" className="priority-action">
+              <Link href="/dashboard/settings#profile" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="person" size={16} />
                 </span>
@@ -427,7 +427,7 @@ function NoWorkspaceReps() {
         title="No workspace selected."
         hint="Create or select a workspace before configuring Reps."
         cta={{
-          href: "/dashboard/prospecting",
+          href: "/dashboard/settings#profile",
           label: "Start setup",
           icon: "add_business",
         }}
