@@ -862,6 +862,20 @@ function ProfileSettingsForm({
       />
       <div className="grid gap-4 md:grid-cols-2">
         <TextArea
+          name="target_titles"
+          label="Buyer roles"
+          defaultValue={profile?.target_titles ?? ""}
+          rows={4}
+        />
+        <TextArea
+          name="target_markets"
+          label="Target markets"
+          defaultValue={profile?.target_markets ?? ""}
+          rows={4}
+        />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextArea
           name="key_features"
           label="Key features"
           defaultValue={profile?.key_features ?? ""}
@@ -874,6 +888,26 @@ function ProfileSettingsForm({
           rows={4}
         />
       </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <TextArea
+          name="signal_keywords"
+          label="Signal keywords"
+          defaultValue={profile?.signal_keywords ?? ""}
+          rows={4}
+        />
+        <TextArea
+          name="competitor_watchlist"
+          label="Competitors to watch"
+          defaultValue={profile?.competitor_watchlist ?? ""}
+          rows={4}
+        />
+      </div>
+      <TextArea
+        name="exclusion_rules"
+        label="Do not contact"
+        defaultValue={profile?.exclusion_rules ?? ""}
+        rows={3}
+      />
       <div className="grid gap-4 md:grid-cols-3">
         <Select
           name="preferred_language"

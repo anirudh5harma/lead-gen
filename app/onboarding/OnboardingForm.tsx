@@ -69,6 +69,22 @@ export default function OnboardingForm({
       />
       <div className="grid gap-3 md:grid-cols-2">
         <TextArea
+          name="target_titles"
+          label="Buyer roles"
+          placeholder={"VP of Sales\nHead of Growth\nFounder"}
+          rows={4}
+        />
+        <TextArea
+          name="target_markets"
+          label="Target markets"
+          placeholder={
+            "Software Development & SaaS\nIT Services\nNorth America"
+          }
+          rows={4}
+        />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <TextArea
           name="key_features"
           label="Key features"
           placeholder="One feature per line."
@@ -81,6 +97,26 @@ export default function OnboardingForm({
           rows={4}
         />
       </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <TextArea
+          name="signal_keywords"
+          label="Signal keywords"
+          placeholder={"intent data\nverified emails\nlinkedin prospecting"}
+          rows={4}
+        />
+        <TextArea
+          name="competitor_watchlist"
+          label="Competitors to watch"
+          placeholder={"Apollo.io\nZoomInfo\nArtisan"}
+          rows={4}
+        />
+      </div>
+      <TextArea
+        name="exclusion_rules"
+        label="Do not contact"
+        placeholder="Service providers, freelancers, consultants, open-to-work profiles, existing customers, or named companies to avoid."
+        rows={3}
+      />
       <div className="grid gap-3 md:grid-cols-2">
         <Select
           name="outreach_goal"

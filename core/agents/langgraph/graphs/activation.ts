@@ -41,8 +41,13 @@ export interface ActivationSetupGraphInput {
   industry_hint?: string;
   description_hint?: string;
   customer_pain_points?: string;
+  target_titles?: string;
+  target_markets?: string;
   key_features?: string;
   social_proof?: string;
+  signal_keywords?: string;
+  competitor_watchlist?: string;
+  exclusion_rules?: string;
   preferred_language?: string;
   outreach_goal?: string;
   message_tone?: string;
@@ -60,8 +65,13 @@ export interface ActivationProfileDraft {
   industry: string | null;
   description: string;
   customer_pain_points?: string | null;
+  target_titles?: string | null;
+  target_markets?: string | null;
   key_features?: string | null;
   social_proof?: string | null;
+  signal_keywords?: string | null;
+  competitor_watchlist?: string | null;
+  exclusion_rules?: string | null;
   preferred_language?: string | null;
   outreach_goal?: string | null;
   message_tone?: string | null;
@@ -223,8 +233,13 @@ export function createActivationSetupGraph(
               industry_hint: input.industry_hint ?? null,
               description_hint: input.description_hint ?? null,
               customer_pain_points: input.customer_pain_points ?? null,
+              target_titles: input.target_titles ?? null,
+              target_markets: input.target_markets ?? null,
               key_features: input.key_features ?? null,
               social_proof: input.social_proof ?? null,
+              signal_keywords: input.signal_keywords ?? null,
+              competitor_watchlist: input.competitor_watchlist ?? null,
+              exclusion_rules: input.exclusion_rules ?? null,
               preferred_language: input.preferred_language ?? null,
               outreach_goal: input.outreach_goal ?? null,
               message_tone: input.message_tone ?? null,
@@ -340,8 +355,13 @@ export function createActivationSetupGraph(
                 industry: profile.industry ?? undefined,
                 description: profile.description,
                 customer_pain_points: profile.customer_pain_points ?? undefined,
+                target_titles: profile.target_titles ?? undefined,
+                target_markets: profile.target_markets ?? undefined,
                 key_features: profile.key_features ?? undefined,
                 social_proof: profile.social_proof ?? undefined,
+                signal_keywords: profile.signal_keywords ?? undefined,
+                competitor_watchlist: profile.competitor_watchlist ?? undefined,
+                exclusion_rules: profile.exclusion_rules ?? undefined,
                 preferred_language: profile.preferred_language ?? undefined,
                 outreach_goal: profile.outreach_goal ?? undefined,
                 message_tone: profile.message_tone ?? undefined,
@@ -404,6 +424,8 @@ export function createActivationSetupGraph(
               website_url: profile.website_url,
               industry: profile.industry,
               description: profile.description,
+              signal_keywords: profile.signal_keywords,
+              competitor_watchlist: profile.competitor_watchlist,
               signal_kind: icp.signal_kind,
             },
             {
@@ -547,8 +569,13 @@ function activationInputFromState(
     industry_hint: stringOrUndefined(state.attributes?.industry_hint),
     description_hint: stringOrUndefined(state.attributes?.description_hint),
     customer_pain_points: stringOrUndefined(state.attributes?.customer_pain_points),
+    target_titles: stringOrUndefined(state.attributes?.target_titles),
+    target_markets: stringOrUndefined(state.attributes?.target_markets),
     key_features: stringOrUndefined(state.attributes?.key_features),
     social_proof: stringOrUndefined(state.attributes?.social_proof),
+    signal_keywords: stringOrUndefined(state.attributes?.signal_keywords),
+    competitor_watchlist: stringOrUndefined(state.attributes?.competitor_watchlist),
+    exclusion_rules: stringOrUndefined(state.attributes?.exclusion_rules),
     preferred_language: stringOrUndefined(state.attributes?.preferred_language),
     outreach_goal: stringOrUndefined(state.attributes?.outreach_goal),
     message_tone: stringOrUndefined(state.attributes?.message_tone),
@@ -611,8 +638,13 @@ function profileDraftFromState(
     industry: input.industry_hint?.trim() || raw.industry?.trim() || null,
     description,
     customer_pain_points: input.customer_pain_points?.trim() || null,
+    target_titles: input.target_titles?.trim() || null,
+    target_markets: input.target_markets?.trim() || null,
     key_features: input.key_features?.trim() || null,
     social_proof: input.social_proof?.trim() || null,
+    signal_keywords: input.signal_keywords?.trim() || null,
+    competitor_watchlist: input.competitor_watchlist?.trim() || null,
+    exclusion_rules: input.exclusion_rules?.trim() || null,
     preferred_language: input.preferred_language?.trim() || null,
     outreach_goal: input.outreach_goal?.trim() || null,
     message_tone: input.message_tone?.trim() || null,
@@ -652,15 +684,32 @@ function icpDraftFromProfile(
   profile: ActivationProfileDraft,
 ): ActivationIcpDraft {
   const market = profile.industry ?? "this market";
+  const roles = splitSetupLines(profile.target_titles);
+  const markets = splitSetupLines(profile.target_markets);
+  const keywords = splitSetupLines(profile.signal_keywords);
+  const competitors = splitSetupLines(profile.competitor_watchlist);
+  const exclusions = splitSetupLines(profile.exclusion_rules);
+  const roleText = roles.length ? ` Buyer roles: ${roles.join(", ")}.` : "";
+  const marketText = markets.length
+    ? ` Target markets: ${markets.join(", ")}.`
+    : "";
+  const exclusionText = exclusions.length
+    ? ` Exclude ${exclusions.join(", ")}.`
+    : "";
   return {
     name: `${profile.company_name} timing signals`,
-    description: `${profile.description} Match companies and people showing fresh public momentum, hiring, launches, funding, or competitive movement relevant to ${market}.`,
+    description: `${profile.description} Match companies and people showing fresh public momentum, hiring, launches, funding, or competitive movement relevant to ${market}.${roleText}${marketText}${exclusionText}`,
     signal_kind: "press_mention",
     match_threshold: 0.6,
     nice_to_haves: [
       `Relevant to ${profile.company_name}`,
       profile.industry ? `Mentions ${profile.industry}` : "Clear market timing",
       "Fresh enough to justify outreach",
+      ...roles.slice(0, 5).map((role) => `Buyer role: ${role}`),
+      ...markets.slice(0, 5).map((target) => `Target market: ${target}`),
+      ...keywords.slice(0, 6).map((keyword) => `Signal keyword: ${keyword}`),
+      ...competitors.slice(0, 5).map((name) => `Competitor watch: ${name}`),
+      ...exclusions.slice(0, 5).map((rule) => `Exclude: ${rule}`),
     ],
     inferred_from: {
       website_url: profile.website_url,
@@ -671,6 +720,17 @@ function icpDraftFromProfile(
       "Confirm any companies, roles, or industries Bombsell should not contact.",
     ],
   };
+}
+
+function splitSetupLines(value: string | null | undefined): string[] {
+  return [
+    ...new Set(
+      (value ?? "")
+        .split(/[\n,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function playDraftsFromProfile(

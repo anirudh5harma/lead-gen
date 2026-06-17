@@ -181,8 +181,13 @@ test("product tools: activation setup exposes setup and initial Signal ingestion
     industry_hint: "Software Development & SaaS",
     description_hint: "Turns quality signals into verified outreach.",
     customer_pain_points: "Teams miss buying intent and lack verified contacts.",
+    target_titles: "VP of Sales\nHead of Growth",
+    target_markets: "North America\nB2B SaaS",
     key_features: "Signal tracking\nVerified email and LinkedIn profiles",
     social_proof: "Used by founder-led GTM teams.",
+    signal_keywords: "intent data\nlinkedin prospecting",
+    competitor_watchlist: "Apollo.io\nZoomInfo",
+    exclusion_rules: "Service providers\nOpen to work",
     preferred_language: "English (US)",
     outreach_goal: "conversations",
     message_tone: "professional",
@@ -190,6 +195,8 @@ test("product tools: activation setup exposes setup and initial Signal ingestion
     wait: false,
   });
   assert.equal(parsedInput.website_url, "acme.ai");
+  assert.equal(parsedInput.target_titles, "VP of Sales\nHead of Growth");
+  assert.equal(parsedInput.signal_keywords, "intent data\nlinkedin prospecting");
   assert.equal(parsedInput.outreach_goal, "conversations");
   assert.equal(parsedInput.message_tone, "professional");
   assert.equal(parsedInput.wait, false);

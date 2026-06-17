@@ -684,8 +684,13 @@ export interface ConfigureWorkspaceProfileInput {
   description?: string | null;
   value_proposition?: string | null;
   customer_pain_points?: string | null;
+  target_titles?: string | null;
+  target_markets?: string | null;
   key_features?: string | null;
   social_proof?: string | null;
+  signal_keywords?: string | null;
+  competitor_watchlist?: string | null;
+  exclusion_rules?: string | null;
   preferred_language?: string | null;
   outreach_goal?: string | null;
   message_tone?: string | null;
@@ -1068,8 +1073,13 @@ export interface ProductCompanyProfile {
   description: string | null;
   value_proposition?: string | null;
   customer_pain_points?: string | null;
+  target_titles?: string | null;
+  target_markets?: string | null;
   key_features?: string | null;
   social_proof?: string | null;
+  signal_keywords?: string | null;
+  competitor_watchlist?: string | null;
+  exclusion_rules?: string | null;
   preferred_language?: string | null;
   outreach_goal?: string | null;
   message_tone?: string | null;
@@ -2566,8 +2576,13 @@ export async function configureWorkspaceCompanyProfile(
     description: blankToNull(input.description ?? undefined),
     value_proposition: blankToNull(input.value_proposition ?? undefined),
     customer_pain_points: blankToNull(input.customer_pain_points ?? undefined),
+    target_titles: blankToNull(input.target_titles ?? undefined),
+    target_markets: blankToNull(input.target_markets ?? undefined),
     key_features: blankToNull(input.key_features ?? undefined),
     social_proof: blankToNull(input.social_proof ?? undefined),
+    signal_keywords: blankToNull(input.signal_keywords ?? undefined),
+    competitor_watchlist: blankToNull(input.competitor_watchlist ?? undefined),
+    exclusion_rules: blankToNull(input.exclusion_rules ?? undefined),
     preferred_language: blankToNull(input.preferred_language ?? undefined),
     outreach_goal: blankToNull(input.outreach_goal ?? undefined),
     message_tone: blankToNull(input.message_tone ?? undefined),
@@ -4975,8 +4990,13 @@ async function projectWorkspaceCompanyProfiled(
     description: string | null;
     value_proposition?: string | null;
     customer_pain_points?: string | null;
+    target_titles?: string | null;
+    target_markets?: string | null;
     key_features?: string | null;
     social_proof?: string | null;
+    signal_keywords?: string | null;
+    competitor_watchlist?: string | null;
+    exclusion_rules?: string | null;
     preferred_language?: string | null;
     outreach_goal?: string | null;
     message_tone?: string | null;
@@ -5017,8 +5037,13 @@ async function projectWorkspaceCompanyProfiled(
         website_url: payload.website_url,
         value_proposition: payload.value_proposition ?? null,
         customer_pain_points: payload.customer_pain_points ?? null,
+        target_titles: payload.target_titles ?? null,
+        target_markets: payload.target_markets ?? null,
         key_features: payload.key_features ?? null,
         social_proof: payload.social_proof ?? null,
+        signal_keywords: payload.signal_keywords ?? null,
+        competitor_watchlist: payload.competitor_watchlist ?? null,
+        exclusion_rules: payload.exclusion_rules ?? null,
         preferred_language: payload.preferred_language ?? null,
         outreach_goal: payload.outreach_goal ?? null,
         message_tone: payload.message_tone ?? null,
@@ -5103,6 +5128,8 @@ export async function configureDefaultSignalAggregator(
     website_url?: string | null;
     industry?: string | null;
     description?: string | null;
+    signal_keywords?: string | null;
+    competitor_watchlist?: string | null;
     signal_kind?: string;
   },
   session: ProductWorkspaceSession,
@@ -5111,6 +5138,10 @@ export async function configureDefaultSignalAggregator(
   const industry = input.industry?.trim();
   const marketPhrase =
     industry || signalKeywordsFromDescription(input.description) || "B2B SaaS";
+  const keywordPhrase = compactSearchTerms(
+    input.signal_keywords,
+    input.competitor_watchlist,
+  );
   // Keep signup/profile bootstrap predictable and free-source-first. Paid Exa
   // monitoring is configured explicitly through product.signal.discover_open_web.
   const ownedSources = await discoverCompanyOwnedSignalSources({
@@ -5134,7 +5165,11 @@ export async function configureDefaultSignalAggregator(
     {
       adapter: "google_news",
       name: `${companyName} market news`,
-      query: `${marketPhrase} hiring funding launch`,
+      query: compactSearchTerms(
+        marketPhrase,
+        keywordPhrase,
+        "hiring funding launch",
+      ),
       signal_kind: input.signal_kind ?? "press_mention",
       poll_interval_minutes: 30,
       source_tier: "aggregator",
@@ -5977,8 +6012,13 @@ function activationSetupIdempotencyKey(
         industry_hint: input.industry_hint ?? null,
         description_hint: input.description_hint ?? null,
         customer_pain_points: input.customer_pain_points ?? null,
+        target_titles: input.target_titles ?? null,
+        target_markets: input.target_markets ?? null,
         key_features: input.key_features ?? null,
         social_proof: input.social_proof ?? null,
+        signal_keywords: input.signal_keywords ?? null,
+        competitor_watchlist: input.competitor_watchlist ?? null,
+        exclusion_rules: input.exclusion_rules ?? null,
         preferred_language: input.preferred_language ?? null,
         outreach_goal: input.outreach_goal ?? null,
         message_tone: input.message_tone ?? null,
@@ -6651,6 +6691,21 @@ function signalKeywordsFromDescription(
       .filter((word) => !COMMON_PROFILE_WORDS.has(word)) ?? [];
   const picked = [...new Set(words)].slice(0, 4);
   return picked.length ? picked.join(" ") : null;
+}
+
+function compactSearchTerms(
+  ...values: Array<string | null | undefined>
+): string {
+  return [
+    ...new Set(
+      values
+        .flatMap((value) => value?.split(/[\n,]+/) ?? [])
+        .map((term) => term.trim())
+        .filter(Boolean),
+    ),
+  ]
+    .slice(0, 12)
+    .join(" ");
 }
 
 const COMMON_PROFILE_WORDS = new Set([
@@ -11540,8 +11595,13 @@ function productProfileState(
     description: row.description,
     value_proposition: stringStateValue(row.properties.value_proposition),
     customer_pain_points: stringStateValue(row.properties.customer_pain_points),
+    target_titles: stringStateValue(row.properties.target_titles),
+    target_markets: stringStateValue(row.properties.target_markets),
     key_features: stringStateValue(row.properties.key_features),
     social_proof: stringStateValue(row.properties.social_proof),
+    signal_keywords: stringStateValue(row.properties.signal_keywords),
+    competitor_watchlist: stringStateValue(row.properties.competitor_watchlist),
+    exclusion_rules: stringStateValue(row.properties.exclusion_rules),
     preferred_language: stringStateValue(row.properties.preferred_language),
     outreach_goal: stringStateValue(row.properties.outreach_goal),
     message_tone: stringStateValue(row.properties.message_tone),
