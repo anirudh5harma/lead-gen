@@ -368,7 +368,7 @@ async function loadAgentOutreachSummary(
           and m.channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
           and m.status in ('sent','delivered','replied')
         order by coalesce(m.sent_at, m.created_at) desc
-        limit 5`,
+        limit 30`,
       [workspaceId],
     ),
     pool.query<{
@@ -410,7 +410,7 @@ export default async function RepsPage() {
   const active = await getActiveWorkspaceSession();
   if (!active) return <NoWorkspaceReps />;
 
-  const state = await loadRepsState(active.workspace.id);
+  const state = await loadSafeRepsState(active.workspace.id);
   const visibleReps = state.reps.filter(isVisibleProductAgent);
   const activeAgents = visibleReps.filter((rep) => rep.status === "active").length;
   const connectedChannels = state.channels.filter(
@@ -564,6 +564,53 @@ export default async function RepsPage() {
   );
 }
 
+async function loadSafeRepsState(workspaceId: string): Promise<RepsState> {
+  try {
+    return await loadRepsState(workspaceId);
+  } catch (err) {
+    console.error("[dashboard/agent] failed to load agent state", err);
+    return emptyRepsState(workspaceId);
+  }
+}
+
+function emptyRepsState(workspaceId: string): RepsState {
+  return {
+    reps: [],
+    channels: [],
+    readiness: {
+      workspace_id: workspaceId,
+      checked_at: new Date().toISOString(),
+      required_channel: "any",
+      status: "blocked",
+      launch_ready: false,
+      next_action: "configure_profile",
+      checks: [],
+      blockers: ["Agent state is temporarily unavailable."],
+      warnings: [],
+    },
+    activity: {
+      active_workflows: 0,
+      events_last_hour: 0,
+      outbound_last_hour: 0,
+      reviews_pending: 0,
+      event_types: [],
+    },
+    outreach: {
+      recent: [],
+      email_sent_7d: 0,
+      linkedin_sent_7d: 0,
+      awaiting_reply: 0,
+    },
+    contacts: {
+      recent: [],
+      reachable: 0,
+      with_email: 0,
+      with_linkedin: 0,
+      fresh_signals: 0,
+    },
+  };
+}
+
 function AgentContactsPanel({
   contacts,
 }: {
@@ -700,6 +747,7 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
     activity.active_workflows > 0 ||
     activity.events_last_hour > 0 ||
     activity.outbound_last_hour > 0;
+  const currentWork = agentCurrentWork(activity);
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5">
@@ -709,23 +757,27 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
               {active ? "Working now" : "Idle right now"}
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-3)]">
-              Last hour: {activity.events_last_hour} system events,{" "}
-              {activity.outbound_last_hour} outreach drafts or sends,{" "}
-              {activity.reviews_pending} waiting for review.
+              {currentWork}
             </p>
           </div>
           <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1 text-xs font-medium text-[var(--color-accent)]">
             {activity.active_workflows} active
           </span>
         </div>
-        <div className="mt-6 grid h-24 grid-cols-12 items-end gap-1 overflow-hidden rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+        <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          <MiniStat label="Events last hour" value={activity.events_last_hour} />
+          <MiniStat label="Outreach last hour" value={activity.outbound_last_hour} />
+          <MiniStat label="Needs review" value={activity.reviews_pending} />
+        </div>
+        <div className="relative mt-6 grid h-28 grid-cols-12 items-end gap-1 overflow-hidden rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+          <span className="agent-work-sweep" aria-hidden="true" />
           {Array.from({ length: 12 }, (_, index) => {
             const height = 18 + ((activity.events_last_hour + index * 7) % 58);
             const delay = `${index * 80}ms`;
             return (
               <span
                 key={index}
-                className="animate-pulse rounded-t-[4px] bg-[var(--color-accent)]/70"
+                className="relative z-10 animate-pulse rounded-t-[4px] bg-[var(--color-accent)]/70"
                 style={{ height: `${height}%`, animationDelay: delay }}
               />
             );
@@ -763,6 +815,22 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
   );
 }
 
+function agentCurrentWork(activity: AgentActivity): string {
+  if (activity.active_workflows > 0 && activity.outbound_last_hour > 0) {
+    return `Processing ${activity.active_workflows} active workflow${activity.active_workflows === 1 ? "" : "s"} and moving ${activity.outbound_last_hour} outreach item${activity.outbound_last_hour === 1 ? "" : "s"} from the last hour.`;
+  }
+  if (activity.active_workflows > 0) {
+    return `Processing ${activity.active_workflows} active workflow${activity.active_workflows === 1 ? "" : "s"} across signal qualification, contact verification, and outreach gates.`;
+  }
+  if (activity.reviews_pending > 0) {
+    return `${activity.reviews_pending} outreach item${activity.reviews_pending === 1 ? " is" : "s are"} waiting for review.`;
+  }
+  if (activity.events_last_hour > 0) {
+    return `${activity.events_last_hour} system event${activity.events_last_hour === 1 ? "" : "s"} landed in the last hour; no outbound send is currently in motion.`;
+  }
+  return "No active workflow right now. The agent will wake when a qualified signal, reply, or channel event arrives.";
+}
+
 function AgentOutreachPanel({
   outreach,
 }: {
@@ -775,7 +843,7 @@ function AgentOutreachPanel({
         action={
           <Link href="/dashboard/conversations" className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
-            View all
+            Open trace
           </Link>
         }
       >
@@ -842,6 +910,11 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
           <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
             {message.subject ?? messagePreview(message)}
           </span>
+          {message.body ? (
+            <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+              {messagePreview(message)}
+            </span>
+          ) : null}
           {message.signal_title ? (
             <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
               Why now: {message.signal_title}
@@ -852,6 +925,9 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {channelLabel(message.channel)}
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {statusLabel(message.status)}
         </span>
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(message.sent_at ?? message.created_at)}

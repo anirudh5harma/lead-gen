@@ -827,6 +827,28 @@ button:active, a:active {
   transform: translateY(-1px);
 }
 
+.agent-work-sweep {
+  position: absolute;
+  inset: 0;
+  width: 36%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-accent) 18%, transparent),
+    transparent
+  );
+  animation: agent-work-sweep 2.4s ease-in-out infinite;
+}
+
+@keyframes agent-work-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+
 .dashboard-loader {
   position: relative;
   isolation: isolate;

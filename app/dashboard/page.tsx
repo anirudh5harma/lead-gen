@@ -229,10 +229,7 @@ export default async function BriefPage() {
       />
     );
   }
-  const [actions, signalKinds] = await Promise.all([
-    loadBriefActionState(session.workspace.id),
-    loadSignalKindMetrics(session.workspace.id),
-  ]);
+  const { actions, signalKinds } = await loadBriefState(session.workspace.id);
   return (
     <BriefView
       actions={actions}
@@ -240,6 +237,21 @@ export default async function BriefPage() {
       workspaceName={session.workspace.name}
     />
   );
+}
+
+async function loadBriefState(
+  workspaceId: string,
+): Promise<{ actions: BriefActionState; signalKinds: SignalKindMetric[] }> {
+  try {
+    const [actions, signalKinds] = await Promise.all([
+      loadBriefActionState(workspaceId),
+      loadSignalKindMetrics(workspaceId),
+    ]);
+    return { actions, signalKinds };
+  } catch (err) {
+    console.error("[dashboard/brief] failed to load brief state", err);
+    return { actions: EMPTY_ACTION_STATE, signalKinds: [] };
+  }
 }
 
 function BriefView({
