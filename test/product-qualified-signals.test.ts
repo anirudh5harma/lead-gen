@@ -235,6 +235,77 @@ test("qualified signals workbench falls back to graph contacts when resolution h
   assert.equal(workbench.signals[0]?.contacts[0]?.verification.email_verified, true);
 });
 
+test("qualified signals workbench treats LinkedIn profiles as outreach-ready contacts", async () => {
+  const now = new Date("2026-06-12T10:00:00Z");
+  const pool = fakePool([
+    {
+      id: "00000000-0000-4000-8000-000000000104",
+      kind: "competitor_move",
+      status: "in_play",
+      title: "Buyer asked about an Apollo alternative",
+      content: "A VP Sales asked for cleaner LinkedIn prospecting workflows.",
+      url: "https://example.com/thread",
+      match_score: "0.8200",
+      match_reason: "Competitor-switching language with a GTM buyer.",
+      freshness_at: now,
+      ingested_at: now,
+      matched_at: now,
+      company_id: "00000000-0000-4000-8000-000000000204",
+      company_name: "Gamma GTM",
+      company_domain: "gammagtm.example",
+      company_industry: "Software",
+      company_description: "GTM analytics.",
+      contact_candidates: null,
+      graph_candidates: JSON.stringify([
+        {
+          rank: 1,
+          person_id: "00000000-0000-4000-8000-000000000304",
+          full_name: "Lina Park",
+          title: "VP Sales",
+          score: 0.82,
+          reasons: ["gtm_leader", "linkedin_ready"],
+          emails: [],
+          linkedin_url: "https://linkedin.com/in/lina-park",
+          verification: { linkedin_ready: true },
+          provenance: { source: "graph_cache" },
+        },
+      ]),
+      contact_channel: "linkedin",
+      contact_defer_reason: null,
+      draft_conversation_id: "00000000-0000-4000-8000-000000000404",
+      draft_message_id: "00000000-0000-4000-8000-000000000504",
+      draft_channel: "linkedin_dm",
+      draft_status: "draft",
+      draft_subject: null,
+      draft_body: "Saw your Apollo thread. Worth comparing notes?",
+      draft_eval_score: "0.7900",
+      draft_eval_passed: true,
+      draft_external_id: null,
+      draft_scheduled_at: null,
+      draft_sent_at: null,
+      draft_delivered_at: null,
+      draft_channel_event_type: null,
+      draft_channel_event_at: null,
+      draft_defer_reason: null,
+      draft_defer_detail: null,
+      draft_created_at: now,
+      pending_approval_id: null,
+    },
+  ]);
+
+  const workbench = await loadQualifiedSignalWorkbench(
+    pool,
+    "00000000-0000-4000-8000-000000000001",
+  );
+
+  assert.equal(workbench.stats.with_verified_contacts, 1);
+  assert.equal(workbench.stats.with_email_draft, 1);
+  assert.equal(workbench.signals[0]?.contacts[0]?.emails.length, 0);
+  assert.equal(workbench.signals[0]?.contacts[0]?.verification.linkedin_ready, true);
+  assert.equal(workbench.signals[0]?.email_draft?.channel, "linkedin_dm");
+  assert.equal(workbench.signals[0]?.email_draft?.body, "Saw your Apollo thread. Worth comparing notes?");
+});
+
 test("qualified signals workbench decodes HTML entities in displayed signal text", async () => {
   const now = new Date("2026-06-12T10:00:00Z");
   const pool = fakePool([
@@ -308,7 +379,9 @@ test("qualified signals query only surfaces actionable company-backed verified-c
   assert.match(sql, /e\.event_type in \(/);
   assert.match(sql, /'message\.deferred'/);
   assert.match(sql, /e\.payload->>'message_id' = m\.id::text/);
-  assert.match(sql, /cardinality\(gp\.emails\) > 0/);
+  assert.match(sql, /e\.payload->>'channel' in \('email','linkedin'\)/);
+  assert.match(sql, /gp\.linkedin_url is not null/);
+  assert.match(sql, /m\.channel in \('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment'\)/);
   assert.match(sql, /meta->>'verified' = 'true'/);
   assert.match(sql, /array_prepend\(ev\.email::citext, array_remove\(gp\.emails, ev\.email::citext\)\)/);
   assert.match(sql, /limit greatest\(\$2::int \* 5, 250\)/);

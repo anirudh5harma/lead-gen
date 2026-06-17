@@ -324,12 +324,14 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.doesNotMatch(signals, /Run ingestion/);
   assert.match(signals, /kicker="Agent"/);
   assert.match(signals, /Quality signals ready for <em>outreach<\/em>/);
+  assert.match(signals, /verified emails or LinkedIn profiles/);
   assert.match(signals, /LinkedIn profiles/);
   assert.match(signals, /HeroStat label="Outlook"/);
   assert.match(signals, /Prepare outreach/);
   assert.match(signals, /<SurfaceSection title="Quality signals">/);
   assert.match(signals, /LinkedIn profile/);
-  assert.match(signals, /Judged email draft/);
+  assert.match(signals, /Judged outreach draft/);
+  assert.match(signals, /email or LinkedIn draft/);
   assert.match(signals, /Open sent outreach/);
   assert.match(signals, /Create a profile first/);
   assert.match(signals, /Tune the profile/);

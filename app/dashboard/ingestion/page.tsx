@@ -42,7 +42,7 @@ export default async function SignalsPage() {
       <SurfaceHero
         kicker="Agent"
         title={<>Quality signals ready for <em>outreach</em>.</>}
-        description="Qualified timing signals with verified contacts, LinkedIn profiles, and judged email drafts tied to the evidence."
+        description="Qualified timing signals with verified emails or LinkedIn profiles and judged outreach drafts tied to the evidence."
         meta={
           <div className="grid gap-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -190,7 +190,7 @@ function QualifiedSignalCard({ signal }: { signal: QualifiedSignalItem }) {
             <Evidence
               label="Draft"
               value={signal.email_draft ? draftStatus(signal.email_draft.status) : "waiting"}
-              icon={signal.email_draft ? "mail" : "refresh"}
+              icon={signal.email_draft ? draftChannelIcon(signal.email_draft.channel) : "refresh"}
             />
           </div>
         </section>
@@ -201,7 +201,7 @@ function QualifiedSignalCard({ signal }: { signal: QualifiedSignalItem }) {
             source={signal.contact_source}
             deferReason={signal.contact_defer_reason}
           />
-          <EmailDraftPanel signal={signal} />
+          <OutreachDraftPanel signal={signal} />
         </section>
       </div>
     </article>
@@ -231,7 +231,7 @@ function ContactPanel({
         <p className="mt-3 rounded-md border border-[var(--color-line-1)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
           {deferReason
             ? `Contact resolution paused: ${deferReason.replace(/_/g, " ")}.`
-            : "No verified contacts yet. Prepare outreach to resolve emails and LinkedIn profiles."}
+            : "No verified contacts yet. Prepare outreach to resolve emails or LinkedIn profiles."}
         </p>
       ) : (
         <ol className="mt-3 grid gap-2">
@@ -293,13 +293,13 @@ function ContactPanel({
   );
 }
 
-function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
+function OutreachDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
   const draft = signal.email_draft;
   return (
     <div className="border-t border-[var(--color-line-1)] pt-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-[var(--color-text-1)]">
-          Judged email draft
+          Judged outreach draft
         </h3>
         {draft ? (
           <span className="text-xs text-[var(--color-text-3)]">
@@ -309,7 +309,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
       </div>
       {!draft ? (
         <p className="mt-3 rounded-md border border-[var(--color-line-1)] px-3 py-3 text-sm leading-6 text-[var(--color-text-3)]">
-          No email draft yet. Once contacts resolve, the agent writes and judges the outreach draft here.
+          No outreach draft yet. Once contacts resolve, the agent writes and judges the email or LinkedIn draft here.
         </p>
       ) : (
         <div className="mt-3">
@@ -448,6 +448,10 @@ function sendIcon(draft: NonNullable<QualifiedSignalItem["email_draft"]>): strin
   }
   if (draft.scheduled_at || draft.latest_channel_event_type === "message.queued") return "schedule";
   return "mail";
+}
+
+function draftChannelIcon(channel: string): string {
+  return channel === "email" ? "mail" : "forum";
 }
 
 function Evidence({ icon, label, value }: { icon: string; label: string; value: string }) {

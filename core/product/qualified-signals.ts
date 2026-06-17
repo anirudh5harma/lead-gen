@@ -295,7 +295,7 @@ export async function loadQualifiedSignalWorkbench(
           where e.workspace_id = s.workspace_id
             and e.event_type = 'contact.resolved'
             and e.payload->>'signal_id' = s.id::text
-            and e.payload->>'channel' = 'email'
+            and e.payload->>'channel' in ('email','linkedin')
           order by e.occurred_at desc
           limit 1
        ) resolved on true
@@ -305,7 +305,7 @@ export async function loadQualifiedSignalWorkbench(
           where e.workspace_id = s.workspace_id
             and e.event_type = 'contact.resolution.deferred'
             and e.payload->>'signal_id' = s.id::text
-            and e.payload->>'channel' = 'email'
+            and e.payload->>'channel' in ('email','linkedin')
           order by e.occurred_at desc
           limit 1
        ) deferred on true
@@ -356,8 +356,14 @@ export async function loadQualifiedSignalWorkbench(
                     to_jsonb(array_remove(array[
                       case when gp.title ~* '(founder|co-founder|ceo|chief executive|owner)' then 'executive_or_founder' end,
                       case when gp.title ~* '(revenue|sales|growth|marketing|gtm|partnership|business development)' then 'gtm_leader' end,
-                      case when cardinality(gp.emails) > 0 then 'has_email' end
-                    ], null) || array['verified_email']) as reasons,
+                      case when cardinality(coalesce(gp.emails, '{}'::text[])) > 0 then 'has_email' end,
+                      case when exists (
+                        select 1
+                          from jsonb_each(coalesce(gp.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                         where meta->>'verified' = 'true'
+                      ) then 'verified_email' end,
+                      case when gp.linkedin_url is not null then 'linkedin_ready' end
+                    ], null)) as reasons,
                     exists (
                       select 1
                         from jsonb_each(coalesce(gp.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
@@ -373,16 +379,27 @@ export async function loadQualifiedSignalWorkbench(
                from graph_persons gp
               where gp.workspace_id = s.workspace_id
                 and gp.company_id = s.related_company_id
-                and cardinality(gp.emails) > 0
-                and exists (
-                  select 1
-                    from jsonb_each(coalesce(gp.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
-                   where meta->>'verified' = 'true'
+                and (
+                  gp.linkedin_url is not null
+                  or exists (
+                    select 1
+                      from jsonb_each(coalesce(gp.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                     where meta->>'verified' = 'true'
+                  )
                 )
               order by
                 case
                   when gp.title ~* '(founder|co-founder|ceo|chief executive|owner)' then 0
                   when gp.title ~* '(revenue|sales|growth|marketing|gtm|partnership|business development)' then 1
+                  else 2
+                end,
+                case
+                  when exists (
+                    select 1
+                      from jsonb_each(coalesce(gp.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                     where meta->>'verified' = 'true'
+                  ) then 0
+                  when gp.linkedin_url is not null then 1
                   else 2
                 end,
                 gp.updated_at desc,
@@ -429,7 +446,7 @@ export async function loadQualifiedSignalWorkbench(
              on m.workspace_id = c.workspace_id
             and m.conversation_id = c.id
             and m.direction = 'outbound'
-            and m.channel = 'email'
+            and m.channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
            left join lateral (
              select e.event_type,
                     e.occurred_at,
@@ -507,7 +524,10 @@ export async function loadQualifiedSignalWorkbench(
     stats: {
       qualified: signals.length,
       with_verified_contacts: signals.filter((signal) =>
-        signal.contacts.some((contact) => contact.verification.email_verified === true)
+        signal.contacts.some((contact) =>
+          contact.verification.email_verified === true ||
+          contact.verification.linkedin_ready === true
+        )
       ).length,
       with_email_draft: signals.filter((signal) => signal.email_draft).length,
       ready_for_review: signals.filter((signal) =>
