@@ -874,6 +874,39 @@ function ProfileSettingsForm({
           rows={4}
         />
       </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Select
+          name="preferred_language"
+          label="Preferred language"
+          defaultValue={profile?.preferred_language ?? "English (US)"}
+          options={[
+            ["English (US)", "English (US)"],
+            ["English (UK)", "English (UK)"],
+            ["Spanish", "Spanish"],
+            ["French", "French"],
+            ["German", "German"],
+          ]}
+        />
+        <Select
+          name="outreach_goal"
+          label="Outreach goal"
+          defaultValue={profile?.outreach_goal ?? "conversations"}
+          options={[
+            ["conversations", "Start conversations"],
+            ["demos", "Book qualified demos"],
+          ]}
+        />
+        <Select
+          name="message_tone"
+          label="Message tone"
+          defaultValue={profile?.message_tone ?? "professional"}
+          options={[
+            ["professional", "Professional"],
+            ["conversational", "Conversational"],
+            ["direct", "Direct"],
+          ]}
+        />
+      </div>
       <Field
         name="linkedin_company_url"
         label="LinkedIn company page"

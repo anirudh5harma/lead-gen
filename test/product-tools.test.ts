@@ -178,10 +178,20 @@ test("product tools: activation setup exposes setup and initial Signal ingestion
   const parsedInput = tool!.input.parse({
     website_url: "acme.ai",
     company_hint: "Acme AI",
+    industry_hint: "Software Development & SaaS",
+    description_hint: "Turns quality signals into verified outreach.",
+    customer_pain_points: "Teams miss buying intent and lack verified contacts.",
+    key_features: "Signal tracking\nVerified email and LinkedIn profiles",
+    social_proof: "Used by founder-led GTM teams.",
+    preferred_language: "English (US)",
+    outreach_goal: "conversations",
+    message_tone: "professional",
     allowed_industries: ["AI", "Developer tools"],
     wait: false,
   });
   assert.equal(parsedInput.website_url, "acme.ai");
+  assert.equal(parsedInput.outreach_goal, "conversations");
+  assert.equal(parsedInput.message_tone, "professional");
   assert.equal(parsedInput.wait, false);
 
   const parsedOutput = tool!.output.parse({

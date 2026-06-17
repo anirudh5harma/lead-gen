@@ -686,6 +686,9 @@ export interface ConfigureWorkspaceProfileInput {
   customer_pain_points?: string | null;
   key_features?: string | null;
   social_proof?: string | null;
+  preferred_language?: string | null;
+  outreach_goal?: string | null;
+  message_tone?: string | null;
   linkedin_company_url?: string | null;
   auto_enrich_email_addresses?: boolean;
   prevent_team_contact_duplication?: boolean;
@@ -1067,6 +1070,9 @@ export interface ProductCompanyProfile {
   customer_pain_points?: string | null;
   key_features?: string | null;
   social_proof?: string | null;
+  preferred_language?: string | null;
+  outreach_goal?: string | null;
+  message_tone?: string | null;
   linkedin_company_url?: string | null;
   auto_enrich_email_addresses?: boolean;
   prevent_team_contact_duplication?: boolean;
@@ -2562,6 +2568,9 @@ export async function configureWorkspaceCompanyProfile(
     customer_pain_points: blankToNull(input.customer_pain_points ?? undefined),
     key_features: blankToNull(input.key_features ?? undefined),
     social_proof: blankToNull(input.social_proof ?? undefined),
+    preferred_language: blankToNull(input.preferred_language ?? undefined),
+    outreach_goal: blankToNull(input.outreach_goal ?? undefined),
+    message_tone: blankToNull(input.message_tone ?? undefined),
     linkedin_company_url: blankToNull(input.linkedin_company_url ?? undefined),
     auto_enrich_email_addresses: input.auto_enrich_email_addresses ?? true,
     prevent_team_contact_duplication:
@@ -4968,6 +4977,9 @@ async function projectWorkspaceCompanyProfiled(
     customer_pain_points?: string | null;
     key_features?: string | null;
     social_proof?: string | null;
+    preferred_language?: string | null;
+    outreach_goal?: string | null;
+    message_tone?: string | null;
     linkedin_company_url?: string | null;
     auto_enrich_email_addresses?: boolean;
     prevent_team_contact_duplication?: boolean;
@@ -5007,6 +5019,9 @@ async function projectWorkspaceCompanyProfiled(
         customer_pain_points: payload.customer_pain_points ?? null,
         key_features: payload.key_features ?? null,
         social_proof: payload.social_proof ?? null,
+        preferred_language: payload.preferred_language ?? null,
+        outreach_goal: payload.outreach_goal ?? null,
+        message_tone: payload.message_tone ?? null,
         linkedin_company_url: payload.linkedin_company_url ?? null,
         auto_enrich_email_addresses:
           payload.auto_enrich_email_addresses ?? true,
@@ -5959,6 +5974,14 @@ function activationSetupIdempotencyKey(
         workspace_id,
         website_url: input.website_url,
         company_hint: input.company_hint ?? null,
+        industry_hint: input.industry_hint ?? null,
+        description_hint: input.description_hint ?? null,
+        customer_pain_points: input.customer_pain_points ?? null,
+        key_features: input.key_features ?? null,
+        social_proof: input.social_proof ?? null,
+        preferred_language: input.preferred_language ?? null,
+        outreach_goal: input.outreach_goal ?? null,
+        message_tone: input.message_tone ?? null,
         allowed_industries: input.allowed_industries ?? [],
       }),
     )
@@ -11519,6 +11542,9 @@ function productProfileState(
     customer_pain_points: stringStateValue(row.properties.customer_pain_points),
     key_features: stringStateValue(row.properties.key_features),
     social_proof: stringStateValue(row.properties.social_proof),
+    preferred_language: stringStateValue(row.properties.preferred_language),
+    outreach_goal: stringStateValue(row.properties.outreach_goal),
+    message_tone: stringStateValue(row.properties.message_tone),
     linkedin_company_url: stringStateValue(row.properties.linkedin_company_url),
     auto_enrich_email_addresses:
       booleanStateValue(row.properties.auto_enrich_email_addresses) ?? true,

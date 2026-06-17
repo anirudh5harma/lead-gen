@@ -38,6 +38,14 @@ export interface ActivationSetupGraphInput {
   user_id: string;
   website_url: string;
   company_hint?: string;
+  industry_hint?: string;
+  description_hint?: string;
+  customer_pain_points?: string;
+  key_features?: string;
+  social_proof?: string;
+  preferred_language?: string;
+  outreach_goal?: string;
+  message_tone?: string;
   allowed_industries?: string[];
   thread_id?: string;
   run_id?: string;
@@ -51,6 +59,12 @@ export interface ActivationProfileDraft {
   domain: string | null;
   industry: string | null;
   description: string;
+  customer_pain_points?: string | null;
+  key_features?: string | null;
+  social_proof?: string | null;
+  preferred_language?: string | null;
+  outreach_goal?: string | null;
+  message_tone?: string | null;
   profile_source: "firecrawl" | "fallback" | "manual";
   confidence: number;
   evidence: Array<{ label: string; value: string; source_ref?: string | null }>;
@@ -206,6 +220,14 @@ export function createActivationSetupGraph(
               website_url,
               user_id: input.user_id,
               company_hint: input.company_hint ?? null,
+              industry_hint: input.industry_hint ?? null,
+              description_hint: input.description_hint ?? null,
+              customer_pain_points: input.customer_pain_points ?? null,
+              key_features: input.key_features ?? null,
+              social_proof: input.social_proof ?? null,
+              preferred_language: input.preferred_language ?? null,
+              outreach_goal: input.outreach_goal ?? null,
+              message_tone: input.message_tone ?? null,
               allowed_industries: input.allowed_industries ?? [],
             }),
           };
@@ -317,6 +339,12 @@ export function createActivationSetupGraph(
                 website_url: profile.website_url,
                 industry: profile.industry ?? undefined,
                 description: profile.description,
+                customer_pain_points: profile.customer_pain_points ?? undefined,
+                key_features: profile.key_features ?? undefined,
+                social_proof: profile.social_proof ?? undefined,
+                preferred_language: profile.preferred_language ?? undefined,
+                outreach_goal: profile.outreach_goal ?? undefined,
+                message_tone: profile.message_tone ?? undefined,
                 profile_source: profile.profile_source,
               },
               state,
@@ -516,6 +544,14 @@ function activationInputFromState(
     user_id: String(state.attributes?.user_id ?? ""),
     website_url: String(state.attributes?.website_url ?? ""),
     company_hint: stringOrUndefined(state.attributes?.company_hint),
+    industry_hint: stringOrUndefined(state.attributes?.industry_hint),
+    description_hint: stringOrUndefined(state.attributes?.description_hint),
+    customer_pain_points: stringOrUndefined(state.attributes?.customer_pain_points),
+    key_features: stringOrUndefined(state.attributes?.key_features),
+    social_proof: stringOrUndefined(state.attributes?.social_proof),
+    preferred_language: stringOrUndefined(state.attributes?.preferred_language),
+    outreach_goal: stringOrUndefined(state.attributes?.outreach_goal),
+    message_tone: stringOrUndefined(state.attributes?.message_tone),
     allowed_industries: arrayOfStrings(state.attributes?.allowed_industries),
     thread_id: state.thread_id,
     run_id: state.run_id,
@@ -555,10 +591,12 @@ function profileDraftFromState(
     state,
     "website_profile",
   );
+  const input = activationInputFromState(state);
   const website_url = normalizeOrThrow(raw.website_url);
   const domain = domainFromUrl(website_url);
   const company_name = raw.company_name?.trim() || titleizeDomain(domain);
   const description =
+    input.description_hint?.trim() ||
     raw.description?.trim() ||
     fallbackProfile(website_url, company_name).description!;
   const profile_source = /could not read enough website content/i.test(
@@ -570,8 +608,14 @@ function profileDraftFromState(
     company_name,
     website_url,
     domain,
-    industry: raw.industry?.trim() || null,
+    industry: input.industry_hint?.trim() || raw.industry?.trim() || null,
     description,
+    customer_pain_points: input.customer_pain_points?.trim() || null,
+    key_features: input.key_features?.trim() || null,
+    social_proof: input.social_proof?.trim() || null,
+    preferred_language: input.preferred_language?.trim() || null,
+    outreach_goal: input.outreach_goal?.trim() || null,
+    message_tone: input.message_tone?.trim() || null,
     profile_source,
     confidence: profile_source === "fallback" ? 0.45 : 0.72,
     evidence: [

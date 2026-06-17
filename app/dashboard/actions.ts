@@ -481,6 +481,9 @@ export async function editCompanyProfileAction(formData: FormData) {
         customer_pain_points: value(formData, "customer_pain_points") || null,
         key_features: value(formData, "key_features") || null,
         social_proof: value(formData, "social_proof") || null,
+        preferred_language: value(formData, "preferred_language") || null,
+        outreach_goal: value(formData, "outreach_goal") || null,
+        message_tone: value(formData, "message_tone") || null,
         linkedin_company_url: value(formData, "linkedin_company_url") || null,
         auto_enrich_email_addresses: checked(
           formData,

@@ -109,6 +109,14 @@ async function createActivationSetup(formData: FormData): Promise<void> {
     {
       website_url: websiteUrl,
       company_hint: companyHint || undefined,
+      industry_hint: value(formData, "industry") || undefined,
+      description_hint: value(formData, "company_description") || undefined,
+      customer_pain_points: value(formData, "customer_pain_points") || undefined,
+      key_features: value(formData, "key_features") || undefined,
+      social_proof: value(formData, "social_proof") || undefined,
+      preferred_language: value(formData, "preferred_language") || undefined,
+      outreach_goal: value(formData, "outreach_goal") || undefined,
+      message_tone: value(formData, "message_tone") || undefined,
       allowed_industries: [
         "B2B SaaS",
         "AI",

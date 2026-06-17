@@ -47,20 +47,20 @@ export default async function OnboardingPage({
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
             <h1 className="display-serif mt-4 max-w-xl text-[clamp(2rem,4vw,3.5rem)] text-[var(--color-text-1)]">
-              Create your workspace profile.
+              Create your first outreach agent.
             </h1>
           </ScrollReveal>
           <ScrollReveal delay={0.3}>
             <p className="mt-5 max-w-md text-[17px] leading-[1.6] text-[var(--color-text-2)]">
-              Add your website. Bombsell builds the profile, finds qualified signals, verifies contacts, and prepares email or LinkedIn outreach for review.
+              Add your website, positioning, proof, and goals. Bombsell turns that profile into qualified signals, verified contacts, and email or LinkedIn outreach.
             </p>
           </ScrollReveal>
           <ScrollReveal delay={0.4}>
             <div className="mt-8 grid gap-3">
-              <FlowStep number="1" label="Profile" text="Your public site becomes company, audience, and voice context." />
-              <FlowStep number="2" label="Accounts" text="Connect email and LinkedIn from Profile when the workspace is ready." />
-              <FlowStep number="3" label="Contacts" text="Qualified signals resolve verified emails and LinkedIn profiles." />
-              <FlowStep number="4" label="Agent" text="The Agent drafts outreach behind channel limits and review posture." />
+              <FlowStep number="1" label="Profile" text="Your site and positioning become company, audience, and voice context." />
+              <FlowStep number="2" label="Channels" text="Email and LinkedIn stay explicit before any outreach can run." />
+              <FlowStep number="3" label="Signals" text="The agent finds timing signals and resolves verified contacts." />
+              <FlowStep number="4" label="Agent" text="Outreach drafts follow your goal, tone, and channel limits." />
             </div>
           </ScrollReveal>
         </div>
@@ -85,10 +85,10 @@ export default async function OnboardingPage({
               </span>
               <div className="min-w-0">
                 <h2 className="font-sans text-2xl font-semibold leading-tight text-[var(--color-text-1)]">
-                  Create profile
+                  Create outreach agent
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-                  Website first. Email and LinkedIn connect from Profile.
+                  Website analysis plus the context your agent needs to write.
                 </p>
               </div>
             </div>
