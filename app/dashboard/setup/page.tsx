@@ -540,14 +540,14 @@ function AgentSummary({ reps }: { reps: SetupRepRow[] }) {
           const meta = AGENT_META[name] ?? {
             role: r?.role ?? "Custom",
             surface: r?.persona.story ?? "Custom work pattern",
-            href: "/dashboard/reps",
+            href: "/dashboard/agent",
             icon: "person",
           };
           const status = r?.status ?? "absent";
           return (
             <Link
               key={name}
-              href={r ? `/dashboard/reps/${r.id}` : meta.href}
+              href={r ? `/dashboard/agent/${r.id}` : meta.href}
               prefetch={false}
               className="group rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-colors hover:bg-[var(--color-ink-2)]/40"
             >

@@ -241,7 +241,7 @@ export async function configureRepAction(formData: FormData) {
   const repId = value(formData, "rep_id");
   const returnTo = dashboardReturnPath(
     formData,
-    repId ? `/dashboard/reps/${repId}` : "/dashboard/reps",
+    repId ? `/dashboard/agent/${repId}` : "/dashboard/agent",
   );
   const name = await repNameFromForm(formData, session);
   await configureRep(
@@ -260,7 +260,10 @@ export async function configureRepAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  if (repId) revalidatePath(`/dashboard/reps/${repId}`);
+  if (repId) {
+    revalidatePath(`/dashboard/agent/${repId}`);
+    revalidatePath(`/dashboard/reps/${repId}`);
+  }
   redirectWithToast(returnTo, "Agent guidance saved.");
 }
 
@@ -437,7 +440,7 @@ export async function prepareQualifiedSignalsAction(formData: FormData) {
 
 export async function checkAgentSourcesAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/reps");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
   try {
     await runWorkspaceSignalIngestion(
       {
@@ -460,7 +463,7 @@ export async function checkAgentSourcesAction(formData: FormData) {
 
 export async function runAgentSourceNowAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/reps");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
   const sourceId = value(formData, "source_id");
   if (!sourceId) {
     redirectWithToast(returnTo, "Choose a source before running it.", "error");
@@ -508,7 +511,7 @@ export async function generateMeetingPrepAction(formData: FormData) {
 
 export async function dismissQualifiedSignalAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/reps");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
   const signalId = value(formData, "signal_id");
   if (!signalId) {
     redirectWithToast(
@@ -653,6 +656,7 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/prospecting");
   revalidatePath("/dashboard/setup");
+  revalidatePath("/dashboard/agent");
   revalidatePath("/dashboard/reps");
   revalidatePath("/dashboard/signals");
   revalidatePath("/dashboard/ingestion");

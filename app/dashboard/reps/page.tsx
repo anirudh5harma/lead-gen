@@ -787,7 +787,7 @@ function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
         action={
           <div className="flex flex-wrap items-center gap-2">
             <form action={checkAgentSourcesAction}>
-              <input type="hidden" name="return_to" value="/dashboard/reps" />
+              <input type="hidden" name="return_to" value="/dashboard/agent" />
               <input type="hidden" name="limit" value="25" />
               <button type="submit" className="btn-solid-sm">
                 <Icon name="sync_alt" size={14} />
@@ -1015,7 +1015,7 @@ function SourceStrategyRow({ source }: { source: AgentSourceRow }) {
         {source.enabled ? (
           <form action={runAgentSourceNowAction}>
             <input type="hidden" name="source_id" value={source.id} />
-            <input type="hidden" name="return_to" value="/dashboard/reps" />
+            <input type="hidden" name="return_to" value="/dashboard/agent" />
             <button type="submit" className="btn-quiet-sm" title="Run source now">
               <Icon name="play_arrow" size={14} />
               Run now
@@ -1230,7 +1230,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
         </span>
         <form action={dismissQualifiedSignalAction}>
           <input type="hidden" name="signal_id" value={signal.id} />
-          <input type="hidden" name="return_to" value="/dashboard/reps" />
+          <input type="hidden" name="return_to" value="/dashboard/agent" />
           <input
             type="hidden"
             name="reason"
@@ -1642,7 +1642,7 @@ function RepCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href={`/dashboard/reps/${rep.id}`}
+              href={`/dashboard/agent/${rep.id}`}
               className="text-[18px] font-semibold text-[var(--color-text-1)] transition-colors hover:text-[var(--color-accent)]"
             >
               {agentDisplayName(rep.role)}
@@ -1681,7 +1681,7 @@ function RepCard({
           {statusLabel(rep.status)} / Profile, accounts, and limits stay in
           Profile
         </span>
-        <Link href={`/dashboard/reps/${rep.id}`} className="btn-quiet-sm">
+        <Link href={`/dashboard/agent/${rep.id}`} className="btn-quiet-sm">
           <Icon name="arrow_forward" size={14} />
           Open agent
         </Link>

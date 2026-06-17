@@ -55,9 +55,10 @@ const NAV: NavItem[] = [
     label: "Dashboard",
   },
   {
-    href: "/dashboard/reps",
+    href: "/dashboard/agent",
     label: "Agent",
     matches: [
+      "/dashboard/agent",
       "/dashboard/reps",
       "/dashboard/conversations",
       "/dashboard/review",
@@ -99,12 +100,12 @@ const FLOW: FlowItem[] = [
     ],
   },
   {
-    href: "/dashboard/reps#sources",
+    href: "/dashboard/agent#sources",
     label: "Sources",
     detail: "Signal strategy",
     icon: "sensors",
     metric: "sources",
-    matches: ["/dashboard/reps"],
+    matches: ["/dashboard/agent", "/dashboard/reps"],
   },
   {
     href: "/dashboard/signals",
@@ -115,7 +116,7 @@ const FLOW: FlowItem[] = [
     matches: ["/dashboard/signals", "/dashboard/ingestion", "/dashboard/prospects"],
   },
   {
-    href: "/dashboard/reps#outreach",
+    href: "/dashboard/agent#outreach",
     label: "Outreach",
     detail: "Emails + DMs",
     icon: "send",

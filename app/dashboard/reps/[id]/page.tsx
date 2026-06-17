@@ -185,7 +185,7 @@ export default async function RepDetailPage({
             <input
               type="hidden"
               name="return_to"
-              value={`/dashboard/reps/${rep.id}`}
+              value={`/dashboard/agent/${rep.id}`}
             />
             <input type="hidden" name="rep_id" value={rep.id} />
             <input type="hidden" name="rep_role" value={rep.role} />

@@ -351,7 +351,7 @@ export default async function ProspectProfilePage({
                 title="No outreach yet."
                 hint="When a qualified signal starts email or LinkedIn outreach for this contact, the thread will appear here."
                 cta={{
-                  href: "/dashboard/reps#outreach",
+                  href: "/dashboard/agent#outreach",
                   label: "Open Agent",
                   icon: "arrow_forward",
                 }}

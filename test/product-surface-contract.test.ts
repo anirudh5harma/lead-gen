@@ -14,7 +14,8 @@ test("dashboard navigation uses active product surface routes", () => {
   );
 
   assert.match(primaryNav, /href: "\/dashboard",\s+label: "Dashboard"/);
-  assert.match(primaryNav, /href: "\/dashboard\/reps",\s+label: "Agent"/);
+  assert.match(primaryNav, /href: "\/dashboard\/agent",\s+label: "Agent"/);
+  assert.match(primaryNav, /"\/dashboard\/reps"/);
   assert.match(primaryNav, /href: "\/dashboard\/settings",\s+label: "Profile"/);
   assert.match(primaryNav, /"\/dashboard\/conversations"/);
   assert.match(primaryNav, /"\/dashboard\/signals"/);
@@ -37,9 +38,9 @@ test("dashboard navigation uses active product surface routes", () => {
   assert.match(shell, /ProductFlowRail/);
   assert.match(shell, /aria-label="Product flow"/);
   assert.match(shell, /href: "\/dashboard\/settings#profile"/);
-  assert.match(shell, /href: "\/dashboard\/reps#sources"/);
+  assert.match(shell, /href: "\/dashboard\/agent#sources"/);
   assert.match(shell, /href: "\/dashboard\/signals"/);
-  assert.match(shell, /href: "\/dashboard\/reps#outreach"/);
+  assert.match(shell, /href: "\/dashboard\/agent#outreach"/);
   assert.match(shell, /detail: "ICP \+ integrations"/);
   assert.match(shell, /detail: "Signal strategy"/);
   assert.match(shell, /detail: "Qualified contacts"/);
@@ -82,6 +83,41 @@ test("dashboard product flow rail renders live status metrics safely", () => {
   assert.match(layout, /from messages m/);
   assert.match(layout, /'linkedin_dm'/);
   assert.match(layout, /outreach_sent_7d/);
+});
+
+test("Agent is the canonical dashboard surface route", () => {
+  const agentPage = source("app/dashboard/agent/page.tsx");
+  const agentDetailPage = source("app/dashboard/agent/[id]/page.tsx");
+
+  assert.match(agentPage, /export const dynamic = "force-dynamic"/);
+  assert.match(agentPage, /from "\.\.\/reps\/page"/);
+  assert.match(agentDetailPage, /export const dynamic = "force-dynamic"/);
+  assert.match(agentDetailPage, /from "\.\.\/\.\.\/reps\/\[id\]\/page"/);
+  assert.match(
+    source("app/dashboard/agent/loading.tsx"),
+    /from "\.\.\/reps\/loading"/,
+  );
+  assert.match(
+    source("app/dashboard/agent/[id]/loading.tsx"),
+    /from "\.\.\/\.\.\/reps\/\[id\]\/loading"/,
+  );
+
+  const productLinks = [
+    source("components/dashboard/Shell.tsx"),
+    source("app/dashboard/page.tsx"),
+    source("app/dashboard/reps/page.tsx"),
+    source("app/dashboard/reps/[id]/page.tsx"),
+    source("app/dashboard/setup/page.tsx"),
+    source("app/dashboard/prospects/[id]/page.tsx"),
+    source("app/dashboard/actions.ts"),
+    source("core/product/launch-readiness.ts"),
+  ].join("\n");
+
+  assert.match(productLinks, /\/dashboard\/agent/);
+  assert.doesNotMatch(productLinks, /href="\/dashboard\/reps/);
+  assert.doesNotMatch(productLinks, /href=\{`\/dashboard\/reps/);
+  assert.doesNotMatch(productLinks, /value="\/dashboard\/reps/);
+  assert.doesNotMatch(productLinks, /Configure Rep", \["product\.rep\.configure"\], "\/dashboard\/reps"/);
 });
 
 test("canonical Prospecting and Signals routes preserve old implementations", () => {
@@ -131,8 +167,8 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /Signal mix/);
   assert.match(dashboard, /Agent insight/);
   assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
-  assert.match(dashboard, /href="\/dashboard\/reps#outreach"/);
-  assert.match(dashboard, /href="\/dashboard\/reps#verified-contacts"/);
+  assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
+  assert.match(dashboard, /href="\/dashboard\/agent#verified-contacts"/);
   assert.match(source("app/dashboard/brief/page.tsx"), /redirect\("\/dashboard"\)/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
   assert.match(appLayout, /Profile, quality signals, verified contacts/);
@@ -221,7 +257,7 @@ test("Verified contacts open graph-backed profile pages with channel readiness",
   assert.match(profile, /Timing evidence, channel handles, outreach, replies, and meetings/);
   assert.match(profile, /Back to contacts/);
   assert.match(profile, /No outreach yet/);
-  assert.match(profile, /href: "\/dashboard\/reps#outreach"/);
+  assert.match(profile, /href: "\/dashboard\/agent#outreach"/);
   assert.match(profile, /Replies and meetings/);
   assert.match(profile, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(profile, /coalesce\(p\.phones, '\{\}'::text\[\]\) as phones/);

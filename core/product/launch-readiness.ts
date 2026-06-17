@@ -208,7 +208,7 @@ export function buildWorkspaceLaunchReadiness(
       count: counts.activeReps,
       detailReady: `${counts.activeReps} active Rep${plural(counts.activeReps)} can own outreach.`,
       detailBlocked: "No active Rep is available to own outreach.",
-      action: action("Configure Rep", ["product.rep.configure"], "/dashboard/reps"),
+      action: action("Configure Agent", ["product.rep.configure"], "/dashboard/agent"),
     }),
     countCheck({
       id: "signal_sources",
