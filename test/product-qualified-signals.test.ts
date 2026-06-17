@@ -7,7 +7,7 @@ import {
   normalizeContactCandidates,
 } from "../core/product/qualified-signals.ts";
 
-test("qualified signals workbench maps verified contacts and email drafts", async () => {
+test("qualified signals workbench maps verified contacts and outreach drafts", async () => {
   const now = new Date("2026-06-12T10:00:00Z");
   const pool = fakePool([
     {

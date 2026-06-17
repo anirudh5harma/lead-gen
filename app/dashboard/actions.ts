@@ -434,7 +434,7 @@ export async function prepareQualifiedSignalsAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  redirectWithToast(returnTo, "Preparing verified contacts and email drafts.");
+  redirectWithToast(returnTo, "Preparing verified contacts and outreach.");
 }
 
 export async function checkAgentSourcesAction(formData: FormData) {

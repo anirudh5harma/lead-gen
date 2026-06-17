@@ -1290,7 +1290,7 @@ function AgentOpportunityPanel({
                 iconSize={14}
                 pendingLabel="Preparing"
               >
-                Prepare contacts + drafts
+                Prepare outreach
               </PendingSubmitButton>
             </form>
             <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">

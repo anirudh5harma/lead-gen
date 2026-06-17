@@ -405,7 +405,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /The agent ranks qualified signals/);
   assert.match(reps, /prepareQualifiedSignalsAction/);
-  assert.match(reps, /Prepare contacts \+ drafts/);
+  assert.match(reps, /Prepare outreach/);
   assert.match(reps, /Verified email/);
   assert.match(reps, /with_outreach_draft/);
   assert.match(reps, /const draft = signal\.outreach_draft/);
@@ -546,6 +546,7 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(actions, /runAgentSourceNowAction/);
   assert.match(actions, /runWorkspaceSourcePollNow/);
   assert.match(actions, /wait: false/);
+  assert.match(actions, /Preparing verified contacts and outreach/);
   assert.match(reps, /checkAgentSourcesAction/);
   assert.match(reps, /Check sources/);
   assert.match(reps, /Run source now/);
@@ -560,6 +561,10 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /email or\s+LinkedIn drafts/);
   assert.match(reps, /Tune profile/);
+  assert.match(productApp, /SIGNAL_TO_EMAIL_PLAY_WORKFLOW,\s*SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW/);
+  assert.match(productApp, /row\.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW/);
+  assert.match(productApp, /contactChannelForTarget\(row\.target_channel\)/);
+  assert.doesNotMatch(actions, /Preparing verified contacts and email drafts/);
   assert.doesNotMatch(signals, /prospecting profile/);
   assert.doesNotMatch(signals, /kicker="Qualified signals"/);
   assert.doesNotMatch(signals, /Signals worth <em>emailing now<\/em>/);
