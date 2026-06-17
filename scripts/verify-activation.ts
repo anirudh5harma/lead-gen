@@ -89,7 +89,7 @@ try {
   const activation = await configureActivationSetup(
     {
       rep: {
-        name: "Sampark",
+        name: "Outbound agent",
         role: "sdr",
         voice: "Clear, specific, low-hype, and useful.",
         story: `Turns market movement around ${companyName} into careful founder-led conversations.`,

@@ -1682,7 +1682,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.campaign.outcome.record",
     description:
-      "Record a real Outcome for a Prayog campaign Play run, attributing the result back to campaign procedural memory.",
+      "Record a real Outcome for a campaign Play run, attributing the result back to campaign procedural memory.",
     kind: "write",
     input: z.object({
       play_run_id: z.string().uuid(),

@@ -931,7 +931,11 @@ function ActivationSettingsForm({
         name="match_threshold"
         value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
       />
-      <input type="hidden" name="rep_name" value={rep?.name ?? "Outbound Agent"} />
+      <input
+        type="hidden"
+        name="rep_name"
+        value={rep ? agentDisplayName(rep.name) : "Outbound agent"}
+      />
       <PendingSubmitButton
         className="btn-solid w-fit"
         icon="check"
@@ -1437,7 +1441,7 @@ function freshWhen(value: Date): string {
 }
 
 function agentDisplayName(name: string): string {
-  if (name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
   return name;
 }
 

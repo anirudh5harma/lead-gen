@@ -353,7 +353,7 @@ Implemented and verified:
   projector waits for at least three accepted recommendations of the same kind
   and a keep rate above the quality threshold, then emits
   `rep.memory.procedural.seeded` with kept/skipped examples for the owning Rep
-  role: Vaani/content for Content opportunities and Bodh/researcher for AEO
+  role: content agent for Content opportunities and research agent for AEO
   gaps. This avoids overfitting to a single operator click while keeping the
   path replayable and preventing unrelated Reps from inheriting the wrong
   procedural examples.

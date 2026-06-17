@@ -66,7 +66,7 @@ test("recommendation outcome exemplar captures the kept item that produced a win
     url: "https://example.com/proof",
     evidence_source_ids: ["00000000-0000-4000-8000-000000000030"],
   });
-  assert.match(String(exemplar.guidance), /Bodh recommendation/);
+  assert.match(String(exemplar.guidance), /research-agent recommendation/);
 });
 
 test("recommendation learning projection waits for repeated accepted feedback", async () => {

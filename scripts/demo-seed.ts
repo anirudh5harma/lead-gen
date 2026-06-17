@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Demo seed. Spins up a fresh workspace, seeds Sampark, ingests a Series A
+ * Demo seed. Spins up a fresh workspace, seeds the outbound agent, ingests a Series A
  * funding signal, runs the cold-open Play (with mocked LLM + SES), and
  * simulates an inbound positive reply so the dashboard has real data to
  * show:
@@ -8,7 +8,7 @@
  *   /dashboard               → morning brief with non-zero counts
  *   /dashboard/conversations → one open conversation
  *   /dashboard/conversations/<id> → message timeline + show-your-work
- *   /dashboard/reps          → Sampark with a positive_reply outcome
+ *   /dashboard/reps          → outbound agent with a positive_reply outcome
  *
  * Run: DATABASE_URL=... npm run demo:seed
  */
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
     throw new Error("Product bootstrap did not configure a sending domain.");
   }
   const sending_domain_id = sendingDomain.id;
-  console.log(`Sampark rep_id=${rep_id}`);
+  console.log(`outbound agent rep_id=${rep_id}`);
 
   const bus = await createPostgresEventBus({ pool });
 

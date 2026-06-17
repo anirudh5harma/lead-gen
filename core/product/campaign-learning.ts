@@ -38,7 +38,7 @@ export function buildCampaignOutcomeLearningExemplar(
     note: input.note?.trim() || null,
     output: compactCampaignOutput(input.output),
     guidance:
-      "Use this Play run as a Prayog campaign exemplar when a similar Play needs a sharper next bet.",
+      "Use this Play run as a campaign-agent exemplar when a similar Play needs a sharper next bet.",
   };
 }
 

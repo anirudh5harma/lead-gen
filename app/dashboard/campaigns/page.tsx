@@ -766,7 +766,7 @@ function clampRate(value: number): number {
 }
 
 function agentDisplayName(name: string | null): string {
-  if (!name || name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  if (!name || name === "Sampark" || name === "Prayog") return "Outbound agent";
   return name;
 }
 

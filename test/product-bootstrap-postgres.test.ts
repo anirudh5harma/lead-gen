@@ -40,7 +40,7 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
     );
     const counts = new Map(events.rows.map((row) => [row.event_type, row.count]));
     assert.equal(counts.get("workspace.created"), "1");
-    assert.equal(counts.get("rep.configured"), "4");
+    assert.equal(counts.get("rep.configured"), "1");
     assert.equal(counts.get("play.configured"), "1");
     assert.equal(counts.get("channel.account.configured"), "1");
     assert.equal(counts.get("rep.memory.procedural.seeded"), "1");
@@ -70,10 +70,7 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
       [boot.workspace_id],
     );
     assert.deepEqual(reps.rows, [
-      { name: "Bodh", role: "researcher" },
-      { name: "Prayog", role: "campaign" },
-      { name: "Sampark", role: "sdr" },
-      { name: "Vaani", role: "content" },
+      { name: "Outbound agent", role: "sdr" },
     ]);
 
     const memory = await fx.pool.query<{ pattern_key: string; score: string }>(
@@ -109,7 +106,7 @@ test("product bootstrap emits typed events for seeded primitives", async (t) => 
       afterRepeat.rows.map((row) => [row.event_type, row.count]),
     );
     assert.equal(repeatCounts.get("workspace.created"), "1");
-    assert.equal(repeatCounts.get("rep.configured"), "4");
+    assert.equal(repeatCounts.get("rep.configured"), "1");
     assert.equal(repeatCounts.get("play.configured"), "1");
     assert.equal(repeatCounts.get("channel.account.configured"), "1");
     assert.equal(repeatCounts.get("rep.memory.procedural.seeded"), "1");
@@ -191,7 +188,7 @@ test("product configuration events append changed user state but dedupe exact re
 
     await configureRep(
       {
-        name: "Sampark",
+        name: "Outbound agent",
         voice: "Crisp founder-to-founder.",
         daily_cap: 12,
         approval: "approve_first",
@@ -200,7 +197,7 @@ test("product configuration events append changed user state but dedupe exact re
     );
     await configureRep(
       {
-        name: "Sampark",
+        name: "Outbound agent",
         voice: "Warmer but still concise.",
         daily_cap: 12,
         approval: "approve_first",
@@ -209,7 +206,7 @@ test("product configuration events append changed user state but dedupe exact re
     );
     await configureRep(
       {
-        name: "Sampark",
+        name: "Outbound agent",
         voice: "Warmer but still concise.",
         daily_cap: 12,
         approval: "approve_first",

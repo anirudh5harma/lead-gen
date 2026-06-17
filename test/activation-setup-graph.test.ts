@@ -227,7 +227,7 @@ function registerActivationStubTools(opts: {
     }),
     async handler(input, ctx) {
       opts.toolCalls.push("product.activation.configure");
-      assert.equal(input.rep.name, "Sampark");
+      assert.equal(input.rep.name, "Outbound agent");
       assert.equal(input.icp.signal_kind, "press_mention");
       return {
         workspace_id: ctx.workspace_id,

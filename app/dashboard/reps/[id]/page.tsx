@@ -435,7 +435,7 @@ function MiniStatus({ label, value }: { label: string; value: number }) {
 }
 
 function surfaceFor(name: string): string {
-  if (name === "Vaani" || name === "Bodh") return `${name} · Retired`;
+  if (name === "Vaani" || name === "Bodh") return "Retired agent";
   return "Agent";
 }
 
@@ -467,7 +467,9 @@ function iconFor(name: string): string {
 }
 
 function agentDisplayName(name: string): string {
-  if (name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
+  if (name === "Vaani") return "Content agent";
+  if (name === "Bodh") return "Research agent";
   return name;
 }
 

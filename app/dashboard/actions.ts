@@ -175,7 +175,7 @@ export async function configureActivationAction(formData: FormData) {
   await configureActivationSetup(
     {
       rep: {
-        name: value(formData, "rep_name") || "Outbound Agent",
+        name: value(formData, "rep_name") || "Outbound agent",
         role: "sdr",
         voice:
           value(formData, "rep_voice") ||
@@ -213,7 +213,7 @@ export async function configureRepAction(formData: FormData) {
     formData,
     repId ? `/dashboard/reps/${repId}` : "/dashboard/reps",
   );
-  const name = value(formData, "rep_name") || "Outbound Agent";
+  const name = value(formData, "rep_name") || "Outbound agent";
   await configureRep(
     {
       name,

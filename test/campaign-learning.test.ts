@@ -17,7 +17,7 @@ test("campaign outcome learning exemplar keeps only useful Play output", () => {
     play_id: "11111111-1111-4111-8111-111111111111",
     play_run_id: "22222222-2222-4222-8222-222222222222",
     play_name: "Founder reply play",
-    rep_name: "Prayog",
+    rep_name: "Campaign agent",
     outcome_kind: "opportunity_created",
     note: "Worked for founders hiring sales",
     output: {
@@ -29,7 +29,7 @@ test("campaign outcome learning exemplar keeps only useful Play output", () => {
   });
 
   assert.equal(exemplar.play_name, "Founder reply play");
-  assert.equal(exemplar.rep_name, "Prayog");
+  assert.equal(exemplar.rep_name, "Campaign agent");
   assert.equal(exemplar.outcome_kind, "opportunity_created");
   assert.equal(exemplar.note, "Worked for founders hiring sales");
   assert.deepEqual(exemplar.output, {
@@ -37,5 +37,5 @@ test("campaign outcome learning exemplar keeps only useful Play output", () => {
     lift: 0.42,
     steps: ["Find trigger", "Send compact proof"],
   });
-  assert.match(String(exemplar.guidance), /Prayog campaign exemplar/);
+  assert.match(String(exemplar.guidance), /campaign-agent exemplar/);
 });

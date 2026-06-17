@@ -162,15 +162,15 @@ async function mergeOrRetireMaya(): Promise<void> {
   );
   await pool.query(
     `update reps maya
-        set name = 'Sampark',
+        set name = 'Outbound agent',
             status = 'active',
             updated_at = now()
       where lower(maya.name) = 'maya'
         and not exists (
           select 1
-            from reps sampark
-           where sampark.workspace_id = maya.workspace_id
-             and lower(sampark.name) = 'sampark'
+            from reps outbound
+           where outbound.workspace_id = maya.workspace_id
+             and lower(outbound.name) = 'outbound agent'
         )`,
   );
   await pool.query(

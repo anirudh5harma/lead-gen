@@ -171,6 +171,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /AgentOutreachPanel/);
   assert.match(reps, /loadAgentContactSummary/);
   assert.match(reps, /loadAgentOutreachSummary/);
+  assert.match(reps, /visibleReps = state\.reps\.filter\(isVisibleProductAgent\)/);
+  assert.match(reps, /return rep\.role === "sdr"/);
   assert.match(reps, /Verified contacts/);
   assert.match(reps, /Signal-ready contacts/);
   assert.match(reps, /verified emails and LinkedIn profiles/);
@@ -430,6 +432,8 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   const onboardingActions = source("app/onboarding/actions.ts");
   const onboardingForm = source("app/onboarding/OnboardingForm.tsx");
   const onboardingPage = source("app/onboarding/page.tsx");
+  const activationGraph = source("core/agents/langgraph/graphs/activation.ts");
+  const productApp = source("core/product/app.ts");
   const productTools = source("core/product/tools.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
@@ -443,6 +447,17 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
   assert.match(onboardingActions, /wait: false/);
   assert.doesNotMatch(onboardingActions, /runWorkspaceSignalAggregatorOnce/);
+  assert.match(activationGraph, /name: "Outbound agent"/);
+  assert.doesNotMatch(activationGraph, /name: "Sampark"/);
+  assert.match(productApp, /input\.name\.trim\(\) \|\| "Outbound agent"/);
+  assert.match(productApp, /name: "Outbound agent"/);
+  assert.doesNotMatch(productApp, /name: "Content agent"/);
+  assert.doesNotMatch(productApp, /name: "Campaign agent"/);
+  assert.doesNotMatch(productApp, /name: "Research agent"/);
+  assert.doesNotMatch(
+    productApp,
+    /await ensureDefaultRepTeam\(engine, session\.workspace_id, session\.user_id\)/,
+  );
   assert.match(onboardingForm, /createActivationSetupFormAction/);
   assert.doesNotMatch(onboardingForm, /createProfileAndAggregatorFormAction/);
   assert.match(productTools, /name: "product\.activation\.setup\.run"/);

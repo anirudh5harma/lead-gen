@@ -236,8 +236,8 @@ export function buildRecommendationOutcomeLearningExemplar(
     },
     guidance:
       input.review_kind === "content_opportunity"
-        ? "Use this published Vaani recommendation as a concrete example of content evidence that turned into a real Outcome."
-        : "Use this Bodh recommendation as a concrete example of an AEO gap that turned into a real visibility Outcome.",
+        ? "Use this published content-agent recommendation as a concrete example of content evidence that turned into a real Outcome."
+        : "Use this research-agent recommendation as a concrete example of an AEO gap that turned into a real visibility Outcome.",
   };
 }
 

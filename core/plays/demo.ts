@@ -72,12 +72,12 @@ export async function runFirstVerticalSlice(
   const rep: Rep = {
     id: rep_id,
     workspace_id,
-    name: "Sampark",
+    name: "Outbound agent",
     role: "sdr",
     status: "active",
     persona: {
       voice: "Warm, precise, low-hype, founder-to-founder.",
-      story: "Sampark helps teams act on fresh buying signals without spraying generic outreach.",
+      story: "Acts on fresh buying signals without spraying generic outreach.",
       kpis: ["positive replies", "meetings booked"],
       do_not: ["Do not mention being an AI.", "Do not overpromise."],
       samples: ["Saw the launch. The timing feels worth a quick compare-notes conversation."],

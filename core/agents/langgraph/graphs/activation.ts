@@ -594,7 +594,7 @@ function repDraftFromProfile(
   profile: ActivationProfileDraft,
 ): ActivationRepDraft {
   return {
-    name: "Sampark",
+    name: "Outbound agent",
     role: "sdr",
     voice:
       "Clear, specific, low-hype, and useful. Never pretend to know more than the signal proves.",
@@ -703,7 +703,7 @@ function launchChecklistFromState(
       label: "Rep created",
       status: state.rep_id ? "complete" : "blocked",
       blocking: !state.rep_id,
-      detail: "Sampark is configured as the founder-led outbound Rep.",
+      detail: "The outbound agent is configured for founder-led email and LinkedIn outreach.",
     },
     {
       id: "signals",

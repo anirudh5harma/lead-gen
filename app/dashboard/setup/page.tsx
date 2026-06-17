@@ -278,7 +278,11 @@ export default async function SetupPage() {
             name="match_threshold"
             value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
           />
-          <input type="hidden" name="rep_name" value={rep?.name ?? "Outbound Agent"} />
+          <input
+            type="hidden"
+            name="rep_name"
+            value={rep ? agentDisplayName(rep.name) : "Outbound agent"}
+          />
           <PendingSubmitButton
             className="btn-solid w-fit"
             icon="check"
@@ -507,7 +511,7 @@ const AGENT_META: Record<
   string,
   { role: string; surface: string; href: string; icon: string }
 > = {
-  "Outbound Agent": {
+  "Outbound agent": {
     role: "Email + LinkedIn",
     surface: "Researches prospects and moves outreach",
     href: "/dashboard/conversations",
@@ -521,7 +525,7 @@ const AGENT_META: Record<
   },
 };
 
-const AGENT_ORDER = ["Outbound Agent", "Learning"];
+const AGENT_ORDER = ["Outbound agent", "Learning"];
 const HIDDEN_REP_NAMES = new Set(["Vaani", "Bodh"]);
 
 function AgentSummary({ reps }: { reps: SetupRepRow[] }) {
@@ -586,6 +590,6 @@ function AgentSummary({ reps }: { reps: SetupRepRow[] }) {
 }
 
 function agentDisplayName(name: string): string {
-  if (name === "Sampark" || name === "Prayog") return "Outbound Agent";
+  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
   return name;
 }

@@ -411,7 +411,8 @@ export default async function RepsPage() {
   if (!active) return <NoWorkspaceReps />;
 
   const state = await loadRepsState(active.workspace.id);
-  const activeAgents = state.reps.filter((rep) => rep.status === "active").length;
+  const visibleReps = state.reps.filter(isVisibleProductAgent);
+  const activeAgents = visibleReps.filter((rep) => rep.status === "active").length;
   const connectedChannels = state.channels.filter(
     (channel) => channel.status === "connected",
   ).length;
@@ -454,7 +455,7 @@ export default async function RepsPage() {
           </Link>
         }
       >
-        {state.reps.length === 0 ? (
+        {visibleReps.length === 0 ? (
           <EmptyState
             title="No agent configured yet."
             hint="Start by defining the workspace profile, audience, voice, and approval mode."
@@ -466,7 +467,7 @@ export default async function RepsPage() {
           />
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
-            {state.reps.map((rep) => (
+            {visibleReps.map((rep) => (
               <RepCard key={rep.id} rep={rep} coverage={coverage} />
             ))}
           </div>
@@ -1080,6 +1081,10 @@ function firstChannelPolicy(
     if (policy) return policy;
   }
   return undefined;
+}
+
+function isVisibleProductAgent(rep: RepRow): boolean {
+  return rep.role === "sdr";
 }
 
 function repIcon(_rep: RepRow): string {

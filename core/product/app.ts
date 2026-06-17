@@ -361,7 +361,7 @@ interface DefaultRepProfile {
 const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
   {
     key: "sampark",
-    name: "Sampark",
+    name: "Outbound agent",
     role: "sdr",
     channels: ["email"],
     persona: {
@@ -375,76 +375,6 @@ const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
     },
     autonomy: {
       channels: { email: { daily_cap: 25, approval: "none" } },
-      global: {},
-    },
-  },
-  {
-    key: "vaani",
-    name: "Vaani",
-    role: "content",
-    channels: ["content"],
-    persona: {
-      voice:
-        "Clear, observant, evidence-led, and useful without sounding like a brand deck.",
-      story:
-        "Turns market movement, buyer questions, and proof into content worth publishing.",
-      kpis: ["post_published", "engagement_lift"],
-      do_not: [
-        "Do not manufacture authority.",
-        "Do not use generic AI phrasing.",
-      ],
-      samples: [
-        "The useful angle is not that teams need more pipeline. It is that timing signals change what is worth saying.",
-      ],
-    },
-    autonomy: {
-      channels: { content: { daily_cap: 3, approval: "none" } },
-      global: {},
-    },
-  },
-  {
-    key: "prayog",
-    name: "Prayog",
-    role: "campaign",
-    channels: ["email", "content"],
-    persona: {
-      voice: "Structured, experimental, and calm about tradeoffs.",
-      story:
-        "Turns proven plays into small campaigns with clear review gates and measurable Outcomes.",
-      kpis: ["positive replies", "meeting_booked", "engagement_lift"],
-      do_not: ["Do not scale a weak signal.", "Do not bypass channel caps."],
-      samples: [
-        "Run the smallest version first, keep the signal clean, then expand only where the Outcome improves.",
-      ],
-    },
-    autonomy: {
-      channels: {
-        email: { daily_cap: 15, approval: "none" },
-        content: { daily_cap: 2, approval: "none" },
-      },
-      global: {},
-    },
-  },
-  {
-    key: "bodh",
-    name: "Bodh",
-    role: "researcher",
-    channels: ["aeo", "web"],
-    persona: {
-      voice: "Precise, diagnostic, and grounded in cited evidence.",
-      story:
-        "Finds answer gaps, category narratives, and visibility opportunities before buyers ask.",
-      kpis: ["engagement_lift", "follower_lift"],
-      do_not: [
-        "Do not treat search visibility as a vanity metric.",
-        "Do not recommend pages without proof.",
-      ],
-      samples: [
-        "The gap is not a missing keyword. It is a missing answer buyers expect before they trust the category.",
-      ],
-    },
-    autonomy: {
-      channels: { aeo: { daily_cap: 3, approval: "none" } },
       global: {},
     },
   },
@@ -1701,9 +1631,8 @@ async function ensureDefaultRepTeam(
   engine: ProductEngine,
   workspace_id: string,
   user_id: string,
-): Promise<Record<"sampark" | "vaani" | "prayog" | "bodh", string>> {
-  const ids: Partial<Record<"sampark" | "vaani" | "prayog" | "bodh", string>> =
-    {};
+): Promise<Record<"sampark", string>> {
+  const ids: Partial<Record<"sampark", string>> = {};
   for (const profile of DEFAULT_REP_TEAM) {
     ids[profile.key as keyof typeof ids] = await ensureDefaultRep(
       engine,
@@ -1714,9 +1643,6 @@ async function ensureDefaultRepTeam(
   }
   return {
     sampark: ids.sampark!,
-    vaani: ids.vaani!,
-    prayog: ids.prayog!,
-    bodh: ids.bodh!,
   };
 }
 
@@ -2032,7 +1958,7 @@ export async function configureRep(
 ): Promise<{ workspace_id: string; rep_id: string }> {
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
-  const name = input.name.trim() || "Sampark";
+  const name = input.name.trim() || "Outbound agent";
   const role = parseRepRole(input.role);
   const dailyCap = Math.max(0, Math.trunc(input.daily_cap ?? 25));
   const approval =
@@ -5379,7 +5305,6 @@ export async function configureActivationSetup(
 ): Promise<ActivationSetupResult> {
   const engine = await getProductEngine();
   const rep = await configureRep(input.rep, session);
-  await ensureDefaultRepTeam(engine, session.workspace_id, session.user_id);
   const icp = await configureIcpSegment(input.icp, session);
   const signalKind = parseSignalKind(input.icp.signal_kind);
   const play = await configureSignalEmailPlay(

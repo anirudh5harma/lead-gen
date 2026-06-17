@@ -4,7 +4,7 @@ Reps, role-agent composition, three-tier memory, MCP tool envelope, hot-path eva
 
 ## Hard rules
 
-1. **Users see Reps, not agents.** A Rep is the named persona (e.g., "Sampark — outreach Rep for founder-led conversations"). Underneath, a Rep is composed of role agents (researcher, writer, sender, replier). Never expose raw agents to the user.
+1. **Users see Reps, not agents.** A Rep is the named persona (e.g., "Outbound agent — outreach Rep for founder-led conversations"). Underneath, a Rep is composed of role agents (researcher, writer, sender, replier). Never expose raw agents to the user.
 2. **Tools are MCP servers, always.** `core/agents/tools/` defines the envelope. Every integration is an MCP server. The same tools are usable by internal Reps and external agents over `core/mcp/`.
 3. **Memory has three tiers, all explicit.** `core/agents/memory/`:
    - **Episodic** — every raw interaction (messages, retrievals, decisions).
