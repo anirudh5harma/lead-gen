@@ -43,7 +43,7 @@ export default async function OnboardingPage({
       <section className="relative z-10 mx-auto grid w-full max-w-[1120px] gap-10 lg:grid-cols-[0.92fr_1.08fr]">
         <div className="flex flex-col justify-center">
           <ScrollReveal delay={0.1}>
-            <p className="mono text-[var(--color-accent)]">Step 1 of 4</p>
+            <p className="mono text-[var(--color-accent)]">Profile first</p>
           </ScrollReveal>
           <ScrollReveal delay={0.2}>
             <h1 className="display-serif mt-4 max-w-xl text-[clamp(2rem,4vw,3.5rem)] text-[var(--color-text-1)]">
@@ -52,15 +52,16 @@ export default async function OnboardingPage({
           </ScrollReveal>
           <ScrollReveal delay={0.3}>
             <p className="mt-5 max-w-md text-[17px] leading-[1.6] text-[var(--color-text-2)]">
-              Add your website, positioning, proof, and goals. Bombsell turns that profile into qualified signals, verified contacts, and email or LinkedIn outreach.
+              Add your website, positioning, proof, and goals. Bombsell turns
+              that profile into qualified signals, verified contacts, and email
+              or LinkedIn outreach.
             </p>
           </ScrollReveal>
           <ScrollReveal delay={0.4}>
             <div className="mt-8 grid gap-3">
               <FlowStep number="1" label="Profile" text="Your site and positioning become company, audience, and voice context." />
-              <FlowStep number="2" label="Channels" text="Email and LinkedIn stay explicit before any outreach can run." />
-              <FlowStep number="3" label="Signals" text="The agent finds timing signals and resolves verified contacts." />
-              <FlowStep number="4" label="Agent" text="Outreach drafts follow your goal, tone, and channel limits." />
+              <FlowStep number="2" label="Integrations" text="Next, connect Outlook and LinkedIn in Profile before outreach can run." />
+              <FlowStep number="3" label="Agent" text="Signals, verified contacts, drafts, and replies stay together under Agent." />
             </div>
           </ScrollReveal>
         </div>
@@ -68,7 +69,7 @@ export default async function OnboardingPage({
         <ScrollReveal delay={0.3}>
           <section className="onboard-panel flex flex-col justify-center">
             <div className="mb-6 flex items-center gap-2" aria-label="Onboarding progress">
-              {[1, 2, 3, 4].map((step) => (
+              {[1, 2, 3].map((step) => (
                 <span
                   key={step}
                   className={
@@ -88,7 +89,8 @@ export default async function OnboardingPage({
                   Create outreach agent
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-                  Website analysis plus the context your agent needs to write.
+                  Website analysis plus the context your agent needs before you
+                  connect outreach accounts.
                 </p>
               </div>
             </div>

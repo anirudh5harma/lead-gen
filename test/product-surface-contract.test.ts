@@ -831,11 +831,14 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
   assert.match(onboardingPage, /Create your first outreach agent/);
-  assert.match(onboardingPage, /Step 1 of 4/);
+  assert.match(onboardingPage, /Profile first/);
   assert.match(onboardingPage, /positioning, proof, and goals/);
   assert.match(onboardingPage, /qualified signals, verified contacts/);
-  assert.match(onboardingPage, /Email and LinkedIn/);
-  assert.match(onboardingPage, /The agent finds timing signals/);
+  assert.match(onboardingPage, /Outlook and LinkedIn/);
+  assert.match(onboardingPage, /\[1, 2, 3\]\.map/);
+  assert.doesNotMatch(onboardingPage, /\[1, 2, 3, 4\]\.map/);
+  assert.match(onboardingPage, /connect Outlook and LinkedIn in Profile/);
+  assert.match(onboardingPage, /Signals, verified contacts, drafts, and replies/);
   assert.match(onboardingForm, /Description and value proposition/);
   assert.match(onboardingForm, /Customer pain points/);
   assert.match(onboardingForm, /Buyer roles/);
@@ -863,6 +866,8 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingActions, /preferred_language/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
   assert.match(onboardingActions, /wait: false/);
+  assert.match(onboardingActions, /POST_ONBOARDING_PATH = "\/dashboard\/settings#email"/);
+  assert.match(onboardingActions, /redirect\(POST_ONBOARDING_PATH\)/);
   assert.doesNotMatch(onboardingActions, /runWorkspaceSignalAggregatorOnce/);
   assert.match(activationGraph, /description_hint/);
   assert.match(activationGraph, /customer_pain_points/);

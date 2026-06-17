@@ -24,6 +24,8 @@ export interface OnboardingActionState {
   error: string | null;
 }
 
+const POST_ONBOARDING_PATH = "/dashboard/settings#email";
+
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
 }
@@ -61,7 +63,7 @@ async function requireOnboardingSession(
 
 export async function createActivationSetupAction(formData: FormData) {
   await createActivationSetup(formData);
-  redirect(PRODUCT_HOME_PATH);
+  redirect(POST_ONBOARDING_PATH);
 }
 
 export async function createActivationSetupFormAction(
@@ -79,7 +81,7 @@ export async function createActivationSetupFormAction(
           : "Could not create the workspace. Try again.",
     };
   }
-  redirect(PRODUCT_HOME_PATH);
+  redirect(POST_ONBOARDING_PATH);
 }
 
 export async function createProfileAndAggregatorAction(formData: FormData) {
