@@ -18,15 +18,15 @@ type LoadingLayout = "tiles" | "rows" | "split";
 const SURFACE_COPY: Record<LoadingSurface, { kicker: string; title: string; icon: string }> = {
   dashboard: { kicker: "Dashboard", title: "Gathering the morning view", icon: "dashboard" },
   brief: { kicker: "Dashboard", title: "Gathering the morning view", icon: "dashboard" },
-  outreach: { kicker: "Conversations", title: "Loading conversations", icon: "forum" },
-  campaigns: { kicker: "Plays", title: "Loading Play signals", icon: "science" },
-  prospecting: { kicker: "Prospecting", title: "Loading prospecting profile", icon: "person" },
-  prospects: { kicker: "Prospects", title: "Loading prospect graph", icon: "travel_explore" },
-  signals: { kicker: "Signals", title: "Loading signal queue", icon: "sensors" },
-  reps: { kicker: "Reps", title: "Loading rep memory", icon: "badge" },
-  plays: { kicker: "Plays", title: "Loading workflow map", icon: "account_tree" },
-  outcomes: { kicker: "Outcomes", title: "Loading outcome proof", icon: "task_alt" },
-  operations: { kicker: "Operations", title: "Loading system state", icon: "monitor_heart" },
+  outreach: { kicker: "Agent", title: "Loading sent outreach", icon: "forum" },
+  campaigns: { kicker: "Agent", title: "Loading outreach learning", icon: "science" },
+  prospecting: { kicker: "Profile", title: "Loading prospecting profile", icon: "person" },
+  prospects: { kicker: "Agent", title: "Loading verified contacts", icon: "travel_explore" },
+  signals: { kicker: "Agent", title: "Loading qualified signals", icon: "sensors" },
+  reps: { kicker: "Agent", title: "Loading live work", icon: "badge" },
+  plays: { kicker: "Agent", title: "Loading outreach plan", icon: "account_tree" },
+  outcomes: { kicker: "Dashboard", title: "Loading reply insights", icon: "task_alt" },
+  operations: { kicker: "Profile", title: "Loading system state", icon: "monitor_heart" },
 };
 
 export function DashboardLoadingState({

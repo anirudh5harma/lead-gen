@@ -407,8 +407,9 @@ export default async function ConversationDetailPage({
               {messages.map((m) => (
                 <li
                   key={m.id}
+                  id={`message-${m.id}`}
                   className={
-                    "rounded-[14px] border p-4 " +
+                    "scroll-mt-24 rounded-[14px] border p-4 transition-shadow target:ring-2 target:ring-[var(--color-accent)] target:ring-offset-2 target:ring-offset-[var(--color-ink-1)] " +
                     (m.direction === "outbound"
                       ? "border-[var(--color-line-1)] bg-[var(--color-ink-0)]"
                       : "border-[var(--color-line-2)] bg-[rgba(17,15,11,0.76)]")

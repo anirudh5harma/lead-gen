@@ -160,7 +160,7 @@ test("Outcomes have a first-class primitive surface", () => {
   assert.match(outcomes, /left join signals s/);
   assert.match(outcomes, /href=\{`\/dashboard\/conversations\/\$\{outcome\.conversation_id\}`\}/);
   assert.match(loading, /surface="outcomes"/);
-  assert.match(loader, /outcomes: \{ kicker: "Outcomes"/);
+  assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
 });
 
 test("Agent surface shows live work and account readiness", () => {
@@ -182,7 +182,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /Qualified signals become verified contacts/);
   assert.match(reps, /href="\/dashboard\/conversations"/);
-  assert.match(reps, /href=\{`\/dashboard\/conversations\/\$\{message\.conversation_id\}`\}/);
+  assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
+  assert.match(reps, /#message-\$\{messageId\}/);
   assert.match(reps, /events_last_hour/);
   assert.match(reps, /active_workflows/);
   assert.match(reps, /animate-pulse/);
@@ -194,6 +195,28 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Open agent/);
   assert.match(reps, /Profile, accounts, and limits stay in\s+Profile/);
   assert.doesNotMatch(reps, /<RepCard key=\{rep\.id\} rep=\{rep\} \/>/);
+});
+
+test("sent outreach links open the exact draft in the conversation trace", () => {
+  const outreach = source("app/dashboard/conversations/page.tsx");
+  const detail = source("app/dashboard/conversations/[id]/page.tsx");
+
+  assert.match(outreach, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
+  assert.match(outreach, /#message-\$\{messageId\}/);
+  assert.match(detail, /id=\{`message-\$\{m\.id\}`\}/);
+  assert.match(detail, /target:ring-\[var\(--color-accent\)\]/);
+});
+
+test("loading states use simplified product surface labels", () => {
+  const loader = source("components/dashboard/LoadingState.tsx");
+
+  assert.match(loader, /reps: \{ kicker: "Agent"/);
+  assert.match(loader, /plays: \{ kicker: "Agent"/);
+  assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
+  assert.match(loader, /prospecting: \{ kicker: "Profile"/);
+  assert.doesNotMatch(loader, /kicker: "Reps"/);
+  assert.doesNotMatch(loader, /kicker: "Plays"/);
+  assert.doesNotMatch(loader, /kicker: "Outcomes"/);
 });
 
 test("dashboard Signal surfaces do not expose manual ingestion controls", () => {

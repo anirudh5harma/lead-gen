@@ -191,7 +191,7 @@ function OutboundMessageLink({ message }: { message: OutboundMessageRow }) {
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
       <Link
-        href={`/dashboard/conversations/${message.conversation_id}`}
+        href={sentDraftHref(message.conversation_id, message.id)}
         prefetch={false}
         className="min-w-0"
       >
@@ -287,6 +287,10 @@ function messageDigest(message: OutboundMessageRow): string {
   const text = message.body ?? message.signal_title;
   if (!text) return prefix;
   return `${prefix}: ${text.length > 92 ? text.slice(0, 92) + "..." : text}`;
+}
+
+function sentDraftHref(conversationId: string, messageId: string): string {
+  return `/dashboard/conversations/${conversationId}#message-${messageId}`;
 }
 
 function freshWhen(value: Date): string {

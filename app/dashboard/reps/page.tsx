@@ -821,7 +821,7 @@ function AgentOutreachPanel({
 function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
   return (
     <Link
-      href={`/dashboard/conversations/${message.conversation_id}`}
+      href={sentDraftHref(message.conversation_id, message.id)}
       prefetch={false}
       className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
     >
@@ -859,6 +859,10 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
       </span>
     </Link>
   );
+}
+
+function sentDraftHref(conversationId: string, messageId: string): string {
+  return `/dashboard/conversations/${conversationId}#message-${messageId}`;
 }
 
 function RepCard({
