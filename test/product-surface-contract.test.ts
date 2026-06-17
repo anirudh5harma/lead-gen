@@ -863,15 +863,17 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   const productTools = source("core/product/tools.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
-  assert.match(onboardingPage, /Create your first outreach agent/);
-  assert.match(onboardingPage, /Profile first/);
+  assert.match(onboardingPage, /Enter your website\. Bombsell builds the Profile/);
+  assert.match(onboardingPage, /Launch agent/);
   assert.match(onboardingPage, /positioning, proof, and goals/);
-  assert.match(onboardingPage, /qualified signals, verified contacts/);
+  assert.match(onboardingPage, /signal sources, verified contacts/);
   assert.match(onboardingPage, /Outlook and LinkedIn/);
   assert.match(onboardingPage, /\[1, 2, 3\]\.map/);
   assert.doesNotMatch(onboardingPage, /\[1, 2, 3, 4\]\.map/);
-  assert.match(onboardingPage, /connect Outlook and LinkedIn in Profile/);
-  assert.match(onboardingPage, /Signals, verified contacts, drafts, and replies/);
+  assert.match(onboardingPage, /Profile \+ channels/);
+  assert.match(onboardingPage, /Connect Outlook and LinkedIn in Profile/);
+  assert.match(onboardingPage, /Signals, verified contacts, drafts, sends, and replies/);
+  assert.doesNotMatch(onboardingPage, /label="Integrations"/);
   assert.match(onboardingForm, /Description and value proposition/);
   assert.match(onboardingForm, /Customer pain points/);
   assert.match(onboardingForm, /Buyer roles/);
@@ -884,7 +886,8 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingForm, /name="outreach_goal"/);
   assert.match(onboardingForm, /name="message_tone"/);
   assert.match(onboardingForm, /preferred_language/);
-  assert.match(onboardingForm, /Create outreach agent/);
+  assert.match(onboardingForm, /Launch agent/);
+  assert.match(onboardingForm, /Building Profile/);
   assert.doesNotMatch(onboardingPage, /Create Outreach Agent/);
   assert.doesNotMatch(onboardingForm, /Create Outreach Agent/);
   assert.match(onboardingActions, /runWorkspaceActivationSetup/);

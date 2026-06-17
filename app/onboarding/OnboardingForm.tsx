@@ -147,12 +147,12 @@ export default function OnboardingForm({
       ) : null}
       <PendingSubmitButton
         pending={pending}
-        pendingLabel="Creating profile"
+        pendingLabel="Building Profile"
         icon="arrow_forward"
         iconSize={18}
         className="btn-solid mt-1 w-full justify-center"
       >
-        Create outreach agent
+        Launch agent
       </PendingSubmitButton>
     </form>
   );
