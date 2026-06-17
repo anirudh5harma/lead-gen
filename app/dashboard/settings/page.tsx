@@ -1271,9 +1271,9 @@ function ContactQualityPanel({
         />
       </div>
 
-      <Link href="/dashboard/prospects" prefetch={false} className="btn-quiet-sm w-fit">
+      <Link href="/dashboard/agent#verified-contacts" prefetch={false} className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
-        Open contact graph
+        Open Agent contacts
       </Link>
     </div>
   );
@@ -1357,9 +1357,9 @@ function BlocklistPanel({
         </div>
       )}
 
-      <Link href="/dashboard/conversations" prefetch={false} className="btn-quiet-sm w-fit">
+      <Link href="/dashboard/agent#outreach" prefetch={false} className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
-        Open sent outreach
+        Open Agent outreach
       </Link>
     </div>
   );

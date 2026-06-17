@@ -533,7 +533,8 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
     settings,
     /jsonb_each\(coalesce\(p\.properties->'email_verification'/,
   );
-  assert.match(settings, /Open contact graph/);
+  assert.match(settings, /href="\/dashboard\/agent#verified-contacts"/);
+  assert.match(settings, /Open Agent contacts/);
   assert.match(settings, /Blocklist/);
   assert.match(
     settings,
@@ -543,7 +544,9 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
     settings,
     /kind in \('bounce','unsubscribe','do_not_contact'\)/,
   );
-  assert.match(settings, /Open sent outreach/);
+  assert.match(settings, /href="\/dashboard\/agent#outreach"/);
+  assert.match(settings, /Open Agent outreach/);
+  assert.doesNotMatch(settings, /Open contact graph/);
   assert.doesNotMatch(settings, /Open prospect graph/);
   assert.doesNotMatch(settings, /Open outcome ledger/);
   assert.doesNotMatch(settings, /do-not-contact outcomes/);
