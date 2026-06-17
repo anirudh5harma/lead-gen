@@ -74,7 +74,9 @@ export function DashboardShell({
   const routePending = pendingHref
     ? !isActivePath(pathname, pendingHref)
     : false;
-  const settingsActive = isActivePath(pathname, "/dashboard/settings");
+  const settingsActive =
+    isActivePath(pathname, "/dashboard/settings") ||
+    isActivePath(pathname, "/dashboard/integrations");
 
   function handleNavClick(
     event: MouseEvent<HTMLAnchorElement>,

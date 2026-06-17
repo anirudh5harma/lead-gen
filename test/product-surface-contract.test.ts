@@ -9,17 +9,20 @@ function source(path: string): string {
 test("dashboard navigation uses active product surface routes", () => {
   const shell = source("components/dashboard/Shell.tsx");
 
-  assert.match(shell, /href: "\/dashboard\/prospecting", label: "Prospecting"/);
-  assert.match(shell, /href: "\/dashboard\/signals", label: "Signals"/);
+  assert.match(shell, /href: "\/dashboard", label: "Dashboard"/);
+  assert.match(shell, /href: "\/dashboard\/reps"/);
+  assert.match(shell, /href: "\/dashboard\/prospects"/);
+  assert.match(shell, /href: "\/dashboard\/conversations"/);
   assert.match(shell, /href="\/dashboard\/settings"/);
   assert.match(shell, /Icon name="settings"/);
+  assert.match(shell, /isActivePath\(pathname, "\/dashboard\/integrations"\)/);
   assert.doesNotMatch(
     shell,
-    /href: "\/dashboard\/setup", label: "Prospecting"/,
+    /href: "\/dashboard\/prospecting", label: "Prospecting"/,
   );
   assert.doesNotMatch(
     shell,
-    /href: "\/dashboard\/ingestion", label: "Signals"/,
+    /href: "\/dashboard\/signals", label: "Signals"/,
   );
 });
 
@@ -46,26 +49,27 @@ test("canonical Prospecting and Signals routes preserve old implementations", ()
   assert.match(actions, /revalidatePath\("\/dashboard\/signals"\)/);
 });
 
-test("retired product surfaces redirect to Campaigns", () => {
+test("retired product surfaces redirect to Plays", () => {
   assert.match(
     source("app/dashboard/content/page.tsx"),
-    /redirect\("\/dashboard\/campaigns"\)/,
+    /redirect\("\/dashboard\/plays"\)/,
   );
   assert.match(
     source("app/dashboard/aeo/page.tsx"),
-    /redirect\("\/dashboard\/campaigns"\)/,
+    /redirect\("\/dashboard\/plays"\)/,
   );
 });
 
-test("Brief presents the operating loop and priority moves", () => {
-  const brief = source("app/dashboard/page.tsx");
+test("Dashboard presents setup, operating loop, and priority moves", () => {
+  const dashboard = source("app/dashboard/page.tsx");
 
-  assert.match(brief, /Operating loop/);
-  assert.match(brief, /Prospect graph/);
-  assert.match(brief, /Prepare Signal-led outreach/);
-  assert.match(brief, /Scale what produced Outcomes/);
-  assert.match(brief, /href: "\/dashboard\/prospecting"/);
-  assert.match(brief, /href: "\/dashboard\/signals"/);
+  assert.match(dashboard, /Launch checklist/);
+  assert.match(dashboard, /Operating loop/);
+  assert.match(dashboard, /Prospect graph/);
+  assert.match(dashboard, /Prepare Signal-led outreach/);
+  assert.match(dashboard, /Scale what produced Outcomes/);
+  assert.match(dashboard, /href: "\/dashboard\/prospecting"/);
+  assert.match(dashboard, /href: "\/dashboard\/signals"/);
 });
 
 test("Health presents agent observability from the event-sourced summary", () => {
@@ -150,6 +154,7 @@ test("Settings exposes profile, Outlook, and workspace autonomy controls", () =>
   assert.match(settings, /editCompanyProfileAction/);
   assert.match(settings, /updateWorkspaceAutonomyAction/);
   assert.match(settings, /href="\/api\/auth\/outlook"/);
+  assert.match(settings, /href="\/dashboard\/integrations"/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);
   assert.match(settings, /row_number\(\) over/);
@@ -159,6 +164,19 @@ test("Settings exposes profile, Outlook, and workspace autonomy controls", () =>
   assert.match(productApp, /event_type: "rep\.configured"/);
   assert.match(productApp, /event_type: "play\.configured"/);
   assert.match(registry, /"workspace\.configured": WorkspaceConfigured/);
+});
+
+test("Integrations exposes direct Outlook, LinkedIn, and MCP connection paths", () => {
+  const integrations = source("app/dashboard/integrations/page.tsx");
+  const outlook = source("app/api/auth/outlook/route.ts");
+  const linkedIn = source("app/api/auth/linkedin/route.ts");
+
+  assert.match(integrations, /Connect Outlook/);
+  assert.match(integrations, /Connect LinkedIn/);
+  assert.match(integrations, /href="\/api\/mcp"/);
+  assert.match(integrations, /kind in \('oauth_outlook','linkedin_session','linkedin_oauth','email_domain'\)/);
+  assert.match(outlook, /authCallbackOrigin/);
+  assert.match(linkedIn, /authCallbackOrigin/);
 });
 
 test("new product defaults are autonomous after checks", () => {
@@ -271,18 +289,18 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(capabilityMap, /`product\.signal\.ingestion\.run`/);
 });
 
-test("visual system uses the Monaco-inspired dark operating surface", () => {
+test("visual system uses the clean light operating surface", () => {
   const globals = source("app/globals.css");
   const layout = source("app/layout.tsx");
   const home = source("app/page.tsx");
   const design = source("DESIGN.md");
 
-  assert.match(globals, /--color-ink-1: #070806/);
-  assert.match(globals, /--color-accent: #c9a35b/);
-  assert.match(globals, /:root \{ color-scheme: dark; \}/);
-  assert.match(layout, /colorScheme: "dark"/);
-  assert.match(home, /function ProductPane/);
-  assert.match(home, /GTM that keeps itself current/);
+  assert.match(globals, /--color-ink-1: #fafbfc/);
+  assert.match(globals, /--color-accent: #26575E/);
+  assert.match(globals, /:root \{ color-scheme: light; \}/);
+  assert.match(layout, /colorScheme: "light"/);
+  assert.match(home, /Autonomous Outbound/);
+  assert.match(home, /Signal-led prospecting/);
   assert.doesNotMatch(home, /function SolarSystem/);
   assert.match(design, /The Signal Operating Surface/);
 });

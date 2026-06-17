@@ -203,9 +203,9 @@ export default async function RepsPage() {
               title="No outbound accounts connected."
               hint="Connect Outlook or LinkedIn before any Rep can move a conversation."
               cta={{
-                href: "/dashboard/settings",
+                href: "/dashboard/integrations",
                 label: "Connect accounts",
-                icon: "settings",
+                icon: "account_tree",
               }}
             />
           ) : (
@@ -252,7 +252,7 @@ export default async function RepsPage() {
                   </span>
                 </span>
               </Link>
-              <Link href="/dashboard/settings" className="priority-action">
+              <Link href="/dashboard/integrations" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="settings" size={16} />
                 </span>
@@ -350,7 +350,7 @@ function ChannelCard({ channel }: { channel: ChannelRow }) {
           ) : null}
         </div>
       </div>
-      <Link href="/dashboard/settings" className="btn-solid-sm w-fit">
+      <Link href="/dashboard/integrations" className="btn-solid-sm w-fit">
         <Icon name="settings" size={14} />
         Manage
       </Link>

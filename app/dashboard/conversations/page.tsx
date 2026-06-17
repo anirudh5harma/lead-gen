@@ -141,7 +141,7 @@ export default async function ConversationsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Outreach"
+        kicker="Inbox"
         title="No workspace selected."
         description="Create a prospecting profile first, then email and LinkedIn replies collect here."
       />
@@ -169,9 +169,9 @@ export default async function ConversationsPage() {
       <SurfaceSection title="Conversations">
         {conversations.length === 0 ? (
           <EmptyState
-            title="No outreach replies yet"
+            title="No conversations yet"
             hint="Once a signal starts an email or LinkedIn Play, replies and review moments will appear here."
-            cta={{ href: "/dashboard/prospecting", label: "Tune prospecting", icon: "person" }}
+            cta={{ href: "/dashboard/integrations", label: "Connect accounts", icon: "account_tree" }}
           />
         ) : (
           <div className="grid gap-2">

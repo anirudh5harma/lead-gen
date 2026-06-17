@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { resolveLinkedInProviderAuthUrl } from "@/core/channels/linkedin/index.ts";
+import { authCallbackOrigin } from "@/lib/auth/next";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { createLinkedInOAuthState } from "./state.ts";
 
@@ -35,7 +36,8 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 function appOrigin(req: NextRequest): string {
-  if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, "");
-  const url = new URL(req.url);
-  return `${url.protocol}//${url.host}`;
+  return authCallbackOrigin({
+    headers: req.headers,
+    requestUrl: req.url,
+  });
 }

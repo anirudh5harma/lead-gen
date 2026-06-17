@@ -12,7 +12,7 @@ import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 
 export const metadata: Metadata = {
-  title: "Brief | Bombsell",
+  title: "Dashboard | Bombsell",
 };
 
 export const dynamic = "force-dynamic";
@@ -413,7 +413,7 @@ function BriefView({
         </h1>
         <p className="mt-5 max-w-[72ch] text-[15px] leading-[1.7] text-[var(--color-text-2)]">
           {totalPulse === 0
-            ? "Start with the launch checklist. Once the Rep, Signals, channels, and Plays are ready, outreach movement will appear here."
+            ? "Start with the launch checklist. Once the Rep, Signals, channels, and Plays are ready, conversations and outcomes will appear here."
             : `Prospects: ${pulse.prospects.count}. Fresh Signals: ${pulse.signals.count}. Active Conversations: ${pulse.outreach.count}. Play runs today: ${pulse.campaigns.count}. Useful Outcomes this week: ${actions.useful_outcomes_7d}.${lastMovement ? ` Last movement ${timeAgo(lastMovement)}.` : ""}`}
         </p>
         <div className="mt-7 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -462,7 +462,7 @@ function BriefView({
             <EmptyState
               title="No outcomes yet."
               hint="Replies, bookings and won conversations will land here as they happen."
-              cta={{ href: "/dashboard/conversations", label: "Open outreach", icon: "forum" }}
+              cta={{ href: "/dashboard/conversations", label: "Open Inbox", icon: "forum" }}
             />
           }
         >

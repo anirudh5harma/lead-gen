@@ -1,5 +1,6 @@
 import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { authCallbackOrigin } from "@/lib/auth/next";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 
 /**
@@ -101,9 +102,10 @@ export function verifyState(token: string, secret: string): OAuthState | null {
 }
 
 function appOrigin(req: NextRequest): string {
-  if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, "");
-  const url = new URL(req.url);
-  return `${url.protocol}//${url.host}`;
+  return authCallbackOrigin({
+    headers: req.headers,
+    requestUrl: req.url,
+  });
 }
 
 function outlookAuthIntent(value: string | null): OutlookAuthIntent {

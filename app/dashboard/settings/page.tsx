@@ -178,7 +178,7 @@ export default async function SettingsPage() {
               label="Profile"
               value={profile?.company_name ?? "Needed"}
             />
-            <HeroStat label="Outlook" value={outlookLabel} />
+            <HeroStat label="Email" value={outlookLabel} />
             <HeroStat label="LinkedIn" value={linkedInLabel} />
             <HeroStat label="Mode" value={modeLabel(mode)} />
           </div>
@@ -431,9 +431,9 @@ function IntegrationPanel() {
       <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-xs text-[var(--color-text-2)]">
         /api/mcp
       </div>
-      <Link href="/api/mcp" prefetch={false} className="btn-quiet-sm w-fit">
+      <Link href="/dashboard/integrations" prefetch={false} className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
-        Open endpoint
+        Manage integrations
       </Link>
     </div>
   );
