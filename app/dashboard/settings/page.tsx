@@ -90,6 +90,7 @@ interface SettingsState {
   settings: Record<string, unknown>;
   outlookAccount: SettingsOutlookAccount | null;
   linkedInAccount: SettingsLinkedInAccount | null;
+  linkedInAccounts: SettingsLinkedInAccount[];
   rep: SettingsRepRow | null;
   icp: SettingsIcpRow | null;
   approvals: string[];
@@ -170,7 +171,7 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
         order by case when status = 'connected' then 0 else 1 end,
                  updated_at desc,
                  created_at desc
-        limit 1`,
+        limit 2`,
       [workspaceId],
     ),
     pool.query<SettingsRepRow>(
@@ -267,6 +268,7 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
     settings: workspace.rows[0]?.settings ?? {},
     outlookAccount: outlook.rows[0] ?? null,
     linkedInAccount: linkedIn.rows[0] ?? null,
+    linkedInAccounts: linkedIn.rows,
     rep: rep.rows[0] ?? null,
     icp: icp.rows[0] ?? null,
     approvals: policies.rows.flatMap((row) =>
@@ -398,7 +400,7 @@ export default async function SettingsPage() {
 
           <div id="linkedin">
             <SurfaceSection title="LinkedIn integration">
-              <LinkedInPanel account={state.linkedInAccount} />
+              <LinkedInPanel accounts={state.linkedInAccounts} />
             </SurfaceSection>
           </div>
         </section>
@@ -1060,27 +1062,72 @@ function OutlookPanel({ account }: { account: SettingsOutlookAccount | null }) {
 }
 
 function LinkedInPanel({
+  accounts,
+}: {
+  accounts: SettingsLinkedInAccount[];
+}) {
+  const slots = [accounts[0] ?? null, accounts[1] ?? null];
+  return (
+    <div className="section-note grid gap-4">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon shrink-0">
+          <Icon name="forum" size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            LinkedIn accounts
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+            Connect up to two LinkedIn accounts for connection requests, DMs,
+            and warm outreach. Limits stay visible before the agent sends.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        {slots.map((account, index) => (
+          <LinkedInAccountSlot
+            key={account?.id ?? `linkedin-slot-${index}`}
+            account={account}
+            label={index === 0 ? "First account" : "Second account"}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LinkedInAccountSlot({
   account,
+  label,
 }: {
   account: SettingsLinkedInAccount | null;
+  label: string;
 }) {
   return (
-    <div className="section-note grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+    <article className="grid gap-4 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3 md:grid-cols-[1fr_auto] md:items-center">
       <div className="flex min-w-0 gap-3">
-        <span className="brief-note-icon shrink-0">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
           <Icon
-            name={account?.status === "connected" ? "forum" : "sync_problem"}
-            size={18}
+            name={account?.status === "connected" ? "check_circle" : "sync_problem"}
+            size={15}
           />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {account ? account.display_name : "LinkedIn account"}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
+              {label}
+            </p>
+            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+              Settings and limits
+            </span>
+          </div>
           <p className="mt-1 text-sm text-[var(--color-text-3)]">
             {account
-              ? `${statusLabel(account.status)} - ${account.daily_cap ?? "unlimited"} daily ceiling`
-              : "Connect LinkedIn for connection requests, DMs, and warm outreach."}
+              ? `${account.display_name} - ${statusLabel(account.status)} - ${
+                  account.daily_cap ?? "unlimited"
+                } daily ceiling`
+              : "Not connected - ready for LinkedIn outreach setup."}
           </p>
           {account?.last_error ? (
             <p className="mt-2 text-sm text-[#ffb4a8]">{account.last_error}</p>
@@ -1090,12 +1137,12 @@ function LinkedInPanel({
       <Link
         href="/api/auth/linkedin?return_to=%2Fdashboard%2Fsettings%23linkedin"
         prefetch={false}
-        className="btn-solid w-fit"
+        className={account ? "btn-quiet-sm w-fit" : "btn-solid-sm w-fit"}
       >
-        <Icon name="forum" size={16} />
-        {account ? "Reconnect LinkedIn" : "Connect LinkedIn"}
+        <Icon name="forum" size={14} />
+        {account ? "Reconnect account" : "Connect account"}
       </Link>
-    </div>
+    </article>
   );
 }
 

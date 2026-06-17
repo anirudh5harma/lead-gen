@@ -366,6 +366,11 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /integrationCount\(state\)/);
   assert.match(settings, /Email integration/);
   assert.match(settings, /LinkedIn integration/);
+  assert.match(settings, /linkedInAccounts: linkedIn\.rows/);
+  assert.match(settings, /Connect up to two LinkedIn accounts/);
+  assert.match(settings, /First account/);
+  assert.match(settings, /Second account/);
+  assert.match(settings, /Settings and limits/);
   assert.match(settings, /Tool integrations/);
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Email and LinkedIn readiness/);
