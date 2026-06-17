@@ -424,10 +424,10 @@ export default async function RepsPage() {
         kicker="Agent"
         title={
           <>
-            Run email and LinkedIn <em>outreach</em>.
+            Watch email and LinkedIn <em>outreach</em>.
           </>
         }
-        description="One place for the agent, outreach queue, replies, learning, and channel readiness. Quality signals turn into verified contacts, judged drafts, and email or LinkedIn next moves."
+        description="Live work, sent emails and DMs, verified contacts, and reply learning in one focused workspace."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Active agents" value={activeAgents} />
@@ -442,9 +442,9 @@ export default async function RepsPage() {
 
       <AgentActivityPanel activity={state.activity} />
 
-      <AgentContactsPanel contacts={state.contacts} />
-
       <AgentOutreachPanel outreach={state.outreach} />
+
+      <AgentContactsPanel contacts={state.contacts} />
 
       <SurfaceSection
         title="Agent"
@@ -473,93 +473,6 @@ export default async function RepsPage() {
           </div>
         )}
       </SurfaceSection>
-
-      <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12">
-        <SurfaceSection title="Outreach accounts">
-          {state.channels.length === 0 ? (
-            <EmptyState
-              title="No outbound accounts connected."
-              hint="Connect Outlook or LinkedIn before the agent can move a conversation."
-              cta={{
-                href: "/dashboard/settings#email",
-                label: "Connect accounts",
-                icon: "account_tree",
-              }}
-            />
-          ) : (
-            <div className="grid gap-3">
-              {state.channels.map((channel) => (
-                <ChannelCard key={channel.id} channel={channel} />
-              ))}
-            </div>
-          )}
-        </SurfaceSection>
-
-        <SurfaceSection title="Launch path">
-          <aside className="section-note">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              Next setup move
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-              {launchReadinessCopy(state.readiness)}
-            </p>
-            <div className="mt-4 grid gap-2">
-              <Link href="/dashboard/settings#motion" className="priority-action">
-                <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                  <Icon name="person" size={16} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Profile and accounts
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Company, ICP, email, LinkedIn, and review mode.
-                  </span>
-                </span>
-              </Link>
-              <a href="#verified-contacts" className="priority-action">
-                <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                  <Icon name="travel_explore" size={16} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Verified contacts
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Email and LinkedIn profiles ready for outreach.
-                  </span>
-                </span>
-              </a>
-              <Link href="/dashboard/settings#email" className="priority-action">
-                <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                  <Icon name="settings" size={16} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Connected accounts
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Outlook, LinkedIn, and daily ceilings.
-                  </span>
-                </span>
-              </Link>
-              <Link href="/dashboard/conversations" className="priority-action">
-                <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                  <Icon name="science" size={16} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                    Replies and learning
-                  </span>
-                  <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-3)]">
-                    Email, LinkedIn, replies, meetings, and feedback.
-                  </span>
-                </span>
-              </Link>
-            </div>
-          </aside>
-        </SurfaceSection>
-      </section>
     </div>
   );
 }
@@ -1052,34 +965,6 @@ function RepChannelPill({
   );
 }
 
-function ChannelCard({ channel }: { channel: ChannelRow }) {
-  return (
-    <article className="grid gap-4 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 md:grid-cols-[1fr_auto] md:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-          <Icon name={channelIcon(channel.kind)} size={17} />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {channel.display_name}
-          </p>
-          <p className="mt-1 text-sm text-[var(--color-text-3)]">
-            {channelKindLabel(channel.kind)} - {statusLabel(channel.status)} -{" "}
-            {channel.daily_cap ?? "unlimited"} daily ceiling
-          </p>
-          {channel.last_error ? (
-            <p className="mt-2 text-sm text-[#ffb4a8]">{channel.last_error}</p>
-          ) : null}
-        </div>
-      </div>
-      <Link href="/dashboard/settings#email" className="btn-solid-sm w-fit">
-        <Icon name="settings" size={14} />
-        Manage
-      </Link>
-    </article>
-  );
-}
-
 function MiniStat({ label, value }: { label: string; value: number }) {
   return (
     <span className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-2">
@@ -1091,16 +976,6 @@ function MiniStat({ label, value }: { label: string; value: number }) {
       </span>
     </span>
   );
-}
-
-function launchReadinessCopy(readiness: WorkspaceLaunchReadiness): string {
-  if (readiness.launch_ready) {
-    return "The required profile, agent, and channel gates are ready. Watch outreach and replies for movement.";
-  }
-  const next = readiness.checks.find(
-    (check) => check.required && check.status !== "ready",
-  );
-  return next?.detail ?? "Finish the required launch checks before scaling outreach.";
 }
 
 function workspaceChannelCoverage(channels: ChannelRow[]): ChannelCoverage {
@@ -1174,19 +1049,6 @@ function repIcon(_rep: RepRow): string {
 function agentDisplayName(role: string): string {
   if (role === "sdr") return "Outbound agent";
   return "Agent";
-}
-
-function channelIcon(kind: string): string {
-  if (kind === "oauth_outlook") return "mail";
-  if (kind === "linkedin_session" || kind === "linkedin_oauth") return "forum";
-  return "send";
-}
-
-function channelKindLabel(kind: string): string {
-  if (kind === "oauth_outlook") return "Outlook";
-  if (kind === "linkedin_session") return "LinkedIn session";
-  if (kind === "linkedin_oauth") return "LinkedIn";
-  return kind.replace(/_/g, " ");
 }
 
 function approvalLabel(value: string): string {

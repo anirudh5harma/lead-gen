@@ -81,6 +81,7 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
   assert.match(dashboard, /href="\/dashboard\/reps#outreach"/);
   assert.match(dashboard, /href="\/dashboard\/reps#verified-contacts"/);
+  assert.match(source("app/dashboard/brief/page.tsx"), /redirect\("\/dashboard"\)/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
   assert.match(appLayout, /Profile, quality signals, verified contacts/);
   assert.doesNotMatch(appLayout, /Prospecting, signal ingestion/);
@@ -242,6 +243,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Open agent/);
   assert.match(reps, /Profile, accounts, and limits stay in\s+Profile/);
   assert.match(reps, /Replies 7d/);
+  assert.doesNotMatch(reps, /Outreach accounts/);
+  assert.doesNotMatch(reps, /Launch path/);
+  assert.doesNotMatch(reps, /ChannelCard/);
   assert.doesNotMatch(reps, /<RepCard key=\{rep\.id\} rep=\{rep\} \/>/);
   assert.doesNotMatch(reps, /Outcomes 7d/);
 });
@@ -358,8 +362,11 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /href: "#templates"/);
   assert.match(settings, /href: "#contact-quality"/);
   assert.match(settings, /href: "#blocklist"/);
-  assert.match(settings, /Email accounts/);
-  assert.match(settings, /LinkedIn accounts/);
+  assert.match(settings, /Profile and <em>integrations<\/em>/);
+  assert.match(settings, /integrationCount\(state\)/);
+  assert.match(settings, /Email integration/);
+  assert.match(settings, /LinkedIn integration/);
+  assert.match(settings, /Tool integrations/);
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Email and LinkedIn readiness/);
   assert.match(settings, /Value proposition/);
@@ -400,7 +407,7 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /href: "#tools"/);
   assert.match(settings, /id="tools"/);
   assert.match(settings, /href="\/api\/mcp"/);
-  assert.match(settings, /Audience, agent, and templates/);
+  assert.match(settings, /Agent inputs and outreach templates/);
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);
   assert.match(settings, /verified contact or LinkedIn profile/);

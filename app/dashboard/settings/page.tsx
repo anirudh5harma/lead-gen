@@ -318,10 +318,10 @@ export default async function SettingsPage() {
         kicker="Profile"
         title={
           <>
-            Company, audience, and <em>accounts</em>.
+            Profile and <em>integrations</em>.
           </>
         }
-        description="The agent uses this profile to decide who is worth contacting, what evidence matters, and which Outlook or LinkedIn account can send safely."
+        description="Company context, ICP, email, LinkedIn, contact quality, and connected tools in one setup surface."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat
@@ -330,7 +330,7 @@ export default async function SettingsPage() {
             />
             <HeroStat label="Email" value={outlookLabel} />
             <HeroStat label="LinkedIn" value={linkedInLabel} />
-            <HeroStat label="Mode" value={modeLabel(mode)} />
+            <HeroStat label="Integrations" value={integrationCount(state)} />
           </div>
         }
       />
@@ -362,7 +362,7 @@ export default async function SettingsPage() {
       </div>
 
       <div id="motion">
-        <SurfaceSection title="Audience, agent, and templates">
+        <SurfaceSection title="Agent inputs and outreach templates">
           <ActivationSettingsForm
             rep={state.rep}
             icp={state.icp}
@@ -391,13 +391,13 @@ export default async function SettingsPage() {
 
         <section className="grid gap-6 md:grid-cols-2">
           <div id="email">
-            <SurfaceSection title="Email accounts">
+            <SurfaceSection title="Email integration">
               <OutlookPanel account={state.outlookAccount} />
             </SurfaceSection>
           </div>
 
           <div id="linkedin">
-            <SurfaceSection title="LinkedIn accounts">
+            <SurfaceSection title="LinkedIn integration">
               <LinkedInPanel account={state.linkedInAccount} />
             </SurfaceSection>
           </div>
@@ -455,7 +455,7 @@ export default async function SettingsPage() {
         </div>
 
         <div id="tools">
-          <SurfaceSection title="Connected tools">
+          <SurfaceSection title="Tool integrations">
             <IntegrationPanel />
           </SurfaceSection>
         </div>
@@ -597,7 +597,7 @@ function SettingsSectionNav({
 }) {
   const sections = [
     {
-      title: "Workspace",
+      title: "Company",
       detail: profile?.company_name ?? "Company profile",
       href: "#profile",
       icon: "add_business",
@@ -708,6 +708,14 @@ function SettingsSectionNav({
       ))}
     </nav>
   );
+}
+
+function integrationCount(state: SettingsState): string {
+  const count =
+    (state.outlookAccount?.status === "connected" ? 1 : 0) +
+    (state.linkedInAccount?.status === "connected" ? 1 : 0) +
+    1;
+  return `${count}/3 ready`;
 }
 
 function StatusPill({ ready }: { ready: boolean }) {
