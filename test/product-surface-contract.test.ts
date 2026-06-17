@@ -464,6 +464,13 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Outreach sent/);
   assert.match(reps, /Replies \/ meetings/);
   assert.match(reps, /animate-pulse/);
+  assert.match(reps, /AgentOperatingLoopPanel/);
+  assert.match(reps, /Signal-to-outreach operating loop/);
+  assert.match(reps, /Channel readiness/);
+  assert.match(reps, /The agent can only turn quality signals into email or LinkedIn/);
+  assert.match(reps, /Judged drafts/);
+  assert.match(reps, /OperatingLoopChannel/);
+  assert.match(reps, /sent 7d/);
   assert.match(reps, /workspaceChannelCoverage/);
   assert.match(reps, /firstChannelPolicy\(rep, \["linkedin_dm", "linkedin"\]\)/);
   assert.match(reps, /Outreach paths/);

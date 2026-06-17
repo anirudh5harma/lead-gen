@@ -801,6 +801,14 @@ export default async function RepsPage() {
 
       <AgentActivityPanel activity={state.activity} />
 
+      <AgentOperatingLoopPanel
+        activity={state.activity}
+        opportunities={state.opportunities}
+        contacts={state.contacts}
+        outreach={state.outreach}
+        coverage={coverage}
+      />
+
       <AgentReadinessPanel readiness={state.readiness} />
 
       <AgentStrategyPanel strategy={state.strategy} />
@@ -1754,6 +1762,186 @@ function AgentWorkStage({ stage }: { stage: AgentWorkStageData }) {
         {stage.label}
       </span>
     </div>
+  );
+}
+
+function AgentOperatingLoopPanel({
+  activity,
+  opportunities,
+  contacts,
+  outreach,
+  coverage,
+}: {
+  activity: AgentActivity;
+  opportunities: QualifiedSignalWorkbench;
+  contacts: AgentContactSummary;
+  outreach: AgentOutreachSummary;
+  coverage: ChannelCoverage;
+}) {
+  const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  const loopSteps = [
+    {
+      icon: "sensors",
+      title: "Qualified signals",
+      value: opportunities.stats.qualified,
+      detail: `${opportunities.stats.with_verified_contacts} with verified contacts`,
+      href: "/dashboard/agent#opportunities",
+      tone: "fit" as const,
+    },
+    {
+      icon: "person_search",
+      title: "Verified contacts",
+      value: contacts.reachable,
+      detail: `${contacts.with_email} email, ${contacts.with_linkedin} LinkedIn`,
+      href: "/dashboard/agent#verified-contacts",
+      tone: "ready" as const,
+    },
+    {
+      icon: "rate_review",
+      title: "Judged drafts",
+      value: opportunities.stats.with_outreach_draft,
+      detail: `${opportunities.stats.ready_for_review} need review`,
+      href: "/dashboard/agent#opportunities",
+      tone: "waiting" as const,
+    },
+    {
+      icon: "send",
+      title: "Sent outreach",
+      value: sent7d,
+      detail: `${outreach.awaiting_reply} awaiting reply`,
+      href: "/dashboard/agent#outreach",
+      tone: "ready" as const,
+    },
+  ];
+  return (
+    <SurfaceSection
+      title="Signal-to-outreach operating loop"
+      action={
+        <Link href="/dashboard/settings#linkedin" className="btn-quiet-sm">
+          <Icon name="account_tree" size={14} />
+          Connect channels
+        </Link>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid auto-rows-max gap-3 md:grid-cols-4">
+          {loopSteps.map((step) => (
+            <Link
+              key={step.title}
+              href={step.href}
+              className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+            >
+              <span className="flex items-center justify-between gap-3">
+                <span
+                  className={
+                    "grid size-9 place-items-center rounded-[8px] " +
+                    (step.tone === "fit"
+                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                      : step.tone === "ready"
+                        ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                        : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+                  }
+                >
+                  <Icon name={step.icon} size={17} />
+                </span>
+                <Icon
+                  name="arrow_forward"
+                  size={14}
+                  className="text-[var(--color-text-4)] transition-colors group-hover:text-[var(--color-accent)]"
+                />
+              </span>
+              <strong className="mt-4 block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
+                {step.value}
+              </strong>
+              <span className="mt-1 block text-sm font-medium text-[var(--color-text-1)]">
+                {step.title}
+              </span>
+              <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
+                {step.detail}
+              </span>
+            </Link>
+          ))}
+        </div>
+
+        <aside className="section-note h-fit">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Channel readiness
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            The agent can only turn quality signals into email or LinkedIn
+            outreach when the destination account is connected and capped.
+          </p>
+          <div className="mt-4 grid gap-2">
+            <OperatingLoopChannel
+              title="Email"
+              channel="email"
+              connection={coverage.email}
+              count={outreach.email_sent_7d}
+            />
+            <OperatingLoopChannel
+              title="LinkedIn"
+              channel="linkedin_dm"
+              connection={coverage.linkedIn}
+              count={outreach.linkedin_sent_7d}
+            />
+          </div>
+          <div className="mt-4 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2 text-xs leading-5 text-[var(--color-text-3)]">
+            Last hour: {activity.signals_last_hour} signals checked,{" "}
+            {activity.contacts_last_hour} contacts resolved,{" "}
+            {activity.drafts_last_hour} drafts prepared.
+          </div>
+        </aside>
+      </div>
+    </SurfaceSection>
+  );
+}
+
+function OperatingLoopChannel({
+  title,
+  channel,
+  connection,
+  count,
+}: {
+  title: string;
+  channel: string;
+  connection: ChannelConnection;
+  count: number;
+}) {
+  return (
+    <Link
+      href={connection.href}
+      prefetch={false}
+      className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-2)]"
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <ChannelMark channel={channel} size={14} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-[var(--color-text-1)]">
+            {title}
+          </span>
+          <span className="block truncate text-[11px] text-[var(--color-text-3)]">
+            {connection.connected ? connection.label : connection.status}
+          </span>
+        </span>
+      </span>
+      <span className="text-right">
+        <span
+          className={
+            "block rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+            (connection.connected
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+          }
+        >
+          {connection.connected ? "Ready" : "Needed"}
+        </span>
+        <span className="mt-1 block text-[11px] tabular-nums text-[var(--color-text-3)]">
+          {count} sent 7d
+        </span>
+      </span>
+    </Link>
   );
 }
 
