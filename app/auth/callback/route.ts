@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { findCompletedOnboardingForAuthIdentity } from "@/lib/auth/onboarding";
-import { postAuthDestination, safeNextPath } from "@/lib/auth/next";
+import { googleAuthPath, postAuthDestination, safeNextPath } from "@/lib/auth/next";
 import { resolvePostAuthUserId } from "@/lib/auth/post-auth";
 import { hasVerifiedEmail, type AuthVerifiedEmailUser } from "@/lib/auth/verified-email";
 import {
@@ -25,12 +25,12 @@ export async function GET(request: Request) {
   if (errParam) {
     console.error("[auth/callback] provider error", errParam);
     return NextResponse.redirect(
-      new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin),
+      new URL(googleAuthPath(next) + "&error=callback", origin),
     );
   }
   if (!code) {
     return NextResponse.redirect(
-      new URL(`/login?error=missing_code&next=${encodeURIComponent(next)}`, origin),
+      new URL(googleAuthPath(next) + "&error=missing_code", origin),
     );
   }
 
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     if (error) {
       console.error("[auth/callback] exchangeCodeForSession error", error);
       return NextResponse.redirect(
-        new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin),
+        new URL(googleAuthPath(next) + "&error=callback", origin),
       );
     }
 
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
   } catch (err) {
     console.error("[auth/callback] unexpected error", err);
     return NextResponse.redirect(
-      new URL(`/login?error=callback&next=${encodeURIComponent(next)}`, origin),
+      new URL(googleAuthPath(next) + "&error=callback", origin),
     );
   }
 }

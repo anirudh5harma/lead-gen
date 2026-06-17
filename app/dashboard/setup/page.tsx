@@ -68,7 +68,7 @@ async function loadSetupState(workspaceId: string) {
     ),
     pool.query<SetupAccountRow>(
       `with ranked_accounts as (
-         select id, display_name, kind::text as kind, status::text as status, daily_cap,
+         select id, display_name, kind::text as kind, status::text as status, daily_cap, created_at,
                 row_number() over (
                   partition by case
                     when kind = 'oauth_outlook' then 'outlook:' || coalesce(
@@ -97,7 +97,7 @@ async function loadSetupState(workspaceId: string) {
           where workspace_id = $1
             and kind in ('email_domain','oauth_outlook','linkedin_session','linkedin_oauth')
        )
-       select id, display_name, kind, status, daily_cap
+       select id, display_name, kind, status, daily_cap, created_at
          from ranked_accounts
         where account_rank = 1
         order by case

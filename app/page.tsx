@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import Icon from '@/components/Icon'
 import ScrollReveal from '@/components/ui/ScrollReveal'
+import { googleAuthPath, PRODUCT_HOME_PATH } from '@/lib/auth/next'
 
 const FEATURES = [
   {
@@ -133,7 +134,7 @@ export default function Home() {
             Bombsell
           </Link>
           <Link
-            href="/login"
+            href={googleAuthPath(PRODUCT_HOME_PATH)}
             className="inline-flex items-center gap-2 rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)]/80 px-3.5 py-2 text-[13px] font-medium text-[var(--color-text-2)] transition-colors hover:border-[var(--color-line-3)] hover:text-[var(--color-text-1)]"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -508,7 +509,7 @@ function FeatureMockup({ feature }: { feature: string }) {
         <div className="flex items-center gap-2 border-b border-[var(--color-line-1)] pb-2">
           <span className="text-[11px] font-medium text-[var(--color-text-3)]">Active plays</span>
         </div>
-        {['Signal-led outreach', 'Content nurture', 'Event follow-up', 'Re-engagement', 'Demo request'].map((play, i) => (
+        {['Signal-led outreach', 'Hiring-intent follow-up', 'Event follow-up', 'Re-engagement', 'Demo request'].map((play, i) => (
           <div key={play} className="flex items-center gap-3 rounded-[6px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2">
             <span className="grid size-6 place-items-center rounded-[4px] bg-[var(--color-ink-2)] text-[var(--color-text-3)]">
               <Icon name="science" size={12} />

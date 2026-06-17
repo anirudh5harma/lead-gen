@@ -71,10 +71,18 @@ test("auth route redirects replay Supabase cookie writes", () => {
   }
 });
 
-test("public entry opens the protected app with a document link so existing sessions are reused", () => {
+test("public entry sends login directly to Google OAuth", () => {
   const body = readFileSync("app/page.tsx", "utf8");
-  assert.match(body, /href="\/dashboard"/);
-  assert.doesNotMatch(body, /googleAuthPath\("\/dashboard"\)/);
+  assert.match(body, /href=\{googleAuthPath\(PRODUCT_HOME_PATH\)\}/);
+  assert.doesNotMatch(body, /href="\/login"/);
+});
+
+test("auth failures stay on the direct Google auth surface", () => {
+  const googleRoute = readFileSync("app/auth/google/route.ts", "utf8");
+  const callbackRoute = readFileSync("app/auth/callback/route.ts", "utf8");
+  assert.doesNotMatch(googleRoute, /\/login/);
+  assert.doesNotMatch(callbackRoute, /\/login/);
+  assert.match(callbackRoute, /googleAuthPath\(next\) \+ "&error=/);
 });
 
 test("proxy refreshes auth cookies with claims and accepts publishable keys", () => {
