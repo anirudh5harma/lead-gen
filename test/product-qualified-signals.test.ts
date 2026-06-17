@@ -85,15 +85,17 @@ test("qualified signals workbench maps verified contacts and email drafts", asyn
 
   assert.equal(workbench.stats.qualified, 1);
   assert.equal(workbench.stats.with_verified_contacts, 1);
+  assert.equal(workbench.stats.with_outreach_draft, 1);
   assert.equal(workbench.stats.with_email_draft, 1);
   assert.equal(workbench.stats.ready_for_review, 1);
   assert.equal(workbench.signals[0]?.contact_source, "resolution");
   assert.equal(workbench.signals[0]?.contacts[0]?.full_name, "Nisha Rao");
-  assert.equal(workbench.signals[0]?.email_draft?.subject, "Congrats on the Series A");
-  assert.equal(workbench.signals[0]?.email_draft?.eval_score, 0.87);
-  assert.equal(workbench.signals[0]?.email_draft?.external_id, "graph-message-1");
-  assert.equal(workbench.signals[0]?.email_draft?.latest_channel_event_type, "message.sent");
-  assert.equal(workbench.signals[0]?.email_draft?.sent_at, now);
+  assert.equal(workbench.signals[0]?.outreach_draft?.subject, "Congrats on the Series A");
+  assert.equal(workbench.signals[0]?.outreach_draft?.eval_score, 0.87);
+  assert.equal(workbench.signals[0]?.outreach_draft?.external_id, "graph-message-1");
+  assert.equal(workbench.signals[0]?.outreach_draft?.latest_channel_event_type, "message.sent");
+  assert.equal(workbench.signals[0]?.outreach_draft?.sent_at, now);
+  assert.equal(workbench.signals[0]?.email_draft, workbench.signals[0]?.outreach_draft);
 });
 
 test("qualified signals workbench does not count judge-blocked drafts as review-ready", async () => {
@@ -160,10 +162,11 @@ test("qualified signals workbench does not count judge-blocked drafts as review-
   );
 
   assert.equal(workbench.stats.with_verified_contacts, 1);
+  assert.equal(workbench.stats.with_outreach_draft, 1);
   assert.equal(workbench.stats.with_email_draft, 1);
   assert.equal(workbench.stats.ready_for_review, 0);
-  assert.equal(workbench.signals[0]?.email_draft?.eval_passed, false);
-  assert.equal(workbench.signals[0]?.email_draft?.defer_reason, "eval_rejected");
+  assert.equal(workbench.signals[0]?.outreach_draft?.eval_passed, false);
+  assert.equal(workbench.signals[0]?.outreach_draft?.defer_reason, "eval_rejected");
 });
 
 test("qualified signals workbench falls back to graph contacts when resolution has not run", async () => {
@@ -230,6 +233,7 @@ test("qualified signals workbench falls back to graph contacts when resolution h
   );
 
   assert.equal(workbench.stats.with_verified_contacts, 1);
+  assert.equal(workbench.stats.with_outreach_draft, 0);
   assert.equal(workbench.stats.with_email_draft, 0);
   assert.equal(workbench.signals[0]?.contact_source, "graph");
   assert.equal(workbench.signals[0]?.contacts[0]?.verification.email_verified, true);
@@ -299,11 +303,12 @@ test("qualified signals workbench treats LinkedIn profiles as outreach-ready con
   );
 
   assert.equal(workbench.stats.with_verified_contacts, 1);
+  assert.equal(workbench.stats.with_outreach_draft, 1);
   assert.equal(workbench.stats.with_email_draft, 1);
   assert.equal(workbench.signals[0]?.contacts[0]?.emails.length, 0);
   assert.equal(workbench.signals[0]?.contacts[0]?.verification.linkedin_ready, true);
-  assert.equal(workbench.signals[0]?.email_draft?.channel, "linkedin_dm");
-  assert.equal(workbench.signals[0]?.email_draft?.body, "Saw your Apollo thread. Worth comparing notes?");
+  assert.equal(workbench.signals[0]?.outreach_draft?.channel, "linkedin_dm");
+  assert.equal(workbench.signals[0]?.outreach_draft?.body, "Saw your Apollo thread. Worth comparing notes?");
 });
 
 test("qualified signals workbench decodes HTML entities in displayed signal text", async () => {

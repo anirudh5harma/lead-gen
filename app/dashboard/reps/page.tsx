@@ -904,6 +904,7 @@ function emptyRepsState(workspaceId: string): RepsState {
       stats: {
         qualified: 0,
         with_verified_contacts: 0,
+        with_outreach_draft: 0,
         with_email_draft: 0,
         ready_for_review: 0,
       },
@@ -1312,7 +1313,7 @@ function AgentOpportunityPanel({
               />
               <MiniStat
                 label="Drafted"
-                value={opportunities.stats.with_email_draft}
+                value={opportunities.stats.with_outreach_draft}
               />
               <MiniStat
                 label="Needs review"
@@ -1350,6 +1351,7 @@ function AgentOpportunityPanel({
 
 function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
   const contact = signal.contacts[0];
+  const draft = signal.outreach_draft;
   const company = signal.company.name ?? signal.company.domain ?? "Unknown company";
   const score = signal.match_score == null ? null : Math.round(signal.match_score * 100);
   const href = opportunityHref(signal, contact);
@@ -1381,9 +1383,9 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             <OpportunityPill tone={contact ? "ready" : "waiting"}>
               {contact ? contactLabel(contact) : "Resolving contact"}
             </OpportunityPill>
-            <OpportunityPill tone={signal.email_draft ? "ready" : "waiting"}>
-              {signal.email_draft
-                ? draftOpportunityLabel(signal.email_draft.status)
+            <OpportunityPill tone={draft ? "ready" : "waiting"}>
+              {draft
+                ? draftOpportunityLabel(draft.status, draft.channel)
                 : "Draft pending"}
             </OpportunityPill>
           </span>
@@ -1401,14 +1403,14 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(signal.freshness_at)}
         </span>
-        {signal.email_draft?.pending_approval_id ? (
+        {draft?.pending_approval_id ? (
           <>
             <form action={decideApprovalWithDraftAction}>
               <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
               <input
                 type="hidden"
                 name="approval_id"
-                value={signal.email_draft.pending_approval_id}
+                value={draft.pending_approval_id}
               />
               <input type="hidden" name="decision" value="approved" />
               <PendingSubmitButton
@@ -1425,7 +1427,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
               <input
                 type="hidden"
                 name="approval_id"
-                value={signal.email_draft.pending_approval_id}
+                value={draft.pending_approval_id}
               />
               <input type="hidden" name="decision" value="rejected" />
               <PendingSubmitButton
@@ -1484,9 +1486,10 @@ function contactLabel(contact: QualifiedSignalContact): string {
   return "Contact found";
 }
 
-function draftOpportunityLabel(status: string): string {
-  if (status === "draft") return "Draft ready";
-  if (status === "deferred") return "Draft deferred";
+function draftOpportunityLabel(status: string, channel: string): string {
+  const label = channelLabel(channel);
+  if (status === "draft") return `${label} draft`;
+  if (status === "deferred") return `${label} deferred`;
   if (status === "sent" || status === "delivered") return "Sent";
   return statusLabel(status);
 }
@@ -1495,10 +1498,10 @@ function opportunityHref(
   signal: QualifiedSignalItem,
   contact?: QualifiedSignalContact,
 ): string {
-  if (signal.email_draft) {
+  if (signal.outreach_draft) {
     return sentDraftHref(
-      signal.email_draft.conversation_id,
-      signal.email_draft.message_id,
+      signal.outreach_draft.conversation_id,
+      signal.outreach_draft.message_id,
     );
   }
   if (contact?.person_id) return `/dashboard/prospects/${contact.person_id}`;

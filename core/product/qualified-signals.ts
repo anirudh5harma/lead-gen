@@ -17,7 +17,7 @@ export interface QualifiedSignalContact {
   provenance: Record<string, unknown>;
 }
 
-export interface QualifiedSignalEmailDraft {
+export interface QualifiedSignalOutreachDraft {
   conversation_id: string;
   message_id: string;
   channel: string;
@@ -37,6 +37,8 @@ export interface QualifiedSignalEmailDraft {
   pending_approval_id: string | null;
   created_at: Date;
 }
+
+export type QualifiedSignalEmailDraft = QualifiedSignalOutreachDraft;
 
 export interface QualifiedSignalItem {
   id: string;
@@ -61,7 +63,8 @@ export interface QualifiedSignalItem {
   contact_source: "resolution" | "graph" | "none";
   contact_channel: string | null;
   contact_defer_reason: string | null;
-  email_draft: QualifiedSignalEmailDraft | null;
+  outreach_draft: QualifiedSignalOutreachDraft | null;
+  email_draft: QualifiedSignalOutreachDraft | null;
 }
 
 export interface QualifiedSignalWorkbench {
@@ -69,6 +72,7 @@ export interface QualifiedSignalWorkbench {
   stats: {
     qualified: number;
     with_verified_contacts: number;
+    with_outreach_draft: number;
     with_email_draft: number;
     ready_for_review: number;
   };
@@ -529,16 +533,17 @@ export async function loadQualifiedSignalWorkbench(
           contact.verification.linkedin_ready === true
         )
       ).length,
-      with_email_draft: signals.filter((signal) => signal.email_draft).length,
+      with_outreach_draft: signals.filter((signal) => signal.outreach_draft).length,
+      with_email_draft: signals.filter((signal) => signal.outreach_draft).length,
       ready_for_review: signals.filter((signal) =>
-        isEmailDraftReadyForReview(signal.email_draft)
+        isOutreachDraftReadyForReview(signal.outreach_draft)
       ).length,
     },
   };
 }
 
-function isEmailDraftReadyForReview(
-  draft: QualifiedSignalEmailDraft | null,
+function isOutreachDraftReadyForReview(
+  draft: QualifiedSignalOutreachDraft | null,
 ): boolean {
   if (!draft) return false;
   if (draft.eval_passed === false) return false;
@@ -556,6 +561,28 @@ function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
   const resolvedContacts = normalizeContactCandidates(row.contact_candidates);
   const graphContacts = normalizeContactCandidates(row.graph_candidates);
   const contacts = resolvedContacts.length > 0 ? resolvedContacts : graphContacts;
+  const outreachDraft = row.draft_message_id && row.draft_conversation_id && row.draft_channel && row.draft_status && row.draft_created_at
+    ? {
+        conversation_id: row.draft_conversation_id,
+        message_id: row.draft_message_id,
+        channel: row.draft_channel,
+        status: row.draft_status,
+        subject: row.draft_subject,
+        body: row.draft_body,
+        eval_score: parseNumber(row.draft_eval_score),
+        eval_passed: row.draft_eval_passed,
+        external_id: row.draft_external_id,
+        scheduled_at: row.draft_scheduled_at,
+        sent_at: row.draft_sent_at,
+        delivered_at: row.draft_delivered_at,
+        latest_channel_event_type: row.draft_channel_event_type,
+        latest_channel_event_at: row.draft_channel_event_at,
+        defer_reason: row.draft_defer_reason,
+        defer_detail: row.draft_defer_detail,
+        pending_approval_id: row.pending_approval_id,
+        created_at: row.draft_created_at,
+      }
+    : null;
   return {
     id: row.id,
     kind: row.kind,
@@ -580,28 +607,8 @@ function mapQualifiedSignalRow(row: QualifiedSignalRow): QualifiedSignalItem {
       resolvedContacts.length > 0 ? "resolution" : graphContacts.length > 0 ? "graph" : "none",
     contact_channel: row.contact_channel,
     contact_defer_reason: row.contact_defer_reason,
-    email_draft: row.draft_message_id && row.draft_conversation_id && row.draft_channel && row.draft_status && row.draft_created_at
-      ? {
-          conversation_id: row.draft_conversation_id,
-          message_id: row.draft_message_id,
-          channel: row.draft_channel,
-          status: row.draft_status,
-          subject: row.draft_subject,
-          body: row.draft_body,
-          eval_score: parseNumber(row.draft_eval_score),
-          eval_passed: row.draft_eval_passed,
-          external_id: row.draft_external_id,
-          scheduled_at: row.draft_scheduled_at,
-          sent_at: row.draft_sent_at,
-          delivered_at: row.draft_delivered_at,
-          latest_channel_event_type: row.draft_channel_event_type,
-          latest_channel_event_at: row.draft_channel_event_at,
-          defer_reason: row.draft_defer_reason,
-          defer_detail: row.draft_defer_detail,
-          pending_approval_id: row.pending_approval_id,
-          created_at: row.draft_created_at,
-        }
-      : null,
+    outreach_draft: outreachDraft,
+    email_draft: outreachDraft,
   };
 }
 

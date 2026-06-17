@@ -407,10 +407,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /prepareQualifiedSignalsAction/);
   assert.match(reps, /Prepare contacts \+ drafts/);
   assert.match(reps, /Verified email/);
-  assert.match(reps, /Draft ready/);
+  assert.match(reps, /with_outreach_draft/);
+  assert.match(reps, /const draft = signal\.outreach_draft/);
+  assert.match(reps, /draftOpportunityLabel\(draft\.status, draft\.channel\)/);
   assert.match(reps, /opportunityHref\(signal, contact\)/);
   assert.match(reps, /return "\/dashboard\/agent#opportunities"/);
-  assert.match(reps, /sentDraftHref\(\s*signal\.email_draft\.conversation_id/);
+  assert.match(reps, /sentDraftHref\(\s*signal\.outreach_draft\.conversation_id/);
   assert.match(reps, /dismissQualifiedSignalAction/);
   assert.match(reps, /Skip opportunity/);
   assert.match(reps, /name="signal_id" value=\{signal\.id\}/);
@@ -433,7 +435,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /#message-\$\{messageId\}/);
   assert.match(reps, /decideApprovalWithDraftAction/);
   assert.match(reps, /value="\/dashboard\/agent#opportunities"/);
-  assert.match(reps, /value=\{signal\.email_draft\.pending_approval_id\}/);
+  assert.match(reps, /value=\{draft\.pending_approval_id\}/);
+  assert.doesNotMatch(reps, /signal\.email_draft/);
   assert.match(reps, /id="learning" className="scroll-mt-28"/);
   assert.match(reps, /Reply evidence/);
   assert.match(reps, /Strategy recommendation/);
