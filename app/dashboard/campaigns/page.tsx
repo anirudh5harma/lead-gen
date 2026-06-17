@@ -253,7 +253,7 @@ export default async function CampaignsPage() {
   ]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-10">
       <SurfaceHero
         kicker="Campaigns"
         title={<>Run small bets. <em>Scale the winners.</em></>}
@@ -274,7 +274,7 @@ export default async function CampaignsPage() {
             <input type="hidden" name="lookback_days" value="30" />
             <input type="hidden" name="min_samples" value="3" />
             <PendingSubmitButton
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+              className="btn-solid"
               icon="auto_graph"
               pendingLabel="Optimizing"
             >
@@ -304,7 +304,7 @@ export default async function CampaignsPage() {
             <input type="hidden" name="lookback_days" value="30" />
             <input type="hidden" name="min_samples" value="3" />
             <PendingSubmitButton
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+              className="btn-solid"
               icon="science"
               pendingLabel="Optimizing skills"
             >
@@ -551,7 +551,7 @@ function CampaignOutcomeButton({
       <input type="hidden" name="play_run_id" value={playRunId} />
       <input type="hidden" name="outcome_kind" value={kind} />
       <PendingSubmitButton
-        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[8px] border border-[color:var(--color-line-2)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)] active:translate-y-px"
+        className="btn-quiet-sm"
         icon={icon}
         iconSize={15}
         pendingLabel="Saving"

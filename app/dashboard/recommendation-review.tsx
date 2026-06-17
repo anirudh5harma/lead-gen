@@ -70,7 +70,7 @@ export function RecommendationLearningBadge({
   if (accepted + ignored === 0) return null;
   const rate = acceptanceRate == null ? null : `${Math.round(acceptanceRate * 100)}% useful`;
   return (
-    <p className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-3)]">
+    <p className="btn-quiet-sm gap-2 text-[var(--color-text-3)]">
       <Icon name="auto_awesome" size={14} />
       <span>{accepted} useful</span>
       <span>{ignored} dismissed</span>
@@ -167,7 +167,7 @@ function RecommendationReviewActions({
             value={surface === "aeo" ? "web" : "x_post"}
           />
           <ToastSubmitButton
-            className="inline-flex items-center justify-center gap-1.5 rounded-full border border-[color:var(--color-line-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)] active:translate-y-px"
+            className="btn-quiet-sm"
             icon={surface === "aeo" ? "article" : "edit_note"}
             iconSize={14}
             pendingLabel="Drafting"
@@ -190,7 +190,7 @@ function RecommendationReviewActions({
             className="min-w-0 flex-1 rounded-md border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs text-[var(--color-text-1)] outline-none transition focus:border-[var(--color-line-3)]"
           />
           <ToastSubmitButton
-            className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+            className="btn-solid-sm"
             icon="task_alt"
             iconSize={14}
             pendingLabel="Recording"
@@ -208,7 +208,7 @@ function RecommendationReviewActions({
           <input type="hidden" name="review_id" value={item.review_id} />
           <input type="hidden" name="decision" value="accepted" />
           <ToastSubmitButton
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 py-1.5 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+            className="btn-solid-sm"
             icon="check"
             iconSize={14}
             pendingLabel="Saving"
@@ -220,7 +220,7 @@ function RecommendationReviewActions({
           <input type="hidden" name="review_id" value={item.review_id} />
           <input type="hidden" name="decision" value="ignored" />
           <ToastSubmitButton
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition active:translate-y-px"
+            className="btn-quiet-sm"
             icon="close"
             iconSize={14}
             pendingLabel="Dismissing"
@@ -269,7 +269,7 @@ function RecommendationDeleteFields({
       <input type="hidden" name="review_id" value={reviewId} />
       <input type="hidden" name="reason" value={`Deleted from ${surface}`} />
       <ToastSubmitButton
-        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-neg)] transition active:translate-y-px"
+        className="btn-quiet-sm text-[var(--color-neg)]"
         icon="delete"
         iconSize={14}
         pendingLabel="Deleting"
@@ -284,7 +284,7 @@ function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
   if (!item.review_id) return null;
   return (
     <details className="group">
-      <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-2)] transition hover:bg-[var(--color-ink-2)]">
+      <summary className="btn-quiet-sm cursor-pointer">
         <Icon name="edit" size={14} />
         Edit
       </summary>
@@ -322,7 +322,7 @@ function RecommendationEditForm({ item }: { item: ProductBriefItem }) {
           />
         </label>
         <ToastSubmitButton
-          className="inline-flex min-h-9 w-fit items-center gap-1.5 rounded-full bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition active:translate-y-px"
+          className="btn-solid-sm"
           icon="save"
           iconSize={14}
           pendingLabel="Saving"

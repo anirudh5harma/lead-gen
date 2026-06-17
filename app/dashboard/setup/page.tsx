@@ -142,7 +142,7 @@ export default async function SetupPage() {
   ].filter(Boolean).length;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-10">
       <SurfaceHero
         kicker="Prospecting"
         title={
@@ -204,7 +204,7 @@ export default async function SetupPage() {
           </div>
           <div className="md:col-span-2 flex flex-wrap items-center gap-3">
             <PendingSubmitButton
-              className="inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+              className="btn-solid"
               icon="check"
               pendingLabel="Saving company"
             >
@@ -280,7 +280,7 @@ export default async function SetupPage() {
           />
           <input type="hidden" name="rep_name" value={rep?.name ?? "Sampark"} />
           <PendingSubmitButton
-            className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+            className="btn-solid w-fit"
             icon="check"
             pendingLabel="Saving guidance"
           >
@@ -345,7 +345,7 @@ function ChannelConnectRow({
       <Link
         href={href}
         prefetch={false}
-        className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+        className="btn-solid w-fit"
       >
         <Icon name={icon} size={16} />
         {account ? reconnectLabel : connectLabel}
@@ -378,7 +378,7 @@ function accountKindLabel(kind: string): string {
 
 function NoWorkspaceSetup() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-10">
       <SurfaceHero
         kicker="Prospecting"
         title="Create a workspace."
@@ -405,7 +405,7 @@ function NoWorkspaceSetup() {
             defaultValue="bombsell-workspace"
           />
           <PendingSubmitButton
-            className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+            className="btn-solid w-fit"
             icon="add_business"
             pendingLabel="Creating workspace"
           >

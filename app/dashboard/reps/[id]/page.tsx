@@ -144,7 +144,7 @@ export default async function RepDetailPage({
   if (!rep) return notFound();
 
   return (
-    <>
+    <div className="space-y-10">
       <section className="section-canvas min-h-[360px] p-5 sm:p-8">
         <div className="section-thread section-thread-a" />
         <div className="grid gap-8 lg:grid-cols-[1fr_320px] lg:items-end">
@@ -224,7 +224,7 @@ export default async function RepDetailPage({
               />
             </div>
             <PendingSubmitButton
-              className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+              className="btn-solid w-fit"
               icon="check"
               iconSize={17}
               pendingLabel="Saving guidance"
@@ -285,7 +285,7 @@ export default async function RepDetailPage({
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }
 

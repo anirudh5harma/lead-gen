@@ -191,7 +191,7 @@ export default async function DeliverabilityPage() {
   ]);
 
   return (
-    <>
+    <div className="space-y-10">
       <section className="section-canvas min-h-[380px] p-5 sm:p-8">
         <div className="section-thread section-thread-a" />
         <div className="grid gap-8 lg:grid-cols-[1fr_360px] lg:items-end">
@@ -237,7 +237,7 @@ export default async function DeliverabilityPage() {
             <Link
               href="/api/auth/outlook"
               prefetch={false}
-              className="inline-flex min-h-9 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+              className="btn-solid"
             >
               <Icon name="mail" size={15} />
               {accounts.length === 0 ? "Connect Outlook" : "Add Outlook"}
@@ -284,7 +284,7 @@ export default async function DeliverabilityPage() {
           )}
         </HealthPanel>
       </section>
-    </>
+    </div>
   );
 }
 

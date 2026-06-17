@@ -86,7 +86,7 @@ export default async function HealthPage() {
   ]);
 
   return (
-    <>
+    <div className="space-y-10">
       <section className="section-canvas min-h-[420px] p-5 sm:p-8">
         <div className="section-thread section-thread-a" />
         <div className="grid gap-8 lg:grid-cols-[1fr_340px] lg:items-end">
@@ -181,7 +181,7 @@ export default async function HealthPage() {
           </ul>
         )}
       </section>
-    </>
+    </div>
   );
 }
 

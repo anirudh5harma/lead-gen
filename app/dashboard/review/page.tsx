@@ -61,7 +61,7 @@ export default async function ReviewPage() {
   const pending = await loadPending(workspace.id);
 
   return (
-    <>
+    <div className="space-y-10">
       <section className="section-canvas min-h-[360px] p-5 sm:p-8">
         <div className="section-thread section-thread-a" />
         <div className="grid gap-8 lg:grid-cols-[1fr_300px] lg:items-end">
@@ -98,7 +98,7 @@ export default async function ReviewPage() {
           ))}
         </section>
       )}
-    </>
+    </div>
   );
 }
 
@@ -149,11 +149,11 @@ function ReviewNote({ approval }: { approval: PendingApprovalRow }) {
                 name="body"
                 rows={8}
                 defaultValue={body}
-                className="rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+                className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
               />
             </label>
             <PendingSubmitButton
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] hover:bg-[var(--color-accent)]"
+              className="btn-solid"
               icon="check"
               iconSize={17}
               pendingLabel="Approving"
@@ -166,7 +166,7 @@ function ReviewNote({ approval }: { approval: PendingApprovalRow }) {
             <input type="hidden" name="approval_id" value={approval.id} />
             <input type="hidden" name="decision" value="rejected" />
             <PendingSubmitButton
-              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 text-sm font-semibold text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)]"
+              className="btn-quiet w-full"
               icon="close"
               iconSize={17}
               pendingLabel="Rejecting"
@@ -212,7 +212,7 @@ function Field({
       <input
         name={name}
         defaultValue={defaultValue}
-        className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)] px-3 text-sm text-[var(--color-text-1)]"
+        className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
       />
     </label>
   );

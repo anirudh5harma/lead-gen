@@ -130,7 +130,7 @@ export default async function SettingsPage() {
     : "Not connected";
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-10">
       <SurfaceHero
         kicker="Settings"
         title={
@@ -187,7 +187,7 @@ export default async function SettingsPage() {
               </p>
             ) : null}
             <PendingSubmitButton
-              className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+              className="btn-solid w-fit"
               icon="check"
               pendingLabel="Saving mode"
             >
@@ -260,7 +260,7 @@ function ProfileSettingsForm({
         rows={5}
       />
       <PendingSubmitButton
-        className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+        className="btn-solid w-fit"
         icon="save"
         pendingLabel="Saving profile"
       >
@@ -297,7 +297,7 @@ function OutlookPanel({ account }: { account: SettingsOutlookAccount | null }) {
       <Link
         href="/api/auth/outlook"
         prefetch={false}
-        className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+        className="btn-solid w-fit"
       >
         <Icon name="mail" size={16} />
         {account ? "Reconnect Outlook" : "Connect Outlook"}
@@ -408,7 +408,7 @@ function TextArea({
 
 function NoWorkspaceSettings() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-10">
       <SurfaceHero
         kicker="Settings"
         title="Create a workspace."
@@ -431,7 +431,7 @@ function NoWorkspaceSettings() {
             defaultValue="bombsell-workspace"
           />
           <PendingSubmitButton
-            className="inline-flex min-h-10 w-fit items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+            className="btn-solid w-fit"
             icon="add_business"
             pendingLabel="Creating workspace"
           >

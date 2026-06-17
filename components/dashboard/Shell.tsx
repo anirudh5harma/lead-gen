@@ -70,8 +70,8 @@ export function DashboardShell({
         <div className="dashboard-route-pending" aria-hidden="true" />
       ) : null}
       {/* Top product frame */}
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[color:var(--color-line-1)] bg-[var(--color-ink-0)]/80 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-[1320px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
+      <header className="glass-nav fixed left-0 right-0 top-0 z-50">
+        <div className="mx-auto flex w-full max-w-[1200px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
             href="/dashboard"
             onClick={(event) => handleNavClick(event, "/dashboard")}
@@ -165,7 +165,7 @@ export function DashboardShell({
       </header>
 
       {/* Mobile sub-nav (visible <md) */}
-      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1320px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-1)] bg-[var(--color-ink-0)]/80 px-6 py-2 backdrop-blur-md md:hidden">
+      <nav className="glass-nav fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1200px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-1)] bg-[var(--color-ink-0)]/80 px-6 py-2 backdrop-blur-md md:hidden">
         {NAV.map((item) => {
           const active = isActivePath(pathname, item.href);
           return (
@@ -187,7 +187,7 @@ export function DashboardShell({
         })}
       </nav>
 
-      <main className="relative z-20 mx-auto w-full min-w-0 max-w-full overflow-x-clip px-6 pb-16 pt-[108px] md:max-w-[1320px] md:px-10 md:pt-[80px] lg:px-16">
+      <main className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] overflow-x-clip px-6 pb-16 pt-[108px] md:px-10 md:pt-[80px] lg:px-16">
         {children}
       </main>
     </div>
@@ -216,7 +216,7 @@ export function EmptyState({
       {cta ? (
         <Link
           href={cta.href}
-          className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-[8px] bg-[var(--color-accent)] px-4 text-sm font-semibold text-[var(--color-accent-on)] transition-colors hover:bg-[var(--color-accent-hi)]"
+          className="btn-solid mt-5 inline-flex"
         >
           {cta.icon ? <Icon name={cta.icon} size={16} /> : null}
           {cta.label}

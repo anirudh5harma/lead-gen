@@ -63,7 +63,7 @@ export function ProfileIntelligence({
         <div className="mt-5 grid gap-2 lg:grid-cols-2">
           {profile.exa_evidence_cards.slice(0, 4).map((card) => (
             <a
-              className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.52)] p-3 transition hover:border-[var(--color-line-2)]"
+              className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3 transition hover:border-[var(--color-line-2)]"
               href={card.url}
               key={card.url}
               rel="noreferrer"
@@ -103,7 +103,7 @@ function ProfileInsightGroup({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.46)] p-3">
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3">
       <span className="block text-xs font-medium uppercase tracking-[0.14em] text-[var(--color-text-3)]">{title}</span>
       <div className="mt-2 flex flex-wrap gap-2">
         {items.slice(0, compact ? 6 : 3).map((item) => (
@@ -120,7 +120,7 @@ function ProfileInsightGroup({
 
 function ProfileMetric({ label, value }: { label: string; value: number }) {
   return (
-    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[rgba(20,18,13,0.60)] p-3 text-center">
+    <span className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3 text-center">
       <strong className="block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">{value}</strong>
       <span className="mt-1 block text-xs text-[var(--color-text-3)]">{label}</span>
     </span>

@@ -135,7 +135,7 @@ function MeetingPrepPanel({
           <input type="hidden" name="return_to" value={`/dashboard/conversations/${conversationId}`} />
           <input type="hidden" name="conversation_id" value={conversationId} />
           <PendingSubmitButton
-            className="inline-flex min-h-8 items-center justify-center rounded-[8px] border border-[var(--color-line-1)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)]"
+            className="btn-quiet-sm"
             icon="schedule"
             iconSize={14}
             pendingLabel="Preparing"
@@ -165,7 +165,7 @@ function MeetingPrepPanel({
                 },
               }}
               prefetch={false}
-              className="inline-flex min-h-8 w-fit items-center gap-2 rounded-[8px] border border-[var(--color-line-1)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-text-1)]"
+              className="btn-quiet-sm w-fit"
             >
               <Icon name="event_available" size={14} />
               Connect calendar
@@ -245,7 +245,7 @@ function PendingApprovalPanel({
           <input
             name="subject"
             defaultValue={subject}
-            className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)] px-3 text-sm text-[var(--color-text-1)]"
+            className="min-h-10 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-sm text-[var(--color-text-1)]"
           />
         </label>
         <label className="grid gap-1.5">
@@ -254,11 +254,11 @@ function PendingApprovalPanel({
             name="body"
             rows={8}
             defaultValue={body}
-            className="rounded-[8px] border border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
+            className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm leading-6 text-[var(--color-text-1)]"
           />
         </label>
         <PendingSubmitButton
-          className="inline-flex min-h-10 items-center justify-center rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+          className="btn-solid"
           pendingLabel="Approving"
         >
           Approve
@@ -269,7 +269,7 @@ function PendingApprovalPanel({
         <input type="hidden" name="approval_id" value={approval.id} />
         <input type="hidden" name="decision" value="rejected" />
         <PendingSubmitButton
-          className="inline-flex min-h-10 w-full items-center justify-center rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 text-sm font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+          className="btn-quiet w-full"
           pendingLabel="Rejecting"
         >
           Reject
@@ -385,7 +385,7 @@ export default async function ConversationDetailPage({
   const latestPrep = latestMeetingPrep(events);
 
   return (
-    <>
+    <div className="space-y-10">
       <section className="section-canvas min-h-[300px] p-5 sm:p-8">
         <div className="section-thread section-thread-a" />
         <p className="brief-kicker">Outreach</p>
@@ -410,7 +410,7 @@ export default async function ConversationDetailPage({
                   className={
                     "rounded-[14px] border p-4 " +
                     (m.direction === "outbound"
-                      ? "border-[var(--color-line-1)] bg-[rgba(22,20,15,0.82)]"
+                      ? "border-[var(--color-line-1)] bg-[var(--color-ink-0)]"
                       : "border-[var(--color-line-2)] bg-[rgba(17,15,11,0.76)]")
                   }
                 >
@@ -520,7 +520,7 @@ export default async function ConversationDetailPage({
           </p>
         </aside>
       </div>
-    </>
+    </div>
   );
 }
 

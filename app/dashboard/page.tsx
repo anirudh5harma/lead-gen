@@ -1,9 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
+
+export const metadata: Metadata = {
+  title: "Brief | Bombsell",
+};
 
 export const dynamic = "force-dynamic";
 

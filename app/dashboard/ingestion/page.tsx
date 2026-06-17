@@ -38,7 +38,7 @@ export default async function SignalsPage() {
   ]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-10">
       <SurfaceHero
         kicker="Qualified signals"
         title={<>Signals worth <em>emailing now</em>.</>}
@@ -57,7 +57,7 @@ export default async function SignalsPage() {
                 <input type="hidden" name="return_to" value="/dashboard/signals" />
                 <input type="hidden" name="limit" value="25" />
                 <PendingSubmitButton
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-4 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)] active:translate-y-px"
+                  className="btn-solid"
                   icon="send"
                   pendingLabel="Preparing"
                 >
@@ -125,7 +125,7 @@ function EmailReadinessBanner({
       <Link
         href={actionHref}
         prefetch={false}
-        className="inline-flex min-h-9 items-center gap-2 rounded-[8px] bg-[var(--color-text-1)] px-3 text-sm font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+        className="btn-solid"
       >
         <Icon
           name={needsReconnect ? "login" : hasOutlook ? "health_and_safety" : "mail"}
@@ -342,7 +342,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                 <Link
                   href="/dashboard/review"
                   prefetch={false}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                  className="btn-quiet-sm"
                 >
                   <Icon name="rate_review" size={14} />
                   Review draft
@@ -352,7 +352,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                   <input type="hidden" name="approval_id" value={draft.pending_approval_id} />
                   <input type="hidden" name="decision" value="approved" />
                   <PendingSubmitButton
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+                    className="btn-solid-sm"
                     icon="check"
                     iconSize={14}
                     pendingLabel="Approving"
@@ -365,7 +365,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
                   <input type="hidden" name="approval_id" value={draft.pending_approval_id} />
                   <input type="hidden" name="decision" value="rejected" />
                   <PendingSubmitButton
-                    className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                    className="btn-quiet-sm"
                     icon="close"
                     iconSize={14}
                     pendingLabel="Rejecting"
@@ -378,7 +378,7 @@ function EmailDraftPanel({ signal }: { signal: QualifiedSignalItem }) {
               <Link
                 href={`/dashboard/conversations/${draft.conversation_id}`}
                 prefetch={false}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                className="btn-quiet-sm"
               >
                 <Icon name="forum" size={14} />
                 Open conversation

@@ -51,7 +51,7 @@ export default function OnboardingForm({
         pendingLabel="Creating workspace"
         icon="arrow_forward"
         iconSize={18}
-        className="group mt-1 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--color-accent-hi)] px-5 text-sm font-semibold text-[var(--color-accent-on)] shadow-[0_10px_24px_-14px_rgba(35,84,88,0.85)] transition-[background,transform,box-shadow] hover:bg-[var(--color-accent)] hover:shadow-[0_14px_30px_-14px_rgba(35,84,88,0.9)] active:translate-y-px disabled:cursor-wait disabled:opacity-70"
+        className="btn-solid mt-1 w-full justify-center"
       >
         Create workspace
       </PendingSubmitButton>

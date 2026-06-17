@@ -152,7 +152,7 @@ export default async function ConversationsPage() {
   const stats = await loadOutreachStats(workspace.id, awaitingReply);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-10">
       <SurfaceHero
         kicker="Email + LinkedIn"
         title={<>Move the <em>useful</em> conversations.</>}
@@ -247,7 +247,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
             <Link
               href="/dashboard/review"
               prefetch={false}
-              className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+              className="btn-quiet-sm"
             >
               <Icon name="rate_review" size={14} />
               Review
@@ -257,7 +257,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="approved" />
               <PendingSubmitButton
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] bg-[var(--color-text-1)] px-3 text-xs font-semibold text-[var(--color-ink-0)] transition-colors hover:bg-[var(--color-accent)]"
+                className="btn-solid-sm"
                 icon="check"
                 iconSize={14}
                 pendingLabel="Approving"
@@ -270,7 +270,7 @@ function ConversationLink({ conversation }: { conversation: ConversationRow }) {
               <input type="hidden" name="approval_id" value={conversation.pending_approval_id} />
               <input type="hidden" name="decision" value="rejected" />
               <PendingSubmitButton
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 text-xs font-semibold text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-ink-2)]"
+                className="btn-quiet-sm"
                 icon="close"
                 iconSize={14}
                 pendingLabel="Rejecting"
