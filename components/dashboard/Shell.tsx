@@ -22,9 +22,10 @@ export interface ShellWorkspace {
 
 const NAV: NavItem[] = [
   {
-    href: "/dashboard",
-    label: "Dashboard",
+    href: "/dashboard/brief",
+    label: "Brief",
     icon: "dashboard",
+    matches: ["/dashboard/brief", "/dashboard"],
   },
   {
     href: "/dashboard/agent",
@@ -115,8 +116,13 @@ export function DashboardShell({
       <header className="glass-nav fixed left-0 right-0 top-0 z-50">
         <div className="mx-auto flex w-full max-w-[1200px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
-            href="/dashboard"
-            onClick={(event) => handleNavClick(event, "/dashboard")}
+            href="/dashboard/brief"
+            onClick={(event) =>
+              handleNavClick(event, "/dashboard/brief", [
+                "/dashboard/brief",
+                "/dashboard",
+              ])
+            }
             className="flex items-center gap-2 text-[1.0625rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >

@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/dashboard/Shell";
 import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
 
 export const metadata: Metadata = {
-  title: "Dashboard | Bombsell",
+  title: "Brief | Bombsell",
 };
 
 export const dynamic = "force-dynamic";

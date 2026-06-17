@@ -71,7 +71,7 @@ export default async function HealthPage() {
       </section>
     );
   }
-  if (!canUseWorkspaceOps(session)) redirect("/dashboard");
+  if (!canUseWorkspaceOps(session)) redirect("/dashboard/brief");
 
   const pool = getPool();
   const [counts, dead, readiness, observability] = await Promise.all([

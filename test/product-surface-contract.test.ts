@@ -17,7 +17,8 @@ test("dashboard navigation uses active product surface routes", () => {
     shell.indexOf("function isActivePath"),
   );
 
-  assert.match(primaryNav, /href: "\/dashboard",\s+label: "Dashboard"/);
+  assert.match(primaryNav, /href: "\/dashboard\/brief",\s+label: "Brief"/);
+  assert.match(primaryNav, /matches: \["\/dashboard\/brief", "\/dashboard"\]/);
   assert.match(primaryNav, /href: "\/dashboard\/agent",\s+label: "Agent"/);
   assert.match(primaryNav, /"\/dashboard\/reps"/);
   assert.match(primaryNav, /href: "\/dashboard\/settings",\s+label: "Profile"/);
@@ -55,7 +56,7 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
 
   assert.match(shell, /DashboardShell/);
   assert.match(shell, /const NAV/);
-  assert.match(shell, /label: "Dashboard"/);
+  assert.match(shell, /label: "Brief"/);
   assert.match(shell, /label: "Agent"/);
   assert.match(shell, /label: "Profile"/);
   assert.match(layout, /<DashboardShell/);
@@ -140,7 +141,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   );
   assert.match(
     source("app/dashboard/outcomes/page.tsx"),
-    /redirect\("\/dashboard"\)/,
+    /redirect\("\/dashboard\/brief"\)/,
   );
   assert.match(
     source("app/dashboard/prospecting/loading.tsx"),
@@ -167,6 +168,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/prospects"/);
   assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/brief"/);
   assert.match(nextConfig, /destination: "\/dashboard\/settings#profile"/);
   assert.match(nextConfig, /destination: "\/dashboard\/settings#email"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#opportunities"/);
@@ -218,7 +220,9 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
   assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
   assert.match(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
-  assert.match(source("app/dashboard/brief/page.tsx"), /redirect\("\/dashboard"\)/);
+  assert.match(source("app/dashboard/brief/page.tsx"), /dynamic = "force-dynamic"/);
+  assert.match(source("app/dashboard/brief/page.tsx"), /from "\.\.\/page"/);
+  assert.match(source("app/brief/page.tsx"), /redirect\("\/dashboard\/brief"\)/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
   assert.match(appLayout, /Profile, quality signals, verified contacts/);
   assert.doesNotMatch(appLayout, /Prospecting, signal ingestion/);
@@ -348,7 +352,7 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   const dashboard = source("app/dashboard/page.tsx");
   const reps = source("app/dashboard/reps/page.tsx");
 
-  assert.match(outcomes, /redirect\("\/dashboard"\)/);
+  assert.match(outcomes, /redirect\("\/dashboard\/brief"\)/);
   assert.match(dashboard, /Replies \/ meetings/);
   assert.match(dashboard, /from outcomes o/);
   assert.match(dashboard, /Reply and meeting insights/);

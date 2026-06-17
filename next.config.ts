@@ -56,7 +56,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/dashboard/outcomes",
-        destination: "/dashboard",
+        destination: "/dashboard/brief",
         permanent: false,
       },
     ];
