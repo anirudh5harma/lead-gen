@@ -428,7 +428,7 @@ export async function optimizePlaySkillsAction(formData: FormData) {
 
 export async function prepareQualifiedSignalsAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/signals");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#opportunities");
   await dispatchSignalPlaysOnce(
     { limit: numberValue(formData, "limit", 25) },
     session,
@@ -490,7 +490,7 @@ export async function generateMeetingPrepAction(formData: FormData) {
     formData,
     conversationId
       ? `/dashboard/conversations/${conversationId}`
-      : "/dashboard/conversations",
+      : "/dashboard/agent#outreach",
   );
   if (!conversationId) {
     redirectWithToast(
@@ -598,7 +598,7 @@ export async function editCompanyProfileAction(formData: FormData) {
 
 export async function decideApprovalWithDraftAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/review");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#opportunities");
   const approvalId = value(formData, "approval_id");
   if (!approvalId) {
     redirectWithToast(
@@ -655,10 +655,7 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/agent");
   revalidatePath("/dashboard/reps");
-  revalidatePath("/dashboard/signals");
-  revalidatePath("/dashboard/ingestion");
   revalidatePath("/dashboard/review");
-  revalidatePath("/dashboard/conversations");
   revalidatePath("/dashboard/health");
   revalidatePath("/dashboard/settings");
 }

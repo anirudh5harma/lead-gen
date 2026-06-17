@@ -139,7 +139,6 @@ async function createActivationSetup(formData: FormData): Promise<void> {
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/settings");
-  revalidatePath("/dashboard/signals");
   revalidatePath("/dashboard/agent");
 }
 

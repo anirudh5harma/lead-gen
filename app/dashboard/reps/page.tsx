@@ -22,6 +22,7 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
+  decideApprovalWithDraftAction,
   dismissQualifiedSignalAction,
   optimizeCampaignStrategyAction,
   optimizePlaySkillsAction,
@@ -1367,6 +1368,44 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(signal.freshness_at)}
         </span>
+        {signal.email_draft?.pending_approval_id ? (
+          <>
+            <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+              <input
+                type="hidden"
+                name="approval_id"
+                value={signal.email_draft.pending_approval_id}
+              />
+              <input type="hidden" name="decision" value="approved" />
+              <PendingSubmitButton
+                className="btn-solid-sm"
+                icon="check"
+                iconSize={14}
+                pendingLabel="Approving"
+              >
+                Approve
+              </PendingSubmitButton>
+            </form>
+            <form action={decideApprovalWithDraftAction}>
+              <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+              <input
+                type="hidden"
+                name="approval_id"
+                value={signal.email_draft.pending_approval_id}
+              />
+              <input type="hidden" name="decision" value="rejected" />
+              <PendingSubmitButton
+                className="btn-quiet-sm"
+                icon="close"
+                iconSize={14}
+                pendingLabel="Rejecting"
+              >
+                Reject
+              </PendingSubmitButton>
+            </form>
+          </>
+        ) : null}
         <form action={dismissQualifiedSignalAction}>
           <input type="hidden" name="signal_id" value={signal.id} />
           <input type="hidden" name="return_to" value="/dashboard/agent" />
@@ -1721,12 +1760,6 @@ function AgentOutreachPanel({
     <div id="outreach" className="scroll-mt-28">
       <SurfaceSection
         title="Sent outreach"
-        action={
-          <Link href="/dashboard/conversations" className="btn-quiet-sm">
-            <Icon name="arrow_forward" size={14} />
-            Open trace
-          </Link>
-        }
       >
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">

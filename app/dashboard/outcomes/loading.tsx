@@ -1,5 +1,5 @@
 import { DashboardLoadingState } from "@/components/dashboard/LoadingState";
 
 export default function OutcomesLoading() {
-  return <DashboardLoadingState surface="outcomes" layout="rows" />;
+  return <DashboardLoadingState surface="dashboard" layout="rows" />;
 }

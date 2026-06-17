@@ -5,8 +5,8 @@ import { test } from "node:test";
 
 const root = process.cwd();
 
-test("conversation review lookup uses indexed pending approval message lookup", () => {
-  const page = readFileSync(join(root, "app/dashboard/conversations/page.tsx"), "utf8");
+test("Agent opportunity review lookup uses indexed pending approval message lookup", () => {
+  const page = readFileSync(join(root, "core/product/qualified-signals.ts"), "utf8");
   const migration = readFileSync(join(root, "db/migrations/037_workflow_approval_message_lookup.sql"), "utf8");
 
   assert.match(page, /a\.payload->>'message_id' = m\.id::text/);

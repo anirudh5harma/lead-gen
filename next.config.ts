@@ -33,6 +33,31 @@ const nextConfig: NextConfig = {
         destination: "/dashboard/settings#profile",
         permanent: false,
       },
+      {
+        source: "/dashboard/signals",
+        destination: "/dashboard/agent#opportunities",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/ingestion",
+        destination: "/dashboard/agent#opportunities",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/prospects",
+        destination: "/dashboard/agent#verified-contacts",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/conversations",
+        destination: "/dashboard/agent#outreach",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/outcomes",
+        destination: "/dashboard",
+        permanent: false,
+      },
     ];
   },
 };

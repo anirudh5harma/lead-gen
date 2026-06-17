@@ -104,7 +104,7 @@ test("Agent is the canonical dashboard surface route", () => {
   assert.doesNotMatch(productLinks, /Configure Rep", \["product\.rep\.configure"\], "\/dashboard\/reps"/);
 });
 
-test("legacy Profile routes redirect to Settings while Signals keeps the Agent view", () => {
+test("legacy list and Profile routes redirect to current product hubs", () => {
   const nextConfig = source("next.config.ts");
 
   assert.match(
@@ -121,7 +121,23 @@ test("legacy Profile routes redirect to Settings while Signals keeps the Agent v
   );
   assert.match(
     source("app/dashboard/signals/page.tsx"),
-    /from "\.\.\/ingestion\/page"/,
+    /redirect\("\/dashboard\/agent#opportunities"\)/,
+  );
+  assert.match(
+    source("app/dashboard/ingestion/page.tsx"),
+    /redirect\("\/dashboard\/agent#opportunities"\)/,
+  );
+  assert.match(
+    source("app/dashboard/prospects/page.tsx"),
+    /redirect\("\/dashboard\/agent#verified-contacts"\)/,
+  );
+  assert.match(
+    source("app/dashboard/conversations/page.tsx"),
+    /redirect\("\/dashboard\/agent#outreach"\)/,
+  );
+  assert.match(
+    source("app/dashboard/outcomes/page.tsx"),
+    /redirect\("\/dashboard"\)/,
   );
   assert.match(
     source("app/dashboard/prospecting/loading.tsx"),
@@ -134,19 +150,34 @@ test("legacy Profile routes redirect to Settings while Signals keeps the Agent v
   );
   assert.match(
     source("app/dashboard/signals/loading.tsx"),
-    /surface="signals"/,
+    /surface="reps"/,
   );
+  assert.match(source("app/dashboard/ingestion/loading.tsx"), /surface="reps"/);
+  assert.match(source("app/dashboard/prospects/loading.tsx"), /surface="reps"/);
+  assert.match(source("app/dashboard/conversations/loading.tsx"), /surface="reps"/);
+  assert.match(source("app/dashboard/outcomes/loading.tsx"), /surface="dashboard"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospecting"/);
   assert.match(nextConfig, /source: "\/dashboard\/setup"/);
   assert.match(nextConfig, /source: "\/dashboard\/deliverability"/);
+  assert.match(nextConfig, /source: "\/dashboard\/signals"/);
+  assert.match(nextConfig, /source: "\/dashboard\/ingestion"/);
+  assert.match(nextConfig, /source: "\/dashboard\/prospects"/);
+  assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
+  assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
   assert.match(nextConfig, /destination: "\/dashboard\/settings#profile"/);
   assert.match(nextConfig, /destination: "\/dashboard\/settings#email"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent#opportunities"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent#outreach"/);
 
   const actions = source("app/dashboard/actions.ts");
   assert.match(actions, /revalidatePath\("\/dashboard\/settings"\)/);
-  assert.match(actions, /revalidatePath\("\/dashboard\/signals"\)/);
+  assert.match(actions, /revalidatePath\("\/dashboard\/agent"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/prospecting"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/setup"\)/);
+  assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/signals"\)/);
+  assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/ingestion"\)/);
+  assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/conversations"\)/);
 });
 
 test("retired product surfaces redirect to Agent", () => {
@@ -269,12 +300,13 @@ test("Agent learning surface owns message optimization from reply evidence", () 
 test("Verified contacts open graph-backed profile pages with channel readiness", () => {
   const prospects = source("app/dashboard/prospects/page.tsx");
   const profile = source("app/dashboard/prospects/[id]/page.tsx");
+  const reps = source("app/dashboard/reps/page.tsx");
 
-  assert.match(prospects, /href=\{`\/dashboard\/prospects\/\$\{prospect\.id\}`\}/);
-  assert.match(prospects, /Verified contacts/);
-  assert.match(prospects, /Contacts ready for/);
-  assert.match(prospects, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
-  assert.match(prospects, /cardinality\(coalesce\(p\.emails, '\{\}'::text\[\]\)\)/);
+  assert.match(prospects, /redirect\("\/dashboard\/agent#verified-contacts"\)/);
+  assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
+  assert.match(reps, /Verified contacts/);
+  assert.match(reps, /Signal-ready contacts/);
+  assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(profile, /Verified contact/);
   assert.match(profile, /Timing evidence, channel handles, outreach, replies, and meetings/);
   assert.match(profile, /Back to contacts/);
@@ -300,17 +332,15 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   const outcomes = source("app/dashboard/outcomes/page.tsx");
   const loading = source("app/dashboard/outcomes/loading.tsx");
   const loader = source("components/dashboard/LoadingState.tsx");
+  const dashboard = source("app/dashboard/page.tsx");
+  const reps = source("app/dashboard/reps/page.tsx");
 
-  assert.match(outcomes, /kicker="Dashboard"/);
-  assert.match(outcomes, /Reply and meeting/);
-  assert.match(outcomes, /Reply insight ledger/);
-  assert.match(outcomes, /Open outreach/);
-  assert.match(outcomes, /from outcomes o/);
-  assert.match(outcomes, /left join conversations c/);
-  assert.match(outcomes, /left join reps r/);
-  assert.match(outcomes, /left join signals s/);
-  assert.match(outcomes, /href=\{`\/dashboard\/conversations\/\$\{outcome\.conversation_id\}`\}/);
-  assert.match(loading, /surface="outcomes"/);
+  assert.match(outcomes, /redirect\("\/dashboard"\)/);
+  assert.match(dashboard, /Replies \/ meetings/);
+  assert.match(dashboard, /from outcomes o/);
+  assert.match(reps, /Reply evidence/);
+  assert.match(reps, /positive_replies_7d/);
+  assert.match(loading, /surface="dashboard"/);
   assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
   assert.doesNotMatch(outcomes, /kicker="Outcomes"/);
   assert.doesNotMatch(outcomes, /Proof your Reps/);
@@ -370,9 +400,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /DMs sent/);
   assert.match(reps, /Qualified signals become verified contacts/);
-  assert.match(reps, /href="\/dashboard\/conversations"/);
+  assert.doesNotMatch(reps, /href="\/dashboard\/conversations"/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
   assert.match(reps, /#message-\$\{messageId\}/);
+  assert.match(reps, /decideApprovalWithDraftAction/);
+  assert.match(reps, /value="\/dashboard\/agent#opportunities"/);
+  assert.match(reps, /value=\{signal\.email_draft\.pending_approval_id\}/);
   assert.match(reps, /id="learning" className="scroll-mt-28"/);
   assert.match(reps, /Reply evidence/);
   assert.match(reps, /Strategy recommendation/);
@@ -428,12 +461,12 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
 test("sent outreach links open the exact draft in the conversation trace", () => {
   const outreach = source("app/dashboard/conversations/page.tsx");
   const detail = source("app/dashboard/conversations/[id]/page.tsx");
+  const reps = source("app/dashboard/reps/page.tsx");
 
-  assert.match(outreach, /kicker="Agent"/);
-  assert.match(outreach, /Sent email and LinkedIn <em>outreach<\/em>/);
-  assert.match(outreach, /<SurfaceSection title="Sent outreach">/);
-  assert.match(outreach, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
-  assert.match(outreach, /#message-\$\{messageId\}/);
+  assert.match(outreach, /redirect\("\/dashboard\/agent#outreach"\)/);
+  assert.match(reps, /<SurfaceSection\s+title="Sent outreach"/);
+  assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
+  assert.match(reps, /#message-\$\{messageId\}/);
   assert.doesNotMatch(outreach, /kicker="Outreach"/);
   assert.doesNotMatch(outreach, /kicker="Inbox"/);
   assert.doesNotMatch(outreach, /Sent list/);
@@ -487,26 +520,20 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(productApp, /runWorkspaceSourcePollNow/);
   assert.match(productApp, /workflow_name: WORKSPACE_POLL_WORKFLOW/);
   assert.match(productApp, /workspace-source-manual/);
-  assert.match(signals, /kicker="Agent"/);
-  assert.match(signals, /Quality signals ready for <em>outreach<\/em>/);
-  assert.match(signals, /verified emails or LinkedIn profiles/);
-  assert.match(signals, /LinkedIn profiles/);
-  assert.match(signals, /HeroStat label="Outlook"/);
-  assert.match(signals, /Prepare outreach/);
-  assert.match(signals, /<SurfaceSection title="Quality signals">/);
-  assert.match(signals, /LinkedIn profile/);
-  assert.match(signals, /Judged outreach draft/);
-  assert.match(signals, /email or LinkedIn draft/);
-  assert.match(signals, /Open sent outreach/);
-  assert.match(signals, /Create a profile first/);
-  assert.match(signals, /Tune the profile/);
+  assert.match(signals, /redirect\("\/dashboard\/agent#opportunities"\)/);
+  assert.match(reps, /Qualified signals/);
+  assert.match(reps, /verified emails and LinkedIn profiles/);
+  assert.match(reps, /LinkedIn profile/);
+  assert.match(reps, /Signal-to-outreach queue/);
+  assert.match(reps, /email or\s+LinkedIn drafts/);
+  assert.match(reps, /Tune profile/);
   assert.doesNotMatch(signals, /prospecting profile/);
   assert.doesNotMatch(signals, /kicker="Qualified signals"/);
   assert.doesNotMatch(signals, /Signals worth <em>emailing now<\/em>/);
   assert.doesNotMatch(signals, /HeroStat label="Inbox"/);
   assert.doesNotMatch(signals, /Prepare contacts \+ drafts/);
   assert.doesNotMatch(signals, /signal-to-email outreach run/);
-  assert.match(signals, /\/api\/auth\/outlook\?return_to=\/dashboard\/signals/);
+  assert.doesNotMatch(signals, /\/api\/auth\/outlook\?return_to=\/dashboard\/signals/);
   assert.doesNotMatch(signals, /"\/api\/auth\/outlook"/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
   assert.match(onboardingActions, /wait: false/);

@@ -512,7 +512,7 @@ export default async function ConversationDetailPage({
 
           <p className="text-xs text-[var(--color-text-3)]">
             <Link
-              href="/dashboard/conversations"
+              href="/dashboard/agent#outreach"
               prefetch={false}
               className="hover:text-[var(--color-text-1)]"
             >

@@ -1,5 +1,7 @@
-import SignalsPage from "../ingestion/page";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default SignalsPage;
+export default function SignalsPage() {
+  redirect("/dashboard/agent#opportunities");
+}

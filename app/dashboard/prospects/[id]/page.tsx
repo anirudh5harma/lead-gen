@@ -270,7 +270,7 @@ export default async function ProspectProfilePage({
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link href="/dashboard/prospects" className="btn-quiet-sm">
+        <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
           <Icon name="arrow_back" size={14} />
           Back to contacts
         </Link>
