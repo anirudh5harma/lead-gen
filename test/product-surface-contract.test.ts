@@ -39,11 +39,11 @@ test("dashboard navigation uses active product surface routes", () => {
   assert.match(shell, /aria-label="Product flow"/);
   assert.match(shell, /href: "\/dashboard\/settings#profile"/);
   assert.match(shell, /href: "\/dashboard\/agent#sources"/);
-  assert.match(shell, /href: "\/dashboard\/signals"/);
+  assert.match(shell, /href: "\/dashboard\/agent#opportunities"/);
   assert.match(shell, /href: "\/dashboard\/agent#outreach"/);
   assert.match(shell, /detail: "ICP \+ integrations"/);
   assert.match(shell, /detail: "Signal strategy"/);
-  assert.match(shell, /detail: "Qualified contacts"/);
+  assert.match(shell, /detail: "Signal queue"/);
   assert.match(shell, /detail: "Emails \+ DMs"/);
   assert.match(shell, /metric: "profile"/);
   assert.match(shell, /metric: "sources"/);
@@ -169,7 +169,7 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /Agent insight/);
   assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
-  assert.match(dashboard, /href="\/dashboard\/agent#verified-contacts"/);
+  assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
   assert.match(source("app/dashboard/brief/page.tsx"), /redirect\("\/dashboard"\)/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
   assert.match(appLayout, /Profile, quality signals, verified contacts/);
@@ -324,7 +324,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /visibleReps = state\.reps\.filter\(isVisibleProductAgent\)/);
   assert.match(reps, /return rep\.role === "sdr"/);
   assert.match(reps, /Verified contacts/);
-  assert.match(reps, /Opportunities/);
+  assert.match(reps, /Qualified signals/);
   assert.match(reps, /Source strategy/);
   assert.match(reps, /Sequence/);
   assert.match(reps, /Keywords watched/);
@@ -333,6 +333,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /graph_sources/);
   assert.match(reps, /coalesce\(compiled->>'channel', ''\)/);
   assert.match(reps, /id="sources" className="scroll-mt-28"/);
+  assert.match(reps, /id="opportunities" className="scroll-mt-28"/);
   assert.match(reps, /runAgentSourceNowAction/);
   assert.match(reps, /Run now/);
   assert.match(reps, /name="source_id" value=\{source\.id\}/);
@@ -341,6 +342,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Verified email/);
   assert.match(reps, /Draft ready/);
   assert.match(reps, /opportunityHref\(signal, contact\)/);
+  assert.match(reps, /return "\/dashboard\/agent#opportunities"/);
   assert.match(reps, /sentDraftHref\(\s*signal\.email_draft\.conversation_id/);
   assert.match(reps, /dismissQualifiedSignalAction/);
   assert.match(reps, /Skip opportunity/);

@@ -387,7 +387,7 @@ function DashboardMetric({
 function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
   return (
     <Link
-      href="/dashboard/agent#verified-contacts"
+      href="/dashboard/agent#opportunities"
       className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 transition-colors hover:border-[var(--color-line-3)]"
     >
       <span className="min-w-0">

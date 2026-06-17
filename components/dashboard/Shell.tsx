@@ -108,9 +108,9 @@ const FLOW: FlowItem[] = [
     matches: ["/dashboard/agent", "/dashboard/reps"],
   },
   {
-    href: "/dashboard/signals",
+    href: "/dashboard/agent#opportunities",
     label: "Signals",
-    detail: "Qualified contacts",
+    detail: "Signal queue",
     icon: "fact_check",
     metric: "signals",
     matches: ["/dashboard/signals", "/dashboard/ingestion", "/dashboard/prospects"],

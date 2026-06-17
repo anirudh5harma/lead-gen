@@ -1212,60 +1212,62 @@ function AgentOpportunityPanel({
   opportunities: QualifiedSignalWorkbench;
 }) {
   return (
-    <SurfaceSection
-      title="Opportunities"
-      action={
-        <Link href="/dashboard/signals" className="btn-quiet-sm">
-          <Icon name="arrow_forward" size={14} />
-          Open signals
-        </Link>
-      }
-    >
-      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-          <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Signal-to-outreach queue
-          </p>
-          <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
-            <MiniStat label="Qualified" value={opportunities.stats.qualified} />
-            <MiniStat
-              label="Verified contacts"
-              value={opportunities.stats.with_verified_contacts}
-            />
-            <MiniStat
-              label="Drafted"
-              value={opportunities.stats.with_email_draft}
-            />
-            <MiniStat
-              label="Needs review"
-              value={opportunities.stats.ready_for_review}
-            />
-          </div>
-          <p className="text-xs leading-5 text-[var(--color-text-3)]">
-            The agent ranks qualified signals by fit, checks reachable people,
-            and prepares judged outreach before anything leaves a channel.
-          </p>
-        </aside>
+    <div id="opportunities" className="scroll-mt-28">
+      <SurfaceSection
+        title="Qualified signals"
+        action={
+          <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
+            <Icon name="arrow_forward" size={14} />
+            View contacts
+          </Link>
+        }
+      >
+        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Signal-to-outreach queue
+            </p>
+            <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
+              <MiniStat label="Qualified" value={opportunities.stats.qualified} />
+              <MiniStat
+                label="Verified contacts"
+                value={opportunities.stats.with_verified_contacts}
+              />
+              <MiniStat
+                label="Drafted"
+                value={opportunities.stats.with_email_draft}
+              />
+              <MiniStat
+                label="Needs review"
+                value={opportunities.stats.ready_for_review}
+              />
+            </div>
+            <p className="text-xs leading-5 text-[var(--color-text-3)]">
+              The agent ranks qualified signals by fit, checks reachable people,
+              and prepares judged outreach before anything leaves a channel.
+            </p>
+          </aside>
 
-        {opportunities.signals.length === 0 ? (
-          <EmptyState
-            title="No opportunities ready yet"
-            hint="Complete the profile, define targeting, and connect accounts so qualified signals can turn into verified outreach."
-            cta={{
-              href: "/dashboard/settings#profile",
-              label: "Tune profile",
-              icon: "person_search",
-            }}
-          />
-        ) : (
-          <div className="grid gap-2">
-            {opportunities.signals.map((signal) => (
-              <AgentOpportunityLink key={signal.id} signal={signal} />
-            ))}
-          </div>
-        )}
-      </div>
-    </SurfaceSection>
+          {opportunities.signals.length === 0 ? (
+            <EmptyState
+              title="No qualified signals ready yet"
+              hint="Complete the profile, define targeting, and connect accounts so qualified signals can turn into verified outreach."
+              cta={{
+                href: "/dashboard/settings#profile",
+                label: "Tune profile",
+                icon: "person_search",
+              }}
+            />
+          ) : (
+            <div className="grid gap-2">
+              {opportunities.signals.map((signal) => (
+                <AgentOpportunityLink key={signal.id} signal={signal} />
+              ))}
+            </div>
+          )}
+        </div>
+      </SurfaceSection>
+    </div>
   );
 }
 
@@ -1385,7 +1387,7 @@ function opportunityHref(
     );
   }
   if (contact?.person_id) return `/dashboard/prospects/${contact.person_id}`;
-  return "/dashboard/signals";
+  return "/dashboard/agent#opportunities";
 }
 
 function AgentContactsPanel({
