@@ -8,21 +8,21 @@ import { googleAuthPath, PRODUCT_HOME_PATH } from '@/lib/auth/next'
 
 const FEATURES = [
   {
-    eyebrow: 'Prospecting',
-    title: 'Your market graph builds itself',
+    eyebrow: 'Profile',
+    title: 'Your buyer profile builds itself',
     description:
-      'Bombsell constructs your total addressable market from your website, ICP, and existing data. The graph updates automatically as your market evolves. No manual list building.',
+      'Bombsell learns your company, ICP, value proposition, and sender accounts from your website and profile. No manual list building.',
     points: [
       { icon: 'person', text: 'AI scoring with clear explanations for every account' },
-      { icon: 'travel_explore', text: 'Find accounts by intent, not just firmographics' },
-      { icon: 'sensors', text: 'Grounded in your ICP and existing customer patterns' },
+      { icon: 'travel_explore', text: 'Find accounts by intent and fit' },
+      { icon: 'sensors', text: 'Grounded in your ICP and connected channels' },
     ],
   },
   {
-    eyebrow: 'Signals',
+    eyebrow: 'Quality signals',
     title: 'Know who to contact and when',
     description:
-      'Overlay custom signals on your target accounts to prioritize outreach. Track job postings, tech changes, news, and inbound activity in one place.',
+      'Track job posts, funding, product launches, hiring, news, and inbound activity so outreach starts from real timing evidence.',
     points: [
       { icon: 'tune', text: 'Custom signals across job posts, tech stack, and news' },
       { icon: 'monitor_heart', text: 'Inbound activity tracking across all channels' },
@@ -30,25 +30,25 @@ const FEATURES = [
     ],
   },
   {
-    eyebrow: 'Plays',
-    title: 'Outbound that runs itself',
+    eyebrow: 'Verified contacts',
+    title: 'Find the person and the channel',
     description:
-      'Demand generation with your guardrails. Bombsell enrolls the right prospects, sends personalized messages, and follows up automatically.',
+      'Qualified signals turn into reachable contacts with verified email handles and LinkedIn profiles before the agent writes.',
     points: [
-      { icon: 'account_tree', text: 'Pre-built sequences you customize in minutes' },
-      { icon: 'forum', text: 'Messages adapt to business context and intent' },
-      { icon: 'task_alt', text: 'Human review gates before anything sends' },
+      { icon: 'account_tree', text: 'Email and LinkedIn readiness in one view' },
+      { icon: 'forum', text: 'Contact context attached to every signal' },
+      { icon: 'task_alt', text: 'Quality checks before a draft can send' },
     ],
   },
   {
-    eyebrow: 'Outcomes',
-    title: 'A CRM that maintains itself',
+    eyebrow: 'Agent outreach',
+    title: 'Emails and DMs go out with proof',
     description:
-      'Every interaction is captured, summarized, and attached to the right account and contact. Your pipeline reflects reality, not rep hygiene.',
+      'The agent sends email and LinkedIn outreach, tracks replies and meetings, and keeps every sent draft inspectable.',
     points: [
-      { icon: 'fact_check', text: 'Auto-enrichment keeps every record current' },
-      { icon: 'report', text: 'Risk detection flags ghosting and stalls early' },
-      { icon: 'sync_alt', text: 'Pipeline stages driven by real engagement signals' },
+      { icon: 'fact_check', text: 'Every message tied to the signal that triggered it' },
+      { icon: 'report', text: 'Reply and meeting insights in the dashboard' },
+      { icon: 'sync_alt', text: 'Outreach history attached to each contact' },
     ],
   },
 ]
@@ -104,17 +104,6 @@ const TRUST_BADGES = [
   'Free forever tier',
 ]
 
-const MARQUEE_ITEMS = [
-  'Signal-led outbound',
-  'AI scoring',
-  'Auto-enrichment',
-  'Human review gates',
-  'Multi-channel plays',
-  'Real-time intent',
-  'Smart sequencing',
-  'Pipeline tracking',
-]
-
 export default function Home() {
   return (
     <main className="monaco-canvas relative isolate min-h-[100dvh] overflow-hidden text-[var(--color-text-1)]">
@@ -167,7 +156,7 @@ export default function Home() {
           </ScrollReveal>
           <ScrollReveal delay={0.3}>
             <p className="mx-auto mt-4 max-w-[480px] text-[17px] leading-[1.55] text-[var(--color-text-2)]">
-              Signal-led prospecting, AI-personalized outreach, and self-updating CRM — all in one platform.
+              Quality signals, verified contacts, and email or LinkedIn outreach in one focused agent.
             </p>
           </ScrollReveal>
 
@@ -289,7 +278,7 @@ export default function Home() {
                 Start growing your pipeline today
               </h2>
               <p className="mt-4 text-[16px] leading-[1.65] text-[var(--color-text-2)]">
-                Free to start. No credit card required. Your first prospecting graph builds in minutes.
+                Free to start. No credit card required. Your first buyer profile builds in minutes.
               </p>
               <div className="mt-8">
                 <Link href="/onboarding" className="btn-solid">
@@ -311,7 +300,7 @@ export default function Home() {
                 Bombsell
               </div>
               <p className="mt-4 max-w-[260px] text-[13px] leading-[1.6] text-[var(--color-text-3)]">
-                Signal-led outbound for modern GTM teams. Build the graph, watch for signals, run the plays.
+                Signal-led outbound for modern GTM teams. Build the profile, watch for quality signals, and let the agent send.
               </p>
             </div>
             {Object.entries(FOOTER_LINKS).map(([category, links]) => (
@@ -411,80 +400,29 @@ function BrowserMockup({ children }: { children: React.ReactNode }) {
   )
 }
 
-function DashboardPreview() {
-  return (
-    <div className="grid gap-4">
-      <div className="flex items-center gap-3 border-b border-[var(--color-line-1)] pb-3">
-        <div className="flex items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-[6px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
-            <Icon name="person" size={14} />
-          </span>
-          <span className="text-[13px] font-semibold text-[var(--color-text-1)]">Bombsell</span>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="rounded-[6px] bg-[var(--color-pos-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-pos)]">Connected</span>
-          <span className="grid size-7 place-items-center rounded-full bg-[var(--color-ink-2)] text-[var(--color-text-3)] text-[10px] font-semibold">JD</span>
-        </div>
-      </div>
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: 'Prospects', value: '1,247', change: '+12' },
-          { label: 'Signals', value: '34', change: '+5' },
-          { label: 'Active', value: '8', change: '+2' },
-          { label: 'Meetings', value: '3', change: '+1' },
-        ].map((m) => (
-          <div key={m.label} className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3">
-            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-3)]">{m.label}</p>
-            <p className="mt-1 text-[18px] font-semibold tabular-nums text-[var(--color-text-1)]">{m.value}</p>
-            <p className="text-[10px] text-[var(--color-pos)]">{m.change} this week</p>
-          </div>
-        ))}
-      </div>
-      <div className="grid gap-2">
-        {[
-          { letter: 'A', name: 'Acme Corporation', detail: 'Hiring SDRs · 94 score', status: 'Ready', statusColor: 'pos' },
-          { letter: 'B', name: 'Beta Labs', detail: 'Raised Series B · 87 score', status: 'Enrolling', statusColor: 'warn' },
-          { letter: 'G', name: 'Gamma Inc', detail: 'New CTO · 91 score', status: 'Ready', statusColor: 'pos' },
-        ].map((item) => (
-          <div key={item.name} className="flex items-center gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2.5">
-            <span className="grid size-7 place-items-center rounded-[6px] bg-[var(--color-accent-bg)] text-[var(--color-accent)] text-[10px] font-semibold">{item.letter}</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-medium text-[var(--color-text-1)]">{item.name}</p>
-              <p className="text-[11px] text-[var(--color-text-3)]">{item.detail}</p>
-            </div>
-            <span className={`shrink-0 rounded-[6px] px-2 py-0.5 text-[10px] font-medium ${item.statusColor === 'pos' ? 'bg-[var(--color-pos-bg)] text-[var(--color-pos)]' : 'bg-[var(--color-warn-bg)] text-[var(--color-warn)]'}`}>
-              {item.status}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function FeatureMockup({ feature }: { feature: string }) {
-  if (feature === 'Prospecting') {
+  if (feature === 'Profile') {
     return (
       <div className="grid gap-2">
         <div className="flex items-center gap-2 border-b border-[var(--color-line-1)] pb-2">
-          <span className="text-[11px] font-medium text-[var(--color-text-3)]">Top prospects</span>
-          <span className="ml-auto text-[10px] text-[var(--color-text-4)]">Sorted by score</span>
+          <span className="text-[11px] font-medium text-[var(--color-text-3)]">Profile readiness</span>
+          <span className="ml-auto text-[10px] text-[var(--color-text-4)]">4/5 ready</span>
         </div>
-        {['Acme Corp', 'Beta Labs', 'Gamma Inc', 'Delta Co', 'Epsilon LLC'].map((name, i) => (
+        {['Company', 'ICP', 'Outlook', 'LinkedIn', 'Templates'].map((name, i) => (
           <div key={name} className="flex items-center gap-3 rounded-[6px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2">
-            <span className="grid size-6 place-items-center rounded-[4px] bg-[var(--color-accent-bg)] text-[var(--color-accent)] text-[10px] font-semibold">{name[0]}</span>
+            <span className="grid size-6 place-items-center rounded-[4px] bg-[var(--color-accent-bg)] text-[var(--color-accent)] text-[10px] font-semibold">{i + 1}</span>
             <div className="min-w-0 flex-1">
               <p className="text-[12px] font-medium text-[var(--color-text-1)]">{name}</p>
-              <p className="text-[10px] text-[var(--color-text-3)]">{['Software', 'Biotech', 'Fintech', 'Retail', 'AI'][i]}</p>
+              <p className="text-[10px] text-[var(--color-text-3)]">{['Value prop saved', 'Target buyers set', 'Mailbox connected', 'Needs account', 'Voice ready'][i]}</p>
             </div>
-            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-[var(--color-accent)]">{['94', '87', '91', '82', '96'][i]}</span>
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-[var(--color-accent)]">{i === 3 ? 'Need' : 'Ready'}</span>
           </div>
         ))}
       </div>
     )
   }
 
-  if (feature === 'Signals') {
+  if (feature === 'Quality signals') {
     return (
       <div className="grid gap-2">
         <div className="flex items-center gap-2 border-b border-[var(--color-line-1)] pb-2">
@@ -503,23 +441,23 @@ function FeatureMockup({ feature }: { feature: string }) {
     )
   }
 
-  if (feature === 'Plays') {
+  if (feature === 'Verified contacts') {
     return (
       <div className="grid gap-2">
         <div className="flex items-center gap-2 border-b border-[var(--color-line-1)] pb-2">
-          <span className="text-[11px] font-medium text-[var(--color-text-3)]">Active plays</span>
+          <span className="text-[11px] font-medium text-[var(--color-text-3)]">Signal-ready contacts</span>
         </div>
-        {['Signal-led outreach', 'Hiring-intent follow-up', 'Event follow-up', 'Re-engagement', 'Demo request'].map((play, i) => (
-          <div key={play} className="flex items-center gap-3 rounded-[6px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2">
+        {['Maya Chen', 'Jordan Lee', 'Nina Patel', 'Oscar Grant', 'Ari Kim'].map((contact, i) => (
+          <div key={contact} className="flex items-center gap-3 rounded-[6px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2">
             <span className="grid size-6 place-items-center rounded-[4px] bg-[var(--color-ink-2)] text-[var(--color-text-3)]">
-              <Icon name="science" size={12} />
+              <Icon name={i % 2 === 0 ? 'mail' : 'forum'} size={12} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[12px] font-medium text-[var(--color-text-1)]">{play}</p>
-              <p className="text-[10px] text-[var(--color-text-4)]">{['17', '42', '8', '23', '5'][i]} enrolled</p>
+              <p className="text-[12px] font-medium text-[var(--color-text-1)]">{contact}</p>
+              <p className="text-[10px] text-[var(--color-text-4)]">{['Email + LinkedIn', 'LinkedIn profile', 'Verified email', 'Email + LinkedIn', 'Verified email'][i]}</p>
             </div>
             <span className={`shrink-0 rounded-[4px] px-1.5 py-0.5 text-[9px] font-medium ${i === 0 ? 'bg-[var(--color-pos-bg)] text-[var(--color-pos)]' : 'bg-[var(--color-ink-2)] text-[var(--color-text-3)]'}`}>
-              {i === 0 ? 'Running' : 'Draft'}
+              {i === 0 ? 'Ready' : 'Matched'}
             </span>
           </div>
         ))}
@@ -527,13 +465,13 @@ function FeatureMockup({ feature }: { feature: string }) {
     )
   }
 
-  // Outcomes
+  // Agent outreach
   return (
     <div className="grid gap-3">
       {[
-        { label: 'Meetings this week', value: '7' },
-        { label: 'Positive replies', value: '12' },
-        { label: 'Pipeline created', value: '$84k' },
+        { label: 'Emails sent', value: '38' },
+        { label: 'LinkedIn DMs', value: '21' },
+        { label: 'Replies / meetings', value: '9' },
       ].map((item) => (
         <div key={item.label} className="flex items-center justify-between rounded-[6px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2">
           <span className="text-[11px] text-[var(--color-text-3)]">{item.label}</span>
@@ -543,7 +481,7 @@ function FeatureMockup({ feature }: { feature: string }) {
       <div className="mt-1 h-2 rounded-full bg-[var(--color-ink-2)] overflow-hidden">
         <div className="h-full w-[65%] rounded-full bg-[var(--color-accent)]" />
       </div>
-      <p className="text-[10px] text-[var(--color-text-4)]">65% of quarterly target</p>
+      <p className="text-[10px] text-[var(--color-text-4)]">Every sent draft is inspectable</p>
     </div>
   )
 }

@@ -901,7 +901,7 @@ function RepCard({
       <div className="grid gap-2 sm:grid-cols-3">
         <MiniStat label="Open" value={Number(rep.open_conversations)} />
         <MiniStat label="Sent 7d" value={Number(rep.sent_7d)} />
-        <MiniStat label="Outcomes 7d" value={Number(rep.outcomes_7d)} />
+        <MiniStat label="Replies 7d" value={Number(rep.outcomes_7d)} />
       </div>
       <div className="grid gap-2 border-t border-[var(--color-line-1)] pt-3 sm:grid-cols-2">
         <RepChannelPill

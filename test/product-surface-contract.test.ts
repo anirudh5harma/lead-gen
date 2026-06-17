@@ -137,7 +137,14 @@ test("Prospects open graph-backed profile pages with channel readiness", () => {
 
   assert.match(prospects, /href=\{`\/dashboard\/prospects\/\$\{prospect\.id\}`\}/);
   assert.match(prospects, /Profile/);
-  assert.match(profile, /Prospect profile/);
+  assert.match(prospects, /Verified contacts/);
+  assert.match(prospects, /Contacts ready for/);
+  assert.match(profile, /Verified contact/);
+  assert.match(profile, /Timing evidence, channel handles, outreach, replies, and meetings/);
+  assert.match(profile, /Back to contacts/);
+  assert.match(profile, /No outreach yet/);
+  assert.match(profile, /href: "\/dashboard\/reps#outreach"/);
+  assert.match(profile, /Replies and meetings/);
   assert.match(profile, /from graph_persons p/);
   assert.match(profile, /left join graph_companies/);
   assert.match(profile, /from signals s/);
@@ -146,6 +153,9 @@ test("Prospects open graph-backed profile pages with channel readiness", () => {
   assert.match(profile, /from channel_accounts ca/);
   assert.match(profile, /Connect LinkedIn/);
   assert.match(profile, /Connect Outlook/);
+  assert.doesNotMatch(profile, /Prospect profile/);
+  assert.doesNotMatch(profile, /Open Plays/);
+  assert.doesNotMatch(profile, /Reps act on/);
 });
 
 test("Outcomes have a first-class primitive surface", () => {
@@ -194,7 +204,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Connect LinkedIn/);
   assert.match(reps, /Open agent/);
   assert.match(reps, /Profile, accounts, and limits stay in\s+Profile/);
+  assert.match(reps, /Replies 7d/);
   assert.doesNotMatch(reps, /<RepCard key=\{rep\.id\} rep=\{rep\} \/>/);
+  assert.doesNotMatch(reps, /Outcomes 7d/);
 });
 
 test("sent outreach links open the exact draft in the conversation trace", () => {
@@ -504,7 +516,12 @@ test("visual system uses the clean light operating surface", () => {
   assert.match(globals, /:root \{ color-scheme: light; \}/);
   assert.match(layout, /colorScheme: "light"/);
   assert.match(home, /Autonomous Outbound/);
-  assert.match(home, /Signal-led prospecting/);
+  assert.match(home, /Quality signals, verified contacts/);
+  assert.match(home, /email or LinkedIn outreach/);
+  assert.match(home, /Your buyer profile builds itself/);
+  assert.doesNotMatch(home, /Signal-led prospecting/);
+  assert.doesNotMatch(home, /Multi-channel plays/);
+  assert.doesNotMatch(home, /run the plays/);
   assert.doesNotMatch(home, /function SolarSystem/);
   assert.match(design, /The Signal Operating Surface/);
 });

@@ -147,9 +147,9 @@ export default async function ProspectsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Prospects"
+        kicker="Verified contacts"
         title="No workspace selected."
-        description="Create a workspace profile first, then Bombsell can build the people and company graph your Reps act on."
+        description="Create a workspace profile first, then Bombsell can build verified email and LinkedIn contacts."
       />
     );
   }
@@ -162,13 +162,13 @@ export default async function ProspectsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Prospects"
+        kicker="Verified contacts"
         title={
           <>
-            The people your Reps can <em>act on</em>.
+            Contacts ready for <em>email and LinkedIn</em>.
           </>
         }
-        description="A graph-backed view of target people, companies, channel handles, signals, and active conversations. Setup defines the ICP; this is the working market."
+        description="A graph-backed view of target people, companies, verified channel handles, timing signals, and active outreach."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="People" value={stats.people} />
@@ -190,7 +190,7 @@ export default async function ProspectsPage() {
       </section>
 
       <SurfaceSection
-        title="Prospect graph"
+        title="Contact graph"
         action={
           <Link href="/dashboard/settings#profile" className="btn-solid-sm">
             <Icon name="tune" size={14} />
@@ -200,7 +200,7 @@ export default async function ProspectsPage() {
       >
         {prospects.length === 0 ? (
           <EmptyState
-            title="No prospects in the graph yet."
+            title="No verified contacts in the graph yet."
             hint="Tune the company profile and signal sources so Bombsell can start collecting target people and companies."
             cta={{
               href: "/dashboard/settings#profile",

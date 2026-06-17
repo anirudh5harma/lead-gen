@@ -228,7 +228,7 @@ export default async function ProspectProfilePage({
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Prospect profile"
+        kicker="Verified contact"
         title="No workspace selected."
         description="Create a workspace before opening graph-backed contact profiles."
       />
@@ -248,7 +248,7 @@ export default async function ProspectProfilePage({
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Prospect profile"
+        kicker="Verified contact"
         title={
           <>
             {prospect.full_name} <em>at {company}</em>.
@@ -256,14 +256,14 @@ export default async function ProspectProfilePage({
         }
         description={
           prospect.title
-            ? `${prospect.title}. Every Signal, Conversation, and Outcome here is tied back to the graph profile Reps act on.`
-            : "Every Signal, Conversation, and Outcome here is tied back to the graph profile Reps act on."
+            ? `${prospect.title}. Timing evidence, channel handles, outreach, replies, and meetings are tied back to this contact.`
+            : "Timing evidence, channel handles, outreach, replies, and meetings are tied back to this contact."
         }
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Signals" value={signals.length} />
-            <HeroStat label="Conversations" value={conversations.length} />
-            <HeroStat label="Outcomes" value={outcomes.length} />
+            <HeroStat label="Outreach" value={conversations.length} />
+            <HeroStat label="Replies" value={outcomes.length} />
             <HeroStat label="Reachable" value={reachable ? "Yes" : "No"} />
           </div>
         }
@@ -272,7 +272,7 @@ export default async function ProspectProfilePage({
       <div className="flex flex-wrap items-center gap-2">
         <Link href="/dashboard/prospects" className="btn-quiet-sm">
           <Icon name="arrow_back" size={14} />
-          Back to prospects
+          Back to contacts
         </Link>
         <Link href="/dashboard/settings#email" className="btn-solid-sm">
           <Icon name="account_tree" size={14} />
@@ -348,12 +348,12 @@ export default async function ProspectProfilePage({
           <SurfaceSection title="Conversations">
             {conversations.length === 0 ? (
               <EmptyState
-                title="No Conversations yet."
-                hint="When a Play opens email or LinkedIn outreach for this profile, the thread will appear here."
+                title="No outreach yet."
+                hint="When a qualified signal starts email or LinkedIn outreach for this contact, the thread will appear here."
                 cta={{
-                  href: "/dashboard/plays",
-                  label: "Open Plays",
-                  icon: "science",
+                  href: "/dashboard/reps#outreach",
+                  label: "Open Agent",
+                  icon: "arrow_forward",
                 }}
               />
             ) : (
@@ -372,7 +372,7 @@ export default async function ProspectProfilePage({
         <aside className="grid h-fit gap-4">
           <ProfilePanel prospect={prospect} />
           <CompanyPanel prospect={prospect} />
-          <OutcomesPanel outcomes={outcomes} />
+          <ReplyInsightPanel outcomes={outcomes} />
         </aside>
       </section>
     </div>
@@ -467,7 +467,7 @@ function ConversationRow({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{conversation.status.replace(/_/g, " ")}</Badge>
-          {conversation.rep_name ? <Badge>{conversation.rep_name}</Badge> : null}
+          {conversation.rep_name ? <Badge>Agent</Badge> : null}
           {conversation.latest_message_status ? (
             <Badge>{conversation.latest_message_status.replace(/_/g, " ")}</Badge>
           ) : null}
@@ -528,15 +528,15 @@ function CompanyPanel({ prospect }: { prospect: ProspectProfileRow }) {
   );
 }
 
-function OutcomesPanel({ outcomes }: { outcomes: ProfileOutcomeRow[] }) {
+function ReplyInsightPanel({ outcomes }: { outcomes: ProfileOutcomeRow[] }) {
   return (
     <div className="section-note">
       <p className="text-sm font-semibold text-[var(--color-text-1)]">
-        Outcomes
+        Replies and meetings
       </p>
       {outcomes.length === 0 ? (
         <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
-          No scored result yet.
+          No reply or meeting insight yet.
         </p>
       ) : (
         <div className="mt-4 grid gap-3">
