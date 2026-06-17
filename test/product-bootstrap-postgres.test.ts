@@ -229,15 +229,15 @@ test("product configuration events append changed user state but dedupe exact re
     assert.equal(rep.rows[0].user_events, "2");
 
     await configureWorkspaceEmailAccount(
-      { display_name: "sampark@go.bombsell.example", daily_cap: 10 },
+      { display_name: "outbound@go.bombsell.example", daily_cap: 10 },
       session,
     );
     await configureWorkspaceEmailAccount(
-      { display_name: "sampark@try.bombsell.example", daily_cap: 10 },
+      { display_name: "outbound@try.bombsell.example", daily_cap: 10 },
       session,
     );
     await configureWorkspaceEmailAccount(
-      { display_name: "sampark@try.bombsell.example", daily_cap: 10 },
+      { display_name: "outbound@try.bombsell.example", daily_cap: 10 },
       session,
     );
 
@@ -255,7 +255,7 @@ test("product configuration events append changed user state but dedupe exact re
         where workspace_id = $1 and id = $2`,
       [boot.workspace_id, boot.channel_account_id],
     );
-    assert.equal(account.rows[0].display_name, "sampark@try.bombsell.example");
+    assert.equal(account.rows[0].display_name, "outbound@try.bombsell.example");
     assert.equal(account.rows[0].user_events, "2");
   } finally {
     await resetProductEngineForTests();

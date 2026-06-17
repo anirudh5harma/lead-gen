@@ -216,6 +216,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /AgentContactsPanel/);
   assert.match(reps, /AgentOutreachPanel/);
   assert.match(reps, /AgentOpportunityPanel/);
+  assert.match(reps, /AgentStrategyPanel/);
+  assert.match(reps, /AgentSequencePanel/);
+  assert.match(reps, /loadAgentSourceStrategy/);
   assert.match(reps, /loadQualifiedSignalWorkbench/);
   assert.match(reps, /loadAgentContactSummary/);
   assert.match(reps, /loadAgentOutreachSummary/);
@@ -223,6 +226,13 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /return rep\.role === "sdr"/);
   assert.match(reps, /Verified contacts/);
   assert.match(reps, /Opportunities/);
+  assert.match(reps, /Source strategy/);
+  assert.match(reps, /Sequence/);
+  assert.match(reps, /Keywords watched/);
+  assert.match(reps, /Competitor audience/);
+  assert.match(reps, /workspace_source_configs/);
+  assert.match(reps, /graph_sources/);
+  assert.match(reps, /coalesce\(compiled->>'channel', ''\)/);
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /The agent ranks qualified signals/);
   assert.match(reps, /Verified email/);

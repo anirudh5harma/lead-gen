@@ -201,7 +201,7 @@ export async function runFirstVerticalSlice(
     accounts: [
       {
         id: randomUUID(),
-        display_name: "sampark@go.bombsell.example",
+        display_name: "outbound@go.bombsell.example",
         kind: "email_domain",
         status: "connected",
         daily_cap: opts.emailDailyCap ?? 10,

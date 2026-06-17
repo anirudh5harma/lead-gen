@@ -360,7 +360,7 @@ interface DefaultRepProfile {
 
 const DEFAULT_REP_TEAM: readonly DefaultRepProfile[] = [
   {
-    key: "sampark",
+    key: "outbound",
     name: "Outbound agent",
     role: "sdr",
     channels: ["email"],
@@ -1656,15 +1656,15 @@ async function ensureRep(
   user_id: string,
 ): Promise<{ id: string }> {
   const team = await ensureDefaultRepTeam(engine, workspace_id, user_id);
-  return { id: team.sampark };
+  return { id: team.outbound };
 }
 
 async function ensureDefaultRepTeam(
   engine: ProductEngine,
   workspace_id: string,
   user_id: string,
-): Promise<Record<"sampark", string>> {
-  const ids: Partial<Record<"sampark", string>> = {};
+): Promise<Record<"outbound", string>> {
+  const ids: Partial<Record<"outbound", string>> = {};
   for (const profile of DEFAULT_REP_TEAM) {
     ids[profile.key as keyof typeof ids] = await ensureDefaultRep(
       engine,
@@ -1674,7 +1674,7 @@ async function ensureDefaultRepTeam(
     );
   }
   return {
-    sampark: ids.sampark!,
+    outbound: ids.outbound!,
   };
 }
 
@@ -1793,7 +1793,7 @@ async function ensureChannelAccount(
   }
   const id = randomUUID();
   const display_name = trustedDemoState
-    ? "sampark@go.bombsell.example"
+    ? "outbound@go.bombsell.example"
     : "Email channel not configured";
   const payload = {
     channel_account_id: id,

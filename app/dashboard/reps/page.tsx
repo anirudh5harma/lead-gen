@@ -116,11 +116,61 @@ interface AgentContactSummary {
   fresh_signals: number;
 }
 
+interface AgentSourceRow {
+  id: string;
+  name: string;
+  kind: string;
+  enabled: boolean;
+  poll_cadence_sec: number;
+  last_polled_at: Date | null;
+  source_last_polled_at: Date | null;
+  last_error: Record<string, unknown> | null;
+  signal_kind: string | null;
+  query: string | null;
+  source_reason: string | null;
+  source_tier: string | null;
+  signals_total: string;
+  signals_week: string;
+  matched_week: string;
+}
+
+interface AgentSequenceStep {
+  id: string;
+  name: string;
+  channel: string;
+  declaration: string;
+  status: string;
+  daily_cap: number | null;
+  approval: string | null;
+  steps: string[];
+}
+
+interface AgentSourceStrategy {
+  icp: {
+    id: string;
+    name: string;
+    description: string;
+    match_threshold: number;
+    nice_to_haves: string[];
+    must_haves: string[];
+  } | null;
+  profile: {
+    signal_keywords: string[];
+    competitor_watchlist: string[];
+    target_titles: string[];
+    target_markets: string[];
+    exclusion_rules: string[];
+  };
+  sources: AgentSourceRow[];
+  sequence: AgentSequenceStep[];
+}
+
 interface RepsState {
   reps: RepRow[];
   channels: ChannelRow[];
   readiness: WorkspaceLaunchReadiness;
   activity: AgentActivity;
+  strategy: AgentSourceStrategy;
   opportunities: QualifiedSignalWorkbench;
   outreach: AgentOutreachSummary;
   contacts: AgentContactSummary;
@@ -133,6 +183,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     channels,
     readiness,
     activity,
+    strategy,
     opportunities,
     outreach,
     contacts,
@@ -211,6 +262,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     ),
     loadWorkspaceLaunchReadiness(pool, workspaceId, { required_channel: "any" }),
     loadAgentActivity(workspaceId),
+    loadAgentSourceStrategy(workspaceId),
     loadQualifiedSignalWorkbench(pool, workspaceId, { limit: 5 }),
     loadAgentOutreachSummary(workspaceId),
     loadAgentContactSummary(workspaceId),
@@ -220,9 +272,151 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     channels: channels.rows,
     readiness,
     activity,
+    strategy,
     opportunities,
     outreach,
     contacts,
+  };
+}
+
+async function loadAgentSourceStrategy(
+  workspaceId: string,
+): Promise<AgentSourceStrategy> {
+  const pool = getPool();
+  const [icp, profile, sources, sequence] = await Promise.all([
+    pool.query<{
+      id: string;
+      name: string;
+      description: string;
+      match_threshold: string;
+      nice_to_haves: unknown;
+      must_haves: unknown;
+    }>(
+      `select id,
+              name,
+              description,
+              match_threshold::text as match_threshold,
+              nice_to_haves,
+              must_haves
+         from workspace_icps
+        where workspace_id = $1
+          and enabled
+        order by created_at asc
+        limit 1`,
+      [workspaceId],
+    ),
+    pool.query<{
+      signal_keywords: string | null;
+      competitor_watchlist: string | null;
+      target_titles: string | null;
+      target_markets: string | null;
+      exclusion_rules: string | null;
+    }>(
+      `select properties->>'signal_keywords' as signal_keywords,
+              properties->>'competitor_watchlist' as competitor_watchlist,
+              properties->>'target_titles' as target_titles,
+              properties->>'target_markets' as target_markets,
+              properties->>'exclusion_rules' as exclusion_rules
+         from graph_companies
+        where workspace_id = $1
+          and properties->>'profile_role' = 'workspace_company'
+        order by updated_at desc
+        limit 1`,
+      [workspaceId],
+    ),
+    pool.query<AgentSourceRow>(
+      `select gs.id::text as id,
+              gs.name,
+              gs.kind::text as kind,
+              (wsc.enabled and gs.enabled) as enabled,
+              wsc.poll_cadence_sec,
+              wsc.last_polled_at,
+              gs.last_polled_at as source_last_polled_at,
+              wsc.last_error,
+              coalesce(wsc.config_overrides->>'signal_kind', gs.config->>'signal_kind') as signal_kind,
+              coalesce(wsc.config_overrides->>'query', gs.config->>'query', gs.config->>'url') as query,
+              coalesce(wsc.config_overrides->>'source_reason', gs.config->>'source_reason') as source_reason,
+              coalesce(wsc.config_overrides->>'source_tier', gs.config->>'source_tier') as source_tier,
+              (select count(*)::text
+                 from signals s
+                where s.workspace_id = $1
+                  and s.source_id = gs.id) as signals_total,
+              (select count(*)::text
+                 from signals s
+                where s.workspace_id = $1
+                  and s.source_id = gs.id
+                  and s.ingested_at >= now() - interval '7 days') as signals_week,
+              (select count(*)::text
+                 from signals s
+                where s.workspace_id = $1
+                  and s.source_id = gs.id
+                  and s.status in ('matched','in_play')
+                  and s.ingested_at >= now() - interval '7 days') as matched_week
+         from workspace_source_configs wsc
+         join graph_sources gs
+           on gs.workspace_id = wsc.workspace_id
+          and gs.id = wsc.source_id
+        where wsc.workspace_id = $1
+        order by (wsc.enabled and gs.enabled) desc,
+                 coalesce(wsc.last_polled_at, gs.last_polled_at, '-infinity'::timestamptz) desc,
+                 gs.created_at asc
+        limit 6`,
+      [workspaceId],
+    ),
+    pool.query<{
+      id: string;
+      name: string;
+      declaration: string;
+      compiled: Record<string, unknown>;
+      autonomy: Record<string, unknown>;
+      status: string;
+      created_at: Date;
+    }>(
+      `select id,
+              name,
+              declaration,
+              compiled,
+              autonomy,
+              status::text as status,
+              created_at
+         from plays
+        where workspace_id = $1
+          and status in ('active','draft','paused')
+          and coalesce(compiled->>'channel', '') in (
+            'email',
+            'linkedin_dm',
+            'linkedin_inmail',
+            'linkedin_connection',
+            'linkedin_comment'
+          )
+        order by case status when 'active' then 0 when 'draft' then 1 else 2 end,
+                 created_at asc
+        limit 8`,
+      [workspaceId],
+    ),
+  ]);
+  const icpRow = icp.rows[0];
+  const profileRow = profile.rows[0];
+  return {
+    icp: icpRow
+      ? {
+          id: icpRow.id,
+          name: icpRow.name,
+          description: icpRow.description,
+          match_threshold: Number(icpRow.match_threshold),
+          nice_to_haves: stringArray(icpRow.nice_to_haves),
+          must_haves: stringArray(icpRow.must_haves),
+        }
+      : null,
+    profile: {
+      signal_keywords: setupLines(profileRow?.signal_keywords),
+      competitor_watchlist: setupLines(profileRow?.competitor_watchlist),
+      target_titles: setupLines(profileRow?.target_titles),
+      target_markets: setupLines(profileRow?.target_markets),
+      exclusion_rules: setupLines(profileRow?.exclusion_rules),
+    },
+    sources: sources.rows,
+    sequence: sequence.rows.map((row) => sequenceStepFromPlay(row)),
   };
 }
 
@@ -434,6 +628,10 @@ export default async function RepsPage() {
     (channel) => channel.status === "connected",
   ).length;
   const coverage = workspaceChannelCoverage(state.channels);
+  const sequence =
+    state.strategy.sequence.length > 0
+      ? state.strategy.sequence
+      : fallbackSequenceFromReps(visibleReps);
 
   return (
     <div className="space-y-10">
@@ -458,6 +656,10 @@ export default async function RepsPage() {
       />
 
       <AgentActivityPanel activity={state.activity} />
+
+      <AgentStrategyPanel strategy={state.strategy} />
+
+      <AgentSequencePanel sequence={sequence} />
 
       <AgentOpportunityPanel opportunities={state.opportunities} />
 
@@ -527,6 +729,18 @@ function emptyRepsState(workspaceId: string): RepsState {
       reviews_pending: 0,
       event_types: [],
     },
+    strategy: {
+      icp: null,
+      profile: {
+        signal_keywords: [],
+        competitor_watchlist: [],
+        target_titles: [],
+        target_markets: [],
+        exclusion_rules: [],
+      },
+      sources: [],
+      sequence: [],
+    },
     outreach: {
       recent: [],
       email_sent_7d: 0,
@@ -550,6 +764,321 @@ function emptyRepsState(workspaceId: string): RepsState {
       fresh_signals: 0,
     },
   };
+}
+
+function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
+  const activeSources = strategy.sources.filter((source) => source.enabled).length;
+  const signalKinds = uniqueStrings(
+    strategy.sources
+      .map((source) => source.signal_kind)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const keywords = strategy.profile.signal_keywords.slice(0, 5);
+  const competitors = strategy.profile.competitor_watchlist.slice(0, 5);
+  return (
+    <SurfaceSection
+      title="Source strategy"
+      action={
+        <Link href="/dashboard/settings#profile" className="btn-quiet-sm">
+          <Icon name="edit_note" size={14} />
+          Tune profile
+        </Link>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              {strategy.icp?.name ?? "Audience not configured"}
+            </p>
+            <p className="mt-1 line-clamp-4 text-xs leading-5 text-[var(--color-text-3)]">
+              {strategy.icp?.description ??
+                "Define buyer roles, markets, exclusions, signal keywords, and competitors in Profile."}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+            <MiniStat label="Active sources" value={activeSources} />
+            <MiniStat label="Signal types" value={signalKinds.length} />
+            <MiniStat
+              label="Match gate"
+              value={Math.round((strategy.icp?.match_threshold ?? 0) * 100)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <StrategyChips
+              icon="person_search"
+              label="Buyer roles"
+              values={strategy.profile.target_titles}
+              empty="Add roles"
+            />
+            <StrategyChips
+              icon="public"
+              label="Markets"
+              values={strategy.profile.target_markets}
+              empty="Add markets"
+            />
+            <StrategyChips
+              icon="block"
+              label="Exclusions"
+              values={strategy.profile.exclusion_rules}
+              empty="No exclusions"
+            />
+          </div>
+        </aside>
+
+        <div className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <StrategyKeywordBox
+              icon="travel_explore"
+              title="Keywords watched"
+              values={keywords}
+              empty="Add signal keywords in Profile."
+            />
+            <StrategyKeywordBox
+              icon="radar"
+              title="Competitor audience"
+              values={competitors}
+              empty="Add competitors whose audience matters."
+            />
+          </div>
+
+          {strategy.sources.length === 0 ? (
+            <EmptyState
+              title="No signal sources yet"
+              hint="Profile setup creates source configs for launch, hiring, funding, and market movement signals."
+              cta={{
+                href: "/dashboard/settings#profile",
+                label: "Tune profile",
+                icon: "edit_note",
+              }}
+            />
+          ) : (
+            <div className="grid gap-2">
+              {strategy.sources.map((source) => (
+                <SourceStrategyRow key={source.id} source={source} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </SurfaceSection>
+  );
+}
+
+function StrategyChips({
+  icon,
+  label,
+  values,
+  empty,
+}: {
+  icon: string;
+  label: string;
+  values: string[];
+  empty: string;
+}) {
+  const visible = values.slice(0, 3);
+  return (
+    <div className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--color-text-3)]">
+        <Icon name={icon} size={13} />
+        {label}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {visible.length === 0 ? (
+          <span className="text-xs text-[var(--color-text-4)]">{empty}</span>
+        ) : (
+          <>
+            {visible.map((value) => (
+              <span
+                key={value}
+                className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 text-[11px] text-[var(--color-text-2)]"
+              >
+                {value}
+              </span>
+            ))}
+            {values.length > visible.length ? (
+              <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+                +{values.length - visible.length}
+              </span>
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StrategyKeywordBox({
+  icon,
+  title,
+  values,
+  empty,
+}: {
+  icon: string;
+  title: string;
+  values: string[];
+  empty: string;
+}) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <p className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-1)]">
+        <Icon name={icon} size={15} />
+        {title}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {values.length === 0 ? (
+          <span className="text-sm text-[var(--color-text-3)]">{empty}</span>
+        ) : (
+          values.map((value) => (
+            <span
+              key={value}
+              className="rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs text-[var(--color-accent)]"
+            >
+              {value}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SourceStrategyRow({ source }: { source: AgentSourceRow }) {
+  const total = Number(source.signals_total);
+  const week = Number(source.signals_week);
+  const matched = Number(source.matched_week);
+  const lastPolled = source.last_polled_at ?? source.source_last_polled_at;
+  return (
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="flex min-w-0 items-start gap-3">
+        <span
+          className={
+            "grid size-9 shrink-0 place-items-center rounded-[8px] " +
+            (source.enabled
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+          }
+        >
+          <Icon name="sensors" size={17} />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {source.name}
+          </p>
+          <p className="mt-1 truncate text-sm text-[var(--color-text-2)]">
+            {source.query ?? source.source_reason ?? source.kind.replace(/_/g, " ")}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <OpportunityPill tone={source.enabled ? "ready" : "waiting"}>
+              {source.enabled ? "Active" : "Paused"}
+            </OpportunityPill>
+            {source.signal_kind ? (
+              <OpportunityPill tone="fit">
+                {source.signal_kind.replace(/_/g, " ")}
+              </OpportunityPill>
+            ) : null}
+            {source.source_tier ? (
+              <OpportunityPill tone="waiting">
+                {source.source_tier.replace(/_/g, " ")}
+              </OpportunityPill>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {week} new / {matched} qualified
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {total} total
+        </span>
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {nextRunLabel(lastPolled, source.poll_cadence_sec)}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function AgentSequencePanel({ sequence }: { sequence: AgentSequenceStep[] }) {
+  return (
+    <SurfaceSection
+      title="Sequence"
+      action={
+        <Link href="/dashboard/settings#motion" className="btn-quiet-sm">
+          <Icon name="rule" size={14} />
+          Review limits
+        </Link>
+      }
+    >
+      {sequence.length === 0 ? (
+        <EmptyState
+          title="No outreach sequence yet"
+          hint="The agent needs active email or LinkedIn plays before it can move qualified signals into outreach."
+          cta={{
+            href: "/dashboard/settings#motion",
+            label: "Configure agent",
+            icon: "rule",
+          }}
+        />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {sequence.map((step, index) => (
+            <SequenceStepCard key={step.id} step={step} index={index} />
+          ))}
+        </div>
+      )}
+    </SurfaceSection>
+  );
+}
+
+function SequenceStepCard({
+  step,
+  index,
+}: {
+  step: AgentSequenceStep;
+  index: number;
+}) {
+  const channel = channelLabel(step.channel);
+  return (
+    <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name={step.channel === "email" ? "mail" : "forum"} size={17} />
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+          Step {index + 1}
+        </span>
+      </div>
+      <p className="mt-3 text-sm font-semibold text-[var(--color-text-1)]">
+        {channel}
+      </p>
+      <p className="mt-1 line-clamp-2 text-sm text-[var(--color-text-2)]">
+        {step.name}
+      </p>
+      <p className="mt-3 line-clamp-3 text-xs leading-5 text-[var(--color-text-3)]">
+        {step.declaration}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <OpportunityPill tone={step.status === "active" ? "ready" : "waiting"}>
+          {statusLabel(step.status)}
+        </OpportunityPill>
+        <OpportunityPill tone="waiting">
+          {step.daily_cap == null ? "No cap" : `${step.daily_cap}/day`}
+        </OpportunityPill>
+        {step.approval ? (
+          <OpportunityPill tone="waiting">
+            {approvalLabel(step.approval)}
+          </OpportunityPill>
+        ) : null}
+      </div>
+      {step.steps.length > 0 ? (
+        <p className="mt-3 text-[11px] leading-5 text-[var(--color-text-4)]">
+          {step.steps.map((item) => item.replace(/\./g, " ")).join(" -> ")}
+        </p>
+      ) : null}
+    </article>
+  );
 }
 
 function AgentOpportunityPanel({
@@ -1239,6 +1768,53 @@ function isVisibleProductAgent(rep: RepRow): boolean {
   return rep.role === "sdr";
 }
 
+function fallbackSequenceFromReps(reps: RepRow[]): AgentSequenceStep[] {
+  const rep = reps[0];
+  if (!rep) return [];
+  const emailPolicy = rep.autonomy?.channels?.email;
+  const linkedInPolicy = firstChannelPolicy(rep, ["linkedin_dm", "linkedin"]);
+  const sequence: AgentSequenceStep[] = [];
+  if (emailPolicy) {
+    sequence.push({
+      id: `${rep.id}:email`,
+      name: "Qualified signal email",
+      channel: "email",
+      declaration:
+        "When a Signal matches the ICP, research the account, draft a judged email, and wait for the configured channel gate.",
+      status: rep.status,
+      daily_cap: emailPolicy.daily_cap ?? null,
+      approval: emailPolicy.approval ?? null,
+      steps: [
+        "research.signal_context",
+        "writer.compose_email",
+        "eval.hot_path",
+        "approval.channel_gate",
+        "sender.email",
+      ],
+    });
+  }
+  if (linkedInPolicy) {
+    sequence.push({
+      id: `${rep.id}:linkedin`,
+      name: "Qualified signal LinkedIn touch",
+      channel: "linkedin_dm",
+      declaration:
+        "When email is not the best path or a LinkedIn profile is ready, draft a judged LinkedIn touch and apply channel limits.",
+      status: rep.status,
+      daily_cap: linkedInPolicy.daily_cap ?? null,
+      approval: linkedInPolicy.approval ?? null,
+      steps: [
+        "research.signal_context",
+        "writer.compose_linkedin",
+        "eval.hot_path",
+        "approval.channel_gate",
+        "sender.linkedin",
+      ],
+    });
+  }
+  return sequence;
+}
+
 function repIcon(_rep: RepRow): string {
   return "badge";
 }
@@ -1286,6 +1862,101 @@ function channelLabel(channel: string): string {
   if (channel === "linkedin_connection") return "LinkedIn connect";
   if (channel === "linkedin_comment") return "LinkedIn comment";
   return channel.replace(/_/g, " ");
+}
+
+function sequenceStepFromPlay(row: {
+  id: string;
+  name: string;
+  declaration: string;
+  compiled: Record<string, unknown>;
+  autonomy: Record<string, unknown>;
+  status: string;
+}): AgentSequenceStep {
+  const channel = stringValue(row.compiled.channel) ?? "email";
+  const channelPolicy = policyFromAutonomy(row.autonomy, channel);
+  return {
+    id: row.id,
+    name: row.name,
+    channel,
+    declaration: row.declaration,
+    status: row.status,
+    daily_cap: numberValue(channelPolicy?.daily_cap),
+    approval: stringValue(channelPolicy?.approval),
+    steps: stepsFromCompiled(row.compiled),
+  };
+}
+
+function policyFromAutonomy(
+  autonomy: Record<string, unknown>,
+  channel: string,
+): Record<string, unknown> | null {
+  const channels = recordValue(autonomy.channels);
+  if (!channels) return null;
+  return recordValue(channels[channel]);
+}
+
+function stepsFromCompiled(compiled: Record<string, unknown>): string[] {
+  const steps = Array.isArray(compiled.steps) ? compiled.steps : [];
+  return steps
+    .map((step) => recordValue(step))
+    .filter((step): step is Record<string, unknown> => Boolean(step))
+    .map((step) => stringValue(step.op) ?? stringValue(step.id))
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 5);
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberValue(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function setupLines(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/\r?\n|,/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const record = recordValue(item);
+      return (
+        stringValue(record?.label) ??
+        stringValue(record?.title) ??
+        stringValue(record?.value) ??
+        stringValue(record?.text)
+      );
+    })
+    .filter((item): item is string => Boolean(item));
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function nextRunLabel(lastPolled: Date | null, cadenceSeconds: number): string {
+  if (!lastPolled) return "Ready now";
+  const nextAt = new Date(lastPolled).getTime() + cadenceSeconds * 1000;
+  const diff = nextAt - Date.now();
+  if (diff <= 0) return "Ready now";
+  const minutes = Math.ceil(diff / 60_000);
+  if (minutes < 60) return `Next in ${minutes}m`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `Next in ${hours}h`;
+  return `Next in ${Math.ceil(hours / 24)}d`;
 }
 
 function NoWorkspaceReps() {
