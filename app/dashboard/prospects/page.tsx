@@ -180,7 +180,7 @@ export default async function ProspectsPage() {
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricTile icon="mail" label="Email ready" value={stats.with_email} />
-        <MetricTile icon="forum" label="LinkedIn ready" value={stats.with_linkedin} />
+        <MetricTile icon="linkedin" label="LinkedIn ready" value={stats.with_linkedin} />
         <MetricTile icon="sensors" label="Signals 14d" value={stats.fresh_signals} />
         <MetricTile
           icon="task_alt"
@@ -253,7 +253,7 @@ function ProspectCard({ prospect }: { prospect: ProspectRow }) {
           <ChannelPill ready={prospect.emails.length > 0} icon="mail">
             {prospect.emails[0] ?? "No email"}
           </ChannelPill>
-          <ChannelPill ready={Boolean(prospect.linkedin_url)} icon="forum">
+          <ChannelPill ready={Boolean(prospect.linkedin_url)} icon="linkedin">
             {prospect.linkedin_url ? "LinkedIn" : "No LinkedIn"}
           </ChannelPill>
           {signals > 0 ? (

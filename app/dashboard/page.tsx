@@ -306,7 +306,7 @@ function BriefView({
           week={actions.emails_sent_7d}
         />
         <DashboardMetric
-          icon="forum"
+          icon="linkedin"
           label="LinkedIn DMs"
           day={actions.dms_sent_24h}
           week={actions.dms_sent_7d}

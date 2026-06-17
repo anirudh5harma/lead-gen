@@ -295,7 +295,7 @@ export default async function ProspectProfilePage({
           }
         />
         <ReadinessTile
-          icon="forum"
+          icon="linkedin"
           label="LinkedIn"
           value={prospect.linkedin_url ? "Profile found" : "Missing"}
           ready={Boolean(prospect.linkedin_url) && channelState.connected_linkedin > 0}
@@ -496,7 +496,7 @@ function ProfilePanel({ prospect }: { prospect: ProspectProfileRow }) {
       </p>
       <div className="mt-4 grid gap-3">
         <Fact label="Email" value={prospect.emails[0] ?? "Missing"} icon="mail" />
-        <Fact label="LinkedIn" value={prospect.linkedin_url ?? "Missing"} icon="forum" />
+        <Fact label="LinkedIn" value={prospect.linkedin_url ?? "Missing"} icon="linkedin" />
         <Fact label="Phone" value={prospect.phones[0] ?? "Missing"} icon="send" />
         <Fact label="X" value={prospect.x_handle ?? "Missing"} icon="sync_alt" />
       </div>

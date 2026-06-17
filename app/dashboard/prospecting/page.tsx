@@ -1,5 +1,7 @@
-import SetupPage from "../setup/page";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default SetupPage;
+export default function ProspectingPage() {
+  redirect("/dashboard/settings#profile");
+}

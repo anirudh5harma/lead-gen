@@ -121,10 +121,20 @@ test("Agent is the canonical dashboard surface route", () => {
   assert.doesNotMatch(productLinks, /Configure Rep", \["product\.rep\.configure"\], "\/dashboard\/reps"/);
 });
 
-test("canonical Prospecting and Signals routes preserve old implementations", () => {
+test("legacy Profile routes redirect to Settings while Signals keeps the Agent view", () => {
+  const nextConfig = source("next.config.ts");
+
   assert.match(
     source("app/dashboard/prospecting/page.tsx"),
-    /from "\.\.\/setup\/page"/,
+    /redirect\("\/dashboard\/settings#profile"\)/,
+  );
+  assert.match(
+    source("app/dashboard/setup/page.tsx"),
+    /redirect\("\/dashboard\/settings#profile"\)/,
+  );
+  assert.match(
+    source("app/dashboard/deliverability/page.tsx"),
+    /redirect\("\/dashboard\/settings#email"\)/,
   );
   assert.match(
     source("app/dashboard/signals/page.tsx"),
@@ -132,16 +142,28 @@ test("canonical Prospecting and Signals routes preserve old implementations", ()
   );
   assert.match(
     source("app/dashboard/prospecting/loading.tsx"),
-    /surface="prospecting"/,
+    /surface="settings"/,
+  );
+  assert.match(source("app/dashboard/setup/loading.tsx"), /surface="settings"/);
+  assert.match(
+    source("app/dashboard/deliverability/loading.tsx"),
+    /surface="settings"/,
   );
   assert.match(
     source("app/dashboard/signals/loading.tsx"),
     /surface="signals"/,
   );
+  assert.match(nextConfig, /source: "\/dashboard\/prospecting"/);
+  assert.match(nextConfig, /source: "\/dashboard\/setup"/);
+  assert.match(nextConfig, /source: "\/dashboard\/deliverability"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/settings#profile"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/settings#email"/);
 
   const actions = source("app/dashboard/actions.ts");
-  assert.match(actions, /revalidatePath\("\/dashboard\/prospecting"\)/);
+  assert.match(actions, /revalidatePath\("\/dashboard\/settings"\)/);
   assert.match(actions, /revalidatePath\("\/dashboard\/signals"\)/);
+  assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/prospecting"\)/);
+  assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/setup"\)/);
 });
 
 test("retired product surfaces redirect to Agent", () => {
@@ -189,34 +211,31 @@ test("Health presents agent observability from the event-sourced summary", () =>
   assert.doesNotMatch(health, /Everyday outcomes stay with the Reps/);
 });
 
-test("Setup presents separate Outlook and LinkedIn connection gates", () => {
-  const setup = source("app/dashboard/setup/page.tsx");
+test("Settings presents separate Outlook and LinkedIn connection gates", () => {
+  const settings = source("app/dashboard/settings/page.tsx");
 
-  assert.match(setup, /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fsettings%23email"/);
-  assert.match(setup, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
+  assert.match(settings, /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fsettings%23email"/);
+  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
   assert.match(
-    setup,
-    /kind in \('email_domain','oauth_outlook','linkedin_session','linkedin_oauth'\)/,
+    settings,
+    /kind in \('linkedin_session','linkedin_oauth'\)/,
   );
-  assert.match(setup, /Ready" value=\{`\$\{readyCount\}\/5`\}/);
-  assert.match(setup, /Finds verified contacts and moves outreach/);
-  assert.match(setup, /const AGENT_ORDER = \["Outbound agent"\]/);
-  assert.doesNotMatch(setup, /Learning: \{/);
-  assert.doesNotMatch(setup, /href: "\/dashboard\/plays"/);
-  assert.doesNotMatch(setup, /prospecting profile/);
+  assert.match(settings, /Profile, channels, and guardrails/);
+  assert.match(settings, /Email integration/);
+  assert.match(settings, /LinkedIn integration/);
+  assert.match(settings, /verified contact or LinkedIn profile/);
+  assert.doesNotMatch(settings, /Learning: \{/);
+  assert.doesNotMatch(settings, /href: "\/dashboard\/plays"/);
+  assert.doesNotMatch(settings, /prospecting profile/);
 });
 
 test("Outlook connection surfaces collapse duplicate rows by mailbox identity", () => {
-  const setup = source("app/dashboard/setup/page.tsx");
-  const deliverability = source("app/dashboard/deliverability/page.tsx");
+  const settings = source("app/dashboard/settings/page.tsx");
   const brief = source("app/dashboard/page.tsx");
 
-  assert.match(setup, /row_number\(\) over/);
-  assert.match(setup, /properties ->> 'mailbox_email'/);
-  assert.match(setup, /where account_rank = 1/);
-  assert.match(deliverability, /row_number\(\) over/);
-  assert.match(deliverability, /properties ->> 'mailbox_email'/);
-  assert.match(deliverability, /where account_rank = 1/);
+  assert.match(settings, /row_number\(\) over/);
+  assert.match(settings, /properties ->> 'mailbox_email'/);
+  assert.match(settings, /where account_rank = 1/);
   assert.match(brief, /outlook_mailboxes/);
   assert.match(brief, /has_blocked_status and not has_connected/);
 });
@@ -645,13 +664,13 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   const linkedInRoute = source("app/api/auth/linkedin/route.ts");
   const linkedInCallback = source("app/api/auth/linkedin/callback/route.ts");
   const linkedInState = source("app/api/auth/linkedin/state.ts");
-  const setup = source("app/dashboard/setup/page.tsx");
+  const settings = source("app/dashboard/settings/page.tsx");
 
   assert.match(linkedInState, /return_to\?: string/);
   assert.match(linkedInRoute, /safeReturnTo\(req\.nextUrl\.searchParams\.get\("return_to"\)\)/);
   assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/settings#linkedin"/);
   assert.match(linkedInCallback, /dest\.searchParams\.set\("status", "linkedin_connecting"\)/);
-  assert.match(setup, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
+  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
   assert.doesNotMatch(linkedInCallback, /\/dashboard\/prospecting/);
 });
 
@@ -676,7 +695,7 @@ test("account connection entry points carry explicit product return targets", ()
 
 test("new product defaults are autonomous after checks", () => {
   const actions = source("app/dashboard/actions.ts");
-  const setup = source("app/dashboard/setup/page.tsx");
+  const settings = source("app/dashboard/settings/page.tsx");
   const repDetail = source("app/dashboard/reps/[id]/page.tsx");
   const productApp = source("core/product/app.ts");
   const playAutonomy = source("core/plays/autonomy.ts");
@@ -687,8 +706,8 @@ test("new product defaults are autonomous after checks", () => {
 
   assert.match(actions, /fallback: DashboardApprovalPolicy = "none"/);
   assert.match(
-    setup,
-    /defaultValue=\{rep\?\.autonomy\.channels\?\.email\?\.approval \?\? "none"\}/,
+    settings,
+    /const approval =\s+rep\?\.autonomy\?\.channels\?\.email\?\.approval \?\? "none"/,
   );
   assert.match(
     repDetail,

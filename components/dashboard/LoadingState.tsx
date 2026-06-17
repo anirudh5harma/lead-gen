@@ -7,6 +7,7 @@ type LoadingSurface =
   | "campaigns"
   | "prospecting"
   | "prospects"
+  | "settings"
   | "signals"
   | "reps"
   | "plays"
@@ -22,6 +23,7 @@ const SURFACE_COPY: Record<LoadingSurface, { kicker: string; title: string; icon
   campaigns: { kicker: "Agent", title: "Loading outreach learning", icon: "science" },
   prospecting: { kicker: "Profile", title: "Loading profile", icon: "person" },
   prospects: { kicker: "Agent", title: "Loading verified contacts", icon: "travel_explore" },
+  settings: { kicker: "Profile", title: "Loading profile and integrations", icon: "verified" },
   signals: { kicker: "Agent", title: "Loading qualified signals", icon: "sensors" },
   reps: { kicker: "Agent", title: "Loading live work", icon: "badge" },
   plays: { kicker: "Agent", title: "Loading outreach plan", icon: "account_tree" },

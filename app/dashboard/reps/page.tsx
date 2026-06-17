@@ -1518,7 +1518,7 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             <ContactPill ready={contact.emails.length > 0} icon="mail">
               {contact.emails[0] ?? "No email"}
             </ContactPill>
-            <ContactPill ready={Boolean(contact.linkedin_url)} icon="forum">
+            <ContactPill ready={Boolean(contact.linkedin_url)} icon="linkedin">
               {contact.linkedin_url ? "LinkedIn profile" : "No LinkedIn"}
             </ContactPill>
           </span>
@@ -2009,7 +2009,7 @@ function RepCard({
         />
         <RepChannelPill
           title="LinkedIn"
-          icon="forum"
+          icon="linkedin"
           connection={coverage.linkedIn}
           policy={linkedInPolicy}
         />

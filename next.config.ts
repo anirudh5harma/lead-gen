@@ -13,6 +13,26 @@ const nextConfig: NextConfig = {
         destination: "/dashboard/agent#learning",
         permanent: false,
       },
+      {
+        source: "/dashboard/integrations",
+        destination: "/dashboard/settings#email",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/deliverability",
+        destination: "/dashboard/settings#email",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/prospecting",
+        destination: "/dashboard/settings#profile",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/setup",
+        destination: "/dashboard/settings#profile",
+        permanent: false,
+      },
     ];
   },
 };

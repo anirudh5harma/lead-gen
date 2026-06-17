@@ -164,6 +164,15 @@ const icons: Record<string, IconNode> = {
       <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
     </>
   ),
+  linkedin: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="2.5" />
+      <path d="M8 11v5" />
+      <path d="M8 8h.01" />
+      <path d="M12 16v-5" />
+      <path d="M12 13.4c0-1.5 1-2.6 2.4-2.6S17 12 17 14.1V16" />
+    </>
+  ),
   lock: (
     <>
       <rect x="5" y="10" width="14" height="10" rx="2" />

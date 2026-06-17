@@ -159,8 +159,7 @@ async function repNameFromForm(
 export async function createWorkspaceAction(formData: FormData) {
   await requireDashboardSession(formData);
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/prospecting");
-  revalidatePath("/dashboard/setup");
+  revalidatePath("/dashboard/settings");
   redirectWithToast("/dashboard/settings#profile", "Workspace created.");
 }
 
@@ -654,17 +653,12 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
 
 function revalidateProductPaths() {
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/prospecting");
-  revalidatePath("/dashboard/setup");
   revalidatePath("/dashboard/agent");
   revalidatePath("/dashboard/reps");
   revalidatePath("/dashboard/signals");
   revalidatePath("/dashboard/ingestion");
-  revalidatePath("/dashboard/plays");
-  revalidatePath("/dashboard/campaigns");
   revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/conversations");
-  revalidatePath("/dashboard/deliverability");
   revalidatePath("/dashboard/health");
   revalidatePath("/dashboard/settings");
 }

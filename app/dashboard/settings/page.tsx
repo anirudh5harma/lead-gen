@@ -516,7 +516,7 @@ function SettingsChecklist({
         ? `${linkedInAccount.display_name} - ${statusLabel(linkedInAccount.status)}`
         : "Connect LinkedIn for connection requests and DMs.",
       href: "#linkedin",
-      icon: "forum",
+      icon: "linkedin",
       ready: linkedInAccount?.status === "connected",
     },
     {
@@ -647,7 +647,7 @@ function SettingsSectionNav({
       title: "LinkedIn",
       detail: linkedInAccount ? linkedInAccount.display_name : "Connect account",
       href: "#linkedin",
-      icon: "forum",
+      icon: "linkedin",
       ready: linkedInAccount?.status === "connected",
     },
     {
@@ -1138,7 +1138,7 @@ function LinkedInPanel({
     <div className="section-note grid gap-4">
       <div className="flex items-start gap-3">
         <span className="brief-note-icon shrink-0">
-          <Icon name="forum" size={18} />
+          <Icon name="linkedin" size={18} />
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[var(--color-text-1)]">
@@ -1206,7 +1206,7 @@ function LinkedInAccountSlot({
         prefetch={false}
         className={account ? "btn-quiet-sm w-fit" : "btn-solid-sm w-fit"}
       >
-        <Icon name="forum" size={14} />
+        <Icon name="linkedin" size={14} />
         {account ? "Reconnect account" : "Connect account"}
       </Link>
     </article>
@@ -1254,7 +1254,7 @@ function ContactQualityPanel({
           status={stats.emailHandles > 0 ? `${stats.emailHandles} found` : "Ready to run"}
         />
         <PreferenceStatus
-          icon="forum"
+          icon="linkedin"
           title="LinkedIn fallback"
           detail="LinkedIn profiles keep outreach available when an email is not ready."
           status={
