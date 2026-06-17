@@ -98,6 +98,70 @@ async function insertSignal(
   return id;
 }
 
+test("signal dismissal projector flips qualified signals and emits public dismissal", async (t) => {
+  const fx = await setupPg("signal_dismissal_projector");
+  if (!fx) return t.skip("DATABASE_URL not set");
+  const bus = await createProjectingBus(fx.pool);
+  try {
+    const workspaceId = await seedWorkspace(fx.pool);
+    const signalId = await insertSignal(fx.pool, workspaceId, {
+      kind: "hiring",
+      freshness_at: new Date(),
+      status: "matched",
+    });
+    const seen: string[] = [];
+    await bus.subscribe("signal.dismissed", (event) => {
+      if (event.payload.signal_id === signalId) seen.push(event.id);
+    });
+
+    const requested = await bus.publish({
+      workspace_id: workspaceId,
+      event_type: "signal.dismissal.requested",
+      source: "user",
+      idempotency_key: `dismiss:${signalId}`,
+      payload: {
+        signal_id: signalId,
+        reason: "not a fit",
+      },
+    });
+    await bus.publish({
+      workspace_id: workspaceId,
+      event_type: "signal.dismissal.requested",
+      source: "user",
+      idempotency_key: `dismiss:${signalId}`,
+      payload: {
+        signal_id: signalId,
+        reason: "not a fit",
+      },
+    });
+
+    await until(async () => {
+      const result = await fx.pool.query<{ status: string; reason: string | null }>(
+        `select status::text as status,
+                audience_hint->>'dismissal_reason' as reason
+           from signals
+          where id = $1`,
+        [signalId],
+      );
+      return result.rows[0]?.status === "dismissed" &&
+        result.rows[0]?.reason === "not a fit";
+    });
+    await until(() => seen.length === 1);
+
+    const dismissed = await fx.pool.query<{ n: string }>(
+      `select count(*)::text as n
+         from events
+        where workspace_id = $1
+          and event_type = 'signal.dismissed'
+          and causation_id = $2`,
+      [workspaceId, requested.id],
+    );
+    assert.equal(dismissed.rows[0].n, "1");
+  } finally {
+    await fx.close();
+  }
+});
+
 test("ttlDaysForKind: returns documented per-kind TTL, with override + null-kind fallback", () => {
   assert.equal(ttlDaysForKind("hiring"), 45);
   assert.equal(ttlDaysForKind("funding"), 90);

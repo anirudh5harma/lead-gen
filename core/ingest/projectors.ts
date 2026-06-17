@@ -13,6 +13,7 @@ type SignalProjectionType =
   | "signal.discovered"
   | "signal.company.linked"
   | "signal.classification.completed"
+  | "signal.dismissal.requested"
   | "signal.expiry.requested";
 
 export interface SignalProjectorDeps {
@@ -98,6 +99,31 @@ export async function registerSignalProjectors(
         });
       },
       "signal_expiry_projector",
+    ),
+    subscriber.subscribe(
+      "signal.dismissal.requested",
+      async (event) => {
+        const flipped = await projectSignalDismissal(
+          deps.pool,
+          event.workspace_id,
+          event.payload,
+        );
+        if (!flipped) return;
+        await deps.bus.publish({
+          workspace_id: event.workspace_id,
+          event_type: "signal.dismissed",
+          source: "system",
+          producer_ref: "projection:signal.dismissal.requested",
+          correlation_id: event.correlation_id ?? event.id,
+          causation_id: event.id,
+          idempotency_key: `projection:${event.id}:signal.dismissed`,
+          payload: {
+            signal_id: event.payload.signal_id,
+            reason: event.payload.reason,
+          },
+        });
+      },
+      "signal_dismissal_projector",
     ),
     subscriber.subscribe(
       "signal.classification.completed",
@@ -341,6 +367,30 @@ export async function projectSignalExpiry(
         set status        = 'spent',
             audience_hint = coalesce(audience_hint, '{}'::jsonb) ||
                             jsonb_build_object('expiry_reason', $3::text)
+      where workspace_id = $1
+        and id           = $2
+        and status in ('ingested', 'matched', 'in_play')`,
+    [workspaceId, payload.signal_id, payload.reason],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Materialize an explicit human/operator decision to remove a Signal from the
+ * outreach queue. The public signal.dismissed event is emitted by callers only
+ * when this transition returns true.
+ */
+export async function projectSignalDismissal(
+  pool: Pool,
+  workspaceId: string,
+  payload: EventPayload<"signal.dismissal.requested">,
+): Promise<boolean> {
+  const result = await pool.query(
+    `update signals
+        set status        = 'dismissed',
+            match_reason  = coalesce(nullif($3::text, ''), match_reason),
+            audience_hint = coalesce(audience_hint, '{}'::jsonb) ||
+                            jsonb_build_object('dismissal_reason', $3::text)
       where workspace_id = $1
         and id           = $2
         and status in ('ingested', 'matched', 'in_play')`,

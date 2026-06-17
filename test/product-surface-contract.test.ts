@@ -239,6 +239,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Draft ready/);
   assert.match(reps, /opportunityHref\(signal, contact\)/);
   assert.match(reps, /sentDraftHref\(\s*signal\.email_draft\.conversation_id/);
+  assert.match(reps, /dismissQualifiedSignalAction/);
+  assert.match(reps, /Skip opportunity/);
+  assert.match(reps, /name="signal_id" value=\{signal\.id\}/);
   assert.match(reps, /Signal-ready contacts/);
   assert.match(reps, /verified emails and LinkedIn profiles/);
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
@@ -460,9 +463,13 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(actions, /exclusion_rules/);
   assert.match(actions, /prevent_team_contact_duplication/);
   assert.match(actions, /configureWorkspaceAutonomyMode/);
+  assert.match(actions, /dismissProductSignal/);
   assert.match(productApp, /event_type: "workspace\.configured"/);
   assert.match(productApp, /event_type: "rep\.configured"/);
   assert.match(productApp, /event_type: "play\.configured"/);
+  assert.match(productApp, /event_type: "signal\.dismissal\.requested"/);
+  assert.match(productApp, /projectSignalDismissal/);
+  assert.match(registry, /"signal\.dismissal\.requested": SignalDismissalRequested/);
   assert.match(registry, /"workspace\.configured": WorkspaceConfigured/);
 });
 

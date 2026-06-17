@@ -205,6 +205,7 @@ export {
   projectSignalDiscovered,
   projectSignalCompanyLinked,
   projectSignalClassification,
+  projectSignalDismissal,
   projectSignalExpiry,
   registerSignalProjectors,
 } from "./projectors.ts";

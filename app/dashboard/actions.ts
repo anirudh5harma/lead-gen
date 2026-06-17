@@ -10,6 +10,7 @@ import {
   configureWorkspaceCompanyProfile,
   createProductWorkspaceForUser,
   deleteProductRecommendation,
+  dismissProductSignal,
   dispatchSignalPlaysOnce,
   draftProductRecommendation,
   generateProductMeetingPrep,
@@ -455,6 +456,39 @@ export async function generateMeetingPrepAction(formData: FormData) {
   revalidateProductPaths();
   revalidatePath(`/dashboard/conversations/${conversationId}`);
   redirectWithToast(returnTo, "Meeting prep updated.");
+}
+
+export async function dismissQualifiedSignalAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/reps");
+  const signalId = value(formData, "signal_id");
+  if (!signalId) {
+    redirectWithToast(
+      returnTo,
+      "Choose a qualified signal before skipping.",
+      "error",
+    );
+  }
+  try {
+    await dismissProductSignal(
+      {
+        signal_id: signalId,
+        reason:
+          value(formData, "reason") ||
+          "Skipped from Agent because the opportunity is not a fit for outreach.",
+      },
+      session,
+    );
+  } catch (error) {
+    console.error("Signal dismissal failed", error);
+    redirectWithToast(
+      returnTo,
+      "Could not skip that opportunity yet. Refresh and try again.",
+      "error",
+    );
+  }
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Opportunity skipped.");
 }
 
 export async function editCompanyProfileAction(formData: FormData) {

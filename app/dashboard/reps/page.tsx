@@ -19,6 +19,7 @@ import {
 } from "@/core/product/qualified-signals.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { dismissQualifiedSignalAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -1150,12 +1151,12 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
   const score = signal.match_score == null ? null : Math.round(signal.match_score * 100);
   const href = opportunityHref(signal, contact);
   return (
-    <Link
-      href={href}
-      prefetch={false}
-      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
-    >
-      <span className="flex min-w-0 items-start gap-3">
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <Link
+        href={href}
+        prefetch={false}
+        className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+      >
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
           <Icon name="sensors" size={17} />
         </span>
@@ -1189,7 +1190,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             </span>
           ) : null}
         </span>
-      </span>
+      </Link>
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {statusLabel(signal.status)}
@@ -1197,8 +1198,21 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(signal.freshness_at)}
         </span>
+        <form action={dismissQualifiedSignalAction}>
+          <input type="hidden" name="signal_id" value={signal.id} />
+          <input type="hidden" name="return_to" value="/dashboard/reps" />
+          <input
+            type="hidden"
+            name="reason"
+            value="Skipped from Agent because the opportunity is not a fit for outreach."
+          />
+          <button type="submit" className="btn-quiet-sm" title="Skip opportunity">
+            <Icon name="block" size={14} />
+            Skip
+          </button>
+        </form>
       </span>
-    </Link>
+    </article>
   );
 }
 

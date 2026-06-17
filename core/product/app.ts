@@ -136,6 +136,7 @@ import {
   discoverWorkspaceSignalOnce,
   projectSignalCompanyLinked,
   projectSignalClassification,
+  projectSignalDismissal,
   projectSignalDiscovered,
   projectSignalExpiry,
   repairMatchedSignalCompanyLinksOnce,
@@ -5892,6 +5893,86 @@ function contactWaterfallResultFromRun(
   };
 }
 
+export interface DismissProductSignalInput {
+  signal_id: string;
+  reason?: string | null;
+}
+
+export interface DismissProductSignalResult {
+  workspace_id: string;
+  signal_id: string;
+  dismissed: boolean;
+  status: string | null;
+}
+
+export async function dismissProductSignal(
+  input: DismissProductSignalInput,
+  session: ProductWorkspaceSession,
+): Promise<DismissProductSignalResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const reason =
+    input.reason?.trim() ||
+    "Skipped from Agent because the opportunity is not a fit for outreach.";
+  const { rows } = await engine.pool.query<{ status: string }>(
+    `select status::text as status
+       from signals
+      where workspace_id = $1
+        and id = $2
+      limit 1`,
+    [session.workspace_id, input.signal_id],
+  );
+  const status = rows[0]?.status ?? null;
+  if (!status) {
+    throw new Error("Signal not found in the active workspace.");
+  }
+  if (status === "dismissed" || status === "spent") {
+    return {
+      workspace_id: session.workspace_id,
+      signal_id: input.signal_id,
+      dismissed: false,
+      status,
+    };
+  }
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "signal.dismissal.requested",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `signal.dismissal.requested:${session.workspace_id}:${input.signal_id}`,
+    payload: {
+      signal_id: input.signal_id,
+      reason,
+    },
+  });
+  const dismissed = await projectSignalDismissal(
+    engine.pool,
+    session.workspace_id,
+    event.payload,
+  );
+  if (dismissed) {
+    await engine.bus.publish({
+      workspace_id: session.workspace_id,
+      event_type: "signal.dismissed",
+      source: "system",
+      producer_ref: "projection:signal.dismissal.requested",
+      correlation_id: event.correlation_id ?? event.id,
+      causation_id: event.id,
+      idempotency_key: `projection:${event.id}:signal.dismissed`,
+      payload: {
+        signal_id: input.signal_id,
+        reason,
+      },
+    });
+  }
+  return {
+    workspace_id: session.workspace_id,
+    signal_id: input.signal_id,
+    dismissed,
+    status: dismissed ? "dismissed" : status,
+  };
+}
+
 export async function matchWorkspaceSignal(
   input: MatchWorkspaceSignalInput,
   session: ProductWorkspaceSession,
@@ -7126,6 +7207,31 @@ function createProductEventProjections(
       },
     },
     createSignalCompanyLinkedProjection(engine),
+    {
+      name: "signal.dismissal.projector.v1",
+      eventTypes: ["signal.dismissal.requested"],
+      apply: async (event) => {
+        const flipped = await projectSignalDismissal(
+          engine.pool,
+          event.workspace_id,
+          event.payload as never,
+        );
+        if (!flipped) return;
+        await engine.bus.publish({
+          workspace_id: event.workspace_id,
+          event_type: "signal.dismissed",
+          source: "system",
+          producer_ref: "projection:signal.dismissal.requested",
+          correlation_id: event.correlation_id ?? event.id,
+          causation_id: event.id,
+          idempotency_key: `projection:${event.id}:signal.dismissed`,
+          payload: {
+            signal_id: (event.payload as { signal_id: string }).signal_id,
+            reason: (event.payload as { reason: string }).reason,
+          },
+        });
+      },
+    },
     {
       name: "signal.classification.projector.v1",
       eventTypes: ["signal.classification.completed"],

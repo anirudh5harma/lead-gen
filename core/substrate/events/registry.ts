@@ -386,6 +386,11 @@ const SignalDismissed = z.object({
   reason: z.string(),
 });
 
+const SignalDismissalRequested = z.object({
+  signal_id: z.string().uuid(),
+  reason: z.string(),
+});
+
 const SignalClassificationCompleted = z.object({
   signal_id: z.string().uuid(),
   kind: z
@@ -1480,6 +1485,7 @@ export const eventRegistry = {
   "signal.matched": SignalMatched,
   "signal.company.linked": SignalCompanyLinked,
   "signal.dismissed": SignalDismissed,
+  "signal.dismissal.requested": SignalDismissalRequested,
   "signal.classification.completed": SignalClassificationCompleted,
   "signal.expired": SignalExpired,
   "signal.expiry.requested": SignalExpiryRequested,
