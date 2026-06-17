@@ -25,22 +25,16 @@ const NAV: NavItem[] = [
     label: "Dashboard",
   },
   {
-    href: "/dashboard/conversations",
-    label: "Outreach",
+    href: "/dashboard/reps",
+    label: "Agent",
     matches: [
+      "/dashboard/reps",
       "/dashboard/conversations",
       "/dashboard/review",
       "/dashboard/approvals",
       "/dashboard/signals",
       "/dashboard/ingestion",
       "/dashboard/prospects",
-    ],
-  },
-  {
-    href: "/dashboard/reps",
-    label: "Agent",
-    matches: [
-      "/dashboard/reps",
       "/dashboard/plays",
       "/dashboard/campaigns",
       "/dashboard/outcomes",

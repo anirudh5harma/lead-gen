@@ -10,12 +10,13 @@ test("dashboard navigation uses active product surface routes", () => {
   const shell = source("components/dashboard/Shell.tsx");
 
   assert.match(shell, /href: "\/dashboard",\s+label: "Dashboard"/);
-  assert.match(shell, /href: "\/dashboard\/conversations",\s+label: "Outreach"/);
   assert.match(shell, /href: "\/dashboard\/reps",\s+label: "Agent"/);
   assert.match(shell, /href: "\/dashboard\/settings",\s+label: "Profile"/);
+  assert.match(shell, /"\/dashboard\/conversations"/);
   assert.match(shell, /"\/dashboard\/signals"/);
   assert.match(shell, /"\/dashboard\/plays"/);
   assert.match(shell, /"\/dashboard\/outcomes"/);
+  assert.doesNotMatch(shell, /label: "Outreach"/);
   assert.doesNotMatch(shell, /label: "Prospects"/);
   assert.doesNotMatch(shell, /label: "Inbox"/);
   assert.doesNotMatch(shell, /label: "Signals"/);
@@ -166,6 +167,12 @@ test("Agent surface shows live work and account readiness", () => {
   const reps = source("app/dashboard/reps/page.tsx");
 
   assert.match(reps, /AgentActivityPanel/);
+  assert.match(reps, /AgentOutreachPanel/);
+  assert.match(reps, /loadAgentOutreachSummary/);
+  assert.match(reps, /Agent outreach, last 7 days/);
+  assert.match(reps, /Qualified signals become verified contacts/);
+  assert.match(reps, /href="\/dashboard\/conversations"/);
+  assert.match(reps, /href=\{`\/dashboard\/conversations\/\$\{message\.conversation_id\}`\}/);
   assert.match(reps, /events_last_hour/);
   assert.match(reps, /active_workflows/);
   assert.match(reps, /animate-pulse/);

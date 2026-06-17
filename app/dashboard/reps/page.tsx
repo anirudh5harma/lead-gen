@@ -67,16 +67,38 @@ interface AgentActivity {
   event_types: Array<{ event_type: string; count: number }>;
 }
 
+interface AgentOutreachRow {
+  id: string;
+  conversation_id: string;
+  channel: string;
+  status: string;
+  subject: string | null;
+  body: string | null;
+  sent_at: Date | null;
+  created_at: Date;
+  counterparty_name: string | null;
+  company_name: string | null;
+  signal_title: string | null;
+}
+
+interface AgentOutreachSummary {
+  recent: AgentOutreachRow[];
+  email_sent_7d: number;
+  linkedin_sent_7d: number;
+  awaiting_reply: number;
+}
+
 interface RepsState {
   reps: RepRow[];
   channels: ChannelRow[];
   readiness: WorkspaceLaunchReadiness;
   activity: AgentActivity;
+  outreach: AgentOutreachSummary;
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
   const pool = getPool();
-  const [reps, channels, readiness, activity] = await Promise.all([
+  const [reps, channels, readiness, activity, outreach] = await Promise.all([
     pool.query<RepRow>(
       `select r.id,
               r.name,
@@ -151,12 +173,14 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     ),
     loadWorkspaceLaunchReadiness(pool, workspaceId, { required_channel: "any" }),
     loadAgentActivity(workspaceId),
+    loadAgentOutreachSummary(workspaceId),
   ]);
   return {
     reps: reps.rows,
     channels: channels.rows,
     readiness,
     activity,
+    outreach,
   };
 }
 
@@ -208,6 +232,71 @@ async function loadAgentActivity(workspaceId: string): Promise<AgentActivity> {
   };
 }
 
+async function loadAgentOutreachSummary(
+  workspaceId: string,
+): Promise<AgentOutreachSummary> {
+  const pool = getPool();
+  const [recent, summary] = await Promise.all([
+    pool.query<AgentOutreachRow>(
+      `select m.id,
+              m.conversation_id,
+              m.channel::text as channel,
+              m.status::text as status,
+              m.subject,
+              m.body,
+              m.sent_at,
+              m.created_at,
+              p.full_name as counterparty_name,
+              co.name as company_name,
+              s.title as signal_title
+         from messages m
+         join conversations c on c.id = m.conversation_id
+         left join graph_persons p on p.id = c.counterparty_person_id
+         left join graph_companies co on co.id = c.counterparty_company_id
+         left join signals s on s.id = c.origin_signal_id
+        where m.workspace_id = $1
+          and m.direction = 'outbound'
+          and m.channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+          and m.status in ('sent','delivered','replied')
+        order by coalesce(m.sent_at, m.created_at) desc
+        limit 5`,
+      [workspaceId],
+    ),
+    pool.query<{
+      email_sent_7d: string;
+      linkedin_sent_7d: string;
+      awaiting_reply: string;
+    }>(
+      `select
+         (select count(*)::text from messages
+            where workspace_id = $1
+              and direction = 'outbound'
+              and channel = 'email'
+              and status in ('sent','delivered','replied')
+              and coalesce(sent_at, created_at) >= now() - interval '7 days') as email_sent_7d,
+         (select count(*)::text from messages
+            where workspace_id = $1
+              and direction = 'outbound'
+              and channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+              and status in ('sent','delivered','replied')
+              and coalesce(sent_at, created_at) >= now() - interval '7 days') as linkedin_sent_7d,
+         (select count(*)::text from messages
+            where workspace_id = $1
+              and direction = 'outbound'
+              and channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+              and status in ('sent','delivered')
+              and coalesce(sent_at, created_at) >= now() - interval '14 days') as awaiting_reply`,
+      [workspaceId],
+    ),
+  ]);
+  return {
+    recent: recent.rows,
+    email_sent_7d: Number(summary.rows[0]?.email_sent_7d ?? 0),
+    linkedin_sent_7d: Number(summary.rows[0]?.linkedin_sent_7d ?? 0),
+    awaiting_reply: Number(summary.rows[0]?.awaiting_reply ?? 0),
+  };
+}
+
 export default async function RepsPage() {
   const active = await getActiveWorkspaceSession();
   if (!active) return <NoWorkspaceReps />;
@@ -242,6 +331,8 @@ export default async function RepsPage() {
       />
 
       <AgentActivityPanel activity={state.activity} />
+
+      <AgentOutreachPanel outreach={state.outreach} />
 
       <SurfaceSection
         title="Agent"
@@ -426,6 +517,102 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
         </div>
       </aside>
     </section>
+  );
+}
+
+function AgentOutreachPanel({
+  outreach,
+}: {
+  outreach: AgentOutreachSummary;
+}) {
+  return (
+    <SurfaceSection
+      title="Outreach"
+      action={
+        <Link href="/dashboard/conversations" className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          Open sent list
+        </Link>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Agent outreach, last 7 days
+          </p>
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+            <MiniStat label="Emails sent" value={outreach.email_sent_7d} />
+            <MiniStat label="LinkedIn sent" value={outreach.linkedin_sent_7d} />
+            <MiniStat label="Awaiting reply" value={outreach.awaiting_reply} />
+          </div>
+          <p className="text-xs leading-5 text-[var(--color-text-3)]">
+            Qualified signals become verified contacts, then judged email or
+            LinkedIn drafts. Click any contact to inspect the sent draft.
+          </p>
+        </aside>
+
+        {outreach.recent.length === 0 ? (
+          <EmptyState
+            title="No sent outreach yet"
+            hint="When the agent sends an email or LinkedIn touch, the contact and draft will appear here."
+            cta={{
+              href: "/dashboard/settings#linkedin",
+              label: "Connect accounts",
+              icon: "account_tree",
+            }}
+          />
+        ) : (
+          <div className="grid gap-2">
+            {outreach.recent.map((message) => (
+              <AgentOutreachLink key={message.id} message={message} />
+            ))}
+          </div>
+        )}
+      </div>
+    </SurfaceSection>
+  );
+}
+
+function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
+  return (
+    <Link
+      href={`/dashboard/conversations/${message.conversation_id}`}
+      prefetch={false}
+      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
+    >
+      <span className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name={message.channel === "email" ? "mail" : "forum"} size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {message.counterparty_name ?? "Unknown contact"}
+            {message.company_name ? (
+              <span className="font-normal text-[var(--color-text-3)]">
+                {" "}
+                at {message.company_name}
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {message.subject ?? messagePreview(message)}
+          </span>
+          {message.signal_title ? (
+            <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
+              Why now: {message.signal_title}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {channelLabel(message.channel)}
+        </span>
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(message.sent_at ?? message.created_at)}
+        </span>
+      </span>
+    </Link>
   );
 }
 
@@ -686,6 +873,31 @@ function statusLabel(status: string): string {
   if (status === "connected") return "Connected";
   if (status === "needs_reauth") return "Needs reauth";
   return status.replace(/_/g, " ");
+}
+
+function messagePreview(message: AgentOutreachRow): string {
+  const text = message.body;
+  if (!text) return "Sent draft";
+  return text.length > 96 ? text.slice(0, 96) + "..." : text;
+}
+
+function freshWhen(value: Date): string {
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function channelLabel(channel: string): string {
+  if (channel === "email") return "Email";
+  if (channel === "linkedin_dm") return "LinkedIn DM";
+  if (channel === "linkedin_inmail") return "LinkedIn InMail";
+  if (channel === "linkedin_connection") return "LinkedIn connect";
+  if (channel === "linkedin_comment") return "LinkedIn comment";
+  return channel.replace(/_/g, " ");
 }
 
 function NoWorkspaceReps() {
