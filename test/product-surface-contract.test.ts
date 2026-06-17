@@ -224,8 +224,19 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /href: "#email"/);
   assert.match(settings, /href: "#linkedin"/);
   assert.match(settings, /href: "#templates"/);
+  assert.match(settings, /href: "#blocklist"/);
   assert.match(settings, /Email accounts/);
   assert.match(settings, /LinkedIn accounts/);
+  assert.match(settings, /Blocklist/);
+  assert.match(
+    settings,
+    /Bounces, unsubscribes, and do-not-contact outcomes protect future\s+outreach automatically/,
+  );
+  assert.match(
+    settings,
+    /kind in \('bounce','unsubscribe','do_not_contact'\)/,
+  );
+  assert.match(settings, /Open outcome ledger/);
   assert.match(
     settings,
     /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fsettings%23email"/,

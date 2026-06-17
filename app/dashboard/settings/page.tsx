@@ -61,6 +61,22 @@ interface SettingsIcpRow {
   match_threshold: string;
 }
 
+interface SettingsSuppressionStats {
+  total: number;
+  bounces: number;
+  unsubscribes: number;
+  doNotContact: number;
+}
+
+interface SettingsSuppressionRow {
+  id: string;
+  kind: string;
+  recorded_at: Date;
+  conversation_id: string | null;
+  counterparty_name: string | null;
+  company_name: string | null;
+}
+
 interface SettingsState {
   settings: Record<string, unknown>;
   outlookAccount: SettingsOutlookAccount | null;
@@ -68,11 +84,22 @@ interface SettingsState {
   rep: SettingsRepRow | null;
   icp: SettingsIcpRow | null;
   approvals: string[];
+  suppressionStats: SettingsSuppressionStats;
+  recentSuppressions: SettingsSuppressionRow[];
 }
 
 async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
   const pool = getPool();
-  const [workspace, outlook, linkedIn, rep, icp, policies] = await Promise.all([
+  const [
+    workspace,
+    outlook,
+    linkedIn,
+    rep,
+    icp,
+    policies,
+    suppressionStats,
+    recentSuppressions,
+  ] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
          from workspaces
@@ -164,7 +191,40 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
           and status in ('draft', 'active', 'paused', 'archived')`,
       [workspaceId],
     ),
+    pool.query<{
+      total: string;
+      bounces: string;
+      unsubscribes: string;
+      do_not_contact: string;
+    }>(
+      `select count(*)::text as total,
+              count(*) filter (where kind = 'bounce')::text as bounces,
+              count(*) filter (where kind = 'unsubscribe')::text as unsubscribes,
+              count(*) filter (where kind = 'do_not_contact')::text as do_not_contact
+         from outcomes
+        where workspace_id = $1
+          and kind in ('bounce','unsubscribe','do_not_contact')`,
+      [workspaceId],
+    ),
+    pool.query<SettingsSuppressionRow>(
+      `select o.id,
+              o.kind::text as kind,
+              o.recorded_at,
+              o.conversation_id,
+              p.full_name as counterparty_name,
+              co.name as company_name
+         from outcomes o
+         left join conversations c on c.id = o.conversation_id
+         left join graph_persons p on p.id = coalesce(o.subject_person_id, c.counterparty_person_id)
+         left join graph_companies co on co.id = coalesce(o.subject_company_id, c.counterparty_company_id)
+        where o.workspace_id = $1
+          and o.kind in ('bounce','unsubscribe','do_not_contact')
+        order by coalesce(o.recorded_at, o.occurred_at) desc
+        limit 5`,
+      [workspaceId],
+    ),
   ]);
+  const suppressions = suppressionStats.rows[0];
   return {
     settings: workspace.rows[0]?.settings ?? {},
     outlookAccount: outlook.rows[0] ?? null,
@@ -174,6 +234,13 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
     approvals: policies.rows.flatMap((row) =>
       approvalsFromAutonomy(row.autonomy),
     ),
+    suppressionStats: {
+      total: Number(suppressions?.total ?? 0),
+      bounces: Number(suppressions?.bounces ?? 0),
+      unsubscribes: Number(suppressions?.unsubscribes ?? 0),
+      doNotContact: Number(suppressions?.do_not_contact ?? 0),
+    },
+    recentSuppressions: recentSuppressions.rows,
   };
 }
 
@@ -239,6 +306,7 @@ export default async function SettingsPage() {
         rep={state.rep}
         icp={state.icp}
         mode={mode}
+        suppressionStats={state.suppressionStats}
       />
 
       <div id="profile">
@@ -285,42 +353,53 @@ export default async function SettingsPage() {
       </section>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div id="autonomy">
-          <SurfaceSection title="Autonomy">
-            <form
-              action={updateWorkspaceAutonomyAction}
-              className="section-note grid gap-5"
-            >
-              <input type="hidden" name="return_to" value="/dashboard/settings" />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <AutonomyOption
-                  value="autonomous"
-                  title="Autonomous"
-                  description="Move after evals, caps, and channel checks pass."
-                  defaultChecked={formMode === "autonomous"}
-                />
-                <AutonomyOption
-                  value="review_only"
-                  title="Review-only"
-                  description="Hold outbound moves for human review every time."
-                  defaultChecked={formMode === "review_only"}
-                />
-              </div>
-              {mode === "custom" ? (
-                <p className="text-sm text-[var(--color-text-3)]">
-                  Current agent and outreach policies are mixed. Saving here
-                  applies one mode across the workspace.
-                </p>
-              ) : null}
-              <PendingSubmitButton
-                className="btn-solid w-fit"
-                icon="check"
-                pendingLabel="Saving mode"
+        <div className="grid gap-6">
+          <div id="autonomy">
+            <SurfaceSection title="Autonomy">
+              <form
+                action={updateWorkspaceAutonomyAction}
+                className="section-note grid gap-5"
               >
-                Save mode
-              </PendingSubmitButton>
-            </form>
-          </SurfaceSection>
+                <input type="hidden" name="return_to" value="/dashboard/settings" />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <AutonomyOption
+                    value="autonomous"
+                    title="Autonomous"
+                    description="Move after evals, caps, and channel checks pass."
+                    defaultChecked={formMode === "autonomous"}
+                  />
+                  <AutonomyOption
+                    value="review_only"
+                    title="Review-only"
+                    description="Hold outbound moves for human review every time."
+                    defaultChecked={formMode === "review_only"}
+                  />
+                </div>
+                {mode === "custom" ? (
+                  <p className="text-sm text-[var(--color-text-3)]">
+                    Current agent and outreach policies are mixed. Saving here
+                    applies one mode across the workspace.
+                  </p>
+                ) : null}
+                <PendingSubmitButton
+                  className="btn-solid w-fit"
+                  icon="check"
+                  pendingLabel="Saving mode"
+                >
+                  Save mode
+                </PendingSubmitButton>
+              </form>
+            </SurfaceSection>
+          </div>
+
+          <div id="blocklist">
+            <SurfaceSection title="Blocklist">
+              <BlocklistPanel
+                stats={state.suppressionStats}
+                recent={state.recentSuppressions}
+              />
+            </SurfaceSection>
+          </div>
         </div>
 
         <SurfaceSection title="Connected tools">
@@ -450,6 +529,7 @@ function SettingsSectionNav({
   rep,
   icp,
   mode,
+  suppressionStats,
 }: {
   profile: ProductCompanyProfile | null;
   outlookAccount: SettingsOutlookAccount | null;
@@ -457,6 +537,7 @@ function SettingsSectionNav({
   rep: SettingsRepRow | null;
   icp: SettingsIcpRow | null;
   mode: SettingsAutonomyMode;
+  suppressionStats: SettingsSuppressionStats;
 }) {
   const sections = [
     {
@@ -507,6 +588,16 @@ function SettingsSectionNav({
       href: "#autonomy",
       icon: "task_alt",
       ready: mode !== "custom",
+    },
+    {
+      title: "Blocklist",
+      detail:
+        suppressionStats.total > 0
+          ? `${suppressionStats.total} protected`
+          : "Bounces and opt-outs",
+      href: "#blocklist",
+      icon: "report",
+      ready: true,
     },
     {
       title: "Tools",
@@ -863,6 +954,88 @@ function LinkedInPanel({
   );
 }
 
+function BlocklistPanel({
+  stats,
+  recent,
+}: {
+  stats: SettingsSuppressionStats;
+  recent: SettingsSuppressionRow[];
+}) {
+  return (
+    <div className="section-note grid gap-5">
+      <div className="flex items-start gap-3">
+        <span className="brief-note-icon shrink-0">
+          <Icon name="report" size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Outreach protection
+          </p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+            Bounces, unsubscribes, and do-not-contact outcomes protect future
+            outreach automatically.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-4">
+        <ProfileFact label="Protected" value={String(stats.total)} />
+        <ProfileFact label="Bounces" value={String(stats.bounces)} />
+        <ProfileFact label="Unsubscribed" value={String(stats.unsubscribes)} />
+        <ProfileFact label="Do not contact" value={String(stats.doNotContact)} />
+      </div>
+
+      {recent.length === 0 ? (
+        <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+          No blocklist events yet.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {recent.map((row) => (
+            <BlocklistRow key={row.id} row={row} />
+          ))}
+        </div>
+      )}
+
+      <Link href="/dashboard/outcomes" prefetch={false} className="btn-quiet-sm w-fit">
+        <Icon name="arrow_forward" size={14} />
+        Open outcome ledger
+      </Link>
+    </div>
+  );
+}
+
+function BlocklistRow({ row }: { row: SettingsSuppressionRow }) {
+  const content = (
+    <article className="grid gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] sm:grid-cols-[1fr_auto] sm:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-[8px] bg-[var(--color-neg-bg)] px-2 py-1 text-[11px] font-medium text-[var(--color-neg)]">
+            {suppressionLabel(row.kind)}
+          </span>
+          <span className="text-xs text-[var(--color-text-4)]">
+            {freshWhen(row.recorded_at)}
+          </span>
+        </div>
+        <p className="mt-2 truncate text-sm font-medium text-[var(--color-text-1)]">
+          {row.counterparty_name ?? "Unknown contact"}
+          {row.company_name ? ` at ${row.company_name}` : ""}
+        </p>
+      </div>
+      <span className="text-xs font-medium text-[var(--color-accent)]">
+        {row.conversation_id ? "Open Conversation" : "Protected"}
+      </span>
+    </article>
+  );
+
+  if (!row.conversation_id) return content;
+  return (
+    <Link href={`/dashboard/conversations/${row.conversation_id}`} prefetch={false}>
+      {content}
+    </Link>
+  );
+}
+
 function AutonomyOption({
   value,
   title,
@@ -1078,6 +1251,23 @@ function outlookMailbox(account: SettingsOutlookAccount): string {
 
 function statusLabel(status: string): string {
   return status.replace(/_/g, " ");
+}
+
+function suppressionLabel(kind: string): string {
+  if (kind === "bounce") return "Bounce";
+  if (kind === "unsubscribe") return "Unsubscribe";
+  if (kind === "do_not_contact") return "Do not contact";
+  return kind.replace(/_/g, " ");
+}
+
+function freshWhen(value: Date): string {
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function agentDisplayName(name: string): string {

@@ -62,7 +62,6 @@ import {
   type MeetingPrepGraphInput,
   type ProfileIcpGraphInput,
   type SignalIngestionGraphInput,
-  type VerticalIntelligenceGraphInput,
 } from "../agents/langgraph/index.ts";
 import {
   createFallbackJudge,
@@ -1059,13 +1058,13 @@ export interface ProductLaunchReadinessInput {
   required_channel?: LaunchReadinessRequiredChannel;
 }
 
-export interface ProductLaunchReadinessResult extends WorkspaceLaunchReadiness {}
+export type ProductLaunchReadinessResult = WorkspaceLaunchReadiness;
 
 export interface ProductVerticalIntelligenceInput {
   company_id?: string | null;
 }
 
-export interface ProductVerticalIntelligenceResult extends VerticalIntelligencePack {}
+export type ProductVerticalIntelligenceResult = VerticalIntelligencePack;
 
 export interface ProductRecommendationQualityBucket {
   total_reviewed: number;
@@ -9529,7 +9528,7 @@ interface SignalMatchingWorkflowStarter {
     idempotency_key?: string;
     correlation_id?: string;
     causation_id?: string;
-  }): Promise<unknown>;
+  }): Promise<O>;
 }
 
 export interface SignalMatchingWorkflowDispatchDeps {
