@@ -25,11 +25,16 @@ interface RepRow {
     story?: string;
   };
   autonomy: {
-    channels?: Record<string, { daily_cap?: number; approval?: string }>;
+    channels?: Record<string, RepChannelPolicy>;
   } | null;
   open_conversations: string;
   sent_7d: string;
   outcomes_7d: string;
+}
+
+interface RepChannelPolicy {
+  daily_cap?: number;
+  approval?: string;
 }
 
 interface ChannelRow {
@@ -39,6 +44,19 @@ interface ChannelRow {
   status: string;
   daily_cap: number | null;
   last_error: string | null;
+}
+
+interface ChannelConnection {
+  connected: boolean;
+  label: string;
+  status: string;
+  dailyCap: number | null;
+  href: string;
+}
+
+interface ChannelCoverage {
+  email: ChannelConnection;
+  linkedIn: ChannelConnection;
 }
 
 interface RepsState {
@@ -145,6 +163,7 @@ export default async function RepsPage() {
   const connectedChannels = state.channels.filter(
     (channel) => channel.status === "connected",
   ).length;
+  const coverage = workspaceChannelCoverage(state.channels);
 
   return (
     <div className="space-y-10">
@@ -171,9 +190,9 @@ export default async function RepsPage() {
       <SurfaceSection
         title="Rep roster"
         action={
-          <Link href="/dashboard/settings#profile" className="btn-solid-sm">
+          <Link href="/dashboard/settings#motion" className="btn-solid-sm">
             <Icon name="edit_note" size={14} />
-            Tune profile
+            Tune Rep
           </Link>
         }
       >
@@ -182,7 +201,7 @@ export default async function RepsPage() {
             title="No Reps configured yet."
             hint="Start by defining the workspace profile, audience, voice, and approval mode."
             cta={{
-              href: "/dashboard/settings#profile",
+              href: "/dashboard/settings#motion",
               label: "Configure first Rep",
               icon: "badge",
             }}
@@ -190,7 +209,7 @@ export default async function RepsPage() {
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
             {state.reps.map((rep) => (
-              <RepCard key={rep.id} rep={rep} />
+              <RepCard key={rep.id} rep={rep} coverage={coverage} />
             ))}
           </div>
         )}
@@ -226,7 +245,7 @@ export default async function RepsPage() {
               {launchReadinessCopy(state.readiness)}
             </p>
             <div className="mt-4 grid gap-2">
-              <Link href="/dashboard/settings#profile" className="priority-action">
+              <Link href="/dashboard/settings#motion" className="priority-action">
                 <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
                   <Icon name="person" size={16} />
                 </span>
@@ -286,24 +305,29 @@ export default async function RepsPage() {
   );
 }
 
-function RepCard({ rep }: { rep: RepRow }) {
+function RepCard({
+  rep,
+  coverage,
+}: {
+  rep: RepRow;
+  coverage: ChannelCoverage;
+}) {
   const emailPolicy = rep.autonomy?.channels?.email;
-  const approval = emailPolicy?.approval ?? "not set";
-  const dailyCap = emailPolicy?.daily_cap ?? 0;
+  const linkedInPolicy = firstChannelPolicy(rep, ["linkedin_dm", "linkedin"]);
   return (
-    <Link
-      href={`/dashboard/reps/${rep.id}`}
-      className="group grid gap-5 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
-    >
+    <article className="group grid gap-5 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50">
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
           <Icon name={repIcon(rep)} size={18} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[18px] font-semibold text-[var(--color-text-1)]">
+            <Link
+              href={`/dashboard/reps/${rep.id}`}
+              className="text-[18px] font-semibold text-[var(--color-text-1)] transition-colors hover:text-[var(--color-accent)]"
+            >
               {rep.name}
-            </h2>
+            </Link>
             <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
               {rep.role.replace(/_/g, " ")}
             </span>
@@ -319,13 +343,75 @@ function RepCard({ rep }: { rep: RepRow }) {
         <MiniStat label="Sent 7d" value={Number(rep.sent_7d)} />
         <MiniStat label="Outcomes 7d" value={Number(rep.outcomes_7d)} />
       </div>
-      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-line-1)] pt-3 text-xs text-[var(--color-text-3)]">
-        <span>{statusLabel(rep.status)}</span>
-        <span aria-hidden="true">/</span>
-        <span>{dailyCap > 0 ? `${dailyCap}/day` : "No daily cap"}</span>
-        <span aria-hidden="true">/</span>
-        <span>{approvalLabel(approval)}</span>
+      <div className="grid gap-2 border-t border-[var(--color-line-1)] pt-3 sm:grid-cols-2">
+        <RepChannelPill
+          title="Email"
+          icon="mail"
+          connection={coverage.email}
+          policy={emailPolicy}
+        />
+        <RepChannelPill
+          title="LinkedIn"
+          icon="forum"
+          connection={coverage.linkedIn}
+          policy={linkedInPolicy}
+        />
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--color-text-3)]">
+        <span>
+          {statusLabel(rep.status)} / Profile, accounts, and limits stay in
+          Settings
+        </span>
+        <Link href={`/dashboard/reps/${rep.id}`} className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          Open Rep
+        </Link>
+      </div>
+    </article>
+  );
+}
+
+function RepChannelPill({
+  title,
+  icon,
+  connection,
+  policy,
+}: {
+  title: string;
+  icon: string;
+  connection: ChannelConnection;
+  policy?: RepChannelPolicy;
+}) {
+  const cap = policy?.daily_cap ?? connection.dailyCap ?? 0;
+  const approval = policy?.approval ?? "not set";
+  return (
+    <Link
+      href={connection.href}
+      prefetch={false}
+      className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 transition-colors hover:border-[var(--color-line-3)]"
+    >
+      <span className="flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+          <Icon name={icon} size={14} />
+          {title}
+        </span>
+        <span
+          className={
+            "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+            (connection.connected
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+          }
+        >
+          {connection.connected ? "Ready" : "Connect"}
+        </span>
+      </span>
+      <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
+        {connection.label}
+      </span>
+      <span className="mt-1 block text-[11px] leading-5 text-[var(--color-text-3)]">
+        {cap > 0 ? `${cap}/day` : "No cap"} - {approvalLabel(approval)}
+      </span>
     </Link>
   );
 }
@@ -379,6 +465,66 @@ function launchReadinessCopy(readiness: WorkspaceLaunchReadiness): string {
     (check) => check.required && check.status !== "ready",
   );
   return next?.detail ?? "Finish the required launch checks before scaling outreach.";
+}
+
+function workspaceChannelCoverage(channels: ChannelRow[]): ChannelCoverage {
+  const email = firstByReadiness(
+    channels.filter((channel) => channel.kind === "oauth_outlook"),
+  );
+  const linkedIn = firstByReadiness(
+    channels.filter(
+      (channel) =>
+        channel.kind === "linkedin_session" || channel.kind === "linkedin_oauth",
+    ),
+  );
+  return {
+    email: channelConnection(email, "Connect Outlook", "/dashboard/integrations"),
+    linkedIn: channelConnection(
+      linkedIn,
+      "Connect LinkedIn",
+      "/dashboard/integrations",
+    ),
+  };
+}
+
+function firstByReadiness(channels: ChannelRow[]): ChannelRow | undefined {
+  return channels.find((channel) => channel.status === "connected") ?? channels[0];
+}
+
+function channelConnection(
+  channel: ChannelRow | undefined,
+  fallback: string,
+  href: string,
+): ChannelConnection {
+  if (!channel) {
+    return {
+      connected: false,
+      label: fallback,
+      status: "needed",
+      dailyCap: null,
+      href,
+    };
+  }
+  return {
+    connected: channel.status === "connected",
+    label: channel.display_name,
+    status: channel.status,
+    dailyCap: channel.daily_cap,
+    href,
+  };
+}
+
+function firstChannelPolicy(
+  rep: RepRow,
+  keys: string[],
+): RepChannelPolicy | undefined {
+  const channels = rep.autonomy?.channels;
+  if (!channels) return undefined;
+  for (const key of keys) {
+    const policy = channels[key];
+    if (policy) return policy;
+  }
+  return undefined;
 }
 
 function repIcon(rep: RepRow): string {

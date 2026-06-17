@@ -142,6 +142,19 @@ test("Prospects open graph-backed profile pages with channel readiness", () => {
   assert.match(profile, /Connect Outlook/);
 });
 
+test("Reps act as the profile and account readiness control plane", () => {
+  const reps = source("app/dashboard/reps/page.tsx");
+
+  assert.match(reps, /workspaceChannelCoverage/);
+  assert.match(reps, /firstChannelPolicy\(rep, \["linkedin_dm", "linkedin"\]\)/);
+  assert.match(reps, /href="\/dashboard\/settings#motion"/);
+  assert.match(reps, /Connect Outlook/);
+  assert.match(reps, /Connect LinkedIn/);
+  assert.match(reps, /Open Rep/);
+  assert.match(reps, /Profile, accounts, and limits stay in\s+Settings/);
+  assert.doesNotMatch(reps, /<RepCard key=\{rep\.id\} rep=\{rep\} \/>/);
+});
+
 test("dashboard Signal surfaces do not expose manual ingestion controls", () => {
   const campaigns = source("app/dashboard/campaigns/page.tsx");
   const signals = source("app/dashboard/ingestion/page.tsx");
