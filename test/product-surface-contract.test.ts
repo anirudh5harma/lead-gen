@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 function source(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+function exists(path: string): boolean {
+  return existsSync(new URL(`../${path}`, import.meta.url));
 }
 
 test("dashboard navigation uses active product surface routes", () => {
@@ -77,10 +81,9 @@ test("Agent is the canonical dashboard surface route", () => {
   assert.match(agentPage, /from "\.\.\/reps\/page"/);
   assert.match(agentDetailPage, /export const dynamic = "force-dynamic"/);
   assert.match(agentDetailPage, /from "\.\.\/\.\.\/reps\/\[id\]\/page"/);
-  assert.match(
-    source("app/dashboard/agent/loading.tsx"),
-    /from "\.\.\/reps\/loading"/,
-  );
+  assert.equal(exists("app/dashboard/loading.tsx"), false);
+  assert.equal(exists("app/dashboard/agent/loading.tsx"), false);
+  assert.equal(exists("app/dashboard/settings/loading.tsx"), false);
   assert.match(
     source("app/dashboard/agent/[id]/loading.tsx"),
     /from "\.\.\/\.\.\/reps\/\[id\]\/loading"/,
@@ -201,11 +204,20 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /Emails sent/);
   assert.match(dashboard, /LinkedIn DMs/);
   assert.match(dashboard, /Replies \/ meetings/);
+  assert.match(dashboard, /Today priority/);
+  assert.match(dashboard, /Signal-to-outreach funnel/);
   assert.match(dashboard, /Signal mix/);
   assert.match(dashboard, /Agent insight/);
+  assert.match(dashboard, /Reply and meeting insights/);
+  assert.match(dashboard, /loadBriefOutcomeInsights/);
+  assert.match(dashboard, /from outcomes o/);
+  assert.match(dashboard, /left join conversations c/);
+  assert.match(dashboard, /left join signals s/);
+  assert.match(dashboard, /OutcomeInsightRow/);
   assert.match(dashboard, /href: "\/dashboard\/settings#profile"/);
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
   assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
+  assert.match(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
   assert.match(source("app/dashboard/brief/page.tsx"), /redirect\("\/dashboard"\)/);
   assert.doesNotMatch(dashboard, /href: "\/dashboard\/prospecting"/);
   assert.match(appLayout, /Profile, quality signals, verified contacts/);
@@ -339,6 +351,8 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   assert.match(outcomes, /redirect\("\/dashboard"\)/);
   assert.match(dashboard, /Replies \/ meetings/);
   assert.match(dashboard, /from outcomes o/);
+  assert.match(dashboard, /Reply and meeting insights/);
+  assert.match(dashboard, /reply_intent/);
   assert.match(reps, /Reply evidence/);
   assert.match(reps, /positive_replies_7d/);
   assert.match(loading, /surface="dashboard"/);
