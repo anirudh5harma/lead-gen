@@ -396,7 +396,7 @@ export default async function SettingsPage() {
           </SurfaceSection>
         </div>
 
-        <section className="grid gap-6 md:grid-cols-2">
+        <section id="channels" className="grid scroll-mt-28 gap-6 md:grid-cols-2">
           <div id="email">
             <SurfaceSection title="Email integration">
               <OutlookPanel account={state.outlookAccount} />

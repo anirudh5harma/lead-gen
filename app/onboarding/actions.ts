@@ -24,7 +24,7 @@ export interface OnboardingActionState {
   error: string | null;
 }
 
-const POST_ONBOARDING_PATH = "/dashboard/settings#email";
+const POST_ONBOARDING_PATH = "/dashboard/settings#channels";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();

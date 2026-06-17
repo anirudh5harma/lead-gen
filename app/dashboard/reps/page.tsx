@@ -2091,7 +2091,10 @@ function readinessFallbackHref(check: LaunchReadinessCheck): string {
   if (check.id === "signal_sources") return "/dashboard/agent#sources";
   if (check.id === "plays") return "/dashboard/agent#outreach";
   if (check.id === "linkedin") return "/dashboard/settings#linkedin";
-  return "/dashboard/settings#email";
+  if (check.id === "outlook" || check.id === "outreach_channel") {
+    return "/dashboard/settings#email";
+  }
+  return "/dashboard/settings#channels";
 }
 
 function readinessActionIcon(check: LaunchReadinessCheck): string {

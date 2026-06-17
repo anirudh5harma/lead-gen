@@ -16,12 +16,12 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/dashboard/integrations",
-        destination: "/dashboard/settings#email",
+        destination: "/dashboard/settings#channels",
         permanent: false,
       },
       {
         source: "/dashboard/deliverability",
-        destination: "/dashboard/settings#email",
+        destination: "/dashboard/settings#channels",
         permanent: false,
       },
       {

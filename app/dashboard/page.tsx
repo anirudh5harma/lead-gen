@@ -477,7 +477,7 @@ function briefPriority(actions: BriefActionState, totalSent7d: number) {
       detail: `${actions.unhealthy_channels} connected ${
         actions.unhealthy_channels === 1 ? "account needs" : "accounts need"
       } attention before the agent can send reliably.`,
-      href: "/dashboard/settings#email",
+      href: "/dashboard/settings#channels",
       icon: "sync_problem",
       label: "Fix accounts",
     };

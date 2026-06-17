@@ -121,7 +121,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   );
   assert.match(
     source("app/dashboard/deliverability/page.tsx"),
-    /redirect\("\/dashboard\/settings#email"\)/,
+    /redirect\("\/dashboard\/settings#channels"\)/,
   );
   assert.match(
     source("app/dashboard/signals/page.tsx"),
@@ -170,7 +170,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
   assert.match(nextConfig, /destination: "\/dashboard\/brief"/);
   assert.match(nextConfig, /destination: "\/dashboard\/settings#profile"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/settings#email"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/settings#channels"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#opportunities"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#outreach"/);
@@ -723,7 +723,7 @@ test("Integrations route folds into Profile", () => {
   const outlook = source("app/api/auth/outlook/route.ts");
   const linkedIn = source("app/api/auth/linkedin/route.ts");
 
-  assert.match(integrations, /redirect\("\/dashboard\/settings#email"\)/);
+  assert.match(integrations, /redirect\("\/dashboard\/settings#channels"\)/);
   assert.doesNotMatch(integrations, /Connect Outlook/);
   assert.doesNotMatch(integrations, /Connect LinkedIn/);
   assert.doesNotMatch(integrations, /href="\/api\/mcp"/);
@@ -744,6 +744,8 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/settings#linkedin"/);
   assert.match(linkedInCallback, /dest\.searchParams\.set\("status", "linkedin_connecting"\)/);
   assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
+  assert.match(settings, /id="channels"/);
+  assert.match(settings, /scroll-mt-28/);
   assert.doesNotMatch(linkedInCallback, /\/dashboard\/prospecting/);
 });
 
@@ -902,7 +904,7 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingActions, /preferred_language/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
   assert.match(onboardingActions, /wait: false/);
-  assert.match(onboardingActions, /POST_ONBOARDING_PATH = "\/dashboard\/settings#email"/);
+  assert.match(onboardingActions, /POST_ONBOARDING_PATH = "\/dashboard\/settings#channels"/);
   assert.match(onboardingActions, /redirect\(POST_ONBOARDING_PATH\)/);
   assert.doesNotMatch(onboardingActions, /runWorkspaceSignalAggregatorOnce/);
   assert.match(activationGraph, /description_hint/);
