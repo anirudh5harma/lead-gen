@@ -14,6 +14,14 @@ interface NavItem {
   matches?: string[];
 }
 
+interface FlowItem {
+  href: string;
+  label: string;
+  detail: string;
+  icon: string;
+  matches: string[];
+}
+
 export interface ShellWorkspace {
   id: string;
   name: string;
@@ -49,6 +57,50 @@ const NAV: NavItem[] = [
       "/dashboard/deliverability",
       "/dashboard/prospecting",
       "/dashboard/setup",
+    ],
+  },
+];
+
+const FLOW: FlowItem[] = [
+  {
+    href: "/dashboard/settings#profile",
+    label: "Profile",
+    detail: "ICP + integrations",
+    icon: "person_search",
+    matches: [
+      "/dashboard/settings",
+      "/dashboard/integrations",
+      "/dashboard/deliverability",
+      "/dashboard/prospecting",
+      "/dashboard/setup",
+    ],
+  },
+  {
+    href: "/dashboard/reps#sources",
+    label: "Sources",
+    detail: "Signal strategy",
+    icon: "sensors",
+    matches: ["/dashboard/reps"],
+  },
+  {
+    href: "/dashboard/signals",
+    label: "Signals",
+    detail: "Qualified contacts",
+    icon: "fact_check",
+    matches: ["/dashboard/signals", "/dashboard/ingestion", "/dashboard/prospects"],
+  },
+  {
+    href: "/dashboard/reps#outreach",
+    label: "Outreach",
+    detail: "Emails + DMs",
+    icon: "send",
+    matches: [
+      "/dashboard/conversations",
+      "/dashboard/review",
+      "/dashboard/approvals",
+      "/dashboard/plays",
+      "/dashboard/campaigns",
+      "/dashboard/outcomes",
     ],
   },
 ];
@@ -202,9 +254,68 @@ export function DashboardShell({
       </nav>
 
       <main className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] overflow-x-clip px-6 pb-16 pt-[108px] md:px-10 md:pt-[80px] lg:px-16">
+        <ProductFlowRail pathname={pathname} onNavClick={handleNavClick} />
         {children}
       </main>
     </div>
+  );
+}
+
+function ProductFlowRail({
+  pathname,
+  onNavClick,
+}: {
+  pathname: string;
+  onNavClick: (
+    event: MouseEvent<HTMLAnchorElement>,
+    href: string,
+    matches?: string[],
+  ) => void;
+}) {
+  return (
+    <nav
+      aria-label="Product flow"
+      className="mb-8 overflow-x-auto rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-1"
+    >
+      <div className="grid min-w-[720px] grid-cols-4 gap-1">
+        {FLOW.map((item) => {
+          const active = isActivePath(pathname, item.href, item.matches);
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              onClick={(event) => onNavClick(event, item.href, item.matches)}
+              aria-current={active ? "step" : undefined}
+              className={
+                "grid grid-cols-[32px_1fr] items-center gap-2 rounded-[8px] px-3 py-2 transition-colors " +
+                (active
+                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                  : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
+              }
+            >
+              <span
+                className={
+                  "grid size-8 place-items-center rounded-[8px] " +
+                  (active
+                    ? "bg-[var(--color-ink-0)]"
+                    : "bg-[var(--color-ink-2)]")
+                }
+              >
+                <Icon name={item.icon} size={15} />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-semibold">
+                  {item.label}
+                </span>
+                <span className="block truncate text-[11px] text-[var(--color-text-3)]">
+                  {item.detail}
+                </span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 

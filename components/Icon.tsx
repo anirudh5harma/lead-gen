@@ -27,6 +27,24 @@ const icons: Record<string, IconNode> = {
       <path d="M14 3v5h5M9 12h6M9 16h6" />
     </>
   ),
+  alternate_email: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M15 9v4a2 2 0 0 0 4 0v-1a7 7 0 1 0-2.1 5" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  auto_graph: (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="M7 15l3-4 3 2 4-7" />
+      <circle cx="7" cy="15" r="1" />
+      <circle cx="10" cy="11" r="1" />
+      <circle cx="13" cy="13" r="1" />
+      <circle cx="17" cy="6" r="1" />
+    </>
+  ),
   auto_awesome: (
     <>
       <path d="M12 3l1.6 5.2L19 10l-5.4 1.8L12 17l-1.6-5.2L5 10l5.4-1.8z" />
@@ -38,6 +56,12 @@ const icons: Record<string, IconNode> = {
       <rect x="5" y="4" width="14" height="16" rx="2" />
       <circle cx="12" cy="10" r="2.5" />
       <path d="M8.5 16a4 4 0 0 1 7 0" />
+    </>
+  ),
+  block: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M6.7 6.7l10.6 10.6" />
     </>
   ),
   campaign: (
@@ -54,6 +78,13 @@ const icons: Record<string, IconNode> = {
     </>
   ),
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  corporate_fare: (
+    <>
+      <rect x="4" y="3" width="10" height="18" rx="1.5" />
+      <path d="M14 9h6v12h-6" />
+      <path d="M7 7h4M7 11h4M7 15h4M17 13h1M17 17h1" />
+    </>
+  ),
   dashboard: (
     <>
       <rect x="4" y="4" width="7" height="7" rx="1.5" />
@@ -86,6 +117,13 @@ const icons: Record<string, IconNode> = {
       <path d="M12 7v6M12 17h.01" />
     </>
   ),
+  event_available: (
+    <>
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M8 3v4M16 3v4M4 10h16" />
+      <path d="M8 15l2.2 2.2L16 12" />
+    </>
+  ),
   fact_check: (
     <>
       <rect x="4" y="5" width="16" height="14" rx="2" />
@@ -102,6 +140,16 @@ const icons: Record<string, IconNode> = {
     <>
       <path d="M12 3l8 3v6c0 4.6-3.2 7.5-8 9-4.8-1.5-8-4.4-8-9V6z" />
       <path d="M12 8v8M8 12h8" />
+    </>
+  ),
+  hub: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <circle cx="5" cy="7" r="2" />
+      <circle cx="19" cy="7" r="2" />
+      <circle cx="7" cy="19" r="2" />
+      <circle cx="17" cy="19" r="2" />
+      <path d="M7 8.3l2.7 2M16.3 10.3l1.2-1.8M10.2 14.2l-2 3M13.8 14.2l2 3" />
     </>
   ),
   info: (
@@ -159,6 +207,30 @@ const icons: Record<string, IconNode> = {
       <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
     </>
   ),
+  person_search: (
+    <>
+      <circle cx="10" cy="8" r="3.5" />
+      <path d="M3.8 19a6.2 6.2 0 0 1 9.8-4.8" />
+      <circle cx="17" cy="17" r="3" />
+      <path d="M19.2 19.2L22 22" />
+    </>
+  ),
+  play_arrow: <path d="M8 5v14l11-7z" />,
+  public: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+      <path d="M5.5 7.5h13M5.5 16.5h13" />
+    </>
+  ),
+  radar: (
+    <>
+      <circle cx="12" cy="12" r="2" />
+      <path d="M12 12l5-7" />
+      <path d="M20 12a8 8 0 1 1-3.2-6.4" />
+      <path d="M16 12a4 4 0 1 1-1.6-3.2" />
+    </>
+  ),
   rate_review: (
     <>
       <path d="M5 5h14v10H9l-4 4z" />
@@ -187,6 +259,13 @@ const icons: Record<string, IconNode> = {
     <>
       <path d="M5 4h12l2 2v14H5z" />
       <path d="M8 4v6h7V4M8 20v-6h8v6" />
+    </>
+  ),
+  rule: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M8 8h8M8 12h5M8 16h8" />
+      <path d="M16 11l1.4 1.4L20 9.8" />
     </>
   ),
   schedule: (
@@ -245,6 +324,18 @@ const icons: Record<string, IconNode> = {
   tune: (
     <>
       <path d="M4 7h8M16 7h4M4 17h4M12 17h8M10 5v4M14 15v4" />
+    </>
+  ),
+  verified: (
+    <>
+      <path d="M12 3l2.2 2 3-.4.7 2.9 2.6 1.5-1.2 2.8 1.2 2.8-2.6 1.5-.7 2.9-3-.4-2.2 2-2.2-2-3 .4-.7-2.9-2.6-1.5 1.2-2.8-1.2-2.8 2.6-1.5.7-2.9 3 .4z" />
+      <path d="M8.5 12.2l2.2 2.2 4.8-5" />
+    </>
+  ),
+  warning: (
+    <>
+      <path d="M12 3l10 18H2z" />
+      <path d="M12 9v5M12 18h.01" />
     </>
   ),
 };

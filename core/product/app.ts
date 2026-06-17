@@ -1057,6 +1057,17 @@ export interface DispatchOptions {
   play_id?: string;
 }
 
+export interface WorkspaceSourcePollRunNowInput {
+  source_id: string;
+}
+
+export interface WorkspaceSourcePollRunNowResult {
+  workspace_id: string;
+  source_id: string;
+  workflow_name: typeof WORKSPACE_POLL_WORKFLOW;
+  workflow_run_id: string;
+}
+
 export interface WorkflowLeaseOptions {
   workflowNames?: readonly string[];
   limit?: number;
@@ -9979,6 +9990,60 @@ export async function dispatchWorkspaceSourcePollsOnce(
     dispatched++;
   }
   return dispatched;
+}
+
+export async function runWorkspaceSourcePollNow(
+  input: WorkspaceSourcePollRunNowInput,
+  session: ProductWorkspaceSession,
+): Promise<WorkspaceSourcePollRunNowResult> {
+  const sourceId = input.source_id.trim();
+  if (!sourceId) throw new Error("source_id required");
+  const engine = await getProductEngine();
+  registerSignalIngestionWorkflows(engine);
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<{
+    source_id: string;
+    source_enabled: boolean;
+    config_enabled: boolean;
+  }>(
+    `select gs.id::text as source_id,
+            gs.enabled as source_enabled,
+            wsc.enabled as config_enabled
+       from graph_sources gs
+       join workspace_source_configs wsc
+         on wsc.workspace_id = gs.workspace_id
+        and wsc.source_id = gs.id
+       join workspaces w on w.id = gs.workspace_id
+      where gs.workspace_id = $1
+        and gs.id = $2
+        and w.archived_at is null
+      limit 1`,
+    [session.workspace_id, sourceId],
+  );
+  const source = rows[0];
+  if (!source) {
+    throw new Error("Source not found in the active workspace.");
+  }
+  if (!source.source_enabled || !source.config_enabled) {
+    throw new Error("Source is paused.");
+  }
+  const minuteBucket = Math.floor(Date.now() / 60_000);
+  const run = await engine.runtime.start({
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_POLL_WORKFLOW,
+    idempotency_key:
+      `workspace-source-manual:${session.workspace_id}:${sourceId}:minute:${minuteBucket}`,
+    input: {
+      workspace_id: session.workspace_id,
+      source_id: sourceId,
+    },
+  });
+  return {
+    workspace_id: session.workspace_id,
+    source_id: sourceId,
+    workflow_name: WORKSPACE_POLL_WORKFLOW,
+    workflow_run_id: run.id,
+  };
 }
 
 interface RecommendationResearchWorkspaceRow {

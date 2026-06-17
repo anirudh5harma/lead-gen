@@ -20,6 +20,7 @@ import {
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
   runWorkspaceSignalIngestion,
+  runWorkspaceSourcePollNow,
   updateProductRecommendation,
   verifiedProductWorkspaceSession,
   type ProductWorkspaceSession,
@@ -455,6 +456,29 @@ export async function checkAgentSourcesAction(formData: FormData) {
   }
   revalidateProductPaths();
   redirectWithToast(returnTo, "Source check started.");
+}
+
+export async function runAgentSourceNowAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/reps");
+  const sourceId = value(formData, "source_id");
+  if (!sourceId) {
+    redirectWithToast(returnTo, "Choose a source before running it.", "error");
+  }
+  try {
+    await runWorkspaceSourcePollNow({ source_id: sourceId }, session);
+  } catch (error) {
+    console.error("Agent source run failed", error);
+    redirectWithToast(
+      returnTo,
+      error instanceof Error && /paused/i.test(error.message)
+        ? "That source is paused. Enable it before running."
+        : "Could not run that source yet. Refresh and try again.",
+      "error",
+    );
+  }
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Source run started.");
 }
 
 export async function generateMeetingPrepAction(formData: FormData) {

@@ -8,28 +8,42 @@ function source(path: string): string {
 
 test("dashboard navigation uses active product surface routes", () => {
   const shell = source("components/dashboard/Shell.tsx");
+  const primaryNav = shell.slice(
+    shell.indexOf("const NAV"),
+    shell.indexOf("const FLOW"),
+  );
 
-  assert.match(shell, /href: "\/dashboard",\s+label: "Dashboard"/);
-  assert.match(shell, /href: "\/dashboard\/reps",\s+label: "Agent"/);
-  assert.match(shell, /href: "\/dashboard\/settings",\s+label: "Profile"/);
-  assert.match(shell, /"\/dashboard\/conversations"/);
-  assert.match(shell, /"\/dashboard\/signals"/);
-  assert.match(shell, /"\/dashboard\/plays"/);
-  assert.match(shell, /"\/dashboard\/outcomes"/);
-  assert.doesNotMatch(shell, /label: "Outreach"/);
-  assert.doesNotMatch(shell, /label: "Prospects"/);
-  assert.doesNotMatch(shell, /label: "Inbox"/);
-  assert.doesNotMatch(shell, /label: "Signals"/);
-  assert.doesNotMatch(shell, /label: "Plays"/);
-  assert.doesNotMatch(shell, /label: "Outcomes"/);
+  assert.match(primaryNav, /href: "\/dashboard",\s+label: "Dashboard"/);
+  assert.match(primaryNav, /href: "\/dashboard\/reps",\s+label: "Agent"/);
+  assert.match(primaryNav, /href: "\/dashboard\/settings",\s+label: "Profile"/);
+  assert.match(primaryNav, /"\/dashboard\/conversations"/);
+  assert.match(primaryNav, /"\/dashboard\/signals"/);
+  assert.match(primaryNav, /"\/dashboard\/plays"/);
+  assert.match(primaryNav, /"\/dashboard\/outcomes"/);
+  assert.doesNotMatch(primaryNav, /label: "Outreach"/);
+  assert.doesNotMatch(primaryNav, /label: "Prospects"/);
+  assert.doesNotMatch(primaryNav, /label: "Inbox"/);
+  assert.doesNotMatch(primaryNav, /label: "Signals"/);
+  assert.doesNotMatch(primaryNav, /label: "Plays"/);
+  assert.doesNotMatch(primaryNav, /label: "Outcomes"/);
   assert.doesNotMatch(
-    shell,
+    primaryNav,
     /href: "\/dashboard\/prospecting", label: "Prospecting"/,
   );
   assert.doesNotMatch(
-    shell,
+    primaryNav,
     /href: "\/dashboard\/prospects", label: "Prospects"/,
   );
+  assert.match(shell, /ProductFlowRail/);
+  assert.match(shell, /aria-label="Product flow"/);
+  assert.match(shell, /href: "\/dashboard\/settings#profile"/);
+  assert.match(shell, /href: "\/dashboard\/reps#sources"/);
+  assert.match(shell, /href: "\/dashboard\/signals"/);
+  assert.match(shell, /href: "\/dashboard\/reps#outreach"/);
+  assert.match(shell, /detail: "ICP \+ integrations"/);
+  assert.match(shell, /detail: "Signal strategy"/);
+  assert.match(shell, /detail: "Qualified contacts"/);
+  assert.match(shell, /detail: "Emails \+ DMs"/);
 });
 
 test("canonical Prospecting and Signals routes preserve old implementations", () => {
@@ -233,6 +247,10 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /workspace_source_configs/);
   assert.match(reps, /graph_sources/);
   assert.match(reps, /coalesce\(compiled->>'channel', ''\)/);
+  assert.match(reps, /id="sources"/);
+  assert.match(reps, /runAgentSourceNowAction/);
+  assert.match(reps, /Run now/);
+  assert.match(reps, /name="source_id" value=\{source\.id\}/);
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /The agent ranks qualified signals/);
   assert.match(reps, /Verified email/);
@@ -325,6 +343,7 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   const signals = source("app/dashboard/ingestion/page.tsx");
   const actions = source("app/dashboard/actions.ts");
   const reps = source("app/dashboard/reps/page.tsx");
+  const productApp = source("core/product/app.ts");
   const onboardingActions = source("app/onboarding/actions.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
 
@@ -337,10 +356,16 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.doesNotMatch(signals, /Run ingestion/);
   assert.match(actions, /checkAgentSourcesAction/);
   assert.match(actions, /runWorkspaceSignalIngestion/);
+  assert.match(actions, /runAgentSourceNowAction/);
+  assert.match(actions, /runWorkspaceSourcePollNow/);
   assert.match(actions, /wait: false/);
   assert.match(reps, /checkAgentSourcesAction/);
   assert.match(reps, /Check sources/);
+  assert.match(reps, /Run source now/);
   assert.match(reps, /name="limit" value="25"/);
+  assert.match(productApp, /runWorkspaceSourcePollNow/);
+  assert.match(productApp, /workflow_name: WORKSPACE_POLL_WORKFLOW/);
+  assert.match(productApp, /workspace-source-manual/);
   assert.match(signals, /kicker="Agent"/);
   assert.match(signals, /Quality signals ready for <em>outreach<\/em>/);
   assert.match(signals, /verified emails or LinkedIn profiles/);
@@ -724,6 +749,40 @@ test("visual system uses the clean light operating surface", () => {
   assert.doesNotMatch(home, /run the plays/);
   assert.doesNotMatch(home, /function SolarSystem/);
   assert.match(design, /The Signal Operating Surface/);
+});
+
+test("dashboard icon names resolve to first-party SVG symbols", () => {
+  const iconSource = source("components/Icon.tsx");
+  const surfaces = [
+    source("components/dashboard/Shell.tsx"),
+    source("app/onboarding/OnboardingForm.tsx"),
+    source("app/dashboard/page.tsx"),
+    source("app/dashboard/reps/page.tsx"),
+    source("app/dashboard/settings/page.tsx"),
+    source("app/dashboard/ingestion/page.tsx"),
+    source("app/dashboard/deliverability/page.tsx"),
+    source("app/dashboard/campaigns/page.tsx"),
+    source("app/dashboard/prospects/page.tsx"),
+    source("app/dashboard/prospects/[id]/page.tsx"),
+  ].join("\n");
+  const defined = new Set(
+    Array.from(iconSource.matchAll(/^  ([a-z0-9_]+):/gm), (match) => match[1]),
+  );
+  const used = new Set(
+    Array.from(
+      surfaces.matchAll(/(?:Icon name|icon)="([a-z0-9_]+)"/g),
+      (match) => match[1],
+    ),
+  );
+  const missing = Array.from(used)
+    .filter((name) => !defined.has(name))
+    .sort();
+
+  assert.deepEqual(missing, []);
+  assert.match(iconSource, /person_search:/);
+  assert.match(iconSource, /radar:/);
+  assert.match(iconSource, /verified:/);
+  assert.match(iconSource, /play_arrow:/);
 });
 
 test("Bombsell logo asset stays canonical and untinted", () => {

@@ -22,6 +22,7 @@ import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
   dismissQualifiedSignalAction,
+  runAgentSourceNowAction,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -780,25 +781,26 @@ function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
   const keywords = strategy.profile.signal_keywords.slice(0, 5);
   const competitors = strategy.profile.competitor_watchlist.slice(0, 5);
   return (
-    <SurfaceSection
-      title="Source strategy"
-      action={
-        <div className="flex flex-wrap items-center gap-2">
-          <form action={checkAgentSourcesAction}>
-            <input type="hidden" name="return_to" value="/dashboard/reps" />
-            <input type="hidden" name="limit" value="25" />
-            <button type="submit" className="btn-solid-sm">
-              <Icon name="sync_alt" size={14} />
-              Check sources
-            </button>
-          </form>
-          <Link href="/dashboard/settings#profile" className="btn-quiet-sm">
-            <Icon name="edit_note" size={14} />
-            Tune profile
-          </Link>
-        </div>
-      }
-    >
+    <div id="sources" className="scroll-mt-28">
+      <SurfaceSection
+        title="Source strategy"
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <form action={checkAgentSourcesAction}>
+              <input type="hidden" name="return_to" value="/dashboard/reps" />
+              <input type="hidden" name="limit" value="25" />
+              <button type="submit" className="btn-solid-sm">
+                <Icon name="sync_alt" size={14} />
+                Check sources
+              </button>
+            </form>
+            <Link href="/dashboard/settings#profile" className="btn-quiet-sm">
+              <Icon name="edit_note" size={14} />
+              Tune profile
+            </Link>
+          </div>
+        }
+      >
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
           <div>
@@ -875,7 +877,8 @@ function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
           )}
         </div>
       </div>
-    </SurfaceSection>
+      </SurfaceSection>
+    </div>
   );
 }
 
@@ -1009,6 +1012,20 @@ function SourceStrategyRow({ source }: { source: AgentSourceRow }) {
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {nextRunLabel(lastPolled, source.poll_cadence_sec)}
         </span>
+        {source.enabled ? (
+          <form action={runAgentSourceNowAction}>
+            <input type="hidden" name="source_id" value={source.id} />
+            <input type="hidden" name="return_to" value="/dashboard/reps" />
+            <button type="submit" className="btn-quiet-sm" title="Run source now">
+              <Icon name="play_arrow" size={14} />
+              Run now
+            </button>
+          </form>
+        ) : (
+          <span className="inline-flex h-8 items-center rounded-[8px] bg-[var(--color-ink-2)] px-2.5 text-xs text-[var(--color-text-3)]">
+            Paused
+          </span>
+        )}
       </div>
     </article>
   );
