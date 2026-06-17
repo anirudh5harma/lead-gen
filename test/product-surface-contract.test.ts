@@ -372,6 +372,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /AgentLearningPanel/);
   assert.match(reps, /AgentOutreachPanel/);
   assert.match(reps, /AgentOpportunityPanel/);
+  assert.match(reps, /AgentReadinessPanel/);
   assert.match(reps, /AgentStrategyPanel/);
   assert.match(reps, /AgentSequencePanel/);
   assert.match(reps, /loadAgentSourceStrategy/);
@@ -384,6 +385,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Verified contacts/);
   assert.match(reps, /Qualified signals/);
   assert.match(reps, /Source strategy/);
+  assert.match(reps, /Readiness gate/);
+  assert.match(reps, /Outreach is gated/);
+  assert.match(reps, /Qualified Signals can become email or LinkedIn outreach/);
+  assert.match(reps, /readiness\.checks\.map/);
+  assert.match(reps, /readinessNextAction/);
+  assert.match(reps, /readinessFallbackHref/);
   assert.match(reps, /Sequence/);
   assert.match(reps, /Keywords watched/);
   assert.match(reps, /Competitor audience/);
@@ -453,6 +460,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /workspaceChannelCoverage/);
   assert.match(reps, /firstChannelPolicy\(rep, \["linkedin_dm", "linkedin"\]\)/);
   assert.match(reps, /href="\/dashboard\/settings#motion"/);
+  assert.match(reps, /\/dashboard\/settings#email/);
+  assert.match(reps, /\/dashboard\/settings#linkedin/);
   assert.match(reps, /Connect Outlook/);
   assert.match(reps, /Connect LinkedIn/);
   assert.match(reps, /Open agent/);

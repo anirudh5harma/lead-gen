@@ -11,6 +11,7 @@ import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   loadWorkspaceLaunchReadiness,
+  type LaunchReadinessCheck,
   type WorkspaceLaunchReadiness,
 } from "@/core/product/launch-readiness.ts";
 import {
@@ -799,6 +800,8 @@ export default async function RepsPage() {
       />
 
       <AgentActivityPanel activity={state.activity} />
+
+      <AgentReadinessPanel readiness={state.readiness} />
 
       <AgentStrategyPanel strategy={state.strategy} />
 
@@ -1749,6 +1752,182 @@ function AgentWorkStage({ stage }: { stage: AgentWorkStageData }) {
       </span>
     </div>
   );
+}
+
+function AgentReadinessPanel({
+  readiness,
+}: {
+  readiness: WorkspaceLaunchReadiness;
+}) {
+  const next = readinessNextAction(readiness);
+  const readyChecks = readiness.checks.filter(
+    (check) => check.status === "ready",
+  ).length;
+  return (
+    <div id="readiness" className="scroll-mt-28">
+      <SurfaceSection
+        title="Readiness gate"
+        action={
+          <Link href={next.href} className="btn-solid-sm">
+            <Icon name={next.icon} size={14} />
+            {next.label}
+          </Link>
+        }
+      >
+        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                {readiness.launch_ready
+                  ? "Outreach can move"
+                  : "Outreach is gated"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                Qualified Signals can become email or LinkedIn outreach only
+                after Profile, Play, and Conversation channel checks pass.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+              <MiniStat label="Ready checks" value={readyChecks} />
+              <MiniStat label="Blockers" value={readiness.blockers.length} />
+              <MiniStat label="Warnings" value={readiness.warnings.length} />
+            </div>
+            <OpportunityPill tone={readiness.launch_ready ? "ready" : "waiting"}>
+              {readinessStatusLabel(readiness.status)}
+            </OpportunityPill>
+          </aside>
+
+          <div className="grid gap-2 md:grid-cols-2">
+            {readiness.checks.map((check) => (
+              <ReadinessCheckRow key={check.id} check={check} />
+            ))}
+          </div>
+        </div>
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function ReadinessCheckRow({ check }: { check: LaunchReadinessCheck }) {
+  const tone = checkTone(check);
+  const href = check.action?.surface ?? readinessFallbackHref(check);
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+    >
+      <span className="flex items-start gap-3">
+        <span
+          className={
+            "grid size-9 shrink-0 place-items-center rounded-[8px] " +
+            (tone === "ready"
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : tone === "attention"
+                ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+                : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+          }
+        >
+          <Icon name={readinessStatusIcon(check.status)} size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-[var(--color-text-1)]">
+              {check.label}
+            </span>
+            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+              {check.primitive}
+            </span>
+            {check.required ? (
+              <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+                Required
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
+            {check.detail}
+          </span>
+          <span className="mt-3 flex flex-wrap items-center gap-2">
+            <OpportunityPill tone={tone === "ready" ? "ready" : "waiting"}>
+              {readinessStatusLabel(check.status)}
+            </OpportunityPill>
+            {check.action ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-accent)]">
+                <Icon name="arrow_forward" size={13} />
+                {check.action.label}
+              </span>
+            ) : null}
+          </span>
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function readinessNextAction(readiness: WorkspaceLaunchReadiness): {
+  href: string;
+  icon: string;
+  label: string;
+} {
+  const actionCheck = readiness.checks.find(
+    (check) => check.required && check.status !== "ready" && check.action,
+  );
+  if (actionCheck?.action) {
+    return {
+      href: actionCheck.action.surface,
+      icon: readinessActionIcon(actionCheck),
+      label: actionCheck.action.label,
+    };
+  }
+  if (readiness.launch_ready) {
+    return {
+      href: "/dashboard/agent#opportunities",
+      icon: "send",
+      label: "Prepare outreach",
+    };
+  }
+  return {
+    href: "/dashboard/settings#profile",
+    icon: "edit_note",
+    label: "Review Profile",
+  };
+}
+
+function readinessFallbackHref(check: LaunchReadinessCheck): string {
+  if (check.id === "workspace_profile") return "/dashboard/settings#profile";
+  if (check.id === "icp") return "/dashboard/settings#motion";
+  if (check.id === "rep") return "/dashboard/agent";
+  if (check.id === "signal_sources") return "/dashboard/agent#sources";
+  if (check.id === "plays") return "/dashboard/agent#outreach";
+  if (check.id === "linkedin") return "/dashboard/settings#linkedin";
+  return "/dashboard/settings#email";
+}
+
+function readinessActionIcon(check: LaunchReadinessCheck): string {
+  if (check.id === "linkedin") return "linkedin";
+  if (check.id === "outlook" || check.id === "outreach_channel") return "mail";
+  if (check.id === "signal_sources") return "sensors";
+  if (check.id === "plays") return "rule";
+  if (check.id === "rep") return "badge";
+  return "edit_note";
+}
+
+function readinessStatusIcon(status: LaunchReadinessCheck["status"]): string {
+  if (status === "ready") return "check_circle";
+  if (status === "needs_attention") return "sync_problem";
+  return "block";
+}
+
+function readinessStatusLabel(status: LaunchReadinessCheck["status"]): string {
+  if (status === "ready") return "Ready";
+  if (status === "needs_attention") return "Needs attention";
+  return "Blocked";
+}
+
+function checkTone(check: LaunchReadinessCheck): "ready" | "attention" | "blocked" {
+  if (check.status === "ready") return "ready";
+  if (check.status === "needs_attention") return "attention";
+  return "blocked";
 }
 
 function agentLastHourStages(activity: AgentActivity): AgentWorkStageData[] {
