@@ -26,7 +26,7 @@ export default async function SignalsPage() {
       <SurfaceHero
         kicker="Qualified signals"
         title="No workspace selected."
-        description="Create a prospecting profile first. Qualified signals, verified contacts, and email drafts will appear here."
+        description="Create a profile first. Qualified signals, verified contacts, and email drafts will appear here."
       />
     );
   }
@@ -75,7 +75,7 @@ export default async function SignalsPage() {
         {workbench.signals.length === 0 ? (
           <EmptyState
             title="No qualified signals yet"
-            hint="Tune the prospecting profile so matched company signals have enough context to qualify."
+            hint="Tune the profile so matched company signals have enough context to qualify."
             cta={{ href: "/dashboard/settings#profile", label: "Update profile", icon: "person" }}
           />
         ) : (

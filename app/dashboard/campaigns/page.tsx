@@ -237,9 +237,9 @@ export default async function CampaignsPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Plays"
+        kicker="Agent"
         title="No workspace yet."
-        description="Create a prospecting profile, then Signals can become email and LinkedIn Plays."
+        description="Create a profile, then quality signals can become email and LinkedIn outreach."
       />
     );
   }
@@ -255,14 +255,14 @@ export default async function CampaignsPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Plays"
-        title={<>Run small bets. <em>Scale the winners.</em></>}
-        description="Qualified signals become email and LinkedIn Plays. Approve a small bet, watch replies and meetings, then let outcomes sharpen the next run."
+        kicker="Agent"
+        title={<>Learn from outreach. <em>Scale what works.</em></>}
+        description="Qualified signals become email and LinkedIn outreach. Watch replies and meetings, then let the agent sharpen the next send."
         meta={
           <div className="flex flex-wrap items-center gap-2">
             <HeroStat label="Qualified today" value={counts.qualified_today} />
             <HeroStat label="Ideas this week" value={counts.ideas_week} />
-            <HeroStat label="Outcomes this week" value={counts.outcomes_week} />
+            <HeroStat label="Replies this week" value={counts.outcomes_week} />
           </div>
         }
       />
@@ -292,12 +292,12 @@ export default async function CampaignsPage() {
         ) : (
           <EmptyState
             title="No strategy recommendation yet"
-            hint="Play learning will appear after outcomes are attributed to recent runs."
+            hint="Outreach learning will appear after replies and meetings are attributed to recent sends."
           />
         )}
       </SurfaceSection>
 
-      <SurfaceSection title="Play Skill optimizer">
+      <SurfaceSection title="Message optimizer">
         <div className="flex flex-wrap items-center gap-2">
           <form action={optimizePlaySkillsAction}>
             <input type="hidden" name="return_to" value="/dashboard/plays" />
@@ -321,17 +321,17 @@ export default async function CampaignsPage() {
           <SkillOptimizerPanel skillOptimization={skillOptimization} />
         ) : (
           <EmptyState
-            title="No Play Skill recommendation yet"
-            hint="After Play outcomes and procedural memory accumulate, Bombsell will recommend which email and LinkedIn frameworks deserve more or less volume."
+            title="No message recommendation yet"
+            hint="After reply evidence and procedural memory accumulate, Bombsell will recommend which email and LinkedIn frameworks deserve more or less volume."
           />
         )}
       </SurfaceSection>
 
-      <SurfaceSection title="Qualified signals worth a Play">
+      <SurfaceSection title="Qualified signals ready for outreach">
         {signals.length === 0 ? (
           <EmptyState
             title="No qualified signals yet"
-            hint="Tune prospecting once, then good-fit timing signals will appear here."
+            hint="Tune the profile once, then good-fit timing signals will appear here."
             cta={{ href: "/dashboard/settings#profile", label: "Update profile", icon: "person" }}
           />
         ) : (
@@ -343,11 +343,11 @@ export default async function CampaignsPage() {
         )}
       </SurfaceSection>
 
-      <SurfaceSection title="Play ideas in flight">
+      <SurfaceSection title="Outreach ideas in flight">
         {ideas.length === 0 ? (
           <EmptyState
-            title="No Play ideas yet"
-            hint="A Play will appear once a signal has enough fit, contact data, and channel confidence."
+            title="No outreach ideas yet"
+            hint="An outreach idea will appear once a signal has enough fit, contact data, and channel confidence."
           />
         ) : (
           <div className="grid gap-2 lg:grid-cols-2">
@@ -408,14 +408,14 @@ function SkillRecommendationCard({
         {humanizeSkillKey(recommendation.skill_key)}
       </h3>
       <p className="mt-1 text-xs text-[var(--color-text-3)]">
-        {recommendation.rep_name ?? "Play Rep"}
+        {recommendation.rep_name ?? "Agent"}
         {recommendation.channel ? ` · ${recommendation.channel}` : ""}
         {recommendation.segment_key !== "all" ? ` · ${recommendation.segment_key}` : ""}
         {` · ${recommendation.sample_count} samples`}
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
         <MetricPill label="Reply" value={percentRate(recommendation.reply_rate)} />
-        <MetricPill label="Outcome" value={percentRate(recommendation.positive_outcome_rate)} />
+        <MetricPill label="Useful" value={percentRate(recommendation.positive_outcome_rate)} />
         <MetricPill label="Utility" value={`${utility}%`} />
         <MetricPill
           label="Memory"
@@ -466,14 +466,14 @@ function StrategyVariantCard({ variant }: { variant: CampaignStrategyVariant }) 
         {variant.play_name}
       </h3>
       <p className="mt-1 text-xs text-[var(--color-text-3)]">
-        {variant.rep_name ?? "Play Rep"}
+        {variant.rep_name ?? "Agent"}
         {variant.channel ? ` · ${variant.channel}` : ""}
         {variant.segment_key !== "all" ? ` · ${variant.segment_key}` : ""}
         {` · ${variant.sample_count} samples`}
       </p>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
         <MetricPill label="Reply" value={percentRate(variant.reply_rate)} />
-        <MetricPill label="Outcome" value={percentRate(variant.positive_outcome_rate)} />
+        <MetricPill label="Useful" value={percentRate(variant.positive_outcome_rate)} />
         <MetricPill label="Meeting" value={percentRate(variant.meeting_rate)} />
         <MetricPill label="Utility" value={`${utility}%`} />
       </div>
@@ -512,7 +512,7 @@ function CampaignIdeaNote({ idea }: { idea: CampaignIdeaRow }) {
       </h3>
       <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
         {outcomes > 0
-          ? `${outcomes} useful ${outcomes === 1 ? "outcome" : "outcomes"}`
+          ? `${outcomes} useful ${outcomes === 1 ? "response" : "responses"}`
           : "Waiting for the first useful response"}
         {learning ? `. Learning: ${learning}` : ""}
       </p>
@@ -577,7 +577,7 @@ function parseCampaignStrategy(payload: unknown): Omit<CampaignStrategyState, "o
     : [];
   return {
     recommendation_id: stringValue(record.recommendation_id) ?? "unknown",
-    summary: stringValue(record.summary) ?? "No Play variants have enough activity yet.",
+    summary: stringValue(record.summary) ?? "No outreach variants have enough activity yet.",
     generated_at: stringValue(record.generated_at) ?? new Date().toISOString(),
     variants,
   };
@@ -593,7 +593,7 @@ function parseSkillOptimization(payload: unknown): Omit<SkillOptimizationState, 
     : [];
   return {
     recommendation_id: stringValue(record.recommendation_id) ?? "unknown",
-    summary: stringValue(record.summary) ?? "No Play Skills have enough evidence yet.",
+    summary: stringValue(record.summary) ?? "No message frameworks have enough evidence yet.",
     generated_at: stringValue(record.generated_at) ?? new Date().toISOString(),
     recommendations,
   };
@@ -722,7 +722,7 @@ function strategyLabel(value: CampaignStrategyVariant["recommendation"]): string
 }
 
 function skillNextActionLabel(value: SkillOptimizationRecommendation["next_action"]): string {
-  if (value === "apply_play_gate") return "Apply at Play gate";
+  if (value === "apply_play_gate") return "Apply to outreach";
   if (value === "review_reduce") return "Review reduce";
   if (value === "keep_learning") return "Keep learning";
   return "No change";

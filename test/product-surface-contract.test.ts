@@ -101,6 +101,11 @@ test("Setup presents separate Outlook and LinkedIn connection gates", () => {
     /kind in \('email_domain','oauth_outlook','linkedin_session','linkedin_oauth'\)/,
   );
   assert.match(setup, /Ready" value=\{`\$\{readyCount\}\/5`\}/);
+  assert.match(setup, /Finds verified contacts and moves outreach/);
+  assert.match(setup, /const AGENT_ORDER = \["Outbound agent"\]/);
+  assert.doesNotMatch(setup, /Learning: \{/);
+  assert.doesNotMatch(setup, /href: "\/dashboard\/plays"/);
+  assert.doesNotMatch(setup, /prospecting profile/);
 });
 
 test("Outlook connection surfaces collapse duplicate rows by mailbox identity", () => {
@@ -118,7 +123,7 @@ test("Outlook connection surfaces collapse duplicate rows by mailbox identity", 
   assert.match(brief, /has_blocked_status and not has_connected/);
 });
 
-test("Plays surface presents Skill optimizer from outcome learning", () => {
+test("Agent learning surface presents message optimization from reply evidence", () => {
   const campaigns = source("app/dashboard/campaigns/page.tsx");
   const plays = source("app/dashboard/plays/page.tsx");
   const actions = source("app/dashboard/actions.ts");
@@ -126,9 +131,20 @@ test("Plays surface presents Skill optimizer from outcome learning", () => {
   assert.match(plays, /from "\.\.\/campaigns\/page"/);
   assert.match(actions, /optimizeProductPlaySkills/);
   assert.match(campaigns, /optimizePlaySkillsAction/);
-  assert.match(campaigns, /Play Skill optimizer/);
+  assert.match(campaigns, /kicker="Agent"/);
+  assert.match(campaigns, /Learn from outreach/);
+  assert.match(campaigns, /Message optimizer/);
+  assert.match(campaigns, /Qualified signals ready for outreach/);
+  assert.match(campaigns, /Outreach ideas in flight/);
   assert.match(campaigns, /play\.skill\.optimization\.recommended/);
   assert.match(campaigns, /Optimize skills/);
+  assert.doesNotMatch(campaigns, /kicker="Plays"/);
+  assert.doesNotMatch(campaigns, /Play Skill optimizer/);
+  assert.doesNotMatch(campaigns, /No Play/);
+  assert.doesNotMatch(campaigns, /worth a Play/);
+  assert.doesNotMatch(campaigns, /Play ideas/);
+  assert.doesNotMatch(campaigns, /Play Rep/);
+  assert.doesNotMatch(campaigns, /Apply at Play gate/);
 });
 
 test("Prospects open graph-backed profile pages with channel readiness", () => {
@@ -158,12 +174,15 @@ test("Prospects open graph-backed profile pages with channel readiness", () => {
   assert.doesNotMatch(profile, /Reps act on/);
 });
 
-test("Outcomes have a first-class primitive surface", () => {
+test("Reply insights keep outcome data under the simplified dashboard", () => {
   const outcomes = source("app/dashboard/outcomes/page.tsx");
   const loading = source("app/dashboard/outcomes/loading.tsx");
   const loader = source("components/dashboard/LoadingState.tsx");
 
-  assert.match(outcomes, /kicker="Outcomes"/);
+  assert.match(outcomes, /kicker="Dashboard"/);
+  assert.match(outcomes, /Reply and meeting/);
+  assert.match(outcomes, /Reply insight ledger/);
+  assert.match(outcomes, /Open outreach/);
   assert.match(outcomes, /from outcomes o/);
   assert.match(outcomes, /left join conversations c/);
   assert.match(outcomes, /left join reps r/);
@@ -171,6 +190,11 @@ test("Outcomes have a first-class primitive surface", () => {
   assert.match(outcomes, /href=\{`\/dashboard\/conversations\/\$\{outcome\.conversation_id\}`\}/);
   assert.match(loading, /surface="outcomes"/);
   assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
+  assert.doesNotMatch(outcomes, /kicker="Outcomes"/);
+  assert.doesNotMatch(outcomes, /Proof your Reps/);
+  assert.doesNotMatch(outcomes, /Outcome ledger/);
+  assert.doesNotMatch(outcomes, /No outcomes recorded/);
+  assert.doesNotMatch(outcomes, /Open Conversations/);
 });
 
 test("Agent surface shows live work and account readiness", () => {
@@ -246,6 +270,9 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.doesNotMatch(signals, /runSignalIngestionAction/);
   assert.doesNotMatch(signals, /Ingest signals/);
   assert.doesNotMatch(signals, /Run ingestion/);
+  assert.match(signals, /Create a profile first/);
+  assert.match(signals, /Tune the profile/);
+  assert.doesNotMatch(signals, /prospecting profile/);
   assert.match(signals, /\/api\/auth\/outlook\?return_to=\/dashboard\/signals/);
   assert.doesNotMatch(signals, /"\/api\/auth\/outlook"/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
@@ -288,17 +315,20 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
     settings,
     /jsonb_each\(coalesce\(p\.properties->'email_verification'/,
   );
-  assert.match(settings, /Open prospect graph/);
+  assert.match(settings, /Open contact graph/);
   assert.match(settings, /Blocklist/);
   assert.match(
     settings,
-    /Bounces, unsubscribes, and do-not-contact outcomes protect future\s+outreach automatically/,
+    /Bounces, unsubscribes, and do-not-contact events protect future\s+outreach automatically/,
   );
   assert.match(
     settings,
     /kind in \('bounce','unsubscribe','do_not_contact'\)/,
   );
-  assert.match(settings, /Open outcome ledger/);
+  assert.match(settings, /Open sent outreach/);
+  assert.doesNotMatch(settings, /Open prospect graph/);
+  assert.doesNotMatch(settings, /Open outcome ledger/);
+  assert.doesNotMatch(settings, /do-not-contact outcomes/);
   assert.match(
     settings,
     /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fsettings%23email"/,

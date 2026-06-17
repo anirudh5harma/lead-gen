@@ -386,7 +386,7 @@ function NoWorkspaceSetup() {
       <SurfaceHero
         kicker="Profile"
         title="Create a workspace."
-        description="Start with a named workspace. Then define the prospecting profile and channels."
+        description="Start with a named workspace. Then define the profile and outreach channels."
       />
       <SurfaceSection title="Workspace">
         <form
@@ -513,19 +513,13 @@ const AGENT_META: Record<
 > = {
   "Outbound agent": {
     role: "Email + LinkedIn",
-    surface: "Researches prospects and moves outreach",
+    surface: "Finds verified contacts and moves outreach",
     href: "/dashboard/conversations",
     icon: "forum",
   },
-  Learning: {
-    role: "Learning",
-    surface: "Sharpens what gets replies and meetings",
-    href: "/dashboard/plays",
-    icon: "task_alt",
-  },
 };
 
-const AGENT_ORDER = ["Outbound agent", "Learning"];
+const AGENT_ORDER = ["Outbound agent"];
 const HIDDEN_REP_NAMES = new Set(["Vaani", "Bodh"]);
 
 function AgentSummary({ reps }: { reps: SetupRepRow[] }) {

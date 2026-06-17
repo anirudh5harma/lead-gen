@@ -1083,7 +1083,7 @@ function ContactQualityPanel({
 
       <Link href="/dashboard/prospects" prefetch={false} className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
-        Open prospect graph
+        Open contact graph
       </Link>
     </div>
   );
@@ -1142,7 +1142,7 @@ function BlocklistPanel({
             Outreach protection
           </p>
           <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-            Bounces, unsubscribes, and do-not-contact outcomes protect future
+            Bounces, unsubscribes, and do-not-contact events protect future
             outreach automatically.
           </p>
         </div>
@@ -1167,9 +1167,9 @@ function BlocklistPanel({
         </div>
       )}
 
-      <Link href="/dashboard/outcomes" prefetch={false} className="btn-quiet-sm w-fit">
+      <Link href="/dashboard/conversations" prefetch={false} className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
-        Open outcome ledger
+        Open sent outreach
       </Link>
     </div>
   );

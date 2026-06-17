@@ -87,7 +87,7 @@ export default async function OutcomesPage() {
   if (!workspace) {
     return (
       <SurfaceHero
-        kicker="Outcomes"
+        kicker="Dashboard"
         title="No workspace selected."
         description="Create or select a workspace before Bombsell can attribute replies, meetings, and learning."
       />
@@ -102,9 +102,9 @@ export default async function OutcomesPage() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Outcomes"
-        title={<>Proof your Reps can <em>learn from</em>.</>}
-        description="Replies, meetings, opportunities, bounces, and opt-outs are the scored facts that gate memory, billing, and the next Play."
+        kicker="Dashboard"
+        title={<>Reply and meeting <em>insights</em>.</>}
+        description="Replies, meetings, opportunities, bounces, and opt-outs are the facts that protect outreach and help the agent learn."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat label="Useful 7d" value={stats.useful_7d} />
@@ -114,14 +114,14 @@ export default async function OutcomesPage() {
         }
       />
 
-      <SurfaceSection title="Outcome ledger">
+      <SurfaceSection title="Reply insight ledger">
         {outcomes.length === 0 ? (
           <EmptyState
-            title="No outcomes recorded yet."
-            hint="Once Conversations produce replies, meetings, or opt-outs, the ledger will show what happened and which Rep, Signal, and Play earned it."
+            title="No reply insights recorded yet."
+            hint="Once outreach produces replies, meetings, or opt-outs, this view will show what happened and which signal earned it."
             cta={{
               href: "/dashboard/conversations",
-              label: "Open Conversations",
+              label: "Open outreach",
               icon: "forum",
             }}
           />
@@ -158,12 +158,12 @@ function OutcomeCard({ outcome }: { outcome: OutcomeRow }) {
             {outcome.company_name ? ` at ${outcome.company_name}` : ""}
           </p>
           <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-            {outcome.rep_name ?? "Rep"} / {outcome.signal_title ?? "No Signal attribution"} / {freshWhen(outcome.occurred_at)}
+            {outcome.rep_name ? "Agent" : "No agent"} / {outcome.signal_title ?? "No signal attribution"} / {freshWhen(outcome.occurred_at)}
           </p>
         </div>
       </div>
       <span className="text-xs font-medium text-[var(--color-accent)]">
-        {outcome.conversation_id ? "Open Conversation" : "Unattributed"}
+        {outcome.conversation_id ? "Open outreach" : "Unattributed"}
       </span>
     </article>
   );

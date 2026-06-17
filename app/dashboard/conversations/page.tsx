@@ -140,7 +140,7 @@ export default async function ConversationsPage() {
       <SurfaceHero
         kicker="Inbox"
         title="No workspace selected."
-        description="Create a prospecting profile first, then email and LinkedIn replies collect here."
+        description="Create a profile first, then email and LinkedIn replies collect here."
       />
     );
   }
