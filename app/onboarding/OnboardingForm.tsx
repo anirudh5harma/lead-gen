@@ -35,7 +35,7 @@ export default function OnboardingForm({
       />
       <Field
         name="company_name"
-        label="Company name hint"
+        label="Company name"
         icon="corporate_fare"
         placeholder="Optional"
         defaultValue={initialCompanyName}
@@ -48,12 +48,12 @@ export default function OnboardingForm({
       ) : null}
       <PendingSubmitButton
         pending={pending}
-        pendingLabel="Creating workspace"
+        pendingLabel="Creating agent"
         icon="arrow_forward"
         iconSize={18}
         className="btn-solid mt-1 w-full justify-center"
       >
-        Create workspace
+        Create Outreach Agent
       </PendingSubmitButton>
     </form>
   );
