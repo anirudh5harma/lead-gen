@@ -108,15 +108,34 @@ test("Outlook connection surfaces collapse duplicate rows by mailbox identity", 
   assert.match(brief, /has_blocked_status and not has_connected/);
 });
 
-test("Campaigns presents Play Skill optimizer from outcome learning", () => {
+test("Plays surface presents Skill optimizer from outcome learning", () => {
   const campaigns = source("app/dashboard/campaigns/page.tsx");
+  const plays = source("app/dashboard/plays/page.tsx");
   const actions = source("app/dashboard/actions.ts");
 
+  assert.match(plays, /from "\.\.\/campaigns\/page"/);
   assert.match(actions, /optimizeProductPlaySkills/);
   assert.match(campaigns, /optimizePlaySkillsAction/);
   assert.match(campaigns, /Play Skill optimizer/);
   assert.match(campaigns, /play\.skill\.optimization\.recommended/);
   assert.match(campaigns, /Optimize skills/);
+});
+
+test("Prospects open graph-backed profile pages with channel readiness", () => {
+  const prospects = source("app/dashboard/prospects/page.tsx");
+  const profile = source("app/dashboard/prospects/[id]/page.tsx");
+
+  assert.match(prospects, /href=\{`\/dashboard\/prospects\/\$\{prospect\.id\}`\}/);
+  assert.match(prospects, /Profile/);
+  assert.match(profile, /Prospect profile/);
+  assert.match(profile, /from graph_persons p/);
+  assert.match(profile, /left join graph_companies/);
+  assert.match(profile, /from signals s/);
+  assert.match(profile, /from conversations c/);
+  assert.match(profile, /from outcomes o/);
+  assert.match(profile, /from channel_accounts ca/);
+  assert.match(profile, /Connect LinkedIn/);
+  assert.match(profile, /Connect Outlook/);
 });
 
 test("dashboard Signal surfaces do not expose manual ingestion controls", () => {

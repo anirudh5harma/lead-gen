@@ -225,7 +225,11 @@ function ProspectCard({ prospect }: { prospect: ProspectRow }) {
   const signals = Number(prospect.fresh_signals);
   const company = prospect.company_name ?? prospect.company_domain ?? "Unknown company";
   return (
-    <article className="grid gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
+    <Link
+      href={`/dashboard/prospects/${prospect.id}`}
+      prefetch={false}
+      className="grid gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
+    >
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
@@ -266,8 +270,12 @@ function ProspectCard({ prospect }: { prospect: ProspectRow }) {
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {activityLabel(prospect)}
         </span>
+        <span className="inline-flex items-center gap-1 rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent)]">
+          Profile
+          <Icon name="arrow_forward" size={12} />
+        </span>
       </div>
-    </article>
+    </Link>
   );
 }
 

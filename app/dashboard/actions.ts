@@ -498,8 +498,8 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
     redirectWithToast(
       returnTo,
       decision === "rejected"
-        ? "Could not reject this outreach yet. Refresh and try again."
-        : "Could not approve this outreach yet. Refresh and try again.",
+        ? "Could not reject this draft yet. Refresh and try again."
+        : "Could not approve this draft yet. Refresh and try again.",
       "error",
     );
   }
@@ -507,13 +507,13 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
   if (!decided) {
     redirectWithToast(
       returnTo,
-      "That outreach decision could not be confirmed. Refresh and try again.",
+      "That draft decision could not be confirmed. Refresh and try again.",
       "error",
     );
   }
   redirectWithToast(
     returnTo,
-    decision === "rejected" ? "Outreach rejected." : "Outreach approved.",
+    decision === "rejected" ? "Draft rejected." : "Draft approved.",
   );
 }
 

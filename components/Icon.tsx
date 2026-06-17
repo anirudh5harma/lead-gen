@@ -19,6 +19,7 @@ const icons: Record<string, IconNode> = {
       <path d="M14 16h5M16.5 13.5v5" />
     </>
   ),
+  arrow_back: <path d="M19 12H5M11 6l-6 6 6 6" />,
   arrow_forward: <path d="M5 12h14M13 6l6 6-6 6" />,
   article: (
     <>
