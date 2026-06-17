@@ -278,11 +278,11 @@ export default async function SetupPage() {
             name="match_threshold"
             value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
           />
-          <input
-            type="hidden"
-            name="rep_name"
-            value={rep ? agentDisplayName(rep.name) : "Outbound agent"}
-          />
+          {rep ? (
+            <input type="hidden" name="rep_id" value={rep.id} />
+          ) : (
+            <input type="hidden" name="rep_name" value="Outbound agent" />
+          )}
           <PendingSubmitButton
             className="btn-solid w-fit"
             icon="check"
@@ -523,12 +523,12 @@ const AGENT_ORDER = ["Outbound agent"];
 const HIDDEN_REP_NAMES = new Set(["Vaani", "Bodh"]);
 
 function AgentSummary({ reps }: { reps: SetupRepRow[] }) {
-  const byName = new Map(reps.map((r) => [agentDisplayName(r.name), r]));
+  const byName = new Map(reps.map((r) => [agentDisplayName(r.role), r]));
   const ordered = [
     ...AGENT_ORDER.map((name) => byName.get(name) ?? null),
     ...reps.filter(
       (rep) =>
-        !AGENT_ORDER.includes(agentDisplayName(rep.name)) &&
+        !AGENT_ORDER.includes(agentDisplayName(rep.role)) &&
         !HIDDEN_REP_NAMES.has(rep.name),
     ),
   ];
@@ -536,7 +536,7 @@ function AgentSummary({ reps }: { reps: SetupRepRow[] }) {
     <SurfaceSection title="Agent motion">
       <div className="grid gap-3 sm:grid-cols-2">
         {ordered.map((r, index) => {
-          const name = r ? agentDisplayName(r.name) : AGENT_ORDER[index];
+          const name = r ? agentDisplayName(r.role) : AGENT_ORDER[index];
           const meta = AGENT_META[name] ?? {
             role: r?.role ?? "Custom",
             surface: r?.persona.story ?? "Custom work pattern",
@@ -583,7 +583,7 @@ function AgentSummary({ reps }: { reps: SetupRepRow[] }) {
   );
 }
 
-function agentDisplayName(name: string): string {
-  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
-  return name;
+function agentDisplayName(role: string): string {
+  if (role === "sdr") return "Outbound agent";
+  return "Agent";
 }

@@ -155,20 +155,23 @@ test("Agent learning surface presents message optimization from reply evidence",
   assert.doesNotMatch(campaigns, /Apply at Play gate/);
 });
 
-test("Prospects open graph-backed profile pages with channel readiness", () => {
+test("Verified contacts open graph-backed profile pages with channel readiness", () => {
   const prospects = source("app/dashboard/prospects/page.tsx");
   const profile = source("app/dashboard/prospects/[id]/page.tsx");
 
   assert.match(prospects, /href=\{`\/dashboard\/prospects\/\$\{prospect\.id\}`\}/);
-  assert.match(prospects, /Profile/);
   assert.match(prospects, /Verified contacts/);
   assert.match(prospects, /Contacts ready for/);
+  assert.match(prospects, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
+  assert.match(prospects, /cardinality\(coalesce\(p\.emails, '\{\}'::text\[\]\)\)/);
   assert.match(profile, /Verified contact/);
   assert.match(profile, /Timing evidence, channel handles, outreach, replies, and meetings/);
   assert.match(profile, /Back to contacts/);
   assert.match(profile, /No outreach yet/);
   assert.match(profile, /href: "\/dashboard\/reps#outreach"/);
   assert.match(profile, /Replies and meetings/);
+  assert.match(profile, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
+  assert.match(profile, /coalesce\(p\.phones, '\{\}'::text\[\]\) as phones/);
   assert.match(profile, /from graph_persons p/);
   assert.match(profile, /left join graph_companies/);
   assert.match(profile, /from signals s/);
@@ -221,7 +224,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(reps, /id="outreach"/);
   assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
+  assert.match(reps, /title="Sent outreach"/);
   assert.match(reps, /Agent outreach, last 7 days/);
+  assert.match(reps, /DMs sent/);
   assert.match(reps, /Qualified signals become verified contacts/);
   assert.match(reps, /href="\/dashboard\/conversations"/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
@@ -239,6 +244,20 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Replies 7d/);
   assert.doesNotMatch(reps, /<RepCard key=\{rep\.id\} rep=\{rep\} \/>/);
   assert.doesNotMatch(reps, /Outcomes 7d/);
+});
+
+test("dashboard app surfaces do not leak legacy named agents", () => {
+  const surfaces = [
+    source("app/dashboard/reps/page.tsx"),
+    source("app/dashboard/reps/[id]/page.tsx"),
+    source("app/dashboard/setup/page.tsx"),
+    source("app/dashboard/settings/page.tsx"),
+    source("app/dashboard/campaigns/page.tsx"),
+  ].join("\n");
+
+  assert.match(surfaces, /Outbound agent/);
+  assert.doesNotMatch(surfaces, /Sampark/);
+  assert.doesNotMatch(surfaces, /Prayog/);
 });
 
 test("sent outreach links open the exact draft in the conversation trace", () => {

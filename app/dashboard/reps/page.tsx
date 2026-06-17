@@ -771,11 +771,11 @@ function AgentOutreachPanel({
   return (
     <div id="outreach">
       <SurfaceSection
-        title="Outreach"
+        title="Sent outreach"
         action={
           <Link href="/dashboard/conversations" className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
-            Open sent list
+            View all
           </Link>
         }
       >
@@ -786,7 +786,7 @@ function AgentOutreachPanel({
             </p>
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
               <MiniStat label="Emails sent" value={outreach.email_sent_7d} />
-              <MiniStat label="LinkedIn sent" value={outreach.linkedin_sent_7d} />
+              <MiniStat label="DMs sent" value={outreach.linkedin_sent_7d} />
               <MiniStat label="Awaiting reply" value={outreach.awaiting_reply} />
             </div>
             <p className="text-xs leading-5 text-[var(--color-text-3)]">
@@ -886,7 +886,7 @@ function RepCard({
               href={`/dashboard/reps/${rep.id}`}
               className="text-[18px] font-semibold text-[var(--color-text-1)] transition-colors hover:text-[var(--color-accent)]"
             >
-              {agentDisplayName(rep.name)}
+              {agentDisplayName(rep.role)}
             </Link>
             <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
               {rep.role.replace(/_/g, " ")}
@@ -1095,9 +1095,9 @@ function repIcon(_rep: RepRow): string {
   return "badge";
 }
 
-function agentDisplayName(name: string): string {
-  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
-  return name;
+function agentDisplayName(role: string): string {
+  if (role === "sdr") return "Outbound agent";
+  return "Agent";
 }
 
 function channelIcon(kind: string): string {

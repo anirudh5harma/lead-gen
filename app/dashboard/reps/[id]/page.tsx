@@ -151,7 +151,7 @@ export default async function RepDetailPage({
           <div>
             <p className="brief-kicker">{surfaceFor(rep.name)}</p>
             <h1 className="mt-4 max-w-3xl text-[38px] font-semibold leading-[1.04] tracking-[0] text-[var(--color-text-1)] sm:text-[58px]">
-              {agentDisplayName(rep.name)}
+              {agentDisplayName(rep.role)}
             </h1>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[var(--color-text-2)]">
               {rep.persona.story ??
@@ -188,7 +188,6 @@ export default async function RepDetailPage({
               value={`/dashboard/reps/${rep.id}`}
             />
             <input type="hidden" name="rep_id" value={rep.id} />
-            <input type="hidden" name="rep_name" value={rep.name} />
             <input type="hidden" name="rep_role" value={rep.role} />
             <TextArea
               name="rep_voice"
@@ -466,11 +465,9 @@ function iconFor(name: string): string {
   return "person";
 }
 
-function agentDisplayName(name: string): string {
-  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
-  if (name === "Vaani") return "Content agent";
-  if (name === "Bodh") return "Research agent";
-  return name;
+function agentDisplayName(role: string): string {
+  if (role === "sdr") return "Outbound agent";
+  return "Agent";
 }
 
 function CanvasEmpty({ label, title }: { label: string; title: string }) {

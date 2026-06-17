@@ -42,7 +42,7 @@ async function loadProspects(workspaceId: string): Promise<ProspectRow[]> {
     `select p.id,
             p.full_name,
             p.title,
-            p.emails::text[] as emails,
+            coalesce(p.emails, '{}'::text[]) as emails,
             p.linkedin_url,
             p.updated_at,
             co.name as company_name,
@@ -116,7 +116,7 @@ async function loadProspectStats(workspaceId: string): Promise<ProspectStats> {
        (select count(*)::text
           from graph_persons p
          where p.workspace_id = $1
-           and cardinality(p.emails) > 0) as with_email,
+           and cardinality(coalesce(p.emails, '{}'::text[])) > 0) as with_email,
        (select count(*)::text
           from graph_persons p
          where p.workspace_id = $1
@@ -124,7 +124,7 @@ async function loadProspectStats(workspaceId: string): Promise<ProspectStats> {
        (select count(*)::text
           from graph_persons p
          where p.workspace_id = $1
-           and (cardinality(p.emails) > 0 or p.linkedin_url is not null)) as reachable,
+           and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)) as reachable,
        (select count(*)::text
           from signals s
          where s.workspace_id = $1
@@ -271,7 +271,7 @@ function ProspectCard({ prospect }: { prospect: ProspectRow }) {
           {activityLabel(prospect)}
         </span>
         <span className="inline-flex items-center gap-1 rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent)]">
-          Profile
+          Open
           <Icon name="arrow_forward" size={12} />
         </span>
       </div>

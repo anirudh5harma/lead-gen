@@ -29,6 +29,7 @@ interface CampaignIdeaRow {
   id: string;
   play_name: string;
   rep_name: string | null;
+  rep_role: string | null;
   status: string;
   output: Record<string, unknown> | null;
   outcome_count: string;
@@ -157,6 +158,7 @@ async function loadCampaignIdeas(workspaceId: string): Promise<CampaignIdeaRow[]
     `select pr.id,
             p.name as play_name,
             coalesce(run_rep.name, default_rep.name) as rep_name,
+            coalesce(run_rep.role::text, default_rep.role::text) as rep_role,
             pr.status::text as status,
             pr.output,
             count(o.id)::text as outcome_count,
@@ -169,7 +171,7 @@ async function loadCampaignIdeas(workspaceId: string): Promise<CampaignIdeaRow[]
        left join reps default_rep on default_rep.id = p.default_rep_id
        left join outcomes o on o.attributed_play_run_id = pr.id
       where pr.workspace_id = $1
-      group by pr.id, p.name, run_rep.name, default_rep.name
+      group by pr.id, p.name, run_rep.name, default_rep.name, run_rep.role, default_rep.role
       order by pr.created_at desc
       limit 8`,
     [workspaceId],
@@ -408,7 +410,7 @@ function SkillRecommendationCard({
         {humanizeSkillKey(recommendation.skill_key)}
       </h3>
       <p className="mt-1 text-xs text-[var(--color-text-3)]">
-        {recommendation.rep_name ?? "Agent"}
+        {agentDisplayName(null)}
         {recommendation.channel ? ` · ${recommendation.channel}` : ""}
         {recommendation.segment_key !== "all" ? ` · ${recommendation.segment_key}` : ""}
         {` · ${recommendation.sample_count} samples`}
@@ -466,7 +468,7 @@ function StrategyVariantCard({ variant }: { variant: CampaignStrategyVariant }) 
         {variant.play_name}
       </h3>
       <p className="mt-1 text-xs text-[var(--color-text-3)]">
-        {variant.rep_name ?? "Agent"}
+        {agentDisplayName(null)}
         {variant.channel ? ` · ${variant.channel}` : ""}
         {variant.segment_key !== "all" ? ` · ${variant.segment_key}` : ""}
         {` · ${variant.sample_count} samples`}
@@ -503,7 +505,7 @@ function CampaignIdeaNote({ idea }: { idea: CampaignIdeaRow }) {
     <article className="rounded-lg border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
       <div className="flex items-center gap-2">
         <span className="rounded-full bg-[var(--color-accent-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--color-accent)]">
-          {agentDisplayName(idea.rep_name)}
+          {agentDisplayName(idea.rep_role)}
         </span>
         <span className="ml-auto text-xs text-[var(--color-text-3)]">{ended}</span>
       </div>
@@ -765,9 +767,9 @@ function clampRate(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function agentDisplayName(name: string | null): string {
-  if (!name || name === "Sampark" || name === "Prayog") return "Outbound agent";
-  return name;
+function agentDisplayName(role: string | null): string {
+  if (role === "sdr" || !role) return "Outbound agent";
+  return "Agent";
 }
 
 function SignalRow({ signal }: { signal: QualifiedSignalRow }) {

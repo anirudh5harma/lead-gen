@@ -48,6 +48,7 @@ interface SettingsLinkedInAccount {
 interface SettingsRepRow {
   id: string;
   name: string;
+  role: string;
   persona: { voice?: string; story?: string };
   autonomy: {
     channels?: { email?: { daily_cap?: number; approval?: string } };
@@ -173,7 +174,7 @@ async function loadSettingsState(workspaceId: string): Promise<SettingsState> {
       [workspaceId],
     ),
     pool.query<SettingsRepRow>(
-      `select id, name, persona, autonomy
+      `select id, name, role::text as role, persona, autonomy
          from reps
         where workspace_id = $1
           and status <> 'retired'
@@ -492,7 +493,7 @@ function SettingsChecklist({
       title: "Audience and agent",
       detail:
         rep && icp
-          ? `${agentDisplayName(rep.name)} acts on ${icp.name}.`
+          ? `${agentDisplayName(rep.role)} acts on ${icp.name}.`
           : "Define the ICP, voice, daily ceiling, and agent.",
       href: "#motion",
       icon: "badge",
@@ -604,7 +605,7 @@ function SettingsSectionNav({
     },
     {
       title: "Agent",
-      detail: rep && icp ? `${agentDisplayName(rep.name)} + ${icp.name}` : "Audience and voice",
+      detail: rep && icp ? `${agentDisplayName(rep.role)} + ${icp.name}` : "Audience and voice",
       href: "#motion",
       icon: "badge",
       ready: Boolean(rep && icp),
@@ -931,11 +932,11 @@ function ActivationSettingsForm({
         name="match_threshold"
         value={icp ? Number(icp.match_threshold).toFixed(2) : "0.60"}
       />
-      <input
-        type="hidden"
-        name="rep_name"
-        value={rep ? agentDisplayName(rep.name) : "Outbound agent"}
-      />
+      {rep ? (
+        <input type="hidden" name="rep_id" value={rep.id} />
+      ) : (
+        <input type="hidden" name="rep_name" value="Outbound agent" />
+      )}
       <PendingSubmitButton
         className="btn-solid w-fit"
         icon="check"
@@ -1440,9 +1441,9 @@ function freshWhen(value: Date): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function agentDisplayName(name: string): string {
-  if (name === "Sampark" || name === "Prayog") return "Outbound agent";
-  return name;
+function agentDisplayName(role: string): string {
+  if (role === "sdr") return "Outbound agent";
+  return "Agent";
 }
 
 function roleLabel(role: string): string {

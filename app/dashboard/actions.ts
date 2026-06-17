@@ -27,6 +27,7 @@ import {
   getActiveWorkspaceSession,
   setActiveWorkspaceCookie,
 } from "@/lib/workspace";
+import { getPool } from "@/core/substrate/storage/index.ts";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
@@ -127,6 +128,27 @@ async function requireDashboardSession(
   });
 }
 
+async function repNameFromForm(
+  formData: FormData,
+  session: ProductWorkspaceSession,
+): Promise<string> {
+  const submittedName = value(formData, "rep_name");
+  if (submittedName) return submittedName;
+
+  const repId = value(formData, "rep_id");
+  if (!repId) return "Outbound agent";
+
+  const { rows } = await getPool().query<{ name: string }>(
+    `select name
+       from reps
+      where workspace_id = $1
+        and id = $2
+      limit 1`,
+    [session.workspace_id, repId],
+  );
+  return rows[0]?.name ?? "Outbound agent";
+}
+
 export async function createWorkspaceAction(formData: FormData) {
   await requireDashboardSession(formData);
   revalidatePath("/dashboard");
@@ -172,10 +194,11 @@ export async function configureActivationAction(formData: FormData) {
   const returnTo = dashboardReturnPath(formData, "/dashboard/settings#motion");
   const signalKind = value(formData, "signal_kind") || "hiring";
   const approval = approvalValue(formData, "approval");
+  const repName = await repNameFromForm(formData, session);
   await configureActivationSetup(
     {
       rep: {
-        name: value(formData, "rep_name") || "Outbound agent",
+        name: repName,
         role: "sdr",
         voice:
           value(formData, "rep_voice") ||
@@ -213,7 +236,7 @@ export async function configureRepAction(formData: FormData) {
     formData,
     repId ? `/dashboard/reps/${repId}` : "/dashboard/reps",
   );
-  const name = value(formData, "rep_name") || "Outbound agent";
+  const name = await repNameFromForm(formData, session);
   await configureRep(
     {
       name,
