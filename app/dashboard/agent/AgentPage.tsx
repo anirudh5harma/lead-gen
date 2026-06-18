@@ -545,6 +545,7 @@ async function loadAgentActivity(workspaceId: string): Promise<AgentActivity> {
          (select count(*)::text from messages m
             where m.workspace_id = $1
               and m.direction = 'outbound'
+              and m.status in ('sent','delivered','replied')
               and m.created_at >= now() - interval '1 hour') as outbound_last_hour,
          (select count(*)::text from outcomes o
             where o.workspace_id = $1

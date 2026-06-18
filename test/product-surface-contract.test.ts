@@ -627,6 +627,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /contacts_last_hour/);
   assert.match(reps, /drafts_last_hour/);
   assert.match(reps, /replies_last_hour/);
+  assert.match(reps, /and m\.status in \('sent','delivered','replied'\)\s+and m\.created_at >= now\(\) - interval '1 hour'\) as outbound_last_hour/);
   assert.match(reps, /maxStageValue/);
   assert.match(reps, /aria-label="Last-hour Agent operating loop"/);
   assert.match(reps, /active run/);
