@@ -734,7 +734,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.state.get",
     description:
-      "Read the workspace morning-brief state: Reps, Plays, Signals, Conversations, Outcomes, approvals, sources, deliverability, and event trace.",
+      "Read the workspace product state behind Brief, Profile, and Agent: qualified signals, verified contacts, outreach, replies, meetings, approvals, sources, account health, and event trace.",
     kind: "read",
     input: z.object({}),
     output: z.unknown(),
@@ -746,7 +746,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.context.get",
     description:
-      "Read prompt-ready dynamic workspace context for Reps and external agents: vocabulary, active resources, recent work, gates, and recovery state.",
+      "Read prompt-ready dynamic workspace context for the Agent: profile, ICP, connected accounts, qualified signals, verified contacts, outreach, replies, meetings, gates, and recovery state.",
     kind: "read",
     input: z.object({}),
     output: z.object({
@@ -773,7 +773,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.company_brain.recall",
     description:
-      "Read the workspace-scoped shared company brain: profile facts, high-intent Signals, Outcomes, meeting prep, playbook memory, semantic facts, source refs, and optional Memory Store connector status.",
+      "Read the workspace-scoped shared company brain: profile facts, high-intent signals, outcomes, meeting prep, outreach memory, semantic facts, source refs, and optional Memory Store connector status.",
     kind: "read",
     input: z.object({}),
     output: z.object({
@@ -868,7 +868,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.vertical_intelligence.refresh",
     description:
-      "Refresh graph-backed vertical intelligence for Signal matching, Play Skills, writer/judge context, and meeting prep by emitting vertical.intelligence.updated.",
+      "Refresh graph-backed vertical intelligence for signal matching, outreach writing, judge context, and meeting prep by emitting vertical.intelligence.updated.",
     kind: "write",
     input: z.object({
       company_id: z.string().uuid().nullable().optional(),
@@ -1164,7 +1164,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.brief.refresh",
     description:
-      "Start the durable Exa-backed morning Brief refresh. It gathers fresh public-web evidence, projects it into the graph, and emits rep.brief.refreshed.",
+      "Start the durable Exa-backed Brief refresh. It gathers fresh public-web evidence, projects it into the graph, and emits the Agent-ready brief refresh event.",
     kind: "write",
     input: z.object({
       query: z.string().min(1).optional(),
@@ -1183,7 +1183,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.rep.research",
     description:
-      "Let a Rep research the public web with Exa and store evidence in the graph for future context.",
+      "Let the Agent research the public web with Exa and store evidence in the graph for future qualification and outreach context.",
     kind: "write",
     input: z.object({
       query: z.string().min(1),
@@ -1206,7 +1206,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.exa.research_workflow.start",
     description:
-      "Start a durable Exa research workflow for Rep research, Brief refresh, or draft grounding when asynchronous checkpointed execution is preferred.",
+      "Start a durable Exa research workflow for Agent research, Brief refresh, or draft grounding when asynchronous checkpointed execution is preferred.",
     kind: "write",
     input: z.object({
       query: z.string().min(1),
@@ -1248,7 +1248,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.rep.configure",
     description:
-      "Create or update a user-facing Rep persona with voice, KPIs, channels, and per-channel autonomy.",
+      "Create or update the workspace Agent persona with voice, KPIs, channels, and per-channel autonomy.",
     kind: "write",
     input: z.object({
       name: z.string().min(1),
@@ -1269,7 +1269,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.icp.configure",
     description:
-      "Create or update an ICP segment used by the signal classifier and Play matching.",
+      "Create or update an ICP segment used by signal qualification and outreach matching.",
     kind: "write",
     input: z.object({
       name: z.string().min(1),
@@ -1288,7 +1288,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.signal_email.configure",
     description:
-      "Create or update a Signal-to-email Play. The Play declaration compiles to the durable workflow path with research, draft, judge, approval, and send steps.",
+      "Create or update the signal-to-email outreach sequence. Internally this compiles to the durable Play workflow with research, draft, judge, approval, contact resolution, and send steps.",
     kind: "write",
     input: z.object({
       rep_id: z.string().uuid(),
@@ -1308,7 +1308,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.signal_linkedin.configure",
     description:
-      "Create or update a Signal-to-LinkedIn Play. The Play declaration compiles to the durable workflow path with research, draft, judge, approval, and native LinkedIn channel send steps.",
+      "Create or update the signal-to-LinkedIn outreach sequence. Internally this compiles to the durable Play workflow with research, draft, judge, approval, verified profile resolution, and native LinkedIn send steps.",
     kind: "write",
     input: z.object({
       rep_id: z.string().uuid(),
@@ -1329,7 +1329,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.skills.list",
     description:
-      "List versioned outbound Play Skills for email, LinkedIn, and reply drafting, including framework slots, constraints, and judge focus.",
+      "List versioned outreach writing skills for email, LinkedIn, and reply drafting, including framework slots, constraints, and judge focus.",
     kind: "read",
     input: z.object({
       channel: OutreachSkillChannelSchema.optional(),
@@ -1353,7 +1353,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.skills.select",
     description:
-      "Preview the Play Skill selected for a channel, stage, signal, or reply intent before writer/judge execution.",
+      "Preview the outreach writing skill selected for a channel, stage, signal, or reply intent before writer/judge execution.",
     kind: "read",
     input: z.object({
       channel: OutreachSkillChannelSchema,
@@ -1756,7 +1756,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.skills.optimize",
     description:
-      "Score outreach Skills from campaign Outcomes and procedural memory, then emit advisory play.skill.optimization.recommended recommendations without mutating Plays.",
+      "Score outreach writing skills from reply and meeting outcomes plus procedural memory, then emit advisory play.skill.optimization.recommended recommendations without mutating outreach sequences.",
     kind: "write",
     input: z.object({
       lookback_days: z.number().int().positive().max(180).optional(),
@@ -1979,7 +1979,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.signals.dispatch_plays",
     description:
-      "Dispatch durable Play workflows for matched Signals that do not already have a workflow run.",
+      "Dispatch durable Agent outreach workflows for matched signals that do not already have a workflow run.",
     kind: "write",
     input: z.object({
       limit: z.number().int().positive().max(100).optional(),

@@ -644,6 +644,38 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
   assert.doesNotMatch(surfaces, /Prayog/);
 });
 
+test("MCP context uses the simplified product model", () => {
+  const context = source("core/product/context.ts");
+  const tools = source("core/product/tools.ts");
+  const env = source("core/product/env.ts");
+
+  assert.match(context, /Brief: the current operating summary/);
+  assert.match(context, /Profile: company positioning/);
+  assert.match(context, /Agent: the execution surface/);
+  assert.match(context, /qualified signals, verified contacts, outreach, replies, and meetings/);
+  assert.match(context, /Active agents/);
+  assert.match(context, /Outreach Sequences/);
+  assert.match(tools, /qualified signals, verified contacts, outreach, replies, meetings/);
+  assert.match(tools, /workspace Agent persona/);
+  assert.match(tools, /signal-to-email outreach sequence/);
+  assert.match(tools, /signal-to-LinkedIn outreach sequence/);
+  assert.match(tools, /Dispatch durable Agent outreach workflows/);
+  assert.match(env, /Agent research, draft grounding, open-web signals, and outreach evidence/);
+  assert.doesNotMatch(context, /Content: plays/);
+  assert.doesNotMatch(context, /Campaigns: sources/);
+  assert.doesNotMatch(context, /AEO: visibility/);
+  assert.doesNotMatch(context, /## Reps/);
+  assert.doesNotMatch(context, /## Plays/);
+  assert.doesNotMatch(tools, /morning-brief state: Reps/);
+  assert.doesNotMatch(tools, /external agents: vocabulary/);
+  assert.doesNotMatch(tools, /Rep research, Brief refresh/);
+  assert.doesNotMatch(tools, /Create or update a user-facing Rep persona/);
+  assert.doesNotMatch(tools, /Create or update a Signal-to-email Play/);
+  assert.doesNotMatch(tools, /Create or update a Signal-to-LinkedIn Play/);
+  assert.doesNotMatch(tools, /Dispatch durable Play workflows/);
+  assert.doesNotMatch(env, /content, and AEO/);
+});
+
 test("sent outreach links open the exact draft in the conversation trace", () => {
   const outreach = source("app/dashboard/conversations/page.tsx");
   const detail = source("app/dashboard/conversations/[id]/page.tsx");

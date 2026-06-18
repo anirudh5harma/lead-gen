@@ -185,7 +185,7 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     name: "EXA_API_KEY",
     requirement: "production",
     category: "intelligence",
-    description: "Exa API key for public-web intelligence, profile enrichment, Rep research, draft grounding, open-web signals, content, and AEO.",
+    description: "Exa API key for public-web intelligence, profile enrichment, Agent research, draft grounding, open-web signals, and outreach evidence.",
     example: "exa_...",
   },
   {
