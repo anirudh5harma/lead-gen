@@ -54,7 +54,7 @@ test("meeting prep: positive reply creates a source-referenced prep note", () =>
       company_industry: "B2B SaaS",
       company_description: "Acme sells workflow tools to enterprise revenue teams.",
       rep_id,
-      rep_name: "Sampark",
+      rep_name: "Outbound agent",
       rep_role: "sdr",
       signal_id,
       signal_title: "Acme is hiring enterprise SDRs",

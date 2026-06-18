@@ -150,7 +150,7 @@ test("product worker: dispatches signal.matched events into durable play runs", 
 
     const state = await getAppState(fx.pool);
     assert.equal(state.sendTraces[0].signal_title, "Acme Payroll announced a Series A");
-    assert.equal(state.sendTraces[0].rep_name, "Sampark");
+    assert.equal(state.sendTraces[0].rep_name, "Outbound agent");
     assert.equal(state.sendTraces[0].eval_passed, true);
     assert.equal(state.sendTraces[0].workflow_status, "completed");
   } finally {

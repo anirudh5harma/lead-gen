@@ -155,7 +155,7 @@ test("skill optimizer: combines campaign outcomes and procedural memory", () => 
     play_runs: runs(play_id, 3).map((run) => ({
       ...run,
       rep_id,
-      rep_name: "Sampark",
+      rep_name: "Outbound agent",
       pattern_key: "founder-signal-cold-open",
     })),
     outcomes: [
@@ -385,7 +385,7 @@ test("campaign strategy graph: optimizes campaign allocation without sending out
           play_id,
           play_name: "Enterprise signal email",
           rep_id: null,
-          rep_name: "Sampark",
+          rep_name: "Outbound agent",
           channel: "email",
           skill_key: "test",
           pattern_key: `play:${play_id}|stage:campaign_outcome`,
@@ -520,7 +520,7 @@ test("skill optimizer graph: recommends gated skill changes without sending outr
           channel: "email",
           segment_key: "enterprise",
           rep_id: null,
-          rep_name: "Sampark",
+          rep_name: "Outbound agent",
           sample_count: 3,
           outcome_count: 2,
           reply_outcomes: 1,

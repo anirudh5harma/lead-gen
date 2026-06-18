@@ -44,7 +44,7 @@ test("company brain builds source-referenced shared memory cards", () => {
     playbooks: [{
       id: "00000000-0000-4000-8000-000000000501",
       rep_id: "00000000-0000-4000-8000-000000000401",
-      rep_name: "Sampark",
+      rep_name: "Outbound agent",
       pattern_key: "icp:ai-gtm|signal:hiring|stage:cold_open",
       exemplar: { body: "Saw the RevOps hire. Usually that means the motion is changing." },
       score: "0.87",
@@ -56,7 +56,7 @@ test("company brain builds source-referenced shared memory cards", () => {
     semantic: [{
       id: "00000000-0000-4000-8000-000000000601",
       rep_id: "00000000-0000-4000-8000-000000000401",
-      rep_name: "Sampark",
+      rep_name: "Outbound agent",
       subject_type: "company",
       subject_id: "00000000-0000-4000-8000-000000000701",
       facts: { buying_trigger: "RevOps hiring", objection: "already has sequencing" },
@@ -89,7 +89,7 @@ test("company brain builds source-referenced shared memory cards", () => {
         },
         rep: {
           rep_id: "00000000-0000-4000-8000-000000000401",
-          name: "Sampark",
+          name: "Outbound agent",
           role: "sdr",
         },
       },
