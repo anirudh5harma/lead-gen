@@ -32,7 +32,6 @@ import {
   prepareQualifiedSignalsAction,
   recordPersonFitFeedbackAction,
   resolveQualifiedSignalContactsAction,
-  runAgentSourceNowAction,
   updateWorkspaceAutonomyAction,
 } from "../actions";
 
@@ -2451,117 +2450,6 @@ function SystemStatusCard({
   );
 }
 
-function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
-  const activeSources = strategy.sources.filter((source) => source.enabled).length;
-  const signalKinds = uniqueStrings(
-    strategy.sources
-      .map((source) => source.signal_kind)
-      .filter((value): value is string => Boolean(value)),
-  );
-  const keywords = strategy.profile.signal_keywords.slice(0, 5);
-  const competitors = strategy.profile.competitor_watchlist.slice(0, 5);
-  return (
-    <div id="sources" className="scroll-mt-28">
-      <SurfaceSection
-        title="Source strategy"
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <form action={checkAgentSourcesAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent" />
-              <input type="hidden" name="limit" value="25" />
-              <button type="submit" className="btn-solid-sm">
-                <Icon name="sync_alt" size={14} />
-                Check sources
-              </button>
-            </form>
-            <Link href="/dashboard/profile#profile" className="btn-quiet-sm">
-              <Icon name="edit_note" size={14} />
-              Tune profile
-            </Link>
-          </div>
-        }
-      >
-      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">
-              {strategy.icp?.name ?? "Audience not configured"}
-            </p>
-            <p className="mt-1 line-clamp-4 text-xs leading-5 text-[var(--color-text-3)]">
-              {strategy.icp?.description ??
-                "Define buyer roles, markets, exclusions, signal keywords, and competitors in Profile."}
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
-            <MiniStat label="Active sources" value={activeSources} />
-            <MiniStat label="Signal types" value={signalKinds.length} />
-            <MiniStat
-              label="Match gate"
-              value={Math.round((strategy.icp?.match_threshold ?? 0) * 100)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <StrategyChips
-              icon="person_search"
-              label="Buyer roles"
-              values={strategy.profile.target_titles}
-              empty="Add roles"
-            />
-            <StrategyChips
-              icon="public"
-              label="Markets"
-              values={strategy.profile.target_markets}
-              empty="Add markets"
-            />
-            <StrategyChips
-              icon="block"
-              label="Exclusions"
-              values={strategy.profile.exclusion_rules}
-              empty="No exclusions"
-            />
-          </div>
-        </aside>
-
-        <div className="grid gap-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <StrategyKeywordBox
-              icon="travel_explore"
-              title="Keywords watched"
-              values={keywords}
-              empty="Add signal keywords in Profile."
-            />
-            <StrategyKeywordBox
-              icon="radar"
-              title="Competitor audience"
-              values={competitors}
-              empty="Add competitors whose audience matters."
-            />
-          </div>
-
-          {strategy.sources.length === 0 ? (
-            <EmptyState
-              title="No signal sources yet"
-              hint="Profile setup creates source configs for launch, hiring, funding, and market movement signals."
-              cta={{
-                href: "/dashboard/profile#profile",
-                label: "Tune profile",
-                icon: "edit_note",
-              }}
-            />
-          ) : (
-            <div className="grid gap-2">
-              {strategy.sources.map((source) => (
-                <SourceStrategyRow key={source.id} source={source} />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-      </SurfaceSection>
-    </div>
-  );
-}
-
 function StrategyChips({
   icon,
   label,
@@ -2602,193 +2490,6 @@ function StrategyChips({
         )}
       </div>
     </div>
-  );
-}
-
-function StrategyKeywordBox({
-  icon,
-  title,
-  values,
-  empty,
-}: {
-  icon: string;
-  title: string;
-  values: string[];
-  empty: string;
-}) {
-  return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-      <p className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-1)]">
-        <Icon name={icon} size={15} />
-        {title}
-      </p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {values.length === 0 ? (
-          <span className="text-sm text-[var(--color-text-3)]">{empty}</span>
-        ) : (
-          values.map((value) => (
-            <span
-              key={value}
-              className="rounded-[8px] bg-[var(--color-accent-bg)] px-2.5 py-1 text-xs text-[var(--color-accent)]"
-            >
-              {value}
-            </span>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SourceStrategyRow({ source }: { source: AgentSourceRow }) {
-  const total = Number(source.signals_total);
-  const week = Number(source.signals_week);
-  const matched = Number(source.matched_week);
-  const lastPolled = source.last_polled_at ?? source.source_last_polled_at;
-  return (
-    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <span
-          className={
-            "grid size-9 shrink-0 place-items-center rounded-[8px] " +
-            (source.enabled
-              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
-          }
-        >
-          <Icon name="sensors" size={17} />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {source.name}
-          </p>
-          <p className="mt-1 truncate text-sm text-[var(--color-text-2)]">
-            {source.query ?? source.source_reason ?? source.kind.replace(/_/g, " ")}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <OpportunityPill tone={source.enabled ? "ready" : "waiting"}>
-              {source.enabled ? "Active" : "Paused"}
-            </OpportunityPill>
-            {source.signal_kind ? (
-              <OpportunityPill tone="fit">
-                {source.signal_kind.replace(/_/g, " ")}
-              </OpportunityPill>
-            ) : null}
-            {source.source_tier ? (
-              <OpportunityPill tone="waiting">
-                {source.source_tier.replace(/_/g, " ")}
-              </OpportunityPill>
-            ) : null}
-          </div>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 md:justify-end">
-        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-          {week} new / {matched} qualified
-        </span>
-        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
-          {total} total
-        </span>
-        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
-          {nextRunLabel(lastPolled, source.poll_cadence_sec)}
-        </span>
-        {source.enabled ? (
-          <form action={runAgentSourceNowAction}>
-            <input type="hidden" name="source_id" value={source.id} />
-            <input type="hidden" name="return_to" value="/dashboard/agent" />
-            <button type="submit" className="btn-quiet-sm" title="Run source now">
-              <Icon name="play_arrow" size={14} />
-              Run now
-            </button>
-          </form>
-        ) : (
-          <span className="inline-flex h-8 items-center rounded-[8px] bg-[var(--color-ink-2)] px-2.5 text-xs text-[var(--color-text-3)]">
-            Paused
-          </span>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function AgentSequencePanel({ sequence }: { sequence: AgentSequenceStep[] }) {
-  return (
-    <SurfaceSection
-      title="Sequence"
-      action={
-        <Link href="/dashboard/profile#agent" className="btn-quiet-sm">
-          <Icon name="rule" size={14} />
-          Review limits
-        </Link>
-      }
-    >
-      {sequence.length === 0 ? (
-        <EmptyState
-          title="No outreach sequence yet"
-          hint="The agent needs an active email or LinkedIn outreach path before it can move qualified signals into messages."
-          cta={{
-            href: "/dashboard/profile#agent",
-            label: "Configure agent",
-            icon: "rule",
-          }}
-        />
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {sequence.map((step, index) => (
-            <SequenceStepCard key={step.id} step={step} index={index} />
-          ))}
-        </div>
-      )}
-    </SurfaceSection>
-  );
-}
-
-function SequenceStepCard({
-  step,
-  index,
-}: {
-  step: AgentSequenceStep;
-  index: number;
-}) {
-  const channel = channelLabel(step.channel);
-  return (
-    <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-          <ChannelMark channel={step.channel} size={17} />
-        </span>
-        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
-          Step {index + 1}
-        </span>
-      </div>
-      <p className="mt-3 text-sm font-semibold text-[var(--color-text-1)]">
-        {channel}
-      </p>
-      <p className="mt-1 line-clamp-2 text-sm text-[var(--color-text-2)]">
-        {step.name}
-      </p>
-      <p className="mt-3 line-clamp-3 text-xs leading-5 text-[var(--color-text-3)]">
-        {step.declaration}
-      </p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <OpportunityPill tone={step.status === "active" ? "ready" : "waiting"}>
-          {statusLabel(step.status)}
-        </OpportunityPill>
-        <OpportunityPill tone="waiting">
-          {step.daily_cap == null ? "No cap" : `${step.daily_cap}/day`}
-        </OpportunityPill>
-        {step.approval ? (
-          <OpportunityPill tone="waiting">
-            {approvalLabel(step.approval)}
-          </OpportunityPill>
-        ) : null}
-      </div>
-      {step.steps.length > 0 ? (
-        <p className="mt-3 text-[11px] leading-5 text-[var(--color-text-4)]">
-          {step.steps.map((item) => item.replace(/\./g, " ")).join(" -> ")}
-        </p>
-      ) : null}
-    </article>
   );
 }
 
@@ -4196,116 +3897,6 @@ function OperatingLoopChannel({
   );
 }
 
-function AgentReadinessPanel({
-  readiness,
-}: {
-  readiness: WorkspaceLaunchReadiness;
-}) {
-  const next = readinessNextAction(readiness);
-  const readyChecks = readiness.checks.filter(
-    (check) => check.status === "ready",
-  ).length;
-  return (
-    <div id="readiness" className="scroll-mt-28">
-      <SurfaceSection
-        title="Readiness gate"
-        action={
-          <Link href={next.href} className="btn-solid-sm">
-            <Icon name={next.icon} size={14} />
-            {next.label}
-          </Link>
-        }
-      >
-        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
-            <div>
-              <p className="text-sm font-semibold text-[var(--color-text-1)]">
-                {readiness.launch_ready
-                  ? "Outreach can move"
-                  : "Outreach is gated"}
-              </p>
-              <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-                Qualified Signals can become email or LinkedIn outreach only
-                after profile, source, and channel checks pass.
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
-              <MiniStat label="Ready checks" value={readyChecks} />
-              <MiniStat label="Blockers" value={readiness.blockers.length} />
-              <MiniStat label="Warnings" value={readiness.warnings.length} />
-            </div>
-            <OpportunityPill tone={readiness.launch_ready ? "ready" : "waiting"}>
-              {readinessStatusLabel(readiness.status)}
-            </OpportunityPill>
-          </aside>
-
-          <div className="grid gap-2 md:grid-cols-2">
-            {readiness.checks.map((check) => (
-              <ReadinessCheckRow key={check.id} check={check} />
-            ))}
-          </div>
-        </div>
-      </SurfaceSection>
-    </div>
-  );
-}
-
-function ReadinessCheckRow({ check }: { check: LaunchReadinessCheck }) {
-  const tone = checkTone(check);
-  const href = check.action?.surface ?? readinessFallbackHref(check);
-  return (
-    <Link
-      href={href}
-      prefetch={false}
-      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
-    >
-      <span className="flex items-start gap-3">
-        <span
-          className={
-            "grid size-9 shrink-0 place-items-center rounded-[8px] " +
-            (tone === "ready"
-              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-              : tone === "attention"
-                ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
-                : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
-          }
-        >
-          <Icon name={readinessStatusIcon(check.status)} size={17} />
-        </span>
-        <span className="min-w-0">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-[var(--color-text-1)]">
-              {check.label}
-            </span>
-            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
-              {check.primitive}
-            </span>
-            {check.required ? (
-              <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
-                Required
-              </span>
-            ) : null}
-          </span>
-          <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
-            {check.detail}
-          </span>
-          <span className="mt-3 flex flex-wrap items-center gap-2">
-            <OpportunityPill tone={tone === "ready" ? "ready" : "waiting"}>
-              {readinessStatusLabel(check.status)}
-            </OpportunityPill>
-            {check.action ? (
-              <span className="inline-flex items-center gap-1.5 text-xs text-[var(--color-accent)]">
-                <Icon name="arrow_forward" size={13} />
-                {check.action.label}
-              </span>
-            ) : null}
-          </span>
-        </span>
-      </span>
-    </Link>
-  );
-}
-
 function readinessNextAction(readiness: WorkspaceLaunchReadiness): {
   href: string;
   icon: string;
@@ -4339,7 +3930,7 @@ function readinessFallbackHref(check: LaunchReadinessCheck): string {
   if (check.id === "workspace_profile") return "/dashboard/profile#profile";
   if (check.id === "icp") return "/dashboard/profile#agent";
   if (check.id === "rep") return "/dashboard/agent";
-  if (check.id === "signal_sources") return "/dashboard/agent#sources";
+  if (check.id === "signal_sources") return "/dashboard/profile#signal-setup";
   if (check.id === "plays") return "/dashboard/agent#outreach";
   if (check.id === "linkedin") return "/dashboard/profile#linkedin";
   if (check.id === "outlook") {
@@ -4356,24 +3947,6 @@ function readinessActionIcon(check: LaunchReadinessCheck): string {
   if (check.id === "plays") return "rule";
   if (check.id === "rep") return "badge";
   return "edit_note";
-}
-
-function readinessStatusIcon(status: LaunchReadinessCheck["status"]): string {
-  if (status === "ready") return "check_circle";
-  if (status === "needs_attention") return "sync_problem";
-  return "block";
-}
-
-function readinessStatusLabel(status: LaunchReadinessCheck["status"]): string {
-  if (status === "ready") return "Ready";
-  if (status === "needs_attention") return "Needs attention";
-  return "Blocked";
-}
-
-function checkTone(check: LaunchReadinessCheck): "ready" | "attention" | "blocked" {
-  if (check.status === "ready") return "ready";
-  if (check.status === "needs_attention") return "attention";
-  return "blocked";
 }
 
 function agentLastHourStages(activity: AgentActivity): AgentWorkStageData[] {
@@ -5690,18 +5263,6 @@ function stringArray(value: unknown): string[] {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function nextRunLabel(lastPolled: Date | null, cadenceSeconds: number): string {
-  if (!lastPolled) return "Ready now";
-  const nextAt = new Date(lastPolled).getTime() + cadenceSeconds * 1000;
-  const diff = nextAt - Date.now();
-  if (diff <= 0) return "Ready now";
-  const minutes = Math.ceil(diff / 60_000);
-  if (minutes < 60) return `Next in ${minutes}m`;
-  const hours = Math.ceil(minutes / 60);
-  if (hours < 24) return `Next in ${hours}h`;
-  return `Next in ${Math.ceil(hours / 24)}d`;
 }
 
 function NoWorkspaceReps() {

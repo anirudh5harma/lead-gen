@@ -220,17 +220,17 @@ export function buildWorkspaceLaunchReadiness(
       action: action(
         "Configure sources",
         ["product.sources.default_aggregator.configure", "product.source.configure"],
-        "/dashboard/agent#sources",
+        "/dashboard/profile#signal-setup",
       ),
     }),
     countCheck({
       id: "plays",
-      label: "Outreach sequence",
+      label: "Outreach path",
       primitive: "Play",
       count: counts.activePlays,
-      detailReady: `${counts.activePlays} active sequence${plural(counts.activePlays)} can react to matched Signals.`,
-      detailBlocked: "No active outreach sequence is available for matched Signals.",
-      action: action("Configure sequence", [
+      detailReady: `${counts.activePlays} active outreach path${plural(counts.activePlays)} can react to matched Signals.`,
+      detailBlocked: "No active outreach path is available for matched Signals.",
+      action: action("Configure path", [
         "product.play.signal_email.configure",
         "product.play.signal_linkedin.configure",
       ], "/dashboard/agent#outreach"),

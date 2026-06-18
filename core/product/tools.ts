@@ -1478,7 +1478,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.signal_email.configure",
     description:
-      "Create or update the signal-to-email outreach sequence. Internally this compiles to the durable Play workflow with research, draft, judge, approval, contact resolution, and send steps.",
+      "Create or update the signal-to-email outreach path. Internally this compiles to the durable Play workflow with research, draft, judge, approval, contact resolution, and send steps.",
     kind: "write",
     input: z.object({
       rep_id: z.string().uuid(),
@@ -1498,7 +1498,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.signal_linkedin.configure",
     description:
-      "Create or update the signal-to-LinkedIn outreach sequence. Internally this compiles to the durable Play workflow with research, draft, judge, approval, verified profile resolution, and native LinkedIn send steps.",
+      "Create or update the signal-to-LinkedIn outreach path. Internally this compiles to the durable Play workflow with research, draft, judge, approval, verified profile resolution, and native LinkedIn send steps.",
     kind: "write",
     input: z.object({
       rep_id: z.string().uuid(),
@@ -1946,7 +1946,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.skills.optimize",
     description:
-      "Score outreach writing skills from reply and meeting outcomes plus procedural memory, then emit advisory play.skill.optimization.recommended recommendations without mutating outreach sequences.",
+      "Score outreach writing skills from reply and meeting outcomes plus procedural memory, then emit advisory play.skill.optimization.recommended recommendations without mutating outreach paths.",
     kind: "write",
     input: z.object({
       lookback_days: z.number().int().positive().max(180).optional(),

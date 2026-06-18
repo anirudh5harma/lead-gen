@@ -753,7 +753,7 @@ function ProfileActivationFlow({
     {
       title: "Signal sources",
       detail: signalSources?.detail ?? "Source checks watch for timing evidence.",
-      href: signalSources?.action?.surface ?? "/dashboard/agent#sources",
+      href: signalSources?.action?.surface ?? "/dashboard/profile#signal-setup",
       icon: "sensors",
       ready: signalSources?.status === "ready",
     },
@@ -781,7 +781,7 @@ function ProfileActivationFlow({
       detail: readiness.launch_ready
         ? "The Agent can prepare judged email or LinkedIn outreach from qualified signals."
         : outreachSequence?.status !== "ready"
-          ? outreachSequence?.detail ?? "Outreach sequence needs configuration."
+          ? outreachSequence?.detail ?? "Outreach path needs configuration."
           : "Finish the remaining blocker before the Agent can send.",
       href: readiness.launch_ready
         ? "/dashboard/agent#outreach"

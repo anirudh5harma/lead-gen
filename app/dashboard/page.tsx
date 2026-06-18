@@ -1194,7 +1194,7 @@ function SignalHealthPanel({
           <Icon name="monitor_heart" size={15} />
           Signal health
         </p>
-        <Link href="/dashboard/agent#sources" className="btn-quiet-sm">
+        <Link href="/dashboard/profile#signal-setup" className="btn-quiet-sm">
           <Icon name="arrow_forward" size={14} />
           Sources
         </Link>
@@ -1573,7 +1573,7 @@ function briefNextMoves(
           : `${signalHealth.quiet_sources} active source${
               signalHealth.quiet_sources === 1 ? " is" : "s are"
             } quiet this week.`,
-      href: "/dashboard/agent#sources",
+      href: "/dashboard/profile#signal-setup",
       action: "Tune",
       tone: "attention",
     });
