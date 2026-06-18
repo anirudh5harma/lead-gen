@@ -54,3 +54,5 @@ The Agent verified-contact workbench now separates contact trust from raw reacha
 The Brief now uses the same contact-trust distinction before it recommends the next move: fresh signal-backed contacts are counted by verified email, LinkedIn profile, fit review, and email handles that still need verification. Hot-contact rows no longer call every found email "verified"; they show Verified email, Email found, or Email pending from graph verification metadata.
 
 Onboarding and Agent empty states now avoid old implementation nouns such as plays and outcomes. The launch flow stays in simple user language: website context creates sources, outreach paths, verified contacts, messages, replies, and meetings.
+
+The Brief priority rail is now channel-aware. It asks users to connect Outlook or LinkedIn before preparing outreach, and it keeps a LinkedIn connect move visible until LinkedIn is ready, matching GojiBerry's habit of making the next unblocker obvious from the home surface.

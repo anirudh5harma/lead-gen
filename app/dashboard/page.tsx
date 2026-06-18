@@ -92,6 +92,12 @@ interface BriefContactReadiness {
   fit_reviewed: number;
 }
 
+interface BriefChannelReadiness {
+  email_connected: boolean;
+  linkedin_connected: boolean;
+  connected_count: number;
+}
+
 interface BriefNextMove {
   icon: string;
   title: string;
@@ -450,6 +456,40 @@ async function loadBriefContactReadiness(
   };
 }
 
+async function loadBriefChannelReadiness(
+  workspaceId: string,
+): Promise<BriefChannelReadiness> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    email_connected: string;
+    linkedin_connected: string;
+  }>(
+    `select
+       exists (
+         select 1
+           from channel_accounts ca
+          where ca.workspace_id = $1
+            and ca.kind = 'oauth_outlook'
+            and ca.status = 'connected'
+       )::text as email_connected,
+       exists (
+         select 1
+           from channel_accounts ca
+          where ca.workspace_id = $1
+            and ca.kind in ('linkedin_oauth','linkedin_session')
+            and ca.status = 'connected'
+       )::text as linkedin_connected`,
+    [workspaceId],
+  );
+  const emailConnected = rows[0]?.email_connected === "true";
+  const linkedInConnected = rows[0]?.linkedin_connected === "true";
+  return {
+    email_connected: emailConnected,
+    linkedin_connected: linkedInConnected,
+    connected_count: Number(emailConnected) + Number(linkedInConnected),
+  };
+}
+
 async function loadBriefOutcomeInsights(
   workspaceId: string,
 ): Promise<BriefOutcomeInsight[]> {
@@ -574,6 +614,12 @@ const EMPTY_CONTACT_READINESS: BriefContactReadiness = {
   fit_reviewed: 0,
 };
 
+const EMPTY_CHANNEL_READINESS: BriefChannelReadiness = {
+  email_connected: false,
+  linkedin_connected: false,
+  connected_count: 0,
+};
+
 export default async function BriefPage() {
   const session = await getActiveWorkspaceSession();
   if (!session) {
@@ -583,6 +629,7 @@ export default async function BriefPage() {
         signalKinds={[]}
         signalHealth={EMPTY_SIGNAL_HEALTH}
         contactReadiness={EMPTY_CONTACT_READINESS}
+        channelReadiness={EMPTY_CHANNEL_READINESS}
         hotContacts={[]}
         outcomeInsights={[]}
         learning={EMPTY_LEARNING_INSIGHT}
@@ -595,6 +642,7 @@ export default async function BriefPage() {
     signalKinds,
     signalHealth,
     contactReadiness,
+    channelReadiness,
     hotContacts,
     outcomeInsights,
     learning,
@@ -605,6 +653,7 @@ export default async function BriefPage() {
       signalKinds={signalKinds}
       signalHealth={signalHealth}
       contactReadiness={contactReadiness}
+      channelReadiness={channelReadiness}
       hotContacts={hotContacts}
       outcomeInsights={outcomeInsights}
       learning={learning}
@@ -620,6 +669,7 @@ async function loadBriefState(
   signalKinds: SignalKindMetric[];
   signalHealth: BriefSignalHealth;
   contactReadiness: BriefContactReadiness;
+  channelReadiness: BriefChannelReadiness;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
@@ -630,6 +680,7 @@ async function loadBriefState(
       signalKinds,
       signalHealth,
       contactReadiness,
+      channelReadiness,
       hotContacts,
       outcomeInsights,
       learning,
@@ -639,6 +690,7 @@ async function loadBriefState(
         loadSignalKindMetrics(workspaceId),
         loadBriefSignalHealth(workspaceId),
         loadBriefContactReadiness(workspaceId),
+        loadBriefChannelReadiness(workspaceId),
         loadBriefHotContacts(workspaceId),
         loadBriefOutcomeInsights(workspaceId),
         loadBriefLearningInsight(workspaceId),
@@ -648,6 +700,7 @@ async function loadBriefState(
       signalKinds,
       signalHealth,
       contactReadiness,
+      channelReadiness,
       hotContacts,
       outcomeInsights,
       learning,
@@ -659,6 +712,7 @@ async function loadBriefState(
       signalKinds: [],
       signalHealth: EMPTY_SIGNAL_HEALTH,
       contactReadiness: EMPTY_CONTACT_READINESS,
+      channelReadiness: EMPTY_CHANNEL_READINESS,
       hotContacts: [],
       outcomeInsights: [],
       learning: EMPTY_LEARNING_INSIGHT,
@@ -671,6 +725,7 @@ function BriefView({
   signalKinds,
   signalHealth,
   contactReadiness,
+  channelReadiness,
   hotContacts,
   outcomeInsights,
   learning,
@@ -680,6 +735,7 @@ function BriefView({
   signalKinds: SignalKindMetric[];
   signalHealth: BriefSignalHealth;
   contactReadiness: BriefContactReadiness;
+  channelReadiness: BriefChannelReadiness;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
@@ -694,11 +750,12 @@ function BriefView({
   const totalSent7d = actions.emails_sent_7d + actions.dms_sent_7d;
   const replyRate =
     totalSent7d > 0 ? Math.round((actions.replies_7d / totalSent7d) * 100) : 0;
-  const priority = briefPriority(actions, totalSent7d);
+  const priority = briefPriority(actions, channelReadiness, totalSent7d);
   const nextMoves = briefNextMoves(
     actions,
     signalHealth,
     contactReadiness,
+    channelReadiness,
     learning,
     totalSent7d,
   );
@@ -1251,6 +1308,7 @@ function emailStatusLabel(status: string): string {
 
 function briefPriority(
   actions: BriefActionState,
+  channelReadiness: BriefChannelReadiness,
   totalSent7d: number,
 ): BriefPriority {
   if (actions.pending_reviews > 0) {
@@ -1271,6 +1329,15 @@ function briefPriority(
       href: "/dashboard/profile#channels",
       icon: "sync_problem",
       label: "Fix accounts",
+    };
+  }
+  if (channelReadiness.connected_count === 0) {
+    return {
+      detail:
+        "Connect Outlook or LinkedIn before qualified signals can become sent outreach.",
+      href: "/dashboard/profile#channels",
+      icon: "hub",
+      label: "Connect accounts",
     };
   }
   if (actions.qualified_signals_7d > 0 && totalSent7d === 0) {
@@ -1296,6 +1363,7 @@ function briefNextMoves(
   actions: BriefActionState,
   signalHealth: BriefSignalHealth,
   contactReadiness: BriefContactReadiness,
+  channelReadiness: BriefChannelReadiness,
   learning: BriefLearningInsight,
   totalSent7d: number,
 ): BriefNextMove[] {
@@ -1310,6 +1378,16 @@ function briefNextMoves(
       } ${actions.pending_reviews === 1 ? "needs" : "need"} a send decision before the agent can move them forward.`,
       href: "/dashboard/agent#opportunities",
       action: "Review",
+      tone: "attention",
+    });
+  } else if (channelReadiness.connected_count === 0) {
+    moves.push({
+      icon: "hub",
+      title: "Connect accounts",
+      detail:
+        "Outlook or LinkedIn must be connected before the agent can turn qualified signals into sent outreach.",
+      href: "/dashboard/profile#channels",
+      action: "Connect",
       tone: "attention",
     });
   } else if (actions.qualified_signals_7d > 0 && totalSent7d === 0) {
@@ -1334,7 +1412,17 @@ function briefNextMoves(
     });
   }
 
-  if (contactReadiness.signal_backed > 0) {
+  if (!channelReadiness.linkedin_connected) {
+    moves.push({
+      icon: "linkedin",
+      title: "Connect LinkedIn",
+      detail:
+        "LinkedIn unlocks profile-backed connection requests, DMs, and reply capture for signal-ready contacts.",
+      href: "/dashboard/profile#linkedin",
+      action: "Connect",
+      tone: channelReadiness.email_connected ? "neutral" : "attention",
+    });
+  } else if (contactReadiness.signal_backed > 0) {
     moves.push({
       icon: "person_search",
       title: "Inspect hot contacts",
