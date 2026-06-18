@@ -99,6 +99,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.sending_domain.operate",
     "bombsell.brief.get",
     "bombsell.launch.check",
+    "bombsell.profile.propose_from_context",
     "bombsell.signals.list_qualified",
     "bombsell.contact_lanes.get",
     "bombsell.outreach.prepare",
@@ -495,6 +496,20 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     },
   });
   registerTool({
+    name: "product.context.get",
+    description: "stub context",
+    kind: "read",
+    input: z.object({}),
+    output: z.unknown(),
+    async handler() {
+      return {
+        workspace_id,
+        generated_at: "2026-06-19T00:01:30.000Z",
+        markdown: "Profile: current workspace context for Acme.",
+      };
+    },
+  });
+  registerTool({
     name: "product.state.get",
     description: "stub state",
     kind: "read",
@@ -724,6 +739,64 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   );
   assert.equal(readiness.launch_ready, true);
   assert.equal(readiness.checks[0]?.surface, "/dashboard/profile#channels");
+
+  const profileProposal = await invokeTool<{
+    mode: string;
+    profile_patch: {
+      company_name: string | null;
+      website_url: string | null;
+      value_proposition: string | null;
+      signal_keywords: string | null;
+    };
+    icp_draft: {
+      signal_kind: string;
+      nice_to_haves: string[];
+    };
+    source_recommendations: Array<{ kind: string; value: string }>;
+    apply_plan: Array<{
+      tool_name: string;
+      requires_confirmation: boolean;
+      input: Record<string, unknown>;
+    }>;
+    missing_context: string[];
+    existing_context_excerpt: string | null;
+    source_tool: string;
+  }>(
+    "bombsell.profile.propose_from_context",
+    {
+      repo_context:
+        "Acme turns product and funding signals into verified email and LinkedIn outreach.",
+      company_name: "Acme",
+      website_url: "https://acme.example",
+      value_proposition: "Turns quality signals into verified outreach.",
+      customer_pain_points: "Teams miss buying intent and lack verified contacts.",
+      target_titles: "VP of Sales\nHead of Growth",
+      target_markets: "North America\nB2B SaaS",
+      signal_keywords: "funding\nlinkedin prospecting",
+      integrations: ["Outlook", "LinkedIn"],
+    },
+    { workspace_id, user_id },
+  );
+  assert.equal(profileProposal.mode, "proposal_only");
+  assert.equal(profileProposal.profile_patch.company_name, "Acme");
+  assert.equal(profileProposal.profile_patch.website_url, "https://acme.example");
+  assert.equal(
+    profileProposal.profile_patch.value_proposition,
+    "Turns quality signals into verified outreach.",
+  );
+  assert.equal(profileProposal.icp_draft.signal_kind, "funding");
+  assert.deepEqual(profileProposal.icp_draft.nice_to_haves.slice(0, 2), [
+    "funding",
+    "linkedin prospecting",
+  ]);
+  assert.equal(profileProposal.source_recommendations[0]?.kind, "website");
+  assert.equal(profileProposal.source_recommendations[0]?.value, "https://acme.example");
+  assert.equal(profileProposal.apply_plan[0]?.tool_name, "product.company.profile.configure");
+  assert.equal(profileProposal.apply_plan[0]?.requires_confirmation, true);
+  assert.equal(profileProposal.apply_plan[1]?.tool_name, "product.icp.configure");
+  assert.deepEqual(profileProposal.missing_context, []);
+  assert.match(profileProposal.existing_context_excerpt ?? "", /current workspace context/);
+  assert.equal(profileProposal.source_tool, "product.context.get");
 
   const outreach = await invokeTool<{ outreach: Array<{ message_id: string; person_name: string | null; href: string }> }>(
     "bombsell.outreach.list_sent",

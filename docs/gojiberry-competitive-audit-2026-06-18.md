@@ -105,3 +105,5 @@ The Agent outreach proof sidebar now uses graph-backed contact trust instead of 
 The Brief LinkedIn DM metric now counts only LinkedIn DMs and InMail, not connection requests or comments. Connection requests and comments remain visible in Agent channel performance, while Brief preserves the user's requested last-day/last-week email and DM accounting.
 
 Claude Code clients now have a prepare-only `bombsell.outreach.prepare` alias. It requires explicit preparation confirmation, dispatches the existing durable Agent outreach workflow for qualified signals, and returns review-ready judged drafts with Agent links instead of sending from the external agent surface.
+
+Claude Code clients can now call `bombsell.profile.propose_from_context` to turn repository, landing-page, README, and package context into a proposal-only Bombsell Profile update. It returns Profile fields, buyer-fit draft, source recommendations, and the exact product tools that would apply the update after user confirmation, keeping Profile setup accessible from Claude Code without granting silent write authority.

@@ -163,6 +163,77 @@ const LearningSchema = WorkspaceResultSchema.extend({
   source_tool: z.literal("product.state.get"),
 });
 
+const ProfileSignalKindSchema = z.enum([
+  "funding",
+  "hiring",
+  "leadership_change",
+  "product_launch",
+  "acquisition",
+  "churn_risk",
+  "competitor_move",
+  "podcast_mention",
+  "press_mention",
+  "regulation",
+  "expansion",
+  "layoff",
+  "other",
+]);
+
+const ProfileProposalSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  mode: z.literal("proposal_only"),
+  profile_patch: z.object({
+    company_name: z.string().nullable(),
+    website_url: z.string().nullable(),
+    industry: z.string().nullable(),
+    description: z.string().nullable(),
+    value_proposition: z.string().nullable(),
+    customer_pain_points: z.string().nullable(),
+    target_titles: z.string().nullable(),
+    target_markets: z.string().nullable(),
+    key_features: z.string().nullable(),
+    social_proof: z.string().nullable(),
+    signal_keywords: z.string().nullable(),
+    competitor_watchlist: z.string().nullable(),
+    exclusion_rules: z.string().nullable(),
+    preferred_language: z.string().nullable(),
+    outreach_goal: z.string().nullable(),
+    message_tone: z.string().nullable(),
+    profile_source: z.literal("manual"),
+  }),
+  icp_draft: z.object({
+    name: z.string(),
+    description: z.string(),
+    signal_kind: ProfileSignalKindSchema,
+    match_threshold: z.number().min(0).max(1),
+    nice_to_haves: z.array(z.string()),
+    enabled: z.boolean(),
+  }),
+  source_recommendations: z.array(
+    z.object({
+      label: z.string(),
+      kind: z.string(),
+      reason: z.string(),
+      value: z.string(),
+    }),
+  ),
+  apply_plan: z.array(
+    z.object({
+      tool_name: z.string(),
+      requires_confirmation: z.literal(true),
+      input: z.record(z.string(), z.unknown()),
+    }),
+  ),
+  missing_context: z.array(z.string()),
+  existing_context_excerpt: z.string().nullable(),
+  next_action: z.object({
+    label: z.string(),
+    detail: z.string(),
+    href: z.string(),
+  }),
+  source_tool: z.literal("product.context.get"),
+});
+
 const SignalContactSummarySchema = z.object({
   person_id: z.string().min(1),
   full_name: z.string().min(1),
@@ -346,6 +417,12 @@ interface LaunchReadiness {
   }>;
 }
 
+interface WorkspaceAgentContextSummary {
+  workspace_id: string;
+  generated_at?: string;
+  markdown?: string;
+}
+
 interface QualifiedSignalWorkbenchResult {
   workspace_id: string;
   generated_at: string;
@@ -446,6 +523,97 @@ export function registerBombsellAliasTools(): void {
           surface: check.action?.surface ?? null,
         })),
         source_tool: "product.launch.readiness.get" as const,
+      };
+    },
+  });
+
+  registerTool({
+    name: "bombsell.profile.propose_from_context",
+    description:
+      "Propose Bombsell Profile, buyer-fit, and source updates from Claude Code repo context. Proposal-only: returns the product tools to apply after user confirmation and does not write workspace state.",
+    kind: "read",
+    input: z.object({
+      repo_context: z.string().min(1).max(12_000),
+      company_name: z.string().min(1).optional(),
+      website_url: z.string().min(1).optional(),
+      industry: z.string().min(1).optional(),
+      description: z.string().min(1).optional(),
+      value_proposition: z.string().min(1).optional(),
+      customer_pain_points: z.string().min(1).optional(),
+      target_titles: z.string().min(1).optional(),
+      target_markets: z.string().min(1).optional(),
+      key_features: z.string().min(1).optional(),
+      social_proof: z.string().min(1).optional(),
+      signal_keywords: z.string().min(1).optional(),
+      competitor_watchlist: z.string().min(1).optional(),
+      exclusion_rules: z.string().min(1).optional(),
+      preferred_language: z.string().min(1).optional(),
+      outreach_goal: z.string().min(1).optional(),
+      message_tone: z.string().min(1).optional(),
+      integrations: z.array(z.string().min(1)).max(20).optional(),
+      source_urls: z.array(z.string().min(1)).max(20).optional(),
+    }),
+    output: ProfileProposalSchema,
+    async handler(input, ctx) {
+      const context = await invokeTool<WorkspaceAgentContextSummary>(
+        "product.context.get",
+        {},
+        ctx,
+      );
+      const profilePatch = {
+        company_name: clean(input.company_name),
+        website_url: clean(input.website_url),
+        industry: clean(input.industry),
+        description: clean(input.description) ?? preview(input.repo_context),
+        value_proposition: clean(input.value_proposition),
+        customer_pain_points: clean(input.customer_pain_points),
+        target_titles: clean(input.target_titles),
+        target_markets: clean(input.target_markets),
+        key_features: clean(input.key_features),
+        social_proof: clean(input.social_proof),
+        signal_keywords: clean(input.signal_keywords),
+        competitor_watchlist: clean(input.competitor_watchlist),
+        exclusion_rules: clean(input.exclusion_rules),
+        preferred_language: clean(input.preferred_language) ?? "English (US)",
+        outreach_goal: clean(input.outreach_goal) ?? "conversations",
+        message_tone: clean(input.message_tone) ?? "professional",
+        profile_source: "manual" as const,
+      };
+      const signalKind = inferProfileSignalKind(input);
+      const icpDraft = {
+        name: profilePatch.target_titles
+          ? `${firstLine(profilePatch.target_titles)} buyers`
+          : "Primary buyer fit",
+        description: [
+          profilePatch.customer_pain_points,
+          profilePatch.value_proposition,
+          profilePatch.target_markets,
+        ].filter(Boolean).join(" ") ||
+          "Buyer fit inferred from the repository context. Review before applying.",
+        signal_kind: signalKind,
+        match_threshold: 0.72,
+        nice_to_haves: proposalNiceToHaves(input),
+        enabled: true,
+      };
+      const sourceRecommendations = proposalSources(input);
+      const applyPlan = proposalApplyPlan(profilePatch, icpDraft, sourceRecommendations);
+      return {
+        workspace_id: context.workspace_id ?? ctx.workspace_id,
+        generated_at: new Date().toISOString(),
+        mode: "proposal_only" as const,
+        profile_patch: profilePatch,
+        icp_draft: icpDraft,
+        source_recommendations: sourceRecommendations,
+        apply_plan: applyPlan,
+        missing_context: missingProfileContext(profilePatch),
+        existing_context_excerpt: preview(context.markdown ?? null),
+        next_action: {
+          label: "Review Profile proposal",
+          detail:
+            "Review the proposed Profile, buyer fit, and source setup in Profile before applying any workspace changes.",
+          href: "/dashboard/profile#profile",
+        },
+        source_tool: "product.context.get" as const,
       };
     },
   });
@@ -878,6 +1046,126 @@ function isDraftReady(
     draft.status === "deferred";
 }
 
+function inferProfileSignalKind(input: {
+  repo_context: string;
+  signal_keywords?: string;
+}): z.infer<typeof ProfileSignalKindSchema> {
+  const text = `${input.signal_keywords ?? ""}\n${input.repo_context}`.toLowerCase();
+  if (/\b(funding|series [abc]|raised|investor)\b/.test(text)) return "funding";
+  if (/\b(hiring|headcount|jobs?|careers?|recruiting)\b/.test(text)) return "hiring";
+  if (/\b(launch|released|shipping|new product|changelog)\b/.test(text)) {
+    return "product_launch";
+  }
+  if (/\b(competitor|alternative|vs\.?|migration)\b/.test(text)) {
+    return "competitor_move";
+  }
+  if (/\b(expansion|new market|enterprise|upmarket)\b/.test(text)) {
+    return "expansion";
+  }
+  if (/\b(podcast|webinar|interview)\b/.test(text)) return "podcast_mention";
+  if (/\b(press|news|article|coverage)\b/.test(text)) return "press_mention";
+  return "other";
+}
+
+function proposalNiceToHaves(input: {
+  signal_keywords?: string;
+  integrations?: string[];
+  source_urls?: string[];
+}): string[] {
+  return unique([
+    ...lines(input.signal_keywords).slice(0, 6),
+    ...(input.integrations ?? []).map((value) => `Uses ${value}`),
+    ...(input.source_urls ?? []).slice(0, 3),
+  ]).slice(0, 10);
+}
+
+function proposalSources(input: {
+  website_url?: string;
+  signal_keywords?: string;
+  competitor_watchlist?: string;
+  source_urls?: string[];
+}): Array<z.infer<typeof ProfileProposalSchema>["source_recommendations"][number]> {
+  const sources: Array<z.infer<typeof ProfileProposalSchema>["source_recommendations"][number]> = [];
+  if (clean(input.website_url)) {
+    sources.push({
+      label: "Company website",
+      kind: "website",
+      reason: "Use the public site as the anchor for Profile, proof, and source discovery.",
+      value: clean(input.website_url)!,
+    });
+  }
+  for (const keyword of lines(input.signal_keywords).slice(0, 5)) {
+    sources.push({
+      label: `Open-web signal: ${keyword}`,
+      kind: "open_web",
+      reason: "Track market timing evidence related to the inferred buyer problem.",
+      value: keyword,
+    });
+  }
+  for (const competitor of lines(input.competitor_watchlist).slice(0, 5)) {
+    sources.push({
+      label: `Competitor watch: ${competitor}`,
+      kind: "competitor_watch",
+      reason: "Watch competitor movement and migration timing signals.",
+      value: competitor,
+    });
+  }
+  for (const url of (input.source_urls ?? []).slice(0, 5)) {
+    sources.push({
+      label: "Repository-provided source",
+      kind: "source_url",
+      reason: "Claude Code found this source while inspecting the project.",
+      value: url,
+    });
+  }
+  return sources.slice(0, 12);
+}
+
+function proposalApplyPlan(
+  profilePatch: z.infer<typeof ProfileProposalSchema>["profile_patch"],
+  icpDraft: z.infer<typeof ProfileProposalSchema>["icp_draft"],
+  sourceRecommendations: z.infer<typeof ProfileProposalSchema>["source_recommendations"],
+): z.infer<typeof ProfileProposalSchema>["apply_plan"] {
+  const applyPlan: z.infer<typeof ProfileProposalSchema>["apply_plan"] = [];
+  if (profilePatch.company_name && profilePatch.website_url) {
+    applyPlan.push({
+      tool_name: "product.company.profile.configure",
+      requires_confirmation: true,
+      input: compactRecord(profilePatch),
+    });
+  }
+  applyPlan.push({
+    tool_name: "product.icp.configure",
+    requires_confirmation: true,
+    input: compactRecord(icpDraft),
+  });
+  for (const source of sourceRecommendations.slice(0, 5)) {
+    applyPlan.push({
+      tool_name: "product.source.configure",
+      requires_confirmation: true,
+      input: {
+        name: source.label,
+        kind: source.kind,
+        config: { value: source.value, reason: source.reason },
+      },
+    });
+  }
+  return applyPlan;
+}
+
+function missingProfileContext(
+  profilePatch: z.infer<typeof ProfileProposalSchema>["profile_patch"],
+): string[] {
+  const missing: string[] = [];
+  if (!profilePatch.company_name) missing.push("company_name");
+  if (!profilePatch.website_url) missing.push("website_url");
+  if (!profilePatch.value_proposition) missing.push("value_proposition");
+  if (!profilePatch.customer_pain_points) missing.push("customer_pain_points");
+  if (!profilePatch.target_titles) missing.push("target_titles");
+  if (!profilePatch.signal_keywords) missing.push("signal_keywords");
+  return missing;
+}
+
 async function productState(ctx: ToolContext): Promise<ProductState> {
   return invokeTool<ProductState>("product.state.get", {}, ctx);
 }
@@ -891,4 +1179,30 @@ function preview(value: string | null): string | null {
   const compact = value.replace(/\s+/g, " ").trim();
   if (compact.length <= 240) return compact;
   return `${compact.slice(0, 237)}...`;
+}
+
+function clean(value: string | null | undefined): string | null {
+  const trimmed = value?.replace(/\s+/g, " ").trim();
+  return trimmed ? trimmed : null;
+}
+
+function firstLine(value: string): string {
+  return value.split(/\r?\n/)[0]?.trim() || value.trim();
+}
+
+function lines(value: string | null | undefined): string[] {
+  return (value ?? "")
+    .split(/\r?\n|,/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function compactRecord<T extends Record<string, unknown>>(value: T): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== null && entry !== undefined),
+  );
 }

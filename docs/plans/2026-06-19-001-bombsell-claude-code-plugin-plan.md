@@ -390,7 +390,7 @@ read-only and prepare-only flow.
    smaller task vocabulary. Add wrapper tools that call the existing registry:
 
    - `bombsell.brief.get` (landed: read-only)
-   - `bombsell.profile.propose_from_context` (needed)
+   - `bombsell.profile.propose_from_context` (landed: proposal-only)
    - `bombsell.launch.check` (landed: read-only)
    - `bombsell.signals.list_qualified` (landed: read-only)
    - `bombsell.contact_lanes.get` (landed: read-only)
@@ -512,10 +512,10 @@ Install page bullets:
 
 - [ ] Add remote MCP auth suitable for Claude Code.
 - [x] Add concise MCP server instructions for tool search.
-- [ ] Finish `bombsell.*` wrapper tools over the existing registry.
+- [x] Finish v1 `bombsell.*` wrapper tools over the existing registry.
   Landed: Brief, launch check, qualified signals, contact lanes, sent outreach,
-  prepare-only outreach, draft lookup, approvals, and learning. Remaining:
-  Profile proposal from repo context.
+  Profile proposal from repo context, prepare-only outreach, draft lookup,
+  approvals, and learning.
 - [x] Add product contract tests for wrapper tools and manifest discovery.
 - [ ] Create `bombsell-claude-code` plugin package.
 - [ ] Add six initial skills.
