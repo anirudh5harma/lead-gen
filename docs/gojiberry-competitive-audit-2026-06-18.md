@@ -64,3 +64,5 @@ Connected Outlook or LinkedIn accounts now wake the durable channel-readiness wo
 LinkedIn provider webhooks can now record accepted connection requests as `linkedin.connection.accepted`, and Agent channel performance shows accepted connections between sent invites and replies. This brings over GojiBerry's contacted/invited/accepted/replied clarity without adding another Campaigns tab.
 
 Accepted LinkedIn connections now carry optional person, conversation, and message IDs from the provider webhook, and the Agent verified-contact workbench promotes matched contacts to `Accepted connection`. This turns GojiBerry's campaign-state clarity into a Bombsell contact trust signal: a user can scan qualified people and see whether email or LinkedIn outreach has progressed from draft/contacted to accepted/replied.
+
+The Brief weekly learning panel now derives the strongest recent signal type and outbound channel from attributed replies and meetings. This borrows GojiBerry's "agent gets better every week" promise in a launch-focused way: Bombsell can tell the user what outcome-backed path to scale without adding another analytics tab.

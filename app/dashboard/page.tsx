@@ -67,6 +67,10 @@ interface BriefLearningInsight {
   skill_updated_at: Date | null;
   recommended_patterns: number;
   useful_outcomes_30d: number;
+  top_signal_kind_7d: string | null;
+  top_signal_kind_wins_7d: number;
+  top_channel_7d: string | null;
+  top_channel_wins_7d: number;
 }
 
 interface BriefHotContact {
@@ -525,7 +529,7 @@ async function loadBriefLearningInsight(
   workspaceId: string,
 ): Promise<BriefLearningInsight> {
   const pool = getPool();
-  const [outcomes, events] = await Promise.all([
+  const [outcomes, events, winners] = await Promise.all([
     pool.query<{ useful_outcomes_30d: string }>(
       `select count(*)::text as useful_outcomes_30d
          from outcomes o
@@ -550,6 +554,64 @@ async function loadBriefLearningInsight(
         limit 6`,
       [workspaceId],
     ),
+    pool.query<{
+      top_signal_kind_7d: string | null;
+      top_signal_kind_wins_7d: string;
+      top_channel_7d: string | null;
+      top_channel_wins_7d: string;
+    }>(
+      `with useful as (
+         select o.id,
+                o.conversation_id,
+                o.attributed_message_id,
+                coalesce(o.attributed_signal_id, c.origin_signal_id) as signal_id,
+                coalesce(o.recorded_at, o.occurred_at) as outcome_at
+           from outcomes o
+           left join conversations c on c.id = o.conversation_id
+          where o.workspace_id = $1
+            and o.kind in ('positive_reply','opportunity_created','meeting_booked','deal_won')
+            and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days'
+       ),
+       signal_counts as (
+         select s.kind::text as signal_kind,
+                count(*)::int as wins
+           from useful u
+           join signals s
+             on s.workspace_id = $1
+            and s.id = u.signal_id
+          group by s.kind
+       ),
+       channel_counts as (
+         select attributed_channel.channel,
+                count(*)::int as wins
+           from useful u
+           join lateral (
+             select m.channel::text as channel
+               from messages m
+              where m.workspace_id = $1
+                and m.direction = 'outbound'
+                and (
+                  m.id = u.attributed_message_id
+                  or (
+                    u.attributed_message_id is null
+                    and u.conversation_id is not null
+                    and m.conversation_id = u.conversation_id
+                    and coalesce(m.sent_at, m.created_at) <= u.outcome_at
+                  )
+                )
+              order by case when m.id = u.attributed_message_id then 0 else 1 end,
+                       coalesce(m.sent_at, m.created_at) desc
+              limit 1
+           ) attributed_channel on true
+          group by attributed_channel.channel
+       )
+       select
+         (select signal_kind from signal_counts order by wins desc, signal_kind asc limit 1) as top_signal_kind_7d,
+         coalesce((select wins::text from signal_counts order by wins desc, signal_kind asc limit 1), '0') as top_signal_kind_wins_7d,
+         (select channel from channel_counts order by wins desc, channel asc limit 1) as top_channel_7d,
+         coalesce((select wins::text from channel_counts order by wins desc, channel asc limit 1), '0') as top_channel_wins_7d`,
+      [workspaceId],
+    ),
   ]);
   const latestStrategy = events.rows.find(
     (event) => event.event_type === "campaign.strategy.recommended",
@@ -568,6 +630,12 @@ async function loadBriefLearningInsight(
       arrayPayloadLength(skill, "recommendations") ||
       arrayPayloadLength(strategy, "variants"),
     useful_outcomes_30d: Number(outcomes.rows[0]?.useful_outcomes_30d ?? 0),
+    top_signal_kind_7d: winners.rows[0]?.top_signal_kind_7d ?? null,
+    top_signal_kind_wins_7d: Number(
+      winners.rows[0]?.top_signal_kind_wins_7d ?? 0,
+    ),
+    top_channel_7d: winners.rows[0]?.top_channel_7d ?? null,
+    top_channel_wins_7d: Number(winners.rows[0]?.top_channel_wins_7d ?? 0),
   };
 }
 
@@ -595,6 +663,10 @@ const EMPTY_LEARNING_INSIGHT: BriefLearningInsight = {
   skill_updated_at: null,
   recommended_patterns: 0,
   useful_outcomes_30d: 0,
+  top_signal_kind_7d: null,
+  top_signal_kind_wins_7d: 0,
+  top_channel_7d: null,
+  top_channel_wins_7d: 0,
 };
 
 const EMPTY_SIGNAL_HEALTH: BriefSignalHealth = {
@@ -1468,14 +1540,16 @@ function briefNextMoves(
       action: "Tune",
       tone: "attention",
     });
-  } else if (learning.strategy_summary || learning.skill_summary) {
+  } else if (
+    learning.strategy_summary ||
+    learning.skill_summary ||
+    learning.top_signal_kind_7d ||
+    learning.top_channel_7d
+  ) {
     moves.push({
       icon: "auto_graph",
       title: "Apply weekly learning",
-      detail:
-        learning.strategy_summary ??
-        learning.skill_summary ??
-        "Replies and meetings are shaping the next outreach batch.",
+      detail: learningMoveDetail(learning),
       href: "/dashboard/agent#learning",
       action: "Apply",
       tone: "ready",
@@ -1494,6 +1568,19 @@ function briefNextMoves(
   return moves;
 }
 
+function learningMoveDetail(learning: BriefLearningInsight): string {
+  if (learning.top_signal_kind_7d && learning.top_channel_7d) {
+    return `${signalKindLabel(learning.top_signal_kind_7d)} via ${briefChannelLabel(
+      learning.top_channel_7d,
+    )} produced recent replies or meetings. Review before the next batch scales.`;
+  }
+  return (
+    learning.strategy_summary ??
+    learning.skill_summary ??
+    "Replies and meetings are shaping the next outreach batch."
+  );
+}
+
 function FunnelStep({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2">
@@ -1510,10 +1597,13 @@ function BriefLearningPanel({
 }: {
   learning: BriefLearningInsight;
 }) {
+  const hasOutcomeLearning = Boolean(
+    learning.top_signal_kind_7d || learning.top_channel_7d,
+  );
   const hasRecommendation = Boolean(
     learning.strategy_summary || learning.skill_summary,
   );
-  if (!hasRecommendation) {
+  if (!hasOutcomeLearning && !hasRecommendation) {
     return (
       <EmptyState
         title="No weekly learning yet"
@@ -1534,6 +1624,14 @@ function BriefLearningPanel({
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
           <FunnelStep label="Useful 30d" value={learning.useful_outcomes_30d} />
+          <FunnelStep
+            label="Signal wins 7d"
+            value={learning.top_signal_kind_wins_7d}
+          />
+          <FunnelStep
+            label="Channel wins 7d"
+            value={learning.top_channel_wins_7d}
+          />
           <FunnelStep label="Patterns" value={learning.recommended_patterns} />
         </div>
         <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
@@ -1542,6 +1640,13 @@ function BriefLearningPanel({
         </p>
       </aside>
       <div className="grid gap-2">
+        <BriefLearningCard
+          icon="sensors"
+          title="What to scale"
+          summary={learningScaleSummary(learning)}
+          updatedAt={null}
+          empty="No outcome-backed signal or channel winner yet."
+        />
         <BriefLearningCard
           icon="auto_graph"
           title="Strategy"
@@ -1559,6 +1664,25 @@ function BriefLearningPanel({
       </div>
     </div>
   );
+}
+
+function learningScaleSummary(learning: BriefLearningInsight): string | null {
+  const signal = learning.top_signal_kind_7d
+    ? `${signalKindLabel(learning.top_signal_kind_7d)} (${learning.top_signal_kind_wins_7d})`
+    : null;
+  const channel = learning.top_channel_7d
+    ? `${briefChannelLabel(learning.top_channel_7d)} (${learning.top_channel_wins_7d})`
+    : null;
+  if (signal && channel) {
+    return `This week's strongest outcome path is ${signal} through ${channel}. Use it to bias the next qualified outreach batch.`;
+  }
+  if (signal) {
+    return `${signal} is the strongest signal type behind this week's useful replies or meetings.`;
+  }
+  if (channel) {
+    return `${channel} is the strongest channel behind this week's useful replies or meetings.`;
+  }
+  return null;
 }
 
 function BriefLearningCard({
@@ -1653,7 +1777,7 @@ function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
     >
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
-          {signal.kind.replace(/_/g, " ")}
+          {signalKindLabel(signal.kind)}
         </span>
         <span className="mt-0.5 block text-xs text-[var(--color-text-3)]">
           {signal.count_24h} in 24h
@@ -1664,6 +1788,19 @@ function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
       </span>
     </Link>
   );
+}
+
+function signalKindLabel(kind: string): string {
+  return kind.replace(/_/g, " ");
+}
+
+function briefChannelLabel(channel: string): string {
+  if (channel === "email") return "email";
+  if (channel === "linkedin_dm") return "LinkedIn DM";
+  if (channel === "linkedin_inmail") return "LinkedIn InMail";
+  if (channel === "linkedin_connection") return "LinkedIn connect";
+  if (channel === "linkedin_comment") return "LinkedIn comment";
+  return channel.replace(/_/g, " ");
 }
 
 function outcomeLabel(kind: string): string {

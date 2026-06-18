@@ -286,6 +286,11 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Fresh qualified contacts/);
   assert.match(dashboard, /Agent insight/);
   assert.match(dashboard, /Weekly learning/);
+  assert.match(dashboard, /What to scale/);
+  assert.match(dashboard, /Signal wins 7d/);
+  assert.match(dashboard, /Channel wins 7d/);
+  assert.match(dashboard, /learningMoveDetail/);
+  assert.match(dashboard, /learningScaleSummary/);
   assert.match(dashboard, /No weekly learning yet/);
   assert.match(dashboard, /Open learning/);
   assert.match(dashboard, /href="\/dashboard\/agent#learning"/);
@@ -310,6 +315,12 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /contact_fit_decision/);
   assert.match(dashboard, /from outcomes o/);
   assert.match(dashboard, /from events/);
+  assert.match(dashboard, /top_signal_kind_7d/);
+  assert.match(dashboard, /top_channel_7d/);
+  assert.match(dashboard, /coalesce\(o\.attributed_signal_id, c\.origin_signal_id\) as signal_id/);
+  assert.match(dashboard, /join lateral \(/);
+  assert.match(dashboard, /m\.direction = 'outbound'/);
+  assert.match(dashboard, /m\.conversation_id = u\.conversation_id/);
   assert.match(dashboard, /campaign\.strategy\.recommended/);
   assert.match(dashboard, /play\.skill\.optimization\.recommended/);
   assert.match(dashboard, /left join conversations c/);
