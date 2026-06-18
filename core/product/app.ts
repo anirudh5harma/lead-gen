@@ -1119,6 +1119,56 @@ export interface ProductCompanyProfile {
   exa_enriched_at: string | null;
 }
 
+export interface ProductOperatingBrief {
+  workspace_id: string;
+  generated_at: string;
+  windows: {
+    last_24h: {
+      qualified_signals: number;
+      emails_sent: number;
+      linkedin_touches_sent: number;
+      replies: number;
+      meetings: number;
+    };
+    last_7d: {
+      qualified_signals: number;
+      emails_sent: number;
+      linkedin_touches_sent: number;
+      replies: number;
+      meetings: number;
+      useful_outcomes: number;
+    };
+  };
+  operations: {
+    pending_reviews: number;
+    unhealthy_channels: number;
+    bounced_24h: number;
+  };
+  channel_readiness: {
+    email_connected: boolean;
+    linkedin_connected: boolean;
+    connected_count: number;
+  };
+  signal_types: Array<{
+    kind: string;
+    count_24h: number;
+    count_7d: number;
+    with_contacts_7d: number;
+    with_drafts_7d: number;
+  }>;
+  next_action: {
+    key:
+      | "review_drafts"
+      | "repair_channels"
+      | "connect_accounts"
+      | "prepare_outreach"
+      | "open_agent";
+    label: string;
+    detail: string;
+    href: string;
+  };
+}
+
 export interface AppState {
   configured: boolean;
   bootstrap?: BootstrapResult;
@@ -11719,6 +11769,306 @@ export async function getProductCompanyProfile(
     [session.workspace_id],
   );
   return productProfileState(rows[0] ?? null);
+}
+
+export async function getProductOperatingBrief(
+  pool = getPool(),
+  session: ProductWorkspaceSession,
+): Promise<ProductOperatingBrief> {
+  await assertProductWorkspaceAccess(session, pool);
+  const [summary, signalTypes, channels] = await Promise.all([
+    pool.query<{
+      pending_reviews: string;
+      unhealthy_channels: string;
+      bounced_24h: string;
+      useful_outcomes_7d: string;
+      qualified_signals_24h: string;
+      qualified_signals_7d: string;
+      emails_sent_24h: string;
+      emails_sent_7d: string;
+      linkedin_touches_sent_24h: string;
+      linkedin_touches_sent_7d: string;
+      replies_24h: string;
+      replies_7d: string;
+      meetings_24h: string;
+      meetings_7d: string;
+    }>(
+      `with outlook_accounts as (
+         select coalesce(
+                  nullif(lower(ca.properties ->> 'mailbox_email'), ''),
+                  nullif(lower(ca.display_name), ''),
+                  ca.id::text
+                ) as outlook_mailbox_key,
+                ca.status,
+                ca.last_error
+           from channel_accounts ca
+          where ca.workspace_id = $1
+            and ca.kind = 'oauth_outlook'
+       ),
+       outlook_mailboxes as (
+         select outlook_mailbox_key,
+                bool_or(status = 'connected') as has_connected,
+                bool_or(status = 'connected' and last_error is not null) as has_connected_error,
+                bool_or(status::text in (
+                  'needs_reauth',
+                  'errored',
+                  'error',
+                  'rate_limited',
+                  'suspended',
+                  'disconnected'
+                )) as has_blocked_status
+           from outlook_accounts
+          group by outlook_mailbox_key
+       )
+       select
+         (select count(*)::text from workflow_approvals a
+            where a.workspace_id = $1
+              and a.decision = 'pending') as pending_reviews,
+         ((select count(*) from outlook_mailboxes
+            where has_connected_error
+               or (has_blocked_status and not has_connected))
+          + (select count(*) from channel_accounts ca
+               where ca.workspace_id = $1
+                 and ca.kind in ('email_domain','linkedin_oauth','linkedin_session')
+                 and (
+                   ca.status::text in ('needs_reauth','errored','error','rate_limited','suspended','disconnected')
+                   or ca.last_error is not null
+                 )))::text as unhealthy_channels,
+         (select count(*)::text from messages m
+            where m.workspace_id = $1
+              and m.direction = 'outbound'
+              and m.status = 'bounced'
+              and m.sent_at >= now() - interval '24 hours') as bounced_24h,
+         (select count(*)::text from outcomes o
+            where o.workspace_id = $1
+              and o.kind in ('positive_reply','opportunity_created','meeting_booked','deal_won')
+              and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as useful_outcomes_7d,
+         (select count(*)::text from signals s
+            where s.workspace_id = $1
+              and s.status in ('matched','in_play')
+              and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '24 hours') as qualified_signals_24h,
+         (select count(*)::text from signals s
+            where s.workspace_id = $1
+              and s.status in ('matched','in_play')
+              and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days') as qualified_signals_7d,
+         (select count(*)::text from messages m
+            where m.workspace_id = $1
+              and m.direction = 'outbound'
+              and m.channel = 'email'
+              and m.status in ('sent','delivered','replied')
+              and coalesce(m.sent_at, m.created_at) >= now() - interval '24 hours') as emails_sent_24h,
+         (select count(*)::text from messages m
+            where m.workspace_id = $1
+              and m.direction = 'outbound'
+              and m.channel = 'email'
+              and m.status in ('sent','delivered','replied')
+              and coalesce(m.sent_at, m.created_at) >= now() - interval '7 days') as emails_sent_7d,
+         (select count(*)::text from messages m
+            where m.workspace_id = $1
+              and m.direction = 'outbound'
+              and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+              and m.status in ('sent','delivered','replied')
+              and coalesce(m.sent_at, m.created_at) >= now() - interval '24 hours') as linkedin_touches_sent_24h,
+         (select count(*)::text from messages m
+            where m.workspace_id = $1
+              and m.direction = 'outbound'
+              and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+              and m.status in ('sent','delivered','replied')
+              and coalesce(m.sent_at, m.created_at) >= now() - interval '7 days') as linkedin_touches_sent_7d,
+         (select count(*)::text from outcomes o
+            where o.workspace_id = $1
+              and o.kind = 'positive_reply'
+              and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '24 hours') as replies_24h,
+         (select count(*)::text from outcomes o
+            where o.workspace_id = $1
+              and o.kind = 'positive_reply'
+              and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as replies_7d,
+         (select count(*)::text from outcomes o
+            where o.workspace_id = $1
+              and o.kind = 'meeting_booked'
+              and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '24 hours') as meetings_24h,
+         (select count(*)::text from outcomes o
+            where o.workspace_id = $1
+              and o.kind = 'meeting_booked'
+              and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days') as meetings_7d`,
+      [session.workspace_id],
+    ),
+    pool.query<{
+      kind: string;
+      count_24h: string;
+      count_7d: string;
+      with_contacts_7d: string;
+      with_drafts_7d: string;
+    }>(
+      `select coalesce(s.kind::text, 'other') as kind,
+              count(*) filter (
+                where coalesce(s.ingested_at, s.freshness_at) >= now() - interval '24 hours'
+              )::text as count_24h,
+              count(*) filter (
+                where coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+              )::text as count_7d,
+              count(*) filter (
+                where exists (
+                  select 1
+                    from graph_persons p
+                   where p.workspace_id = $1
+                     and (
+                       p.id = s.related_person_id
+                       or (
+                         s.related_company_id is not null
+                         and p.company_id = s.related_company_id
+                       )
+                     )
+                     and (
+                       cardinality(coalesce(p.emails, '{}'::text[])) > 0
+                       or p.linkedin_url is not null
+                     )
+                )
+              )::text as with_contacts_7d,
+              count(*) filter (
+                where exists (
+                  select 1
+                    from conversations c
+                    join messages m
+                      on m.workspace_id = c.workspace_id
+                     and m.conversation_id = c.id
+                   where c.workspace_id = $1
+                     and c.origin_signal_id = s.id
+                     and m.direction = 'outbound'
+                     and m.status in ('draft','queued','deferred','sent','delivered','replied')
+                )
+              )::text as with_drafts_7d
+         from signals s
+        where s.workspace_id = $1
+          and s.status in ('matched','in_play')
+          and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+        group by coalesce(s.kind::text, 'other')
+        order by count(*) desc, coalesce(s.kind::text, 'other') asc
+        limit 6`,
+      [session.workspace_id],
+    ),
+    pool.query<{
+      email_connected: string;
+      linkedin_connected: string;
+    }>(
+      `select
+         exists (
+           select 1
+             from channel_accounts ca
+            where ca.workspace_id = $1
+              and ca.kind = 'oauth_outlook'
+              and ca.status = 'connected'
+         )::text as email_connected,
+         exists (
+           select 1
+             from channel_accounts ca
+            where ca.workspace_id = $1
+              and ca.kind in ('linkedin_oauth','linkedin_session')
+              and ca.status = 'connected'
+         )::text as linkedin_connected`,
+      [session.workspace_id],
+    ),
+  ]);
+  const row = summary.rows[0];
+  const emailConnected = channels.rows[0]?.email_connected === "true";
+  const linkedInConnected = channels.rows[0]?.linkedin_connected === "true";
+  const brief = {
+    workspace_id: session.workspace_id,
+    generated_at: new Date().toISOString(),
+    windows: {
+      last_24h: {
+        qualified_signals: Number(row?.qualified_signals_24h ?? 0),
+        emails_sent: Number(row?.emails_sent_24h ?? 0),
+        linkedin_touches_sent: Number(
+          row?.linkedin_touches_sent_24h ?? 0,
+        ),
+        replies: Number(row?.replies_24h ?? 0),
+        meetings: Number(row?.meetings_24h ?? 0),
+      },
+      last_7d: {
+        qualified_signals: Number(row?.qualified_signals_7d ?? 0),
+        emails_sent: Number(row?.emails_sent_7d ?? 0),
+        linkedin_touches_sent: Number(row?.linkedin_touches_sent_7d ?? 0),
+        replies: Number(row?.replies_7d ?? 0),
+        meetings: Number(row?.meetings_7d ?? 0),
+        useful_outcomes: Number(row?.useful_outcomes_7d ?? 0),
+      },
+    },
+    operations: {
+      pending_reviews: Number(row?.pending_reviews ?? 0),
+      unhealthy_channels: Number(row?.unhealthy_channels ?? 0),
+      bounced_24h: Number(row?.bounced_24h ?? 0),
+    },
+    channel_readiness: {
+      email_connected: emailConnected,
+      linkedin_connected: linkedInConnected,
+      connected_count: Number(emailConnected) + Number(linkedInConnected),
+    },
+    signal_types: signalTypes.rows.map((signal) => ({
+      kind: signal.kind,
+      count_24h: Number(signal.count_24h),
+      count_7d: Number(signal.count_7d),
+      with_contacts_7d: Number(signal.with_contacts_7d),
+      with_drafts_7d: Number(signal.with_drafts_7d),
+    })),
+  };
+  return {
+    ...brief,
+    next_action: operatingBriefNextAction(brief),
+  };
+}
+
+function operatingBriefNextAction(
+  brief: Omit<ProductOperatingBrief, "next_action">,
+): ProductOperatingBrief["next_action"] {
+  const totalSent7d =
+    brief.windows.last_7d.emails_sent +
+    brief.windows.last_7d.linkedin_touches_sent;
+  if (brief.operations.pending_reviews > 0) {
+    return {
+      key: "review_drafts",
+      label: "Review drafts",
+      detail: `${brief.operations.pending_reviews} drafted outreach ${
+        brief.operations.pending_reviews === 1 ? "message needs" : "messages need"
+      } review before sending.`,
+      href: "/dashboard/agent#opportunities",
+    };
+  }
+  if (brief.operations.unhealthy_channels > 0) {
+    return {
+      key: "repair_channels",
+      label: "Fix accounts",
+      detail: `${brief.operations.unhealthy_channels} connected ${
+        brief.operations.unhealthy_channels === 1 ? "account needs" : "accounts need"
+      } attention before the agent can send reliably.`,
+      href: "/dashboard/profile#channels",
+    };
+  }
+  if (brief.channel_readiness.connected_count === 0) {
+    return {
+      key: "connect_accounts",
+      label: "Connect accounts",
+      detail:
+        "Connect Outlook or LinkedIn before qualified signals can become sent outreach.",
+      href: "/dashboard/profile#channels",
+    };
+  }
+  if (brief.windows.last_7d.qualified_signals > 0 && totalSent7d === 0) {
+    return {
+      key: "prepare_outreach",
+      label: "Prepare outreach",
+      detail:
+        "Qualified signals are ready, but no email or LinkedIn outreach has gone out this week.",
+      href: "/dashboard/agent#opportunities",
+    };
+  }
+  return {
+    key: "open_agent",
+    label: "Open Agent",
+    detail:
+      "The agent is running. Review fresh signal mix, sent outreach, and reply evidence before changing targeting.",
+    href: "/dashboard/agent",
+  };
 }
 
 export async function getAppState(

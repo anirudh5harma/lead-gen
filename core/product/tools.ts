@@ -20,6 +20,7 @@ import {
   evaluateProductDraft,
   generateProductMeetingPrep,
   getLinkedInAccountConnectIntent,
+  getProductOperatingBrief,
   getProductLaunchReadiness,
   getOutlookCalendarConnectIntent,
   getProductOutlookCalendarAvailability,
@@ -303,6 +304,53 @@ const SourceAdapterSchema = z.enum([
 
 const WorkspaceResultSchema = z.object({
   workspace_id: z.string().uuid(),
+});
+const OperatingBriefWindowSchema = z.object({
+  qualified_signals: z.number().int().nonnegative(),
+  emails_sent: z.number().int().nonnegative(),
+  linkedin_touches_sent: z.number().int().nonnegative(),
+  replies: z.number().int().nonnegative(),
+  meetings: z.number().int().nonnegative(),
+});
+const OperatingBriefSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  windows: z.object({
+    last_24h: OperatingBriefWindowSchema,
+    last_7d: OperatingBriefWindowSchema.extend({
+      useful_outcomes: z.number().int().nonnegative(),
+    }),
+  }),
+  operations: z.object({
+    pending_reviews: z.number().int().nonnegative(),
+    unhealthy_channels: z.number().int().nonnegative(),
+    bounced_24h: z.number().int().nonnegative(),
+  }),
+  channel_readiness: z.object({
+    email_connected: z.boolean(),
+    linkedin_connected: z.boolean(),
+    connected_count: z.number().int().min(0).max(2),
+  }),
+  signal_types: z.array(
+    z.object({
+      kind: z.string().min(1),
+      count_24h: z.number().int().nonnegative(),
+      count_7d: z.number().int().nonnegative(),
+      with_contacts_7d: z.number().int().nonnegative(),
+      with_drafts_7d: z.number().int().nonnegative(),
+    }),
+  ),
+  next_action: z.object({
+    key: z.enum([
+      "review_drafts",
+      "repair_channels",
+      "connect_accounts",
+      "prepare_outreach",
+      "open_agent",
+    ]),
+    label: z.string().min(1),
+    detail: z.string().min(1),
+    href: z.string().min(1),
+  }),
 });
 const MessagePersonalizationOutputSchema = WorkspaceResultSchema.extend({
   conversation_id: z.string().uuid().nullable(),
@@ -740,6 +788,18 @@ export function registerProductTools(): void {
     output: z.unknown(),
     async handler(_input, ctx) {
       return getAppState(undefined, sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.brief.get",
+    description:
+      "Read the current operating Brief for agent clients: last-day and last-week qualified signals, signal types, sent email/LinkedIn outreach, replies, meetings, channel readiness, pending reviews, and the next action.",
+    kind: "read",
+    input: z.object({}),
+    output: OperatingBriefSchema,
+    async handler(_input, ctx) {
+      return getProductOperatingBrief(undefined, sessionFromContext(ctx));
     },
   });
 

@@ -33,6 +33,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
 
   for (const expected of [
     "product.state.get",
+    "product.brief.get",
     "product.context.get",
     "product.company_brain.recall",
     "product.company_brain.brief.refresh",
