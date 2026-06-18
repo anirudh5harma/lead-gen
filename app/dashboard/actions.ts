@@ -262,7 +262,6 @@ export async function configureRepAction(formData: FormData) {
   revalidateProductPaths();
   if (repId) {
     revalidatePath(`/dashboard/agent/${repId}`);
-    revalidatePath(`/dashboard/reps/${repId}`);
   }
   redirectWithToast(returnTo, "Agent guidance saved.");
 }
@@ -708,7 +707,6 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
 function revalidateProductPaths() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/agent");
-  revalidatePath("/dashboard/reps");
   revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/health");
   revalidatePath("/dashboard/profile");

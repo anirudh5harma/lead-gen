@@ -1,3 +1,3 @@
 export const dynamic = "force-dynamic";
 
-export { default } from "../../reps/[id]/page";
+export { default } from "./AgentDetailPage";

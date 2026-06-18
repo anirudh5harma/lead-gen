@@ -79,9 +79,17 @@ test("Agent is the canonical dashboard surface route", () => {
   const agentDetailPage = source("app/dashboard/agent/[id]/page.tsx");
 
   assert.match(agentPage, /export const dynamic = "force-dynamic"/);
-  assert.match(agentPage, /from "\.\.\/reps\/page"/);
+  assert.match(agentPage, /from "\.\/AgentPage"/);
   assert.match(agentDetailPage, /export const dynamic = "force-dynamic"/);
-  assert.match(agentDetailPage, /from "\.\.\/\.\.\/reps\/\[id\]\/page"/);
+  assert.match(agentDetailPage, /from "\.\/AgentDetailPage"/);
+  assert.match(
+    source("app/dashboard/reps/page.tsx"),
+    /redirect\("\/dashboard\/agent"\)/,
+  );
+  assert.match(
+    source("app/dashboard/reps/[id]/page.tsx"),
+    /redirect\(`\/dashboard\/agent\/\$\{id\}`\)/,
+  );
   assert.equal(exists("app/dashboard/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/loading.tsx"), false);
   assert.equal(exists("app/dashboard/profile/loading.tsx"), true);
@@ -97,14 +105,14 @@ test("Agent is the canonical dashboard surface route", () => {
   );
   assert.match(
     source("app/dashboard/agent/[id]/loading.tsx"),
-    /from "\.\.\/\.\.\/reps\/\[id\]\/loading"/,
+    /surface="agent" layout="split"/,
   );
 
   const productLinks = [
     source("components/dashboard/Shell.tsx"),
     source("app/dashboard/page.tsx"),
-    source("app/dashboard/reps/page.tsx"),
-    source("app/dashboard/reps/[id]/page.tsx"),
+    source("app/dashboard/agent/AgentPage.tsx"),
+    source("app/dashboard/agent/[id]/AgentDetailPage.tsx"),
     source("app/dashboard/setup/page.tsx"),
     source("app/dashboard/prospects/[id]/page.tsx"),
     source("app/dashboard/actions.ts"),
@@ -322,7 +330,7 @@ test("Agent learning surface owns message optimization from reply evidence", () 
   const campaignsLoading = source("app/dashboard/campaigns/loading.tsx");
   const playsLoading = source("app/dashboard/plays/loading.tsx");
   const nextConfig = source("next.config.ts");
-  const reps = source("app/dashboard/reps/page.tsx");
+  const reps = source("app/dashboard/agent/AgentPage.tsx");
   const actions = source("app/dashboard/actions.ts");
   const readiness = source("core/product/launch-readiness.ts");
 
@@ -362,7 +370,7 @@ test("Agent learning surface owns message optimization from reply evidence", () 
 test("Verified contacts open graph-backed profile pages with channel readiness", () => {
   const prospects = source("app/dashboard/prospects/page.tsx");
   const profile = source("app/dashboard/prospects/[id]/page.tsx");
-  const reps = source("app/dashboard/reps/page.tsx");
+  const reps = source("app/dashboard/agent/AgentPage.tsx");
 
   assert.match(prospects, /redirect\("\/dashboard\/agent#verified-contacts"\)/);
   assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
@@ -402,7 +410,7 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   const loading = source("app/dashboard/outcomes/loading.tsx");
   const loader = source("components/dashboard/LoadingState.tsx");
   const dashboard = source("app/dashboard/page.tsx");
-  const reps = source("app/dashboard/reps/page.tsx");
+  const reps = source("app/dashboard/agent/AgentPage.tsx");
 
   assert.match(outcomes, /redirect\("\/dashboard\/brief"\)/);
   assert.match(dashboard, /Replies \/ meetings/);
@@ -433,7 +441,7 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
 });
 
 test("Agent surface shows live work and account readiness", () => {
-  const reps = source("app/dashboard/reps/page.tsx");
+  const reps = source("app/dashboard/agent/AgentPage.tsx");
 
   assert.match(reps, /AgentActivityPanel/);
   assert.match(reps, /AgentContactsPanel/);
@@ -660,8 +668,8 @@ test("Agent surface shows live work and account readiness", () => {
 
 test("dashboard app surfaces do not leak legacy named agents", () => {
   const surfaces = [
-    source("app/dashboard/reps/page.tsx"),
-    source("app/dashboard/reps/[id]/page.tsx"),
+    source("app/dashboard/agent/AgentPage.tsx"),
+    source("app/dashboard/agent/[id]/AgentDetailPage.tsx"),
     source("app/dashboard/setup/page.tsx"),
     source("app/dashboard/profile/ProfilePage.tsx"),
     source("app/dashboard/campaigns/page.tsx"),
@@ -708,7 +716,7 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   const outreach = source("app/dashboard/conversations/page.tsx");
   const detail = source("app/dashboard/conversations/[id]/page.tsx");
   const trust = source("core/product/conversation-trust.ts");
-  const reps = source("app/dashboard/reps/page.tsx");
+  const reps = source("app/dashboard/agent/AgentPage.tsx");
 
   assert.match(outreach, /redirect\("\/dashboard\/agent#outreach"\)/);
   assert.match(reps, /<SurfaceSection\s+title="Sent outreach"/);
@@ -760,7 +768,7 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   const campaigns = source("app/dashboard/campaigns/page.tsx");
   const signals = source("app/dashboard/ingestion/page.tsx");
   const actions = source("app/dashboard/actions.ts");
-  const reps = source("app/dashboard/reps/page.tsx");
+  const reps = source("app/dashboard/agent/AgentPage.tsx");
   const productApp = source("core/product/app.ts");
   const onboardingActions = source("app/onboarding/actions.ts");
   const capabilityMap = source("docs/agent-native-capability-map.md");
@@ -997,7 +1005,7 @@ test("account connection entry points carry explicit product return targets", ()
     source("app/dashboard/integrations/page.tsx"),
     source("app/dashboard/setup/page.tsx"),
     source("app/dashboard/deliverability/page.tsx"),
-    source("app/dashboard/reps/page.tsx"),
+    source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/conversations/page.tsx"),
     source("app/dashboard/prospects/[id]/page.tsx"),
   ].join("\n");
@@ -1013,7 +1021,7 @@ test("account connection entry points carry explicit product return targets", ()
 test("new product defaults are autonomous after checks", () => {
   const actions = source("app/dashboard/actions.ts");
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
-  const repDetail = source("app/dashboard/reps/[id]/page.tsx");
+  const repDetail = source("app/dashboard/agent/[id]/AgentDetailPage.tsx");
   const productApp = source("core/product/app.ts");
   const playAutonomy = source("core/plays/autonomy.ts");
   const repPrimitive = source("core/primitives/rep.ts");
@@ -1230,7 +1238,7 @@ test("dashboard icon names resolve to first-party SVG symbols", () => {
     source("components/dashboard/Shell.tsx"),
     source("app/onboarding/OnboardingForm.tsx"),
     source("app/dashboard/page.tsx"),
-    source("app/dashboard/reps/page.tsx"),
+    source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/profile/ProfilePage.tsx"),
     source("app/dashboard/ingestion/page.tsx"),
     source("app/dashboard/deliverability/page.tsx"),
