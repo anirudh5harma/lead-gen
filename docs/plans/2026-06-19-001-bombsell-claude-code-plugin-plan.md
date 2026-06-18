@@ -157,7 +157,7 @@ Plugin namespace:
 Proposed structure:
 
 ```text
-bombsell-claude-code/
+integrations/bombsell-claude-code/
   .claude-plugin/
     plugin.json
   .mcp.json
@@ -175,15 +175,11 @@ bombsell-claude-code/
       SKILL.md
     reply-insights/
       SKILL.md
-  agents/
-    gtm-operator.md
-    outreach-reviewer.md
-  hooks/
-    hooks.json
-  bin/
-    bombsell-auth
-    bombsell-status
 ```
+
+The first package now intentionally omits agents, hooks, and local binaries.
+Those remain post-dogfood additions after remote MCP OAuth and audit logging are
+complete.
 
 Private marketplace structure:
 
@@ -310,14 +306,14 @@ MCP tools needed:
 
 ## Agents
 
-### `bombsell:gtm-operator`
+### `bombsell:gtm-operator` (deferred)
 
 A Claude Code subagent that can read the local project and use Bombsell MCP tools
 to keep Profile, signals, and launch readiness current. It should be allowed to
 read local files and call Bombsell MCP tools, but should default to read-only
 local files and proposal-only Bombsell writes.
 
-### `bombsell:outreach-reviewer`
+### `bombsell:outreach-reviewer` (deferred)
 
 A stricter review subagent for checking drafts against:
 
@@ -517,11 +513,12 @@ Install page bullets:
   Profile proposal from repo context, prepare-only outreach, draft lookup,
   approvals, and learning.
 - [x] Add product contract tests for wrapper tools and manifest discovery.
-- [ ] Create `bombsell-claude-code` plugin package.
-- [ ] Add six initial skills.
+- [x] Create `bombsell-claude-code` plugin package under `integrations/`.
+- [x] Add six initial skills.
 - [ ] Add two optional agents.
-- [ ] Add README and install docs.
-- [ ] Validate locally with `claude --plugin-dir`.
+- [x] Add README and install docs.
+- [x] Validate plugin manifest locally with `claude plugin validate integrations/bombsell-claude-code`.
+- [ ] Dogfood an authenticated session with `claude --plugin-dir ./integrations/bombsell-claude-code`.
 - [ ] Publish private marketplace.
 - [ ] Dogfood with design partners.
 - [ ] Submit to community marketplace.

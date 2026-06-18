@@ -1,6 +1,6 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import {
   invokeTool,
@@ -26,6 +26,14 @@ import {
   registerProductTools,
   _resetProductToolsRegistration,
 } from "../core/product/tools.ts";
+
+function readProjectFile(path: string): string {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+function projectFileExists(path: string): boolean {
+  return existsSync(new URL(`../${path}`, import.meta.url));
+}
 
 beforeEach(() => {
   _resetToolRegistry();
@@ -337,7 +345,7 @@ test("agent-native capability map references registered tools", () => {
   registerExaTools();
   registerProductTools();
   const names = new Set(listTools().map((tool) => tool.name));
-  const map = readFileSync("docs/agent-native-capability-map.md", "utf8");
+  const map = readProjectFile("docs/agent-native-capability-map.md");
   const refs = [...map.matchAll(/`((?:product|graph)\.[^`]+)`/g)]
     .flatMap((match) => match[1]!.split(",").map((part) => part.trim()))
     .filter(Boolean);
@@ -389,6 +397,74 @@ test("MCP manifest guides external agents through Brief, Agent, and Profile", ()
   ]) {
     assert.match(BOMBSELL_MCP_INSTRUCTIONS, new RegExp(phrase));
   }
+});
+
+test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () => {
+  const root = "integrations/bombsell-claude-code";
+  const manifest = JSON.parse(
+    readProjectFile(`${root}/.claude-plugin/plugin.json`),
+  ) as {
+    name: string;
+    description: string;
+    version: string;
+  };
+  const mcp = JSON.parse(readProjectFile(`${root}/.mcp.json`)) as {
+    mcpServers: {
+      bombsell: {
+        type: string;
+        url: string;
+        oauth?: { scopes?: string };
+      };
+    };
+  };
+  const readme = readProjectFile(`${root}/README.md`);
+  const skills = [
+    "brief",
+    "profile-from-repo",
+    "launch-check",
+    "signal-review",
+    "prepare-outreach",
+    "reply-insights",
+  ];
+
+  assert.equal(manifest.name, "bombsell");
+  assert.match(manifest.description, /Brief, Profile proposals, launch checks/);
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(mcp.mcpServers.bombsell.type, "http");
+  assert.equal(mcp.mcpServers.bombsell.url, "https://www.bombsell.com/api/mcp");
+  assert.match(mcp.mcpServers.bombsell.oauth?.scopes ?? "", /profile:read/);
+  assert.match(mcp.mcpServers.bombsell.oauth?.scopes ?? "", /outreach:prepare/);
+
+  for (const skill of skills) {
+    const skillPath = `${root}/skills/${skill}/SKILL.md`;
+    assert.ok(projectFileExists(skillPath), `expected ${skillPath}`);
+    const content = readProjectFile(skillPath);
+    assert.match(content, /^---\ndescription:/);
+    assert.doesNotMatch(content, /headersHelper|Bearer\s+[A-Za-z0-9._-]+/);
+  }
+
+  for (const tool of [
+    "bombsell.brief.get",
+    "bombsell.profile.propose_from_context",
+    "bombsell.launch.check",
+    "bombsell.signals.list_qualified",
+    "bombsell.contact_lanes.get",
+    "bombsell.outreach.prepare",
+    "bombsell.outreach.list_sent",
+    "bombsell.draft.get",
+    "bombsell.approvals.list",
+    "bombsell.approvals.decide",
+    "bombsell.learning.get",
+  ]) {
+    assert.match(readme, new RegExp(tool.replace(/\./g, "\\.")));
+  }
+
+  assert.match(readme, /proposal-only/);
+  assert.match(readme, /does not send/);
+  assert.match(readme, /Do not publish static bearer tokens/);
+  assert.doesNotMatch(readme, /Sampark|plays tab|outcomes tab/i);
+  assert.ok(!projectFileExists(`${root}/hooks/hooks.json`));
+  assert.ok(!projectFileExists(`${root}/agents/gtm-operator.md`));
 });
 
 test("bombsell wrapper tools summarize product state for Claude Code", async () => {

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "bombsell": {
+      "type": "http",
+      "url": "https://www.bombsell.com/api/mcp",
+      "oauth": {
+        "scopes": "brief:read profile:read signals:read outreach:read outreach:prepare approvals:read approvals:write learning:read"
+      }
+    }
+  }
+}

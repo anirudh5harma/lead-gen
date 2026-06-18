@@ -1,0 +1,11 @@
+{
+  "name": "bombsell",
+  "description": "Run Bombsell GTM workflows from Claude Code: Brief, Profile proposals, launch checks, qualified signals, prepare-only outreach, and reply learning.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Bombsell"
+  },
+  "homepage": "https://www.bombsell.com",
+  "repository": "https://github.com/anirudh5harma/lead-gen",
+  "license": "UNLICENSED"
+}
