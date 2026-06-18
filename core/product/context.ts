@@ -410,7 +410,7 @@ export async function getWorkspaceAgentContext(
     "## Current Counts",
     `- Active agents: ${reps.rows.length}`,
     `- ICP segments: ${icps.rows.length}`,
-    `- Outreach paths: ${plays.rows.length}`,
+    `- Outreach rules: ${plays.rows.length}`,
     `- Sources: ${sources.rows.length}`,
     `- Pending approvals: ${pendingApprovals.rows.length}`,
     `- Recent signals: ${signals.rows.length}`,
@@ -445,7 +445,7 @@ export async function getWorkspaceAgentContext(
       ),
     ),
     "",
-    "## Outreach Paths",
+    "## Outreach Rules",
     listOrEmpty(
       plays.rows.map(
         (play) => `- ${line(play.name)} (${play.status}): ${line(play.declaration)}`,

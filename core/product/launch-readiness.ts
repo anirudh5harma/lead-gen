@@ -185,7 +185,7 @@ export function buildWorkspaceLaunchReadiness(
   const checks: LaunchReadinessCheck[] = [
     countCheck({
       id: "workspace_profile",
-      label: "Workspace profile",
+      label: "Profile",
       primitive: "Signal",
       count: counts.workspaceProfiles,
       detailReady: "Company profile is available for matching and personalization.",
@@ -194,12 +194,12 @@ export function buildWorkspaceLaunchReadiness(
     }),
     countCheck({
       id: "icp",
-      label: "ICP",
+      label: "Buyer fit",
       primitive: "Signal",
       count: counts.enabledIcps,
-      detailReady: `${counts.enabledIcps} ICP segment${plural(counts.enabledIcps)} enabled.`,
-      detailBlocked: "No enabled ICP segment is available for lead matching.",
-      action: action("Configure ICP", ["product.icp.configure"], "/dashboard/profile#agent"),
+      detailReady: `${counts.enabledIcps} buyer-fit segment${plural(counts.enabledIcps)} enabled.`,
+      detailBlocked: "No enabled buyer-fit segment is available for signal matching.",
+      action: action("Configure buyer fit", ["product.icp.configure"], "/dashboard/profile#agent"),
     }),
     countCheck({
       id: "rep",
@@ -225,12 +225,12 @@ export function buildWorkspaceLaunchReadiness(
     }),
     countCheck({
       id: "plays",
-      label: "Outreach path",
+      label: "Outreach rules",
       primitive: "Play",
       count: counts.activePlays,
-      detailReady: `${counts.activePlays} active outreach path${plural(counts.activePlays)} can react to matched Signals.`,
-      detailBlocked: "No active outreach path is available for matched Signals.",
-      action: action("Configure path", [
+      detailReady: `${counts.activePlays} active email/LinkedIn rule set${plural(counts.activePlays)} can react to qualified signals.`,
+      detailBlocked: "No active email or LinkedIn outreach rules are available for qualified signals.",
+      action: action("Configure outreach", [
         "product.play.signal_email.configure",
         "product.play.signal_linkedin.configure",
       ], "/dashboard/agent#outreach"),

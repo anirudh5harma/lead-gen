@@ -44,7 +44,7 @@ The Brief now includes a compact next-move rail. It chooses between reviewing dr
 
 The Agent contact workbench and contact profile now expose when a contact first entered the graph and when it was last updated. This brings over GojiBerry's import-timing trust signal while keeping the contact story tied to Bombsell's graph, signals, channel handles, outreach threads, and fit feedback.
 
-The Profile page now has a launch-model summary under the setup hub. It makes the learned buyer fit, watched signal terms, email path, LinkedIn path, contact coverage, match gate, duplicate protection, and review mode visible before the detailed forms. This translates GojiBerry's "enter your website and the agent takes it from there" clarity into Bombsell's Profile and integrations surface.
+The Profile page now has a launch-model summary under the setup hub. It makes the learned buyer fit, watched signal terms, email channel, LinkedIn channel, contact coverage, match gate, duplicate protection, and review mode visible before the detailed forms. This translates GojiBerry's "enter your website and the agent takes it from there" clarity into Bombsell's Profile and integrations surface.
 
 Saving the Profile or Agent setup now starts the durable signal-ingestion workflow in the background, and the Profile launch model includes a direct Check sources action. This keeps Bombsell's architecture intact while making the GojiBerry-style "agent starts working from setup" loop visible and directly accessible.
 
@@ -58,7 +58,7 @@ The Agent verified-contact workbench now separates contact trust from raw reacha
 
 The Brief now uses the same contact-trust distinction before it recommends the next move: fresh signal-backed contacts are counted by verified email, LinkedIn profile, fit review, and email handles that still need verification. Hot-contact rows no longer call every found email "verified"; they show Verified email, Email found, or Email pending from graph verification metadata.
 
-Onboarding and Agent empty states now avoid old implementation nouns such as plays and outcomes. The launch flow stays in simple user language: website context creates sources, outreach paths, verified contacts, messages, replies, and meetings.
+Onboarding and Agent empty states now avoid old implementation nouns such as plays and outcomes. The launch flow stays in simple user language: website context creates sources, outreach rules, verified contacts, messages, replies, and meetings.
 
 The Brief priority rail is now channel-aware. It asks users to connect Outlook or LinkedIn before preparing outreach, and it keeps a LinkedIn connect move visible until LinkedIn is ready, matching GojiBerry's habit of making the next unblocker obvious from the home surface.
 
@@ -78,7 +78,7 @@ The Agent sent-outreach surface now lists accepted LinkedIn connections that hav
 
 Profile now includes a signal setup panel that mirrors GojiBerry's concrete agent editor without adding another tab: buyer filters, intent signals, source categories, qualified signals this week, email enrichment, duplicate protection, verified email, and LinkedIn profile readiness are visible in one scan. The panel reads backend source counts and recent qualified-signal counts, then routes users to Profile tuning, source checks, or Agent execution.
 
-The Agent page now includes a setup snapshot directly under the command strip. It reads the seven-day signal mix from the backend, groups signal types by seen, qualified, contact-ready, and draft-ready counts, and pairs that with buyer/source tuning plus outreach gates for verified emails, LinkedIn profiles, outreach paths, and sent volume. This translates GojiBerry's "one agent replaces the outreach stack" positioning into Bombsell's execution surface without adding a new tab.
+The Agent page now includes a setup snapshot directly under the command strip. It reads the seven-day signal mix from the backend, groups signal types by seen, qualified, contact-ready, and draft-ready counts, and pairs that with buyer/source tuning plus outreach gates for verified emails, LinkedIn profiles, outreach rules, and sent volume. This translates GojiBerry's "one agent replaces the outreach stack" positioning into Bombsell's execution surface without adding a new tab.
 
 The Brief signal-types panel now goes beyond raw qualified-signal counts. Each signal type shows last-day count, seven-day count, contact-ready count, and drafted count, with a compact readiness bar. This makes the home surface answer whether timing evidence is actually becoming reachable people and outreach drafts, which is the core GojiBerry-style operator loop.
 

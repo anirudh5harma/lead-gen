@@ -1088,7 +1088,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.launch.readiness.get",
     description:
-      "Read the workspace launch gate for autonomous outreach: Profile, buyer fit, signal sources, outreach paths, Outlook reply sync, LinkedIn health, blockers, warnings, and next action.",
+      "Read the workspace launch gate for autonomous outreach: Profile, buyer fit, signal sources, outreach rules, Outlook reply sync, LinkedIn health, blockers, warnings, and next action.",
     kind: "read",
     input: z.object({
       required_channel: LaunchReadinessRequiredChannelSchema.optional(),
@@ -1207,7 +1207,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.profile_icp.draft",
     description:
-      "Run the durable LangGraph Profile and buyer-fit draft step from a website URL. Emits workspace.profile.drafted and icp.drafted; it does not configure Agent persona, outreach paths, sources, channels, or sends.",
+      "Run the durable LangGraph Profile and buyer-fit draft step from a website URL. Emits workspace.profile.drafted and icp.drafted; it does not configure Agent persona, outreach rules, sources, channels, or sends.",
     kind: "write",
     input: z.object({
       website_url: z.string().min(1),
@@ -1234,7 +1234,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.activation.setup.run",
     description:
-      "Run the durable website-to-setup LangGraph workflow. It drafts Profile and buyer fit, configures the Agent persona and email/LinkedIn outreach paths, configures low-cost default signal sources, returns Outlook/LinkedIn connection gates, and then starts initial signal ingestion after activation completes. It never matches leads or sends outreach.",
+      "Run the durable website-to-setup LangGraph workflow. It drafts Profile and buyer fit, configures the Agent persona and email/LinkedIn outreach rules, configures low-cost default signal sources, returns Outlook/LinkedIn connection gates, and then starts initial signal ingestion after activation completes. It never matches leads or sends outreach.",
     kind: "write",
     input: z.object({
       website_url: z.string().min(1),
@@ -1478,7 +1478,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.signal_email.configure",
     description:
-      "Create or update the signal-to-email outreach path. Internally this compiles to the durable Play workflow with research, draft, judge, approval, contact resolution, and send steps.",
+      "Create or update the signal-to-email outreach rules. Internally this compiles to the durable Play workflow with research, draft, judge, approval, contact resolution, and send steps.",
     kind: "write",
     input: z.object({
       rep_id: z.string().uuid(),
@@ -1498,7 +1498,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.signal_linkedin.configure",
     description:
-      "Create or update the signal-to-LinkedIn outreach path. Internally this compiles to the durable Play workflow with research, draft, judge, approval, verified profile resolution, and native LinkedIn send steps.",
+      "Create or update the signal-to-LinkedIn outreach rules. Internally this compiles to the durable Play workflow with research, draft, judge, approval, verified profile resolution, and native LinkedIn send steps.",
     kind: "write",
     input: z.object({
       rep_id: z.string().uuid(),
@@ -1782,7 +1782,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.activation.configure",
     description:
-      "Shortcut for the setup screen: compose Agent persona, buyer fit, signal-to-email outreach path, optional email account, tracked company, and optional source. Primitive tools remain available for each step.",
+      "Shortcut for the setup screen: compose Agent persona, buyer fit, signal-to-email outreach rules, optional email account, tracked company, and optional source. Primitive tools remain available for each step.",
     kind: "write",
     input: z.object({
       rep: z.object({
@@ -1925,7 +1925,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.campaign.strategy.optimize",
     description:
-      "Score outreach path variants from attributable replies, meetings, and learning results, then emit a conservative campaign.strategy.recommended event for double-down, hold, reduce, or exploration decisions.",
+      "Score outreach rule variants from attributable replies, meetings, and learning results, then emit a conservative campaign.strategy.recommended event for double-down, hold, reduce, or exploration decisions.",
     kind: "write",
     input: z.object({
       lookback_days: z.number().int().positive().max(180).optional(),
@@ -1946,7 +1946,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.play.skills.optimize",
     description:
-      "Score outreach writing skills from reply and meeting outcomes plus procedural memory, then emit advisory play.skill.optimization.recommended recommendations without mutating outreach paths.",
+      "Score outreach writing skills from reply and meeting outcomes plus procedural memory, then emit advisory play.skill.optimization.recommended recommendations without mutating outreach rules.",
     kind: "write",
     input: z.object({
       lookback_days: z.number().int().positive().max(180).optional(),

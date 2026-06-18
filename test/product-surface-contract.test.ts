@@ -418,7 +418,7 @@ test("Profile presents separate Outlook and LinkedIn connection gates", () => {
   assert.match(settings, /Signals watched/);
   assert.match(settings, /ProfileSignalBuilderPanel/);
   assert.match(settings, /Signal setup/);
-  assert.match(settings, /ICP, intent signals, and contact quality in one loop/);
+  assert.match(settings, /Buyer fit, intent signals, and contact quality in one loop/);
   assert.match(settings, /Buyer filters/);
   assert.match(settings, /Intent signals/);
   assert.match(settings, /Quality gates/);
@@ -429,8 +429,8 @@ test("Profile presents separate Outlook and LinkedIn connection gates", () => {
   assert.match(settings, /state\.signalSetup\.qualifiedSignals7d/);
   assert.match(settings, /Keep at least five strong signal inputs/);
   assert.match(settings, /return_to" value="\/dashboard\/profile#signal-setup"/);
-  assert.match(settings, /Email path/);
-  assert.match(settings, /LinkedIn path/);
+  assert.match(settings, /Email channel/);
+  assert.match(settings, /LinkedIn channel/);
   assert.match(settings, /Open signal queue/);
   assert.match(settings, /checkAgentSourcesAction/);
   assert.match(settings, /Check sources/);
@@ -489,7 +489,7 @@ test("Agent learning surface owns message optimization from reply evidence", () 
   assert.match(reps, /play\.skill\.optimization\.recommended/);
   assert.match(reps, /Optimize messages/);
   assert.match(readiness, /label: "Agent"/);
-  assert.match(readiness, /label: "Outreach path"/);
+  assert.match(readiness, /label: "Outreach rules"/);
   assert.match(readiness, /"\/dashboard\/profile#signal-setup"/);
   assert.match(readiness, /"\/dashboard\/agent#outreach"/);
   assert.doesNotMatch(readiness, /label: "Rep"/);
@@ -630,7 +630,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /readinessNextAction/);
   assert.match(reps, /readinessFallbackHref/);
   assert.doesNotMatch(reps, /title="Sequence"/);
-  assert.match(reps, /A judged email or LinkedIn path can move contacts to outreach/);
+  assert.match(reps, /Judged email or LinkedIn rules can move contacts to outreach/);
   assert.doesNotMatch(reps, /active email or LinkedIn plays/);
   assert.doesNotMatch(reps, /Keywords watched/);
   assert.doesNotMatch(reps, /Competitor audience/);
@@ -644,7 +644,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.doesNotMatch(reps, /name="source_id" value=\{source\.id\}/);
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /The agent ranks qualified signals/);
-  assert.match(reps, /Hot signal paths/);
+  assert.match(reps, /Hot signal traces/);
   assert.match(reps, /Signal, verified contact, channel handle, and draft state/);
   assert.match(reps, /AgentHotSignalPaths/);
   assert.match(reps, /AgentHotSignalPathRow/);
@@ -911,7 +911,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Profile and buyer fit/);
   assert.match(reps, /Email or LinkedIn account/);
   assert.match(reps, /Qualified signal sources/);
-  assert.match(reps, /Outreach path/);
+  assert.match(reps, /Outreach rules/);
   assert.match(reps, /launchChecksReady\(readiness, \["workspace_profile", "icp", "rep"\]\)/);
   assert.match(reps, /channelSetupDetail\(coverage\)/);
   assert.match(reps, /Email and LinkedIn are connected for native outreach/);
@@ -924,7 +924,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /value="\/dashboard\/agent#replies"/);
   assert.match(reps, /workspaceChannelCoverage/);
   assert.match(reps, /firstChannelPolicy\(primaryAgent, \["linkedin_dm", "linkedin"\]\)/);
-  assert.match(reps, /Outreach paths/);
+  assert.match(reps, /Outreach rules/);
   assert.match(reps, /AgentModeControl/);
   assert.match(reps, /agentOperatingMode/);
   assert.match(reps, /Operating mode/);
@@ -1025,15 +1025,15 @@ test("MCP context uses the simplified product model", () => {
   assert.match(productApp, /prepare_outreach/);
   assert.match(productApp, /open_agent/);
   assert.match(context, /Active agents/);
-  assert.match(context, /Outreach Paths/);
+  assert.match(context, /Outreach Rules/);
   assert.doesNotMatch(context, /Outreach Sequences/);
   assert.doesNotMatch(context, /Preserve the internal five primitives/);
   assert.doesNotMatch(context, /Content opportunities/);
   assert.doesNotMatch(context, /AEO gaps/);
   assert.match(tools, /qualified signals, verified contacts, outreach, replies, meetings/);
   assert.match(tools, /workspace Agent persona/);
-  assert.match(tools, /signal-to-email outreach path/);
-  assert.match(tools, /signal-to-LinkedIn outreach path/);
+  assert.match(tools, /signal-to-email outreach rules/);
+  assert.match(tools, /signal-to-LinkedIn outreach rules/);
   assert.doesNotMatch(tools, /outreach sequence/);
   assert.match(tools, /Dispatch durable Agent outreach workflows/);
   assert.match(env, /Agent research, draft grounding, open-web signals, and outreach evidence/);
@@ -1629,7 +1629,7 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingPage, /Profile \+ channels/);
   assert.match(onboardingPage, /Connect Outlook and LinkedIn in Profile/);
   assert.match(onboardingPage, /Signals, verified contacts, drafts, sends, and replies/);
-  assert.match(onboardingPage, /outreach paths, and the first Agent queue/);
+  assert.match(onboardingPage, /outreach rules, and the first Agent queue/);
   assert.doesNotMatch(onboardingPage, /sources,\s+plays, and the first Agent queue/);
   assert.doesNotMatch(onboardingPage, /label="Integrations"/);
   assert.match(onboardingForm, /Start with the website/);

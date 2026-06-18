@@ -770,7 +770,7 @@ function ProfileActivationFlow({
     {
       title: "Channels",
       detail: channelReady
-        ? `${channelReadinessCount(state)}; qualified contacts can use connected email or LinkedIn paths.`
+        ? `${channelReadinessCount(state)}; qualified contacts can use connected email or LinkedIn channels.`
         : "Connect Outlook or LinkedIn so qualified contacts can become outreach.",
       href: "#channels",
       icon: "hub",
@@ -781,7 +781,7 @@ function ProfileActivationFlow({
       detail: readiness.launch_ready
         ? "The Agent can prepare judged email or LinkedIn outreach from qualified signals."
         : outreachSequence?.status !== "ready"
-          ? outreachSequence?.detail ?? "Outreach path needs configuration."
+          ? outreachSequence?.detail ?? "Outreach rules need configuration."
           : "Finish the remaining blocker before the Agent can send.",
       href: readiness.launch_ready
         ? "/dashboard/agent#outreach"
@@ -897,7 +897,7 @@ function ProfileLaunchModel({
     : "Fit gate pending";
   const channelPaths = [
     {
-      title: "Email path",
+      title: "Email channel",
       icon: <BrandIcon name="microsoft" size={16} />,
       ready: state.outlookAccount?.status === "connected",
       detail: state.outlookAccount
@@ -906,7 +906,7 @@ function ProfileLaunchModel({
       href: "#email",
     },
     {
-      title: "LinkedIn path",
+      title: "LinkedIn channel",
       icon: <BrandIcon name="linkedin" size={16} />,
       ready: state.linkedInAccount?.status === "connected",
       detail: state.linkedInAccount
@@ -1118,7 +1118,7 @@ function ProfileSignalBuilderPanel({
             className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            ICP, intent signals, and contact quality in one loop.
+            Buyer fit, intent signals, and contact quality in one loop.
           </h2>
           <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
             Define who matters, what LinkedIn or market behavior counts as

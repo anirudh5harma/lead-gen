@@ -1457,7 +1457,7 @@ export default async function RepsPage() {
         description="Live work, sent emails and DMs, verified contacts, and reply learning in one focused workspace."
         meta={
           <div className="flex flex-wrap gap-2">
-            <HeroStat label="Outreach paths" value={sequence.length} />
+            <HeroStat label="Outreach rules" value={sequence.length} />
             <HeroStat label="Channels" value={connectedChannels} />
             <HeroStat
               label="Launch"
@@ -1635,7 +1635,7 @@ function commandBlockerCopy(readiness: WorkspaceLaunchReadiness): string {
     return "Check sources so the agent can find qualified signals.";
   }
   if (blocker?.id === "plays") {
-    return "Create an outreach path before signals can become messages.";
+    return "Set email or LinkedIn rules before signals can become messages.";
   }
   return "Finish Profile before outreach can run.";
 }
@@ -1862,7 +1862,7 @@ function AgentSetupSnapshot({
               Outreach conversion
             </p>
             <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-              Verified contacts, connected channels, and active paths decide
+              Verified contacts, connected channels, and approval rules decide
               whether qualified signals become email or LinkedIn touches.
             </p>
           </div>
@@ -1881,7 +1881,7 @@ function AgentSetupSnapshot({
             />
             <SetupGateRow
               icon="rule"
-              label="Outreach paths"
+              label="Outreach rules"
               value={sequence.length}
               ready={sequence.length > 0}
             />
@@ -2144,7 +2144,7 @@ function AgentSystemPanel({
         <SystemStatusCard
           icon="rule"
           title="Outreach rules"
-          value={`${sequence.length} path${sequence.length === 1 ? "" : "s"}`}
+          value={`${sequence.length} rule set${sequence.length === 1 ? "" : "s"}`}
           detail={
             coverage.email.connected || coverage.linkedIn.connected
               ? "Email and LinkedIn sends follow connected-account caps and approval gates."
@@ -2283,9 +2283,9 @@ function AgentGetStartedChecklist({
       ready: launchChecksReady(readiness, ["signal_sources"]),
     },
     {
-      title: "Outreach path",
-      detail: "A judged email or LinkedIn path can move contacts to outreach.",
-      blocked: "Create an outreach path before signals can become messages.",
+      title: "Outreach rules",
+      detail: "Judged email or LinkedIn rules can move contacts to outreach.",
+      blocked: "Set email or LinkedIn rules before signals can become messages.",
       href: "/dashboard/agent#outreach",
       icon: "send",
       ready: launchChecksReady(readiness, ["plays"]),
@@ -3726,7 +3726,7 @@ function AgentHotSignalPaths({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Hot signal paths
+            Hot signal traces
           </p>
           <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
             Signal, verified contact, channel handle, and draft state in one
@@ -3741,7 +3741,7 @@ function AgentHotSignalPaths({
 
       {signals.length === 0 ? (
         <p className="mt-4 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
-          No qualified signal paths yet. Profile setup and source checks will
+          No qualified signal traces yet. Profile setup and source checks will
           create the first trace from signal to reachable contact.
         </p>
       ) : (

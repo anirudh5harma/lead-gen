@@ -40,7 +40,7 @@ test("launch readiness: blocks launch until setup and one channel are ready", ()
   assert.equal(readiness.checks.find((check) => check.id === "rep")?.label, "Agent");
   assert.equal(
     readiness.checks.find((check) => check.id === "plays")?.label,
-    "Outreach path",
+    "Outreach rules",
   );
   assert.equal(
     readiness.checks.find((check) => check.id === "signal_sources")?.action?.surface,
@@ -52,7 +52,7 @@ test("launch readiness: blocks launch until setup and one channel are ready", ()
   );
 });
 
-test("launch readiness: outreach path setup points users back to Agent", () => {
+test("launch readiness: outreach rules setup points users back to Agent", () => {
   const readiness = buildWorkspaceLaunchReadiness(
     randomUUID(),
     {
@@ -75,9 +75,9 @@ test("launch readiness: outreach path setup points users back to Agent", () => {
   );
 
   const path = readiness.checks.find((check) => check.id === "plays");
-  assert.equal(path?.label, "Outreach path");
-  assert.equal(path?.detail, "No active outreach path is available for matched Signals.");
-  assert.equal(path?.action?.label, "Configure path");
+  assert.equal(path?.label, "Outreach rules");
+  assert.equal(path?.detail, "No active email or LinkedIn outreach rules are available for qualified signals.");
+  assert.equal(path?.action?.label, "Configure outreach");
   assert.equal(path?.action?.surface, "/dashboard/agent#outreach");
 });
 
