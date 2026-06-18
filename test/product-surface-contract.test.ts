@@ -304,6 +304,12 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /loadBriefOutcomeInsights/);
   assert.match(dashboard, /loadBriefLearningInsight/);
   assert.match(dashboard, /loadBriefSignalHealth/);
+  assert.match(dashboard, /with_contacts_7d/);
+  assert.match(dashboard, /with_drafts_7d/);
+  assert.match(dashboard, /coalesce\(s\.kind::text, 'other'\) as kind/);
+  assert.match(dashboard, /contact-ready/);
+  assert.match(dashboard, /drafted/);
+  assert.match(dashboard, /contact and draft readiness/);
   assert.match(dashboard, /coalesce\(p\.properties->'email_verification'/);
   assert.match(dashboard, /coalesce\(s\.ingested_at, s\.freshness_at\) >= now\(\) - interval '14 days'/);
   assert.match(dashboard, /from workspace_source_configs wsc/);

@@ -36,6 +36,8 @@ interface SignalKindMetric {
   kind: string;
   count_24h: number;
   count_7d: number;
+  with_contacts_7d: number;
+  with_drafts_7d: number;
 }
 
 interface BriefSignalHealth {
@@ -261,20 +263,53 @@ async function loadSignalKindMetrics(workspaceId: string): Promise<SignalKindMet
     kind: string;
     count_24h: string;
     count_7d: string;
+    with_contacts_7d: string;
+    with_drafts_7d: string;
   }>(
-    `select s.kind::text as kind,
+    `select coalesce(s.kind::text, 'other') as kind,
             count(*) filter (
               where coalesce(s.ingested_at, s.freshness_at) >= now() - interval '24 hours'
             )::text as count_24h,
             count(*) filter (
               where coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
-            )::text as count_7d
+            )::text as count_7d,
+            count(*) filter (
+              where exists (
+                select 1
+                  from graph_persons p
+                 where p.workspace_id = $1
+                   and (
+                     p.id = s.related_person_id
+                     or (
+                       s.related_company_id is not null
+                       and p.company_id = s.related_company_id
+                     )
+                   )
+                   and (
+                     cardinality(coalesce(p.emails, '{}'::text[])) > 0
+                     or p.linkedin_url is not null
+                   )
+              )
+            )::text as with_contacts_7d,
+            count(*) filter (
+              where exists (
+                select 1
+                  from conversations c
+                  join messages m
+                    on m.workspace_id = c.workspace_id
+                   and m.conversation_id = c.id
+                 where c.workspace_id = $1
+                   and c.origin_signal_id = s.id
+                   and m.direction = 'outbound'
+                   and m.status in ('draft','queued','deferred','sent','delivered','replied')
+              )
+            )::text as with_drafts_7d
        from signals s
       where s.workspace_id = $1
         and s.status in ('matched','in_play')
         and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
-      group by s.kind
-      order by count(*) desc, s.kind asc
+      group by coalesce(s.kind::text, 'other')
+      order by count(*) desc, coalesce(s.kind::text, 'other') asc
       limit 6`,
     [workspaceId],
   );
@@ -282,6 +317,8 @@ async function loadSignalKindMetrics(workspaceId: string): Promise<SignalKindMet
     kind: row.kind,
     count_24h: Number(row.count_24h),
     count_7d: Number(row.count_7d),
+    with_contacts_7d: Number(row.with_contacts_7d),
+    with_drafts_7d: Number(row.with_drafts_7d),
   }));
 }
 
@@ -1770,20 +1807,42 @@ function OutcomeInsightRow({ insight }: { insight: BriefOutcomeInsight }) {
 }
 
 function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
+  const contactWidth =
+    signal.count_7d > 0
+      ? Math.min(100, Math.round((signal.with_contacts_7d / signal.count_7d) * 100))
+      : 0;
+  const draftWidth =
+    signal.count_7d > 0
+      ? Math.min(100, Math.round((signal.with_drafts_7d / signal.count_7d) * 100))
+      : 0;
   return (
     <Link
       href="/dashboard/agent#opportunities"
-      className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 transition-colors hover:border-[var(--color-line-3)]"
+      className="grid gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:border-[var(--color-line-3)] md:grid-cols-[minmax(0,1fr)_92px] md:items-center"
     >
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
           {signalKindLabel(signal.kind)}
         </span>
         <span className="mt-0.5 block text-xs text-[var(--color-text-3)]">
-          {signal.count_24h} in 24h
+          {signal.count_24h} in 24h; {signal.with_contacts_7d} contact-ready,{" "}
+          {signal.with_drafts_7d} drafted
+        </span>
+        <span
+          className="mt-2 grid h-1.5 grid-cols-1 overflow-hidden rounded-full bg-[var(--color-ink-3)]"
+          aria-label={`${signalKindLabel(signal.kind)} contact and draft readiness`}
+        >
+          <span
+            className="col-start-1 row-start-1 block h-full rounded-full bg-[var(--color-accent)]"
+            style={{ width: `${contactWidth}%` }}
+          />
+          <span
+            className="col-start-1 row-start-1 block h-full rounded-full bg-[var(--color-pos)]"
+            style={{ width: `${draftWidth}%` }}
+          />
         </span>
       </span>
-      <span className="font-mono text-sm text-[var(--color-text-2)]">
+      <span className="font-mono text-sm text-[var(--color-text-2)] md:text-right">
         {signal.count_7d}
       </span>
     </Link>
@@ -1791,7 +1850,11 @@ function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
 }
 
 function signalKindLabel(kind: string): string {
-  return kind.replace(/_/g, " ");
+  const normalized = kind.trim().toLowerCase();
+  if (normalized === "hn") return "HN";
+  if (normalized === "rss") return "RSS";
+  if (normalized === "gdelt") return "GDELT";
+  return normalized.replace(/_/g, " ");
 }
 
 function briefChannelLabel(channel: string): string {
