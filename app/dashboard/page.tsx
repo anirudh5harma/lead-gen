@@ -49,6 +49,15 @@ interface BriefOutcomeInsight {
   reply_intent: string | null;
 }
 
+interface BriefLearningInsight {
+  strategy_summary: string | null;
+  strategy_updated_at: Date | null;
+  skill_summary: string | null;
+  skill_updated_at: Date | null;
+  recommended_patterns: number;
+  useful_outcomes_30d: number;
+}
+
 interface BriefHotContact {
   id: string;
   full_name: string;
@@ -299,6 +308,56 @@ async function loadBriefOutcomeInsights(
   return rows;
 }
 
+async function loadBriefLearningInsight(
+  workspaceId: string,
+): Promise<BriefLearningInsight> {
+  const pool = getPool();
+  const [outcomes, events] = await Promise.all([
+    pool.query<{ useful_outcomes_30d: string }>(
+      `select count(*)::text as useful_outcomes_30d
+         from outcomes o
+        where o.workspace_id = $1
+          and o.kind in ('positive_reply','opportunity_created','meeting_booked','deal_won')
+          and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '30 days'`,
+      [workspaceId],
+    ),
+    pool.query<{
+      event_type: string;
+      payload: unknown;
+      occurred_at: Date;
+    }>(
+      `select event_type, payload, occurred_at
+         from events
+        where workspace_id = $1
+          and event_type in (
+            'campaign.strategy.recommended',
+            'play.skill.optimization.recommended'
+          )
+        order by occurred_at desc
+        limit 6`,
+      [workspaceId],
+    ),
+  ]);
+  const latestStrategy = events.rows.find(
+    (event) => event.event_type === "campaign.strategy.recommended",
+  );
+  const latestSkill = events.rows.find(
+    (event) => event.event_type === "play.skill.optimization.recommended",
+  );
+  const strategy = recordPayload(latestStrategy?.payload);
+  const skill = recordPayload(latestSkill?.payload);
+  return {
+    strategy_summary: stringPayload(strategy, "summary"),
+    strategy_updated_at: latestStrategy?.occurred_at ?? null,
+    skill_summary: stringPayload(skill, "summary"),
+    skill_updated_at: latestSkill?.occurred_at ?? null,
+    recommended_patterns:
+      arrayPayloadLength(skill, "recommendations") ||
+      arrayPayloadLength(strategy, "variants"),
+    useful_outcomes_30d: Number(outcomes.rows[0]?.useful_outcomes_30d ?? 0),
+  };
+}
+
 const EMPTY_ACTION_STATE: BriefActionState = {
   pending_reviews: 0,
   unhealthy_channels: 0,
@@ -316,6 +375,15 @@ const EMPTY_ACTION_STATE: BriefActionState = {
   meetings_24h: 0,
 };
 
+const EMPTY_LEARNING_INSIGHT: BriefLearningInsight = {
+  strategy_summary: null,
+  strategy_updated_at: null,
+  skill_summary: null,
+  skill_updated_at: null,
+  recommended_patterns: 0,
+  useful_outcomes_30d: 0,
+};
+
 export default async function BriefPage() {
   const session = await getActiveWorkspaceSession();
   if (!session) {
@@ -325,19 +393,20 @@ export default async function BriefPage() {
         signalKinds={[]}
         hotContacts={[]}
         outcomeInsights={[]}
+        learning={EMPTY_LEARNING_INSIGHT}
         workspaceName="there"
       />
     );
   }
-  const { actions, signalKinds, hotContacts, outcomeInsights } = await loadBriefState(
-    session.workspace.id,
-  );
+  const { actions, signalKinds, hotContacts, outcomeInsights, learning } =
+    await loadBriefState(session.workspace.id);
   return (
     <BriefView
       actions={actions}
       signalKinds={signalKinds}
       hotContacts={hotContacts}
       outcomeInsights={outcomeInsights}
+      learning={learning}
       workspaceName={session.workspace.name}
     />
   );
@@ -350,15 +419,18 @@ async function loadBriefState(
   signalKinds: SignalKindMetric[];
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
+  learning: BriefLearningInsight;
 }> {
   try {
-    const [actions, signalKinds, hotContacts, outcomeInsights] = await Promise.all([
-      loadBriefActionState(workspaceId),
-      loadSignalKindMetrics(workspaceId),
-      loadBriefHotContacts(workspaceId),
-      loadBriefOutcomeInsights(workspaceId),
-    ]);
-    return { actions, signalKinds, hotContacts, outcomeInsights };
+    const [actions, signalKinds, hotContacts, outcomeInsights, learning] =
+      await Promise.all([
+        loadBriefActionState(workspaceId),
+        loadSignalKindMetrics(workspaceId),
+        loadBriefHotContacts(workspaceId),
+        loadBriefOutcomeInsights(workspaceId),
+        loadBriefLearningInsight(workspaceId),
+      ]);
+    return { actions, signalKinds, hotContacts, outcomeInsights, learning };
   } catch (err) {
     console.error("[dashboard/brief] failed to load brief state", err);
     return {
@@ -366,6 +438,7 @@ async function loadBriefState(
       signalKinds: [],
       hotContacts: [],
       outcomeInsights: [],
+      learning: EMPTY_LEARNING_INSIGHT,
     };
   }
 }
@@ -375,12 +448,14 @@ function BriefView({
   signalKinds,
   hotContacts,
   outcomeInsights,
+  learning,
   workspaceName,
 }: {
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
+  learning: BriefLearningInsight;
   workspaceName: string;
 }) {
   const today = new Date().toLocaleDateString(undefined, {
@@ -534,6 +609,20 @@ function BriefView({
           Open Agent
         </Link>
       </aside>
+
+      <div id="weekly-learning" className="scroll-mt-28">
+        <SurfaceSection
+          title="Weekly learning"
+          action={
+            <Link href="/dashboard/agent#learning" className="btn-quiet-sm">
+              <Icon name="auto_graph" size={14} />
+              Open learning
+            </Link>
+          }
+        >
+          <BriefLearningPanel learning={learning} />
+        </SurfaceSection>
+      </div>
 
       <div id="reply-insights" className="scroll-mt-28">
         <SurfaceSection title="Reply and meeting insights">
@@ -723,6 +812,97 @@ function DashboardMetric({
   );
 }
 
+function BriefLearningPanel({
+  learning,
+}: {
+  learning: BriefLearningInsight;
+}) {
+  const hasRecommendation = Boolean(
+    learning.strategy_summary || learning.skill_summary,
+  );
+  if (!hasRecommendation) {
+    return (
+      <EmptyState
+        title="No weekly learning yet"
+        hint="Once replies and meetings are attributed, the agent will show what it learned about sources, channels, and message patterns."
+        cta={{
+          href: "/dashboard/agent#learning",
+          label: "Open learning",
+          icon: "auto_graph",
+        }}
+      />
+    );
+  }
+  return (
+    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          Outcome memory
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+          <FunnelStep label="Useful 30d" value={learning.useful_outcomes_30d} />
+          <FunnelStep label="Patterns" value={learning.recommended_patterns} />
+        </div>
+        <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
+          Replies and meetings feed the agent's source, channel, and message
+          choices before the next outreach batch.
+        </p>
+      </aside>
+      <div className="grid gap-2">
+        <BriefLearningCard
+          icon="auto_graph"
+          title="Strategy"
+          summary={learning.strategy_summary}
+          updatedAt={learning.strategy_updated_at}
+          empty="No strategy recommendation yet."
+        />
+        <BriefLearningCard
+          icon="science"
+          title="Messages"
+          summary={learning.skill_summary}
+          updatedAt={learning.skill_updated_at}
+          empty="No message recommendation yet."
+        />
+      </div>
+    </div>
+  );
+}
+
+function BriefLearningCard({
+  icon,
+  title,
+  summary,
+  updatedAt,
+  empty,
+}: {
+  icon: string;
+  title: string;
+  summary: string | null;
+  updatedAt: Date | null;
+  empty: string;
+}) {
+  return (
+    <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+          <Icon name={icon} size={15} />
+        </span>
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          {title}
+        </p>
+        {updatedAt ? (
+          <span className="ml-auto text-xs text-[var(--color-text-3)]">
+            Updated {freshWhen(updatedAt)}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[var(--color-text-2)]">
+        {summary ?? empty}
+      </p>
+    </article>
+  );
+}
+
 function OutcomeInsightRow({ insight }: { insight: BriefOutcomeInsight }) {
   const person = insight.counterparty_name ?? "Unknown contact";
   const company = insight.company_name ? ` at ${insight.company_name}` : "";
@@ -797,6 +977,28 @@ function outcomeLabel(kind: string): string {
   if (kind === "positive_reply") return "Positive reply";
   if (kind === "meeting_booked") return "Meeting booked";
   return kind.replace(/_/g, " ");
+}
+
+function recordPayload(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringPayload(
+  payload: Record<string, unknown> | null,
+  key: string,
+): string | null {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function arrayPayloadLength(
+  payload: Record<string, unknown> | null,
+  key: string,
+): number {
+  const value = payload?.[key];
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function freshWhen(value: Date): string {
