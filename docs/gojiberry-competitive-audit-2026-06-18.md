@@ -15,6 +15,11 @@ Observed in the authenticated GojiBerry app on June 18, 2026. This is a product-
 - **AI chat is workspace-aware.** Suggested prompts are grounded in lead finding, campaign performance, and ICP refinement rather than generic assistant tasks.
 - **Copilot separates review from autopilot.** The surface lets the user inspect AI-recommended leads and understand whether work is waiting on campaign activation.
 - **The app keeps suggesting the next operational move.** Home, Copilot, Inbox, and Insights all route the user toward the next unblocker: connect LinkedIn, start a campaign, review contacts, inspect signal output, or tune the agent.
+- **Agent setup is an ICP plus signal scanner.** Editing a Signals Agent exposes target job titles, industries, company sizes, markets, company types, excluded competitors, high-precision matching, mandatory keywords, and quality filters such as excluding service providers and open-to-work profiles.
+- **Signals are concrete LinkedIn behaviors.** Their signal categories include company/team engagement, engagement with keyworded LinkedIn content, relevant LinkedIn profiles, trigger events, and competitor/company engagement. Keyword signals link directly to LinkedIn search and can track posts, likes, comments, or all engagement.
+- **Lead management is a list handoff.** Found leads automatically enter a named list, and if that list is not attached to a campaign the product tells the user the next step is outreach campaign creation.
+- **Profile content feeds message quality.** Company settings collect website, industry, value proposition, pain points, features, social proof, LinkedIn company page, auto-enrichment, and team-level duplicate prevention.
+- **Integrations are positioned as output pipes.** CRM, outreach, and automation integrations are described in terms of where qualified leads should sync next: HubSpot, Pipedrive, Instantly, SmartLead, HeyReach, Slack, Clay, webhooks, and Zapier.
 
 ## Translation To Bombsell
 
@@ -67,6 +72,6 @@ Accepted LinkedIn connections now carry optional person, conversation, and messa
 
 The Brief weekly learning panel now derives the strongest recent signal type and outbound channel from attributed replies and meetings. This borrows GojiBerry's "agent gets better every week" promise in a launch-focused way: Bombsell can tell the user what outcome-backed path to scale without adding another analytics tab.
 
-Accepted LinkedIn connections now wake the product event dispatcher and nudge the existing signal-to-outreach play dispatcher. This makes the GojiBerry-style invited -> accepted -> next touch loop operational in Bombsell's backend instead of leaving accepted connections as a passive dashboard count. A future refinement should introduce a person/conversation-targeted accepted-connection follow-up workflow, but the event already flows through the durable worker path.
+Accepted LinkedIn connections now wake a targeted product event dispatcher that resolves the accepted person/conversation back to a qualified Signal and starts the existing Signal -> LinkedIn DM workflow with an accepted-event idempotency key when no later DM, InMail, or comment exists. This makes the GojiBerry-style invited -> accepted -> next touch loop operational in Bombsell's backend instead of leaving accepted connections as a passive dashboard count.
 
 The Agent sent-outreach surface now lists accepted LinkedIn connections that have no later DM, InMail, or comment in the same person/conversation trace. This makes the invited -> accepted -> follow-up gap visible as a concrete Agent task while keeping outreach under Agent rather than adding a Campaigns tab.

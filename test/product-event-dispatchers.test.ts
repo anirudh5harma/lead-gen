@@ -12,7 +12,12 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
   const durableNames = new Map<string, string[]>();
   const unsubscribed = new Set<string>();
   const calls: Array<{
-    kind: "signal_matching" | "signal" | "reply" | "meeting_prep";
+    kind:
+      | "signal_matching"
+      | "signal"
+      | "reply"
+      | "meeting_prep"
+      | "linkedin_accepted_followup";
     limit: number | undefined;
     signal_id?: string;
   }> = [];
@@ -43,6 +48,13 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
         calls.push({ kind: "signal", limit: opts.limit });
         return 1;
       },
+      async dispatchLinkedInAcceptedFollowups(opts) {
+        calls.push({
+          kind: "linkedin_accepted_followup",
+          limit: opts.limit,
+        });
+        return 1;
+      },
       async dispatchReplyEmailPlays(opts) {
         calls.push({ kind: "reply", limit: opts.limit });
         return 1;
@@ -64,7 +76,7 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
     "product-meeting-prep-dispatcher-v1",
   ]);
   assert.deepEqual(durableNames.get("linkedin.connection.accepted"), [
-    "product-linkedin-accepted-play-dispatcher-v1",
+    "product-linkedin-accepted-followup-dispatcher-v1",
   ]);
 
   await Promise.all((handlers.get("signal.ingested") ?? []).map((handler) =>
@@ -93,7 +105,7 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
     { kind: "signal", limit: 7 },
     { kind: "reply", limit: 7 },
     { kind: "meeting_prep", limit: 7 },
-    { kind: "signal", limit: 7 },
+    { kind: "linkedin_accepted_followup", limit: 7 },
   ]);
 
   await Promise.all(subscriptions.map((subscription) => subscription.unsubscribe()));
@@ -105,7 +117,7 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
       "product-contact-play-dispatcher-v1",
       "product-reply-play-dispatcher-v1",
       "product-meeting-prep-dispatcher-v1",
-      "product-linkedin-accepted-play-dispatcher-v1",
+      "product-linkedin-accepted-followup-dispatcher-v1",
     ]),
   );
 });

@@ -1263,8 +1263,22 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
     /"linkedin\.connection\.accepted": LinkedInConnectionAccepted/,
   );
   assert.match(productApp, /"linkedin\.connection\.accepted"/);
-  assert.match(productApp, /product-linkedin-accepted-play-dispatcher-v1/);
-  assert.match(productApp, /dispatchSignalPlays\(\{ limit \}\)/);
+  assert.match(productApp, /dispatchLinkedInAcceptedFollowupsOnce/);
+  assert.match(productApp, /dispatchLinkedInAcceptedFollowups\(\{ limit \}\)/);
+  assert.match(
+    productApp,
+    /product-linkedin-accepted-followup-dispatcher-v1/,
+  );
+  assert.match(productApp, /event_type = 'linkedin\.connection\.accepted'/);
+  assert.match(productApp, /coalesce\(nullif\(e\.payload->>'accepted_at', ''\)::timestamptz, e\.occurred_at\)/);
+  assert.match(productApp, /p\.id::text = accepted\.payload_person_id/);
+  assert.match(productApp, /p\.linkedin_url = accepted\.profile_url/);
+  assert.match(productApp, /coalesce\(p\.id, c\.counterparty_person_id\) as person_id/);
+  assert.match(productApp, /c\.counterparty_company_id/);
+  assert.match(productApp, /c\.origin_signal_id/);
+  assert.match(productApp, /m\.channel in \('linkedin_dm','linkedin_inmail','linkedin_comment'\)/);
+  assert.match(productApp, /followup\.id is null/);
+  assert.match(productApp, /repair_key: `accepted:\$\{row\.accepted_event_id\}`/);
   assert.doesNotMatch(linkedInCallback, /\/dashboard\/prospecting/);
 });
 

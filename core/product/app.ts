@@ -9309,6 +9309,17 @@ interface SignalDispatchRow {
   play_autonomy: Record<string, unknown>;
 }
 
+interface LinkedInAcceptedFollowupDispatchRow {
+  accepted_event_id: string;
+  workspace_id: string;
+  signal_id: string;
+  person_id: string;
+  play_id: string;
+  rep_id: string;
+  signal_properties: Record<string, unknown>;
+  play_autonomy: Record<string, unknown> | null;
+}
+
 type SignalDispatchCandidate = CampaignDispatchCandidate & {
   row: SignalDispatchRow;
   original_index: number;
@@ -9901,6 +9912,175 @@ export async function dispatchSignalPlaysOnce(
   return dispatched;
 }
 
+export async function dispatchLinkedInAcceptedFollowupsOnce(
+  opts: DispatchOptions = {},
+  session?: ProductWorkspaceSession,
+): Promise<number> {
+  const engine = await getProductEngine();
+  if (session) await assertProductWorkspaceAccess(session, engine.pool);
+  const { rows } = await engine.pool.query<LinkedInAcceptedFollowupDispatchRow>(
+    `with accepted as (
+       select e.id as accepted_event_id,
+              e.workspace_id,
+              e.payload->>'person_id' as payload_person_id,
+              e.payload->>'conversation_id' as payload_conversation_id,
+              e.payload->>'profile_url' as profile_url,
+              coalesce(nullif(e.payload->>'accepted_at', '')::timestamptz, e.occurred_at) as accepted_at
+         from events e
+        where e.event_type = 'linkedin.connection.accepted'
+          and ($3::uuid is null or e.workspace_id = $3)
+     ),
+     resolved as (
+       select accepted.accepted_event_id,
+              accepted.workspace_id,
+              accepted.accepted_at,
+              coalesce(p.id, c.counterparty_person_id) as person_id,
+              coalesce(p.company_id, c.counterparty_company_id) as company_id,
+              resolved_person.properties #>> '{contact_fit,decision}' as contact_fit_decision,
+              c.id as conversation_id,
+              c.origin_signal_id
+         from accepted
+         left join graph_persons p
+           on p.workspace_id = accepted.workspace_id
+          and (
+            p.id::text = accepted.payload_person_id
+            or (
+              accepted.profile_url is not null
+              and p.linkedin_url = accepted.profile_url
+            )
+          )
+         left join lateral (
+           select c.id,
+                  c.origin_signal_id,
+                  c.counterparty_person_id,
+                  c.counterparty_company_id,
+                  c.last_activity_at
+             from conversations c
+            where c.workspace_id = accepted.workspace_id
+              and (
+                c.id::text = accepted.payload_conversation_id
+                or (
+                  p.id is not null
+                  and c.counterparty_person_id = p.id
+                )
+              )
+            order by case
+                       when c.id::text = accepted.payload_conversation_id then 0
+                       else 1
+                     end,
+                     c.last_activity_at desc
+            limit 1
+         ) c on true
+         left join graph_persons resolved_person
+           on resolved_person.workspace_id = accepted.workspace_id
+          and resolved_person.id = coalesce(p.id, c.counterparty_person_id)
+     )
+     select resolved.accepted_event_id::text,
+            resolved.workspace_id::text,
+            s.id::text as signal_id,
+            resolved.person_id::text,
+            p.id::text as play_id,
+            p.default_rep_id::text as rep_id,
+            s.properties as signal_properties,
+            p.autonomy as play_autonomy
+       from resolved
+       join lateral (
+         select s.id,
+                s.properties,
+                s.kind::text as signal_kind,
+                coalesce(s.ingested_at, s.freshness_at) as signal_at
+           from signals s
+          where s.workspace_id = resolved.workspace_id
+            and s.status in ('matched','in_play')
+            and (
+              s.id = resolved.origin_signal_id
+              or (
+                resolved.origin_signal_id is null
+                and (
+                  s.related_person_id = resolved.person_id
+                  or (
+                    resolved.company_id is not null
+                    and s.related_company_id = resolved.company_id
+                  )
+                )
+              )
+            )
+          order by case when s.id = resolved.origin_signal_id then 0 else 1 end,
+                   coalesce(s.ingested_at, s.freshness_at) desc
+          limit 1
+       ) s on true
+       join plays p
+         on p.workspace_id = resolved.workspace_id
+        and p.status = 'active'
+        and p.default_rep_id is not null
+        and coalesce(p.compiled->>'workflow', $1) = $1
+        and coalesce(p.compiled->>'channel', 'linkedin_dm') = 'linkedin_dm'
+        and p.compiled->'trigger'->>'kind' = 'signal'
+        and (
+          p.compiled #>> '{trigger,filter,kind}' is null
+          or p.compiled #>> '{trigger,filter,kind}' = s.signal_kind
+        )
+       left join workflow_runs wr
+         on wr.workspace_id = resolved.workspace_id
+        and wr.workflow_name = $1
+        and wr.idempotency_key = concat(
+          'signal:', s.id::text,
+          ':play:', p.id::text,
+          ':repair:accepted:',
+          resolved.accepted_event_id::text
+        )
+       left join lateral (
+         select m.id
+           from messages m
+          where m.workspace_id = resolved.workspace_id
+            and resolved.conversation_id is not null
+            and m.conversation_id = resolved.conversation_id
+            and m.direction = 'outbound'
+            and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_comment')
+            and coalesce(m.sent_at, m.created_at) >= resolved.accepted_at
+          order by coalesce(m.sent_at, m.created_at) desc
+          limit 1
+       ) followup on true
+      where resolved.person_id is not null
+        and resolved.contact_fit_decision is distinct from 'not_fit'
+        and followup.id is null
+        and wr.id is null
+      order by resolved.accepted_at asc
+      limit $2`,
+    [
+      SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW,
+      opts.limit ?? 25,
+      session?.workspace_id ?? null,
+    ],
+  );
+
+  let dispatched = 0;
+  for (const row of rows) {
+    const policy = resolvePlayChannelPolicy(
+      row.play_autonomy ?? {},
+      "linkedin_dm",
+      {
+        approval: parseApprovalPolicy(row.signal_properties.linkedin_approval),
+      },
+    );
+    await startSignalLinkedInPlay(engine, {
+      workspace_id: row.workspace_id,
+      play_id: row.play_id,
+      rep_id: row.rep_id,
+      signal_id: row.signal_id,
+      person_id: row.person_id,
+      trigger_event_id: row.accepted_event_id,
+      action: "linkedin_dm",
+      approval: policy.approval,
+      policy,
+      simulate_outcome_kind: simulateOutcomeFromSignal(row.signal_properties),
+      repair_key: `accepted:${row.accepted_event_id}`,
+    });
+    dispatched++;
+  }
+  return dispatched;
+}
+
 export async function dispatchReplyEmailPlaysOnce(
   opts: DispatchOptions = {},
   session?: ProductWorkspaceSession,
@@ -10137,6 +10317,7 @@ interface ProductEventDispatchSubscriptionAdapter {
 interface ProductEventDispatcherOptions {
   limit?: number;
   dispatchSignalPlays?: typeof dispatchSignalPlaysOnce;
+  dispatchLinkedInAcceptedFollowups?: typeof dispatchLinkedInAcceptedFollowupsOnce;
   dispatchReplyEmailPlays?: typeof dispatchReplyEmailPlaysOnce;
   dispatchMeetingPrep?: typeof dispatchMeetingPrepOnce;
   dispatchSignalMatching?: (event: PublishedEvent) => Promise<number>;
@@ -10149,6 +10330,9 @@ export async function registerProductEventDispatchers(
   const limit = opts.limit ?? 25;
   const dispatchSignalPlays =
     opts.dispatchSignalPlays ?? dispatchSignalPlaysOnce;
+  const dispatchLinkedInAcceptedFollowups =
+    opts.dispatchLinkedInAcceptedFollowups ??
+    dispatchLinkedInAcceptedFollowupsOnce;
   const dispatchReplyEmailPlays =
     opts.dispatchReplyEmailPlays ?? dispatchReplyEmailPlaysOnce;
   const dispatchMeetingPrep =
@@ -10195,9 +10379,9 @@ export async function registerProductEventDispatchers(
   const linkedInAcceptedSubscription = await adapter.subscribe(
     "linkedin.connection.accepted",
     async () => {
-      await dispatchSignalPlays({ limit });
+      await dispatchLinkedInAcceptedFollowups({ limit });
     },
-    "product-linkedin-accepted-play-dispatcher-v1",
+    "product-linkedin-accepted-followup-dispatcher-v1",
   );
 
   return [
