@@ -2131,7 +2131,7 @@ function AgentSequencePanel({ sequence }: { sequence: AgentSequenceStep[] }) {
       {sequence.length === 0 ? (
         <EmptyState
           title="No outreach sequence yet"
-          hint="The agent needs active email or LinkedIn plays before it can move qualified signals into outreach."
+          hint="The agent needs an active email or LinkedIn outreach path before it can move qualified signals into messages."
           cta={{
             href: "/dashboard/profile#agent",
             label: "Configure agent",

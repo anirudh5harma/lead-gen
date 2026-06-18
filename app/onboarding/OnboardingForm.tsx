@@ -113,7 +113,7 @@ export default function OnboardingForm({
             <TextArea
               name="social_proof"
               label="Social proof"
-              placeholder="Customer logos, outcomes, testimonials, or proof points."
+              placeholder="Customer logos, wins, testimonials, or proof points."
               rows={4}
             />
           </div>

@@ -52,3 +52,5 @@ The Agent live-work panel now labels the busiest last-hour stage and emphasizes 
 The Agent verified-contact workbench now separates contact trust from raw reachability: verified email, LinkedIn readiness, fit review, and outreach participation are counted before the contact list. This mirrors GojiBerry's contact table trust cues while keeping Bombsell focused on signal-backed people who can become email or LinkedIn outreach.
 
 The Brief now uses the same contact-trust distinction before it recommends the next move: fresh signal-backed contacts are counted by verified email, LinkedIn profile, fit review, and email handles that still need verification. Hot-contact rows no longer call every found email "verified"; they show Verified email, Email found, or Email pending from graph verification metadata.
+
+Onboarding and Agent empty states now avoid old implementation nouns such as plays and outcomes. The launch flow stays in simple user language: website context creates sources, outreach paths, verified contacts, messages, replies, and meetings.

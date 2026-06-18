@@ -90,7 +90,7 @@ export default async function OnboardingPage({
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
                   Website analysis plus the context needed to create sources,
-                  plays, and the first Agent queue.
+                  outreach paths, and the first Agent queue.
                 </p>
               </div>
             </div>

@@ -549,6 +549,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /readinessNextAction/);
   assert.match(reps, /readinessFallbackHref/);
   assert.match(reps, /Sequence/);
+  assert.match(reps, /active email or LinkedIn outreach path/);
+  assert.doesNotMatch(reps, /active email or LinkedIn plays/);
   assert.match(reps, /Keywords watched/);
   assert.match(reps, /Competitor audience/);
   assert.match(reps, /workspace_source_configs/);
@@ -1314,6 +1316,8 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingPage, /Profile \+ channels/);
   assert.match(onboardingPage, /Connect Outlook and LinkedIn in Profile/);
   assert.match(onboardingPage, /Signals, verified contacts, drafts, sends, and replies/);
+  assert.match(onboardingPage, /outreach paths, and the first Agent queue/);
+  assert.doesNotMatch(onboardingPage, /sources,\s+plays, and the first Agent queue/);
   assert.doesNotMatch(onboardingPage, /label="Integrations"/);
   assert.match(onboardingForm, /Start with the website/);
   assert.match(onboardingForm, /learn the company, audience, signal sources/);
@@ -1323,6 +1327,8 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingForm, /Description and value proposition/);
   assert.match(onboardingForm, /Customer pain points/);
   assert.match(onboardingForm, /Buyer roles/);
+  assert.match(onboardingForm, /Customer logos, wins, testimonials, or proof points/);
+  assert.doesNotMatch(onboardingForm, /Customer logos, outcomes, testimonials/);
   assert.match(onboardingForm, /Target markets/);
   assert.match(onboardingForm, /Key features/);
   assert.match(onboardingForm, /Social proof/);
