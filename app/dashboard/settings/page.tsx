@@ -1118,7 +1118,7 @@ function OutlookPanel({ account }: { account: SettingsOutlookAccount | null }) {
         </div>
       </div>
       <Link
-        href="/api/auth/outlook?return_to=%2Fdashboard%2Fsettings%23email"
+        href="/api/auth/outlook?return_to=%2Fdashboard%2Fprofile%23email"
         prefetch={false}
         className="btn-solid w-fit"
       >
@@ -1203,7 +1203,7 @@ function LinkedInAccountSlot({
         </div>
       </div>
       <Link
-        href="/api/auth/linkedin?return_to=%2Fdashboard%2Fsettings%23linkedin"
+        href="/api/auth/linkedin?return_to=%2Fdashboard%2Fprofile%23linkedin"
         prefetch={false}
         className={account ? "btn-quiet-sm w-fit" : "btn-solid-sm w-fit"}
       >

@@ -250,8 +250,8 @@ test("Health presents agent observability from the event-sourced summary", () =>
 test("Settings presents separate Outlook and LinkedIn connection gates", () => {
   const settings = source("app/dashboard/settings/page.tsx");
 
-  assert.match(settings, /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fsettings%23email"/);
-  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
+  assert.match(settings, /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fprofile%23email"/);
+  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/);
   assert.match(
     settings,
     /kind in \('linkedin_session','linkedin_oauth'\)/,
@@ -691,11 +691,11 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.doesNotMatch(settings, /do-not-contact outcomes/);
   assert.match(
     settings,
-    /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fsettings%23email"/,
+    /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fprofile%23email"/,
   );
   assert.match(
     settings,
-    /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/,
+    /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/,
   );
   assert.match(settings, /href: "#tools"/);
   assert.match(settings, /href: "#agent"/);
@@ -758,7 +758,7 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   assert.match(linkedInRoute, /safeReturnTo\(req\.nextUrl\.searchParams\.get\("return_to"\)\)/);
   assert.match(linkedInCallback, /state\.return_to \?\? "\/dashboard\/profile#linkedin"/);
   assert.match(linkedInCallback, /dest\.searchParams\.set\("status", "linkedin_connecting"\)/);
-  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fsettings%23linkedin"/);
+  assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/);
   assert.match(settings, /id="channels"/);
   assert.match(settings, /scroll-mt-28/);
   assert.doesNotMatch(linkedInCallback, /\/dashboard\/prospecting/);
