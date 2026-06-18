@@ -864,6 +864,9 @@ const LinkedInConnectionAccepted = z.object({
   provider_account_id: z.string().min(1).optional(),
   provider_event_id: z.string().min(1).optional(),
   external_id: z.string().min(1).optional(),
+  person_id: z.string().uuid().nullable().optional(),
+  conversation_id: z.string().uuid().nullable().optional(),
+  message_id: z.string().uuid().nullable().optional(),
   profile_url: z.string().url().nullable().optional(),
   accepted_at: z.string().datetime().optional(),
 });

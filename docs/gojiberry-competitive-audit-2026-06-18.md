@@ -62,3 +62,5 @@ Profile now includes an activation flow that connects website profile, signal so
 Connected Outlook or LinkedIn accounts now wake the durable channel-readiness workflow from the `channel.account.connected` event. This makes the backend match the UI promise: integrations immediately refresh launch blockers and can unblock the Brief/Profile/Agent flow without waiting for a separate settings action.
 
 LinkedIn provider webhooks can now record accepted connection requests as `linkedin.connection.accepted`, and Agent channel performance shows accepted connections between sent invites and replies. This brings over GojiBerry's contacted/invited/accepted/replied clarity without adding another Campaigns tab.
+
+Accepted LinkedIn connections now carry optional person, conversation, and message IDs from the provider webhook, and the Agent verified-contact workbench promotes matched contacts to `Accepted connection`. This turns GojiBerry's campaign-state clarity into a Bombsell contact trust signal: a user can scan qualified people and see whether email or LinkedIn outreach has progressed from draft/contacted to accepted/replied.

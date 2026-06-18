@@ -622,9 +622,25 @@ async function loadAgentContactSummary(
                 when cardinality(coalesce(p.emails, '{}'::text[])) > 0 then 'found'
                 else 'missing'
               end as email_status,
-              coalesce(latest_outreach.campaign_status, 'not_contacted') as campaign_status,
-              latest_outreach.channel as latest_outreach_channel,
-              latest_outreach.last_touch_at as last_outreach_at,
+              case
+                when latest_outreach.campaign_status = 'message_replied'
+                  then latest_outreach.campaign_status
+                when latest_linkedin_acceptance.last_touch_at is not null
+                  then 'connection_accepted'
+                else coalesce(latest_outreach.campaign_status, 'not_contacted')
+              end as campaign_status,
+              case
+                when latest_linkedin_acceptance.last_touch_at is not null
+                  and coalesce(latest_outreach.campaign_status, '') <> 'message_replied'
+                  then latest_linkedin_acceptance.channel
+                else latest_outreach.channel
+              end as latest_outreach_channel,
+              case
+                when latest_linkedin_acceptance.last_touch_at is not null
+                  and coalesce(latest_outreach.campaign_status, '') <> 'message_replied'
+                  then latest_linkedin_acceptance.last_touch_at
+                else latest_outreach.last_touch_at
+              end as last_outreach_at,
               p.properties #>> '{contact_fit,decision}' as contact_fit_decision,
               p.created_at,
               p.updated_at,
@@ -658,6 +674,32 @@ async function loadAgentContactSummary(
             order by coalesce(s.ingested_at, s.freshness_at) desc
             limit 1
          ) latest_signal on true
+         left join lateral (
+           select 'linkedin_connection'::text as channel,
+                  coalesce(nullif(e.payload->>'accepted_at', '')::timestamptz, e.occurred_at) as last_touch_at
+             from events e
+            where e.workspace_id = $1
+              and e.event_type = 'linkedin.connection.accepted'
+              and (
+                e.payload->>'person_id' = p.id::text
+                or (
+                  p.linkedin_url is not null
+                  and e.payload->>'profile_url' = p.linkedin_url
+                )
+                or (
+                  e.payload->>'conversation_id' is not null
+                  and exists (
+                    select 1
+                      from conversations accepted_conversation
+                     where accepted_conversation.workspace_id = $1
+                       and accepted_conversation.id::text = e.payload->>'conversation_id'
+                       and accepted_conversation.counterparty_person_id = p.id
+                  )
+                )
+              )
+            order by coalesce(nullif(e.payload->>'accepted_at', '')::timestamptz, e.occurred_at) desc
+            limit 1
+         ) latest_linkedin_acceptance on true
          left join lateral (
            select latest_message.channel::text as channel,
                   coalesce(latest_message.sent_at, latest_message.created_at, c.last_activity_at) as last_touch_at,
@@ -753,15 +795,32 @@ async function loadAgentContactSummary(
              and p.properties #>> '{contact_fit,decision}' is not null) as fit_reviewed,
          (select count(distinct p.id)::text
             from graph_persons p
-            join conversations c
+            left join conversations c
               on c.workspace_id = p.workspace_id
              and c.counterparty_person_id = p.id
-            join messages m
+            left join messages m
               on m.workspace_id = c.workspace_id
              and m.conversation_id = c.id
            where p.workspace_id = $1
-             and m.direction = 'outbound'
-             and m.status in ('draft','queued','deferred','sent','delivered','replied')) as in_outreach,
+             and (
+               (
+                 m.direction = 'outbound'
+                 and m.status in ('draft','queued','deferred','sent','delivered','replied')
+               )
+               or exists (
+                 select 1
+                   from events accepted
+                  where accepted.workspace_id = $1
+                    and accepted.event_type = 'linkedin.connection.accepted'
+                    and (
+                      accepted.payload->>'person_id' = p.id::text
+                      or (
+                        p.linkedin_url is not null
+                        and accepted.payload->>'profile_url' = p.linkedin_url
+                      )
+                    )
+               )
+             )) as in_outreach,
          (select count(*)::text
             from signals s
            where s.workspace_id = $1
@@ -2794,6 +2853,8 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             "rounded-[8px] px-2.5 py-1 text-xs " +
             (contact.campaign_status === "message_replied"
               ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : contact.campaign_status === "connection_accepted"
+                ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
               : contact.campaign_status === "contacted" ||
                   contact.campaign_status === "draft_ready"
                 ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
@@ -3092,6 +3153,7 @@ function emailStatusLabel(status: string): string {
 
 function campaignStatusLabel(status: string): string {
   if (status === "message_replied") return "Message replied";
+  if (status === "connection_accepted") return "Accepted connection";
   if (status === "contacted") return "Contacted";
   if (status === "draft_ready") return "Draft ready";
   return "Not contacted";

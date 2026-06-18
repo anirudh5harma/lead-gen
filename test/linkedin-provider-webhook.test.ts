@@ -98,12 +98,21 @@ test("LinkedIn provider webhook accepts connection acceptance metadata", () => {
     provider_account_id: "li_acc_123",
     provider_event_id: "evt_accept_123",
     external_id: "invite_456",
+    person_id: "22222222-2222-4222-8222-222222222222",
+    conversation_id: "33333333-3333-4333-8333-333333333333",
+    message_id: "44444444-4444-4444-8444-444444444444",
     profile_url: "https://www.linkedin.com/in/example",
     occurred_at: "2026-06-18T10:00:00.000Z",
   });
 
   assert.equal(payload.event, "connection_accepted");
   assert.equal(payload.external_id, "invite_456");
+  assert.equal(payload.person_id, "22222222-2222-4222-8222-222222222222");
+  assert.equal(
+    payload.conversation_id,
+    "33333333-3333-4333-8333-333333333333",
+  );
+  assert.equal(payload.message_id, "44444444-4444-4444-8444-444444444444");
   assert.equal(payload.profile_url, "https://www.linkedin.com/in/example");
   assert.equal(
     lifecycleIdempotencyKey(payload, payload.channel_account_id!),

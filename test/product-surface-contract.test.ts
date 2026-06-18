@@ -466,8 +466,9 @@ test("Verified contacts open graph-backed profile pages with channel readiness",
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(reps, /latest_signal\.match_score::text as latest_signal_score/);
   assert.match(reps, /end as email_status/);
-  assert.match(reps, /coalesce\(latest_outreach\.campaign_status, 'not_contacted'\) as campaign_status/);
-  assert.match(reps, /latest_outreach\.channel as latest_outreach_channel/);
+  assert.match(reps, /latest_linkedin_acceptance\.last_touch_at is not null/);
+  assert.match(reps, /then 'connection_accepted'/);
+  assert.match(reps, /latest_linkedin_acceptance\.channel/);
   assert.match(profile, /Verified contact/);
   assert.match(profile, /Timing evidence, channel handles, outreach, replies, and meetings/);
   assert.match(profile, /Back to contacts/);
@@ -642,6 +643,10 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /latest_signal_score/);
   assert.match(reps, /email_status/);
   assert.match(reps, /campaign_status/);
+  assert.match(reps, /latest_linkedin_acceptance/);
+  assert.match(reps, /connection_accepted/);
+  assert.match(reps, /Accepted connection/);
+  assert.match(reps, /accepted_conversation\.counterparty_person_id = p\.id/);
   assert.match(reps, /last_outreach_at/);
   assert.match(reps, /p\.created_at/);
   assert.match(reps, /contact_fit_decision/);
@@ -1221,8 +1226,17 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   assert.match(settings, /scroll-mt-28/);
   assert.match(linkedInWebhook, /payload\.event === "connection_accepted"/);
   assert.match(linkedInWebhook, /event_type: "linkedin\.connection\.accepted"/);
+  assert.match(linkedInWebhook, /person_id: payload\.person_id/);
+  assert.match(linkedInWebhook, /conversation_id: payload\.conversation_id/);
+  assert.match(linkedInWebhook, /message_id: payload\.message_id/);
   assert.match(linkedInWebhook, /accepted_at: payload\.occurred_at/);
   assert.match(eventRegistry, /const LinkedInConnectionAccepted = z\.object/);
+  assert.match(eventRegistry, /person_id: z\.string\(\)\.uuid\(\)\.nullable\(\)\.optional\(\)/);
+  assert.match(
+    eventRegistry,
+    /conversation_id: z\.string\(\)\.uuid\(\)\.nullable\(\)\.optional\(\)/,
+  );
+  assert.match(eventRegistry, /message_id: z\.string\(\)\.uuid\(\)\.nullable\(\)\.optional\(\)/);
   assert.match(
     eventRegistry,
     /"linkedin\.connection\.accepted": LinkedInConnectionAccepted/,
