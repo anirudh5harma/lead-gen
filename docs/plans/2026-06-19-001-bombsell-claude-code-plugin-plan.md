@@ -394,7 +394,7 @@ read-only and prepare-only flow.
    - `bombsell.launch.check` (landed: read-only)
    - `bombsell.signals.list_qualified` (landed: read-only)
    - `bombsell.contact_lanes.get` (landed: read-only)
-   - `bombsell.outreach.prepare` (needed; prepare-only; never sends directly)
+   - `bombsell.outreach.prepare` (landed: prepare-only; never sends directly)
    - `bombsell.outreach.list_sent` (landed: read-only)
    - `bombsell.draft.get` (landed: read-only)
    - `bombsell.approvals.list` (landed: read-only)
@@ -514,8 +514,8 @@ Install page bullets:
 - [x] Add concise MCP server instructions for tool search.
 - [ ] Finish `bombsell.*` wrapper tools over the existing registry.
   Landed: Brief, launch check, qualified signals, contact lanes, sent outreach,
-  draft lookup, approvals, and learning. Remaining: Profile proposal from repo
-  context and prepare-only outreach.
+  prepare-only outreach, draft lookup, approvals, and learning. Remaining:
+  Profile proposal from repo context.
 - [x] Add product contract tests for wrapper tools and manifest discovery.
 - [ ] Create `bombsell-claude-code` plugin package.
 - [ ] Add six initial skills.

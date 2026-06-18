@@ -101,6 +101,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "bombsell.launch.check",
     "bombsell.signals.list_qualified",
     "bombsell.contact_lanes.get",
+    "bombsell.outreach.prepare",
     "bombsell.outreach.list_sent",
     "bombsell.draft.get",
     "bombsell.approvals.list",
@@ -405,6 +406,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     decision: string;
     note?: string;
   }> = [];
+  const dispatchCalls: Array<{ limit?: number }> = [];
 
   registerTool({
     name: "product.brief.get",
@@ -692,6 +694,19 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       return { ok: true };
     },
   });
+  registerTool({
+    name: "product.signals.dispatch_plays",
+    description: "stub prepare outreach",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().positive().max(100).optional(),
+    }),
+    output: z.object({ dispatched: z.number().int().nonnegative() }),
+    async handler(input) {
+      dispatchCalls.push(input);
+      return { dispatched: 1 };
+    },
+  });
   registerBombsellAliasTools();
 
   const brief = await invokeTool<{ source_tool: string; windows: { last_24h: { qualified_signals: number } } }>(
@@ -765,6 +780,45 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   assert.equal(lanes.lane_counts.draft_ready, 1);
   assert.equal(lanes.lane_counts.needs_contact_resolution, 0);
   assert.equal(lanes.lane_counts.needs_fit_review, 1);
+
+  await assert.rejects(
+    invokeTool(
+      "bombsell.outreach.prepare",
+      { limit: 3 },
+      { workspace_id, user_id },
+    ),
+    /confirm_prepare=true/,
+  );
+  assert.equal(dispatchCalls.length, 0);
+
+  const prepared = await invokeTool<{
+    dispatched: number;
+    requested_limit: number;
+    before: { ready_for_review: number };
+    after: { with_outreach_draft: number };
+    review_ready_signals: Array<{
+      signal_id: string;
+      outreach_draft: { pending_approval_id: string | null } | null;
+    }>;
+    next_action: { href: string };
+    source_tool: string;
+  }>(
+    "bombsell.outreach.prepare",
+    { limit: 3, confirm_prepare: true },
+    { workspace_id, user_id },
+  );
+  assert.equal(prepared.dispatched, 1);
+  assert.equal(prepared.requested_limit, 3);
+  assert.equal(prepared.before.ready_for_review, 1);
+  assert.equal(prepared.after.with_outreach_draft, 1);
+  assert.equal(prepared.review_ready_signals[0]?.signal_id, signal_id);
+  assert.equal(
+    prepared.review_ready_signals[0]?.outreach_draft?.pending_approval_id,
+    approval_id,
+  );
+  assert.equal(prepared.next_action.href, "/dashboard/agent#outreach");
+  assert.equal(prepared.source_tool, "product.signals.dispatch_plays");
+  assert.deepEqual(dispatchCalls, [{ limit: 3 }]);
 
   const draft = await invokeTool<{ message: { body: string | null; eval_passed: boolean | null } | null }>(
     "bombsell.draft.get",

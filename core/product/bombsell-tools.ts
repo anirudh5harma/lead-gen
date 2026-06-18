@@ -246,6 +246,28 @@ const ContactLanesSchema = WorkspaceResultSchema.extend({
   source_tool: z.literal("product.qualified_signals.list"),
 });
 
+const OutreachPrepareSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  requested_limit: z.number().int().positive(),
+  dispatched: z.number().int().nonnegative(),
+  before: z.object({
+    qualified: z.number().int().nonnegative(),
+    ready_for_review: z.number().int().nonnegative(),
+  }),
+  after: z.object({
+    qualified: z.number().int().nonnegative(),
+    ready_for_review: z.number().int().nonnegative(),
+    with_outreach_draft: z.number().int().nonnegative(),
+  }),
+  review_ready_signals: z.array(QualifiedSignalSummarySchema),
+  next_action: z.object({
+    label: z.string(),
+    detail: z.string(),
+    href: z.string(),
+  }),
+  source_tool: z.literal("product.signals.dispatch_plays"),
+});
+
 interface OperatingBrief {
   workspace_id: string;
   generated_at: string;
@@ -587,6 +609,59 @@ export function registerBombsellAliasTools(): void {
         },
         lanes,
         source_tool: "product.qualified_signals.list" as const,
+      };
+    },
+  });
+
+  registerTool({
+    name: "bombsell.outreach.prepare",
+    description:
+      "Prepare judged Bombsell email or LinkedIn outreach from qualified signals without sending. This dispatches the existing durable Agent workflow and returns review-ready drafts for approval.",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().min(1).max(25).optional(),
+      confirm_prepare: z.boolean().optional(),
+    }),
+    output: OutreachPrepareSchema,
+    async handler(input, ctx) {
+      if (input.confirm_prepare !== true) {
+        throw new Error(
+          "Preparing Bombsell outreach can create judged drafts and approval gates. Set confirm_prepare=true to continue without sending.",
+        );
+      }
+      const limit = input.limit ?? 10;
+      const before = await qualifiedSignalWorkbench(limit, ctx);
+      const result = await invokeTool<{ dispatched: number }>(
+        "product.signals.dispatch_plays",
+        { limit },
+        ctx,
+      );
+      const after = await qualifiedSignalWorkbench(limit, ctx);
+      const reviewReadySignals = summarizeQualifiedSignals(after.signals)
+        .filter((signal) => isDraftReady(signal.outreach_draft));
+      return {
+        workspace_id: after.workspace_id,
+        generated_at: new Date().toISOString(),
+        requested_limit: limit,
+        dispatched: result.dispatched,
+        before: {
+          qualified: before.stats.qualified,
+          ready_for_review: before.stats.ready_for_review,
+        },
+        after: {
+          qualified: after.stats.qualified,
+          ready_for_review: after.stats.ready_for_review,
+          with_outreach_draft: after.stats.with_outreach_draft,
+        },
+        review_ready_signals: reviewReadySignals,
+        next_action: {
+          label: "Review prepared outreach",
+          detail: reviewReadySignals.length > 0
+            ? `${reviewReadySignals.length} judged draft${reviewReadySignals.length === 1 ? "" : "s"} ready under Agent.`
+            : "Preparation started. Check Agent for verified contacts, judged drafts, and approval gates.",
+          href: "/dashboard/agent#outreach",
+        },
+        source_tool: "product.signals.dispatch_plays" as const,
       };
     },
   });
