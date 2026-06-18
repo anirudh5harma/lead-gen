@@ -550,7 +550,7 @@ function ConversationRow({
 }) {
   return (
     <Link
-      href={`/dashboard/conversations/${conversation.id}`}
+      href={`/dashboard/agent/outreach/${conversation.id}`}
       prefetch={false}
       className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
     >

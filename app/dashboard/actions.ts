@@ -507,7 +507,7 @@ export async function generateMeetingPrepAction(formData: FormData) {
   const returnTo = dashboardReturnPath(
     formData,
     conversationId
-      ? `/dashboard/conversations/${conversationId}`
+      ? `/dashboard/agent/outreach/${conversationId}`
       : "/dashboard/agent#outreach",
   );
   if (!conversationId) {
@@ -522,7 +522,7 @@ export async function generateMeetingPrepAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  revalidatePath(`/dashboard/conversations/${conversationId}`);
+  revalidatePath(`/dashboard/agent/outreach/${conversationId}`);
   redirectWithToast(returnTo, "Meeting prep updated.");
 }
 

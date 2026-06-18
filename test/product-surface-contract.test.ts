@@ -160,6 +160,10 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
     /redirect\("\/dashboard\/agent#outreach"\)/,
   );
   assert.match(
+    source("app/dashboard/conversations/[id]/page.tsx"),
+    /redirect\(`\/dashboard\/agent\/outreach\/\$\{id\}`\)/,
+  );
+  assert.match(
     source("app/dashboard/review/page.tsx"),
     /redirect\("\/dashboard\/agent#opportunities"\)/,
   );
@@ -197,6 +201,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/prospects"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospects\/:id"/);
   assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
+  assert.match(nextConfig, /source: "\/dashboard\/conversations\/:id"/);
   assert.match(nextConfig, /source: "\/dashboard\/review"/);
   assert.match(nextConfig, /source: "\/dashboard\/approvals"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
@@ -209,6 +214,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent\/contacts\/:id"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#outreach"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent\/outreach\/:id"/);
 
   const actions = source("app/dashboard/actions.ts");
   assert.match(actions, /revalidatePath\("\/dashboard\/profile"\)/);
@@ -369,7 +375,7 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /href: "\/dashboard\/profile#profile"/);
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
   assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
-  assert.match(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
+  assert.match(dashboard, /\/dashboard\/agent\/outreach\/\$\{insight\.conversation_id\}/);
   assert.match(source("app/dashboard/brief/page.tsx"), /dynamic = "force-dynamic"/);
   assert.match(source("app/dashboard/brief/page.tsx"), /from "\.\.\/page"/);
   assert.match(source("app/brief/page.tsx"), /redirect\("\/dashboard\/brief"\)/);
@@ -1065,15 +1071,30 @@ test("message personalization uses Profile ingredients before outreach drafts", 
 
 test("sent outreach links open the exact draft in the conversation trace", () => {
   const outreach = source("app/dashboard/conversations/page.tsx");
-  const detail = source("app/dashboard/conversations/[id]/page.tsx");
+  const legacyDetail = source("app/dashboard/conversations/[id]/page.tsx");
+  const detail = source("app/dashboard/agent/outreach/[id]/page.tsx");
   const trust = source("core/product/conversation-trust.ts");
   const reps = source("app/dashboard/agent/AgentPage.tsx");
+  const dashboard = source("app/dashboard/page.tsx");
+  const profile = source("app/dashboard/profile/ProfilePage.tsx");
+  const contact = source("app/dashboard/agent/contacts/[id]/ContactPage.tsx");
+  const actions = source("app/dashboard/actions.ts");
+  const aliases = source("core/product/bombsell-tools.ts");
 
   assert.match(outreach, /redirect\("\/dashboard\/agent#outreach"\)/);
+  assert.match(legacyDetail, /redirect\(`\/dashboard\/agent\/outreach\/\$\{id\}`\)/);
   assert.match(reps, /<SurfaceSection\s+title="Sent outreach"/);
   assert.match(trust, /the Agent is set to research-only for replies/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
-  assert.match(reps, /#message-\$\{messageId\}/);
+  assert.match(reps, /\/dashboard\/agent\/outreach\/\$\{conversationId\}#message-\$\{messageId\}/);
+  assert.match(reps, /\/dashboard\/agent\/outreach\/\$\{reply\.conversation_id\}#message-\$\{reply\.inbound_message_id\}/);
+  assert.match(reps, /\/dashboard\/agent\/outreach\/\$\{row\.conversation_id\}/);
+  assert.match(dashboard, /\/dashboard\/agent\/outreach\/\$\{insight\.conversation_id\}/);
+  assert.match(profile, /\/dashboard\/agent\/outreach\/\$\{row\.conversation_id\}/);
+  assert.match(contact, /\/dashboard\/agent\/outreach\/\$\{conversation\.id\}/);
+  assert.match(actions, /revalidatePath\(`\/dashboard\/agent\/outreach\/\$\{conversationId\}`\)/);
+  assert.match(aliases, /\/dashboard\/agent\/outreach\/\$\{message\.conversation_id\}#message-\$\{message\.id\}/);
+  assert.doesNotMatch(aliases, /\/dashboard\/conversations\/\$\{message\.conversation_id\}/);
   assert.doesNotMatch(outreach, /kicker="Outreach"/);
   assert.doesNotMatch(outreach, /kicker="Inbox"/);
   assert.doesNotMatch(outreach, /Sent list/);
@@ -1083,6 +1104,10 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /Back to sent outreach/);
   assert.doesNotMatch(detail, /brief-kicker">Inbox/);
   assert.doesNotMatch(detail, /Back to Inbox/);
+  assert.doesNotMatch(reps, /\/dashboard\/conversations\/\$\{conversationId\}/);
+  assert.doesNotMatch(dashboard, /\/dashboard\/conversations\/\$\{insight\.conversation_id\}/);
+  assert.doesNotMatch(profile, /\/dashboard\/conversations\/\$\{row\.conversation_id\}/);
+  assert.doesNotMatch(contact, /\/dashboard\/conversations\/\$\{conversation\.id\}/);
   assert.doesNotMatch(trust, /the Play is set to research-only/);
 });
 

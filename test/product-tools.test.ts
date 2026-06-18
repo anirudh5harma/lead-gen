@@ -717,7 +717,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   );
   assert.equal(outreach.outreach[0]?.message_id, message_id);
   assert.equal(outreach.outreach[0]?.person_name, "Maya Patel");
-  assert.match(outreach.outreach[0]?.href ?? "", /\/dashboard\/conversations\//);
+  assert.match(outreach.outreach[0]?.href ?? "", /\/dashboard\/agent\/outreach\//);
 
   const signals = await invokeTool<{
     stats: { qualified: number };

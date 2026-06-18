@@ -85,6 +85,11 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: "/dashboard/conversations/:id",
+        destination: "/dashboard/agent/outreach/:id",
+        permanent: false,
+      },
+      {
         source: "/dashboard/review",
         destination: "/dashboard/agent#opportunities",
         permanent: false,

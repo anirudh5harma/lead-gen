@@ -4164,7 +4164,7 @@ function AcceptedConnectionFollowupLink({
 function acceptedConnectionHref(
   row: AgentAcceptedConnectionFollowupRow,
 ): string {
-  if (row.conversation_id) return `/dashboard/conversations/${row.conversation_id}`;
+  if (row.conversation_id) return `/dashboard/agent/outreach/${row.conversation_id}`;
   if (row.person_id) return `/dashboard/agent/contacts/${row.person_id}`;
   return "/dashboard/agent#outreach";
 }
@@ -4323,7 +4323,7 @@ function AgentRepliesPanel({
 }
 
 function AgentReplyLink({ reply }: { reply: AgentReplyRow }) {
-  const href = `/dashboard/conversations/${reply.conversation_id}#message-${reply.inbound_message_id}`;
+  const href = `/dashboard/agent/outreach/${reply.conversation_id}#message-${reply.inbound_message_id}`;
   const needsPrep = reply.intent_class === "meeting_intent" || reply.intent_class === "positive";
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
@@ -4698,7 +4698,7 @@ function outreachEvalScore(score: string | null): number | null {
 }
 
 function sentDraftHref(conversationId: string, messageId: string): string {
-  return `/dashboard/conversations/${conversationId}#message-${messageId}`;
+  return `/dashboard/agent/outreach/${conversationId}#message-${messageId}`;
 }
 
 function AgentSetupSummary({

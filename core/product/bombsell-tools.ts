@@ -469,7 +469,7 @@ export function registerBombsellAliasTools(): void {
             company_name: trace?.company_name ?? null,
             signal_title: trace?.signal_title ?? null,
             signal_kind: trace?.signal_kind ?? null,
-            href: `/dashboard/conversations/${message.conversation_id}?message=${message.id}`,
+            href: `/dashboard/agent/outreach/${message.conversation_id}#message-${message.id}`,
           };
         });
       return {
@@ -513,7 +513,7 @@ export function registerBombsellAliasTools(): void {
               eval_passed: message.eval_passed,
               eval_notes: message.eval_notes,
               provenance: message.provenance,
-              href: `/dashboard/conversations/${message.conversation_id}?message=${message.id}`,
+              href: `/dashboard/agent/outreach/${message.conversation_id}#message-${message.id}`,
             }
           : null,
         source_tool: "product.state.get" as const,
@@ -790,7 +790,7 @@ function summarizeDraft(
     eval_passed: draft.eval_passed,
     pending_approval_id: draft.pending_approval_id,
     defer_reason: draft.defer_reason,
-    href: `/dashboard/conversations/${draft.conversation_id}?message=${draft.message_id}`,
+    href: `/dashboard/agent/outreach/${draft.conversation_id}#message-${draft.message_id}`,
   };
 }
 
