@@ -598,6 +598,17 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /title="Sent outreach"/);
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /DMs sent/);
+  assert.match(reps, /Channel performance/);
+  assert.match(reps, /LinkedIn invites/);
+  assert.match(reps, /LinkedIn messages/);
+  assert.match(reps, /Native Outlook threads/);
+  assert.match(reps, /Connection requests/);
+  assert.match(reps, /DMs, InMail, and comments/);
+  assert.match(reps, /latest_outbound_channel/);
+  assert.match(reps, /linkedin_invites_7d/);
+  assert.match(reps, /linkedin_messages_7d/);
+  assert.match(reps, /linkedin_invite_replies_7d/);
+  assert.match(reps, /linkedin_message_replies_7d/);
   assert.match(reps, /Qualified signals become verified contacts/);
   assert.match(reps, /left join channel_accounts ca/);
   assert.match(reps, /ca\.display_name as channel_account_name/);

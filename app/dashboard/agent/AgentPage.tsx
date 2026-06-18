@@ -123,6 +123,11 @@ interface AgentOutreachSummary {
   recent: AgentOutreachRow[];
   email_sent_7d: number;
   linkedin_sent_7d: number;
+  linkedin_invites_7d: number;
+  linkedin_messages_7d: number;
+  email_replies_7d: number;
+  linkedin_invite_replies_7d: number;
+  linkedin_message_replies_7d: number;
   awaiting_reply: number;
 }
 
@@ -855,9 +860,33 @@ async function loadAgentOutreachSummary(
     pool.query<{
       email_sent_7d: string;
       linkedin_sent_7d: string;
+      linkedin_invites_7d: string;
+      linkedin_messages_7d: string;
+      email_replies_7d: string;
+      linkedin_invite_replies_7d: string;
+      linkedin_message_replies_7d: string;
       awaiting_reply: string;
     }>(
-      `select
+      `with recent_replies as (
+         select inbound.id,
+                latest_outbound.channel::text as latest_outbound_channel
+           from messages inbound
+           join lateral (
+             select outbound.channel
+               from messages outbound
+              where outbound.workspace_id = $1
+                and outbound.conversation_id = inbound.conversation_id
+                and outbound.direction = 'outbound'
+                and outbound.channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+                and coalesce(outbound.sent_at, outbound.created_at) <= coalesce(inbound.sent_at, inbound.created_at)
+              order by coalesce(outbound.sent_at, outbound.created_at) desc
+              limit 1
+           ) latest_outbound on true
+          where inbound.workspace_id = $1
+            and inbound.direction = 'inbound'
+            and coalesce(inbound.sent_at, inbound.created_at) >= now() - interval '7 days'
+       )
+       select
          (select count(*)::text from messages
             where workspace_id = $1
               and direction = 'outbound'
@@ -873,6 +902,24 @@ async function loadAgentOutreachSummary(
          (select count(*)::text from messages
             where workspace_id = $1
               and direction = 'outbound'
+              and channel = 'linkedin_connection'
+              and status in ('sent','delivered','replied')
+              and coalesce(sent_at, created_at) >= now() - interval '7 days') as linkedin_invites_7d,
+         (select count(*)::text from messages
+            where workspace_id = $1
+              and direction = 'outbound'
+              and channel in ('linkedin_dm','linkedin_inmail','linkedin_comment')
+              and status in ('sent','delivered','replied')
+              and coalesce(sent_at, created_at) >= now() - interval '7 days') as linkedin_messages_7d,
+         (select count(*)::text from recent_replies
+            where latest_outbound_channel = 'email') as email_replies_7d,
+         (select count(*)::text from recent_replies
+            where latest_outbound_channel = 'linkedin_connection') as linkedin_invite_replies_7d,
+         (select count(*)::text from recent_replies
+            where latest_outbound_channel in ('linkedin_dm','linkedin_inmail','linkedin_comment')) as linkedin_message_replies_7d,
+         (select count(*)::text from messages
+            where workspace_id = $1
+              and direction = 'outbound'
               and channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
               and status in ('sent','delivered')
               and coalesce(sent_at, created_at) >= now() - interval '14 days') as awaiting_reply`,
@@ -883,6 +930,15 @@ async function loadAgentOutreachSummary(
     recent: recent.rows,
     email_sent_7d: Number(summary.rows[0]?.email_sent_7d ?? 0),
     linkedin_sent_7d: Number(summary.rows[0]?.linkedin_sent_7d ?? 0),
+    linkedin_invites_7d: Number(summary.rows[0]?.linkedin_invites_7d ?? 0),
+    linkedin_messages_7d: Number(summary.rows[0]?.linkedin_messages_7d ?? 0),
+    email_replies_7d: Number(summary.rows[0]?.email_replies_7d ?? 0),
+    linkedin_invite_replies_7d: Number(
+      summary.rows[0]?.linkedin_invite_replies_7d ?? 0,
+    ),
+    linkedin_message_replies_7d: Number(
+      summary.rows[0]?.linkedin_message_replies_7d ?? 0,
+    ),
     awaiting_reply: Number(summary.rows[0]?.awaiting_reply ?? 0),
   };
 }
@@ -1338,6 +1394,11 @@ function emptyRepsState(workspaceId: string): RepsState {
       recent: [],
       email_sent_7d: 0,
       linkedin_sent_7d: 0,
+      linkedin_invites_7d: 0,
+      linkedin_messages_7d: 0,
+      email_replies_7d: 0,
+      linkedin_invite_replies_7d: 0,
+      linkedin_message_replies_7d: 0,
       awaiting_reply: 0,
     },
     replies: {
@@ -3582,26 +3643,121 @@ function AgentOutreachPanel({
             </p>
           </aside>
 
-          {outreach.recent.length === 0 ? (
-            <EmptyState
-              title="No sent outreach yet"
-              hint="When the agent sends an email or LinkedIn touch, the contact and draft will appear here."
-              cta={{
-                href: "/dashboard/profile#channels",
-                label: "Connect accounts",
-                icon: "account_tree",
-              }}
-            />
-          ) : (
-            <div className="grid gap-2">
-              {outreach.recent.map((message) => (
-                <AgentOutreachLink key={message.id} message={message} />
-              ))}
-            </div>
-          )}
+          <div className="grid gap-4">
+            <ChannelPerformancePanel outreach={outreach} />
+
+            {outreach.recent.length === 0 ? (
+              <EmptyState
+                title="No sent outreach yet"
+                hint="When the agent sends an email or LinkedIn touch, the contact and draft will appear here."
+                cta={{
+                  href: "/dashboard/profile#channels",
+                  label: "Connect accounts",
+                  icon: "account_tree",
+                }}
+              />
+            ) : (
+              <div className="grid gap-2">
+                {outreach.recent.map((message) => (
+                  <AgentOutreachLink key={message.id} message={message} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </SurfaceSection>
     </div>
+  );
+}
+
+function ChannelPerformancePanel({
+  outreach,
+}: {
+  outreach: AgentOutreachSummary;
+}) {
+  const cards = [
+    {
+      icon: <Icon name="mail" size={15} />,
+      title: "Email",
+      sent: outreach.email_sent_7d,
+      reply: outreach.email_replies_7d,
+      detail: "Native Outlook threads",
+    },
+    {
+      icon: <BrandIcon name="linkedin" size={15} />,
+      title: "LinkedIn invites",
+      sent: outreach.linkedin_invites_7d,
+      reply: outreach.linkedin_invite_replies_7d,
+      detail: "Connection requests",
+    },
+    {
+      icon: <BrandIcon name="linkedin" size={15} />,
+      title: "LinkedIn messages",
+      sent: outreach.linkedin_messages_7d,
+      reply: outreach.linkedin_message_replies_7d,
+      detail: "DMs, InMail, and comments",
+    },
+  ];
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Channel performance
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            Outreach is split by email, LinkedIn invites, LinkedIn messages,
+            and channel-attributed replies.
+          </p>
+        </div>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+          7 days
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-3">
+        {cards.map((card) => (
+          <div
+            key={card.title}
+            className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3"
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
+                {card.icon}
+              </span>
+              <span className="text-[11px] text-[var(--color-text-4)]">
+                {card.detail}
+              </span>
+            </span>
+            <p className="mt-3 text-sm font-semibold text-[var(--color-text-1)]">
+              {card.title}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <ChannelPerformanceMetric label="Sent" value={card.sent} />
+              <ChannelPerformanceMetric label="Replies" value={card.reply} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChannelPerformanceMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2.5 py-2">
+      <span className="block text-[11px] text-[var(--color-text-4)]">
+        {label}
+      </span>
+      <strong className="mt-1 block text-lg font-semibold tabular-nums text-[var(--color-text-1)]">
+        {value}
+      </strong>
+    </span>
   );
 }
 
