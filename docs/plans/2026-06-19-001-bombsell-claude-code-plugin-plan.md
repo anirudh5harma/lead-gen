@@ -135,9 +135,10 @@ recommended action.
 
 MCP tools needed:
 
+- `product.brief.get`
 - `product.context.get`
-- `product.launch_readiness.get`
-- `product.agent_observability.get`
+- `product.launch.readiness.get`
+- `product.agent_observability.summary.get`
 - Future ergonomic alias: `bombsell.brief.get`
 
 ### `/bombsell:profile-from-repo`
@@ -148,10 +149,10 @@ points, integration assumptions, and signal-source recommendations.
 
 MCP tools needed:
 
-- `product.company_profile.configure`
-- `product.icp_segment.configure`
-- `product.activation_setup.run`
-- `product.signal_source.configure`
+- `product.company.profile.configure`
+- `product.icp.configure`
+- `product.activation.setup.run`
+- `product.source.configure`
 
 Safety:
 
@@ -165,10 +166,10 @@ outreach.
 
 MCP tools needed:
 
-- `product.readiness.get`
+- `product.launch.readiness.get`
 - `product.outlook_account.connect_url.get`
 - `product.linkedin_account.connect_url.get`
-- `product.signal_ingestion.run`
+- `product.signal.ingestion.run`
 
 ### `/bombsell:signal-review`
 
@@ -177,10 +178,12 @@ contacts, fit review gaps, and draft readiness.
 
 MCP tools needed:
 
+- `product.brief.get`
+- `product.state.get`
 - `product.context.get`
-- `product.qualified_signals.list` or equivalent registry addition
-- `product.contact_waterfall.run`
-- Future ergonomic alias: `bombsell.contact_lanes.get`
+- `product.contact.waterfall.resolve`
+- Future ergonomic aliases: `bombsell.signals.list_qualified`,
+  `bombsell.contact_lanes.get`
 
 ### `/bombsell:prepare-outreach`
 
@@ -188,10 +191,11 @@ Turns selected qualified signals into judged email or LinkedIn outreach drafts.
 
 MCP tools needed:
 
-- `product.qualified_signals.prepare`
+- `product.signals.dispatch_plays`
 - `product.message.personalize`
-- `product.draft.evaluate`
-- `product.approval.approve`
+- `product.draft.eval.gate`
+- `product.approval.decide`
+- Future ergonomic alias: `bombsell.outreach.prepare`
 
 Safety:
 
@@ -208,8 +212,8 @@ signals, channels, and personas are working.
 MCP tools needed:
 
 - `product.reply.triage`
-- `product.campaign_strategy.optimize`
-- `product.play_skills.optimize`
+- `product.campaign.strategy.optimize`
+- `product.play.skills.optimize`
 - Future ergonomic alias: `bombsell.learning.get`
 
 ## Agents
@@ -263,10 +267,11 @@ Hooks must never auto-send outreach or auto-write Profile changes.
 
 2. Server instructions for tool search
 
-   - Add concise MCP server instructions under 2KB explaining that Bombsell tools
-     handle GTM Profile, qualified signals, verified contacts, judged outreach,
-     approvals, replies, and launch readiness.
-   - Keep critical capability words near the start so tool search works well.
+   - Added concise MCP server instructions under 2KB explaining that Bombsell
+     tools handle GTM Profile, qualified signals, verified contacts, judged
+     outreach, approvals, replies, and launch readiness.
+   - The manifest advertises Brief, Agent, and Profile plus
+     `product.brief.get` as the recommended entry tool.
 
 3. Ergonomic MCP aliases
 
@@ -395,7 +400,7 @@ Install page bullets:
 ## Implementation Checklist
 
 - [ ] Add remote MCP auth suitable for Claude Code.
-- [ ] Add concise MCP server instructions for tool search.
+- [x] Add concise MCP server instructions for tool search.
 - [ ] Add `bombsell.*` wrapper tools over the existing registry.
 - [ ] Add product contract tests for wrapper tools and manifest discovery.
 - [ ] Create `bombsell-claude-code` plugin package.

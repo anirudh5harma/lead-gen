@@ -6,6 +6,7 @@ import {
   type ToolContext,
   type ToolDefinition,
 } from "../agents/tools/index.ts";
+import { BOMBSELL_MCP_INSTRUCTIONS } from "./instructions.ts";
 
 /**
  * MCP server envelope. Exposes the agent fabric's Tool registry over the
@@ -33,6 +34,8 @@ export interface CreateBombsellMcpServerOptions {
   excludeTools?: string[];
   /** Server metadata. */
   serverInfo?: { name?: string; version?: string };
+  /** Optional override for clients that need a narrower MCP instruction set. */
+  instructions?: string;
 }
 
 function isZodObject(s: unknown): s is z.ZodObject<z.ZodRawShape> {
@@ -48,10 +51,15 @@ function isZodObject(s: unknown): s is z.ZodObject<z.ZodRawShape> {
 export function createBombsellMcpServer(
   opts: CreateBombsellMcpServerOptions,
 ): McpServer {
-  const server = new McpServer({
-    name: opts.serverInfo?.name ?? "bombsell",
-    version: opts.serverInfo?.version ?? "pivot-v2",
-  });
+  const server = new McpServer(
+    {
+      name: opts.serverInfo?.name ?? "bombsell",
+      version: opts.serverInfo?.version ?? "pivot-v2",
+    },
+    {
+      instructions: opts.instructions ?? BOMBSELL_MCP_INSTRUCTIONS,
+    },
+  );
 
   const allowedKinds = opts.exposeKinds ?? ["read", "write", "external"];
   const excluded = new Set(opts.excludeTools ?? []);

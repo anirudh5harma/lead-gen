@@ -15,6 +15,7 @@ import {
   _resetExaToolsRegistration,
 } from "../core/exa/index.ts";
 import { createMcpManifest } from "../core/mcp/manifest.ts";
+import { BOMBSELL_MCP_INSTRUCTIONS } from "../core/mcp/instructions.ts";
 import {
   registerProductTools,
   _resetProductToolsRegistration,
@@ -344,4 +345,28 @@ test("MCP manifest includes every registered product and graph tool", () => {
   const manifest = createMcpManifest(null);
 
   assert.deepEqual(manifest.tools, registered);
+});
+
+test("MCP manifest guides external agents through Brief, Agent, and Profile", () => {
+  registerGraphTools();
+  registerExaTools();
+  registerProductTools();
+  const manifest = createMcpManifest(null);
+
+  assert.equal(manifest.instructions, BOMBSELL_MCP_INSTRUCTIONS);
+  assert.deepEqual(manifest.product_surfaces, ["Brief", "Agent", "Profile"]);
+  assert.equal(manifest.recommended_entry_tool, "product.brief.get");
+  assert.ok(
+    BOMBSELL_MCP_INSTRUCTIONS.length < 2000,
+    "Claude Code tool-search instructions should stay concise",
+  );
+  for (const phrase of [
+    "qualified signals",
+    "verified contacts",
+    "email and LinkedIn outreach",
+    "approval policy",
+    "hot-path eval gate",
+  ]) {
+    assert.match(BOMBSELL_MCP_INSTRUCTIONS, new RegExp(phrase));
+  }
 });
