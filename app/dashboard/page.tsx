@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
@@ -46,6 +47,19 @@ interface BriefOutcomeInsight {
   signal_title: string | null;
   message_subject: string | null;
   reply_intent: string | null;
+}
+
+interface BriefHotContact {
+  id: string;
+  full_name: string;
+  title: string | null;
+  emails: string[];
+  linkedin_url: string | null;
+  company_name: string | null;
+  company_domain: string | null;
+  latest_signal_title: string;
+  latest_signal_kind: string;
+  last_signal_at: Date;
 }
 
 async function loadBriefActionState(workspaceId: string): Promise<BriefActionState> {
@@ -214,6 +228,44 @@ async function loadSignalKindMetrics(workspaceId: string): Promise<SignalKindMet
   }));
 }
 
+async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContact[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<BriefHotContact>(
+    `select p.id,
+            p.full_name,
+            p.title,
+            coalesce(p.emails, '{}'::text[]) as emails,
+            p.linkedin_url,
+            co.name as company_name,
+            co.domain::text as company_domain,
+            latest_signal.title as latest_signal_title,
+            latest_signal.kind as latest_signal_kind,
+            latest_signal.signal_at as last_signal_at
+       from graph_persons p
+       left join graph_companies co on co.id = p.company_id
+       join lateral (
+         select s.title,
+                s.kind::text as kind,
+                coalesce(s.ingested_at, s.freshness_at) as signal_at
+           from signals s
+          where s.workspace_id = $1
+            and s.status in ('matched','in_play')
+            and (
+              s.related_person_id = p.id
+              or (p.company_id is not null and s.related_company_id = p.company_id)
+            )
+          order by coalesce(s.ingested_at, s.freshness_at) desc
+          limit 1
+       ) latest_signal on true
+      where p.workspace_id = $1
+        and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
+      order by latest_signal.signal_at desc
+      limit 4`,
+    [workspaceId],
+  );
+  return rows;
+}
+
 async function loadBriefOutcomeInsights(
   workspaceId: string,
 ): Promise<BriefOutcomeInsight[]> {
@@ -269,18 +321,20 @@ export default async function BriefPage() {
       <BriefView
         actions={EMPTY_ACTION_STATE}
         signalKinds={[]}
+        hotContacts={[]}
         outcomeInsights={[]}
         workspaceName="there"
       />
     );
   }
-  const { actions, signalKinds, outcomeInsights } = await loadBriefState(
+  const { actions, signalKinds, hotContacts, outcomeInsights } = await loadBriefState(
     session.workspace.id,
   );
   return (
     <BriefView
       actions={actions}
       signalKinds={signalKinds}
+      hotContacts={hotContacts}
       outcomeInsights={outcomeInsights}
       workspaceName={session.workspace.name}
     />
@@ -292,29 +346,38 @@ async function loadBriefState(
 ): Promise<{
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
+  hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
 }> {
   try {
-    const [actions, signalKinds, outcomeInsights] = await Promise.all([
+    const [actions, signalKinds, hotContacts, outcomeInsights] = await Promise.all([
       loadBriefActionState(workspaceId),
       loadSignalKindMetrics(workspaceId),
+      loadBriefHotContacts(workspaceId),
       loadBriefOutcomeInsights(workspaceId),
     ]);
-    return { actions, signalKinds, outcomeInsights };
+    return { actions, signalKinds, hotContacts, outcomeInsights };
   } catch (err) {
     console.error("[dashboard/brief] failed to load brief state", err);
-    return { actions: EMPTY_ACTION_STATE, signalKinds: [], outcomeInsights: [] };
+    return {
+      actions: EMPTY_ACTION_STATE,
+      signalKinds: [],
+      hotContacts: [],
+      outcomeInsights: [],
+    };
   }
 }
 
 function BriefView({
   actions,
   signalKinds,
+  hotContacts,
   outcomeInsights,
   workspaceName,
 }: {
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
+  hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   workspaceName: string;
 }) {
@@ -410,6 +473,34 @@ function BriefView({
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <SurfaceSection
+          title="Fresh qualified contacts"
+          action={
+            <Link href="/dashboard/agent#verified-contacts" className="btn-quiet-sm">
+              <Icon name="arrow_forward" size={14} />
+              View contacts
+            </Link>
+          }
+        >
+          {hotContacts.length === 0 ? (
+            <EmptyState
+              title="No signal-backed contacts yet"
+              hint="Once qualified signals resolve to verified emails or LinkedIn profiles, the freshest people will appear here."
+              cta={{
+                href: "/dashboard/agent#opportunities",
+                label: "Review signals",
+                icon: "person_search",
+              }}
+            />
+          ) : (
+            <div className="grid gap-2">
+              {hotContacts.map((contact) => (
+                <BriefHotContactRow key={contact.id} contact={contact} />
+              ))}
+            </div>
+          )}
+        </SurfaceSection>
+
         <SurfaceSection title="Signal mix">
           {signalKinds.length === 0 ? (
             <EmptyState
@@ -425,22 +516,22 @@ function BriefView({
             </div>
           )}
         </SurfaceSection>
-
-        <aside className="section-note h-fit">
-          <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Agent insight
-          </p>
-          <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
-            {totalSent7d === 0
-              ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals become verified contacts and judged drafts."
-              : `${totalSent7d} emails or DMs went out in the last week. ${actions.replies_7d} got useful replies, ${actions.meetings_7d} became meetings, and the current reply rate is ${replyRate}%.`}
-          </p>
-          <Link href="/dashboard/agent#outreach" className="btn-solid-sm mt-4 w-fit">
-            <Icon name="arrow_forward" size={14} />
-            Open Agent
-          </Link>
-        </aside>
       </section>
+
+      <aside className="section-note">
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          Agent insight
+        </p>
+        <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
+          {totalSent7d === 0
+            ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals become verified contacts and judged drafts."
+            : `${totalSent7d} emails or DMs went out in the last week. ${actions.replies_7d} got useful replies, ${actions.meetings_7d} became meetings, and the current reply rate is ${replyRate}%.`}
+        </p>
+        <Link href="/dashboard/agent#outreach" className="btn-solid-sm mt-4 w-fit">
+          <Icon name="arrow_forward" size={14} />
+          Open Agent
+        </Link>
+      </aside>
 
       <div id="reply-insights" className="scroll-mt-28">
         <SurfaceSection title="Reply and meeting insights">
@@ -464,6 +555,67 @@ function BriefView({
         </SurfaceSection>
       </div>
     </div>
+  );
+}
+
+function BriefHotContactRow({ contact }: { contact: BriefHotContact }) {
+  const company = contact.company_name ?? contact.company_domain ?? "Unknown company";
+  const signalKind = contact.latest_signal_kind.replace(/_/g, " ");
+  return (
+    <Link
+      href={`/dashboard/prospects/${contact.id}`}
+      prefetch={false}
+      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+    >
+      <span className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+          <Icon name="person_search" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {contact.full_name}
+            <span className="font-normal text-[var(--color-text-3)]">
+              {" "}
+              at {company}
+            </span>
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {contact.title ?? "Role unknown"}
+          </span>
+          <span className="mt-2 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+            <span className="font-medium text-[var(--color-text-2)]">Why now:</span>{" "}
+            {contact.latest_signal_title}
+          </span>
+          <span className="mt-2 flex flex-wrap gap-2">
+            <ContactSignalPill icon="sensors">{signalKind}</ContactSignalPill>
+            <ContactSignalPill icon="mail">
+              {contact.emails.length > 0 ? "Verified email" : "Email pending"}
+            </ContactSignalPill>
+            <ContactSignalPill icon="linkedin">
+              {contact.linkedin_url ? "LinkedIn profile" : "LinkedIn pending"}
+            </ContactSignalPill>
+          </span>
+        </span>
+      </span>
+      <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+        {freshWhen(contact.last_signal_at)}
+      </span>
+    </Link>
+  );
+}
+
+function ContactSignalPill({
+  icon,
+  children,
+}: {
+  icon: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+      <Icon name={icon} size={12} />
+      {children}
+    </span>
   );
 }
 
