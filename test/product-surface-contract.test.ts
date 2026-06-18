@@ -620,19 +620,24 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Judged drafts/);
   assert.match(reps, /OperatingLoopChannel/);
   assert.match(reps, /sent 7d/);
-  assert.match(reps, /AgentModeCards/);
-  assert.match(reps, /Agent launch modes/);
-  assert.match(reps, /Signal Agent/);
-  assert.match(reps, /Watches launch, hiring, funding, competitor, and LinkedIn intent signals/);
-  assert.match(reps, /Outreach Agent/);
-  assert.match(reps, /Turns qualified signals into verified email or LinkedIn contacts/);
-  assert.match(reps, /Open signal queue/);
-  assert.match(reps, /Review outreach/);
+  assert.match(reps, /AgentSystemPanel/);
+  assert.match(reps, /SystemStatusCard/);
+  assert.match(reps, /System status/);
+  assert.match(reps, /Ready to send/);
+  assert.match(reps, /Outreach gated/);
+  assert.match(reps, /Signal sources/);
+  assert.match(reps, /Outreach rules/);
+  assert.match(reps, /Learning loop/);
+  assert.match(reps, /Agent controls/);
+  assert.match(reps, /Channel health/);
+  assert.match(reps, /Voice, limits, account connections, and contact-quality rules/);
+  assert.match(reps, /Bombsell sends only through connected accounts with explicit caps/);
+  assert.match(reps, /Check sources/);
+  assert.match(reps, /Optimize messages/);
+  assert.match(reps, /value="\/dashboard\/agent#replies"/);
   assert.match(reps, /workspaceChannelCoverage/);
-  assert.match(reps, /firstChannelPolicy\(rep, \["linkedin_dm", "linkedin"\]\)/);
+  assert.match(reps, /firstChannelPolicy\(primaryAgent, \["linkedin_dm", "linkedin"\]\)/);
   assert.match(reps, /Outreach paths/);
-  assert.match(reps, /Agent setup/);
-  assert.match(reps, /AgentSetupSummary/);
   assert.match(reps, /AgentModeControl/);
   assert.match(reps, /agentOperatingMode/);
   assert.match(reps, /Operating mode/);
@@ -642,22 +647,26 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /name="autonomy_mode" value="autonomous"/);
   assert.match(reps, /name="autonomy_mode" value="review_only"/);
   assert.match(reps, /Tune in Profile/);
-  assert.match(reps, /Voice, accounts, and limits stay in Profile/);
-  assert.match(reps, /Channels and limits/);
+  assert.doesNotMatch(reps, /<AgentModeCards/);
+  assert.doesNotMatch(reps, /<AgentReadinessPanel/);
+  assert.doesNotMatch(reps, /<AgentStrategyPanel/);
+  assert.doesNotMatch(reps, /<AgentSequencePanel/);
+  assert.doesNotMatch(reps, /<AgentLearningPanel/);
+  assert.doesNotMatch(reps, /<AgentSetupSummary/);
   assert.ok(
     reps.indexOf("<AgentOutreachPanel outreach={state.outreach} />") <
-      reps.indexOf("<AgentReadinessPanel readiness={state.readiness} />"),
-    "sent outreach must appear before readiness so Agent opens on execution evidence",
+      reps.indexOf("<AgentOpportunityPanel opportunities={state.opportunities} />"),
+    "sent outreach must appear before qualified-signal work so Agent opens on execution evidence",
   );
   assert.ok(
     reps.indexOf("<AgentOpportunityPanel opportunities={state.opportunities} />") <
-      reps.indexOf("<AgentStrategyPanel strategy={state.strategy} />"),
-    "qualified signals must appear before source strategy on the Agent surface",
+      reps.indexOf("<AgentContactsPanel contacts={state.contacts} />"),
+    "qualified signals must appear before the contact workbench on the Agent surface",
   );
   assert.ok(
     reps.indexOf("<AgentContactsPanel contacts={state.contacts} />") <
-      reps.indexOf("<AgentSequencePanel sequence={sequence} />"),
-    "verified contacts must appear before sequence internals on the Agent surface",
+      reps.indexOf("<AgentSystemPanel"),
+    "verified contacts must appear before compact system controls on the Agent surface",
   );
   assert.match(reps, /href="\/dashboard\/profile#agent"/);
   assert.match(reps, /\/dashboard\/profile#channels/);
@@ -665,8 +674,6 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /\/dashboard\/profile#linkedin/);
   assert.match(reps, /Connect Outlook/);
   assert.match(reps, /Connect LinkedIn/);
-  assert.match(reps, /Edit voice/);
-  assert.match(reps, /Replies 7d/);
   assert.doesNotMatch(reps, /Active agents/);
   assert.doesNotMatch(reps, /Open agent/);
   assert.doesNotMatch(reps, /function RepCard/);

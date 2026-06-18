@@ -985,14 +985,6 @@ export default async function RepsPage() {
         coverage={coverage}
       />
 
-      <AgentModeCards
-        strategy={state.strategy}
-        opportunities={state.opportunities}
-        contacts={state.contacts}
-        outreach={state.outreach}
-        coverage={coverage}
-      />
-
       <AgentOutreachPanel outreach={state.outreach} />
 
       <AgentRepliesPanel replies={state.replies} />
@@ -1001,41 +993,14 @@ export default async function RepsPage() {
 
       <AgentContactsPanel contacts={state.contacts} />
 
-      <AgentReadinessPanel readiness={state.readiness} />
-
-      <AgentStrategyPanel strategy={state.strategy} />
-
-      <AgentSequencePanel sequence={sequence} />
-
-      <AgentLearningPanel learning={state.learning} />
-
-      <SurfaceSection
-        title="Agent setup"
-        action={
-          <Link href="/dashboard/profile#agent" className="btn-solid-sm">
-            <Icon name="edit_note" size={14} />
-            Tune in Profile
-          </Link>
-        }
-      >
-        {!primaryAgent ? (
-          <EmptyState
-            title="No agent configured yet."
-            hint="Start by defining the workspace profile, audience, voice, and approval mode."
-            cta={{
-              href: "/dashboard/profile#agent",
-              label: "Configure agent",
-              icon: "badge",
-            }}
-          />
-        ) : (
-          <AgentSetupSummary
-            rep={primaryAgent}
-            reps={visibleReps}
-            coverage={coverage}
-          />
-        )}
-      </SurfaceSection>
+      <AgentSystemPanel
+        readiness={state.readiness}
+        strategy={state.strategy}
+        sequence={sequence}
+        learning={state.learning}
+        primaryAgent={primaryAgent}
+        coverage={coverage}
+      />
     </div>
   );
 }
@@ -1129,6 +1094,248 @@ function emptyRepsState(workspaceId: string): RepsState {
       recommended_patterns: 0,
     },
   };
+}
+
+function AgentSystemPanel({
+  readiness,
+  strategy,
+  sequence,
+  learning,
+  primaryAgent,
+  coverage,
+}: {
+  readiness: WorkspaceLaunchReadiness;
+  strategy: AgentSourceStrategy;
+  sequence: AgentSequenceStep[];
+  learning: AgentLearningSummary;
+  primaryAgent: RepRow | null;
+  coverage: ChannelCoverage;
+}) {
+  const activeSources = strategy.sources.filter((source) => source.enabled).length;
+  const readyChecks = readiness.checks.filter(
+    (check) => check.status === "ready",
+  ).length;
+  const next = readinessNextAction(readiness);
+  const emailPolicy = primaryAgent?.autonomy?.channels?.email;
+  const linkedInPolicy = primaryAgent
+    ? firstChannelPolicy(primaryAgent, ["linkedin_dm", "linkedin"])
+    : undefined;
+  const operatingMode = primaryAgent
+    ? agentOperatingMode(emailPolicy, linkedInPolicy)
+    : null;
+  const learningCount =
+    learning.positive_replies_7d +
+    learning.meetings_7d +
+    learning.recommended_patterns;
+  return (
+    <SurfaceSection
+      title="System status"
+      action={
+        <Link href="/dashboard/profile#agent" className="btn-quiet-sm">
+          <Icon name="edit_note" size={14} />
+          Tune in Profile
+        </Link>
+      }
+    >
+      <div className="grid gap-3 lg:grid-cols-4">
+        <SystemStatusCard
+          icon={readiness.launch_ready ? "check_circle" : "sync_problem"}
+          title={readiness.launch_ready ? "Ready to send" : "Outreach gated"}
+          value={`${readyChecks}/${Math.max(readyChecks, readiness.checks.length)} checks`}
+          detail={
+            readiness.blockers[0] ??
+            readiness.warnings[0] ??
+            "Profile, sources, channels, and approval gates are healthy."
+          }
+          href={next.href}
+          action={next.label}
+          ready={readiness.launch_ready}
+        />
+        <SystemStatusCard
+          icon="sensors"
+          title="Signal sources"
+          value={`${activeSources} active`}
+          detail={
+            strategy.sources[0]?.name ??
+            "Profile setup creates launch, hiring, funding, and competitor sources."
+          }
+          href="/dashboard/agent#opportunities"
+          action="Open signals"
+          ready={activeSources > 0}
+        />
+        <SystemStatusCard
+          icon="rule"
+          title="Outreach rules"
+          value={`${sequence.length} path${sequence.length === 1 ? "" : "s"}`}
+          detail={
+            coverage.email.connected || coverage.linkedIn.connected
+              ? "Email and LinkedIn sends follow connected-account caps and approval gates."
+              : "Connect Outlook or LinkedIn before the agent can send."
+          }
+          href="/dashboard/profile#channels"
+          action="Review channels"
+          ready={coverage.email.connected || coverage.linkedIn.connected}
+        />
+        <SystemStatusCard
+          icon="auto_graph"
+          title="Learning loop"
+          value={`${learningCount} signal${learningCount === 1 ? "" : "s"}`}
+          detail={
+            learning.strategy_summary ??
+            learning.skill_summary ??
+            "Replies and meetings teach the agent which signals and messages to scale."
+          }
+          href="/dashboard/agent#replies"
+          action="Review replies"
+          ready={learningCount > 0}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Agent controls
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                Voice, limits, account connections, and contact-quality rules
+                stay in Profile so the Agent page remains an execution surface.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <form action={checkAgentSourcesAction}>
+                <input type="hidden" name="return_to" value="/dashboard/agent" />
+                <input type="hidden" name="limit" value="25" />
+                <PendingSubmitButton
+                  className="btn-quiet-sm"
+                  icon="sync_alt"
+                  iconSize={14}
+                  pendingLabel="Checking"
+                >
+                  Check sources
+                </PendingSubmitButton>
+              </form>
+              <form action={optimizePlaySkillsAction}>
+                <input type="hidden" name="return_to" value="/dashboard/agent#replies" />
+                <input type="hidden" name="lookback_days" value="30" />
+                <input type="hidden" name="min_samples" value="3" />
+                <PendingSubmitButton
+                  className="btn-quiet-sm"
+                  icon="science"
+                  iconSize={14}
+                  pendingLabel="Optimizing"
+                >
+                  Optimize messages
+                </PendingSubmitButton>
+              </form>
+            </div>
+          </div>
+          {operatingMode ? (
+            <div className="mt-4">
+              <AgentModeControl mode={operatingMode} />
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+              Configure the outbound agent in Profile before enabling
+              autonomous outreach.
+            </div>
+          )}
+        </div>
+
+        <div className="section-note">
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Channel health
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            Bombsell sends only through connected accounts with explicit caps.
+          </p>
+          <div className="mt-4 grid gap-2">
+            <AgentChannelPill
+              title="Email"
+              icon="mail"
+              connection={coverage.email}
+              policy={emailPolicy}
+            />
+            <AgentChannelPill
+              title="LinkedIn"
+              icon="linkedin"
+              connection={coverage.linkedIn}
+              policy={linkedInPolicy}
+            />
+          </div>
+        </div>
+      </div>
+    </SurfaceSection>
+  );
+}
+
+function SystemStatusCard({
+  icon,
+  title,
+  value,
+  detail,
+  href,
+  action,
+  ready,
+}: {
+  icon: string;
+  title: string;
+  value: string;
+  detail: string;
+  href: string;
+  action: string;
+  ready: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      className="group grid gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span
+          className={
+            "grid size-9 place-items-center rounded-[8px] " +
+            (ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+          }
+        >
+          <Icon name={icon} size={17} />
+        </span>
+        <span
+          className={
+            "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+            (ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-warn-bg)] text-[var(--color-warn)]")
+          }
+        >
+          {ready ? "Ready" : "Needs setup"}
+        </span>
+      </span>
+      <span>
+        <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+          {title}
+        </span>
+        <span className="mt-1 block text-xl font-semibold tabular-nums text-[var(--color-text-1)]">
+          {value}
+        </span>
+        <span className="mt-2 block line-clamp-3 text-xs leading-5 text-[var(--color-text-3)]">
+          {detail}
+        </span>
+      </span>
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)]">
+        {action}
+        <Icon
+          name="arrow_forward"
+          size={13}
+          className="transition-transform group-hover:translate-x-0.5"
+        />
+      </span>
+    </Link>
+  );
 }
 
 function AgentStrategyPanel({ strategy }: { strategy: AgentSourceStrategy }) {
