@@ -67,6 +67,25 @@ Example user prompts:
 - "After I merge this feature, refresh Bombsell sources and suggest who we
   should contact."
 
+## Launch Decision
+
+Build this as a Claude Code plugin, not a loose `.mcp.json` snippet.
+
+The plugin should ship:
+
+- a bundled remote HTTP MCP configuration pointed at Bombsell's existing
+  `/api/mcp` endpoint
+- six namespaced skills that guide users through Brief, Profile, launch
+  readiness, qualified signals, outreach preparation, and reply learning
+- two optional read-mostly subagents for GTM operation and outreach review
+- opt-in hooks for release/commit workflows after the core plugin is trusted
+- a private marketplace first, then the Claude community marketplace after
+  validation and partner dogfood
+
+This gives Claude Code users a native `/bombsell:*` workflow while preserving
+Bombsell as the system of record for auth, workspace scope, verified contacts,
+approval gates, evals, and channel sending.
+
 ## Plugin Shape
 
 Repository/package name:

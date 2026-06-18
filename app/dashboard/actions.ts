@@ -731,7 +731,6 @@ export async function decideApprovalWithDraftAction(formData: FormData) {
 function revalidateProductPaths() {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/agent");
-  revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/health");
   revalidatePath("/dashboard/profile");
 }

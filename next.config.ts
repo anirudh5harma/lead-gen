@@ -60,6 +60,16 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: "/dashboard/review",
+        destination: "/dashboard/agent#opportunities",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/approvals",
+        destination: "/dashboard/agent#opportunities",
+        permanent: false,
+      },
+      {
         source: "/dashboard/outcomes",
         destination: "/dashboard/brief",
         permanent: false,

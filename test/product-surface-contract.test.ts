@@ -156,6 +156,14 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
     /redirect\("\/dashboard\/agent#outreach"\)/,
   );
   assert.match(
+    source("app/dashboard/review/page.tsx"),
+    /redirect\("\/dashboard\/agent#opportunities"\)/,
+  );
+  assert.match(
+    source("app/dashboard/approvals/page.tsx"),
+    /redirect\("\/dashboard\/agent#opportunities"\)/,
+  );
+  assert.match(
     source("app/dashboard/outcomes/page.tsx"),
     /redirect\("\/dashboard\/brief"\)/,
   );
@@ -184,6 +192,8 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/prospects"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospects\/:id"/);
   assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
+  assert.match(nextConfig, /source: "\/dashboard\/review"/);
+  assert.match(nextConfig, /source: "\/dashboard\/approvals"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
   assert.match(nextConfig, /source: "\/dashboard\/integrations"/);
   assert.match(nextConfig, /destination: "\/dashboard\/brief"/);
@@ -198,6 +208,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   const actions = source("app/dashboard/actions.ts");
   assert.match(actions, /revalidatePath\("\/dashboard\/profile"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/settings"\)/);
+  assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/review"\)/);
   assert.match(actions, /revalidatePath\("\/dashboard\/agent"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/prospecting"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/setup"\)/);
@@ -1065,10 +1076,11 @@ test("Health trace labels use product-facing names", () => {
   const health = source("app/dashboard/health/page.tsx");
 
   assert.match(health, /`Agent \$\{shortId\(refs\.rep_id\)\}`/);
-  assert.match(health, /`Sequence \$\{shortId\(refs\.play_id\)\}`/);
+  assert.match(health, /`Path \$\{shortId\(refs\.play_id\)\}`/);
   assert.match(health, /`Result \$\{shortId\(refs\.outcome_id\)\}`/);
   assert.doesNotMatch(health, /`Rep \$\{shortId\(refs\.rep_id\)\}`/);
   assert.doesNotMatch(health, /`Play \$\{shortId\(refs\.play_id\)\}`/);
+  assert.doesNotMatch(health, /`Sequence \$\{shortId\(refs\.play_id\)\}`/);
   assert.doesNotMatch(health, /`Outcome \$\{shortId\(refs\.outcome_id\)\}`/);
 });
 

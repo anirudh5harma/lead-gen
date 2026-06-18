@@ -16,9 +16,9 @@ test("Agent opportunity review lookup uses indexed pending approval message look
   assert.match(migration, /workspace_id, \(payload->>'message_id'\), created_at desc/);
 });
 
-test("review message join stays scoped to the approval workspace", () => {
-  const page = readFileSync(join(root, "app/dashboard/review/page.tsx"), "utf8");
+test("Agent approval message join stays scoped to the approval workspace", () => {
+  const page = readFileSync(join(root, "core/product/qualified-signals.ts"), "utf8");
 
-  assert.match(page, /m\.workspace_id = a\.workspace_id/);
-  assert.match(page, /m\.id = \(a\.payload->>'message_id'\)::uuid/);
+  assert.match(page, /where a\.workspace_id = c\.workspace_id/);
+  assert.match(page, /a\.payload->>'message_id' = m\.id::text/);
 });

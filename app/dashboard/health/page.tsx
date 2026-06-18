@@ -381,7 +381,7 @@ function primitiveRefLabels(trace: AgentTraceSummary): string[] {
   return [
     refs.rep_id ? `Agent ${shortId(refs.rep_id)}` : null,
     refs.signal_id ? `Signal ${shortId(refs.signal_id)}` : null,
-    refs.play_id ? `Sequence ${shortId(refs.play_id)}` : null,
+    refs.play_id ? `Path ${shortId(refs.play_id)}` : null,
     refs.conversation_id ? `Conversation ${shortId(refs.conversation_id)}` : null,
     refs.outcome_id ? `Result ${shortId(refs.outcome_id)}` : null,
   ].filter((value): value is string => Boolean(value));
