@@ -283,6 +283,15 @@ test("Settings presents separate Outlook and LinkedIn connection gates", () => {
     /kind in \('linkedin_session','linkedin_oauth'\)/,
   );
   assert.match(settings, /Profile, channels, and guardrails/);
+  assert.match(settings, /Activation map/);
+  assert.match(settings, /Website, profile, channels, and contacts in one loop/);
+  assert.match(settings, /Website profile/);
+  assert.match(settings, /Buyer fit/);
+  assert.match(settings, /Reachable contacts/);
+  assert.match(settings, /Email \+ LinkedIn/);
+  assert.match(settings, /Control mode/);
+  assert.match(settings, /href="\/dashboard\/agent#opportunities"/);
+  assert.match(settings, /profile qualifies signals/);
   assert.match(settings, /Email integration/);
   assert.match(settings, /LinkedIn integration/);
   assert.match(settings, /verified contact or LinkedIn profile/);

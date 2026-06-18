@@ -346,6 +346,12 @@ export default async function SettingsPage() {
 
       <LaunchPathPanel readiness={readiness} />
 
+      <ProfileActivationMap
+        profile={profile}
+        state={state}
+        mode={mode}
+      />
+
       <SettingsChecklist
         profile={profile}
         outlookAccount={state.outlookAccount}
@@ -473,6 +479,136 @@ export default async function SettingsPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+function ProfileActivationMap({
+  profile,
+  state,
+  mode,
+}: {
+  profile: ProductCompanyProfile | null;
+  state: SettingsState;
+  mode: SettingsAutonomyMode;
+}) {
+  const website = profileWebsite(profile);
+  const connectedChannels = [
+    state.outlookAccount?.status === "connected" ? "email" : null,
+    state.linkedInAccount?.status === "connected" ? "LinkedIn" : null,
+  ].filter(Boolean);
+  const channelSummary =
+    connectedChannels.length > 0
+      ? connectedChannels.join(" + ")
+      : "Connect email or LinkedIn";
+  const contactSummary =
+    state.contactQuality.reachable > 0
+      ? `${state.contactQuality.reachable} reachable contacts`
+      : "Waiting on verified contacts";
+  const nodes = [
+    {
+      title: "Website profile",
+      detail: profile?.company_name
+        ? `${profile.company_name}${website ? ` - ${website}` : ""}`
+        : "Enter the company website so the agent knows what you sell.",
+      href: "#profile",
+      icon: "add_business",
+      ready: Boolean(profile?.company_name && website),
+    },
+    {
+      title: "Buyer fit",
+      detail: state.icp?.name
+        ? `${state.icp.name} with ${Math.round(Number(state.icp.match_threshold) * 100)}% match gate`
+        : "Define the ICP that quality signals must match.",
+      href: "#agent",
+      icon: "person_search",
+      ready: Boolean(state.icp && state.rep),
+    },
+    {
+      title: "Reachable contacts",
+      detail: `${contactSummary}; ${state.contactQuality.verifiedEmails} verified emails and ${state.contactQuality.linkedInProfiles} LinkedIn profiles.`,
+      href: "#contact-quality",
+      icon: "verified",
+      ready: state.contactQuality.reachable > 0,
+    },
+    {
+      title: "Email + LinkedIn",
+      detail: channelSummary,
+      href: "#channels",
+      icon: "hub",
+      ready: connectedChannels.length > 0,
+    },
+    {
+      title: "Control mode",
+      detail:
+        mode === "review_only"
+          ? "Human review before every outbound move."
+          : mode === "custom"
+            ? "Mixed policies; choose one posture before launch."
+            : "Autonomous after evals, caps, and channel checks.",
+      href: "#autonomy",
+      icon: "task_alt",
+      ready: mode !== "custom",
+    },
+  ];
+  return (
+    <section className="section-note grid gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Activation map
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Website, profile, channels, and contacts in one loop.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            This is the setup spine: the website shapes the buyer profile, the
+            profile qualifies signals, verified contacts decide the channel,
+            and control mode decides whether the agent can send.
+          </p>
+        </div>
+        <Link href="/dashboard/agent#opportunities" prefetch={false} className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          See qualified signals
+        </Link>
+      </div>
+      <div className="grid gap-3 xl:grid-cols-5">
+        {nodes.map((node, index) => (
+          <Link
+            key={node.title}
+            href={node.href}
+            prefetch={false}
+            className="group relative grid min-h-[154px] gap-3 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+                <Icon name={node.icon} size={16} />
+              </span>
+              <span className="flex items-center gap-2">
+                <StatusPill ready={node.ready} />
+                {index < nodes.length - 1 ? (
+                  <Icon
+                    name="arrow_forward"
+                    size={14}
+                    className="hidden text-[var(--color-text-4)] xl:block"
+                  />
+                ) : null}
+              </span>
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+                {node.title}
+              </span>
+              <span className="mt-1 line-clamp-3 block text-xs leading-5 text-[var(--color-text-3)]">
+                {node.detail}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
