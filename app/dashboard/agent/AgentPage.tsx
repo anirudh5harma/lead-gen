@@ -121,8 +121,21 @@ interface AgentOutreachRow {
   signal_title: string | null;
 }
 
+interface AgentAcceptedConnectionFollowupRow {
+  accepted_event_id: string;
+  conversation_id: string | null;
+  person_id: string | null;
+  full_name: string;
+  title: string | null;
+  linkedin_url: string | null;
+  company_name: string | null;
+  signal_title: string | null;
+  accepted_at: Date;
+}
+
 interface AgentOutreachSummary {
   recent: AgentOutreachRow[];
+  accepted_followups: AgentAcceptedConnectionFollowupRow[];
   email_sent_7d: number;
   linkedin_sent_7d: number;
   linkedin_invites_7d: number;
@@ -909,7 +922,7 @@ async function loadAgentOutreachSummary(
   workspaceId: string,
 ): Promise<AgentOutreachSummary> {
   const pool = getPool();
-  const [recent, summary] = await Promise.all([
+  const [recent, summary, acceptedFollowups] = await Promise.all([
     pool.query<AgentOutreachRow>(
       `select m.id,
               m.conversation_id,
@@ -1029,9 +1042,81 @@ async function loadAgentOutreachSummary(
               and coalesce(sent_at, created_at) >= now() - interval '14 days') as awaiting_reply`,
       [workspaceId],
     ),
+    pool.query<AgentAcceptedConnectionFollowupRow>(
+      `with accepted as (
+         select e.id as accepted_event_id,
+                e.payload->>'conversation_id' as payload_conversation_id,
+                e.payload->>'person_id' as payload_person_id,
+                e.payload->>'profile_url' as profile_url,
+                coalesce(nullif(e.payload->>'accepted_at', '')::timestamptz, e.occurred_at) as accepted_at
+           from events e
+          where e.workspace_id = $1
+            and e.event_type = 'linkedin.connection.accepted'
+            and coalesce(nullif(e.payload->>'accepted_at', '')::timestamptz, e.occurred_at) >= now() - interval '14 days'
+       )
+       select accepted.accepted_event_id,
+              c.id::text as conversation_id,
+              p.id::text as person_id,
+              coalesce(p.full_name, 'LinkedIn contact') as full_name,
+              p.title,
+              coalesce(p.linkedin_url, accepted.profile_url) as linkedin_url,
+              co.name as company_name,
+              s.title as signal_title,
+              accepted.accepted_at
+         from accepted
+         left join graph_persons p
+           on p.workspace_id = $1
+          and (
+            p.id::text = accepted.payload_person_id
+            or (
+              accepted.profile_url is not null
+              and p.linkedin_url = accepted.profile_url
+            )
+          )
+         left join graph_companies co on co.id = p.company_id
+         left join lateral (
+           select c.id,
+                  c.origin_signal_id
+             from conversations c
+            where c.workspace_id = $1
+              and (
+                c.id::text = accepted.payload_conversation_id
+                or (
+                  p.id is not null
+                  and c.counterparty_person_id = p.id
+                )
+              )
+            order by case
+                       when c.id::text = accepted.payload_conversation_id then 0
+                       else 1
+                     end,
+                     c.last_activity_at desc
+            limit 1
+         ) c on true
+         left join signals s
+           on s.workspace_id = $1
+          and s.id = c.origin_signal_id
+         left join lateral (
+           select m.id
+             from messages m
+            where m.workspace_id = $1
+              and c.id is not null
+              and m.conversation_id = c.id
+              and m.direction = 'outbound'
+              and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_comment')
+              and coalesce(m.sent_at, m.created_at) >= accepted.accepted_at
+            order by coalesce(m.sent_at, m.created_at) desc
+            limit 1
+         ) followup on true
+        where followup.id is null
+        order by accepted.accepted_at desc
+        limit 5`,
+      [workspaceId],
+    ),
   ]);
   return {
     recent: recent.rows,
+    accepted_followups: acceptedFollowups.rows,
     email_sent_7d: Number(summary.rows[0]?.email_sent_7d ?? 0),
     linkedin_sent_7d: Number(summary.rows[0]?.linkedin_sent_7d ?? 0),
     linkedin_invites_7d: Number(summary.rows[0]?.linkedin_invites_7d ?? 0),
@@ -1497,6 +1582,7 @@ function emptyRepsState(workspaceId: string): RepsState {
     },
     outreach: {
       recent: [],
+      accepted_followups: [],
       email_sent_7d: 0,
       linkedin_sent_7d: 0,
       linkedin_invites_7d: 0,
@@ -3866,6 +3952,10 @@ function AgentOutreachPanel({
           <div className="grid gap-4">
             <ChannelPerformancePanel outreach={outreach} />
 
+            {outreach.accepted_followups.length > 0 ? (
+              <AcceptedConnectionFollowups rows={outreach.accepted_followups} />
+            ) : null}
+
             {outreach.recent.length === 0 ? (
               <EmptyState
                 title="No sent outreach yet"
@@ -3888,6 +3978,91 @@ function AgentOutreachPanel({
       </SurfaceSection>
     </div>
   );
+}
+
+function AcceptedConnectionFollowups({
+  rows,
+}: {
+  rows: AgentAcceptedConnectionFollowupRow[];
+}) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Accepted connections to follow up
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            LinkedIn accepts without a later DM, InMail, or comment in the same
+            person trace.
+          </p>
+        </div>
+        <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs font-medium text-[var(--color-pos)]">
+          {rows.length} ready
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {rows.map((row) => (
+          <AcceptedConnectionFollowupLink
+            key={row.accepted_event_id}
+            row={row}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AcceptedConnectionFollowupLink({
+  row,
+}: {
+  row: AgentAcceptedConnectionFollowupRow;
+}) {
+  return (
+    <Link
+      href={acceptedConnectionHref(row)}
+      prefetch={false}
+      className="grid gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+    >
+      <span className="flex min-w-0 items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
+          <BrandIcon name="linkedin" size={15} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {row.full_name}
+            {row.company_name ? (
+              <span className="font-normal text-[var(--color-text-3)]">
+                {" "}
+                at {row.company_name}
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+            {row.signal_title ??
+              row.title ??
+              "Accepted the LinkedIn connection request."}
+          </span>
+        </span>
+      </span>
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          DM follow-up due
+        </span>
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(row.accepted_at)}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function acceptedConnectionHref(
+  row: AgentAcceptedConnectionFollowupRow,
+): string {
+  if (row.conversation_id) return `/dashboard/conversations/${row.conversation_id}`;
+  if (row.person_id) return `/dashboard/agent/contacts/${row.person_id}`;
+  return "/dashboard/agent#outreach";
 }
 
 function ChannelPerformancePanel({

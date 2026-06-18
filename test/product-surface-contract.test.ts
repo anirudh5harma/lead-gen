@@ -686,6 +686,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /LinkedIn invites/);
   assert.match(reps, /Accepted/);
   assert.match(reps, /LinkedIn messages/);
+  assert.match(reps, /accepted_followups/);
+  assert.match(reps, /Accepted connections to follow up/);
+  assert.match(reps, /AcceptedConnectionFollowups/);
+  assert.match(reps, /AcceptedConnectionFollowupLink/);
+  assert.match(reps, /DM follow-up due/);
+  assert.match(reps, /acceptedConnectionHref/);
   assert.match(reps, /Native Outlook threads/);
   assert.match(reps, /Connection requests/);
   assert.match(reps, /DMs, InMail, and comments/);
@@ -696,6 +702,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /linkedin_invite_replies_7d/);
   assert.match(reps, /linkedin_message_replies_7d/);
   assert.match(reps, /event_type = 'linkedin\.connection\.accepted'/);
+  assert.match(reps, /m\.channel in \('linkedin_dm','linkedin_inmail','linkedin_comment'\)/);
+  assert.match(reps, /followup\.id is null/);
+  assert.match(reps, /coalesce\(nullif\(e\.payload->>'accepted_at', ''\)::timestamptz, e\.occurred_at\)/);
   assert.match(reps, /accepted\s+connections/);
   assert.match(reps, /Qualified signals become verified contacts/);
   assert.match(reps, /left join channel_accounts ca/);
