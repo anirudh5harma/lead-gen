@@ -341,6 +341,14 @@ const icons: Record<string, IconNode> = {
       <path d="M8.5 12.2l2.2 2.2 4.8-5" />
     </>
   ),
+  webhook: (
+    <>
+      <circle cx="7" cy="8" r="3" />
+      <circle cx="17" cy="8" r="3" />
+      <circle cx="12" cy="17" r="3" />
+      <path d="M9.7 9.8l1.5 3.8M14.3 9.8l-1.5 3.8M10 8h4" />
+    </>
+  ),
   warning: (
     <>
       <path d="M12 3l10 18H2z" />

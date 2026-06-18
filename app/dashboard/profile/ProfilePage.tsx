@@ -541,8 +541,8 @@ export default async function ProfilePage() {
         </div>
 
         <div id="tools">
-          <SurfaceSection title="Tool integrations">
-            <IntegrationPanel />
+          <SurfaceSection title="Output destinations">
+            <IntegrationPanel state={state} />
           </SurfaceSection>
         </div>
       </section>
@@ -1526,7 +1526,7 @@ function ProfileSectionNav({
     },
     {
       title: "Tools",
-      detail: "MCP and channel tools",
+      detail: "Output destinations",
       href: "#tools",
       icon: "account_tree",
       ready: true,
@@ -1627,29 +1627,193 @@ function AccountPanel({
   );
 }
 
-function IntegrationPanel() {
+function IntegrationPanel({ state }: { state: ProfileState }) {
+  const destinations = [
+    {
+      title: "Outlook",
+      category: "Email outreach",
+      detail: state.outlookAccount
+        ? `${outlookMailbox(state.outlookAccount)} sends native email and syncs replies.`
+        : "Connect Microsoft 365 so the agent can send email from your mailbox and read replies.",
+      href: "#email",
+      action: state.outlookAccount ? "Manage Outlook" : "Connect Outlook",
+      icon: <BrandIcon name="microsoft" size={16} />,
+      ready: state.outlookAccount?.status === "connected",
+      status: state.outlookAccount
+        ? statusLabel(state.outlookAccount.status)
+        : "Not connected",
+    },
+    {
+      title: "LinkedIn",
+      category: "Social outreach",
+      detail: state.linkedInAccount
+        ? `${state.linkedInAccount.display_name} can handle profile-backed connection requests and DMs.`
+        : "Connect LinkedIn so verified profiles can become connection requests, DMs, and reply traces.",
+      href: "#linkedin",
+      action: state.linkedInAccount ? "Manage LinkedIn" : "Connect LinkedIn",
+      icon: <BrandIcon name="linkedin" size={16} />,
+      ready: state.linkedInAccount?.status === "connected",
+      status: state.linkedInAccount
+        ? statusLabel(state.linkedInAccount.status)
+        : "Not connected",
+    },
+    {
+      title: "Bombsell MCP",
+      category: "Agent API",
+      detail:
+        "External agents can use the same workspace tools for profile, signals, contacts, and outreach through the MCP endpoint.",
+      href: "/api/mcp",
+      action: "Open endpoint",
+      icon: <Icon name="account_tree" size={16} />,
+      ready: true,
+      status: "Available",
+      code: "/api/mcp",
+    },
+    {
+      title: "Signal webhook",
+      category: "Automation intake",
+      detail:
+        "Push trusted buying-signal events into Bombsell so they enter the same qualification and contact-resolution path.",
+      href: "/api/webhooks/signals",
+      action: "View route",
+      icon: <Icon name="webhook" size={16} />,
+      ready: true,
+      status: "Available",
+      code: "/api/webhooks/signals",
+    },
+  ];
+  const planned = [
+    {
+      title: "CRM sync",
+      detail: "HubSpot, Pipedrive, Salesforce, Attio, and Folk should receive qualified contacts after send or reply proof exists.",
+      icon: "corporate_fare",
+    },
+    {
+      title: "Outreach tools",
+      detail: "Instantly, Smartlead, HeyReach, and SmartReach make sense as optional volume destinations after native channels are healthy.",
+      icon: "send",
+    },
+    {
+      title: "Team alerts",
+      detail: "Slack, Zapier, and outbound webhooks should announce hot contacts, replies, meetings, and blocked send reasons.",
+      icon: "hub",
+    },
+  ];
   return (
-    <div className="section-note grid gap-4">
-      <div className="flex items-start gap-3">
-        <span className="brief-note-icon shrink-0">
-          <Icon name="account_tree" size={18} />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            MCP server
-          </p>
-          <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-            External agents can use the same workspace tools through the MCP endpoint.
-          </p>
+    <div className="section-note grid gap-5">
+      <div>
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          Where qualified work can go
+        </p>
+        <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+          Bombsell routes quality signals into native outreach first, then opens
+          the same graph-backed tools to agent and webhook surfaces. CRM and
+          volume-tool sync stay explicit until those destinations are wired.
+        </p>
+      </div>
+
+      <div className="grid gap-3">
+        {destinations.map((destination) => (
+          <Link
+            key={destination.title}
+            href={destination.href}
+            prefetch={false}
+            className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+          >
+            <span className="flex items-start justify-between gap-3">
+              <span className="flex min-w-0 items-start gap-3">
+                <span
+                  className={
+                    "grid size-9 shrink-0 place-items-center rounded-[8px] " +
+                    (destination.ready
+                      ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                      : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
+                  }
+                >
+                  {destination.icon}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-[var(--color-text-1)]">
+                      {destination.title}
+                    </span>
+                    <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+                      {destination.category}
+                    </span>
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
+                    {destination.detail}
+                  </span>
+                  {destination.code ? (
+                    <span className="mt-2 inline-block rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-2)]">
+                      {destination.code}
+                    </span>
+                  ) : null}
+                </span>
+              </span>
+              <span className="flex shrink-0 flex-col items-end gap-2">
+                <span
+                  className={
+                    "rounded-[8px] px-2.5 py-1 text-[11px] font-medium " +
+                    (destination.ready
+                      ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                      : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+                  }
+                >
+                  {destination.status}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)]">
+                  {destination.action}
+                  <Icon
+                    name="arrow_forward"
+                    size={13}
+                    className="transition-transform group-hover:translate-x-0.5"
+                  />
+                </span>
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+
+      <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Next destination classes
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+              These match the output pipes users expect, but should ship as real
+              evented integrations rather than decorative install buttons.
+            </p>
+          </div>
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+            Planned
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {planned.map((item) => (
+            <div
+              key={item.title}
+              className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3"
+            >
+              <span className="flex items-start gap-2">
+                <span className="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
+                  <Icon name={item.icon} size={14} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold text-[var(--color-text-1)]">
+                    {item.title}
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+                    {item.detail}
+                  </span>
+                </span>
+              </span>
+            </div>
+          ))}
         </div>
       </div>
-      <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-xs text-[var(--color-text-2)]">
-        /api/mcp
-      </div>
-      <Link href="/api/mcp" prefetch={false} className="btn-quiet-sm w-fit">
-        <Icon name="arrow_forward" size={14} />
-        Open endpoint
-      </Link>
     </div>
   );
 }

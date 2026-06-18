@@ -185,9 +185,11 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/prospects\/:id"/);
   assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
+  assert.match(nextConfig, /source: "\/dashboard\/integrations"/);
   assert.match(nextConfig, /destination: "\/dashboard\/brief"/);
   assert.match(nextConfig, /destination: "\/dashboard\/profile#profile"/);
   assert.match(nextConfig, /destination: "\/dashboard\/profile#channels"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/profile#tools"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#opportunities"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent\/contacts\/:id"/);
@@ -1147,7 +1149,18 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /First account/);
   assert.match(settings, /Second account/);
   assert.match(settings, /Account and limits/);
-  assert.match(settings, /Tool integrations/);
+  assert.match(settings, /Output destinations/);
+  assert.match(settings, /Where qualified work can go/);
+  assert.match(settings, /Email outreach/);
+  assert.match(settings, /Social outreach/);
+  assert.match(settings, /Agent API/);
+  assert.match(settings, /Automation intake/);
+  assert.match(settings, /\/api\/webhooks\/signals/);
+  assert.match(settings, /Next destination classes/);
+  assert.match(settings, /CRM sync/);
+  assert.match(settings, /Outreach tools/);
+  assert.match(settings, /Team alerts/);
+  assert.match(settings, /evented integrations rather than decorative install buttons/);
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Email and LinkedIn readiness/);
   assert.match(settings, /Value proposition/);
@@ -1201,7 +1214,7 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /id="agent"/);
   assert.match(settings, /id="motion"/);
   assert.match(settings, /id="tools"/);
-  assert.match(settings, /href="\/api\/mcp"/);
+  assert.match(settings, /href: "\/api\/mcp"/);
   assert.match(settings, /Agent inputs and outreach templates/);
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);
@@ -1255,7 +1268,7 @@ test("Integrations route folds into Profile", () => {
   const outlook = source("app/api/auth/outlook/route.ts");
   const linkedIn = source("app/api/auth/linkedin/route.ts");
 
-  assert.match(integrations, /redirect\("\/dashboard\/profile#channels"\)/);
+  assert.match(integrations, /redirect\("\/dashboard\/profile#tools"\)/);
   assert.doesNotMatch(integrations, /Connect Outlook/);
   assert.doesNotMatch(integrations, /Connect LinkedIn/);
   assert.doesNotMatch(integrations, /href="\/api\/mcp"/);

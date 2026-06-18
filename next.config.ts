@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/dashboard/integrations",
-        destination: "/dashboard/profile#channels",
+        destination: "/dashboard/profile#tools",
         permanent: false,
       },
       {
