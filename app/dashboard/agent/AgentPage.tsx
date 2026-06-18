@@ -1256,6 +1256,8 @@ function AgentSystemPanel({
         />
       </div>
 
+      <AgentGetStartedChecklist readiness={readiness} coverage={coverage} />
+
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1333,6 +1335,138 @@ function AgentSystemPanel({
       </div>
     </SurfaceSection>
   );
+}
+
+function AgentGetStartedChecklist({
+  readiness,
+  coverage,
+}: {
+  readiness: WorkspaceLaunchReadiness;
+  coverage: ChannelCoverage;
+}) {
+  const steps = [
+    {
+      title: "Profile and buyer fit",
+      detail: "Company context, buyer profile, and Agent voice are ready.",
+      blocked: "Complete Profile so signals can be matched and personalized.",
+      href: "/dashboard/profile#profile",
+      icon: "badge",
+      ready: launchChecksReady(readiness, ["workspace_profile", "icp", "rep"]),
+    },
+    {
+      title: "Email or LinkedIn account",
+      detail: channelSetupDetail(coverage),
+      blocked: "Connect Outlook or LinkedIn before outreach can leave.",
+      href: "/dashboard/profile#channels",
+      icon: "account_tree",
+      ready: coverage.email.connected || coverage.linkedIn.connected,
+    },
+    {
+      title: "Qualified signal sources",
+      detail: "The Agent is watching sources for fresh timing evidence.",
+      blocked: "Check sources so the Agent can find qualified signals.",
+      href: "/dashboard/agent#opportunities",
+      icon: "sensors",
+      ready: launchChecksReady(readiness, ["signal_sources"]),
+    },
+    {
+      title: "Outreach path",
+      detail: "A judged email or LinkedIn path can move contacts to outreach.",
+      blocked: "Create an outreach path before signals can become messages.",
+      href: "/dashboard/agent#outreach",
+      icon: "send",
+      ready: launchChecksReady(readiness, ["plays"]),
+    },
+  ];
+  const readyCount = steps.filter((step) => step.ready).length;
+  const next = readinessNextAction(readiness);
+  return (
+    <div className="mt-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Get started
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            One path from Profile to signals, verified contacts, judged
+            outreach, and replies.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 font-mono text-xs text-[var(--color-text-3)]">
+            {readyCount}/{steps.length} ready
+          </span>
+          <Link href={next.href} prefetch={false} className="btn-quiet-sm">
+            <Icon name={next.icon} size={14} />
+            {next.label}
+          </Link>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {steps.map((step) => (
+          <Link
+            key={step.title}
+            href={step.href}
+            prefetch={false}
+            className="group grid min-h-[126px] gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span
+                className={
+                  "grid size-8 place-items-center rounded-[8px] " +
+                  (step.ready
+                    ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                    : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+                }
+              >
+                <Icon name={step.ready ? "check_circle" : step.icon} size={15} />
+              </span>
+              <span
+                className={
+                  "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+                  (step.ready
+                    ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                    : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+                }
+              >
+                {step.ready ? "Ready" : "Needed"}
+              </span>
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+                {step.title}
+              </span>
+              <span className="mt-1 line-clamp-2 block text-xs leading-5 text-[var(--color-text-3)]">
+                {step.ready ? step.detail : step.blocked}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function launchChecksReady(
+  readiness: WorkspaceLaunchReadiness,
+  ids: LaunchReadinessCheck["id"][],
+): boolean {
+  return ids.every((id) =>
+    readiness.checks.some((check) => check.id === id && check.status === "ready"),
+  );
+}
+
+function channelSetupDetail(coverage: ChannelCoverage): string {
+  if (coverage.email.connected && coverage.linkedIn.connected) {
+    return "Email and LinkedIn are connected for native outreach.";
+  }
+  if (coverage.email.connected) {
+    return "Email is connected; LinkedIn can add DMs when ready.";
+  }
+  if (coverage.linkedIn.connected) {
+    return "LinkedIn is connected; Outlook can add email when ready.";
+  }
+  return "Connect Outlook or LinkedIn before outreach can leave.";
 }
 
 function SystemStatusCard({
