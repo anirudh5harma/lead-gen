@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
+import { prepareQualifiedSignalsAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "Brief | Bombsell",
@@ -88,6 +90,14 @@ interface BriefNextMove {
   href: string;
   action: string;
   tone: "ready" | "attention" | "neutral";
+}
+
+interface BriefPriority {
+  action?: "prepare_outreach";
+  detail: string;
+  href: string;
+  icon: string;
+  label: string;
 }
 
 async function loadBriefActionState(workspaceId: string): Promise<BriefActionState> {
@@ -631,10 +641,29 @@ function BriefView({
                 {priority.detail}
               </p>
             </div>
-            <Link href={priority.href} className="btn-solid-sm w-fit">
-              <Icon name={priority.icon} size={14} />
-              {priority.label}
-            </Link>
+            {priority.action === "prepare_outreach" ? (
+              <form action={prepareQualifiedSignalsAction}>
+                <input
+                  type="hidden"
+                  name="return_to"
+                  value="/dashboard/brief#reply-insights"
+                />
+                <input type="hidden" name="limit" value="25" />
+                <PendingSubmitButton
+                  className="btn-solid-sm w-fit"
+                  icon={priority.icon}
+                  iconSize={14}
+                  pendingLabel="Preparing"
+                >
+                  {priority.label}
+                </PendingSubmitButton>
+              </form>
+            ) : (
+              <Link href={priority.href} className="btn-solid-sm w-fit">
+                <Icon name={priority.icon} size={14} />
+                {priority.label}
+              </Link>
+            )}
           </div>
         </div>
 
@@ -1116,7 +1145,10 @@ function contactFitLabel(decision: string): string {
   return "Needs review";
 }
 
-function briefPriority(actions: BriefActionState, totalSent7d: number) {
+function briefPriority(
+  actions: BriefActionState,
+  totalSent7d: number,
+): BriefPriority {
   if (actions.pending_reviews > 0) {
     return {
       detail: `${actions.pending_reviews} drafted outreach ${
@@ -1139,6 +1171,7 @@ function briefPriority(actions: BriefActionState, totalSent7d: number) {
   }
   if (actions.qualified_signals_7d > 0 && totalSent7d === 0) {
     return {
+      action: "prepare_outreach",
       detail:
         "Qualified signals are ready, but no email or LinkedIn outreach has gone out this week.",
       href: "/dashboard/agent#opportunities",

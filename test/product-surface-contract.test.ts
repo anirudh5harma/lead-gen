@@ -245,6 +245,9 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Review source mix if qualified signals slow down/);
   assert.match(dashboard, /The operating brief only tracks qualified signals/);
   assert.match(dashboard, /Today priority/);
+  assert.match(dashboard, /prepareQualifiedSignalsAction/);
+  assert.match(dashboard, /action: "prepare_outreach"/);
+  assert.match(dashboard, /pendingLabel="Preparing"/);
   assert.match(dashboard, /BriefNextMovesPanel/);
   assert.match(dashboard, /briefNextMoves/);
   assert.match(dashboard, /Review drafted outreach/);
