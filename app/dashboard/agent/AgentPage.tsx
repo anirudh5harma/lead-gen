@@ -108,6 +108,8 @@ interface AgentOutreachRow {
   status: string;
   subject: string | null;
   body: string | null;
+  eval_score: string | null;
+  eval_passed: boolean | null;
   sent_at: Date | null;
   created_at: Date;
   counterparty_name: string | null;
@@ -810,6 +812,11 @@ async function loadAgentOutreachSummary(
               m.status::text as status,
               m.subject,
               m.body,
+              coalesce(m.eval_score, (judged.payload->>'eval_score')::numeric)::text as eval_score,
+              case
+                when judged.payload ? 'passed' then (judged.payload->>'passed')::boolean
+                else m.eval_passed
+              end as eval_passed,
               m.sent_at,
               m.created_at,
               p.full_name as counterparty_name,
@@ -820,6 +827,15 @@ async function loadAgentOutreachSummary(
          left join graph_persons p on p.id = c.counterparty_person_id
          left join graph_companies co on co.id = c.counterparty_company_id
          left join signals s on s.id = c.origin_signal_id
+         left join lateral (
+           select e.payload
+             from events e
+            where e.workspace_id = m.workspace_id
+              and e.event_type = 'draft.judged'
+              and e.payload->>'message_id' = m.id::text
+            order by e.occurred_at desc
+            limit 1
+         ) judged on true
         where m.workspace_id = $1
           and m.direction = 'outbound'
           and m.channel in ('email','linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
@@ -3695,12 +3711,57 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {statusLabel(message.status)}
         </span>
+        <OutreachQualityPill message={message} />
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {freshWhen(message.sent_at ?? message.created_at)}
         </span>
       </span>
     </Link>
   );
+}
+
+function OutreachQualityPill({ message }: { message: AgentOutreachRow }) {
+  const score = outreachEvalScore(message.eval_score);
+  const passed = message.eval_passed;
+  const label =
+    passed === false
+      ? "Judge blocked"
+      : passed !== true
+        ? "Judge missing"
+        : score == null
+          ? "Judge passed"
+          : `Judge ${score}%`;
+  const icon =
+    passed === false ? "block" : passed === true ? "verified" : "sync_problem";
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-xs " +
+        (passed === false
+          ? "bg-[var(--color-neg-bg)] text-[var(--color-neg)]"
+          : passed === true
+            ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+            : "bg-[var(--color-warn-bg)] text-[var(--color-warn)]")
+      }
+      title={
+        passed === false
+          ? "The latest hot-path judge rejected this draft."
+          : passed === true
+            ? "This outreach passed the hot-path judge before sending."
+            : "No hot-path judge proof was found for this sent message."
+      }
+    >
+      <Icon name={icon} size={13} />
+      {label}
+    </span>
+  );
+}
+
+function outreachEvalScore(score: string | null): number | null {
+  if (score == null) return null;
+  const numeric = Number(score);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.round(numeric * 100);
 }
 
 function sentDraftHref(conversationId: string, messageId: string): string {

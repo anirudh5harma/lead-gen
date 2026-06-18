@@ -589,6 +589,13 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /DMs sent/);
   assert.match(reps, /Qualified signals become verified contacts/);
+  assert.match(reps, /draft\.judged/);
+  assert.match(reps, /coalesce\(m\.eval_score, \(judged\.payload->>'eval_score'\)::numeric\)::text as eval_score/);
+  assert.match(reps, /OutreachQualityPill/);
+  assert.match(reps, /Judge missing/);
+  assert.match(reps, /Judge passed/);
+  assert.match(reps, /Judge \$\{score\}%/);
+  assert.match(reps, /hot-path judge proof/);
   assert.match(reps, /title="No sent outreach yet"/);
   assert.match(reps, /href: "\/dashboard\/profile#channels",\s+label: "Connect accounts"/);
   assert.doesNotMatch(reps, /href="\/dashboard\/conversations"/);
