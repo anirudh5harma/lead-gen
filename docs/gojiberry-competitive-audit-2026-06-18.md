@@ -56,3 +56,5 @@ The Brief now uses the same contact-trust distinction before it recommends the n
 Onboarding and Agent empty states now avoid old implementation nouns such as plays and outcomes. The launch flow stays in simple user language: website context creates sources, outreach paths, verified contacts, messages, replies, and meetings.
 
 The Brief priority rail is now channel-aware. It asks users to connect Outlook or LinkedIn before preparing outreach, and it keeps a LinkedIn connect move visible until LinkedIn is ready, matching GojiBerry's habit of making the next unblocker obvious from the home surface.
+
+Profile now includes an activation flow that connects website profile, signal sources, verified contacts, channels, and outreach in one scan. It uses existing launch-readiness blockers and Profile contact/channel state, so users can see how setup becomes qualified email or LinkedIn outreach without learning extra product tabs.

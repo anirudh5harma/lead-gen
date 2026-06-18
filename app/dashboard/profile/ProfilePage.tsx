@@ -353,6 +353,12 @@ export default async function ProfilePage() {
         readiness={readiness}
       />
 
+      <ProfileActivationFlow
+        profile={profile}
+        state={state}
+        readiness={readiness}
+      />
+
       <ProfileLaunchModel
         profile={profile}
         state={state}
@@ -654,6 +660,152 @@ function profileReadinessNextAction(
     icon: readinessActionIcon(blocker.id),
     label: blocker.action.label,
   };
+}
+
+function ProfileActivationFlow({
+  profile,
+  state,
+  readiness,
+}: {
+  profile: ProductCompanyProfile | null;
+  state: ProfileState;
+  readiness: ProductLaunchReadinessResult;
+}) {
+  const signalSources = readinessCheck(readiness, "signal_sources");
+  const outreachSequence = readinessCheck(readiness, "plays");
+  const channelReady =
+    state.outlookAccount?.status === "connected" ||
+    state.linkedInAccount?.status === "connected";
+  const next = profileReadinessNextAction(readiness);
+  const flowSteps = [
+    {
+      title: "Website profile",
+      detail: profile?.company_name
+        ? `${profile.company_name}${profileWebsite(profile) ? ` - ${profileWebsite(profile)}` : ""}`
+        : "Add the site and company context Bombsell should represent.",
+      href: "#profile",
+      icon: "public",
+      ready: Boolean(profile?.company_name && profileWebsite(profile)),
+    },
+    {
+      title: "Signal sources",
+      detail: signalSources?.detail ?? "Source checks watch for timing evidence.",
+      href: signalSources?.action?.surface ?? "/dashboard/agent#sources",
+      icon: "sensors",
+      ready: signalSources?.status === "ready",
+    },
+    {
+      title: "Verified contacts",
+      detail:
+        state.contactQuality.reachable > 0
+          ? `${state.contactQuality.reachable} reachable, ${state.contactQuality.verifiedEmails} verified emails, ${state.contactQuality.linkedInProfiles} LinkedIn profiles.`
+          : "Contacts need verified email or LinkedIn profile coverage before outreach.",
+      href: "#contact-quality",
+      icon: "verified",
+      ready: state.contactQuality.reachable > 0,
+    },
+    {
+      title: "Channels",
+      detail: channelReady
+        ? `${channelReadinessCount(state)}; qualified contacts can use connected email or LinkedIn paths.`
+        : "Connect Outlook or LinkedIn so qualified contacts can become outreach.",
+      href: "#channels",
+      icon: "hub",
+      ready: channelReady,
+    },
+    {
+      title: "Outreach",
+      detail: readiness.launch_ready
+        ? "The Agent can prepare judged email or LinkedIn outreach from qualified signals."
+        : outreachSequence?.status !== "ready"
+          ? outreachSequence?.detail ?? "Outreach sequence needs configuration."
+          : "Finish the remaining blocker before the Agent can send.",
+      href: readiness.launch_ready
+        ? "/dashboard/agent#outreach"
+        : next.href,
+      icon: "send",
+      ready: readiness.launch_ready,
+    },
+  ];
+  return (
+    <section className="section-note grid gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Activation flow
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            From company profile to sent outreach.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            Bombsell forms the profile from the website, watches signal sources,
+            resolves verified contacts, then uses connected email or LinkedIn to
+            send only after quality checks pass.
+          </p>
+        </div>
+        <Link
+          href={next.href}
+          prefetch={false}
+          className="btn-solid-sm w-fit"
+        >
+          <Icon name={next.icon} size={14} />
+          {next.label}
+        </Link>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-5">
+        {flowSteps.map((step, index) => (
+          <Link
+            key={step.title}
+            href={step.href}
+            prefetch={false}
+            className="group relative min-h-[176px] rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/60"
+          >
+            {index < flowSteps.length - 1 ? (
+              <span
+                className="pointer-events-none absolute right-[-18px] top-8 hidden h-px w-8 bg-[var(--color-line-2)] lg:block"
+                aria-hidden="true"
+              />
+            ) : null}
+            <div className="flex items-start justify-between gap-3">
+              <span
+                className={
+                  "grid size-9 shrink-0 place-items-center rounded-[8px] " +
+                  (step.ready
+                    ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                    : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
+                }
+              >
+                <Icon name={step.icon} size={17} />
+              </span>
+              <span className="font-mono text-[11px] text-[var(--color-text-4)]">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+            </div>
+            <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
+              {step.title}
+            </p>
+            <p className="mt-2 line-clamp-3 text-xs leading-5 text-[var(--color-text-3)]">
+              {step.detail}
+            </p>
+            <div className="mt-4">
+              <StatusPill ready={step.ready} />
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function readinessCheck(
+  readiness: ProductLaunchReadinessResult,
+  id: ProductLaunchReadinessResult["checks"][number]["id"],
+) {
+  return readiness.checks.find((check) => check.id === id);
 }
 
 function ProfileLaunchModel({
