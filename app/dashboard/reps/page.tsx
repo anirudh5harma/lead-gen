@@ -30,6 +30,7 @@ import {
   optimizeCampaignStrategyAction,
   optimizePlaySkillsAction,
   prepareQualifiedSignalsAction,
+  recordPersonFitFeedbackAction,
   runAgentSourceNowAction,
 } from "../actions";
 
@@ -1600,7 +1601,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
           ) : null}
         </span>
       </Link>
-      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {statusLabel(signal.status)}
         </span>
@@ -1645,6 +1646,14 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             </form>
           </>
         ) : null}
+        {contact?.person_id ? (
+          <ContactQualificationControls
+            personId={contact.person_id}
+            currentDecision={contact.contact_fit_decision}
+            returnTo="/dashboard/agent#opportunities"
+            compact
+          />
+        ) : null}
         <form action={dismissQualifiedSignalAction}>
           <input type="hidden" name="signal_id" value={signal.id} />
           <input type="hidden" name="return_to" value="/dashboard/agent" />
@@ -1658,7 +1667,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             Skip
           </button>
         </form>
-      </span>
+      </div>
     </article>
   );
 }
@@ -1794,12 +1803,12 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
     ? freshWhen(contact.last_signal_at)
     : freshWhen(contact.updated_at);
   return (
-    <Link
-      href={`/dashboard/prospects/${contact.id}`}
-      prefetch={false}
-      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center"
-    >
-      <span className="flex min-w-0 items-start gap-3">
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
+      <Link
+        href={`/dashboard/prospects/${contact.id}`}
+        prefetch={false}
+        className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+      >
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
           <Icon name="person" size={17} />
         </span>
@@ -1833,8 +1842,8 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             ) : null}
           </span>
         </span>
-      </span>
-      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+      </Link>
+      <div className="flex flex-wrap items-center gap-2 md:justify-end">
         {latestSignalKind ? (
           <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
             {latestSignalKind}
@@ -1853,8 +1862,82 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             {conversations} conversation{conversations === 1 ? "" : "s"}
           </span>
         ) : null}
-      </span>
-    </Link>
+        <ContactQualificationControls
+          personId={contact.id}
+          currentDecision={contact.contact_fit_decision}
+          returnTo="/dashboard/agent#verified-contacts"
+        />
+      </div>
+    </article>
+  );
+}
+
+function ContactQualificationControls({
+  personId,
+  currentDecision,
+  returnTo,
+  compact = false,
+}: {
+  personId: string;
+  currentDecision: string | null;
+  returnTo: string;
+  compact?: boolean;
+}) {
+  const options = [
+    {
+      decision: "fit",
+      label: compact ? "Fit" : "Good fit",
+      icon: "check",
+      note: "Marked as a good-fit contact from Agent.",
+    },
+    {
+      decision: "unsure",
+      label: "Review",
+      icon: "fact_check",
+      note: "Marked for fit review from Agent.",
+    },
+    {
+      decision: "not_fit",
+      label: compact ? "No" : "Not fit",
+      icon: "close",
+      note: "Marked as not a fit from Agent.",
+    },
+  ];
+  return (
+    <div
+      className={
+        "flex flex-wrap items-center gap-1.5 " +
+        (compact ? "max-w-[240px]" : "md:justify-end")
+      }
+      aria-label="Contact qualification"
+    >
+      {options.map((option) => {
+        const active = currentDecision === option.decision;
+        return (
+          <form key={option.decision} action={recordPersonFitFeedbackAction}>
+            <input type="hidden" name="person_id" value={personId} />
+            <input type="hidden" name="decision" value={option.decision} />
+            <input type="hidden" name="note" value={option.note} />
+            <input type="hidden" name="return_to" value={returnTo} />
+            <PendingSubmitButton
+              aria-label={`${option.label} contact`}
+              title={`${option.label} contact`}
+              className={
+                "inline-flex h-8 items-center gap-1.5 rounded-[8px] border px-2.5 text-xs transition-colors " +
+                (active
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                  : "border-[var(--color-line-1)] bg-[var(--color-ink-0)] text-[var(--color-text-2)] hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]")
+              }
+              icon={option.icon}
+              iconSize={13}
+              pendingLabel={compact ? "" : "Saving"}
+            >
+              {compact ? <span className="sr-only">{option.label}</span> : option.label}
+            </PendingSubmitButton>
+          </form>
+        );
+      })}
+    </div>
   );
 }
 

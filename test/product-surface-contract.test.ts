@@ -485,6 +485,15 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /contactFitGate\(contact\)/);
   assert.match(reps, /Outreach gated/);
   assert.match(reps, /Blocked by fit/);
+  assert.match(reps, /recordPersonFitFeedbackAction/);
+  assert.match(reps, /ContactQualificationControls/);
+  assert.match(reps, /aria-label="Contact qualification"/);
+  assert.match(reps, /name="person_id" value=\{personId\}/);
+  assert.match(reps, /name="decision" value=\{option\.decision\}/);
+  assert.match(reps, /returnTo="\/dashboard\/agent#opportunities"/);
+  assert.match(reps, /returnTo="\/dashboard\/agent#verified-contacts"/);
+  assert.match(reps, /Good fit/);
+  assert.match(reps, /Not fit/);
   assert.match(reps, /draftOpportunityLabel\(draft\.status, draft\.channel\)/);
   assert.match(reps, /opportunityHref\(signal, contact\)/);
   assert.match(reps, /return "\/dashboard\/agent#opportunities"/);
