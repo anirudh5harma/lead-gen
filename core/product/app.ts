@@ -4098,10 +4098,11 @@ export async function personalizeProductMessage(
   const engine = await getProductEngine();
   await assertProductWorkspaceAccess(session, engine.pool);
   const store = createPostgresVerticalSliceStore(engine.pool);
-  const [rep, signal, person] = await Promise.all([
+  const [rep, signal, person, profile] = await Promise.all([
     store.getRep(input.rep_id),
     store.getSignal(input.signal_id),
     store.getPerson(input.person_id),
+    getProductCompanyProfile(engine.pool, session),
   ]);
   if (!rep) throw new Error(`Rep not found: ${input.rep_id}`);
   if (!signal) throw new Error(`Signal not found: ${input.signal_id}`);
@@ -4152,6 +4153,7 @@ export async function personalizeProductMessage(
       signal,
       person,
       company,
+      profile,
       workspaceContextMarkdown,
       channel,
       research,
@@ -4161,6 +4163,7 @@ export async function personalizeProductMessage(
     signal,
     person,
     company,
+    profile,
     skill,
     workspaceContextMarkdown,
   });
@@ -4438,6 +4441,7 @@ function messagePersonalizationSlotValues(input: {
   signal: Signal;
   person: GraphPerson;
   company: GraphCompany | null;
+  profile: ProductCompanyProfile | null;
   workspaceContextMarkdown: string | null;
   channel: OutreachSkillChannel;
   research: ResearchResult;
@@ -4457,7 +4461,9 @@ function messagePersonalizationSlotValues(input: {
       .join(" "),
     180,
   );
+  const profileProof = messageProfileProof(input.profile);
   const workspaceProof =
+    profileProof ??
     firstUsefulContextLine(input.workspaceContextMarkdown) ??
     "Use the workspace profile, ICP, vertical intelligence, and prior Outcomes only when supported.";
   const role = input.person.title ?? "their team";
@@ -4489,9 +4495,11 @@ function buildMessagePersonalizationContext(input: {
   signal: Signal;
   person: GraphPerson;
   company: GraphCompany | null;
+  profile: ProductCompanyProfile | null;
   skill: SelectedOutreachSkill;
   workspaceContextMarkdown: string | null;
 }): string {
+  const profileIngredients = messageProfileIngredientLines(input.profile);
   const sections = [
     "## Signal Timing And Why Now",
     `- Signal: ${input.signal.title}`,
@@ -4509,6 +4517,11 @@ function buildMessagePersonalizationContext(input: {
       ? `- Company context: ${compactPersonalizationText(input.company.description, 420)}`
       : null,
     "",
+    "## Profile Message Ingredients",
+    profileIngredients.length > 0
+      ? profileIngredients.map((line) => `- ${line}`).join("\n")
+      : "- No Profile message ingredients configured yet.",
+    "",
     "## Workspace And Vertical Context",
     input.workspaceContextMarkdown
       ? compactPersonalizationText(input.workspaceContextMarkdown, 1800)
@@ -4521,6 +4534,44 @@ function buildMessagePersonalizationContext(input: {
     ...input.skill.constraints.map((constraint) => `- ${constraint}`),
   ].filter((line): line is string => line !== null);
   return sections.join("\n");
+}
+
+function messageProfileIngredientLines(
+  profile: ProductCompanyProfile | null,
+): string[] {
+  if (!profile) return [];
+  const fields: Array<[string, string | null | undefined]> = [
+    ["Company", profile.company_name],
+    ["Website", profile.website_url],
+    ["Industry", profile.industry],
+    ["Value proposition", profile.value_proposition],
+    ["Customer pain points", profile.customer_pain_points],
+    ["Key features", profile.key_features],
+    ["Social proof", profile.social_proof],
+    ["Buyer roles", profile.target_titles],
+    ["Target markets", profile.target_markets],
+    ["Outreach goal", profile.outreach_goal],
+    ["Message tone", profile.message_tone],
+    ["LinkedIn company page", profile.linkedin_company_url],
+  ];
+  return fields
+    .map(([label, value]) => {
+      const text = compactPersonalizationText(value, 220);
+      return text ? `${label}: ${text}` : null;
+    })
+    .filter((line): line is string => Boolean(line));
+}
+
+function messageProfileProof(
+  profile: ProductCompanyProfile | null,
+): string | null {
+  const ingredients = messageProfileIngredientLines(profile);
+  const proof = ingredients.find((line) => line.startsWith("Social proof:"));
+  const value = ingredients.find((line) => line.startsWith("Value proposition:"));
+  const pain = ingredients.find((line) =>
+    line.startsWith("Customer pain points:"),
+  );
+  return proof ?? value ?? pain ?? ingredients[0] ?? null;
 }
 
 function firstUsefulContextLine(

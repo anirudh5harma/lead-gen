@@ -994,6 +994,26 @@ test("MCP context uses the simplified product model", () => {
   assert.doesNotMatch(env, /content, and AEO/);
 });
 
+test("message personalization uses Profile ingredients before outreach drafts", () => {
+  const productApp = source("core/product/app.ts");
+
+  assert.match(productApp, /getProductCompanyProfile\(engine\.pool, session\)/);
+  assert.match(productApp, /Profile Message Ingredients/);
+  assert.match(productApp, /messageProfileIngredientLines/);
+  assert.match(productApp, /messageProfileProof/);
+  assert.match(productApp, /profileProof \?\?/);
+  assert.match(productApp, /\["Value proposition", profile\.value_proposition\]/);
+  assert.match(productApp, /\["Customer pain points", profile\.customer_pain_points\]/);
+  assert.match(productApp, /\["Key features", profile\.key_features\]/);
+  assert.match(productApp, /\["Social proof", profile\.social_proof\]/);
+  assert.match(productApp, /\["Buyer roles", profile\.target_titles\]/);
+  assert.match(productApp, /\["Target markets", profile\.target_markets\]/);
+  assert.match(productApp, /\["Outreach goal", profile\.outreach_goal\]/);
+  assert.match(productApp, /\["Message tone", profile\.message_tone\]/);
+  assert.match(productApp, /\["LinkedIn company page", profile\.linkedin_company_url\]/);
+  assert.match(productApp, /next_action: "run_eval_gate"/);
+});
+
 test("sent outreach links open the exact draft in the conversation trace", () => {
   const outreach = source("app/dashboard/conversations/page.tsx");
   const detail = source("app/dashboard/conversations/[id]/page.tsx");
