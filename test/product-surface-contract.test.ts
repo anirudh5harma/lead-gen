@@ -572,6 +572,14 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Judged drafts/);
   assert.match(reps, /OperatingLoopChannel/);
   assert.match(reps, /sent 7d/);
+  assert.match(reps, /AgentModeCards/);
+  assert.match(reps, /Agent launch modes/);
+  assert.match(reps, /Signal Agent/);
+  assert.match(reps, /Watches launch, hiring, funding, competitor, and LinkedIn intent signals/);
+  assert.match(reps, /Outreach Agent/);
+  assert.match(reps, /Turns qualified signals into verified email or LinkedIn contacts/);
+  assert.match(reps, /Open signal queue/);
+  assert.match(reps, /Review outreach/);
   assert.match(reps, /workspaceChannelCoverage/);
   assert.match(reps, /firstChannelPolicy\(rep, \["linkedin_dm", "linkedin"\]\)/);
   assert.match(reps, /Outreach paths/);
@@ -617,6 +625,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.doesNotMatch(reps, /Outreach accounts/);
   assert.doesNotMatch(reps, /Launch path/);
   assert.doesNotMatch(reps, /ChannelCard/);
+  assert.doesNotMatch(reps, /RepChannelPill/);
   assert.doesNotMatch(reps, /<RepCard key=\{rep\.id\} rep=\{rep\} \/>/);
   assert.doesNotMatch(reps, /Outcomes 7d/);
 });

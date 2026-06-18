@@ -985,6 +985,14 @@ export default async function RepsPage() {
         coverage={coverage}
       />
 
+      <AgentModeCards
+        strategy={state.strategy}
+        opportunities={state.opportunities}
+        contacts={state.contacts}
+        outreach={state.outreach}
+        coverage={coverage}
+      />
+
       <AgentOutreachPanel outreach={state.outreach} />
 
       <AgentRepliesPanel replies={state.replies} />
@@ -2264,6 +2272,110 @@ function AgentOperatingLoopPanel({
   );
 }
 
+function AgentModeCards({
+  strategy,
+  opportunities,
+  contacts,
+  outreach,
+  coverage,
+}: {
+  strategy: AgentSourceStrategy;
+  opportunities: QualifiedSignalWorkbench;
+  contacts: AgentContactSummary;
+  outreach: AgentOutreachSummary;
+  coverage: ChannelCoverage;
+}) {
+  const activeSources = strategy.sources.filter((source) => source.enabled).length;
+  const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  const modes = [
+    {
+      title: "Signal Agent",
+      icon: "sensors",
+      detail:
+        "Watches launch, hiring, funding, competitor, and LinkedIn intent signals against the buyer profile.",
+      statLabel: "Qualified",
+      statValue: opportunities.stats.qualified,
+      meta: `${activeSources} active source${activeSources === 1 ? "" : "s"}`,
+      href: "/dashboard/agent#opportunities",
+      cta: "Open signal queue",
+      ready: activeSources > 0,
+    },
+    {
+      title: "Outreach Agent",
+      icon: "send",
+      detail:
+        "Turns qualified signals into verified email or LinkedIn contacts, judged drafts, sends, replies, and meetings.",
+      statLabel: "Sent 7d",
+      statValue: sent7d,
+      meta: `${contacts.reachable} reachable contact${contacts.reachable === 1 ? "" : "s"}`,
+      href: "/dashboard/agent#outreach",
+      cta: "Review outreach",
+      ready: coverage.email.connected || coverage.linkedIn.connected,
+    },
+  ];
+  return (
+    <SurfaceSection title="Agent launch modes">
+      <div className="grid gap-3 lg:grid-cols-2">
+        {modes.map((mode) => (
+          <Link
+            key={mode.title}
+            href={mode.href}
+            prefetch={false}
+            className="group grid gap-5 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+          >
+            <span className="flex flex-wrap items-start justify-between gap-4">
+              <span className="flex min-w-0 items-start gap-3">
+                <span
+                  className={
+                    "grid size-10 shrink-0 place-items-center rounded-[8px] " +
+                    (mode.ready
+                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                      : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+                  }
+                >
+                  <Icon name={mode.icon} size={18} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[17px] font-semibold text-[var(--color-text-1)]">
+                    {mode.title}
+                  </span>
+                  <span className="mt-2 block max-w-[62ch] text-sm leading-6 text-[var(--color-text-3)]">
+                    {mode.detail}
+                  </span>
+                </span>
+              </span>
+              <span
+                className={
+                  "rounded-[8px] px-2.5 py-1 text-xs font-medium " +
+                  (mode.ready
+                    ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                    : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+                }
+              >
+                {mode.ready ? "Ready" : "Setup needed"}
+              </span>
+            </span>
+            <span className="grid gap-3 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)_auto] sm:items-end">
+              <MiniStat label={mode.statLabel} value={mode.statValue} />
+              <span className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 text-sm text-[var(--color-text-2)]">
+                {mode.meta}
+              </span>
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-[8px] text-sm font-medium text-[var(--color-accent)]">
+                {mode.cta}
+                <Icon
+                  name="arrow_forward"
+                  size={14}
+                  className="transition-transform group-hover:translate-x-0.5"
+                />
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </SurfaceSection>
+  );
+}
+
 function AgentHotSignalPaths({
   signals,
 }: {
@@ -3126,13 +3238,13 @@ function AgentSetupSummary({
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-          <RepChannelPill
+          <AgentChannelPill
             title="Email"
             icon="mail"
             connection={coverage.email}
             policy={emailPolicy}
           />
-          <RepChannelPill
+          <AgentChannelPill
             title="LinkedIn"
             icon="linkedin"
             connection={coverage.linkedIn}
@@ -3257,7 +3369,7 @@ function sumRepMetric(
   return reps.reduce((sum, rep) => sum + Number(rep[key]), 0);
 }
 
-function RepChannelPill({
+function AgentChannelPill({
   title,
   icon,
   connection,
