@@ -31,6 +31,7 @@ import {
   optimizePlaySkillsAction,
   prepareQualifiedSignalsAction,
   recordPersonFitFeedbackAction,
+  resolveQualifiedSignalContactsAction,
   runAgentSourceNowAction,
 } from "../actions";
 
@@ -1581,6 +1582,14 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             <OpportunityPill tone={contact ? "ready" : "waiting"}>
               {contact ? contactLabel(contact) : "Resolving contact"}
             </OpportunityPill>
+            <OpportunityPill tone={contactSourceTone(signal)}>
+              {contactSourceLabel(signal)}
+            </OpportunityPill>
+            {signal.contact_defer_reason ? (
+              <OpportunityPill tone="review">
+                {contactDeferLabel(signal.contact_defer_reason)}
+              </OpportunityPill>
+            ) : null}
             {fitGate ? (
               <OpportunityPill tone={fitGate.tone}>{fitGate.label}</OpportunityPill>
             ) : null}
@@ -1654,6 +1663,20 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             compact
           />
         ) : null}
+        {needsContactResolution(signal) ? (
+          <form action={resolveQualifiedSignalContactsAction}>
+            <input type="hidden" name="signal_id" value={signal.id} />
+            <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+            <PendingSubmitButton
+              className="btn-quiet-sm"
+              icon="person_search"
+              iconSize={14}
+              pendingLabel="Resolving"
+            >
+              Resolve contacts
+            </PendingSubmitButton>
+          </form>
+        ) : null}
         <form action={dismissQualifiedSignalAction}>
           <input type="hidden" name="signal_id" value={signal.id} />
           <input type="hidden" name="return_to" value="/dashboard/agent" />
@@ -1701,6 +1724,38 @@ function contactLabel(contact: QualifiedSignalContact): string {
   if (contact.linkedin_url) return "LinkedIn profile";
   if (contact.emails.length > 0) return "Email found";
   return "Contact found";
+}
+
+function contactSourceLabel(signal: QualifiedSignalItem): string {
+  if (signal.contact_source === "resolution") {
+    const channel = signal.contact_channel
+      ? channelLabel(signal.contact_channel)
+      : "contact";
+    return `Waterfall ${channel}`;
+  }
+  if (signal.contact_source === "graph") return "Graph contact";
+  return "Needs enrichment";
+}
+
+function contactSourceTone(
+  signal: QualifiedSignalItem,
+): "blocked" | "fit" | "ready" | "review" | "waiting" {
+  if (signal.contact_source === "resolution") return "fit";
+  if (signal.contact_source === "graph") return "ready";
+  if (signal.contact_defer_reason) return "review";
+  return "waiting";
+}
+
+function contactDeferLabel(reason: string): string {
+  return reason.replace(/_/g, " ");
+}
+
+function needsContactResolution(signal: QualifiedSignalItem): boolean {
+  const contact = signal.contacts[0];
+  if (!signal.company.id) return false;
+  if (signal.outreach_draft) return false;
+  if (contact?.verification.email_verified || contact?.linkedin_url) return false;
+  return true;
 }
 
 function contactFitGate(

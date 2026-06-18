@@ -476,7 +476,14 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Waiting for verified email or LinkedIn profile/);
   assert.match(reps, /Contact verified/);
   assert.match(reps, /prepareQualifiedSignalsAction/);
+  assert.match(reps, /resolveQualifiedSignalContactsAction/);
   assert.match(reps, /Prepare outreach/);
+  assert.match(reps, /Resolve contacts/);
+  assert.match(reps, /Waterfall \$\{channel\}/);
+  assert.match(reps, /Graph contact/);
+  assert.match(reps, /Needs enrichment/);
+  assert.match(reps, /contactDeferLabel/);
+  assert.match(reps, /needsContactResolution\(signal\)/);
   assert.match(reps, /Verified email/);
   assert.match(reps, /with_outreach_draft/);
   assert.match(reps, /blocked_by_fit/);
@@ -676,6 +683,9 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(actions, /runWorkspaceSourcePollNow/);
   assert.match(actions, /wait: false/);
   assert.match(actions, /Preparing verified contacts and outreach/);
+  assert.match(actions, /resolveQualifiedSignalContactsAction/);
+  assert.match(actions, /dispatchSignalPlaysOnce\(\{ signal_id: signalId, limit: 1 \}, session\)/);
+  assert.match(actions, /Resolving verified contacts and outreach/);
   assert.match(reps, /checkAgentSourcesAction/);
   assert.match(reps, /Check sources/);
   assert.match(reps, /Run source now/);

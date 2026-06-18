@@ -440,6 +440,22 @@ export async function prepareQualifiedSignalsAction(formData: FormData) {
   redirectWithToast(returnTo, "Preparing verified contacts and outreach.");
 }
 
+export async function resolveQualifiedSignalContactsAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#opportunities");
+  const signalId = value(formData, "signal_id");
+  if (!signalId) {
+    redirectWithToast(
+      returnTo,
+      "Choose a qualified signal before resolving contacts.",
+      "error",
+    );
+  }
+  await dispatchSignalPlaysOnce({ signal_id: signalId, limit: 1 }, session);
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Resolving verified contacts and outreach.");
+}
+
 export async function checkAgentSourcesAction(formData: FormData) {
   const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
