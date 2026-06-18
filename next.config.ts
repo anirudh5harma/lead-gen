@@ -5,13 +5,38 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/dashboard/reps",
+        destination: "/dashboard/agent",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/reps/:id",
+        destination: "/dashboard/agent/:id",
+        permanent: false,
+      },
+      {
         source: "/dashboard/campaigns",
         destination: "/dashboard/agent#learning",
         permanent: false,
       },
       {
+        source: "/dashboard/content",
+        destination: "/dashboard/agent",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/aeo",
+        destination: "/dashboard/agent",
+        permanent: false,
+      },
+      {
         source: "/dashboard/plays",
         destination: "/dashboard/agent#learning",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/settings",
+        destination: "/dashboard/profile#tools",
         permanent: false,
       },
       {
@@ -67,6 +92,11 @@ const nextConfig: NextConfig = {
       {
         source: "/dashboard/approvals",
         destination: "/dashboard/agent#opportunities",
+        permanent: false,
+      },
+      {
+        source: "/dashboard/ops",
+        destination: "/dashboard/health",
         permanent: false,
       },
       {

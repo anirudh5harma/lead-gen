@@ -101,7 +101,7 @@ test("Agent is the canonical dashboard surface route", () => {
   );
   assert.match(
     source("app/dashboard/settings/page.tsx"),
-    /redirect\("\/dashboard\/profile"\)/,
+    /redirect\("\/dashboard\/profile#tools"\)/,
   );
   assert.equal(exists("app/dashboard/agent/[id]/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/contacts/[id]/loading.tsx"), false);
@@ -127,6 +127,10 @@ test("Agent is the canonical dashboard surface route", () => {
 test("legacy list and Profile routes redirect to current product hubs", () => {
   const nextConfig = source("next.config.ts");
 
+  assert.match(
+    source("app/dashboard/settings/page.tsx"),
+    /redirect\("\/dashboard\/profile#tools"\)/,
+  );
   assert.match(
     source("app/dashboard/prospecting/page.tsx"),
     /redirect\("\/dashboard\/profile#profile"\)/,
@@ -186,6 +190,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(source("app/dashboard/outcomes/loading.tsx"), /surface="brief"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospecting"/);
   assert.match(nextConfig, /source: "\/dashboard\/setup"/);
+  assert.match(nextConfig, /source: "\/dashboard\/settings"/);
   assert.match(nextConfig, /source: "\/dashboard\/deliverability"/);
   assert.match(nextConfig, /source: "\/dashboard\/signals"/);
   assert.match(nextConfig, /source: "\/dashboard\/ingestion"/);
@@ -218,6 +223,15 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
 });
 
 test("retired product surfaces redirect to Agent", () => {
+  const nextConfig = source("next.config.ts");
+
+  assert.match(nextConfig, /source: "\/dashboard\/reps"/);
+  assert.match(nextConfig, /source: "\/dashboard\/reps\/:id"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent\/:id"/);
+  assert.match(nextConfig, /source: "\/dashboard\/content"/);
+  assert.match(nextConfig, /source: "\/dashboard\/aeo"/);
+  assert.match(nextConfig, /source: "\/dashboard\/ops"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/health"/);
   assert.match(
     source("app/dashboard/content/page.tsx"),
     /redirect\("\/dashboard\/agent"\)/,
