@@ -344,21 +344,11 @@ export default async function ProfilePage() {
         }
       />
 
-      <LaunchPathPanel readiness={readiness} />
-
-      <ProfileActivationMap
+      <ProfileSetupHub
         profile={profile}
         state={state}
         mode={mode}
-      />
-
-      <ProfileChecklist
-        profile={profile}
-        outlookAccount={state.outlookAccount}
-        linkedInAccount={state.linkedInAccount}
-        rep={state.rep}
-        icp={state.icp}
-        mode={mode}
+        readiness={readiness}
       />
 
       <ProfileSectionNav
@@ -482,14 +472,16 @@ export default async function ProfilePage() {
   );
 }
 
-function ProfileActivationMap({
+function ProfileSetupHub({
   profile,
   state,
   mode,
+  readiness,
 }: {
   profile: ProductCompanyProfile | null;
   state: ProfileState;
   mode: ProfileAutonomyMode;
+  readiness: ProductLaunchReadinessResult;
 }) {
   const website = profileWebsite(profile);
   const connectedChannels = [
@@ -504,271 +496,54 @@ function ProfileActivationMap({
     state.contactQuality.reachable > 0
       ? `${state.contactQuality.reachable} reachable contacts`
       : "Waiting on verified contacts";
-  const nodes = [
+  const next = profileReadinessNextAction(readiness);
+  const setupItems = [
     {
-      title: "Website profile",
+      title: "Company profile",
       detail: profile?.company_name
         ? `${profile.company_name}${website ? ` - ${website}` : ""}`
-        : "Enter the company website so the agent knows what you sell.",
+        : "Add the website and positioning the agent should represent.",
       href: "#profile",
       icon: "add_business",
       ready: Boolean(profile?.company_name && website),
     },
     {
-      title: "Buyer fit",
-      detail: state.icp?.name
-        ? `${state.icp.name} with ${Math.round(Number(state.icp.match_threshold) * 100)}% match gate`
-        : "Define the ICP that quality signals must match.",
+      title: "Agent and buyer fit",
+      detail:
+        state.rep && state.icp
+          ? `${agentDisplayName(state.rep.role)} acts on ${state.icp.name}.`
+          : "Define the buyer profile, voice, daily ceiling, and approval mode.",
       href: "#agent",
-      icon: "person_search",
-      ready: Boolean(state.icp && state.rep),
+      icon: "badge",
+      ready: Boolean(state.rep && state.icp),
     },
     {
-      title: "Reachable contacts",
+      title: "Email",
+      detail: state.outlookAccount
+        ? `${outlookMailbox(state.outlookAccount)} - ${statusLabel(state.outlookAccount.status)}`
+        : "Connect Outlook for native email threads and reply sync.",
+      href: "#email",
+      icon: "mail",
+      ready: state.outlookAccount?.status === "connected",
+    },
+    {
+      title: "LinkedIn",
+      detail: state.linkedInAccount
+        ? `${state.linkedInAccount.display_name} - ${statusLabel(state.linkedInAccount.status)}`
+        : "Connect LinkedIn for connection requests and DMs.",
+      href: "#linkedin",
+      icon: "linkedin",
+      ready: state.linkedInAccount?.status === "connected",
+    },
+    {
+      title: "Contact quality",
       detail: `${contactSummary}; ${state.contactQuality.verifiedEmails} verified emails and ${state.contactQuality.linkedInProfiles} LinkedIn profiles.`,
       href: "#contact-quality",
       icon: "verified",
       ready: state.contactQuality.reachable > 0,
     },
     {
-      title: "Email + LinkedIn",
-      detail: channelSummary,
-      href: "#channels",
-      icon: "hub",
-      ready: connectedChannels.length > 0,
-    },
-    {
       title: "Control mode",
-      detail:
-        mode === "review_only"
-          ? "Copilot prepares outbound and waits for approval."
-          : mode === "custom"
-            ? "Mixed policies; choose one posture before launch."
-            : "Autopilot sends after evals, caps, and channel checks.",
-      href: "#autonomy",
-      icon: "task_alt",
-      ready: mode !== "custom",
-    },
-  ];
-  return (
-    <section className="section-note grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-2xl">
-          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-            Activation map
-          </p>
-          <h2
-            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            Website, profile, channels, and contacts in one loop.
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-            This is the setup spine: the website shapes the buyer profile, the
-            profile qualifies signals, verified contacts decide the channel,
-            and control mode decides whether the agent can send.
-          </p>
-        </div>
-        <Link href="/dashboard/agent#opportunities" prefetch={false} className="btn-quiet-sm">
-          <Icon name="arrow_forward" size={14} />
-          See qualified signals
-        </Link>
-      </div>
-      <div className="grid gap-3 xl:grid-cols-5">
-        {nodes.map((node, index) => (
-          <Link
-            key={node.title}
-            href={node.href}
-            prefetch={false}
-            className="group relative grid min-h-[154px] gap-3 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
-          >
-            <span className="flex items-center justify-between gap-3">
-              <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                <Icon name={node.icon} size={16} />
-              </span>
-              <span className="flex items-center gap-2">
-                <StatusPill ready={node.ready} />
-                {index < nodes.length - 1 ? (
-                  <Icon
-                    name="arrow_forward"
-                    size={14}
-                    className="hidden text-[var(--color-text-4)] xl:block"
-                  />
-                ) : null}
-              </span>
-            </span>
-            <span>
-              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                {node.title}
-              </span>
-              <span className="mt-1 line-clamp-3 block text-xs leading-5 text-[var(--color-text-3)]">
-                {node.detail}
-              </span>
-            </span>
-          </Link>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function LaunchPathPanel({
-  readiness,
-}: {
-  readiness: ProductLaunchReadinessResult;
-}) {
-  const next = profileReadinessNextAction(readiness);
-  const profileReady = launchChecksReady(readiness, [
-    "workspace_profile",
-    "icp",
-    "rep",
-  ]);
-  const contactsReady = launchChecksReady(readiness, [
-    "signal_sources",
-    "plays",
-  ]);
-  const channelReady = launchChecksReady(readiness, ["outreach_channel"]);
-  const stages = [
-    {
-      title: "Website intelligence",
-      detail: profileReady
-        ? "Company, ICP, and agent context are ready."
-        : "Add the website, audience, and agent voice.",
-      href: profileReady ? "/dashboard/profile#agent" : "/dashboard/profile#profile",
-      icon: "add_business",
-      ready: profileReady,
-    },
-    {
-      title: "Find contacts",
-      detail: contactsReady
-        ? "Signal sources and outreach sequence are active."
-        : "Turn profile context into watched sources and a sequence.",
-      href: "/dashboard/agent#sources",
-      icon: "sensors",
-      ready: contactsReady,
-    },
-    {
-      title: "Start outreach",
-      detail: channelReady
-        ? "Email or LinkedIn can move after eval gates."
-        : "Connect a channel before messages can leave.",
-      href: "/dashboard/profile#channels",
-      icon: "send",
-      ready: channelReady,
-    },
-  ];
-  return (
-    <section className="section-note grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-2xl">
-          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-            Launch path
-          </p>
-          <h2
-            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            Website to outreach.
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
-            Bombsell uses the same readiness gate as the Agent: profile, sources,
-            sequence, and connected channels must line up before outreach runs.
-          </p>
-        </div>
-        <Link href={next.href} prefetch={false} className="btn-solid-sm">
-          <Icon name={next.icon} size={14} />
-          {next.label}
-        </Link>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-3">
-        {stages.map((stage) => (
-          <Link
-            key={stage.title}
-            href={stage.href}
-            prefetch={false}
-            className="grid min-h-[132px] gap-3 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
-          >
-            <span className="flex items-center justify-between gap-3">
-              <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-                <Icon name={stage.icon} size={16} />
-              </span>
-              <StatusPill ready={stage.ready} />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
-                {stage.title}
-              </span>
-              <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
-                {stage.detail}
-              </span>
-            </span>
-          </Link>
-        ))}
-      </div>
-      <p className="text-xs leading-5 text-[var(--color-text-3)]">
-        {readiness.launch_ready
-          ? "Ready: qualified signals can become email or LinkedIn outreach."
-          : `${readiness.blockers.length} launch blocker${readiness.blockers.length === 1 ? "" : "s"} remaining.`}
-      </p>
-    </section>
-  );
-}
-
-function ProfileChecklist({
-  profile,
-  outlookAccount,
-  linkedInAccount,
-  rep,
-  icp,
-  mode,
-}: {
-  profile: ProductCompanyProfile | null;
-  outlookAccount: ProfileOutlookAccount | null;
-  linkedInAccount: ProfileLinkedInAccount | null;
-  rep: ProfileRepRow | null;
-  icp: ProfileIcpRow | null;
-  mode: ProfileAutonomyMode;
-}) {
-  const steps = [
-    {
-      title: "Company profile",
-      detail: profile?.company_name
-        ? `${profile.company_name}${profileWebsite(profile) ? ` - ${profileWebsite(profile)}` : ""}`
-        : "Add the company and website the agent should represent.",
-      href: "#profile",
-      icon: "add_business",
-      ready: Boolean(profile?.company_name && profileWebsite(profile)),
-    },
-    {
-      title: "Audience and agent",
-      detail:
-        rep && icp
-          ? `${agentDisplayName(rep.role)} acts on ${icp.name}.`
-          : "Define the ICP, voice, daily ceiling, and agent.",
-      href: "#agent",
-      icon: "badge",
-      ready: Boolean(rep && icp),
-    },
-    {
-      title: "Email account",
-      detail: outlookAccount
-        ? `${outlookMailbox(outlookAccount)} - ${statusLabel(outlookAccount.status)}`
-        : "Connect Outlook for native email threads and reply sync.",
-      href: "#email",
-      icon: "mail",
-      ready: outlookAccount?.status === "connected",
-    },
-    {
-      title: "LinkedIn account",
-      detail: linkedInAccount
-        ? `${linkedInAccount.display_name} - ${statusLabel(linkedInAccount.status)}`
-        : "Connect LinkedIn for connection requests and DMs.",
-      href: "#linkedin",
-      icon: "linkedin",
-      ready: linkedInAccount?.status === "connected",
-    },
-    {
-      title: "Review posture",
       detail:
         mode === "custom"
           ? "Agent and outreach policies are mixed."
@@ -780,32 +555,43 @@ function ProfileChecklist({
       ready: mode !== "custom",
     },
   ];
-  const readyCount = steps.filter((step) => step.ready).length;
+  const readyCount = setupItems.filter((step) => step.ready).length;
   return (
-    <section>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
+    <section className="section-note grid gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
           <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
-            Setup
+            Setup hub
           </p>
           <h2
             className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Profile, channels, and guardrails.
+            Profile, email, LinkedIn, contacts, and Agent controls.
           </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            Website context shapes the buyer profile, connected accounts unlock
+            outreach, and verified contact coverage decides whether the Agent can
+            turn quality signals into email or LinkedIn touches.
+          </p>
         </div>
-        <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
-          {readyCount}/{steps.length} ready
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
+            {readyCount}/{setupItems.length} ready
+          </span>
+          <Link href={next.href} prefetch={false} className="btn-solid-sm">
+            <Icon name={next.icon} size={14} />
+            {next.label}
+          </Link>
+        </div>
       </div>
-      <div className="grid gap-3 lg:grid-cols-5">
-        {steps.map((step) => (
+      <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        {setupItems.map((step) => (
           <Link
             key={step.title}
             href={step.href}
             prefetch={false}
-            className="group flex min-h-[142px] flex-col rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
+            className="group flex min-h-[150px] flex-col rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
           >
             <div className="flex items-center justify-between gap-3">
               <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
@@ -822,16 +608,22 @@ function ProfileChecklist({
           </Link>
         ))}
       </div>
+      <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 md:grid-cols-[1fr_auto] md:items-center">
+        <p className="text-sm leading-6 text-[var(--color-text-3)]">
+          {readiness.launch_ready
+            ? `Ready: ${channelSummary} can now move qualified signals into outreach.`
+            : `${readiness.blockers.length} launch blocker${readiness.blockers.length === 1 ? "" : "s"} remaining before outreach can run.`}
+        </p>
+        <Link
+          href="/dashboard/agent#opportunities"
+          prefetch={false}
+          className="btn-quiet-sm w-fit"
+        >
+          <Icon name="arrow_forward" size={14} />
+          Open Agent
+        </Link>
+      </div>
     </section>
-  );
-}
-
-function launchChecksReady(
-  readiness: ProductLaunchReadinessResult,
-  ids: ProductLaunchReadinessResult["checks"][number]["id"][],
-): boolean {
-  return ids.every((id) =>
-    readiness.checks.some((check) => check.id === id && check.status === "ready"),
   );
 }
 
