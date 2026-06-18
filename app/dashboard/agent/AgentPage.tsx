@@ -203,6 +203,12 @@ interface AgentContactSummary {
   with_email: number;
   verified_email: number;
   with_linkedin: number;
+  linkedin_only: number;
+  needs_fit_review: number;
+  blocked_by_fit: number;
+  draft_ready: number;
+  contacted: number;
+  replied: number;
   fit_reviewed: number;
   in_outreach: number;
   fresh_signals: number;
@@ -865,6 +871,12 @@ async function loadAgentContactSummary(
       with_email: string;
       verified_email: string;
       with_linkedin: string;
+      linkedin_only: string;
+      needs_fit_review: string;
+      blocked_by_fit: string;
+      draft_ready: string;
+      contacted: string;
+      replied: string;
       fit_reviewed: string;
       in_outreach: string;
       fresh_signals: string;
@@ -891,6 +903,57 @@ async function loadAgentContactSummary(
             from graph_persons p
            where p.workspace_id = $1
              and p.linkedin_url is not null) as with_linkedin,
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
+             and p.linkedin_url is not null
+             and not exists (
+               select 1
+                 from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                where lower(coalesce(ev.meta->>'verified', '')) = 'true'
+                   or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
+             )) as linkedin_only,
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
+             and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
+             and p.properties #>> '{contact_fit,decision}' is null) as needs_fit_review,
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
+             and p.properties #>> '{contact_fit,decision}' = 'not_fit') as blocked_by_fit,
+         (select count(distinct p.id)::text
+            from graph_persons p
+            join conversations c
+              on c.workspace_id = p.workspace_id
+             and c.counterparty_person_id = p.id
+            join messages m
+              on m.workspace_id = c.workspace_id
+             and m.conversation_id = c.id
+           where p.workspace_id = $1
+             and m.direction = 'outbound'
+             and m.status in ('draft','queued','deferred')) as draft_ready,
+         (select count(distinct p.id)::text
+            from graph_persons p
+            join conversations c
+              on c.workspace_id = p.workspace_id
+             and c.counterparty_person_id = p.id
+            join messages m
+              on m.workspace_id = c.workspace_id
+             and m.conversation_id = c.id
+           where p.workspace_id = $1
+             and m.direction = 'outbound'
+             and m.status in ('sent','delivered','replied')) as contacted,
+         (select count(distinct p.id)::text
+            from graph_persons p
+            join conversations c
+              on c.workspace_id = p.workspace_id
+             and c.counterparty_person_id = p.id
+            join messages m
+              on m.workspace_id = c.workspace_id
+             and m.conversation_id = c.id
+           where p.workspace_id = $1
+             and m.direction = 'inbound') as replied,
          (select count(*)::text
             from graph_persons p
            where p.workspace_id = $1
@@ -937,6 +1000,12 @@ async function loadAgentContactSummary(
     with_email: Number(summary.rows[0]?.with_email ?? 0),
     verified_email: Number(summary.rows[0]?.verified_email ?? 0),
     with_linkedin: Number(summary.rows[0]?.with_linkedin ?? 0),
+    linkedin_only: Number(summary.rows[0]?.linkedin_only ?? 0),
+    needs_fit_review: Number(summary.rows[0]?.needs_fit_review ?? 0),
+    blocked_by_fit: Number(summary.rows[0]?.blocked_by_fit ?? 0),
+    draft_ready: Number(summary.rows[0]?.draft_ready ?? 0),
+    contacted: Number(summary.rows[0]?.contacted ?? 0),
+    replied: Number(summary.rows[0]?.replied ?? 0),
     fit_reviewed: Number(summary.rows[0]?.fit_reviewed ?? 0),
     in_outreach: Number(summary.rows[0]?.in_outreach ?? 0),
     fresh_signals: Number(summary.rows[0]?.fresh_signals ?? 0),
@@ -1976,6 +2045,12 @@ function emptyRepsState(workspaceId: string): RepsState {
       with_email: 0,
       verified_email: 0,
       with_linkedin: 0,
+      linkedin_only: 0,
+      needs_fit_review: 0,
+      blocked_by_fit: 0,
+      draft_ready: 0,
+      contacted: 0,
+      replied: 0,
       fit_reviewed: 0,
       in_outreach: 0,
       fresh_signals: 0,
@@ -3142,6 +3217,53 @@ function AgentContactsPanel({
                 total={contacts.reachable}
               />
             </div>
+            <div className="grid gap-2 border-t border-[var(--color-line-1)] pt-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-4)]">
+                Contact lanes
+              </p>
+              <ContactLaneRow
+                icon="mail"
+                label="Email-ready"
+                value={contacts.verified_email}
+                tone="ready"
+              />
+              <ContactLaneRow
+                icon="linkedin"
+                label="LinkedIn-only"
+                value={contacts.linkedin_only}
+                tone="fit"
+              />
+              <ContactLaneRow
+                icon="fact_check"
+                label="Needs fit review"
+                value={contacts.needs_fit_review}
+                tone={contacts.needs_fit_review > 0 ? "review" : "quiet"}
+              />
+              <ContactLaneRow
+                icon="block"
+                label="Blocked by fit"
+                value={contacts.blocked_by_fit}
+                tone={contacts.blocked_by_fit > 0 ? "blocked" : "quiet"}
+              />
+              <ContactLaneRow
+                icon="rate_review"
+                label="Draft ready"
+                value={contacts.draft_ready}
+                tone={contacts.draft_ready > 0 ? "ready" : "quiet"}
+              />
+              <ContactLaneRow
+                icon="send"
+                label="Contacted"
+                value={contacts.contacted}
+                tone={contacts.contacted > 0 ? "fit" : "quiet"}
+              />
+              <ContactLaneRow
+                icon="forum"
+                label="Replied"
+                value={contacts.replied}
+                tone={contacts.replied > 0 ? "ready" : "quiet"}
+              />
+            </div>
             <p className="text-xs leading-5 text-[var(--color-text-3)]">
               Signal-ready contacts show why now, score, email verification,
               LinkedIn profile, fit, and outreach state before the agent sends.
@@ -3167,6 +3289,49 @@ function AgentContactsPanel({
           )}
         </div>
       </SurfaceSection>
+    </div>
+  );
+}
+
+function ContactLaneRow({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: string;
+  label: string;
+  value: number;
+  tone: "ready" | "fit" | "review" | "blocked" | "quiet";
+}) {
+  const color =
+    tone === "ready"
+      ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+      : tone === "fit"
+        ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+        : tone === "review"
+          ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+          : tone === "blocked"
+            ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+            : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]";
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-1)] px-3 py-2">
+      <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-2)]">
+        {icon === "linkedin" ? (
+          <BrandIcon name="linkedin" size={13} />
+        ) : (
+          <Icon name={icon} size={13} />
+        )}
+        <span className="truncate">{label}</span>
+      </span>
+      <span
+        className={
+          "min-w-7 rounded-[8px] px-2 py-1 text-center font-mono text-[11px] " +
+          color
+        }
+      >
+        {value}
+      </span>
     </div>
   );
 }
