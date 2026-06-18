@@ -1306,6 +1306,36 @@ test("Signal ingress matching dispatch is centralized in the product dispatcher"
   assert.match(capabilityMap, /product-signal-matching-workflow-dispatcher-v1/);
 });
 
+test("channel connection wakes launch readiness through the product backend", () => {
+  const productApp = source("core/product/app.ts");
+  const channelWorkflow = source(
+    "core/agents/langgraph/workflows/channel-readiness.ts",
+  );
+  const release = source("scripts/verify-worker-release.ts");
+
+  assert.match(productApp, /runWorkspaceChannelReadiness/);
+  assert.match(productApp, /WorkspaceChannelReadinessRunResult/);
+  assert.match(productApp, /channelReadinessIdempotencyKey/);
+  assert.match(productApp, /createChannelConnectionReadinessProjection/);
+  assert.match(
+    productApp,
+    /name: "workspace\.channel_readiness_on_connection\.v1"/,
+  );
+  assert.match(productApp, /eventTypes: \["channel\.account\.connected"\]/);
+  assert.match(productApp, /WORKSPACE_CHANNEL_READINESS_WORKFLOW/);
+  assert.match(productApp, /workflow_name: WORKSPACE_CHANNEL_READINESS_WORKFLOW/);
+  assert.match(productApp, /idempotency_key: `channel\.readiness\.connected:\$\{event\.id\}`/);
+  assert.match(productApp, /causation_event_id: event\.id/);
+  assert.match(productApp, /required_channel: "any"/);
+  assert.match(productApp, /userIdFromProducerRef/);
+  assert.match(
+    productApp,
+    /Channel readiness refresh waiting for connected account/,
+  );
+  assert.match(channelWorkflow, /WORKSPACE_CHANNEL_READINESS_WORKFLOW = "workspace\.channel\.readiness"/);
+  assert.match(release, /workspace\.channel\.readiness/);
+});
+
 test("meeting-intent replies wake prep and reply workflows", () => {
   const intent = source("core/channels/email/intent.ts");
   const productApp = source("core/product/app.ts");

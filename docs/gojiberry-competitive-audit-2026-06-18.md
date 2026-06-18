@@ -58,3 +58,5 @@ Onboarding and Agent empty states now avoid old implementation nouns such as pla
 The Brief priority rail is now channel-aware. It asks users to connect Outlook or LinkedIn before preparing outreach, and it keeps a LinkedIn connect move visible until LinkedIn is ready, matching GojiBerry's habit of making the next unblocker obvious from the home surface.
 
 Profile now includes an activation flow that connects website profile, signal sources, verified contacts, channels, and outreach in one scan. It uses existing launch-readiness blockers and Profile contact/channel state, so users can see how setup becomes qualified email or LinkedIn outreach without learning extra product tabs.
+
+Connected Outlook or LinkedIn accounts now wake the durable channel-readiness workflow from the `channel.account.connected` event. This makes the backend match the UI promise: integrations immediately refresh launch blockers and can unblock the Brief/Profile/Agent flow without waiting for a separate settings action.

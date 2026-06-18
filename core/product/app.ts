@@ -57,6 +57,7 @@ import {
   WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
   type ActivationSetupGraphInput,
   type BombsellLangGraphState,
+  type ChannelReadinessGraphInput,
   type CompanyBrainGraphInput,
   type LeadMatchingGraphInput,
   type MeetingPrepGraphInput,
@@ -273,6 +274,7 @@ import {
   redriveDeadLetteredDispatch,
   type DeadLetteredDispatch,
   type EventBus,
+  type EventPayload,
   type DurableEventProjection,
   type DurableProjectionTick,
   type PublishedEvent,
@@ -5498,6 +5500,13 @@ export interface WorkspaceSignalMatchingRunResult {
   output: BombsellLangGraphState | null;
 }
 
+export interface WorkspaceChannelReadinessRunResult {
+  workspace_id: string;
+  workflow_name: typeof WORKSPACE_CHANNEL_READINESS_WORKFLOW;
+  workflow_run_id: string;
+  output: BombsellLangGraphState | null;
+}
+
 export interface WorkspaceCompanyBrainBriefRunResult {
   workspace_id: string;
   workflow_name: typeof WORKSPACE_COMPANY_BRAIN_BRIEF_WORKFLOW;
@@ -5695,6 +5704,77 @@ export async function runWorkspaceSignalMatching(
   return {
     workspace_id: session.workspace_id,
     workflow_name: WORKSPACE_SIGNAL_MATCHING_WORKFLOW,
+    workflow_run_id: run.id,
+    output: completed.output ?? null,
+  };
+}
+
+export async function runWorkspaceChannelReadiness(
+  input: Omit<ChannelReadinessGraphInput, "workspace_id" | "user_id">,
+  session: ProductWorkspaceSession,
+  opts: {
+    wait?: boolean;
+    timeoutMs?: number;
+    correlationId?: string | null;
+    causationEventId?: string | null;
+  } = {},
+): Promise<WorkspaceChannelReadinessRunResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  await registerWorkspaceChannelReadinessWorkflow(engine);
+  const required_channel = input.required_channel ?? "any";
+  const workflowInput: ChannelReadinessGraphInput = {
+    ...input,
+    required_channel,
+    workspace_id: session.workspace_id,
+    user_id: session.user_id,
+    thread_id:
+      input.thread_id ??
+      `channel-readiness:${session.workspace_id}:${required_channel}`,
+    correlation_id: input.correlation_id ?? opts.correlationId ?? undefined,
+    causation_event_id:
+      input.causation_event_id ?? opts.causationEventId ?? null,
+  };
+  const run = await engine.runtime.start<
+    ChannelReadinessGraphInput,
+    BombsellLangGraphState
+  >({
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_CHANNEL_READINESS_WORKFLOW,
+    idempotency_key: channelReadinessIdempotencyKey(
+      session.workspace_id,
+      workflowInput,
+    ),
+    correlation_id: workflowInput.correlation_id,
+    causation_id: workflowInput.causation_event_id ?? undefined,
+    input: workflowInput,
+  });
+  if (opts.wait === false) {
+    return {
+      workspace_id: session.workspace_id,
+      workflow_name: WORKSPACE_CHANNEL_READINESS_WORKFLOW,
+      workflow_run_id: run.id,
+      output: run.output ?? null,
+    };
+  }
+  const completed = await waitForWorkflowTerminal<BombsellLangGraphState>(
+    engine.runtime,
+    run.id,
+    opts.timeoutMs ?? 30_000,
+  );
+  if (completed.status === "failed") {
+    throw new Error(
+      completed.error?.message ?? "Channel readiness workflow failed.",
+    );
+  }
+  if (completed.status !== "completed") {
+    throw new Error(
+      `Channel readiness workflow ended with status ${completed.status}.`,
+    );
+  }
+  return {
+    workspace_id: session.workspace_id,
+    workflow_name: WORKSPACE_CHANNEL_READINESS_WORKFLOW,
     workflow_run_id: run.id,
     output: completed.output ?? null,
   };
@@ -6246,6 +6326,24 @@ function profileIcpIdempotencyKey(
     .digest("hex")
     .slice(0, 24);
   return `profile.icp:${workspace_id}:${digest}`;
+}
+
+function channelReadinessIdempotencyKey(
+  workspace_id: string,
+  input: ChannelReadinessGraphInput,
+): string {
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        workspace_id,
+        required_channel: input.required_channel ?? "any",
+        causation_event_id: input.causation_event_id ?? null,
+        run_id: input.run_id ?? null,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 24);
+  return `channel.readiness:${workspace_id}:${digest}`;
 }
 
 function signalIngestionIdempotencyKey(
@@ -7474,7 +7572,65 @@ function createProductEventProjections(
       pool: engine.pool,
       bus: engine.bus,
     }),
+    createChannelConnectionReadinessProjection(engine),
   ];
+}
+
+function createChannelConnectionReadinessProjection(
+  engine: ProductEngine,
+): DurableEventProjection {
+  return {
+    name: "workspace.channel_readiness_on_connection.v1",
+    eventTypes: ["channel.account.connected"],
+    async apply(event) {
+      const payload = event.payload as EventPayload<"channel.account.connected">;
+      const { rows } = await engine.pool.query<{ status: string }>(
+        `select status::text as status
+           from channel_accounts
+          where workspace_id = $1
+            and id = $2
+            and kind::text = $3
+          limit 1`,
+        [event.workspace_id, payload.channel_account_id, payload.kind],
+      );
+      if (rows[0]?.status !== "connected") {
+        throw new Error(
+          `Channel readiness refresh waiting for connected account ${payload.channel_account_id}`,
+        );
+      }
+      await registerWorkspaceChannelReadinessWorkflow(engine);
+      await engine.runtime.start<
+        ChannelReadinessGraphInput,
+        BombsellLangGraphState
+      >({
+        workspace_id: event.workspace_id,
+        workflow_name: WORKSPACE_CHANNEL_READINESS_WORKFLOW,
+        idempotency_key: `channel.readiness.connected:${event.id}`,
+        correlation_id: event.correlation_id ?? event.id,
+        causation_id: event.id,
+        input: {
+          workspace_id: event.workspace_id,
+          user_id: userIdFromProducerRef(event.producer_ref),
+          required_channel: "any",
+          thread_id: `channel-readiness:${event.workspace_id}:connected`,
+          correlation_id: event.correlation_id ?? event.id,
+          causation_event_id: event.id,
+        },
+      });
+    },
+  };
+}
+
+function userIdFromProducerRef(producer_ref: string | null): string {
+  const maybeUser = producer_ref?.startsWith("user:")
+    ? producer_ref.slice("user:".length)
+    : null;
+  return maybeUser &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      maybeUser,
+    )
+    ? maybeUser
+    : DEFAULT_PRODUCT_USER_ID;
 }
 
 async function projectVisibleProductState(
