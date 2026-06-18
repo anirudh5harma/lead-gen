@@ -36,6 +36,15 @@ interface SignalKindMetric {
   count_7d: number;
 }
 
+interface BriefSignalHealth {
+  active_sources: number;
+  watched_sources: number;
+  productive_sources_7d: number;
+  quiet_sources: number;
+  attention_source_name: string | null;
+  attention_reason: string | null;
+}
+
 interface BriefOutcomeInsight {
   id: string;
   kind: string;
@@ -238,6 +247,71 @@ async function loadSignalKindMetrics(workspaceId: string): Promise<SignalKindMet
   }));
 }
 
+async function loadBriefSignalHealth(
+  workspaceId: string,
+): Promise<BriefSignalHealth> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    active_sources: string;
+    watched_sources: string;
+    productive_sources_7d: string;
+    quiet_sources: string;
+    attention_source_name: string | null;
+    attention_reason: string | null;
+  }>(
+    `with source_rows as (
+       select gs.id,
+              gs.name,
+              (wsc.enabled and gs.enabled) as enabled,
+              coalesce(wsc.last_polled_at, gs.last_polled_at) as last_polled_at,
+              wsc.last_error,
+              (select count(*)::int
+                 from signals s
+                where s.workspace_id = $1
+                  and s.source_id = gs.id
+                  and s.status in ('matched','in_play')
+                  and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days') as matched_week
+         from workspace_source_configs wsc
+         join graph_sources gs
+           on gs.workspace_id = wsc.workspace_id
+          and gs.id = wsc.source_id
+        where wsc.workspace_id = $1
+     ),
+     attention as (
+       select name,
+              case
+                when last_error is not null then 'source error'
+                when enabled and matched_week = 0 then 'no qualified signals this week'
+                else null
+              end as reason
+         from source_rows
+        where last_error is not null
+           or (enabled and matched_week = 0)
+        order by case when last_error is not null then 0 else 1 end,
+                 coalesce(last_polled_at, '-infinity'::timestamptz) desc,
+                 name asc
+        limit 1
+     )
+     select count(*) filter (where enabled)::text as active_sources,
+            count(*)::text as watched_sources,
+            count(*) filter (where enabled and matched_week > 0)::text as productive_sources_7d,
+            count(*) filter (where enabled and matched_week = 0)::text as quiet_sources,
+            (select name from attention) as attention_source_name,
+            (select reason from attention) as attention_reason
+       from source_rows`,
+    [workspaceId],
+  );
+  const row = rows[0];
+  return {
+    active_sources: Number(row?.active_sources ?? 0),
+    watched_sources: Number(row?.watched_sources ?? 0),
+    productive_sources_7d: Number(row?.productive_sources_7d ?? 0),
+    quiet_sources: Number(row?.quiet_sources ?? 0),
+    attention_source_name: row?.attention_source_name ?? null,
+    attention_reason: row?.attention_reason ?? null,
+  };
+}
+
 async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContact[]> {
   const pool = getPool();
   const { rows } = await pool.query<BriefHotContact>(
@@ -384,6 +458,15 @@ const EMPTY_LEARNING_INSIGHT: BriefLearningInsight = {
   useful_outcomes_30d: 0,
 };
 
+const EMPTY_SIGNAL_HEALTH: BriefSignalHealth = {
+  active_sources: 0,
+  watched_sources: 0,
+  productive_sources_7d: 0,
+  quiet_sources: 0,
+  attention_source_name: null,
+  attention_reason: null,
+};
+
 export default async function BriefPage() {
   const session = await getActiveWorkspaceSession();
   if (!session) {
@@ -391,6 +474,7 @@ export default async function BriefPage() {
       <BriefView
         actions={EMPTY_ACTION_STATE}
         signalKinds={[]}
+        signalHealth={EMPTY_SIGNAL_HEALTH}
         hotContacts={[]}
         outcomeInsights={[]}
         learning={EMPTY_LEARNING_INSIGHT}
@@ -398,12 +482,19 @@ export default async function BriefPage() {
       />
     );
   }
-  const { actions, signalKinds, hotContacts, outcomeInsights, learning } =
-    await loadBriefState(session.workspace.id);
+  const {
+    actions,
+    signalKinds,
+    signalHealth,
+    hotContacts,
+    outcomeInsights,
+    learning,
+  } = await loadBriefState(session.workspace.id);
   return (
     <BriefView
       actions={actions}
       signalKinds={signalKinds}
+      signalHealth={signalHealth}
       hotContacts={hotContacts}
       outcomeInsights={outcomeInsights}
       learning={learning}
@@ -417,25 +508,42 @@ async function loadBriefState(
 ): Promise<{
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
+  signalHealth: BriefSignalHealth;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
 }> {
   try {
-    const [actions, signalKinds, hotContacts, outcomeInsights, learning] =
+    const [
+      actions,
+      signalKinds,
+      signalHealth,
+      hotContacts,
+      outcomeInsights,
+      learning,
+    ] =
       await Promise.all([
         loadBriefActionState(workspaceId),
         loadSignalKindMetrics(workspaceId),
+        loadBriefSignalHealth(workspaceId),
         loadBriefHotContacts(workspaceId),
         loadBriefOutcomeInsights(workspaceId),
         loadBriefLearningInsight(workspaceId),
       ]);
-    return { actions, signalKinds, hotContacts, outcomeInsights, learning };
+    return {
+      actions,
+      signalKinds,
+      signalHealth,
+      hotContacts,
+      outcomeInsights,
+      learning,
+    };
   } catch (err) {
     console.error("[dashboard/brief] failed to load brief state", err);
     return {
       actions: EMPTY_ACTION_STATE,
       signalKinds: [],
+      signalHealth: EMPTY_SIGNAL_HEALTH,
       hotContacts: [],
       outcomeInsights: [],
       learning: EMPTY_LEARNING_INSIGHT,
@@ -446,6 +554,7 @@ async function loadBriefState(
 function BriefView({
   actions,
   signalKinds,
+  signalHealth,
   hotContacts,
   outcomeInsights,
   learning,
@@ -453,6 +562,7 @@ function BriefView({
 }: {
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
+  signalHealth: BriefSignalHealth;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
@@ -488,7 +598,11 @@ function BriefView({
         </p>
       </section>
 
-      <BriefSnapshotPanel actions={actions} signalKinds={signalKinds} />
+      <BriefSnapshotPanel
+        actions={actions}
+        signalKinds={signalKinds}
+        signalHealth={signalHealth}
+      />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
@@ -598,9 +712,11 @@ function BriefView({
 function BriefSnapshotPanel({
   actions,
   signalKinds,
+  signalHealth,
 }: {
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
+  signalHealth: BriefSignalHealth;
 }) {
   const metrics = [
     {
@@ -697,9 +813,101 @@ function BriefSnapshotPanel({
             ))}
           </div>
         )}
+        <SignalHealthPanel actions={actions} health={signalHealth} />
       </div>
     </section>
   );
+}
+
+function SignalHealthPanel({
+  actions,
+  health,
+}: {
+  actions: BriefActionState;
+  health: BriefSignalHealth;
+}) {
+  const dailyAverage = actions.qualified_signals_7d / 7;
+  const attention = signalHealthAttention(health);
+  return (
+    <div className="mt-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-1)]">
+          <Icon name="monitor_heart" size={15} />
+          Signal health
+        </p>
+        <Link href="/dashboard/agent#sources" className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          Sources
+        </Link>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <SignalHealthMetric
+          label="Active sources"
+          value={`${health.active_sources}/${health.watched_sources}`}
+        />
+        <SignalHealthMetric
+          label="Productive 7d"
+          value={health.productive_sources_7d}
+        />
+        <SignalHealthMetric
+          label="Avg/day"
+          value={formatDailyAverage(dailyAverage)}
+        />
+      </div>
+      <p
+        className={
+          "mt-3 rounded-[8px] px-3 py-2 text-xs leading-5 " +
+          (attention
+            ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+            : "bg-[var(--color-pos-bg)] text-[var(--color-pos)]")
+        }
+      >
+        {attention ??
+          "Signal engine is active. Productive sources are creating qualified timing evidence this week."}
+      </p>
+    </div>
+  );
+}
+
+function SignalHealthMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2">
+      <p className="text-[11px] text-[var(--color-text-4)]">{label}</p>
+      <p className="mt-1 text-base font-semibold tabular-nums text-[var(--color-text-1)]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function signalHealthAttention(health: BriefSignalHealth): string | null {
+  if (health.watched_sources === 0) {
+    return "No signal sources are configured yet. Complete Profile so the Agent can watch for timing evidence.";
+  }
+  if (health.active_sources === 0) {
+    return "Signal sources exist, but none are active. Re-enable sources before qualified signals can flow.";
+  }
+  if (health.attention_source_name && health.attention_reason) {
+    return `${health.attention_source_name} needs attention: ${health.attention_reason}.`;
+  }
+  if (health.quiet_sources > 0) {
+    return `${health.quiet_sources} active source${
+      health.quiet_sources === 1 ? " is" : "s are"
+    } quiet this week. Review source mix if qualified signals slow down.`;
+  }
+  return null;
+}
+
+function formatDailyAverage(value: number): string {
+  if (value === 0) return "0";
+  if (value < 1) return value.toFixed(1);
+  return String(Math.round(value));
 }
 
 function BriefWindowMetricRow({

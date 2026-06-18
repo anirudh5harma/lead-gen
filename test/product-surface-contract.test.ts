@@ -239,6 +239,12 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /24h \/ 7d/);
   assert.match(dashboard, /Signal types/);
   assert.match(dashboard, /Qualified timing evidence by type/);
+  assert.match(dashboard, /Signal health/);
+  assert.match(dashboard, /Active sources/);
+  assert.match(dashboard, /Productive 7d/);
+  assert.match(dashboard, /Avg\/day/);
+  assert.match(dashboard, /Signal engine is active/);
+  assert.match(dashboard, /Review source mix if qualified signals slow down/);
   assert.match(dashboard, /The operating brief only tracks qualified signals/);
   assert.match(dashboard, /Today priority/);
   assert.match(dashboard, /Fresh qualified contacts/);
@@ -256,6 +262,10 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /loadBriefHotContacts/);
   assert.match(dashboard, /loadBriefOutcomeInsights/);
   assert.match(dashboard, /loadBriefLearningInsight/);
+  assert.match(dashboard, /loadBriefSignalHealth/);
+  assert.match(dashboard, /from workspace_source_configs wsc/);
+  assert.match(dashboard, /join graph_sources gs/);
+  assert.match(dashboard, /attention_source_name/);
   assert.match(dashboard, /from graph_persons p/);
   assert.match(dashboard, /join lateral \(/);
   assert.match(dashboard, /latest_signal\.title as latest_signal_title/);

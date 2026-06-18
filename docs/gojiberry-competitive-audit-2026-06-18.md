@@ -25,3 +25,5 @@ Observed in the authenticated GojiBerry app on June 18, 2026. This is a product-
 ## Current Bombsell Change From This Pass
 
 The Agent page now opens with live system work and the execution evidence users care about first: sent outreach, qualified signals, and verified contacts. Readiness, source strategy, sequence, learning, and setup remain available but no longer block the first scan.
+
+The Brief now carries a compact signal-health readout: active sources, productive sources in the last week, average qualified signals per day, and the source that needs attention. This borrows GojiBerry's concrete signal analytics without adding a separate Insights tab.
