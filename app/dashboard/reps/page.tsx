@@ -26,6 +26,7 @@ import {
   checkAgentSourcesAction,
   decideApprovalWithDraftAction,
   dismissQualifiedSignalAction,
+  generateMeetingPrepAction,
   optimizeCampaignStrategyAction,
   optimizePlaySkillsAction,
   prepareQualifiedSignalsAction,
@@ -116,6 +117,33 @@ interface AgentOutreachSummary {
   email_sent_7d: number;
   linkedin_sent_7d: number;
   awaiting_reply: number;
+}
+
+interface AgentReplyRow {
+  conversation_id: string;
+  conversation_status: string;
+  inbound_message_id: string;
+  inbound_subject: string | null;
+  inbound_body: string | null;
+  intent_class: string | null;
+  received_at: Date;
+  counterparty_name: string | null;
+  company_name: string | null;
+  signal_title: string | null;
+  reply_draft_message_id: string | null;
+  reply_draft_status: string | null;
+  reply_approval_id: string | null;
+  reply_approval_decision: string | null;
+  meeting_prep_generated_at: Date | null;
+  meeting_prep_next_action: string | null;
+}
+
+interface AgentReplySummary {
+  recent: AgentReplyRow[];
+  replies_7d: number;
+  drafted_replies: number;
+  meeting_intent: number;
+  prep_ready: number;
 }
 
 interface AgentContactRow {
@@ -211,6 +239,7 @@ interface RepsState {
   strategy: AgentSourceStrategy;
   opportunities: QualifiedSignalWorkbench;
   outreach: AgentOutreachSummary;
+  replies: AgentReplySummary;
   contacts: AgentContactSummary;
   learning: AgentLearningSummary;
 }
@@ -225,6 +254,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     strategy,
     opportunities,
     outreach,
+    replies,
     contacts,
     learning,
   ] = await Promise.all([
@@ -305,6 +335,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     loadAgentSourceStrategy(workspaceId),
     loadQualifiedSignalWorkbench(pool, workspaceId, { limit: 5 }),
     loadAgentOutreachSummary(workspaceId),
+    loadAgentReplySummary(workspaceId),
     loadAgentContactSummary(workspaceId),
     loadAgentLearningSummary(workspaceId),
   ]);
@@ -316,6 +347,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     strategy,
     opportunities,
     outreach,
+    replies,
     contacts,
     learning,
   };
@@ -763,6 +795,145 @@ async function loadAgentOutreachSummary(
   };
 }
 
+async function loadAgentReplySummary(
+  workspaceId: string,
+): Promise<AgentReplySummary> {
+  const pool = getPool();
+  const [recent, summary] = await Promise.all([
+    pool.query<AgentReplyRow>(
+      `select c.id as conversation_id,
+              c.status::text as conversation_status,
+              inbound.id as inbound_message_id,
+              inbound.subject as inbound_subject,
+              inbound.body as inbound_body,
+              inbound.intent_class,
+              coalesce(inbound.sent_at, inbound.created_at) as received_at,
+              p.full_name as counterparty_name,
+              co.name as company_name,
+              s.title as signal_title,
+              reply_draft.id as reply_draft_message_id,
+              reply_draft.status::text as reply_draft_status,
+              approval.id as reply_approval_id,
+              approval.decision::text as reply_approval_decision,
+              meeting_prep.generated_at as meeting_prep_generated_at,
+              meeting_prep.next_action as meeting_prep_next_action
+         from conversations c
+         join lateral (
+           select m.id,
+                  m.subject,
+                  m.body,
+                  m.intent_class,
+                  m.sent_at,
+                  m.created_at
+             from messages m
+            where m.workspace_id = $1
+              and m.conversation_id = c.id
+              and m.direction = 'inbound'
+            order by coalesce(m.sent_at, m.created_at) desc
+            limit 1
+         ) inbound on true
+         left join graph_persons p on p.id = c.counterparty_person_id
+         left join graph_companies co on co.id = c.counterparty_company_id
+         left join signals s on s.id = c.origin_signal_id
+         left join lateral (
+           select m.id, m.status
+             from messages m
+            where m.workspace_id = $1
+              and m.conversation_id = c.id
+              and m.direction = 'outbound'
+              and m.properties->>'reply_to_message_id' = inbound.id::text
+            order by m.created_at desc
+            limit 1
+         ) reply_draft on true
+         left join lateral (
+           select a.id, a.decision
+             from workflow_approvals a
+            where a.workspace_id = $1
+              and a.kind = 'inbound.email.reply'
+              and a.payload->>'conversation_id' = c.id::text
+              and a.payload->>'inbound_message_id' = inbound.id::text
+            order by a.created_at desc
+            limit 1
+         ) approval on true
+         left join lateral (
+           select (e.payload->>'generated_at')::timestamptz as generated_at,
+                  e.payload->>'next_action' as next_action
+             from events e
+            where e.workspace_id = $1
+              and e.event_type = 'meeting.prep.generated'
+              and e.payload->>'conversation_id' = c.id::text
+            order by e.occurred_at desc
+            limit 1
+         ) meeting_prep on true
+        where c.workspace_id = $1
+          and coalesce(inbound.sent_at, inbound.created_at) >= now() - interval '14 days'
+        order by coalesce(inbound.sent_at, inbound.created_at) desc
+        limit 8`,
+      [workspaceId],
+    ),
+    pool.query<{
+      replies_7d: string;
+      drafted_replies: string;
+      meeting_intent: string;
+      prep_ready: string;
+    }>(
+      `with recent_replies as (
+         select c.id as conversation_id,
+                inbound.id as inbound_message_id,
+                inbound.intent_class
+           from conversations c
+           join lateral (
+             select m.id,
+                    m.intent_class,
+                    m.sent_at,
+                    m.created_at
+               from messages m
+              where m.workspace_id = $1
+                and m.conversation_id = c.id
+                and m.direction = 'inbound'
+              order by coalesce(m.sent_at, m.created_at) desc
+              limit 1
+           ) inbound on true
+          where c.workspace_id = $1
+            and coalesce(inbound.sent_at, inbound.created_at) >= now() - interval '7 days'
+       )
+       select
+         count(*)::text as replies_7d,
+         count(*) filter (
+           where exists (
+             select 1
+               from messages m
+              where m.workspace_id = $1
+                and m.conversation_id = recent_replies.conversation_id
+                and m.direction = 'outbound'
+                and m.properties->>'reply_to_message_id' = recent_replies.inbound_message_id::text
+           )
+         )::text as drafted_replies,
+         count(*) filter (
+           where recent_replies.intent_class in ('meeting_intent','positive')
+         )::text as meeting_intent,
+         count(*) filter (
+           where exists (
+             select 1
+               from events e
+              where e.workspace_id = $1
+                and e.event_type = 'meeting.prep.generated'
+                and e.payload->>'conversation_id' = recent_replies.conversation_id::text
+           )
+         )::text as prep_ready
+       from recent_replies`,
+      [workspaceId],
+    ),
+  ]);
+  return {
+    recent: recent.rows,
+    replies_7d: Number(summary.rows[0]?.replies_7d ?? 0),
+    drafted_replies: Number(summary.rows[0]?.drafted_replies ?? 0),
+    meeting_intent: Number(summary.rows[0]?.meeting_intent ?? 0),
+    prep_ready: Number(summary.rows[0]?.prep_ready ?? 0),
+  };
+}
+
 export default async function RepsPage() {
   const active = await getActiveWorkspaceSession();
   if (!active) return <NoWorkspaceReps />;
@@ -812,6 +983,8 @@ export default async function RepsPage() {
       />
 
       <AgentOutreachPanel outreach={state.outreach} />
+
+      <AgentRepliesPanel replies={state.replies} />
 
       <AgentOpportunityPanel opportunities={state.opportunities} />
 
@@ -908,6 +1081,13 @@ function emptyRepsState(workspaceId: string): RepsState {
       email_sent_7d: 0,
       linkedin_sent_7d: 0,
       awaiting_reply: 0,
+    },
+    replies: {
+      recent: [],
+      replies_7d: 0,
+      drafted_replies: 0,
+      meeting_intent: 0,
+      prep_ready: 0,
     },
     opportunities: {
       signals: [],
@@ -2297,6 +2477,128 @@ function AgentOutreachPanel({
   );
 }
 
+function AgentRepliesPanel({
+  replies,
+}: {
+  replies: AgentReplySummary;
+}) {
+  return (
+    <div id="replies" className="scroll-mt-28">
+      <SurfaceSection title="Replies ready">
+        <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Reply desk, last 7 days
+            </p>
+            <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
+              <MiniStat label="Replies" value={replies.replies_7d} />
+              <MiniStat label="Drafted" value={replies.drafted_replies} />
+              <MiniStat label="Meeting intent" value={replies.meeting_intent} />
+              <MiniStat label="Prep ready" value={replies.prep_ready} />
+            </div>
+            <p className="text-xs leading-5 text-[var(--color-text-3)]">
+              Inbound replies are classified, drafted, and tied back to the
+              original conversation so the next move is reviewable.
+            </p>
+          </aside>
+
+          {replies.recent.length === 0 ? (
+            <EmptyState
+              title="No replies ready yet"
+              hint="When contacts reply, the agent will classify intent, prepare a response, and keep the exact conversation trace here."
+              cta={{
+                href: "/dashboard/agent#outreach",
+                label: "Review sent outreach",
+                icon: "mail",
+              }}
+            />
+          ) : (
+            <div className="grid gap-2">
+              {replies.recent.map((reply) => (
+                <AgentReplyLink key={reply.inbound_message_id} reply={reply} />
+              ))}
+            </div>
+          )}
+        </div>
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function AgentReplyLink({ reply }: { reply: AgentReplyRow }) {
+  const href = `/dashboard/conversations/${reply.conversation_id}#message-${reply.inbound_message_id}`;
+  const needsPrep = reply.intent_class === "meeting_intent" || reply.intent_class === "positive";
+  return (
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
+      <Link href={href} prefetch={false} className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-pos-bg)] text-[var(--color-pos)]">
+          <Icon name="mail" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {reply.counterparty_name ?? "Unknown contact"}
+            {reply.company_name ? (
+              <span className="font-normal text-[var(--color-text-3)]">
+                {" "}
+                at {reply.company_name}
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {reply.inbound_subject ?? replyPreview(reply)}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+            {replyPreview(reply)}
+          </span>
+          {reply.signal_title ? (
+            <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
+              Why now: {reply.signal_title}
+            </span>
+          ) : null}
+        </span>
+      </Link>
+
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {replyIntentLabel(reply.intent_class)}
+        </span>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {replyDraftLabel(reply)}
+        </span>
+        {reply.meeting_prep_generated_at ? (
+          <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs text-[var(--color-pos)]">
+            {meetingPrepLabel(reply.meeting_prep_next_action)}
+          </span>
+        ) : needsPrep ? (
+          <form action={generateMeetingPrepAction}>
+            <input
+              type="hidden"
+              name="return_to"
+              value="/dashboard/agent#replies"
+            />
+            <input
+              type="hidden"
+              name="conversation_id"
+              value={reply.conversation_id}
+            />
+            <PendingSubmitButton
+              className="btn-quiet-sm"
+              icon="event_available"
+              iconSize={14}
+              pendingLabel="Preparing"
+            >
+              Prepare meeting
+            </PendingSubmitButton>
+          </form>
+        ) : null}
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(reply.received_at)}
+        </span>
+      </span>
+    </article>
+  );
+}
+
 function AgentLearningPanel({
   learning,
 }: {
@@ -2797,6 +3099,38 @@ function messagePreview(message: AgentOutreachRow): string {
   const text = message.body;
   if (!text) return "Sent draft";
   return text.length > 96 ? text.slice(0, 96) + "..." : text;
+}
+
+function replyPreview(reply: AgentReplyRow): string {
+  const text = reply.inbound_body;
+  if (!text) return "Inbound reply";
+  return text.length > 96 ? text.slice(0, 96) + "..." : text;
+}
+
+function replyIntentLabel(intent: string | null): string {
+  if (intent === "meeting_intent") return "Meeting intent";
+  if (intent === "positive") return "Positive reply";
+  if (intent === "neutral") return "Neutral reply";
+  if (intent === "negative") return "Negative reply";
+  if (intent === "unsubscribe") return "Unsubscribe";
+  if (intent === "do_not_contact") return "Do not contact";
+  return "Classifying";
+}
+
+function replyDraftLabel(reply: AgentReplyRow): string {
+  if (reply.reply_approval_decision === "pending") return "Draft ready";
+  if (reply.reply_approval_decision === "approved") return "Approved";
+  if (reply.reply_approval_decision === "rejected") return "Rejected";
+  if (reply.reply_draft_status) return statusLabel(reply.reply_draft_status);
+  return "Draft pending";
+}
+
+function meetingPrepLabel(action: string | null): string {
+  if (action === "prepare_meeting") return "Meeting prep ready";
+  if (action === "ask_for_times") return "Ask for times";
+  if (action === "wait_for_reply") return "Wait for reply";
+  if (action === "do_not_follow_up") return "Do not follow up";
+  return "Prep ready";
 }
 
 function freshWhen(value: Date): string {

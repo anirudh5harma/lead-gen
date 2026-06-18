@@ -405,6 +405,16 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   assert.match(dashboard, /Reply and meeting insights/);
   assert.match(dashboard, /reply_intent/);
   assert.match(reps, /Reply evidence/);
+  assert.match(reps, /Replies ready/);
+  assert.match(reps, /Reply desk, last 7 days/);
+  assert.match(reps, /loadAgentReplySummary/);
+  assert.match(reps, /AgentRepliesPanel/);
+  assert.match(reps, /direction = 'inbound'/);
+  assert.match(reps, /reply_to_message_id/);
+  assert.match(reps, /meeting\.prep\.generated/);
+  assert.match(reps, /generateMeetingPrepAction/);
+  assert.match(reps, /Prepare meeting/);
+  assert.match(reps, /href: "\/dashboard\/agent#outreach",\s+label: "Review sent outreach"/);
   assert.match(reps, /positive_replies_7d/);
   assert.match(loading, /surface="dashboard"/);
   assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
@@ -422,6 +432,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /AgentContactsPanel/);
   assert.match(reps, /AgentLearningPanel/);
   assert.match(reps, /AgentOutreachPanel/);
+  assert.match(reps, /AgentRepliesPanel/);
   assert.match(reps, /AgentOpportunityPanel/);
   assert.match(reps, /AgentReadinessPanel/);
   assert.match(reps, /AgentStrategyPanel/);
@@ -431,6 +442,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /loadAgentContactSummary/);
   assert.match(reps, /loadAgentLearningSummary/);
   assert.match(reps, /loadAgentOutreachSummary/);
+  assert.match(reps, /loadAgentReplySummary/);
   assert.match(reps, /visibleReps = state\.reps\.filter\(isVisibleProductAgent\)/);
   assert.match(reps, /return rep\.role === "sdr"/);
   assert.match(reps, /Verified contacts/);
@@ -483,6 +495,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(reps, /id="verified-contacts" className="scroll-mt-28"/);
   assert.match(reps, /id="outreach" className="scroll-mt-28"/);
+  assert.match(reps, /id="replies" className="scroll-mt-28"/);
   assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
   assert.match(reps, /title="Sent outreach"/);
   assert.match(reps, /Agent outreach, last 7 days/);
