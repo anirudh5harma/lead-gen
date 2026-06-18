@@ -17,6 +17,8 @@ Conversation, and Outcome-derived learning.
 
 ## Research Snapshot
 
+Last checked against Anthropic Claude Code docs on 2026-06-19.
+
 - Claude Code is available across terminal, IDE, desktop, and web, and the docs
   position MCP as the way to connect external tools and data sources.
   Source: <https://code.claude.com/docs/en/overview>
@@ -27,11 +29,17 @@ Conversation, and Outcome-derived learning.
   namespaced by plugin name, which avoids command conflicts.
   Source: <https://code.claude.com/docs/en/plugins-reference>
 - Plugin MCP servers can be declared in `.mcp.json` or the manifest and start
-  automatically when the plugin is enabled.
-  Source: <https://code.claude.com/docs/en/plugins-reference>
+  automatically when the plugin is enabled. Claude Code supports `${CLAUDE_PLUGIN_ROOT}`,
+  `${CLAUDE_PLUGIN_DATA}`, and `${CLAUDE_PROJECT_DIR}` substitutions for plugin
+  MCP server config.
+  Source: <https://code.claude.com/docs/en/mcp>
 - Claude Code supports remote HTTP, SSE, WebSocket, and local stdio MCP servers.
   MCP resources, prompts, elicitation, and tool search are supported. Tool search
   makes a larger Bombsell toolset viable if server instructions are concise.
+  Source: <https://code.claude.com/docs/en/mcp>
+- Claude Code supports OAuth-style remote MCP auth and `headersHelper` for
+  custom auth headers. `headersHelper` is useful for private dogfood but runs a
+  shell command, so the public path should prefer first-class remote MCP OAuth.
   Source: <https://code.claude.com/docs/en/mcp>
 - Distribution can start with a private/company marketplace and later move to
   the Anthropic community marketplace after validation and safety review.
@@ -102,7 +110,6 @@ Proposed structure:
 bombsell-claude-code/
   .claude-plugin/
     plugin.json
-    marketplace.json
   .mcp.json
   README.md
   skills/
@@ -128,6 +135,16 @@ bombsell-claude-code/
     bombsell-status
 ```
 
+Private marketplace structure:
+
+```text
+bombsell-claude-code-marketplace/
+  .claude-plugin/
+    marketplace.json
+  plugins/
+    bombsell/ -> ../bombsell-claude-code or pinned source
+```
+
 Initial `.mcp.json` target:
 
 ```json
@@ -135,14 +152,18 @@ Initial `.mcp.json` target:
   "mcpServers": {
     "bombsell": {
       "type": "http",
-      "url": "https://www.bombsell.com/api/mcp"
+      "url": "https://www.bombsell.com/api/mcp",
+      "oauth": {
+        "scopes": ["brief:read", "profile:read", "signals:read", "outreach:read"]
+      }
     }
   }
 }
 ```
 
 This requires completing first-class remote MCP auth for Claude Code. Until then,
-developer testing can use a bearer token with dynamic headers or local config.
+developer testing can use a local `.mcp.json` with `headersHelper` or static
+bearer headers, but that must stay out of the published plugin.
 
 ## Skills
 
@@ -207,6 +228,8 @@ MCP tools needed:
 ### `/bombsell:prepare-outreach`
 
 Turns selected qualified signals into judged email or LinkedIn outreach drafts.
+For v1, this skill is prepare-and-review: it can create or find drafts and
+approval records, but it should not approve sends by itself.
 
 MCP tools needed:
 
@@ -226,7 +249,7 @@ Safety:
 ### `/bombsell:reply-insights`
 
 Fetches reply and meeting evidence so Claude Code can summarize what messages,
-signals, channels, and personas are working.
+signals, channels, and Agent positioning are working.
 
 MCP tools needed:
 
@@ -241,8 +264,8 @@ MCP tools needed:
 
 A Claude Code subagent that can read the local project and use Bombsell MCP tools
 to keep Profile, signals, and launch readiness current. It should be allowed to
-read local files and call Bombsell MCP tools, but should not write local files by
-default.
+read local files and call Bombsell MCP tools, but should default to read-only
+local files and proposal-only Bombsell writes.
 
 ### `bombsell:outreach-reviewer`
 
@@ -274,6 +297,23 @@ Candidate hooks:
 
 Hooks must never auto-send outreach or auto-write Profile changes.
 
+## V1 Command Boundaries
+
+Ship the first plugin as a focused GTM workbench:
+
+- Brief: read current last-day and last-week metrics.
+- Profile: propose company, buyer-fit, signal-source, and voice updates from the
+  repo.
+- Signals: list qualified signals by verified email, LinkedIn-ready profile,
+  draft-ready, contact-resolution needed, and fit-review needed.
+- Outreach: inspect sent email/LinkedIn drafts and prepare new judged drafts
+  behind approval gates.
+- Learning: summarize replies, meetings, and what Agent positioning is working.
+
+Defer automatic release hooks, profile writes without confirmation, local stdio
+servers, and any send/approve automation until design partners trust the
+read-only and prepare-only flow.
+
 ## Required Bombsell Backend Work
 
 1. Remote MCP auth for Claude Code
@@ -283,6 +323,8 @@ Hooks must never auto-send outreach or auto-write Profile changes.
    - Support workspace selection during auth.
    - Keep bearer token support for power users and CI.
    - Document how to revoke plugin sessions.
+   - Keep `headersHelper`-based bearer auth as a private dogfood escape hatch
+     only; do not require users to paste tokens into plugin files.
 
 2. Server instructions for tool search
 
@@ -302,7 +344,7 @@ Hooks must never auto-send outreach or auto-write Profile changes.
    - `bombsell.launch.check` (landed: read-only)
    - `bombsell.signals.list_qualified` (landed: read-only)
    - `bombsell.contact_lanes.get` (landed: read-only)
-   - `bombsell.outreach.prepare`
+   - `bombsell.outreach.prepare` (prepare-only; never sends directly)
    - `bombsell.outreach.list_sent` (landed: read-only)
    - `bombsell.draft.get` (landed: read-only)
    - `bombsell.approvals.list` (landed: read-only)
@@ -346,7 +388,7 @@ Hooks must never auto-send outreach or auto-write Profile changes.
 
 - Build the plugin in a separate `bombsell-claude-code` directory.
 - Load locally with `claude --plugin-dir ./bombsell-claude-code`.
-- Use bearer token or local dev auth.
+- Use local dev auth or a non-published `headersHelper` during dogfood.
 - Verify the six skills against staging and production workspaces.
 
 Exit criteria:

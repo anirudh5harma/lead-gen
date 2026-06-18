@@ -1027,6 +1027,9 @@ test("MCP context uses the simplified product model", () => {
   assert.match(context, /Active agents/);
   assert.match(context, /Outreach Paths/);
   assert.doesNotMatch(context, /Outreach Sequences/);
+  assert.doesNotMatch(context, /Preserve the internal five primitives/);
+  assert.doesNotMatch(context, /Content opportunities/);
+  assert.doesNotMatch(context, /AEO gaps/);
   assert.match(tools, /qualified signals, verified contacts, outreach, replies, meetings/);
   assert.match(tools, /workspace Agent persona/);
   assert.match(tools, /signal-to-email outreach path/);
@@ -1046,6 +1049,14 @@ test("MCP context uses the simplified product model", () => {
   assert.doesNotMatch(tools, /Create or update a Signal-to-email Play/);
   assert.doesNotMatch(tools, /Create or update a Signal-to-LinkedIn Play/);
   assert.doesNotMatch(tools, /Dispatch durable Play workflows/);
+  assert.doesNotMatch(tools, /active Plays/);
+  assert.doesNotMatch(tools, /before any Play sends/);
+  assert.doesNotMatch(tools, /configures Rep and email\/LinkedIn Plays/);
+  assert.doesNotMatch(tools, /selected Play Skill/);
+  assert.doesNotMatch(tools, /Conversation matcher/);
+  assert.doesNotMatch(tools, /campaign Play variants/);
+  assert.doesNotMatch(tools, /real Outcome for a campaign Play run/);
+  assert.doesNotMatch(tools, /Play dispatch/);
   assert.doesNotMatch(env, /content, and AEO/);
 });
 

@@ -404,7 +404,7 @@ export async function getWorkspaceAgentContext(
     "- Use the registered tools as primitives; compose outcomes from tools instead of assuming hidden features.",
     "- State changes should flow through typed product/graph tools and durable workflows.",
     "- Keep user-facing language simple: Brief, Profile, Agent, qualified signals, verified contacts, outreach, replies, and meetings.",
-    "- Preserve the internal five primitives underneath: Rep, Signal, Play, Conversation, and Outcome.",
+    "- Preserve the durable architecture underneath; never bypass workflow, event, graph, eval, or channel-readiness contracts.",
     "- Approved sends still pass through verified contact resolution, judge, deliverability, duplicate-contact, and channel gates.",
     "",
     "## Current Counts",
@@ -556,8 +556,8 @@ export function formatRecommendationQuality(quality: ContextRecommendationQualit
   }
   return [
     formatRecommendationQualityLine("All recommendations", quality),
-    formatRecommendationQualityLine("Content opportunities", quality.content_opportunity),
-    formatRecommendationQualityLine("AEO gaps", quality.aeo_gap),
+    formatRecommendationQualityLine("Signal opportunities", quality.content_opportunity),
+    formatRecommendationQualityLine("Visibility gaps", quality.aeo_gap),
   ].join("\n");
 }
 

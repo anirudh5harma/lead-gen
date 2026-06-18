@@ -98,4 +98,6 @@ Claude Code workflows can now decide Bombsell approval gates through `bombsell.a
 
 Sent outreach proof now has a canonical Agent route at `/dashboard/agent/outreach/[id]`. Brief, Agent, Profile, contact pages, actions, and `bombsell.*` MCP aliases link to that route, while the old `/dashboard/conversations/[id]` path redirects for compatibility. This keeps exact draft/reply proof under Agent instead of leaving a hidden fourth product surface.
 
+The Claude Code plugin plan is now grounded in Anthropic's current plugin and MCP docs and framed as a focused GTM workbench: Brief, Profile proposal, qualified signals, judged outreach preparation, and reply/meeting learning. The public plugin path should use remote MCP OAuth; `headersHelper` remains a private dogfood escape hatch only.
+
 The Agent outreach proof sidebar now uses graph-backed contact trust instead of only raw contact text. It shows verified email status, LinkedIn profile readiness, fit review, and channel handles from the same conversation trace that drives signal, message, approval, reply, and meeting proof.

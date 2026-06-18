@@ -1088,7 +1088,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.launch.readiness.get",
     description:
-      "Read the workspace launch gate for autonomous outreach: profile, ICP, Rep, Signal sources, active Plays, Outlook reply sync, LinkedIn health, blockers, warnings, and next action.",
+      "Read the workspace launch gate for autonomous outreach: Profile, buyer fit, signal sources, outreach paths, Outlook reply sync, LinkedIn health, blockers, warnings, and next action.",
     kind: "read",
     input: z.object({
       required_channel: LaunchReadinessRequiredChannelSchema.optional(),
@@ -1127,7 +1127,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.contact.waterfall.resolve",
     description:
-      "Run the official graph-first contact resolution waterfall for a matched Signal before any Play sends: graph cache, provider discovery, email verification, ranked candidates, or a typed defer.",
+      "Run the official graph-first contact resolution waterfall for a qualified signal before outreach: graph cache, provider discovery, email verification, ranked candidates, or a typed defer.",
     kind: "write",
     input: z.object({
       signal_id: z.string().uuid(),
@@ -1149,7 +1149,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.conversation.trust.get",
     description:
-      "Read the user-facing proof trace for one Conversation: Signal, messages, judge output, approval gate, workflow steps, send/defer events, and Outcomes.",
+      "Read the user-facing proof trace for one outreach thread: signal, verified contact, messages, judge output, approval gate, workflow steps, send/defer events, replies, and meetings.",
     kind: "read",
     input: z.object({ conversation_id: z.string().uuid() }),
     output: z.unknown(),
@@ -1207,7 +1207,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.profile_icp.draft",
     description:
-      "Run the durable LangGraph Profile/ICP draft step from a website URL. Emits workspace.profile.drafted and icp.drafted; it does not configure Reps, Plays, sources, channels, or sends.",
+      "Run the durable LangGraph Profile and buyer-fit draft step from a website URL. Emits workspace.profile.drafted and icp.drafted; it does not configure Agent persona, outreach paths, sources, channels, or sends.",
     kind: "write",
     input: z.object({
       website_url: z.string().min(1),
@@ -1234,7 +1234,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.activation.setup.run",
     description:
-      "Run the durable website-to-setup LangGraph workflow. It drafts Profile/ICP, configures Rep and email/LinkedIn Plays, configures low-cost default Signal sources, returns Outlook/LinkedIn connection gates, and then starts initial Signal ingestion after activation completes. It never matches leads or sends outreach.",
+      "Run the durable website-to-setup LangGraph workflow. It drafts Profile and buyer fit, configures the Agent persona and email/LinkedIn outreach paths, configures low-cost default signal sources, returns Outlook/LinkedIn connection gates, and then starts initial signal ingestion after activation completes. It never matches leads or sends outreach.",
     kind: "write",
     input: z.object({
       website_url: z.string().min(1),
@@ -1581,7 +1581,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.message.personalize",
     description:
-      "Personalize an outbound message from Rep, Signal, prospect, graph context, vertical intelligence, and a selected Play Skill; emits message.personalized and returns the draft for eval gating.",
+      "Personalize an outbound message from Agent persona, qualified signal, prospect, graph context, vertical intelligence, and the selected outreach writing skill; emits message.personalized and returns the draft for eval gating.",
     kind: "write",
     input: z.object({
       rep_id: z.string().uuid(),
@@ -1617,7 +1617,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.reply.triage",
     description:
-      "Triage an inbound email reply through the official Conversation matcher, Rep replier role, reply.classified event, and Outcome recording path.",
+      "Triage an inbound email reply through the official outreach-thread matcher, Agent reply role, reply.classified event, and reply/meeting learning path.",
     kind: "write",
     input: z.object({
       channel: z.literal("email").optional(),
@@ -1782,7 +1782,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.activation.configure",
     description:
-      "Shortcut for the setup screen: compose Rep, ICP, Signal-email Play, optional email account, tracked company, and optional source. Primitive tools remain available for each step.",
+      "Shortcut for the setup screen: compose Agent persona, buyer fit, signal-to-email outreach path, optional email account, tracked company, and optional source. Primitive tools remain available for each step.",
     kind: "write",
     input: z.object({
       rep: z.object({
@@ -1898,7 +1898,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.campaign.outcome.record",
     description:
-      "Record a real Outcome for a campaign Play run, attributing the result back to campaign procedural memory.",
+      "Record a real reply, meeting, or learning result for an attributed outreach run, feeding it back into procedural memory.",
     kind: "write",
     input: z.object({
       play_run_id: z.string().uuid(),
@@ -1925,7 +1925,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.campaign.strategy.optimize",
     description:
-      "Score campaign Play variants from attributable Outcomes and emit a conservative campaign.strategy.recommended event for double-down, hold, reduce, or exploration decisions.",
+      "Score outreach path variants from attributable replies, meetings, and learning results, then emit a conservative campaign.strategy.recommended event for double-down, hold, reduce, or exploration decisions.",
     kind: "write",
     input: z.object({
       lookback_days: z.number().int().positive().max(180).optional(),
@@ -2106,7 +2106,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.signal.submit",
     description:
-      "Submit a manual Signal into the evented ingestion path. Matching and Play dispatch remain separate capabilities.",
+      "Submit a manual signal into the evented ingestion path. Matching and Agent outreach dispatch remain separate capabilities.",
     kind: "write",
     input: z.object({
       company_name: z.string().min(1),
