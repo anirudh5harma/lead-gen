@@ -89,7 +89,11 @@ test("Agent is the canonical dashboard surface route", () => {
   assert.equal(exists("app/dashboard/settings/loading.tsx"), false);
   assert.match(
     source("app/dashboard/profile/page.tsx"),
-    /from "\.\.\/settings\/page"/,
+    /from "\.\/ProfilePage"/,
+  );
+  assert.match(
+    source("app/dashboard/settings/page.tsx"),
+    /redirect\("\/dashboard\/profile"\)/,
   );
   assert.match(
     source("app/dashboard/agent/[id]/loading.tsx"),
@@ -183,7 +187,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
 
   const actions = source("app/dashboard/actions.ts");
   assert.match(actions, /revalidatePath\("\/dashboard\/profile"\)/);
-  assert.match(actions, /revalidatePath\("\/dashboard\/settings"\)/);
+  assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/settings"\)/);
   assert.match(actions, /revalidatePath\("\/dashboard\/agent"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/prospecting"\)/);
   assert.doesNotMatch(actions, /revalidatePath\("\/dashboard\/setup"\)/);
@@ -203,7 +207,7 @@ test("retired product surfaces redirect to Agent", () => {
   );
 });
 
-test("Dashboard routes setup work through Settings and current surfaces", () => {
+test("Dashboard routes setup work through Profile and current surfaces", () => {
   const dashboard = source("app/dashboard/page.tsx");
   const appLayout = source("app/layout.tsx");
   const urlStart = source("components/UrlStart.tsx");
@@ -274,8 +278,8 @@ test("Health presents agent observability from the event-sourced summary", () =>
   assert.doesNotMatch(health, /Everyday outcomes stay with the Reps/);
 });
 
-test("Settings presents separate Outlook and LinkedIn connection gates", () => {
-  const settings = source("app/dashboard/settings/page.tsx");
+test("Profile presents separate Outlook and LinkedIn connection gates", () => {
+  const settings = source("app/dashboard/profile/ProfilePage.tsx");
 
   assert.match(settings, /href="\/api\/auth\/outlook\?return_to=%2Fdashboard%2Fprofile%23email"/);
   assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/);
@@ -302,7 +306,7 @@ test("Settings presents separate Outlook and LinkedIn connection gates", () => {
 });
 
 test("Outlook connection surfaces collapse duplicate rows by mailbox identity", () => {
-  const settings = source("app/dashboard/settings/page.tsx");
+  const settings = source("app/dashboard/profile/ProfilePage.tsx");
   const brief = source("app/dashboard/page.tsx");
 
   assert.match(settings, /row_number\(\) over/);
@@ -659,7 +663,7 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
     source("app/dashboard/reps/page.tsx"),
     source("app/dashboard/reps/[id]/page.tsx"),
     source("app/dashboard/setup/page.tsx"),
-    source("app/dashboard/settings/page.tsx"),
+    source("app/dashboard/profile/ProfilePage.tsx"),
     source("app/dashboard/campaigns/page.tsx"),
   ].join("\n");
 
@@ -814,8 +818,8 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(capabilityMap, /`product\.signal\.ingestion\.run`/);
 });
 
-test("Settings exposes profile, activation, Outlook, and workspace autonomy controls", () => {
-  const settings = source("app/dashboard/settings/page.tsx");
+test("Profile exposes profile, activation, Outlook, and workspace autonomy controls", () => {
+  const settings = source("app/dashboard/profile/ProfilePage.tsx");
   const actions = source("app/dashboard/actions.ts");
   const productApp = source("core/product/app.ts");
   const contactResolution = source("core/contacts/resolution.ts");
@@ -825,7 +829,7 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /configureActivationAction/);
   assert.match(settings, /updateWorkspaceAutonomyAction/);
   assert.match(settings, /href="\/api\/auth\/outlook\?/);
-  assert.match(settings, /SettingsSectionNav/);
+  assert.match(settings, /ProfileSectionNav/);
   assert.match(settings, /getProductLaunchReadiness/);
   assert.match(settings, /LaunchPathPanel/);
   assert.match(settings, /Launch path/);
@@ -975,7 +979,7 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   const linkedInRoute = source("app/api/auth/linkedin/route.ts");
   const linkedInCallback = source("app/api/auth/linkedin/callback/route.ts");
   const linkedInState = source("app/api/auth/linkedin/state.ts");
-  const settings = source("app/dashboard/settings/page.tsx");
+  const settings = source("app/dashboard/profile/ProfilePage.tsx");
 
   assert.match(linkedInState, /return_to\?: string/);
   assert.match(linkedInRoute, /safeReturnTo\(req\.nextUrl\.searchParams\.get\("return_to"\)\)/);
@@ -989,7 +993,7 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
 
 test("account connection entry points carry explicit product return targets", () => {
   const surfaces = [
-    source("app/dashboard/settings/page.tsx"),
+    source("app/dashboard/profile/ProfilePage.tsx"),
     source("app/dashboard/integrations/page.tsx"),
     source("app/dashboard/setup/page.tsx"),
     source("app/dashboard/deliverability/page.tsx"),
@@ -1008,7 +1012,7 @@ test("account connection entry points carry explicit product return targets", ()
 
 test("new product defaults are autonomous after checks", () => {
   const actions = source("app/dashboard/actions.ts");
-  const settings = source("app/dashboard/settings/page.tsx");
+  const settings = source("app/dashboard/profile/ProfilePage.tsx");
   const repDetail = source("app/dashboard/reps/[id]/page.tsx");
   const productApp = source("core/product/app.ts");
   const playAutonomy = source("core/plays/autonomy.ts");
@@ -1227,7 +1231,7 @@ test("dashboard icon names resolve to first-party SVG symbols", () => {
     source("app/onboarding/OnboardingForm.tsx"),
     source("app/dashboard/page.tsx"),
     source("app/dashboard/reps/page.tsx"),
-    source("app/dashboard/settings/page.tsx"),
+    source("app/dashboard/profile/ProfilePage.tsx"),
     source("app/dashboard/ingestion/page.tsx"),
     source("app/dashboard/deliverability/page.tsx"),
     source("app/dashboard/campaigns/page.tsx"),

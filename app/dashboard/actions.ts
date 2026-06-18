@@ -161,7 +161,6 @@ export async function createWorkspaceAction(formData: FormData) {
   await requireDashboardSession(formData);
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/profile");
-  revalidatePath("/dashboard/settings");
   redirectWithToast("/dashboard/profile#profile", "Workspace created.");
 }
 
@@ -189,7 +188,6 @@ export async function updateWorkspaceAutonomyAction(formData: FormData) {
   await configureWorkspaceAutonomyMode({ mode }, session);
   revalidateProductPaths();
   revalidatePath("/dashboard/profile");
-  revalidatePath("/dashboard/settings");
   redirectWithToast(
     returnTo,
     mode === "review_only"
@@ -714,5 +712,4 @@ function revalidateProductPaths() {
   revalidatePath("/dashboard/review");
   revalidatePath("/dashboard/health");
   revalidatePath("/dashboard/profile");
-  revalidatePath("/dashboard/settings");
 }
