@@ -467,6 +467,14 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /name="source_id" value=\{source\.id\}/);
   assert.match(reps, /Signal-to-outreach queue/);
   assert.match(reps, /The agent ranks qualified signals/);
+  assert.match(reps, /Hot signal paths/);
+  assert.match(reps, /Signal, verified contact, channel handle, and draft state/);
+  assert.match(reps, /AgentHotSignalPaths/);
+  assert.match(reps, /AgentHotSignalPathRow/);
+  assert.match(reps, /signals=\{opportunities\.signals\.slice\(0, 3\)\}/);
+  assert.match(reps, /signalPathStatus\(signal\)/);
+  assert.match(reps, /Waiting for verified email or LinkedIn profile/);
+  assert.match(reps, /Contact verified/);
   assert.match(reps, /prepareQualifiedSignalsAction/);
   assert.match(reps, /Prepare outreach/);
   assert.match(reps, /Verified email/);

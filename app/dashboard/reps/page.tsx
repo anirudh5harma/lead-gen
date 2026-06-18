@@ -2049,43 +2049,47 @@ function AgentOperatingLoopPanel({
       }
     >
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="grid auto-rows-max gap-3 md:grid-cols-4">
-          {loopSteps.map((step) => (
-            <Link
-              key={step.title}
-              href={step.href}
-              className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
-            >
-              <span className="flex items-center justify-between gap-3">
-                <span
-                  className={
-                    "grid size-9 place-items-center rounded-[8px] " +
-                    (step.tone === "fit"
-                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
-                      : step.tone === "ready"
-                        ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
-                        : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
-                  }
-                >
-                  <Icon name={step.icon} size={17} />
+        <div className="grid auto-rows-max gap-3">
+          <div className="grid gap-3 md:grid-cols-4">
+            {loopSteps.map((step) => (
+              <Link
+                key={step.title}
+                href={step.href}
+                className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+              >
+                <span className="flex items-center justify-between gap-3">
+                  <span
+                    className={
+                      "grid size-9 place-items-center rounded-[8px] " +
+                      (step.tone === "fit"
+                        ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                        : step.tone === "ready"
+                          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                          : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+                    }
+                  >
+                    <Icon name={step.icon} size={17} />
+                  </span>
+                  <Icon
+                    name="arrow_forward"
+                    size={14}
+                    className="text-[var(--color-text-4)] transition-colors group-hover:text-[var(--color-accent)]"
+                  />
                 </span>
-                <Icon
-                  name="arrow_forward"
-                  size={14}
-                  className="text-[var(--color-text-4)] transition-colors group-hover:text-[var(--color-accent)]"
-                />
-              </span>
-              <strong className="mt-4 block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
-                {step.value}
-              </strong>
-              <span className="mt-1 block text-sm font-medium text-[var(--color-text-1)]">
-                {step.title}
-              </span>
-              <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
-                {step.detail}
-              </span>
-            </Link>
-          ))}
+                <strong className="mt-4 block text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
+                  {step.value}
+                </strong>
+                <span className="mt-1 block text-sm font-medium text-[var(--color-text-1)]">
+                  {step.title}
+                </span>
+                <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
+                  {step.detail}
+                </span>
+              </Link>
+            ))}
+          </div>
+
+          <AgentHotSignalPaths signals={opportunities.signals.slice(0, 3)} />
         </div>
 
         <aside className="section-note h-fit">
@@ -2119,6 +2123,132 @@ function AgentOperatingLoopPanel({
       </div>
     </SurfaceSection>
   );
+}
+
+function AgentHotSignalPaths({
+  signals,
+}: {
+  signals: QualifiedSignalItem[];
+}) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Hot signal paths
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            Signal, verified contact, channel handle, and draft state in one
+            trace.
+          </p>
+        </div>
+        <Link href="/dashboard/agent#opportunities" className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          Open queue
+        </Link>
+      </div>
+
+      {signals.length === 0 ? (
+        <p className="mt-4 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+          No qualified signal paths yet. Profile setup and source checks will
+          create the first trace from signal to reachable contact.
+        </p>
+      ) : (
+        <div className="mt-4 grid gap-2">
+          {signals.map((signal) => (
+            <AgentHotSignalPathRow key={signal.id} signal={signal} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentHotSignalPathRow({ signal }: { signal: QualifiedSignalItem }) {
+  const contact = signal.contacts[0];
+  const draft = signal.outreach_draft;
+  const company = signal.company.name ?? signal.company.domain ?? "Unknown company";
+  const status = signalPathStatus(signal);
+  return (
+    <Link
+      href={opportunityHref(signal, contact)}
+      prefetch={false}
+      className="grid gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)] md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_auto] md:items-center"
+    >
+      <span className="flex min-w-0 items-start gap-2">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+          <Icon name="sensors" size={15} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-[var(--color-text-1)]">
+            {company}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+            {signal.title}
+          </span>
+        </span>
+      </span>
+
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-semibold text-[var(--color-text-1)]">
+          {contact?.full_name ?? "Resolving contact"}
+        </span>
+        <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+          {contact?.title ?? "Waiting for verified email or LinkedIn profile"}
+        </span>
+        <span className="mt-2 flex flex-wrap gap-1.5">
+          <ContactPill ready={Boolean(contact?.emails.length)} icon="mail">
+            {contact?.verification.email_verified
+              ? "Verified email"
+              : contact?.emails.length
+                ? "Email found"
+                : "No email"}
+          </ContactPill>
+          <ContactPill ready={Boolean(contact?.linkedin_url)} icon="linkedin">
+            {contact?.linkedin_url ? "LinkedIn profile" : "No LinkedIn"}
+          </ContactPill>
+        </span>
+      </span>
+
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        {draft ? (
+          <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-0)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            <ChannelMark channel={draft.channel} size={13} />
+            {draftOpportunityLabel(draft.status, draft.channel)}
+          </span>
+        ) : null}
+        <OpportunityPill tone={status.tone}>{status.label}</OpportunityPill>
+      </span>
+    </Link>
+  );
+}
+
+function signalPathStatus(
+  signal: QualifiedSignalItem,
+): { label: string; tone: "blocked" | "fit" | "ready" | "review" | "waiting" } {
+  const contact = signal.contacts[0];
+  const draft = signal.outreach_draft;
+  if (contact?.contact_fit_decision === "not_fit") {
+    return { label: "Fit blocked", tone: "blocked" };
+  }
+  if (draft?.status === "sent" || draft?.status === "delivered") {
+    return { label: "Outreach sent", tone: "ready" };
+  }
+  if (draft?.pending_approval_id) {
+    return { label: "Needs review", tone: "review" };
+  }
+  if (draft) {
+    return { label: "Draft ready", tone: "ready" };
+  }
+  if (
+    contact?.verification.email_verified ||
+    contact?.verification.linkedin_ready ||
+    contact?.linkedin_url ||
+    contact?.emails.length
+  ) {
+    return { label: "Contact verified", tone: "fit" };
+  }
+  return { label: "Resolving", tone: "waiting" };
 }
 
 function OperatingLoopChannel({
