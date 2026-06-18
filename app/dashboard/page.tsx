@@ -60,6 +60,7 @@ interface BriefHotContact {
   latest_signal_title: string;
   latest_signal_kind: string;
   last_signal_at: Date;
+  contact_fit_decision: string | null;
 }
 
 async function loadBriefActionState(workspaceId: string): Promise<BriefActionState> {
@@ -240,7 +241,8 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
             co.domain::text as company_domain,
             latest_signal.title as latest_signal_title,
             latest_signal.kind as latest_signal_kind,
-            latest_signal.signal_at as last_signal_at
+            latest_signal.signal_at as last_signal_at,
+            p.properties #>> '{contact_fit,decision}' as contact_fit_decision
        from graph_persons p
        left join graph_companies co on co.id = p.company_id
        join lateral (
@@ -594,6 +596,11 @@ function BriefHotContactRow({ contact }: { contact: BriefHotContact }) {
             <ContactSignalPill icon="linkedin">
               {contact.linkedin_url ? "LinkedIn profile" : "LinkedIn pending"}
             </ContactSignalPill>
+            {contact.contact_fit_decision ? (
+              <ContactSignalPill icon="fact_check">
+                {contactFitLabel(contact.contact_fit_decision)}
+              </ContactSignalPill>
+            ) : null}
           </span>
         </span>
       </span>
@@ -617,6 +624,12 @@ function ContactSignalPill({
       {children}
     </span>
   );
+}
+
+function contactFitLabel(decision: string): string {
+  if (decision === "fit") return "Good fit";
+  if (decision === "not_fit") return "Not a fit";
+  return "Needs review";
 }
 
 function briefPriority(actions: BriefActionState, totalSent7d: number) {

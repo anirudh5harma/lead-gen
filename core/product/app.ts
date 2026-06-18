@@ -5916,6 +5916,20 @@ export interface DismissProductSignalResult {
   status: string | null;
 }
 
+export type ProductPersonFitDecision = "fit" | "unsure" | "not_fit";
+
+export interface RecordProductPersonFitFeedbackInput {
+  person_id: string;
+  decision: ProductPersonFitDecision;
+  note?: string | null;
+}
+
+export interface RecordProductPersonFitFeedbackResult {
+  workspace_id: string;
+  person_id: string;
+  decision: ProductPersonFitDecision;
+}
+
 export async function dismissProductSignal(
   input: DismissProductSignalInput,
   session: ProductWorkspaceSession,
@@ -5982,6 +5996,100 @@ export async function dismissProductSignal(
     dismissed,
     status: dismissed ? "dismissed" : status,
   };
+}
+
+export async function recordProductPersonFitFeedback(
+  input: RecordProductPersonFitFeedbackInput,
+  session: ProductWorkspaceSession,
+): Promise<RecordProductPersonFitFeedbackResult> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const decision = personFitDecision(input.decision);
+  const { rows } = await engine.pool.query<{ id: string }>(
+    `select id
+       from graph_persons
+      where workspace_id = $1
+        and id = $2
+      limit 1`,
+    [session.workspace_id, input.person_id],
+  );
+  if (!rows[0]) throw new Error("Contact not found in the active workspace.");
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "person.fit_feedback.recorded",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: `person.fit_feedback.recorded:${session.workspace_id}:${input.person_id}:${randomUUID()}`,
+    payload: {
+      person_id: input.person_id,
+      decision,
+      note: input.note?.trim() || null,
+      recorded_by: session.user_id,
+      recorded_at: new Date().toISOString(),
+    },
+  });
+  await projectPersonFitFeedback(
+    engine.pool,
+    session.workspace_id,
+    event.payload as {
+      person_id: string;
+      decision: ProductPersonFitDecision;
+      note?: string | null;
+      recorded_by?: string | null;
+      recorded_at?: string;
+    },
+  );
+  return {
+    workspace_id: session.workspace_id,
+    person_id: input.person_id,
+    decision,
+  };
+}
+
+function personFitDecision(value: string): ProductPersonFitDecision {
+  if (value === "fit" || value === "not_fit" || value === "unsure") return value;
+  return "unsure";
+}
+
+async function projectPersonFitFeedback(
+  pool: Pool,
+  workspace_id: string,
+  payload: {
+    person_id: string;
+    decision: ProductPersonFitDecision;
+    note?: string | null;
+    recorded_by?: string | null;
+    recorded_at?: string;
+  },
+): Promise<void> {
+  const score =
+    payload.decision === "fit" ? 1 : payload.decision === "not_fit" ? 0 : 0.5;
+  await pool.query(
+    `update graph_persons
+        set properties = properties || jsonb_build_object(
+              'contact_fit',
+              jsonb_build_object(
+                'decision', $3::text,
+                'score', $4::numeric,
+                'note', $5::text,
+                'recorded_by', $6::uuid,
+                'recorded_at', $7::timestamptz,
+                'source', 'dashboard'
+              )
+            ),
+            updated_at = now()
+      where workspace_id = $1
+        and id = $2`,
+    [
+      workspace_id,
+      payload.person_id,
+      payload.decision,
+      score,
+      payload.note ?? null,
+      payload.recorded_by ?? null,
+      payload.recorded_at ?? new Date().toISOString(),
+    ],
+  );
 }
 
 export async function matchWorkspaceSignal(
@@ -7241,6 +7349,23 @@ function createProductEventProjections(
             reason: (event.payload as { reason: string }).reason,
           },
         });
+      },
+    },
+    {
+      name: "person.fit_feedback.projector.v1",
+      eventTypes: ["person.fit_feedback.recorded"],
+      apply: async (event) => {
+        await projectPersonFitFeedback(
+          engine.pool,
+          event.workspace_id,
+          event.payload as {
+            person_id: string;
+            decision: ProductPersonFitDecision;
+            note?: string | null;
+            recorded_by?: string | null;
+            recorded_at?: string;
+          },
+        );
       },
     },
     {

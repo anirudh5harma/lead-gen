@@ -228,6 +228,7 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /from graph_persons p/);
   assert.match(dashboard, /join lateral \(/);
   assert.match(dashboard, /latest_signal\.title as latest_signal_title/);
+  assert.match(dashboard, /contact_fit_decision/);
   assert.match(dashboard, /from outcomes o/);
   assert.match(dashboard, /left join conversations c/);
   assert.match(dashboard, /left join signals s/);
@@ -236,6 +237,7 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
   assert.match(dashboard, /Verified email/);
   assert.match(dashboard, /LinkedIn profile/);
+  assert.match(dashboard, /contactFitLabel\(contact\.contact_fit_decision\)/);
   assert.match(dashboard, /No signal-backed contacts yet/);
   assert.match(dashboard, /href: "\/dashboard\/profile#profile"/);
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
@@ -351,6 +353,12 @@ test("Verified contacts open graph-backed profile pages with channel readiness",
   assert.match(profile, /No outreach yet/);
   assert.match(profile, /href: "\/dashboard\/agent#outreach"/);
   assert.match(profile, /Replies and meetings/);
+  assert.match(profile, /Fit feedback/);
+  assert.match(profile, /recordPersonFitFeedbackAction/);
+  assert.match(profile, /name="decision" value=\{option\.decision\}/);
+  assert.match(profile, /Good fit/);
+  assert.match(profile, /Not a fit/);
+  assert.match(profile, /contactFitState/);
   assert.match(profile, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(profile, /coalesce\(p\.phones, '\{\}'::text\[\]\) as phones/);
   assert.match(profile, /from graph_persons p/);
@@ -444,8 +452,10 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Contact workbench/);
   assert.match(reps, /Signal-ready contacts show why now/);
   assert.match(reps, /latest_signal_title/);
+  assert.match(reps, /contact_fit_decision/);
   assert.match(reps, /left join lateral/);
   assert.match(reps, /Why now:/);
+  assert.match(reps, /contactFitLabel\(contact\.contact_fit_decision\)/);
   assert.match(reps, /verified emails, LinkedIn\s+profiles/);
   assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
   assert.match(reps, /id="verified-contacts" className="scroll-mt-28"/);
@@ -756,12 +766,16 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(actions, /prevent_team_contact_duplication/);
   assert.match(actions, /configureWorkspaceAutonomyMode/);
   assert.match(actions, /dismissProductSignal/);
+  assert.match(actions, /recordProductPersonFitFeedback/);
   assert.match(productApp, /event_type: "workspace\.configured"/);
   assert.match(productApp, /event_type: "rep\.configured"/);
   assert.match(productApp, /event_type: "play\.configured"/);
   assert.match(productApp, /event_type: "signal\.dismissal\.requested"/);
+  assert.match(productApp, /event_type: "person\.fit_feedback\.recorded"/);
+  assert.match(productApp, /projectPersonFitFeedback/);
   assert.match(productApp, /projectSignalDismissal/);
   assert.match(registry, /"signal\.dismissal\.requested": SignalDismissalRequested/);
+  assert.match(registry, /"person\.fit_feedback\.recorded": PersonFitFeedbackRecorded/);
   assert.match(registry, /"workspace\.configured": WorkspaceConfigured/);
 });
 

@@ -391,6 +391,14 @@ const SignalDismissalRequested = z.object({
   reason: z.string(),
 });
 
+const PersonFitFeedbackRecorded = z.object({
+  person_id: z.string().uuid(),
+  decision: z.enum(["fit", "unsure", "not_fit"]),
+  note: z.string().nullable().optional(),
+  recorded_by: z.string().uuid().nullable().optional(),
+  recorded_at: z.string().datetime().optional(),
+});
+
 const SignalClassificationCompleted = z.object({
   signal_id: z.string().uuid(),
   kind: z
@@ -1486,6 +1494,7 @@ export const eventRegistry = {
   "signal.company.linked": SignalCompanyLinked,
   "signal.dismissed": SignalDismissed,
   "signal.dismissal.requested": SignalDismissalRequested,
+  "person.fit_feedback.recorded": PersonFitFeedbackRecorded,
   "signal.classification.completed": SignalClassificationCompleted,
   "signal.expired": SignalExpired,
   "signal.expiry.requested": SignalExpiryRequested,

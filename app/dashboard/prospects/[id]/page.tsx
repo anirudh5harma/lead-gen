@@ -10,6 +10,7 @@ import {
 import Icon from "@/components/Icon";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspace } from "@/lib/workspace";
+import { recordPersonFitFeedbackAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,14 @@ interface ProfileOutcomeRow {
 interface ProfileChannelState {
   connected_outlook: number;
   connected_linkedin: number;
+}
+
+type ContactFitDecision = "fit" | "unsure" | "not_fit";
+
+interface ContactFitState {
+  decision: ContactFitDecision | null;
+  note: string | null;
+  recorded_at: string | null;
 }
 
 interface ProspectProfileState {
@@ -370,11 +379,92 @@ export default async function ProspectProfilePage({
         </div>
 
         <aside className="grid h-fit gap-4">
+          <FitFeedbackPanel prospect={prospect} />
           <ProfilePanel prospect={prospect} />
           <CompanyPanel prospect={prospect} />
           <ReplyInsightPanel outcomes={outcomes} />
         </aside>
       </section>
+    </div>
+  );
+}
+
+function FitFeedbackPanel({ prospect }: { prospect: ProspectProfileRow }) {
+  const fit = contactFitState(prospect.properties);
+  const options: Array<{
+    decision: ContactFitDecision;
+    label: string;
+    icon: string;
+    detail: string;
+  }> = [
+    {
+      decision: "fit",
+      label: "Good fit",
+      icon: "check",
+      detail: "Prioritize outreach",
+    },
+    {
+      decision: "unsure",
+      label: "Not sure",
+      icon: "help",
+      detail: "Keep for review",
+    },
+    {
+      decision: "not_fit",
+      label: "Not a fit",
+      icon: "block",
+      detail: "De-prioritize",
+    },
+  ];
+  return (
+    <div className="section-note">
+      <p className="text-sm font-semibold text-[var(--color-text-1)]">
+        Fit feedback
+      </p>
+      <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+        Tell the agent whether this signal-backed contact should move toward
+        email or LinkedIn outreach.
+      </p>
+      <div className="mt-4 grid gap-2">
+        {options.map((option) => (
+          <form key={option.decision} action={recordPersonFitFeedbackAction}>
+            <input type="hidden" name="person_id" value={prospect.id} />
+            <input type="hidden" name="decision" value={option.decision} />
+            <input
+              type="hidden"
+              name="return_to"
+              value={`/dashboard/prospects/${prospect.id}`}
+            />
+            <button
+              type="submit"
+              className={
+                "flex w-full items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-left transition-colors " +
+                (fit.decision === option.decision
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                  : "border-[var(--color-line-1)] bg-[var(--color-ink-0)] text-[var(--color-text-2)] hover:border-[var(--color-line-3)]")
+              }
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon name={option.icon} size={14} />
+                <span className="truncate text-sm font-semibold">{option.label}</span>
+              </span>
+              <span className="text-xs text-[var(--color-text-3)]">
+                {option.detail}
+              </span>
+            </button>
+          </form>
+        ))}
+      </div>
+      {fit.decision ? (
+        <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
+          Saved as {fitLabel(fit.decision)}
+          {fit.recorded_at ? ` ${freshWhen(new Date(fit.recorded_at))}` : ""}.
+        </p>
+      ) : (
+        <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
+          No fit feedback recorded yet.
+        </p>
+      )}
     </div>
   );
 }
@@ -554,6 +644,33 @@ function ReplyInsightPanel({ outcomes }: { outcomes: ProfileOutcomeRow[] }) {
       )}
     </div>
   );
+}
+
+function contactFitState(
+  properties: Record<string, unknown> | null,
+): ContactFitState {
+  const raw =
+    properties && typeof properties.contact_fit === "object"
+      ? properties.contact_fit as Record<string, unknown>
+      : null;
+  const decision = fitDecisionValue(raw?.decision);
+  return {
+    decision,
+    note: typeof raw?.note === "string" ? raw.note : null,
+    recorded_at: typeof raw?.recorded_at === "string" ? raw.recorded_at : null,
+  };
+}
+
+function fitDecisionValue(value: unknown): ContactFitDecision | null {
+  return value === "fit" || value === "unsure" || value === "not_fit"
+    ? value
+    : null;
+}
+
+function fitLabel(decision: ContactFitDecision): string {
+  if (decision === "fit") return "good fit";
+  if (decision === "not_fit") return "not a fit";
+  return "not sure";
 }
 
 function Fact({

@@ -17,6 +17,7 @@ import {
   optimizeProductCampaignStrategy,
   optimizeProductPlaySkills,
   recordProductCampaignOutcome,
+  recordProductPersonFitFeedback,
   recordProductRecommendationOutcome,
   reviewProductRecommendation,
   runWorkspaceSignalIngestion,
@@ -541,6 +542,43 @@ export async function dismissQualifiedSignalAction(formData: FormData) {
   }
   revalidateProductPaths();
   redirectWithToast(returnTo, "Opportunity skipped.");
+}
+
+export async function recordPersonFitFeedbackAction(formData: FormData) {
+  const session = await requireDashboardSession(formData);
+  const personId = value(formData, "person_id");
+  const returnTo = dashboardReturnPath(
+    formData,
+    personId ? `/dashboard/prospects/${personId}` : "/dashboard/agent#verified-contacts",
+  );
+  if (!personId) {
+    redirectWithToast(returnTo, "Choose a contact before recording fit.", "error");
+  }
+  const decisionValue = value(formData, "decision");
+  const decision =
+    decisionValue === "fit" || decisionValue === "not_fit"
+      ? decisionValue
+      : "unsure";
+  try {
+    await recordProductPersonFitFeedback(
+      {
+        person_id: personId,
+        decision,
+        note: value(formData, "note") || null,
+      },
+      session,
+    );
+  } catch (error) {
+    console.error("Contact fit feedback failed", error);
+    redirectWithToast(
+      returnTo,
+      "Could not save contact fit yet. Refresh and try again.",
+      "error",
+    );
+  }
+  revalidateProductPaths();
+  revalidatePath(`/dashboard/prospects/${personId}`);
+  redirectWithToast(returnTo, "Contact fit saved.");
 }
 
 export async function editCompanyProfileAction(formData: FormData) {

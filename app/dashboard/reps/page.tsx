@@ -132,6 +132,7 @@ interface AgentContactRow {
   fresh_signals: string;
   conversations: string;
   updated_at: Date;
+  contact_fit_decision: string | null;
 }
 
 interface AgentContactSummary {
@@ -553,6 +554,7 @@ async function loadAgentContactSummary(
               latest_signal.title as latest_signal_title,
               latest_signal.kind as latest_signal_kind,
               latest_signal.ingested_at as last_signal_at,
+              p.properties #>> '{contact_fit,decision}' as contact_fit_decision,
               p.updated_at,
               (select count(*)::text
                  from signals s
@@ -1613,6 +1615,11 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             <ContactPill ready={Boolean(contact.linkedin_url)} icon="linkedin">
               {contact.linkedin_url ? "LinkedIn profile" : "No LinkedIn"}
             </ContactPill>
+            {contact.contact_fit_decision ? (
+              <ContactPill ready={contact.contact_fit_decision === "fit"} icon="fact_check">
+                {contactFitLabel(contact.contact_fit_decision)}
+              </ContactPill>
+            ) : null}
           </span>
         </span>
       </span>
@@ -1764,6 +1771,12 @@ function AgentWorkStage({ stage }: { stage: AgentWorkStageData }) {
       </span>
     </div>
   );
+}
+
+function contactFitLabel(decision: string): string {
+  if (decision === "fit") return "Good fit";
+  if (decision === "not_fit") return "Not a fit";
+  return "Needs review";
 }
 
 function AgentOperatingLoopPanel({
