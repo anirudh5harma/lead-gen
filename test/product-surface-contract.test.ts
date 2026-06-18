@@ -602,6 +602,15 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /name="signal_id" value=\{signal\.id\}/);
   assert.match(reps, /Contact workbench/);
   assert.match(reps, /Signal-ready contacts show why now, score, email verification/);
+  assert.match(reps, /verified_email/);
+  assert.match(reps, /fit_reviewed/);
+  assert.match(reps, /in_outreach/);
+  assert.match(reps, /ContactTrustStep/);
+  assert.match(reps, /LinkedIn ready/);
+  assert.match(reps, /Fit reviewed/);
+  assert.match(reps, /In outreach/);
+  assert.match(reps, /jsonb_each\(coalesce\(p\.properties->'email_verification'/);
+  assert.match(reps, /m\.status in \('draft','queued','deferred','sent','delivered','replied'\)/);
   assert.match(reps, /latest_signal_title/);
   assert.match(reps, /latest_signal_score/);
   assert.match(reps, /email_status/);

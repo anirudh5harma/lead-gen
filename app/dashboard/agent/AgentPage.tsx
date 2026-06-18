@@ -187,7 +187,10 @@ interface AgentContactSummary {
   recent: AgentContactRow[];
   reachable: number;
   with_email: number;
+  verified_email: number;
   with_linkedin: number;
+  fit_reviewed: number;
+  in_outreach: number;
   fresh_signals: number;
 }
 
@@ -715,7 +718,10 @@ async function loadAgentContactSummary(
     pool.query<{
       reachable: string;
       with_email: string;
+      verified_email: string;
       with_linkedin: string;
+      fit_reviewed: string;
+      in_outreach: string;
       fresh_signals: string;
     }>(
       `select
@@ -730,7 +736,31 @@ async function loadAgentContactSummary(
          (select count(*)::text
             from graph_persons p
            where p.workspace_id = $1
+             and exists (
+               select 1
+                 from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                where lower(coalesce(ev.meta->>'verified', '')) = 'true'
+                   or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
+             )) as verified_email,
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
              and p.linkedin_url is not null) as with_linkedin,
+         (select count(*)::text
+            from graph_persons p
+           where p.workspace_id = $1
+             and p.properties #>> '{contact_fit,decision}' is not null) as fit_reviewed,
+         (select count(distinct p.id)::text
+            from graph_persons p
+            join conversations c
+              on c.workspace_id = p.workspace_id
+             and c.counterparty_person_id = p.id
+            join messages m
+              on m.workspace_id = c.workspace_id
+             and m.conversation_id = c.id
+           where p.workspace_id = $1
+             and m.direction = 'outbound'
+             and m.status in ('draft','queued','deferred','sent','delivered','replied')) as in_outreach,
          (select count(*)::text
             from signals s
            where s.workspace_id = $1
@@ -743,7 +773,10 @@ async function loadAgentContactSummary(
     recent: recent.rows,
     reachable: Number(summary.rows[0]?.reachable ?? 0),
     with_email: Number(summary.rows[0]?.with_email ?? 0),
+    verified_email: Number(summary.rows[0]?.verified_email ?? 0),
     with_linkedin: Number(summary.rows[0]?.with_linkedin ?? 0),
+    fit_reviewed: Number(summary.rows[0]?.fit_reviewed ?? 0),
+    in_outreach: Number(summary.rows[0]?.in_outreach ?? 0),
     fresh_signals: Number(summary.rows[0]?.fresh_signals ?? 0),
   };
 }
@@ -1429,7 +1462,10 @@ function emptyRepsState(workspaceId: string): RepsState {
       recent: [],
       reachable: 0,
       with_email: 0,
+      verified_email: 0,
       with_linkedin: 0,
+      fit_reviewed: 0,
+      in_outreach: 0,
       fresh_signals: 0,
     },
     learning: {
@@ -2561,6 +2597,32 @@ function AgentContactsPanel({
               <MiniStat label="LinkedIn profiles" value={contacts.with_linkedin} />
               <MiniStat label="Signals 14d" value={contacts.fresh_signals} />
             </div>
+            <div className="grid gap-2">
+              <ContactTrustStep
+                icon="verified"
+                label="Verified email"
+                value={contacts.verified_email}
+                total={contacts.reachable}
+              />
+              <ContactTrustStep
+                icon="linkedin"
+                label="LinkedIn ready"
+                value={contacts.with_linkedin}
+                total={contacts.reachable}
+              />
+              <ContactTrustStep
+                icon="fact_check"
+                label="Fit reviewed"
+                value={contacts.fit_reviewed}
+                total={contacts.reachable}
+              />
+              <ContactTrustStep
+                icon="send"
+                label="In outreach"
+                value={contacts.in_outreach}
+                total={contacts.reachable}
+              />
+            </div>
             <p className="text-xs leading-5 text-[var(--color-text-3)]">
               Signal-ready contacts show why now, score, email verification,
               LinkedIn profile, fit, and outreach state before the agent sends.
@@ -2586,6 +2648,52 @@ function AgentContactsPanel({
           )}
         </div>
       </SurfaceSection>
+    </div>
+  );
+}
+
+function ContactTrustStep({
+  icon,
+  label,
+  value,
+  total,
+}: {
+  icon: string;
+  label: string;
+  value: number;
+  total: number;
+}) {
+  const ratio = total > 0 ? Math.min(100, Math.round((value / total) * 100)) : 0;
+  const ready = value > 0;
+  return (
+    <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-3 py-2.5">
+      <span className="flex items-center justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2">
+          <Icon
+            name={icon}
+            size={14}
+            className={ready ? "text-[var(--color-accent)]" : "text-[var(--color-text-3)]"}
+          />
+          <span className="truncate text-xs font-medium text-[var(--color-text-2)]">
+            {label}
+          </span>
+        </span>
+        <strong className="text-xs tabular-nums text-[var(--color-text-1)]">
+          {value}
+        </strong>
+      </span>
+      <span
+        className="mt-2 block h-1.5 overflow-hidden rounded-full bg-[var(--color-ink-3)]"
+        aria-label={`${label}: ${value} of ${total} reachable contacts`}
+      >
+        <span
+          className={
+            "block h-full rounded-full " +
+            (ready ? "bg-[var(--color-accent)]" : "bg-[var(--color-line-3)]")
+          }
+          style={{ width: `${ratio}%` }}
+        />
+      </span>
     </div>
   );
 }

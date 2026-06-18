@@ -48,3 +48,5 @@ Sent outreach rows now carry the graph contact handles behind each message: veri
 The Brief priority action now starts the existing qualified-signal preparation workflow when signals are waiting but no outreach has gone out. This makes the morning brief an operational command surface: users can move from "qualified signals are ready" to verified contacts and judged email/LinkedIn outreach without first navigating to Agent.
 
 The Agent live-work panel now labels the busiest last-hour stage and emphasizes it in the animated workline. This makes the "what is the Agent doing right now?" answer easier to read while preserving the signal -> contact -> draft -> outreach -> reply operating loop.
+
+The Agent verified-contact workbench now separates contact trust from raw reachability: verified email, LinkedIn readiness, fit review, and outreach participation are counted before the contact list. This mirrors GojiBerry's contact table trust cues while keeping Bombsell focused on signal-backed people who can become email or LinkedIn outreach.
