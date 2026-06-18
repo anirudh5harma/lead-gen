@@ -135,6 +135,14 @@ const ApprovalListSchema = WorkspaceResultSchema.extend({
   source_tool: z.literal("product.state.get"),
 });
 
+const ApprovalDecisionSchema = WorkspaceResultSchema.extend({
+  approval_id: z.string().uuid(),
+  decision: z.enum(["approved", "rejected"]),
+  ok: z.boolean(),
+  next_action: z.enum(["refresh_approvals", "inspect_agent"]),
+  source_tool: z.literal("product.approval.decide"),
+});
+
 const LearningSchema = WorkspaceResultSchema.extend({
   generated_at: z.string().datetime(),
   recent_outcome_count: z.number().int().nonnegative(),
@@ -612,6 +620,46 @@ export function registerBombsellAliasTools(): void {
         pending_count: approvals.length,
         approvals,
         source_tool: "product.state.get" as const,
+      };
+    },
+  });
+
+  registerTool({
+    name: "bombsell.approvals.decide",
+    description:
+      "Approve or reject one Bombsell approval gate from Claude Code. Approvals require confirm_channel_effects=true because approved work can continue through Bombsell's channel, readiness, and eval-gated workflow.",
+    kind: "write",
+    input: z.object({
+      approval_id: z.string().uuid(),
+      decision: z.enum(["approved", "rejected"]),
+      note: z.string().min(1).max(500).optional(),
+      confirm_channel_effects: z.boolean().optional(),
+    }),
+    output: ApprovalDecisionSchema,
+    async handler(input, ctx) {
+      if (input.decision === "approved" && input.confirm_channel_effects !== true) {
+        throw new Error(
+          "Approving a Bombsell gate can continue outreach through channel workflows. Set confirm_channel_effects=true to approve explicitly.",
+        );
+      }
+      const result = await invokeTool<{ ok: true }>(
+        "product.approval.decide",
+        {
+          approval_id: input.approval_id,
+          decision: input.decision,
+          note: input.note,
+        },
+        ctx,
+      );
+      return {
+        workspace_id: ctx.workspace_id,
+        approval_id: input.approval_id,
+        decision: input.decision,
+        ok: result.ok,
+        next_action: (
+          input.decision === "approved" ? "inspect_agent" : "refresh_approvals"
+        ) as "inspect_agent" | "refresh_approvals",
+        source_tool: "product.approval.decide" as const,
       };
     },
   });

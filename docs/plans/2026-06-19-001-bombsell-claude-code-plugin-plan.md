@@ -287,7 +287,7 @@ Hooks must never auto-send outreach or auto-write Profile changes.
    - `bombsell.outreach.list_sent` (landed: read-only)
    - `bombsell.draft.get` (landed: read-only)
    - `bombsell.approvals.list` (landed: read-only)
-   - `bombsell.approvals.decide`
+   - `bombsell.approvals.decide` (landed: explicit approval-backed write)
    - `bombsell.learning.get` (landed: read-only)
 
    These wrappers must remain derived views over the five primitives, not a new

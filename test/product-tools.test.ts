@@ -104,6 +104,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "bombsell.outreach.list_sent",
     "bombsell.draft.get",
     "bombsell.approvals.list",
+    "bombsell.approvals.decide",
     "bombsell.learning.get",
   ]) {
     assert.ok(names.has(expected), `expected product tool ${expected}`);
@@ -398,6 +399,12 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   const person_id = crypto.randomUUID();
   const linkedin_person_id = crypto.randomUUID();
   const approval_id = crypto.randomUUID();
+  const rejected_approval_id = crypto.randomUUID();
+  const approvalDecisions: Array<{
+    approval_id: string;
+    decision: string;
+    note?: string;
+  }> = [];
 
   registerTool({
     name: "product.brief.get",
@@ -670,6 +677,21 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       };
     },
   });
+  registerTool({
+    name: "product.approval.decide",
+    description: "stub approval decision",
+    kind: "write",
+    input: z.object({
+      approval_id: z.string().uuid(),
+      decision: z.enum(["approved", "rejected"]),
+      note: z.string().optional(),
+    }),
+    output: z.object({ ok: z.literal(true) }),
+    async handler(input) {
+      approvalDecisions.push(input);
+      return { ok: true };
+    },
+  });
   registerBombsellAliasTools();
 
   const brief = await invokeTool<{ source_tool: string; windows: { last_24h: { qualified_signals: number } } }>(
@@ -759,6 +781,51 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   );
   assert.equal(approvals.pending_count, 1);
   assert.deepEqual(approvals.approvals[0]?.payload_keys, ["message_id"]);
+
+  await assert.rejects(
+    invokeTool(
+      "bombsell.approvals.decide",
+      { approval_id, decision: "approved" },
+      { workspace_id, user_id },
+    ),
+    /confirm_channel_effects=true/,
+  );
+  assert.equal(approvalDecisions.length, 0);
+
+  const approved = await invokeTool<{
+    ok: boolean;
+    approval_id: string;
+    decision: string;
+    next_action: string;
+    source_tool: string;
+  }>(
+    "bombsell.approvals.decide",
+    {
+      approval_id,
+      decision: "approved",
+      note: "Looks grounded.",
+      confirm_channel_effects: true,
+    },
+    { workspace_id, user_id },
+  );
+  assert.equal(approved.ok, true);
+  assert.equal(approved.approval_id, approval_id);
+  assert.equal(approved.decision, "approved");
+  assert.equal(approved.next_action, "inspect_agent");
+  assert.equal(approved.source_tool, "product.approval.decide");
+  assert.deepEqual(approvalDecisions[0], {
+    approval_id,
+    decision: "approved",
+    note: "Looks grounded.",
+  });
+
+  const rejected = await invokeTool<{ ok: boolean; next_action: string }>(
+    "bombsell.approvals.decide",
+    { approval_id: rejected_approval_id, decision: "rejected", note: "Too vague." },
+    { workspace_id, user_id },
+  );
+  assert.equal(rejected.ok, true);
+  assert.equal(rejected.next_action, "refresh_approvals");
 
   const learning = await invokeTool<{ useful_outcome_count: number; counts_by_kind: Record<string, number> }>(
     "bombsell.learning.get",
