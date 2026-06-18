@@ -159,9 +159,14 @@ interface AgentContactRow {
   company_domain: string | null;
   latest_signal_title: string | null;
   latest_signal_kind: string | null;
+  latest_signal_score: string | null;
   last_signal_at: Date | null;
   fresh_signals: string;
   conversations: string;
+  email_status: string;
+  campaign_status: string;
+  latest_outreach_channel: string | null;
+  last_outreach_at: Date | null;
   updated_at: Date;
   contact_fit_decision: string | null;
 }
@@ -588,7 +593,21 @@ async function loadAgentContactSummary(
               co.domain::text as company_domain,
               latest_signal.title as latest_signal_title,
               latest_signal.kind as latest_signal_kind,
+              latest_signal.match_score::text as latest_signal_score,
               latest_signal.ingested_at as last_signal_at,
+              case
+                when exists (
+                  select 1
+                    from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                   where lower(coalesce(ev.meta->>'verified', '')) = 'true'
+                      or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
+                ) then 'verified'
+                when cardinality(coalesce(p.emails, '{}'::text[])) > 0 then 'found'
+                else 'missing'
+              end as email_status,
+              coalesce(latest_outreach.campaign_status, 'not_contacted') as campaign_status,
+              latest_outreach.channel as latest_outreach_channel,
+              latest_outreach.last_touch_at as last_outreach_at,
               p.properties #>> '{contact_fit,decision}' as contact_fit_decision,
               p.updated_at,
               (select count(*)::text
@@ -609,6 +628,7 @@ async function loadAgentContactSummary(
          left join lateral (
            select s.title,
                   s.kind::text as kind,
+                  s.match_score,
                   coalesce(s.ingested_at, s.freshness_at) as ingested_at
              from signals s
             where s.workspace_id = $1
@@ -620,6 +640,51 @@ async function loadAgentContactSummary(
             order by coalesce(s.ingested_at, s.freshness_at) desc
             limit 1
          ) latest_signal on true
+         left join lateral (
+           select latest_message.channel::text as channel,
+                  coalesce(latest_message.sent_at, latest_message.created_at, c.last_activity_at) as last_touch_at,
+                  case
+                    when exists (
+                      select 1
+                        from messages inbound
+                       where inbound.workspace_id = $1
+                         and inbound.conversation_id = c.id
+                         and inbound.direction = 'inbound'
+                    ) then 'message_replied'
+                    when exists (
+                      select 1
+                        from messages sent
+                       where sent.workspace_id = $1
+                         and sent.conversation_id = c.id
+                         and sent.direction = 'outbound'
+                         and sent.status in ('sent','delivered','replied')
+                    ) then 'contacted'
+                    when exists (
+                      select 1
+                        from messages draft
+                       where draft.workspace_id = $1
+                         and draft.conversation_id = c.id
+                         and draft.direction = 'outbound'
+                         and draft.status in ('draft','queued','deferred')
+                    ) then 'draft_ready'
+                    else 'not_contacted'
+                  end as campaign_status
+             from conversations c
+             left join lateral (
+               select m.channel,
+                      m.sent_at,
+                      m.created_at
+                 from messages m
+                where m.workspace_id = $1
+                  and m.conversation_id = c.id
+                order by coalesce(m.sent_at, m.created_at) desc
+                limit 1
+             ) latest_message on true
+            where c.workspace_id = $1
+              and c.counterparty_person_id = p.id
+            order by c.last_activity_at desc
+            limit 1
+         ) latest_outreach on true
         where p.workspace_id = $1
           and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
         order by coalesce(
@@ -2079,8 +2144,8 @@ function AgentContactsPanel({
               <MiniStat label="Signals 14d" value={contacts.fresh_signals} />
             </div>
             <p className="text-xs leading-5 text-[var(--color-text-3)]">
-              Signal-ready contacts show why now, verified emails, LinkedIn
-              profiles, and outreach history before the agent sends.
+              Signal-ready contacts show why now, score, email verification,
+              LinkedIn profile, fit, and outreach state before the agent sends.
             </p>
           </aside>
 
@@ -2115,6 +2180,12 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
   const latestSignalAt = contact.last_signal_at
     ? freshWhen(contact.last_signal_at)
     : freshWhen(contact.updated_at);
+  const signalScore = signalScoreLabel(contact.latest_signal_score);
+  const campaignStatus = campaignStatusLabel(contact.campaign_status);
+  const campaignDetail =
+    contact.campaign_status === "not_contacted"
+      ? "No outreach"
+      : `${campaignStatus}${contact.latest_outreach_channel ? ` via ${channelLabel(contact.latest_outreach_channel)}` : ""}`;
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
       <Link
@@ -2142,8 +2213,14 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
               "Verified contact ready for the next qualified signal."}
           </span>
           <span className="mt-2 flex flex-wrap gap-2">
-            <ContactPill ready={contact.emails.length > 0} icon="mail">
-              {contact.emails[0] ?? "No email"}
+            <ContactPill ready={Boolean(signalScore)} icon="auto_graph">
+              {signalScore ?? "No signal score"}
+            </ContactPill>
+            <ContactPill
+              ready={contact.email_status !== "missing"}
+              icon={contact.email_status === "verified" ? "verified" : "mail"}
+            >
+              {emailStatusLabel(contact.email_status)}
             </ContactPill>
             <ContactPill ready={Boolean(contact.linkedin_url)} icon="linkedin">
               {contact.linkedin_url ? "LinkedIn profile" : "No LinkedIn"}
@@ -2169,6 +2246,24 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
         ) : null}
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
           {latestSignalAt}
+        </span>
+        <span
+          className={
+            "rounded-[8px] px-2.5 py-1 text-xs " +
+            (contact.campaign_status === "message_replied"
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : contact.campaign_status === "contacted" ||
+                  contact.campaign_status === "draft_ready"
+                ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
+          }
+          title={
+            contact.last_outreach_at
+              ? `${campaignStatus} ${freshWhen(contact.last_outreach_at)}`
+              : campaignStatus
+          }
+        >
+          {campaignDetail}
         </span>
         {conversations > 0 ? (
           <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
@@ -2410,6 +2505,26 @@ function contactFitLabel(decision: string): string {
   if (decision === "fit") return "Good fit";
   if (decision === "not_fit") return "Not a fit";
   return "Needs review";
+}
+
+function signalScoreLabel(score: string | null): string | null {
+  if (score == null) return null;
+  const numeric = Number(score);
+  if (!Number.isFinite(numeric)) return null;
+  return `${Math.round(numeric * 100)}% signal score`;
+}
+
+function emailStatusLabel(status: string): string {
+  if (status === "verified") return "Verified email";
+  if (status === "found") return "Email found";
+  return "No email";
+}
+
+function campaignStatusLabel(status: string): string {
+  if (status === "message_replied") return "Message replied";
+  if (status === "contacted") return "Contacted";
+  if (status === "draft_ready") return "Draft ready";
+  return "Not contacted";
 }
 
 function AgentOperatingLoopPanel({
