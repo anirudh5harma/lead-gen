@@ -1064,6 +1064,13 @@ export default async function RepsPage() {
         }
       />
 
+      <AgentCommandStrip
+        readiness={state.readiness}
+        opportunities={state.opportunities}
+        outreach={state.outreach}
+        coverage={coverage}
+      />
+
       <AgentActivityPanel activity={state.activity} />
 
       <AgentOperatingLoopPanel
@@ -1093,6 +1100,190 @@ export default async function RepsPage() {
         coverage={coverage}
       />
     </div>
+  );
+}
+
+function AgentCommandStrip({
+  readiness,
+  opportunities,
+  outreach,
+  coverage,
+}: {
+  readiness: WorkspaceLaunchReadiness;
+  opportunities: QualifiedSignalWorkbench;
+  outreach: AgentOutreachSummary;
+  coverage: ChannelCoverage;
+}) {
+  const next = readinessNextAction(readiness);
+  const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  return (
+    <section
+      className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3 md:grid-cols-2 xl:grid-cols-4"
+      aria-label="Agent launch commands"
+    >
+      <AgentCommandLink
+        href="/dashboard/agent#opportunities"
+        icon={<Icon name="sensors" size={17} />}
+        title="Active signals"
+        value={opportunities.stats.qualified}
+        detail={`${opportunities.stats.with_verified_contacts} verified contacts, ${opportunities.stats.with_outreach_draft} judged drafts`}
+        ready={opportunities.stats.qualified > 0}
+      />
+      <AgentCommandLink
+        href={coverage.email.href}
+        icon={<BrandIcon name="microsoft" size={17} />}
+        title={coverage.email.connected ? "Email ready" : "Connect Outlook"}
+        value={coverage.email.connected ? outreach.email_sent_7d : "Setup"}
+        detail={
+          coverage.email.connected
+            ? `${coverage.email.label}; ${coverage.email.dailyCap ?? "uncapped"} daily cap`
+            : "Outlook unlocks native email threads and reply sync."
+        }
+        metricLabel={coverage.email.connected ? "sent 7d" : "needed"}
+        ready={coverage.email.connected}
+      />
+      <AgentCommandLink
+        href={coverage.linkedIn.href}
+        icon={<BrandIcon name="linkedin" size={17} />}
+        title={coverage.linkedIn.connected ? "LinkedIn ready" : "Connect LinkedIn"}
+        value={coverage.linkedIn.connected ? outreach.linkedin_sent_7d : "Setup"}
+        detail={
+          coverage.linkedIn.connected
+            ? `${coverage.linkedIn.label}; ${coverage.linkedIn.dailyCap ?? "uncapped"} daily cap`
+            : "LinkedIn unlocks connection requests, DMs, and reply capture."
+        }
+        metricLabel={coverage.linkedIn.connected ? "sent 7d" : "needed"}
+        ready={coverage.linkedIn.connected}
+      />
+      <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4">
+        <span className="flex items-center justify-between gap-3">
+          <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+            <Icon name="send" size={17} />
+          </span>
+          <span
+            className={
+              "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+              (readiness.launch_ready
+                ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                : "bg-[var(--color-warn-bg)] text-[var(--color-warn)]")
+            }
+          >
+            {readiness.launch_ready ? "Ready" : "Blocked"}
+          </span>
+        </span>
+        <span>
+          <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+            Prepare outreach
+          </span>
+          <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+            {readiness.launch_ready
+              ? `${sent7d} sent this week. Push qualified signals into verified email or LinkedIn drafts.`
+              : commandBlockerCopy(readiness)}
+          </span>
+        </span>
+        {readiness.launch_ready ? (
+          <form action={prepareQualifiedSignalsAction}>
+            <input type="hidden" name="limit" value="25" />
+            <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+            <PendingSubmitButton
+              className="btn-solid-sm w-fit"
+              icon="send"
+              iconSize={14}
+              pendingLabel="Preparing"
+            >
+              Start Agent
+            </PendingSubmitButton>
+          </form>
+        ) : (
+          <Link href={next.href} prefetch={false} className="btn-quiet-sm w-fit">
+            <Icon name={next.icon} size={14} />
+            {next.label}
+          </Link>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function commandBlockerCopy(readiness: WorkspaceLaunchReadiness): string {
+  const blocker = readiness.checks.find(
+    (check) => check.required && check.status !== "ready",
+  );
+  if (blocker?.id === "outreach_channel") {
+    return "Connect Outlook or LinkedIn before outreach can run.";
+  }
+  if (blocker?.id === "workspace_profile") {
+    return "Complete Profile so the agent knows who you sell to.";
+  }
+  if (blocker?.id === "icp" || blocker?.id === "rep") {
+    return "Finish buyer fit and Agent voice before outreach can run.";
+  }
+  if (blocker?.id === "signal_sources") {
+    return "Check sources so the agent can find qualified signals.";
+  }
+  if (blocker?.id === "plays") {
+    return "Create an outreach path before signals can become messages.";
+  }
+  return "Finish Profile before outreach can run.";
+}
+
+function AgentCommandLink({
+  href,
+  icon,
+  title,
+  value,
+  detail,
+  metricLabel = "now",
+  ready,
+}: {
+  href: string;
+  icon: ReactNode;
+  title: string;
+  value: number | string;
+  detail: string;
+  metricLabel?: string;
+  ready: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      className="group grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
+    >
+      <span className="flex items-center justify-between gap-3">
+        <span
+          className={
+            "grid size-9 place-items-center rounded-[8px] " +
+            (ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+          }
+        >
+          {icon}
+        </span>
+        <Icon
+          name="arrow_forward"
+          size={14}
+          className="text-[var(--color-text-4)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-accent)]"
+        />
+      </span>
+      <span>
+        <span className="flex items-end gap-2">
+          <strong className="text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
+            {value}
+          </strong>
+          <span className="pb-1 text-[11px] text-[var(--color-text-4)]">
+            {metricLabel}
+          </span>
+        </span>
+        <span className="mt-1 block text-sm font-semibold text-[var(--color-text-1)]">
+          {title}
+        </span>
+        <span className="mt-2 line-clamp-2 block text-xs leading-5 text-[var(--color-text-3)]">
+          {detail}
+        </span>
+      </span>
+    </Link>
   );
 }
 
