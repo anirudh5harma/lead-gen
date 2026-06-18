@@ -62,6 +62,22 @@ export async function POST(req: NextRequest): Promise<Response> {
           provider_event_id: payload.provider_event_id,
         },
       });
+    } else if (payload.event === "connection_accepted") {
+      await bus.publish({
+        workspace_id: account.workspace_id,
+        event_type: "linkedin.connection.accepted",
+        source: "webhook",
+        producer_ref: "webhook:linkedin:provider",
+        idempotency_key: lifecycleIdempotencyKey(payload, account.id),
+        payload: {
+          channel_account_id: account.id,
+          provider_account_id: payload.provider_account_id,
+          provider_event_id: payload.provider_event_id,
+          external_id: payload.external_id,
+          profile_url: payload.profile_url,
+          accepted_at: payload.occurred_at,
+        },
+      });
     } else {
       await bus.publish({
         workspace_id: account.workspace_id,

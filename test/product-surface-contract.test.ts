@@ -668,15 +668,19 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /DMs sent/);
   assert.match(reps, /Channel performance/);
   assert.match(reps, /LinkedIn invites/);
+  assert.match(reps, /Accepted/);
   assert.match(reps, /LinkedIn messages/);
   assert.match(reps, /Native Outlook threads/);
   assert.match(reps, /Connection requests/);
   assert.match(reps, /DMs, InMail, and comments/);
   assert.match(reps, /latest_outbound_channel/);
   assert.match(reps, /linkedin_invites_7d/);
+  assert.match(reps, /linkedin_accepts_7d/);
   assert.match(reps, /linkedin_messages_7d/);
   assert.match(reps, /linkedin_invite_replies_7d/);
   assert.match(reps, /linkedin_message_replies_7d/);
+  assert.match(reps, /event_type = 'linkedin\.connection\.accepted'/);
+  assert.match(reps, /accepted\s+connections/);
   assert.match(reps, /Qualified signals become verified contacts/);
   assert.match(reps, /left join channel_accounts ca/);
   assert.match(reps, /ca\.display_name as channel_account_name/);
@@ -1203,6 +1207,8 @@ test("Integrations route folds into Profile", () => {
 test("LinkedIn OAuth returns to current product hubs instead of legacy prospecting", () => {
   const linkedInRoute = source("app/api/auth/linkedin/route.ts");
   const linkedInCallback = source("app/api/auth/linkedin/callback/route.ts");
+  const linkedInWebhook = source("app/api/webhooks/linkedin/route.ts");
+  const eventRegistry = source("core/substrate/events/registry.ts");
   const linkedInState = source("app/api/auth/linkedin/state.ts");
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
 
@@ -1213,6 +1219,14 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   assert.match(settings, /href="\/api\/auth\/linkedin\?return_to=%2Fdashboard%2Fprofile%23linkedin"/);
   assert.match(settings, /id="channels"/);
   assert.match(settings, /scroll-mt-28/);
+  assert.match(linkedInWebhook, /payload\.event === "connection_accepted"/);
+  assert.match(linkedInWebhook, /event_type: "linkedin\.connection\.accepted"/);
+  assert.match(linkedInWebhook, /accepted_at: payload\.occurred_at/);
+  assert.match(eventRegistry, /const LinkedInConnectionAccepted = z\.object/);
+  assert.match(
+    eventRegistry,
+    /"linkedin\.connection\.accepted": LinkedInConnectionAccepted/,
+  );
   assert.doesNotMatch(linkedInCallback, /\/dashboard\/prospecting/);
 });
 

@@ -60,3 +60,5 @@ The Brief priority rail is now channel-aware. It asks users to connect Outlook o
 Profile now includes an activation flow that connects website profile, signal sources, verified contacts, channels, and outreach in one scan. It uses existing launch-readiness blockers and Profile contact/channel state, so users can see how setup becomes qualified email or LinkedIn outreach without learning extra product tabs.
 
 Connected Outlook or LinkedIn accounts now wake the durable channel-readiness workflow from the `channel.account.connected` event. This makes the backend match the UI promise: integrations immediately refresh launch blockers and can unblock the Brief/Profile/Agent flow without waiting for a separate settings action.
+
+LinkedIn provider webhooks can now record accepted connection requests as `linkedin.connection.accepted`, and Agent channel performance shows accepted connections between sent invites and replies. This brings over GojiBerry's contacted/invited/accepted/replied clarity without adding another Campaigns tab.

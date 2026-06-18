@@ -859,6 +859,15 @@ const LinkedInAccountAuthorizationReceived = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
 });
 
+const LinkedInConnectionAccepted = z.object({
+  channel_account_id: z.string().uuid(),
+  provider_account_id: z.string().min(1).optional(),
+  provider_event_id: z.string().min(1).optional(),
+  external_id: z.string().min(1).optional(),
+  profile_url: z.string().url().nullable().optional(),
+  accepted_at: z.string().datetime().optional(),
+});
+
 const ChannelDomainRecord = z.object({
   record: z.string(),
   name: z.string(),
@@ -1559,6 +1568,7 @@ export const eventRegistry = {
   "channel.account.errored": ChannelAccountErrored,
   "linkedin.account.authorization.received":
     LinkedInAccountAuthorizationReceived,
+  "linkedin.connection.accepted": LinkedInConnectionAccepted,
   "channel.domain.provisioned": ChannelDomainSnapshot,
   "channel.domain.verification.requested": ChannelDomainVerificationRequested,
   "channel.domain.status.received": ChannelDomainSnapshot,

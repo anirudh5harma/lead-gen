@@ -126,6 +126,7 @@ interface AgentOutreachSummary {
   email_sent_7d: number;
   linkedin_sent_7d: number;
   linkedin_invites_7d: number;
+  linkedin_accepts_7d: number;
   linkedin_messages_7d: number;
   email_replies_7d: number;
   linkedin_invite_replies_7d: number;
@@ -900,6 +901,7 @@ async function loadAgentOutreachSummary(
       email_sent_7d: string;
       linkedin_sent_7d: string;
       linkedin_invites_7d: string;
+      linkedin_accepts_7d: string;
       linkedin_messages_7d: string;
       email_replies_7d: string;
       linkedin_invite_replies_7d: string;
@@ -944,6 +946,10 @@ async function loadAgentOutreachSummary(
               and channel = 'linkedin_connection'
               and status in ('sent','delivered','replied')
               and coalesce(sent_at, created_at) >= now() - interval '7 days') as linkedin_invites_7d,
+         (select count(*)::text from events
+            where workspace_id = $1
+              and event_type = 'linkedin.connection.accepted'
+              and occurred_at >= now() - interval '7 days') as linkedin_accepts_7d,
          (select count(*)::text from messages
             where workspace_id = $1
               and direction = 'outbound'
@@ -970,6 +976,7 @@ async function loadAgentOutreachSummary(
     email_sent_7d: Number(summary.rows[0]?.email_sent_7d ?? 0),
     linkedin_sent_7d: Number(summary.rows[0]?.linkedin_sent_7d ?? 0),
     linkedin_invites_7d: Number(summary.rows[0]?.linkedin_invites_7d ?? 0),
+    linkedin_accepts_7d: Number(summary.rows[0]?.linkedin_accepts_7d ?? 0),
     linkedin_messages_7d: Number(summary.rows[0]?.linkedin_messages_7d ?? 0),
     email_replies_7d: Number(summary.rows[0]?.email_replies_7d ?? 0),
     linkedin_invite_replies_7d: Number(
@@ -1434,6 +1441,7 @@ function emptyRepsState(workspaceId: string): RepsState {
       email_sent_7d: 0,
       linkedin_sent_7d: 0,
       linkedin_invites_7d: 0,
+      linkedin_accepts_7d: 0,
       linkedin_messages_7d: 0,
       email_replies_7d: 0,
       linkedin_invite_replies_7d: 0,
@@ -3837,6 +3845,7 @@ function ChannelPerformancePanel({
       icon: <BrandIcon name="linkedin" size={15} />,
       title: "LinkedIn invites",
       sent: outreach.linkedin_invites_7d,
+      accepted: outreach.linkedin_accepts_7d,
       reply: outreach.linkedin_invite_replies_7d,
       detail: "Connection requests",
     },
@@ -3856,8 +3865,8 @@ function ChannelPerformancePanel({
             Channel performance
           </p>
           <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
-            Outreach is split by email, LinkedIn invites, LinkedIn messages,
-            and channel-attributed replies.
+            Outreach is split by email, LinkedIn invites, accepted
+            connections, LinkedIn messages, and channel-attributed replies.
           </p>
         </div>
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
@@ -3881,8 +3890,21 @@ function ChannelPerformancePanel({
             <p className="mt-3 text-sm font-semibold text-[var(--color-text-1)]">
               {card.title}
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div
+              className={
+                "mt-3 grid gap-2 " +
+                (typeof card.accepted === "number"
+                  ? "grid-cols-3"
+                  : "grid-cols-2")
+              }
+            >
               <ChannelPerformanceMetric label="Sent" value={card.sent} />
+              {typeof card.accepted === "number" ? (
+                <ChannelPerformanceMetric
+                  label="Accepted"
+                  value={card.accepted}
+                />
+              ) : null}
               <ChannelPerformanceMetric label="Replies" value={card.reply} />
             </div>
           </div>

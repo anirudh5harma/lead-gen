@@ -68,6 +68,7 @@ test("LinkedIn provider webhook maps lifecycle events to account statuses", () =
   assert.equal(providerStatus("disconnected"), "disconnected");
   assert.equal(providerStatus("errored"), null);
   assert.equal(providerStatus("connected"), null);
+  assert.equal(providerStatus("connection_accepted"), null);
 });
 
 test("LinkedIn provider webhook preserves provider incident metadata", () => {
@@ -87,5 +88,25 @@ test("LinkedIn provider webhook preserves provider incident metadata", () => {
   assert.equal(
     lifecycleIdempotencyKey(payload, payload.channel_account_id!),
     "linkedin-provider:11111111-1111-4111-8111-111111111111:rate_limited:evt_limit_123",
+  );
+});
+
+test("LinkedIn provider webhook accepts connection acceptance metadata", () => {
+  const payload = LinkedInProviderWebhook.parse({
+    event: "connection_accepted",
+    channel_account_id: "11111111-1111-4111-8111-111111111111",
+    provider_account_id: "li_acc_123",
+    provider_event_id: "evt_accept_123",
+    external_id: "invite_456",
+    profile_url: "https://www.linkedin.com/in/example",
+    occurred_at: "2026-06-18T10:00:00.000Z",
+  });
+
+  assert.equal(payload.event, "connection_accepted");
+  assert.equal(payload.external_id, "invite_456");
+  assert.equal(payload.profile_url, "https://www.linkedin.com/in/example");
+  assert.equal(
+    lifecycleIdempotencyKey(payload, payload.channel_account_id!),
+    "linkedin-provider:11111111-1111-4111-8111-111111111111:connection_accepted:evt_accept_123",
   );
 });

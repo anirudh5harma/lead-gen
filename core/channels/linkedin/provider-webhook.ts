@@ -5,6 +5,7 @@ export const LinkedInProviderWebhook = z.object({
   event: z.enum([
     "connected",
     "credentials_refreshed",
+    "connection_accepted",
     "reauthorization_required",
     "rate_limited",
     "suspended",
@@ -15,6 +16,8 @@ export const LinkedInProviderWebhook = z.object({
   provider_account_id: z.string().min(1).optional(),
   account_display_name: z.string().min(1).optional(),
   provider_event_id: z.string().min(1).optional(),
+  external_id: z.string().min(1).optional(),
+  profile_url: z.string().url().optional(),
   provider_incident_id: z.string().min(1).optional(),
   retry_after: z.string().min(1).optional(),
   error: z.string().optional(),
