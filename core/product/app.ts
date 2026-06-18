@@ -10036,7 +10036,8 @@ export async function dispatchMeetingPrepOnce(
 type ProductDispatchEventType =
   | "signal.matched"
   | "contact.resolved"
-  | "reply.classified";
+  | "reply.classified"
+  | "linkedin.connection.accepted";
 type SignalMatchingDispatchEventType = "signal.ingested";
 
 interface SignalMatchingWorkflowStarter {
@@ -10191,6 +10192,13 @@ export async function registerProductEventDispatchers(
     },
     "product-meeting-prep-dispatcher-v1",
   );
+  const linkedInAcceptedSubscription = await adapter.subscribe(
+    "linkedin.connection.accepted",
+    async () => {
+      await dispatchSignalPlays({ limit });
+    },
+    "product-linkedin-accepted-play-dispatcher-v1",
+  );
 
   return [
     signalMatchingSubscription,
@@ -10198,6 +10206,7 @@ export async function registerProductEventDispatchers(
     contactSubscription,
     replySubscription,
     meetingPrepSubscription,
+    linkedInAcceptedSubscription,
   ];
 }
 

@@ -1225,6 +1225,7 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
   const linkedInCallback = source("app/api/auth/linkedin/callback/route.ts");
   const linkedInWebhook = source("app/api/webhooks/linkedin/route.ts");
   const eventRegistry = source("core/substrate/events/registry.ts");
+  const productApp = source("core/product/app.ts");
   const linkedInState = source("app/api/auth/linkedin/state.ts");
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
 
@@ -1252,6 +1253,9 @@ test("LinkedIn OAuth returns to current product hubs instead of legacy prospecti
     eventRegistry,
     /"linkedin\.connection\.accepted": LinkedInConnectionAccepted/,
   );
+  assert.match(productApp, /"linkedin\.connection\.accepted"/);
+  assert.match(productApp, /product-linkedin-accepted-play-dispatcher-v1/);
+  assert.match(productApp, /dispatchSignalPlays\(\{ limit \}\)/);
   assert.doesNotMatch(linkedInCallback, /\/dashboard\/prospecting/);
 });
 

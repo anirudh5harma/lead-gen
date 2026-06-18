@@ -63,6 +63,9 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
     "product-reply-play-dispatcher-v1",
     "product-meeting-prep-dispatcher-v1",
   ]);
+  assert.deepEqual(durableNames.get("linkedin.connection.accepted"), [
+    "product-linkedin-accepted-play-dispatcher-v1",
+  ]);
 
   await Promise.all((handlers.get("signal.ingested") ?? []).map((handler) =>
     handler(event("signal.ingested", { signal_id: "22222222-2222-4222-8222-222222222222" }))
@@ -76,6 +79,9 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
   await Promise.all((handlers.get("reply.classified") ?? []).map((handler) =>
     handler(event("reply.classified"))
   ));
+  await Promise.all((handlers.get("linkedin.connection.accepted") ?? []).map((handler) =>
+    handler(event("linkedin.connection.accepted"))
+  ));
 
   assert.deepEqual(calls, [
     {
@@ -87,6 +93,7 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
     { kind: "signal", limit: 7 },
     { kind: "reply", limit: 7 },
     { kind: "meeting_prep", limit: 7 },
+    { kind: "signal", limit: 7 },
   ]);
 
   await Promise.all(subscriptions.map((subscription) => subscription.unsubscribe()));
@@ -98,6 +105,7 @@ test("product event dispatchers wake Plays from typed signal and reply events", 
       "product-contact-play-dispatcher-v1",
       "product-reply-play-dispatcher-v1",
       "product-meeting-prep-dispatcher-v1",
+      "product-linkedin-accepted-play-dispatcher-v1",
     ]),
   );
 });
