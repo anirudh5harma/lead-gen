@@ -9132,6 +9132,7 @@ interface SignalDispatchRow {
   signal_id: string;
   company_id: string | null;
   resolved_person_id: string | null;
+  resolved_person_fit_decision: string | null;
   resolver_run_id: string | null;
   resolver_idempotency_key: string | null;
   resolver_status: string | null;
@@ -9305,6 +9306,63 @@ async function publishCampaignDispatchSkipped(
   });
 }
 
+async function loadPersonContactFitDecision(
+  pool: Pool,
+  workspace_id: string,
+  person_id: string,
+): Promise<ProductPersonFitDecision | null> {
+  const { rows } = await pool.query<{ decision: string | null }>(
+    `select properties #>> '{contact_fit,decision}' as decision
+       from graph_persons
+      where workspace_id = $1
+        and id = $2
+      limit 1`,
+    [workspace_id, person_id],
+  );
+  return personFitDecisionOrNull(rows[0]?.decision);
+}
+
+function personFitDecisionOrNull(
+  value: unknown,
+): ProductPersonFitDecision | null {
+  return value === "fit" || value === "not_fit" || value === "unsure"
+    ? value
+    : null;
+}
+
+async function publishSignalOutreachGated(
+  engine: ProductEngine,
+  row: SignalDispatchRow,
+  person_id: string,
+  channel: string,
+): Promise<void> {
+  await engine.bus.publish({
+    workspace_id: row.workspace_id,
+    event_type: "signal.outreach.gated",
+    source: "system",
+    producer_ref: "product.dispatchSignalPlaysOnce",
+    correlation_id: row.event_id,
+    causation_id: row.event_id,
+    idempotency_key: [
+      "signal-outreach-gated",
+      `signal:${row.signal_id}`,
+      `play:${row.play_id}`,
+      `person:${person_id}`,
+      "gate:contact_fit",
+    ].join(":"),
+    payload: {
+      signal_id: row.signal_id,
+      play_id: row.play_id,
+      person_id,
+      channel,
+      gate: "contact_fit",
+      decision: "not_fit",
+      reason: "Human fit feedback marked this contact as not a fit.",
+      gated_at: new Date().toISOString(),
+    },
+  });
+}
+
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -9350,6 +9408,7 @@ export async function dispatchSignalPlaysOnce(
             e.payload->>'signal_id' as signal_id,
             s.related_company_id::text as company_id,
             resolved.payload->>'selected_person_id' as resolved_person_id,
+            fit_person.properties #>> '{contact_fit,decision}' as resolved_person_fit_decision,
             resolver.id::text as resolver_run_id,
             resolver.idempotency_key as resolver_idempotency_key,
             resolver.status as resolver_status,
@@ -9422,6 +9481,9 @@ export async function dispatchSignalPlaysOnce(
           order by cr.occurred_at desc
           limit 1
        ) resolved on true
+       left join graph_persons fit_person
+         on fit_person.workspace_id = e.workspace_id
+        and fit_person.id = (resolved.payload->>'selected_person_id')::uuid
        left join workflow_runs wr
          on wr.workspace_id = e.workspace_id
         and wr.workflow_name = coalesce(p.compiled->>'workflow', $1)
@@ -9626,6 +9688,18 @@ export async function dispatchSignalPlaysOnce(
       });
       personId = resolver.output?.selected_person_id ?? null;
       if (!personId) continue;
+    }
+    const fitDecision =
+      personId === row.resolved_person_id
+        ? personFitDecisionOrNull(row.resolved_person_fit_decision)
+        : await loadPersonContactFitDecision(
+            engine.pool,
+            row.workspace_id,
+            personId,
+          );
+    if (fitDecision === "not_fit") {
+      await publishSignalOutreachGated(engine, row, personId, contactChannel);
+      continue;
     }
     if (row.workflow_name === SIGNAL_TO_LINKEDIN_PLAY_WORKFLOW) {
       const action = parseLinkedInAction(row.target_channel) ?? "linkedin_dm";

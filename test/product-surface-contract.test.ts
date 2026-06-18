@@ -441,7 +441,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Prepare outreach/);
   assert.match(reps, /Verified email/);
   assert.match(reps, /with_outreach_draft/);
+  assert.match(reps, /blocked_by_fit/);
+  assert.match(reps, /Fit blocked/);
   assert.match(reps, /const draft = signal\.outreach_draft/);
+  assert.match(reps, /contactFitGate\(contact\)/);
+  assert.match(reps, /Outreach gated/);
+  assert.match(reps, /Blocked by fit/);
   assert.match(reps, /draftOpportunityLabel\(draft\.status, draft\.channel\)/);
   assert.match(reps, /opportunityHref\(signal, contact\)/);
   assert.match(reps, /return "\/dashboard\/agent#opportunities"/);
@@ -772,10 +777,14 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(productApp, /event_type: "play\.configured"/);
   assert.match(productApp, /event_type: "signal\.dismissal\.requested"/);
   assert.match(productApp, /event_type: "person\.fit_feedback\.recorded"/);
+  assert.match(productApp, /event_type: "signal\.outreach\.gated"/);
+  assert.match(productApp, /publishSignalOutreachGated/);
+  assert.match(productApp, /loadPersonContactFitDecision/);
   assert.match(productApp, /projectPersonFitFeedback/);
   assert.match(productApp, /projectSignalDismissal/);
   assert.match(registry, /"signal\.dismissal\.requested": SignalDismissalRequested/);
   assert.match(registry, /"person\.fit_feedback\.recorded": PersonFitFeedbackRecorded/);
+  assert.match(registry, /"signal\.outreach\.gated": SignalOutreachGated/);
   assert.match(registry, /"workspace\.configured": WorkspaceConfigured/);
 });
 

@@ -917,6 +917,7 @@ function emptyRepsState(workspaceId: string): RepsState {
         with_outreach_draft: 0,
         with_email_draft: 0,
         ready_for_review: 0,
+        blocked_by_fit: 0,
       },
     },
     contacts: {
@@ -1315,7 +1316,7 @@ function AgentOpportunityPanel({
             <p className="text-sm font-semibold text-[var(--color-text-1)]">
               Signal-to-outreach queue
             </p>
-            <div className="grid gap-2 sm:grid-cols-4 lg:grid-cols-1">
+            <div className="grid gap-2 sm:grid-cols-5 lg:grid-cols-1">
               <MiniStat label="Qualified" value={opportunities.stats.qualified} />
               <MiniStat
                 label="Verified contacts"
@@ -1328,6 +1329,10 @@ function AgentOpportunityPanel({
               <MiniStat
                 label="Needs review"
                 value={opportunities.stats.ready_for_review}
+              />
+              <MiniStat
+                label="Fit blocked"
+                value={opportunities.stats.blocked_by_fit}
               />
             </div>
             <p className="text-xs leading-5 text-[var(--color-text-3)]">
@@ -1365,6 +1370,8 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
   const company = signal.company.name ?? signal.company.domain ?? "Unknown company";
   const score = signal.match_score == null ? null : Math.round(signal.match_score * 100);
   const href = opportunityHref(signal, contact);
+  const fitGate = contactFitGate(contact);
+  const isFitBlocked = fitGate?.tone === "blocked";
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <Link
@@ -1393,10 +1400,17 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             <OpportunityPill tone={contact ? "ready" : "waiting"}>
               {contact ? contactLabel(contact) : "Resolving contact"}
             </OpportunityPill>
-            <OpportunityPill tone={draft ? "ready" : "waiting"}>
+            {fitGate ? (
+              <OpportunityPill tone={fitGate.tone}>{fitGate.label}</OpportunityPill>
+            ) : null}
+            <OpportunityPill
+              tone={draft ? "ready" : isFitBlocked ? "blocked" : "waiting"}
+            >
               {draft
                 ? draftOpportunityLabel(draft.status, draft.channel)
-                : "Draft pending"}
+                : isFitBlocked
+                  ? "Outreach gated"
+                  : "Draft pending"}
             </OpportunityPill>
           </span>
           {signal.match_reason ? (
@@ -1473,11 +1487,15 @@ function OpportunityPill({
   tone,
   children,
 }: {
-  tone: "fit" | "ready" | "waiting";
+  tone: "blocked" | "fit" | "ready" | "review" | "waiting";
   children: ReactNode;
 }) {
   const toneClass =
-    tone === "fit"
+    tone === "blocked"
+      ? "bg-[var(--color-neg-bg)] text-[var(--color-neg)]"
+      : tone === "review"
+        ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+        : tone === "fit"
       ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
       : tone === "ready"
         ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
@@ -1494,6 +1512,19 @@ function contactLabel(contact: QualifiedSignalContact): string {
   if (contact.linkedin_url) return "LinkedIn profile";
   if (contact.emails.length > 0) return "Email found";
   return "Contact found";
+}
+
+function contactFitGate(
+  contact: QualifiedSignalContact | undefined,
+): { label: string; tone: "blocked" | "fit" | "review" } | null {
+  if (!contact?.contact_fit_decision) return null;
+  if (contact.contact_fit_decision === "fit") {
+    return { label: "Good fit", tone: "fit" };
+  }
+  if (contact.contact_fit_decision === "not_fit") {
+    return { label: "Blocked by fit", tone: "blocked" };
+  }
+  return { label: "Fit review", tone: "review" };
 }
 
 function draftOpportunityLabel(status: string, channel: string): string {

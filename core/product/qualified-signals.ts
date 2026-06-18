@@ -6,6 +6,7 @@ export interface QualifiedSignalContact {
   full_name: string;
   title: string | null;
   score: number;
+  contact_fit_decision: "fit" | "unsure" | "not_fit" | null;
   reasons: string[];
   emails: string[];
   linkedin_url: string | null;
@@ -75,6 +76,7 @@ export interface QualifiedSignalWorkbench {
     with_outreach_draft: number;
     with_email_draft: number;
     ready_for_review: number;
+    blocked_by_fit: number;
   };
 }
 
@@ -320,6 +322,7 @@ export async function loadQualifiedSignalWorkbench(
                   'full_name', ranked.full_name,
                   'title', ranked.title,
                   'score', ranked.score,
+                  'contact_fit_decision', ranked.contact_fit_decision,
                   'reasons', ranked.reasons,
                   'emails', ranked.emails,
                   'linkedin_url', ranked.linkedin_url,
@@ -333,6 +336,12 @@ export async function loadQualifiedSignalWorkbench(
            from (
              select row_number() over (
                       order by
+                        case gp.properties #>> '{contact_fit,decision}'
+                          when 'fit' then 0
+                          when 'unsure' then 1
+                          when 'not_fit' then 3
+                          else 2
+                        end,
                         case
                           when gp.title ~* '(founder|co-founder|ceo|chief executive|owner)' then 0
                           when gp.title ~* '(revenue|sales|growth|marketing|gtm|partnership|business development)' then 1
@@ -344,6 +353,7 @@ export async function loadQualifiedSignalWorkbench(
                     gp.id,
                     gp.full_name,
                     gp.title,
+                    gp.properties #>> '{contact_fit,decision}' as contact_fit_decision,
                     coalesce((
                       select array_prepend(ev.email::citext, array_remove(gp.emails, ev.email::citext))
                         from jsonb_each(coalesce(gp.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
@@ -391,7 +401,13 @@ export async function loadQualifiedSignalWorkbench(
                      where meta->>'verified' = 'true'
                   )
                 )
-              order by
+             order by
+                case gp.properties #>> '{contact_fit,decision}'
+                  when 'fit' then 0
+                  when 'unsure' then 1
+                  when 'not_fit' then 3
+                  else 2
+                end,
                 case
                   when gp.title ~* '(founder|co-founder|ceo|chief executive|owner)' then 0
                   when gp.title ~* '(revenue|sales|growth|marketing|gtm|partnership|business development)' then 1
@@ -538,6 +554,9 @@ export async function loadQualifiedSignalWorkbench(
       ready_for_review: signals.filter((signal) =>
         isOutreachDraftReadyForReview(signal.outreach_draft)
       ).length,
+      blocked_by_fit: signals.filter((signal) =>
+        signal.contacts.some((contact) => contact.contact_fit_decision === "not_fit")
+      ).length,
     },
   };
 }
@@ -664,6 +683,7 @@ export function normalizeContactCandidates(value: unknown): QualifiedSignalConta
       full_name: stringValue(record.full_name) ?? "Unknown person",
       title: nullableString(record.title),
       score: numberValue(record.score) ?? 0,
+      contact_fit_decision: contactFitDecision(record.contact_fit_decision),
       reasons: stringArray(record.reasons),
       emails: stringArray(record.emails),
       linkedin_url: nullableString(record.linkedin_url),
@@ -675,6 +695,14 @@ export function normalizeContactCandidates(value: unknown): QualifiedSignalConta
       provenance,
     }];
   }).filter((contact) => contact.person_id || contact.full_name !== "Unknown person");
+}
+
+function contactFitDecision(
+  value: unknown,
+): QualifiedSignalContact["contact_fit_decision"] {
+  return value === "fit" || value === "unsure" || value === "not_fit"
+    ? value
+    : null;
 }
 
 function parseJsonArray(value: unknown): unknown[] {

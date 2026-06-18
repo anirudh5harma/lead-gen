@@ -399,6 +399,17 @@ const PersonFitFeedbackRecorded = z.object({
   recorded_at: z.string().datetime().optional(),
 });
 
+const SignalOutreachGated = z.object({
+  signal_id: z.string().uuid(),
+  play_id: z.string().uuid(),
+  person_id: z.string().uuid(),
+  channel: z.string().min(1),
+  gate: z.enum(["contact_fit"]),
+  decision: z.enum(["not_fit"]),
+  reason: z.string().min(1),
+  gated_at: z.string().datetime(),
+});
+
 const SignalClassificationCompleted = z.object({
   signal_id: z.string().uuid(),
   kind: z
@@ -1495,6 +1506,7 @@ export const eventRegistry = {
   "signal.dismissed": SignalDismissed,
   "signal.dismissal.requested": SignalDismissalRequested,
   "person.fit_feedback.recorded": PersonFitFeedbackRecorded,
+  "signal.outreach.gated": SignalOutreachGated,
   "signal.classification.completed": SignalClassificationCompleted,
   "signal.expired": SignalExpired,
   "signal.expiry.requested": SignalExpiryRequested,
