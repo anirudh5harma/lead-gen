@@ -44,6 +44,14 @@ Last checked against Anthropic Claude Code docs on 2026-06-19.
 - Distribution can start with a private/company marketplace and later move to
   the Anthropic community marketplace after validation and safety review.
   Source: <https://code.claude.com/docs/en/plugin-marketplaces>
+- Claude Code's plugin manager shows users what a plugin will install: commands,
+  agents, skills, hooks, MCP servers, and LSP servers. That means Bombsell's v1
+  should keep its install footprint small and obvious.
+  Source: <https://code.claude.com/docs/en/discover-plugins>
+- Community marketplace submission requires local validation and Anthropic
+  safety review. Public launch should run `claude plugin validate` before every
+  submission and keep the private marketplace as the faster update channel.
+  Source: <https://code.claude.com/docs/en/plugins>
 
 ## Current Bombsell Fit
 
@@ -93,6 +101,48 @@ The plugin should ship:
 This gives Claude Code users a native `/bombsell:*` workflow while preserving
 Bombsell as the system of record for auth, workspace scope, verified contacts,
 approval gates, evals, and channel sending.
+
+## Build Plan
+
+1. Auth and install path
+
+   Ship first-class remote MCP auth for Claude Code. The normal install should
+   not ask users to paste bearer tokens or edit local plugin files. Private
+   dogfood can keep `headersHelper`, but the published plugin should use a
+   Bombsell-hosted authorization flow, workspace selection, and revocation UI.
+
+2. Minimal plugin package
+
+   Create a separate `bombsell-claude-code` package with only the manifest,
+   remote MCP config, six skills, README, and privacy notes. Do not ship hooks,
+   local stdio servers, or write-heavy agents in the first public build.
+
+3. Read-first skills
+
+   Launch the first three skills as read-only or proposal-only:
+   `/bombsell:brief`, `/bombsell:launch-check`, and
+   `/bombsell:signal-review`. These prove value quickly and validate auth,
+   workspace scoping, tool search, pagination, and links back into Bombsell.
+
+4. Prepare-only outreach
+
+   Add `/bombsell:prepare-outreach` only after the read path is stable. It can
+   prepare or find judged drafts and route the user to approval, but it must not
+   send directly from Claude Code. Approval remains explicit through Bombsell's
+   existing eval, channel readiness, and policy gates.
+
+5. Private marketplace dogfood
+
+   Publish a Bombsell-controlled marketplace for design partners. Measure time
+   to install, time to first useful Brief, tool-call errors, and whether users
+   naturally ask Claude Code to update Profile from repo context.
+
+6. Community submission
+
+   Submit to Anthropic's community marketplace once auth, audit logging,
+   privacy text, plugin validation, and partner feedback are clean. Keep the
+   official Bombsell marketplace as the fastest path for updates and enterprise
+   users.
 
 ## Plugin Shape
 
@@ -340,11 +390,11 @@ read-only and prepare-only flow.
    smaller task vocabulary. Add wrapper tools that call the existing registry:
 
    - `bombsell.brief.get` (landed: read-only)
-   - `bombsell.profile.propose_from_context`
+   - `bombsell.profile.propose_from_context` (needed)
    - `bombsell.launch.check` (landed: read-only)
    - `bombsell.signals.list_qualified` (landed: read-only)
    - `bombsell.contact_lanes.get` (landed: read-only)
-   - `bombsell.outreach.prepare` (prepare-only; never sends directly)
+   - `bombsell.outreach.prepare` (needed; prepare-only; never sends directly)
    - `bombsell.outreach.list_sent` (landed: read-only)
    - `bombsell.draft.get` (landed: read-only)
    - `bombsell.approvals.list` (landed: read-only)
@@ -462,7 +512,10 @@ Install page bullets:
 
 - [ ] Add remote MCP auth suitable for Claude Code.
 - [x] Add concise MCP server instructions for tool search.
-- [ ] Add `bombsell.*` wrapper tools over the existing registry.
+- [ ] Finish `bombsell.*` wrapper tools over the existing registry.
+  Landed: Brief, launch check, qualified signals, contact lanes, sent outreach,
+  draft lookup, approvals, and learning. Remaining: Profile proposal from repo
+  context and prepare-only outreach.
 - [x] Add product contract tests for wrapper tools and manifest discovery.
 - [ ] Create `bombsell-claude-code` plugin package.
 - [ ] Add six initial skills.

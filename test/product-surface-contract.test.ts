@@ -257,6 +257,18 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Qualified signals/);
   assert.match(dashboard, /Emails sent/);
   assert.match(dashboard, /LinkedIn DMs/);
+  const dayDmMetric = dashboard.slice(
+    dashboard.indexOf("as dms_sent_24h") - 360,
+    dashboard.indexOf("as dms_sent_24h") + 80,
+  );
+  const weekDmMetric = dashboard.slice(
+    dashboard.indexOf("as dms_sent_7d") - 360,
+    dashboard.indexOf("as dms_sent_7d") + 80,
+  );
+  assert.match(dayDmMetric, /m\.channel in \('linkedin_dm','linkedin_inmail'\)/);
+  assert.match(weekDmMetric, /m\.channel in \('linkedin_dm','linkedin_inmail'\)/);
+  assert.doesNotMatch(dayDmMetric, /linkedin_connection|linkedin_comment/);
+  assert.doesNotMatch(weekDmMetric, /linkedin_connection|linkedin_comment/);
   assert.match(dashboard, /Replies/);
   assert.match(dashboard, /Meetings/);
   assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);

@@ -101,3 +101,5 @@ Sent outreach proof now has a canonical Agent route at `/dashboard/agent/outreac
 The Claude Code plugin plan is now grounded in Anthropic's current plugin and MCP docs and framed as a focused GTM workbench: Brief, Profile proposal, qualified signals, judged outreach preparation, and reply/meeting learning. The public plugin path should use remote MCP OAuth; `headersHelper` remains a private dogfood escape hatch only.
 
 The Agent outreach proof sidebar now uses graph-backed contact trust instead of only raw contact text. It shows verified email status, LinkedIn profile readiness, fit review, and channel handles from the same conversation trace that drives signal, message, approval, reply, and meeting proof.
+
+The Brief LinkedIn DM metric now counts only LinkedIn DMs and InMail, not connection requests or comments. Connection requests and comments remain visible in Agent channel performance, while Brief preserves the user's requested last-day/last-week email and DM accounting.

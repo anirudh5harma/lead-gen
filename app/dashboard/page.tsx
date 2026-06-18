@@ -216,13 +216,13 @@ async function loadBriefActionState(workspaceId: string): Promise<BriefActionSta
        (select count(*)::text from messages m
           where m.workspace_id = $1
             and m.direction = 'outbound'
-            and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+            and m.channel in ('linkedin_dm','linkedin_inmail')
             and m.status in ('sent','delivered','replied')
             and coalesce(m.sent_at, m.created_at) >= now() - interval '24 hours') as dms_sent_24h,
        (select count(*)::text from messages m
           where m.workspace_id = $1
             and m.direction = 'outbound'
-            and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+            and m.channel in ('linkedin_dm','linkedin_inmail')
             and m.status in ('sent','delivered','replied')
             and coalesce(m.sent_at, m.created_at) >= now() - interval '7 days') as dms_sent_7d,
        (select count(*)::text from outcomes o
