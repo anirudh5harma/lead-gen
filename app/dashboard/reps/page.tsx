@@ -33,6 +33,7 @@ import {
   recordPersonFitFeedbackAction,
   resolveQualifiedSignalContactsAction,
   runAgentSourceNowAction,
+  updateWorkspaceAutonomyAction,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -3073,6 +3074,7 @@ function AgentSetupSummary({
 }) {
   const emailPolicy = rep.autonomy?.channels?.email;
   const linkedInPolicy = firstChannelPolicy(rep, ["linkedin_dm", "linkedin"]);
+  const operatingMode = agentOperatingMode(emailPolicy, linkedInPolicy);
   const openConversations = sumRepMetric(reps, "open_conversations");
   const sent7d = sumRepMetric(reps, "sent_7d");
   const replies7d = sumRepMetric(reps, "outcomes_7d");
@@ -3103,6 +3105,7 @@ function AgentSetupSummary({
           <MiniStat label="Sent 7d" value={sent7d} />
           <MiniStat label="Replies 7d" value={replies7d} />
         </div>
+        <AgentModeControl mode={operatingMode} />
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-line-1)] pt-3 text-xs text-[var(--color-text-3)]">
           <span>Voice, accounts, and limits stay in Profile.</span>
           <Link href="/dashboard/profile#agent" className="btn-quiet-sm">
@@ -3139,6 +3142,112 @@ function AgentSetupSummary({
       </article>
     </div>
   );
+}
+
+type AgentOperatingMode = "autopilot" | "copilot" | "review_first" | "research_only" | "mixed";
+
+function AgentModeControl({ mode }: { mode: AgentOperatingMode }) {
+  const detail = agentOperatingModeDetail(mode);
+  return (
+    <div className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-4)]">
+            Operating mode
+          </p>
+          <p className="mt-1 text-sm font-semibold text-[var(--color-text-1)]">
+            {detail.label}
+          </p>
+          <p className="mt-1 max-w-[60ch] text-xs leading-5 text-[var(--color-text-3)]">
+            {detail.description}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <form action={updateWorkspaceAutonomyAction}>
+            <input type="hidden" name="return_to" value="/dashboard/agent" />
+            <input type="hidden" name="autonomy_mode" value="autonomous" />
+            <PendingSubmitButton
+              className={mode === "autopilot" ? "btn-solid-sm" : "btn-quiet-sm"}
+              icon="send"
+              iconSize={14}
+              pendingLabel="Saving"
+            >
+              Autopilot
+            </PendingSubmitButton>
+          </form>
+          <form action={updateWorkspaceAutonomyAction}>
+            <input type="hidden" name="return_to" value="/dashboard/agent" />
+            <input type="hidden" name="autonomy_mode" value="review_only" />
+            <PendingSubmitButton
+              className={mode === "copilot" ? "btn-solid-sm" : "btn-quiet-sm"}
+              icon="rate_review"
+              iconSize={14}
+              pendingLabel="Saving"
+            >
+              Copilot
+            </PendingSubmitButton>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function agentOperatingMode(
+  emailPolicy: RepChannelPolicy | undefined,
+  linkedInPolicy: RepChannelPolicy | undefined,
+): AgentOperatingMode {
+  const approvals = [emailPolicy?.approval, linkedInPolicy?.approval].filter(
+    (approval): approval is string => Boolean(approval),
+  );
+  if (approvals.length === 0) return "autopilot";
+  if (approvals.every((approval) => approval === "none")) return "autopilot";
+  if (approvals.every((approval) => approval === "always")) return "copilot";
+  if (approvals.every((approval) => approval === "approve_first")) {
+    return "review_first";
+  }
+  if (approvals.every((approval) => approval === "research_only")) {
+    return "research_only";
+  }
+  return "mixed";
+}
+
+function agentOperatingModeDetail(
+  mode: AgentOperatingMode,
+): { label: string; description: string } {
+  if (mode === "copilot") {
+    return {
+      label: "Copilot review",
+      description:
+        "The agent finds contacts and writes outreach, then waits for human approval before sending.",
+    };
+  }
+  if (mode === "review_first") {
+    return {
+      label: "Review first move",
+      description:
+        "The first outbound touch waits for approval; follow-up work can move after checks.",
+    };
+  }
+  if (mode === "research_only") {
+    return {
+      label: "Research only",
+      description:
+        "The agent can qualify signals and contacts, but outbound stays blocked.",
+    };
+  }
+  if (mode === "mixed") {
+    return {
+      label: "Mixed policies",
+      description:
+        "Email and LinkedIn use different approval rules. Choose Autopilot or Copilot to simplify.",
+    };
+  }
+  return {
+    label: "Autopilot",
+    description:
+      "The agent can send after contact verification, eval gates, caps, and channel health pass.",
+  };
 }
 
 function sumRepMetric(

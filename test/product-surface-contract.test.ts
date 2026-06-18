@@ -577,6 +577,14 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Outreach paths/);
   assert.match(reps, /Agent setup/);
   assert.match(reps, /AgentSetupSummary/);
+  assert.match(reps, /AgentModeControl/);
+  assert.match(reps, /agentOperatingMode/);
+  assert.match(reps, /Operating mode/);
+  assert.match(reps, /Autopilot/);
+  assert.match(reps, /Copilot/);
+  assert.match(reps, /updateWorkspaceAutonomyAction/);
+  assert.match(reps, /name="autonomy_mode" value="autonomous"/);
+  assert.match(reps, /name="autonomy_mode" value="review_only"/);
   assert.match(reps, /Tune in Profile/);
   assert.match(reps, /Voice, accounts, and limits stay in Profile/);
   assert.match(reps, /Channels and limits/);
@@ -824,6 +832,10 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /Saving agent/);
   assert.match(settings, /value="autonomous"/);
   assert.match(settings, /value="review_only"/);
+  assert.match(settings, /Autopilot/);
+  assert.match(settings, /Copilot review/);
+  assert.match(settings, /Copilot prepares outbound and waits for approval/);
+  assert.match(settings, /Autopilot sends after evals/);
   assert.match(settings, /row_number\(\) over/);
   assert.match(settings, /properties ->> 'mailbox_email'/);
   assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/profile#agent"\)/);

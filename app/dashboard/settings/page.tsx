@@ -434,14 +434,14 @@ export default async function SettingsPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <AutonomyOption
                     value="autonomous"
-                    title="Autonomous"
-                    description="Move after evals, caps, and channel checks pass."
+                    title="Autopilot"
+                    description="Send after evals, caps, contact checks, and channel health pass."
                     defaultChecked={formMode === "autonomous"}
                   />
                   <AutonomyOption
                     value="review_only"
-                    title="Review-only"
-                    description="Hold outbound moves for human review every time."
+                    title="Copilot review"
+                    description="Prepare every move, then wait for a human approval before outreach."
                     defaultChecked={formMode === "review_only"}
                   />
                 </div>
@@ -541,10 +541,10 @@ function ProfileActivationMap({
       title: "Control mode",
       detail:
         mode === "review_only"
-          ? "Human review before every outbound move."
+          ? "Copilot prepares outbound and waits for approval."
           : mode === "custom"
             ? "Mixed policies; choose one posture before launch."
-            : "Autonomous after evals, caps, and channel checks.",
+            : "Autopilot sends after evals, caps, and channel checks.",
       href: "#autonomy",
       icon: "task_alt",
       ready: mode !== "custom",
@@ -773,8 +773,8 @@ function SettingsChecklist({
         mode === "custom"
           ? "Agent and outreach policies are mixed."
           : mode === "review_only"
-            ? "Every outbound move waits for review."
-            : "The agent can move after evals, caps, and channel checks pass.",
+            ? "Copilot waits for approval before outreach."
+            : "Autopilot can send after evals and channel checks pass.",
       href: "#autonomy",
       icon: "task_alt",
       ready: mode !== "custom",
@@ -1875,9 +1875,9 @@ function settingsMode(
 }
 
 function modeLabel(mode: SettingsAutonomyMode): string {
-  if (mode === "review_only") return "Review-only";
+  if (mode === "review_only") return "Copilot review";
   if (mode === "custom") return "Mixed";
-  return "Autonomous";
+  return "Autopilot";
 }
 
 function profileWebsite(profile: ProductCompanyProfile | null): string {
