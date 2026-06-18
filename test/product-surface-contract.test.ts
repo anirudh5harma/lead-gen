@@ -92,7 +92,7 @@ test("Agent is the canonical dashboard surface route", () => {
   );
   assert.equal(exists("app/dashboard/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/loading.tsx"), false);
-  assert.equal(exists("app/dashboard/profile/loading.tsx"), true);
+  assert.equal(exists("app/dashboard/profile/loading.tsx"), false);
   assert.equal(exists("app/dashboard/profile/page.tsx"), true);
   assert.equal(exists("app/dashboard/settings/loading.tsx"), false);
   assert.match(
@@ -103,10 +103,8 @@ test("Agent is the canonical dashboard surface route", () => {
     source("app/dashboard/settings/page.tsx"),
     /redirect\("\/dashboard\/profile"\)/,
   );
-  assert.match(
-    source("app/dashboard/agent/[id]/loading.tsx"),
-    /surface="agent" layout="split"/,
-  );
+  assert.equal(exists("app/dashboard/agent/[id]/loading.tsx"), false);
+  assert.equal(exists("app/dashboard/agent/contacts/[id]/loading.tsx"), false);
 
   const productLinks = [
     source("components/dashboard/Shell.tsx"),
