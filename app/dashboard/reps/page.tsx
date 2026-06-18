@@ -2235,7 +2235,7 @@ function AgentOutreachPanel({
               title="No sent outreach yet"
               hint="When the agent sends an email or LinkedIn touch, the contact and draft will appear here."
               cta={{
-                href: "/dashboard/profile#linkedin",
+                href: "/dashboard/profile#channels",
                 label: "Connect accounts",
                 icon: "account_tree",
               }}

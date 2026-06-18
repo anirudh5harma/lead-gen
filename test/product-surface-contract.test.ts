@@ -440,6 +440,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /DMs sent/);
   assert.match(reps, /Qualified signals become verified contacts/);
+  assert.match(reps, /title="No sent outreach yet"/);
+  assert.match(reps, /href: "\/dashboard\/profile#channels",\s+label: "Connect accounts"/);
   assert.doesNotMatch(reps, /href="\/dashboard\/conversations"/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
   assert.match(reps, /#message-\$\{messageId\}/);
