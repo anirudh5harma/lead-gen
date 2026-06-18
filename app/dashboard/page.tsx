@@ -384,24 +384,28 @@ function BriefView({
           label="Qualified signals"
           day={actions.qualified_signals_24h}
           week={actions.qualified_signals_7d}
+          href="/dashboard/agent#opportunities"
         />
         <DashboardMetric
           icon="mail"
           label="Emails sent"
           day={actions.emails_sent_24h}
           week={actions.emails_sent_7d}
+          href="/dashboard/agent#outreach"
         />
         <DashboardMetric
           icon="linkedin"
           label="LinkedIn DMs"
           day={actions.dms_sent_24h}
           week={actions.dms_sent_7d}
+          href="/dashboard/agent#outreach"
         />
         <DashboardMetric
           icon="event_available"
           label="Replies / meetings"
           day={actions.replies_24h + actions.meetings_24h}
           week={actions.replies_7d + actions.meetings_7d}
+          href="/dashboard/brief#reply-insights"
         />
       </section>
 
@@ -438,25 +442,27 @@ function BriefView({
         </aside>
       </section>
 
-      <SurfaceSection title="Reply and meeting insights">
-        {outcomeInsights.length === 0 ? (
-          <EmptyState
-            title="No replies or meetings this week"
-            hint="Once outreach lands, the brief will show the person, company, signal, and exact conversation behind each reply or meeting."
-            cta={{
-              href: "/dashboard/agent#outreach",
-              label: "Review outreach",
-              icon: "mail",
-            }}
-          />
-        ) : (
-          <div className="grid gap-2">
-            {outcomeInsights.map((insight) => (
-              <OutcomeInsightRow key={insight.id} insight={insight} />
-            ))}
-          </div>
-        )}
-      </SurfaceSection>
+      <div id="reply-insights" className="scroll-mt-28">
+        <SurfaceSection title="Reply and meeting insights">
+          {outcomeInsights.length === 0 ? (
+            <EmptyState
+              title="No replies or meetings this week"
+              hint="Once outreach lands, the brief will show the person, company, signal, and exact conversation behind each reply or meeting."
+              cta={{
+                href: "/dashboard/agent#outreach",
+                label: "Review outreach",
+                icon: "mail",
+              }}
+            />
+          ) : (
+            <div className="grid gap-2">
+              {outcomeInsights.map((insight) => (
+                <OutcomeInsightRow key={insight.id} insight={insight} />
+              ))}
+            </div>
+          )}
+        </SurfaceSection>
+      </div>
     </div>
   );
 }
@@ -516,19 +522,31 @@ function DashboardMetric({
   label,
   day,
   week,
+  href,
 }: {
   icon: string;
   label: string;
   day: number;
   week: number;
+  href: string;
 }) {
   return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+    <Link
+      href={href}
+      className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+    >
       <div className="flex items-center justify-between gap-3">
         <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
           <Icon name={icon} size={17} />
         </span>
-        <span className="text-[11px] text-[var(--color-text-3)]">24h / 7d</span>
+        <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-3)]">
+          24h / 7d
+          <Icon
+            name="arrow_forward"
+            size={12}
+            className="text-[var(--color-text-4)] transition-colors group-hover:text-[var(--color-accent)]"
+          />
+        </span>
       </div>
       <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
         {label}
@@ -536,7 +554,7 @@ function DashboardMetric({
       <p className="mt-2 text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
         {day} <span className="text-sm font-medium text-[var(--color-text-3)]">/ {week}</span>
       </p>
-    </div>
+    </Link>
   );
 }
 

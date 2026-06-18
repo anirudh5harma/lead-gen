@@ -212,6 +212,11 @@ test("Dashboard routes setup work through Settings and current surfaces", () => 
   assert.match(dashboard, /Emails sent/);
   assert.match(dashboard, /LinkedIn DMs/);
   assert.match(dashboard, /Replies \/ meetings/);
+  assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
+  assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
+  assert.match(dashboard, /href="\/dashboard\/brief#reply-insights"/);
+  assert.match(dashboard, /id="reply-insights" className="scroll-mt-28"/);
+  assert.match(dashboard, /group-hover:text-\[var\(--color-accent\)\]/);
   assert.match(dashboard, /Today priority/);
   assert.match(dashboard, /Signal-to-outreach funnel/);
   assert.match(dashboard, /Signal mix/);
