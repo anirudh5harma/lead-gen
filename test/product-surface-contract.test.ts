@@ -359,6 +359,7 @@ test("Agent learning surface owns message optimization from reply evidence", () 
   assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/agent#learning"\)/);
   assert.match(reps, /optimizePlaySkillsAction/);
   assert.match(reps, /optimizeCampaignStrategyAction/);
+  assert.match(reps, /<AgentLearningPanel learning=\{state\.learning\} \/>/);
   assert.match(reps, /title="Learning"/);
   assert.match(reps, /Message recommendation/);
   assert.match(reps, /play\.skill\.optimization\.recommended/);
@@ -688,12 +689,22 @@ test("Agent surface shows live work and account readiness", () => {
   assert.doesNotMatch(reps, /<AgentReadinessPanel/);
   assert.doesNotMatch(reps, /<AgentStrategyPanel/);
   assert.doesNotMatch(reps, /<AgentSequencePanel/);
-  assert.doesNotMatch(reps, /<AgentLearningPanel/);
+  assert.match(reps, /<AgentLearningPanel learning=\{state\.learning\} \/>/);
   assert.doesNotMatch(reps, /<AgentSetupSummary/);
   assert.ok(
     reps.indexOf("<AgentOutreachPanel outreach={state.outreach} />") <
+      reps.indexOf("<AgentRepliesPanel replies={state.replies} />"),
+    "sent outreach must appear before reply evidence so Agent opens on execution evidence",
+  );
+  assert.ok(
+    reps.indexOf("<AgentRepliesPanel replies={state.replies} />") <
+      reps.indexOf("<AgentLearningPanel learning={state.learning} />"),
+    "reply evidence must feed the learning section on the Agent surface",
+  );
+  assert.ok(
+    reps.indexOf("<AgentLearningPanel learning={state.learning} />") <
       reps.indexOf("<AgentOpportunityPanel opportunities={state.opportunities} />"),
-    "sent outreach must appear before qualified-signal work so Agent opens on execution evidence",
+    "learning must appear before the next qualified-signal work queue",
   );
   assert.ok(
     reps.indexOf("<AgentOpportunityPanel opportunities={state.opportunities} />") <

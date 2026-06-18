@@ -1054,6 +1054,8 @@ export default async function RepsPage() {
 
       <AgentRepliesPanel replies={state.replies} />
 
+      <AgentLearningPanel learning={state.learning} />
+
       <AgentOpportunityPanel opportunities={state.opportunities} />
 
       <AgentContactsPanel contacts={state.contacts} />
