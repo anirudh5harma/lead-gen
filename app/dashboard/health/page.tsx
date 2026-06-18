@@ -379,11 +379,11 @@ function formatCost(value: number): string {
 function primitiveRefLabels(trace: AgentTraceSummary): string[] {
   const refs = trace.primitive_refs;
   return [
-    refs.rep_id ? `Rep ${shortId(refs.rep_id)}` : null,
+    refs.rep_id ? `Agent ${shortId(refs.rep_id)}` : null,
     refs.signal_id ? `Signal ${shortId(refs.signal_id)}` : null,
-    refs.play_id ? `Play ${shortId(refs.play_id)}` : null,
+    refs.play_id ? `Sequence ${shortId(refs.play_id)}` : null,
     refs.conversation_id ? `Conversation ${shortId(refs.conversation_id)}` : null,
-    refs.outcome_id ? `Outcome ${shortId(refs.outcome_id)}` : null,
+    refs.outcome_id ? `Result ${shortId(refs.outcome_id)}` : null,
   ].filter((value): value is string => Boolean(value));
 }
 

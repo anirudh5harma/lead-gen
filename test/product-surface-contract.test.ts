@@ -403,6 +403,7 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   assert.match(dashboard, /Replies \/ meetings/);
   assert.match(dashboard, /from outcomes o/);
   assert.match(dashboard, /Reply and meeting insights/);
+  assert.match(dashboard, /Reply memory/);
   assert.match(dashboard, /reply_intent/);
   assert.match(reps, /Reply evidence/);
   assert.match(reps, /Replies ready/);
@@ -421,6 +422,7 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   assert.doesNotMatch(outcomes, /kicker="Outcomes"/);
   assert.doesNotMatch(outcomes, /Proof your Reps/);
   assert.doesNotMatch(outcomes, /Outcome ledger/);
+  assert.doesNotMatch(dashboard, /Outcome memory/);
   assert.doesNotMatch(outcomes, /No outcomes recorded/);
   assert.doesNotMatch(outcomes, /Open Conversations/);
 });
@@ -679,10 +681,12 @@ test("MCP context uses the simplified product model", () => {
 test("sent outreach links open the exact draft in the conversation trace", () => {
   const outreach = source("app/dashboard/conversations/page.tsx");
   const detail = source("app/dashboard/conversations/[id]/page.tsx");
+  const trust = source("core/product/conversation-trust.ts");
   const reps = source("app/dashboard/reps/page.tsx");
 
   assert.match(outreach, /redirect\("\/dashboard\/agent#outreach"\)/);
   assert.match(reps, /<SurfaceSection\s+title="Sent outreach"/);
+  assert.match(trust, /the Agent is set to research-only for replies/);
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
   assert.match(reps, /#message-\$\{messageId\}/);
   assert.doesNotMatch(outreach, /kicker="Outreach"/);
@@ -694,6 +698,18 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /Back to sent outreach/);
   assert.doesNotMatch(detail, /brief-kicker">Inbox/);
   assert.doesNotMatch(detail, /Back to Inbox/);
+  assert.doesNotMatch(trust, /the Play is set to research-only/);
+});
+
+test("Health trace labels use product-facing names", () => {
+  const health = source("app/dashboard/health/page.tsx");
+
+  assert.match(health, /`Agent \$\{shortId\(refs\.rep_id\)\}`/);
+  assert.match(health, /`Sequence \$\{shortId\(refs\.play_id\)\}`/);
+  assert.match(health, /`Result \$\{shortId\(refs\.outcome_id\)\}`/);
+  assert.doesNotMatch(health, /`Rep \$\{shortId\(refs\.rep_id\)\}`/);
+  assert.doesNotMatch(health, /`Play \$\{shortId\(refs\.play_id\)\}`/);
+  assert.doesNotMatch(health, /`Outcome \$\{shortId\(refs\.outcome_id\)\}`/);
 });
 
 test("loading states use simplified product surface labels", () => {

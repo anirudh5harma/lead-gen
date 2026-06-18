@@ -546,7 +546,7 @@ function friendlyDeferReason(reason: string): string {
     linkedin_account_disconnected: "the LinkedIn account is disconnected",
     eval_rejected: "the hot-path judge rejected the draft",
     eval_rejected_after_edit: "the edited draft did not pass the judge",
-    reply_research_only: "the Play is set to research-only for replies",
+    reply_research_only: "the Agent is set to research-only for replies",
   };
   return known[reason] ?? reason.replace(/_/g, " ");
 }

@@ -837,7 +837,7 @@ function BriefLearningPanel({
     <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
         <p className="text-sm font-semibold text-[var(--color-text-1)]">
-          Outcome memory
+          Reply memory
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
           <FunnelStep label="Useful 30d" value={learning.useful_outcomes_30d} />
