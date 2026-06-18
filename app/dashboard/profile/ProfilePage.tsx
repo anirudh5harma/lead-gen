@@ -91,6 +91,13 @@ interface ProfileContactQuality {
   reachable: number;
 }
 
+interface ProfileSignalSetup {
+  activeSources: number;
+  watchedSources: number;
+  sourceKinds: string[];
+  qualifiedSignals7d: number;
+}
+
 interface ProfileState {
   settings: Record<string, unknown>;
   outlookAccount: ProfileOutlookAccount | null;
@@ -102,6 +109,7 @@ interface ProfileState {
   suppressionStats: ProfileSuppressionStats;
   recentSuppressions: ProfileSuppressionRow[];
   contactQuality: ProfileContactQuality;
+  signalSetup: ProfileSignalSetup;
 }
 
 async function loadProfileState(workspaceId: string): Promise<ProfileState> {
@@ -116,6 +124,7 @@ async function loadProfileState(workspaceId: string): Promise<ProfileState> {
     suppressionStats,
     recentSuppressions,
     contactQuality,
+    signalSetup,
   ] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
@@ -266,6 +275,48 @@ async function loadProfileState(workspaceId: string): Promise<ProfileState> {
         where p.workspace_id = $1`,
       [workspaceId],
     ),
+    pool.query<{
+      active_sources: string;
+      watched_sources: string;
+      source_kinds: string[] | null;
+      qualified_signals_7d: string;
+    }>(
+      `select
+         (select count(*)::text
+            from workspace_source_configs wsc
+            join graph_sources gs
+              on gs.workspace_id = wsc.workspace_id
+             and gs.id = wsc.source_id
+           where wsc.workspace_id = $1
+             and wsc.enabled
+             and gs.enabled) as active_sources,
+         (select count(*)::text
+            from workspace_source_configs wsc
+            join graph_sources gs
+              on gs.workspace_id = wsc.workspace_id
+             and gs.id = wsc.source_id
+           where wsc.workspace_id = $1) as watched_sources,
+         array(
+           select distinct coalesce(
+                    nullif(gs.properties->>'signal_kind', ''),
+                    gs.kind::text
+                  )
+             from workspace_source_configs wsc
+             join graph_sources gs
+               on gs.workspace_id = wsc.workspace_id
+              and gs.id = wsc.source_id
+            where wsc.workspace_id = $1
+              and wsc.enabled
+              and gs.enabled
+            order by 1
+         ) as source_kinds,
+         (select count(*)::text
+            from signals s
+           where s.workspace_id = $1
+             and s.status in ('matched','in_play')
+             and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days') as qualified_signals_7d`,
+      [workspaceId],
+    ),
   ]);
   const suppressions = suppressionStats.rows[0];
   const contacts = contactQuality.rows[0];
@@ -292,6 +343,12 @@ async function loadProfileState(workspaceId: string): Promise<ProfileState> {
       verifiedEmails: Number(contacts?.verified_emails ?? 0),
       linkedInProfiles: Number(contacts?.linkedin_profiles ?? 0),
       reachable: Number(contacts?.reachable ?? 0),
+    },
+    signalSetup: {
+      activeSources: Number(signalSetup.rows[0]?.active_sources ?? 0),
+      watchedSources: Number(signalSetup.rows[0]?.watched_sources ?? 0),
+      sourceKinds: signalSetup.rows[0]?.source_kinds ?? [],
+      qualifiedSignals7d: Number(signalSetup.rows[0]?.qualified_signals_7d ?? 0),
     },
   };
 }
@@ -363,6 +420,12 @@ export default async function ProfilePage() {
         profile={profile}
         state={state}
         mode={mode}
+        readiness={readiness}
+      />
+
+      <ProfileSignalBuilderPanel
+        profile={profile}
+        state={state}
         readiness={readiness}
       />
 
@@ -1017,6 +1080,299 @@ function LaunchModelPill({
   );
 }
 
+function ProfileSignalBuilderPanel({
+  profile,
+  state,
+  readiness,
+}: {
+  profile: ProductCompanyProfile | null;
+  state: ProfileState;
+  readiness: ProductLaunchReadinessResult;
+}) {
+  const roles = splitProfileTerms(profile?.target_titles);
+  const markets = splitProfileTerms(profile?.target_markets);
+  const keywords = splitProfileTerms(profile?.signal_keywords);
+  const competitors = splitProfileTerms(profile?.competitor_watchlist);
+  const exclusions = splitProfileTerms(profile?.exclusion_rules);
+  const signalCount =
+    keywords.length + competitors.length + state.signalSetup.activeSources;
+  const fitGate = state.icp
+    ? Math.round(Number(state.icp.match_threshold) * 100)
+    : 0;
+  const readyGates = [
+    roles.length > 0 || markets.length > 0,
+    signalCount >= 5,
+    state.signalSetup.activeSources > 0,
+    profile?.auto_enrich_email_addresses !== false,
+    profile?.prevent_team_contact_duplication !== false,
+  ].filter(Boolean).length;
+  const next = profileReadinessNextAction(readiness);
+  return (
+    <section id="signal-setup" className="section-note grid scroll-mt-28 gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Signal setup
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            ICP, intent signals, and contact quality in one loop.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            Define who matters, what LinkedIn or market behavior counts as
+            timing evidence, and which quality gates must pass before outreach.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
+            {readyGates}/5 gates ready
+          </span>
+          <Link href={next.href} prefetch={false} className="btn-solid-sm">
+            <Icon name={next.icon} size={14} />
+            {next.label}
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-3">
+        <SignalSetupCard
+          icon="person_search"
+          title="Buyer filters"
+          detail="Roles, markets, exclusions, and match gate decide which people can become qualified contacts."
+          ready={roles.length > 0 || markets.length > 0}
+          href="#profile"
+          footer={`${fitGate || 60}% fit gate`}
+        >
+          <SetupChipGroup
+            label="Roles"
+            values={roles}
+            empty="Add target roles"
+          />
+          <SetupChipGroup
+            label="Markets"
+            values={markets}
+            empty="Add markets"
+          />
+          <SetupChipGroup
+            label="Exclusions"
+            values={exclusions}
+            empty="No exclusions"
+          />
+        </SignalSetupCard>
+
+        <SignalSetupCard
+          icon="sensors"
+          title="Intent signals"
+          detail="Signal terms, competitors, and source categories tell the agent where fresh timing evidence should come from."
+          ready={signalCount >= 5 && state.signalSetup.activeSources > 0}
+          href="#profile"
+          footer={`${state.signalSetup.qualifiedSignals7d} qualified this week`}
+        >
+          <div className="grid gap-2 sm:grid-cols-3">
+            <ProfileFact label="Signal terms" value={String(signalCount)} />
+            <ProfileFact
+              label="Active sources"
+              value={`${state.signalSetup.activeSources}/${state.signalSetup.watchedSources}`}
+            />
+            <ProfileFact
+              label="Source types"
+              value={String(state.signalSetup.sourceKinds.length)}
+            />
+          </div>
+          <SetupChipGroup
+            label="Watched terms"
+            values={[...keywords, ...competitors]}
+            empty="Add keywords or competitors"
+          />
+          <SetupChipGroup
+            label="Source categories"
+            values={state.signalSetup.sourceKinds.map(sourceKindLabel)}
+            empty="Run source setup"
+          />
+        </SignalSetupCard>
+
+        <SignalSetupCard
+          icon="verified"
+          title="Quality gates"
+          detail="Verified email, LinkedIn profiles, duplicate protection, and review mode keep outreach trustworthy."
+          ready={state.contactQuality.reachable > 0}
+          href="#contact-quality"
+          footer={`${state.contactQuality.reachable} reachable contacts`}
+        >
+          <QualityGateRow
+            icon="travel_explore"
+            label="Auto-enrich email"
+            ready={profile?.auto_enrich_email_addresses !== false}
+          />
+          <QualityGateRow
+            icon="hub"
+            label="Prevent duplicates"
+            ready={profile?.prevent_team_contact_duplication !== false}
+          />
+          <QualityGateRow
+            icon="mail"
+            label="Verified email"
+            ready={state.contactQuality.verifiedEmails > 0}
+          />
+          <QualityGateRow
+            icon="linkedin"
+            label="LinkedIn profile"
+            ready={state.contactQuality.linkedInProfiles > 0}
+          />
+        </SignalSetupCard>
+      </div>
+
+      <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 md:grid-cols-[1fr_auto] md:items-center">
+        <p className="text-sm leading-6 text-[var(--color-text-3)]">
+          Keep at least five strong signal inputs across keywords, competitors,
+          and active sources. Bombsell turns them into qualified contacts,
+          judged drafts, sent email or LinkedIn touches, then reply learning.
+        </p>
+        <div className="flex flex-wrap gap-2 md:justify-end">
+          <form action={checkAgentSourcesAction}>
+            <input type="hidden" name="return_to" value="/dashboard/profile#signal-setup" />
+            <input type="hidden" name="limit" value="25" />
+            <PendingSubmitButton
+              className="btn-solid w-fit"
+              icon="sync_alt"
+              pendingLabel="Checking sources"
+            >
+              Check sources
+            </PendingSubmitButton>
+          </form>
+          <Link
+            href="/dashboard/agent#opportunities"
+            prefetch={false}
+            className="btn-quiet-sm w-fit"
+          >
+            <Icon name="arrow_forward" size={14} />
+            Open Agent
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SignalSetupCard({
+  icon,
+  title,
+  detail,
+  ready,
+  href,
+  footer,
+  children,
+}: {
+  icon: string;
+  title: string;
+  detail: string;
+  ready: boolean;
+  href: string;
+  footer: string;
+  children: ReactNode;
+}) {
+  return (
+    <article className="grid min-h-[360px] gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <span
+          className={
+            "grid size-9 shrink-0 place-items-center rounded-[8px] " +
+            (ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
+          }
+        >
+          <Icon name={icon} size={17} />
+        </span>
+        <StatusPill ready={ready} />
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-[var(--color-text-1)]">
+          {title}
+        </p>
+        <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+          {detail}
+        </p>
+      </div>
+      <div className="grid content-start gap-3">{children}</div>
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-[var(--color-line-1)] pt-3">
+        <span className="text-xs text-[var(--color-text-3)]">{footer}</span>
+        <Link href={href} prefetch={false} className="btn-quiet-sm">
+          <Icon name="edit_note" size={14} />
+          Tune
+        </Link>
+      </div>
+    </article>
+  );
+}
+
+function SetupChipGroup({
+  label,
+  values,
+  empty,
+}: {
+  label: string;
+  values: string[];
+  empty: string;
+}) {
+  const visible = uniqueStrings(values).slice(0, 5);
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-text-4)]">
+        {label}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {visible.length > 0 ? (
+          <>
+            {visible.map((value) => (
+              <span
+                key={value}
+                className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-2)]"
+              >
+                {value}
+              </span>
+            ))}
+            {values.length > visible.length ? (
+              <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+                +{values.length - visible.length}
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="text-xs text-[var(--color-text-4)]">{empty}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QualityGateRow({
+  icon,
+  label,
+  ready,
+}: {
+  icon: string;
+  label: string;
+  ready: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2">
+      <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-2)]">
+        <Icon name={icon} size={14} />
+        <span className="truncate">{label}</span>
+      </span>
+      <span
+        className={
+          "size-2 shrink-0 rounded-full " +
+          (ready ? "bg-[var(--color-pos)]" : "bg-[var(--color-text-4)]")
+        }
+      />
+    </div>
+  );
+}
+
 function profileSignalList(profile: ProductCompanyProfile | null): string[] {
   const terms = [
     ...splitProfileTerms(profile?.signal_keywords),
@@ -1042,6 +1398,30 @@ function splitProfileTerms(value: string | null | undefined): string[] {
     .split(/[\n,;]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function sourceKindLabel(kind: string): string {
+  const normalized = kind.trim().toLowerCase();
+  if (normalized === "hn") return "HN";
+  if (normalized === "rss") return "RSS";
+  if (normalized === "gdelt") return "GDELT";
+
+  return normalized
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  values.forEach((value) => {
+    const clean = value.trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) return;
+    seen.add(key);
+    out.push(clean);
+  });
+  return out;
 }
 
 function readinessActionIcon(
