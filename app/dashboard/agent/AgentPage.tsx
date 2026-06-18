@@ -110,6 +110,8 @@ interface AgentOutreachRow {
   body: string | null;
   eval_score: string | null;
   eval_passed: boolean | null;
+  channel_account_name: string | null;
+  channel_account_status: string | null;
   sent_at: Date | null;
   created_at: Date;
   counterparty_name: string | null;
@@ -817,6 +819,8 @@ async function loadAgentOutreachSummary(
                 when judged.payload ? 'passed' then (judged.payload->>'passed')::boolean
                 else m.eval_passed
               end as eval_passed,
+              ca.display_name as channel_account_name,
+              ca.status::text as channel_account_status,
               m.sent_at,
               m.created_at,
               p.full_name as counterparty_name,
@@ -824,6 +828,9 @@ async function loadAgentOutreachSummary(
               s.title as signal_title
          from messages m
          join conversations c on c.id = m.conversation_id
+         left join channel_accounts ca
+           on ca.workspace_id = m.workspace_id
+          and ca.id = m.channel_account_id
          left join graph_persons p on p.id = c.counterparty_person_id
          left join graph_companies co on co.id = c.counterparty_company_id
          left join signals s on s.id = c.origin_signal_id
@@ -3708,6 +3715,7 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {channelLabel(message.channel)}
         </span>
+        <OutreachAccountPill message={message} />
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {statusLabel(message.status)}
         </span>
@@ -3717,6 +3725,32 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
         </span>
       </span>
     </Link>
+  );
+}
+
+function OutreachAccountPill({ message }: { message: AgentOutreachRow }) {
+  const connected = message.channel_account_status === "connected";
+  return (
+    <span
+      className={
+        "inline-flex max-w-[220px] items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-xs " +
+        (connected
+          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+          : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+      }
+      title={
+        message.channel_account_name
+          ? `Sent through ${message.channel_account_name}`
+          : "No connected account provenance was recorded for this message."
+      }
+    >
+      <Icon name="account_tree" size={13} />
+      <span className="truncate">
+        {message.channel_account_name
+          ? `Via ${message.channel_account_name}`
+          : "Account not recorded"}
+      </span>
+    </span>
   );
 }
 

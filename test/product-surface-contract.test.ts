@@ -589,6 +589,13 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /DMs sent/);
   assert.match(reps, /Qualified signals become verified contacts/);
+  assert.match(reps, /left join channel_accounts ca/);
+  assert.match(reps, /ca\.display_name as channel_account_name/);
+  assert.match(reps, /ca\.status::text as channel_account_status/);
+  assert.match(reps, /OutreachAccountPill/);
+  assert.match(reps, /Sent through \$\{message\.channel_account_name\}/);
+  assert.match(reps, /Via \$\{message\.channel_account_name\}/);
+  assert.match(reps, /Account not recorded/);
   assert.match(reps, /draft\.judged/);
   assert.match(reps, /coalesce\(m\.eval_score, \(judged\.payload->>'eval_score'\)::numeric\)::text as eval_score/);
   assert.match(reps, /OutreachQualityPill/);
