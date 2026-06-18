@@ -330,7 +330,18 @@ test("Profile presents separate Outlook and LinkedIn connection gates", () => {
   );
   assert.match(settings, /Setup hub/);
   assert.match(settings, /Profile, email, LinkedIn, contacts, and Agent controls/);
+  assert.match(settings, /Company context, buyer fit, email, LinkedIn/);
+  assert.doesNotMatch(settings, /Company context, ICP, email/);
   assert.match(settings, /Website context shapes the buyer profile/);
+  assert.match(settings, /Launch model/);
+  assert.match(settings, /What the agent learned and how it can act/);
+  assert.match(settings, /buyer fit, signal watchlist, channel/);
+  assert.match(settings, /Buyer fit/);
+  assert.match(settings, /Signals watched/);
+  assert.match(settings, /Email path/);
+  assert.match(settings, /LinkedIn path/);
+  assert.match(settings, /Open signal queue/);
+  assert.match(settings, /profileSignalList/);
   assert.match(settings, /Company profile/);
   assert.match(settings, /Agent and buyer fit/);
   assert.match(settings, /Contact quality/);

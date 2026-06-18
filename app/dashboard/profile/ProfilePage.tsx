@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import BrandIcon from "@/components/BrandIcon";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
@@ -327,7 +328,7 @@ export default async function ProfilePage() {
             Profile and <em>integrations</em>.
           </>
         }
-        description="Company context, ICP, email, LinkedIn, contact quality, and connected tools in one setup surface."
+        description="Company context, buyer fit, email, LinkedIn, contact quality, and connected tools in one setup surface."
         meta={
           <div className="flex flex-wrap gap-2">
             <HeroStat
@@ -345,6 +346,13 @@ export default async function ProfilePage() {
       />
 
       <ProfileSetupHub
+        profile={profile}
+        state={state}
+        mode={mode}
+        readiness={readiness}
+      />
+
+      <ProfileLaunchModel
         profile={profile}
         state={state}
         mode={mode}
@@ -645,6 +653,225 @@ function profileReadinessNextAction(
     icon: readinessActionIcon(blocker.id),
     label: blocker.action.label,
   };
+}
+
+function ProfileLaunchModel({
+  profile,
+  state,
+  mode,
+  readiness,
+}: {
+  profile: ProductCompanyProfile | null;
+  state: ProfileState;
+  mode: ProfileAutonomyMode;
+  readiness: ProductLaunchReadinessResult;
+}) {
+  const buyerFit =
+    state.icp?.description ??
+    profile?.target_titles ??
+    profile?.target_markets ??
+    "Define the companies and people the agent should qualify before outreach.";
+  const signals = profileSignalList(profile);
+  const contactCoverage =
+    state.contactQuality.people > 0
+      ? `${state.contactQuality.reachable}/${state.contactQuality.people} reachable`
+      : "Waiting for first contacts";
+  const matchThreshold = state.icp
+    ? `${Math.round(Number(state.icp.match_threshold) * 100)}% fit gate`
+    : "Fit gate pending";
+  const channelPaths = [
+    {
+      title: "Email path",
+      icon: <BrandIcon name="microsoft" size={16} />,
+      ready: state.outlookAccount?.status === "connected",
+      detail: state.outlookAccount
+        ? `${outlookMailbox(state.outlookAccount)} - ${statusLabel(state.outlookAccount.status)}`
+        : "Connect Outlook for native sends and reply sync.",
+      href: "#email",
+    },
+    {
+      title: "LinkedIn path",
+      icon: <BrandIcon name="linkedin" size={16} />,
+      ready: state.linkedInAccount?.status === "connected",
+      detail: state.linkedInAccount
+        ? `${state.linkedInAccount.display_name} - ${statusLabel(state.linkedInAccount.status)}`
+        : "Connect LinkedIn for connection requests and DMs.",
+      href: "#linkedin",
+    },
+  ];
+  return (
+    <section className="section-note grid gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Launch model
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            What the agent learned and how it can act.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            Profile turns the website, buyer fit, signal watchlist, channel
+            accounts, contact coverage, and review mode into one operating model.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill ready={readiness.launch_ready} />
+          <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 text-xs text-[var(--color-text-3)]">
+            {modeLabel(mode)}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="flex items-start gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+              <Icon name="person_search" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Buyer fit
+              </p>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-[var(--color-text-3)]">
+                {buyerFit}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <LaunchModelPill icon="fact_check">{matchThreshold}</LaunchModelPill>
+                <LaunchModelPill icon="verified">{contactCoverage}</LaunchModelPill>
+                <LaunchModelPill icon="block">
+                  {profile?.prevent_team_contact_duplication === false
+                    ? "Duplicate checks off"
+                    : "Duplicate checks on"}
+                </LaunchModelPill>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="flex items-start gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+              <Icon name="sensors" size={17} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Signals watched
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+                {signals.length > 0
+                  ? "These terms guide source checks and contact matching."
+                  : "Add signal keywords and competitors so source checks find timing evidence."}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(signals.length > 0 ? signals : ["Launches", "Hiring", "Competitors"]).map(
+                  (signal) => (
+                    <span
+                      key={signal}
+                      className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]"
+                    >
+                      {signal}
+                    </span>
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {channelPaths.map((path) => (
+          <Link
+            key={path.title}
+            href={path.href}
+            prefetch={false}
+            className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
+          >
+            <span className="flex items-start justify-between gap-3">
+              <span className="flex min-w-0 items-start gap-3">
+                <span
+                  className={
+                    "grid size-9 shrink-0 place-items-center rounded-[8px] " +
+                    (path.ready
+                      ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                      : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
+                  }
+                >
+                  {path.icon}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+                    {path.title}
+                  </span>
+                  <span className="mt-1 block truncate text-sm text-[var(--color-text-3)]">
+                    {path.detail}
+                  </span>
+                </span>
+              </span>
+              <StatusPill ready={path.ready} />
+            </span>
+          </Link>
+        ))}
+      </div>
+
+      <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 md:grid-cols-[1fr_auto] md:items-center">
+        <p className="text-sm leading-6 text-[var(--color-text-3)]">
+          {readiness.launch_ready
+            ? "The agent can now move qualified signals into verified email or LinkedIn outreach after evals, caps, and review rules pass."
+            : "Finish the launch blockers above so qualified signals can become verified contacts, judged drafts, and replies."}
+        </p>
+        <Link href="/dashboard/agent#opportunities" prefetch={false} className="btn-quiet-sm w-fit">
+          <Icon name="arrow_forward" size={14} />
+          Open signal queue
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function LaunchModelPill({
+  icon,
+  children,
+}: {
+  icon: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+      <Icon name={icon} size={13} />
+      {children}
+    </span>
+  );
+}
+
+function profileSignalList(profile: ProductCompanyProfile | null): string[] {
+  const terms = [
+    ...splitProfileTerms(profile?.signal_keywords),
+    ...splitProfileTerms(profile?.competitor_watchlist),
+    ...(profile?.exa_market_terms ?? []),
+    ...(profile?.exa_competitor_mentions ?? []),
+  ];
+  const seen = new Set<string>();
+  const compact: string[] = [];
+  for (const term of terms) {
+    const clean = term.trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    compact.push(clean.length > 28 ? clean.slice(0, 25) + "..." : clean);
+    if (compact.length === 5) break;
+  }
+  return compact;
+}
+
+function splitProfileTerms(value: string | null | undefined): string[] {
+  return (value ?? "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function readinessActionIcon(

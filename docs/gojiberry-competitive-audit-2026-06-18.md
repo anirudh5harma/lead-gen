@@ -4,6 +4,7 @@ Observed in the authenticated GojiBerry app on June 18, 2026. This is a product-
 
 ## What GojiBerry Does Differently
 
+- **Public positioning is brutally simple.** The website sells one flow: enter your website, the agent learns the business, finds high-intent prospects, reaches out across email and socials, drafts replies, and learns from what converts.
 - **Home is an operator brief, not a CRM landing page.** It welcomes the user, exposes active signals, prompts LinkedIn connection, offers time windows, and shows hot opportunities, leads engaged, conversations, latest hot leads, and latest replies.
 - **Agents are framed by output.** The Signals Agents page lists each active agent, leads found, next launch timing, edit controls, and plan limits. The product makes lead generation status visible immediately.
 - **Signal analytics are concrete.** Insights shows total leads, average leads/day, active signals, a daily agent-by-agent matrix, signal types, lead counts, and weak-signal warnings.
@@ -35,3 +36,5 @@ The Agent sent-outreach section now separates channel performance into email, Li
 The Brief now includes a compact next-move rail. It chooses between reviewing drafted outreach, preparing outreach from qualified signals, inspecting hot contacts, resolving contact quality, tuning sources, applying learning, or refreshing Profile setup. This borrows GojiBerry's workspace-aware prompts while preserving Bombsell's three-surface product model.
 
 The Agent contact workbench and contact profile now expose when a contact first entered the graph and when it was last updated. This brings over GojiBerry's import-timing trust signal while keeping the contact story tied to Bombsell's graph, signals, channel handles, outreach threads, and fit feedback.
+
+The Profile page now has a launch-model summary under the setup hub. It makes the learned buyer fit, watched signal terms, email path, LinkedIn path, contact coverage, match gate, duplicate protection, and review mode visible before the detailed forms. This translates GojiBerry's "enter your website and the agent takes it from there" clarity into Bombsell's Profile and integrations surface.
