@@ -449,6 +449,9 @@ test("Verified contacts open graph-backed profile pages with channel readiness",
   assert.match(profile, /from conversations c/);
   assert.match(profile, /from outcomes o/);
   assert.match(profile, /from channel_accounts ca/);
+  assert.match(profile, /First seen/);
+  assert.match(profile, /Last updated/);
+  assert.match(profile, /Contact provenance comes from the graph, signals, and outreach threads/);
   assert.match(profile, /Connect LinkedIn/);
   assert.match(profile, /Connect Outlook/);
   assert.doesNotMatch(profile, /Prospect profile/);
@@ -590,9 +593,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /email_status/);
   assert.match(reps, /campaign_status/);
   assert.match(reps, /last_outreach_at/);
+  assert.match(reps, /p\.created_at/);
   assert.match(reps, /contact_fit_decision/);
   assert.match(reps, /left join lateral/);
   assert.match(reps, /Why now:/);
+  assert.match(reps, /First seen/);
+  assert.match(reps, /Signal \{latestSignalAt\}/);
   assert.match(reps, /signalScoreLabel\(contact\.latest_signal_score\)/);
   assert.match(reps, /emailStatusLabel\(contact\.email_status\)/);
   assert.match(reps, /campaignStatusLabel\(contact\.campaign_status\)/);

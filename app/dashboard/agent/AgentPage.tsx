@@ -176,6 +176,7 @@ interface AgentContactRow {
   campaign_status: string;
   latest_outreach_channel: string | null;
   last_outreach_at: Date | null;
+  created_at: Date;
   updated_at: Date;
   contact_fit_decision: string | null;
 }
@@ -619,6 +620,7 @@ async function loadAgentContactSummary(
               latest_outreach.channel as latest_outreach_channel,
               latest_outreach.last_touch_at as last_outreach_at,
               p.properties #>> '{contact_fit,decision}' as contact_fit_decision,
+              p.created_at,
               p.updated_at,
               (select count(*)::text
                  from signals s
@@ -2656,8 +2658,16 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             {signals} signal{signals === 1 ? "" : "s"}
           </span>
         ) : null}
+        <span
+          className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]"
+          title={`Added to the Agent workbench ${new Date(
+            contact.created_at,
+          ).toLocaleString()}`}
+        >
+          First seen {freshWhen(contact.created_at)}
+        </span>
         <span className="text-xs tabular-nums text-[var(--color-text-3)]">
-          {latestSignalAt}
+          Signal {latestSignalAt}
         </span>
         <span
           className={

@@ -589,9 +589,19 @@ function ProfilePanel({ contact }: { contact: ContactProfileRow }) {
         <Fact label="LinkedIn" value={contact.linkedin_url ?? "Missing"} icon="linkedin" />
         <Fact label="Phone" value={contact.phones[0] ?? "Missing"} icon="send" />
         <Fact label="X" value={contact.x_handle ?? "Missing"} icon="sync_alt" />
+        <Fact
+          label="First seen"
+          value={new Date(contact.created_at).toLocaleString()}
+          icon="person_search"
+        />
+        <Fact
+          label="Last updated"
+          value={new Date(contact.updated_at).toLocaleString()}
+          icon="sync_alt"
+        />
       </div>
       <p className="mt-4 text-xs leading-5 text-[var(--color-text-3)]">
-        Updated {new Date(contact.updated_at).toLocaleString()}
+        Contact provenance comes from the graph, signals, and outreach threads.
       </p>
     </div>
   );

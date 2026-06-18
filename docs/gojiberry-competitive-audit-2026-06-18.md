@@ -33,3 +33,5 @@ The Brief now carries a compact signal-health readout: active sources, productiv
 The Agent sent-outreach section now separates channel performance into email, LinkedIn connection requests, LinkedIn messages, and replies attributed to the latest prior outbound touch. This mirrors GojiBerry's contacted/invited/replied clarity while keeping outreach under Agent.
 
 The Brief now includes a compact next-move rail. It chooses between reviewing drafted outreach, preparing outreach from qualified signals, inspecting hot contacts, resolving contact quality, tuning sources, applying learning, or refreshing Profile setup. This borrows GojiBerry's workspace-aware prompts while preserving Bombsell's three-surface product model.
+
+The Agent contact workbench and contact profile now expose when a contact first entered the graph and when it was last updated. This brings over GojiBerry's import-timing trust signal while keeping the contact story tied to Bombsell's graph, signals, channel handles, outreach threads, and fit feedback.
