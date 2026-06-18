@@ -1563,6 +1563,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
   const href = opportunityHref(signal, contact);
   const fitGate = contactFitGate(contact);
   const isFitBlocked = fitGate?.tone === "blocked";
+  const deferAction = contactDeferAction(signal.contact_defer_reason);
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <Link
@@ -1672,6 +1673,15 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
             compact
           />
         ) : null}
+        {deferAction ? (
+          <Link
+            href={deferAction.href}
+            className="btn-quiet-sm"
+          >
+            <Icon name={deferAction.icon} size={14} />
+            {deferAction.label}
+          </Link>
+        ) : null}
         {needsContactResolution(signal) ? (
           <form action={resolveQualifiedSignalContactsAction}>
             <input type="hidden" name="signal_id" value={signal.id} />
@@ -1756,7 +1766,39 @@ function contactSourceTone(
 }
 
 function contactDeferLabel(reason: string): string {
-  return reason.replace(/_/g, " ");
+  const known: Record<string, string> = {
+    email_auto_enrich_disabled: "Email enrichment off",
+    no_email_ready_contact: "No verified email yet",
+    no_linkedin_ready_contact: "No LinkedIn profile yet",
+  };
+  return known[reason] ?? reason.replace(/_/g, " ");
+}
+
+function contactDeferAction(
+  reason: string | null,
+): { href: string; icon: string; label: string } | null {
+  if (reason === "email_auto_enrich_disabled") {
+    return {
+      href: "/dashboard/profile#contact-quality",
+      icon: "settings",
+      label: "Enable enrichment",
+    };
+  }
+  if (reason === "no_email_ready_contact") {
+    return {
+      href: "/dashboard/profile#contact-quality",
+      icon: "person_search",
+      label: "Review contact rules",
+    };
+  }
+  if (reason === "no_linkedin_ready_contact") {
+    return {
+      href: "/dashboard/profile#linkedin",
+      icon: "linkedin",
+      label: "Review LinkedIn",
+    };
+  }
+  return null;
 }
 
 function needsContactResolution(signal: QualifiedSignalItem): boolean {
@@ -2516,6 +2558,12 @@ function signalPathStatus(
   }
   if (draft) {
     return { label: "Draft ready", tone: "ready" };
+  }
+  if (signal.contact_defer_reason) {
+    return {
+      label: contactDeferLabel(signal.contact_defer_reason),
+      tone: "review",
+    };
   }
   if (
     contact?.verification.email_verified ||

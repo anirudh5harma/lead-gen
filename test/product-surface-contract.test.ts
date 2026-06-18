@@ -485,6 +485,15 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Graph contact/);
   assert.match(reps, /Needs enrichment/);
   assert.match(reps, /contactDeferLabel/);
+  assert.match(reps, /contactDeferAction/);
+  assert.match(reps, /Email enrichment off/);
+  assert.match(reps, /No verified email yet/);
+  assert.match(reps, /No LinkedIn profile yet/);
+  assert.match(reps, /Enable enrichment/);
+  assert.match(reps, /Review contact rules/);
+  assert.match(reps, /Review LinkedIn/);
+  assert.match(reps, /\/dashboard\/profile#contact-quality/);
+  assert.match(reps, /\/dashboard\/profile#linkedin/);
   assert.match(reps, /needsContactResolution\(signal\)/);
   assert.match(reps, /Verified email/);
   assert.match(reps, /with_outreach_draft/);
