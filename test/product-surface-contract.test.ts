@@ -1024,6 +1024,11 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingPage, /Connect Outlook and LinkedIn in Profile/);
   assert.match(onboardingPage, /Signals, verified contacts, drafts, sends, and replies/);
   assert.doesNotMatch(onboardingPage, /label="Integrations"/);
+  assert.match(onboardingForm, /Start with the website/);
+  assert.match(onboardingForm, /learn the company, audience, signal sources/);
+  assert.match(onboardingForm, /<details className=/);
+  assert.match(onboardingForm, /Optional launch context/);
+  assert.match(onboardingForm, /Use these fields when the website is sparse/);
   assert.match(onboardingForm, /Description and value proposition/);
   assert.match(onboardingForm, /Customer pain points/);
   assert.match(onboardingForm, /Buyer roles/);
