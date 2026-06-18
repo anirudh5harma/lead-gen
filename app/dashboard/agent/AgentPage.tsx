@@ -2807,6 +2807,7 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
   const workStages = agentLastHourStages(activity);
   const workVolume = workStages.reduce((sum, stage) => sum + stage.value, 0);
   const maxStageValue = Math.max(1, ...workStages.map((stage) => stage.value));
+  const focusStage = agentFocusStage(workStages);
   const active =
     activity.active_workflows > 0 ||
     workVolume > 0 ||
@@ -2825,10 +2826,15 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
               {currentWork}
             </p>
           </div>
-          <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1 text-xs font-medium text-[var(--color-accent)]">
-            {activity.active_workflows} active run
-            {activity.active_workflows === 1 ? "" : "s"}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1 text-xs font-medium text-[var(--color-accent)]">
+              {activity.active_workflows} active run
+              {activity.active_workflows === 1 ? "" : "s"}
+            </span>
+            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-1 text-xs font-medium text-[var(--color-text-2)]">
+              Focus: {focusStage.label}
+            </span>
+          </div>
         </div>
         <div className="mt-5 grid gap-2 sm:grid-cols-3">
           <MiniStat label="Events last hour" value={activity.events_last_hour} />
@@ -2847,6 +2853,7 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
           <span className="agent-work-sweep" aria-hidden="true" />
           <div className="relative z-10 grid h-32 grid-cols-5 items-end gap-2">
             {workStages.map((stage, index) => {
+              const focused = stage.key === focusStage.key;
               const height =
                 stage.value === 0
                   ? 16
@@ -2864,13 +2871,22 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
                   <span
                     className={
                       "mx-auto w-full max-w-[44px] rounded-t-[6px] transition-[height] duration-500 " +
-                      (stage.value > 0
-                        ? "animate-pulse bg-[var(--color-accent)]/75"
+                      (focused
+                        ? "agent-work-focus-bar bg-[var(--color-accent)]"
+                        : stage.value > 0
+                          ? "animate-pulse bg-[var(--color-accent)]/75"
                         : "bg-[var(--color-line-2)]")
                     }
                     style={{ height: `${height}%`, animationDelay: delay }}
                   />
-                  <span className="flex items-center justify-center text-[var(--color-text-3)]">
+                  <span
+                    className={
+                      "flex items-center justify-center " +
+                      (focused
+                        ? "text-[var(--color-accent)]"
+                        : "text-[var(--color-text-3)]")
+                    }
+                  >
                     <Icon name={stage.icon} size={13} />
                   </span>
                 </span>
@@ -2909,6 +2925,18 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
       </aside>
     </section>
   );
+}
+
+function agentFocusStage(stages: AgentWorkStageData[]): AgentWorkStageData {
+  return stages.reduce((best, stage) => {
+    if (stage.value > best.value) return stage;
+    return best;
+  }, stages[0] ?? {
+    key: "signals",
+    label: "Signals checked",
+    value: 0,
+    icon: "fact_check",
+  });
 }
 
 function AgentWorkStage({ stage }: { stage: AgentWorkStageData }) {

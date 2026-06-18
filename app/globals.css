@@ -840,12 +840,28 @@ button:active, a:active {
   animation: agent-work-sweep 2.4s ease-in-out infinite;
 }
 
+.agent-work-focus-bar {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 25%, transparent),
+    0 10px 24px -18px var(--color-accent);
+  animation: agent-work-focus 1.8s ease-in-out infinite;
+}
+
 @keyframes agent-work-sweep {
   0% {
     transform: translateX(-110%);
   }
   100% {
     transform: translateX(310%);
+  }
+}
+
+@keyframes agent-work-focus {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
   }
 }
 

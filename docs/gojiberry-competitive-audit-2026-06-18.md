@@ -46,3 +46,5 @@ Saving the Profile or Agent setup now starts the durable signal-ingestion workfl
 Sent outreach rows now carry the graph contact handles behind each message: verified email availability and LinkedIn profile availability appear next to the signal and judged draft. This keeps GojiBerry's contact-table trust signal inside Bombsell's Agent execution trace instead of adding another Contacts tab.
 
 The Brief priority action now starts the existing qualified-signal preparation workflow when signals are waiting but no outreach has gone out. This makes the morning brief an operational command surface: users can move from "qualified signals are ready" to verified contacts and judged email/LinkedIn outreach without first navigating to Agent.
+
+The Agent live-work panel now labels the busiest last-hour stage and emphasizes it in the animated workline. This makes the "what is the Agent doing right now?" answer easier to read while preserving the signal -> contact -> draft -> outreach -> reply operating loop.

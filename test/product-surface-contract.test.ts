@@ -703,6 +703,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /title=\{event\.event_type\}/);
   assert.match(reps, /AgentWorkStage/);
   assert.match(reps, /agentLastHourStages/);
+  assert.match(reps, /agentFocusStage/);
+  assert.match(reps, /Focus: \{focusStage\.label\}/);
+  assert.match(reps, /agent-work-focus-bar/);
   assert.match(reps, /Signals checked/);
   assert.match(reps, /Contacts resolved/);
   assert.match(reps, /Drafts prepared/);
