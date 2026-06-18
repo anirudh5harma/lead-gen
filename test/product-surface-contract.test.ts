@@ -462,6 +462,13 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /contacts_last_hour/);
   assert.match(reps, /drafts_last_hour/);
   assert.match(reps, /replies_last_hour/);
+  assert.match(reps, /agentEventLabel/);
+  assert.match(reps, /Signal checked/);
+  assert.match(reps, /Contact resolved/);
+  assert.match(reps, /Draft prepared/);
+  assert.match(reps, /Outreach updated/);
+  assert.match(reps, /Reply insight captured/);
+  assert.match(reps, /title=\{event\.event_type\}/);
   assert.match(reps, /AgentWorkStage/);
   assert.match(reps, /agentLastHourStages/);
   assert.match(reps, /Signals checked/);
@@ -474,6 +481,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Signal-to-outreach operating loop/);
   assert.match(reps, /Channel readiness/);
   assert.match(reps, /The agent can only turn quality signals into email or LinkedIn/);
+  assert.match(reps, /after profile, source, and channel checks pass/);
   assert.match(reps, /Judged drafts/);
   assert.match(reps, /OperatingLoopChannel/);
   assert.match(reps, /sent 7d/);
@@ -621,7 +629,7 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /updateWorkspaceAutonomyAction/);
   assert.match(settings, /href="\/api\/auth\/outlook\?/);
   assert.match(settings, /SettingsSectionNav/);
-  assert.match(settings, /aria-label="Settings sections"/);
+  assert.match(settings, /aria-label="Profile sections"/);
   assert.match(settings, /id="email"/);
   assert.match(settings, /id="linkedin"/);
   assert.match(settings, /href: "#email"/);
@@ -639,7 +647,7 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /Connect up to two LinkedIn accounts/);
   assert.match(settings, /First account/);
   assert.match(settings, /Second account/);
-  assert.match(settings, /Settings and limits/);
+  assert.match(settings, /Account and limits/);
   assert.match(settings, /Tool integrations/);
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Email and LinkedIn readiness/);

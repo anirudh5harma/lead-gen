@@ -682,7 +682,7 @@ function SettingsSectionNav({
   ];
   return (
     <nav
-      aria-label="Settings sections"
+      aria-label="Profile sections"
       className="section-note flex gap-2 overflow-x-auto p-2"
     >
       {sections.map((section) => (
@@ -1187,7 +1187,7 @@ function LinkedInAccountSlot({
               {label}
             </p>
             <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
-              Settings and limits
+              Account and limits
             </span>
           </div>
           <p className="mt-1 text-sm text-[var(--color-text-3)]">
@@ -1532,9 +1532,9 @@ function NoWorkspaceSettings() {
   return (
     <div className="space-y-10">
       <SurfaceHero
-        kicker="Settings"
+        kicker="Profile"
         title="Create a workspace."
-        description="Settings attach to the active workspace."
+        description="Profile, channels, and limits attach to the active workspace."
       />
       <SurfaceSection title="Workspace">
         <form

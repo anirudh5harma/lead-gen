@@ -1733,9 +1733,10 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
               <div
                 key={event.event_type}
                 className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2"
+                title={event.event_type}
               >
                 <span className="truncate text-xs text-[var(--color-text-2)]">
-                  {event.event_type.replace(/\./g, " ")}
+                  {agentEventLabel(event.event_type)}
                 </span>
                 <span className="font-mono text-xs text-[var(--color-text-3)]">
                   {event.count}
@@ -1817,7 +1818,7 @@ function AgentOperatingLoopPanel({
     <SurfaceSection
       title="Signal-to-outreach operating loop"
       action={
-        <Link href="/dashboard/profile#linkedin" className="btn-quiet-sm">
+        <Link href="/dashboard/profile#channels" className="btn-quiet-sm">
           <Icon name="account_tree" size={14} />
           Connect channels
         </Link>
@@ -1975,7 +1976,7 @@ function AgentReadinessPanel({
               </p>
               <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
                 Qualified Signals can become email or LinkedIn outreach only
-                after Profile, Play, and Conversation channel checks pass.
+                after profile, source, and channel checks pass.
               </p>
             </div>
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
@@ -2174,6 +2175,33 @@ function agentCurrentWork(activity: AgentActivity): string {
     return `${activity.events_last_hour} system event${activity.events_last_hour === 1 ? "" : "s"} landed in the last hour; no outbound send is currently in motion.`;
   }
   return "No active workflow right now. The agent will wake when a qualified signal, reply, or channel event arrives.";
+}
+
+function agentEventLabel(eventType: string): string {
+  const normalized = eventType.toLowerCase();
+  if (normalized.includes("signal")) return "Signal checked";
+  if (normalized.includes("contact") || normalized.includes("person")) {
+    return "Contact resolved";
+  }
+  if (normalized.includes("draft") || normalized.includes("approval")) {
+    return "Draft prepared";
+  }
+  if (normalized.includes("message") || normalized.includes("outreach")) {
+    return "Outreach updated";
+  }
+  if (normalized.includes("reply") || normalized.includes("outcome")) {
+    return "Reply insight captured";
+  }
+  if (normalized.includes("linkedin")) return "LinkedIn channel updated";
+  if (normalized.includes("outlook") || normalized.includes("email")) {
+    return "Email channel updated";
+  }
+  if (normalized.includes("profile") || normalized.includes("workspace")) {
+    return "Profile updated";
+  }
+  if (normalized.includes("source")) return "Source checked";
+  if (normalized.includes("workflow")) return "Workflow advanced";
+  return "System check completed";
 }
 
 function AgentOutreachPanel({
