@@ -255,6 +255,15 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Review sent outreach/);
   assert.match(dashboard, /Inspect hot contacts/);
   assert.match(dashboard, /Resolve contact quality/);
+  assert.match(dashboard, /BriefContactReadiness/);
+  assert.match(dashboard, /loadBriefContactReadiness/);
+  assert.match(dashboard, /contactReadiness/);
+  assert.match(dashboard, /signal_backed/);
+  assert.match(dashboard, /verified_email/);
+  assert.match(dashboard, /needs_email_verification/);
+  assert.match(dashboard, /emailStatusLabel\(contact\.email_status\)/);
+  assert.match(dashboard, /Email found/);
+  assert.match(dashboard, /"handle needs"/);
   assert.match(dashboard, /Tune signal sources/);
   assert.match(dashboard, /Apply weekly learning/);
   assert.match(dashboard, /Keep Profile current/);
@@ -276,6 +285,8 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /loadBriefOutcomeInsights/);
   assert.match(dashboard, /loadBriefLearningInsight/);
   assert.match(dashboard, /loadBriefSignalHealth/);
+  assert.match(dashboard, /coalesce\(p\.properties->'email_verification'/);
+  assert.match(dashboard, /coalesce\(s\.ingested_at, s\.freshness_at\) >= now\(\) - interval '14 days'/);
   assert.match(dashboard, /from workspace_source_configs wsc/);
   assert.match(dashboard, /join graph_sources gs/);
   assert.match(dashboard, /attention_source_name/);

@@ -75,12 +75,21 @@ interface BriefHotContact {
   title: string | null;
   emails: string[];
   linkedin_url: string | null;
+  email_status: string;
   company_name: string | null;
   company_domain: string | null;
   latest_signal_title: string;
   latest_signal_kind: string;
   last_signal_at: Date;
   contact_fit_decision: string | null;
+}
+
+interface BriefContactReadiness {
+  signal_backed: number;
+  verified_email: number;
+  linkedin_profiles: number;
+  needs_email_verification: number;
+  fit_reviewed: number;
 }
 
 interface BriefNextMove {
@@ -339,6 +348,16 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
             p.title,
             coalesce(p.emails, '{}'::text[]) as emails,
             p.linkedin_url,
+            case
+              when exists (
+                select 1
+                  from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                 where lower(coalesce(ev.meta->>'verified', '')) = 'true'
+                    or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
+              ) then 'verified'
+              when cardinality(coalesce(p.emails, '{}'::text[])) > 0 then 'found'
+              else 'missing'
+            end as email_status,
             co.name as company_name,
             co.domain::text as company_domain,
             latest_signal.title as latest_signal_title,
@@ -354,6 +373,7 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
            from signals s
           where s.workspace_id = $1
             and s.status in ('matched','in_play')
+            and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '14 days'
             and (
               s.related_person_id = p.id
               or (p.company_id is not null and s.related_company_id = p.company_id)
@@ -368,6 +388,66 @@ async function loadBriefHotContacts(workspaceId: string): Promise<BriefHotContac
     [workspaceId],
   );
   return rows;
+}
+
+async function loadBriefContactReadiness(
+  workspaceId: string,
+): Promise<BriefContactReadiness> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    signal_backed: string;
+    verified_email: string;
+    linkedin_profiles: string;
+    needs_email_verification: string;
+    fit_reviewed: string;
+  }>(
+    `with signal_backed_contacts as (
+       select p.id,
+              p.emails,
+              p.linkedin_url,
+              p.properties,
+              exists (
+                select 1
+                  from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+                 where lower(coalesce(ev.meta->>'verified', '')) = 'true'
+                    or lower(coalesce(ev.meta->>'status', '')) in ('valid', 'deliverable')
+              ) as has_verified_email
+         from graph_persons p
+        where p.workspace_id = $1
+          and (cardinality(coalesce(p.emails, '{}'::text[])) > 0 or p.linkedin_url is not null)
+          and exists (
+            select 1
+              from signals s
+             where s.workspace_id = $1
+               and s.status in ('matched','in_play')
+               and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '14 days'
+               and (
+                 s.related_person_id = p.id
+                 or (p.company_id is not null and s.related_company_id = p.company_id)
+               )
+          )
+     )
+     select count(*)::text as signal_backed,
+            count(*) filter (where has_verified_email)::text as verified_email,
+            count(*) filter (where linkedin_url is not null)::text as linkedin_profiles,
+            count(*) filter (
+              where cardinality(coalesce(emails, '{}'::text[])) > 0
+                and not has_verified_email
+            )::text as needs_email_verification,
+            count(*) filter (
+              where properties #>> '{contact_fit,decision}' is not null
+            )::text as fit_reviewed
+       from signal_backed_contacts`,
+    [workspaceId],
+  );
+  const row = rows[0];
+  return {
+    signal_backed: Number(row?.signal_backed ?? 0),
+    verified_email: Number(row?.verified_email ?? 0),
+    linkedin_profiles: Number(row?.linkedin_profiles ?? 0),
+    needs_email_verification: Number(row?.needs_email_verification ?? 0),
+    fit_reviewed: Number(row?.fit_reviewed ?? 0),
+  };
 }
 
 async function loadBriefOutcomeInsights(
@@ -486,6 +566,14 @@ const EMPTY_SIGNAL_HEALTH: BriefSignalHealth = {
   attention_reason: null,
 };
 
+const EMPTY_CONTACT_READINESS: BriefContactReadiness = {
+  signal_backed: 0,
+  verified_email: 0,
+  linkedin_profiles: 0,
+  needs_email_verification: 0,
+  fit_reviewed: 0,
+};
+
 export default async function BriefPage() {
   const session = await getActiveWorkspaceSession();
   if (!session) {
@@ -494,6 +582,7 @@ export default async function BriefPage() {
         actions={EMPTY_ACTION_STATE}
         signalKinds={[]}
         signalHealth={EMPTY_SIGNAL_HEALTH}
+        contactReadiness={EMPTY_CONTACT_READINESS}
         hotContacts={[]}
         outcomeInsights={[]}
         learning={EMPTY_LEARNING_INSIGHT}
@@ -505,6 +594,7 @@ export default async function BriefPage() {
     actions,
     signalKinds,
     signalHealth,
+    contactReadiness,
     hotContacts,
     outcomeInsights,
     learning,
@@ -514,6 +604,7 @@ export default async function BriefPage() {
       actions={actions}
       signalKinds={signalKinds}
       signalHealth={signalHealth}
+      contactReadiness={contactReadiness}
       hotContacts={hotContacts}
       outcomeInsights={outcomeInsights}
       learning={learning}
@@ -528,6 +619,7 @@ async function loadBriefState(
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
   signalHealth: BriefSignalHealth;
+  contactReadiness: BriefContactReadiness;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
@@ -537,6 +629,7 @@ async function loadBriefState(
       actions,
       signalKinds,
       signalHealth,
+      contactReadiness,
       hotContacts,
       outcomeInsights,
       learning,
@@ -545,6 +638,7 @@ async function loadBriefState(
         loadBriefActionState(workspaceId),
         loadSignalKindMetrics(workspaceId),
         loadBriefSignalHealth(workspaceId),
+        loadBriefContactReadiness(workspaceId),
         loadBriefHotContacts(workspaceId),
         loadBriefOutcomeInsights(workspaceId),
         loadBriefLearningInsight(workspaceId),
@@ -553,6 +647,7 @@ async function loadBriefState(
       actions,
       signalKinds,
       signalHealth,
+      contactReadiness,
       hotContacts,
       outcomeInsights,
       learning,
@@ -563,6 +658,7 @@ async function loadBriefState(
       actions: EMPTY_ACTION_STATE,
       signalKinds: [],
       signalHealth: EMPTY_SIGNAL_HEALTH,
+      contactReadiness: EMPTY_CONTACT_READINESS,
       hotContacts: [],
       outcomeInsights: [],
       learning: EMPTY_LEARNING_INSIGHT,
@@ -574,6 +670,7 @@ function BriefView({
   actions,
   signalKinds,
   signalHealth,
+  contactReadiness,
   hotContacts,
   outcomeInsights,
   learning,
@@ -582,6 +679,7 @@ function BriefView({
   actions: BriefActionState;
   signalKinds: SignalKindMetric[];
   signalHealth: BriefSignalHealth;
+  contactReadiness: BriefContactReadiness;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
@@ -600,7 +698,7 @@ function BriefView({
   const nextMoves = briefNextMoves(
     actions,
     signalHealth,
-    hotContacts.length,
+    contactReadiness,
     learning,
     totalSent7d,
   );
@@ -1104,7 +1202,7 @@ function BriefHotContactRow({ contact }: { contact: BriefHotContact }) {
           <span className="mt-2 flex flex-wrap gap-2">
             <ContactSignalPill icon="sensors">{signalKind}</ContactSignalPill>
             <ContactSignalPill icon="mail">
-              {contact.emails.length > 0 ? "Verified email" : "Email pending"}
+              {emailStatusLabel(contact.email_status)}
             </ContactSignalPill>
             <ContactSignalPill icon="linkedin">
               {contact.linkedin_url ? "LinkedIn profile" : "LinkedIn pending"}
@@ -1143,6 +1241,12 @@ function contactFitLabel(decision: string): string {
   if (decision === "fit") return "Good fit";
   if (decision === "not_fit") return "Not a fit";
   return "Needs review";
+}
+
+function emailStatusLabel(status: string): string {
+  if (status === "verified") return "Verified email";
+  if (status === "found") return "Email found";
+  return "Email pending";
 }
 
 function briefPriority(
@@ -1191,7 +1295,7 @@ function briefPriority(
 function briefNextMoves(
   actions: BriefActionState,
   signalHealth: BriefSignalHealth,
-  hotContactCount: number,
+  contactReadiness: BriefContactReadiness,
   learning: BriefLearningInsight,
   totalSent7d: number,
 ): BriefNextMove[] {
@@ -1230,16 +1334,26 @@ function briefNextMoves(
     });
   }
 
-  if (hotContactCount > 0) {
+  if (contactReadiness.signal_backed > 0) {
     moves.push({
       icon: "person_search",
       title: "Inspect hot contacts",
-      detail: `${hotContactCount} fresh signal-backed contact${
-        hotContactCount === 1 ? "" : "s"
-      } are ready with email, LinkedIn, or fit context.`,
+      detail:
+        contactReadiness.needs_email_verification > 0
+          ? `${contactReadiness.signal_backed} signal-backed contact${
+              contactReadiness.signal_backed === 1 ? "" : "s"
+            }: ${contactReadiness.verified_email} verified email, ${contactReadiness.linkedin_profiles} LinkedIn, ${contactReadiness.needs_email_verification} email ${
+              contactReadiness.needs_email_verification === 1 ? "handle needs" : "handles need"
+            } verification.`
+          : `${contactReadiness.signal_backed} signal-backed contact${
+              contactReadiness.signal_backed === 1 ? "" : "s"
+            }: ${contactReadiness.verified_email} verified email, ${contactReadiness.linkedin_profiles} LinkedIn, ${contactReadiness.fit_reviewed} fit reviewed.`,
       href: "/dashboard/agent#verified-contacts",
       action: "Inspect",
-      tone: "ready",
+      tone:
+        contactReadiness.verified_email > 0 || contactReadiness.linkedin_profiles > 0
+          ? "ready"
+          : "neutral",
     });
   } else {
     moves.push({
