@@ -1840,7 +1840,7 @@ function opportunityHref(
       signal.outreach_draft.message_id,
     );
   }
-  if (contact?.person_id) return `/dashboard/prospects/${contact.person_id}`;
+  if (contact?.person_id) return `/dashboard/agent/contacts/${contact.person_id}`;
   return "/dashboard/agent#opportunities";
 }
 
@@ -1911,7 +1911,7 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
       <Link
-        href={`/dashboard/prospects/${contact.id}`}
+        href={`/dashboard/agent/contacts/${contact.id}`}
         prefetch={false}
         className="flex min-w-0 items-start gap-3 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
       >

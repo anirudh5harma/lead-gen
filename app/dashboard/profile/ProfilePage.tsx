@@ -623,7 +623,7 @@ function LaunchPathPanel({
     "icp",
     "rep",
   ]);
-  const prospectReady = launchChecksReady(readiness, [
+  const contactsReady = launchChecksReady(readiness, [
     "signal_sources",
     "plays",
   ]);
@@ -639,13 +639,13 @@ function LaunchPathPanel({
       ready: profileReady,
     },
     {
-      title: "Find prospects",
-      detail: prospectReady
+      title: "Find contacts",
+      detail: contactsReady
         ? "Signal sources and outreach sequence are active."
         : "Turn profile context into watched sources and a sequence.",
       href: "/dashboard/agent#sources",
       icon: "sensors",
-      ready: prospectReady,
+      ready: contactsReady,
     },
     {
       title: "Start outreach",

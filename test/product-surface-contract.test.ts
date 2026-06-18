@@ -113,8 +113,8 @@ test("Agent is the canonical dashboard surface route", () => {
     source("app/dashboard/page.tsx"),
     source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/agent/[id]/AgentDetailPage.tsx"),
+    source("app/dashboard/agent/contacts/[id]/ContactPage.tsx"),
     source("app/dashboard/setup/page.tsx"),
-    source("app/dashboard/prospects/[id]/page.tsx"),
     source("app/dashboard/actions.ts"),
     source("core/product/launch-readiness.ts"),
   ].join("\n");
@@ -184,6 +184,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /source: "\/dashboard\/signals"/);
   assert.match(nextConfig, /source: "\/dashboard\/ingestion"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospects"/);
+  assert.match(nextConfig, /source: "\/dashboard\/prospects\/:id"/);
   assert.match(nextConfig, /source: "\/dashboard\/conversations"/);
   assert.match(nextConfig, /source: "\/dashboard\/outcomes"/);
   assert.match(nextConfig, /destination: "\/dashboard\/brief"/);
@@ -191,6 +192,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /destination: "\/dashboard\/profile#channels"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#opportunities"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent\/contacts\/:id"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#outreach"/);
 
   const actions = source("app/dashboard/actions.ts");
@@ -256,7 +258,7 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /BriefHotContactRow/);
   assert.match(dashboard, /BriefLearningPanel/);
   assert.match(dashboard, /OutcomeInsightRow/);
-  assert.match(dashboard, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
+  assert.match(dashboard, /href=\{`\/dashboard\/agent\/contacts\/\$\{contact\.id\}`\}/);
   assert.match(dashboard, /Verified email/);
   assert.match(dashboard, /LinkedIn profile/);
   assert.match(dashboard, /contactFitLabel\(contact\.contact_fit_decision\)/);
@@ -369,11 +371,21 @@ test("Agent learning surface owns message optimization from reply evidence", () 
 
 test("Verified contacts open graph-backed profile pages with channel readiness", () => {
   const prospects = source("app/dashboard/prospects/page.tsx");
-  const profile = source("app/dashboard/prospects/[id]/page.tsx");
+  const prospectDetail = source("app/dashboard/prospects/[id]/page.tsx");
+  const profile = source("app/dashboard/agent/contacts/[id]/ContactPage.tsx");
   const reps = source("app/dashboard/agent/AgentPage.tsx");
+  const brief = source("app/dashboard/page.tsx");
+  const actions = source("app/dashboard/actions.ts");
 
   assert.match(prospects, /redirect\("\/dashboard\/agent#verified-contacts"\)/);
-  assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
+  assert.match(
+    prospectDetail,
+    /redirect\(`\/dashboard\/agent\/contacts\/\$\{id\}`\)/,
+  );
+  assert.match(reps, /href=\{`\/dashboard\/agent\/contacts\/\$\{contact\.id\}`\}/);
+  assert.match(brief, /href=\{`\/dashboard\/agent\/contacts\/\$\{contact\.id\}`\}/);
+  assert.match(actions, /`\/dashboard\/agent\/contacts\/\$\{personId\}`/);
+  assert.match(actions, /revalidatePath\(`\/dashboard\/agent\/contacts\/\$\{personId\}`\)/);
   assert.match(reps, /Verified contacts/);
   assert.match(reps, /Contact workbench/);
   assert.match(reps, /Signal-ready contacts show why now/);
@@ -544,7 +556,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /id="verified-contacts" className="scroll-mt-28"/);
   assert.match(reps, /id="outreach" className="scroll-mt-28"/);
   assert.match(reps, /id="replies" className="scroll-mt-28"/);
-  assert.match(reps, /href=\{`\/dashboard\/prospects\/\$\{contact\.id\}`\}/);
+  assert.match(reps, /href=\{`\/dashboard\/agent\/contacts\/\$\{contact\.id\}`\}/);
   assert.match(reps, /title="Sent outreach"/);
   assert.match(reps, /Agent outreach, last 7 days/);
   assert.match(reps, /DMs sent/);
@@ -843,7 +855,7 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /Launch path/);
   assert.match(settings, /Website to outreach/);
   assert.match(settings, /Website intelligence/);
-  assert.match(settings, /Find prospects/);
+  assert.match(settings, /Find contacts/);
   assert.match(settings, /Start outreach/);
   assert.match(settings, /readiness\.checks\.some/);
   assert.match(settings, /aria-label="Profile sections"/);
@@ -1007,7 +1019,7 @@ test("account connection entry points carry explicit product return targets", ()
     source("app/dashboard/deliverability/page.tsx"),
     source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/conversations/page.tsx"),
-    source("app/dashboard/prospects/[id]/page.tsx"),
+    source("app/dashboard/agent/contacts/[id]/ContactPage.tsx"),
   ].join("\n");
 
   assert.doesNotMatch(surfaces, /href="\/api\/auth\/outlook"/);
@@ -1244,7 +1256,7 @@ test("dashboard icon names resolve to first-party SVG symbols", () => {
     source("app/dashboard/deliverability/page.tsx"),
     source("app/dashboard/campaigns/page.tsx"),
     source("app/dashboard/prospects/page.tsx"),
-    source("app/dashboard/prospects/[id]/page.tsx"),
+    source("app/dashboard/agent/contacts/[id]/ContactPage.tsx"),
   ].join("\n");
   const defined = new Set(
     Array.from(iconSource.matchAll(/^  ([a-z0-9_]+):/gm), (match) => match[1]),

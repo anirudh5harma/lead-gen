@@ -63,7 +63,7 @@ const STEPS = [
   {
     number: '02',
     title: 'Your agent finds buyers',
-    description: 'It detects buying signals, scores your best prospects, and starts contacting them across email and socials.',
+    description: 'It detects buying signals, verifies the right contacts, and starts email or LinkedIn outreach.',
   },
   {
     number: '03',

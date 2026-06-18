@@ -562,7 +562,9 @@ export async function recordPersonFitFeedbackAction(formData: FormData) {
   const personId = value(formData, "person_id");
   const returnTo = dashboardReturnPath(
     formData,
-    personId ? `/dashboard/prospects/${personId}` : "/dashboard/agent#verified-contacts",
+    personId
+      ? `/dashboard/agent/contacts/${personId}`
+      : "/dashboard/agent#verified-contacts",
   );
   if (!personId) {
     redirectWithToast(returnTo, "Choose a contact before recording fit.", "error");
@@ -590,7 +592,7 @@ export async function recordPersonFitFeedbackAction(formData: FormData) {
     );
   }
   revalidateProductPaths();
-  revalidatePath(`/dashboard/prospects/${personId}`);
+  revalidatePath(`/dashboard/agent/contacts/${personId}`);
   redirectWithToast(returnTo, "Contact fit saved.");
 }
 

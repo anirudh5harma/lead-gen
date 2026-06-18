@@ -654,7 +654,7 @@ function BriefHotContactRow({ contact }: { contact: BriefHotContact }) {
   const signalKind = contact.latest_signal_kind.replace(/_/g, " ");
   return (
     <Link
-      href={`/dashboard/prospects/${contact.id}`}
+      href={`/dashboard/agent/contacts/${contact.id}`}
       prefetch={false}
       className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
     >

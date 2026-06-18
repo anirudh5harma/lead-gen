@@ -50,6 +50,11 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: "/dashboard/prospects/:id",
+        destination: "/dashboard/agent/contacts/:id",
+        permanent: false,
+      },
+      {
         source: "/dashboard/conversations",
         destination: "/dashboard/agent#outreach",
         permanent: false,

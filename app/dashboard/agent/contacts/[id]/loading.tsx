@@ -1,5 +1,5 @@
 import { DashboardLoadingState } from "@/components/dashboard/LoadingState";
 
-export default function ProspectDetailRedirectLoading() {
+export default function ContactProfileLoading() {
   return <DashboardLoadingState surface="agent" layout="split" />;
 }
