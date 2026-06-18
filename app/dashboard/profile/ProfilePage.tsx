@@ -20,6 +20,7 @@ import { getRequestAuthIdentity } from "@/lib/auth";
 import type { RequestAuthIdentity } from "@/lib/auth";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import {
+  checkAgentSourcesAction,
   configureActivationAction,
   createWorkspaceAction,
   editCompanyProfileAction,
@@ -823,10 +824,27 @@ function ProfileLaunchModel({
             ? "The agent can now move qualified signals into verified email or LinkedIn outreach after evals, caps, and review rules pass."
             : "Finish the launch blockers above so qualified signals can become verified contacts, judged drafts, and replies."}
         </p>
-        <Link href="/dashboard/agent#opportunities" prefetch={false} className="btn-quiet-sm w-fit">
-          <Icon name="arrow_forward" size={14} />
-          Open signal queue
-        </Link>
+        <div className="flex flex-wrap gap-2 md:justify-end">
+          <form action={checkAgentSourcesAction}>
+            <input type="hidden" name="return_to" value="/dashboard/profile" />
+            <input type="hidden" name="limit" value="25" />
+            <PendingSubmitButton
+              className="btn-solid w-fit"
+              icon="sensors"
+              pendingLabel="Checking sources"
+            >
+              Check sources
+            </PendingSubmitButton>
+          </form>
+          <Link
+            href="/dashboard/agent#opportunities"
+            prefetch={false}
+            className="btn-quiet-sm w-fit"
+          >
+            <Icon name="arrow_forward" size={14} />
+            Open signal queue
+          </Link>
+        </div>
       </div>
     </section>
   );

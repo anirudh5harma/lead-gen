@@ -5,6 +5,7 @@ Observed in the authenticated GojiBerry app on June 18, 2026. This is a product-
 ## What GojiBerry Does Differently
 
 - **Public positioning is brutally simple.** The website sells one flow: enter your website, the agent learns the business, finds high-intent prospects, reaches out across email and socials, drafts replies, and learns from what converts.
+- **Onboarding starts with a website and an outreach agent.** The authenticated onboarding frames step one as creating the first Outreach Agent from the company website, not configuring a stack of sales objects.
 - **Home is an operator brief, not a CRM landing page.** It welcomes the user, exposes active signals, prompts LinkedIn connection, offers time windows, and shows hot opportunities, leads engaged, conversations, latest hot leads, and latest replies.
 - **Agents are framed by output.** The Signals Agents page lists each active agent, leads found, next launch timing, edit controls, and plan limits. The product makes lead generation status visible immediately.
 - **Signal analytics are concrete.** Insights shows total leads, average leads/day, active signals, a daily agent-by-agent matrix, signal types, lead counts, and weak-signal warnings.
@@ -21,6 +22,7 @@ Observed in the authenticated GojiBerry app on June 18, 2026. This is a product-
 - Brief should answer: what happened in the last day and week, which signal types worked, how many emails and LinkedIn DMs went out, and what replies or meetings appeared.
 - Profile owns setup: company context, ICP, voice, email, LinkedIn, contact quality, and limits.
 - Agent owns execution: live work, sent outreach, qualified signals, verified contacts, readiness gates, source strategy, sequence, learning, and setup summary.
+- Saving Profile or Agent guidance should wake the signal-ingestion workflow so the product feels alive after every meaningful setup change.
 - Do not reintroduce user-facing nouns such as reps, plays, or outcomes. They remain architecture primitives or derived implementation views.
 - Make every contact and sent message explain the chain: qualified signal, verified person, channel, judged draft, reply or meeting outcome.
 - Translate AI-chat prompts into status-derived next moves inside Brief and Agent rather than adding another assistant tab.
@@ -38,3 +40,5 @@ The Brief now includes a compact next-move rail. It chooses between reviewing dr
 The Agent contact workbench and contact profile now expose when a contact first entered the graph and when it was last updated. This brings over GojiBerry's import-timing trust signal while keeping the contact story tied to Bombsell's graph, signals, channel handles, outreach threads, and fit feedback.
 
 The Profile page now has a launch-model summary under the setup hub. It makes the learned buyer fit, watched signal terms, email path, LinkedIn path, contact coverage, match gate, duplicate protection, and review mode visible before the detailed forms. This translates GojiBerry's "enter your website and the agent takes it from there" clarity into Bombsell's Profile and integrations surface.
+
+Saving the Profile or Agent setup now starts the durable signal-ingestion workflow in the background, and the Profile launch model includes a direct Check sources action. This keeps Bombsell's architecture intact while making the GojiBerry-style "agent starts working from setup" loop visible and directly accessible.

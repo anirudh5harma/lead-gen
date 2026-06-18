@@ -232,8 +232,15 @@ export async function configureActivationAction(formData: FormData) {
     },
     session,
   );
+  const sourceCheckStarted = await startAgentSourceCheck(session);
   revalidateProductPaths();
-  redirectWithToast(returnTo, "Guidance saved.");
+  redirectWithToast(
+    returnTo,
+    sourceCheckStarted
+      ? "Guidance saved. Agent is checking sources."
+      : "Guidance saved. Source check did not start yet.",
+    sourceCheckStarted ? "success" : "error",
+  );
 }
 
 export async function configureRepAction(formData: FormData) {
@@ -456,16 +463,11 @@ export async function resolveQualifiedSignalContactsAction(formData: FormData) {
 export async function checkAgentSourcesAction(formData: FormData) {
   const session = await requireDashboardSession();
   const returnTo = dashboardReturnPath(formData, "/dashboard/agent");
-  try {
-    await runWorkspaceSignalIngestion(
-      {
-        limit: numberValue(formData, "limit", 25),
-      },
-      session,
-      { wait: false },
-    );
-  } catch (error) {
-    console.error("Agent source check failed", error);
+  const sourceCheckStarted = await startAgentSourceCheck(
+    session,
+    numberValue(formData, "limit", 25),
+  );
+  if (!sourceCheckStarted) {
     redirectWithToast(
       returnTo,
       "Could not start the source check yet. Refresh and try again.",
@@ -641,14 +643,34 @@ export async function editCompanyProfileAction(formData: FormData) {
       },
       session,
     );
+    const sourceCheckStarted = await startAgentSourceCheck(session);
+    revalidateProductPaths();
+    redirectWithToast(
+      returnTo,
+      sourceCheckStarted
+        ? "Company profile saved. Agent is checking sources."
+        : "Company profile saved. Source check did not start yet.",
+      sourceCheckStarted ? "success" : "error",
+    );
   } catch (error) {
     if (error instanceof Error && /valid website_url/i.test(error.message)) {
       redirectWithToast(returnTo, "Enter a valid company website.", "error");
     }
     throw error;
   }
-  revalidateProductPaths();
-  redirectWithToast(returnTo, "Company profile saved.");
+}
+
+async function startAgentSourceCheck(
+  session: ProductWorkspaceSession,
+  limit = 25,
+): Promise<boolean> {
+  try {
+    await runWorkspaceSignalIngestion({ limit }, session, { wait: false });
+    return true;
+  } catch (error) {
+    console.error("Agent source check failed", error);
+    return false;
+  }
 }
 
 export async function decideApprovalWithDraftAction(formData: FormData) {

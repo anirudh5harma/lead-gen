@@ -341,6 +341,8 @@ test("Profile presents separate Outlook and LinkedIn connection gates", () => {
   assert.match(settings, /Email path/);
   assert.match(settings, /LinkedIn path/);
   assert.match(settings, /Open signal queue/);
+  assert.match(settings, /checkAgentSourcesAction/);
+  assert.match(settings, /Check sources/);
   assert.match(settings, /profileSignalList/);
   assert.match(settings, /Company profile/);
   assert.match(settings, /Agent and buyer fit/);
@@ -985,6 +987,9 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /editCompanyProfileAction/);
   assert.match(settings, /configureActivationAction/);
   assert.match(settings, /updateWorkspaceAutonomyAction/);
+  assert.match(actions, /async function startAgentSourceCheck/);
+  assert.match(actions, /Agent is checking sources/);
+  assert.match(actions, /Company profile saved\. Agent is checking sources/);
   assert.match(settings, /href="\/api\/auth\/outlook\?/);
   assert.match(settings, /ProfileSectionNav/);
   assert.match(settings, /getProductLaunchReadiness/);
