@@ -81,6 +81,15 @@ interface BriefHotContact {
   contact_fit_decision: string | null;
 }
 
+interface BriefNextMove {
+  icon: string;
+  title: string;
+  detail: string;
+  href: string;
+  action: string;
+  tone: "ready" | "attention" | "neutral";
+}
+
 async function loadBriefActionState(workspaceId: string): Promise<BriefActionState> {
   const pool = getPool();
   const { rows } = await pool.query<{
@@ -578,6 +587,13 @@ function BriefView({
   const replyRate =
     totalSent7d > 0 ? Math.round((actions.replies_7d / totalSent7d) * 100) : 0;
   const priority = briefPriority(actions, totalSent7d);
+  const nextMoves = briefNextMoves(
+    actions,
+    signalHealth,
+    hotContacts.length,
+    learning,
+    totalSent7d,
+  );
 
   return (
     <div className="space-y-8">
@@ -637,6 +653,8 @@ function BriefView({
           </Link>
         </aside>
       </section>
+
+      <BriefNextMovesPanel moves={nextMoves} />
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <SurfaceSection
@@ -707,6 +725,54 @@ function BriefView({
       </div>
     </div>
   );
+}
+
+function BriefNextMovesPanel({ moves }: { moves: BriefNextMove[] }) {
+  return (
+    <section className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:grid-cols-3">
+      {moves.map((move) => (
+        <Link
+          key={move.title}
+          href={move.href}
+          prefetch={false}
+          className="group grid min-h-[138px] gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-3)]"
+        >
+          <span className="flex items-start justify-between gap-3">
+            <span
+              className={
+                "grid size-9 place-items-center rounded-[8px] " +
+                briefMoveToneClass(move.tone)
+              }
+            >
+              <Icon name={move.icon} size={17} />
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent)]">
+              {move.action}
+              <Icon
+                name="arrow_forward"
+                size={13}
+                className="transition-transform group-hover:translate-x-0.5"
+              />
+            </span>
+          </span>
+          <span>
+            <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+              {move.title}
+            </span>
+            <span className="mt-2 line-clamp-3 block text-xs leading-5 text-[var(--color-text-3)]">
+              {move.detail}
+            </span>
+          </span>
+        </Link>
+      ))}
+    </section>
+  );
+}
+
+function briefMoveToneClass(tone: BriefNextMove["tone"]): string {
+  if (tone === "ready") return "bg-[var(--color-pos-bg)] text-[var(--color-pos)]";
+  if (tone === "attention") return "bg-[var(--color-warn-bg)] text-[var(--color-warn)]";
+  return "bg-[var(--color-ink-0)] text-[var(--color-text-2)]";
 }
 
 function BriefSnapshotPanel({
@@ -1087,6 +1153,110 @@ function briefPriority(actions: BriefActionState, totalSent7d: number) {
     icon: "arrow_forward",
     label: "Open Agent",
   };
+}
+
+function briefNextMoves(
+  actions: BriefActionState,
+  signalHealth: BriefSignalHealth,
+  hotContactCount: number,
+  learning: BriefLearningInsight,
+  totalSent7d: number,
+): BriefNextMove[] {
+  const moves: BriefNextMove[] = [];
+
+  if (actions.pending_reviews > 0) {
+    moves.push({
+      icon: "rate_review",
+      title: "Review drafted outreach",
+      detail: `${actions.pending_reviews} judged draft${
+        actions.pending_reviews === 1 ? "" : "s"
+      } ${actions.pending_reviews === 1 ? "needs" : "need"} a send decision before the agent can move them forward.`,
+      href: "/dashboard/agent#opportunities",
+      action: "Review",
+      tone: "attention",
+    });
+  } else if (actions.qualified_signals_7d > 0 && totalSent7d === 0) {
+    moves.push({
+      icon: "send",
+      title: "Turn signals into outreach",
+      detail: `${actions.qualified_signals_7d} qualified signal${
+        actions.qualified_signals_7d === 1 ? "" : "s"
+      } are waiting for verified email or LinkedIn touches.`,
+      href: "/dashboard/agent#opportunities",
+      action: "Prepare",
+      tone: "ready",
+    });
+  } else {
+    moves.push({
+      icon: "campaign",
+      title: "Review sent outreach",
+      detail: `${actions.emails_sent_7d} emails and ${actions.dms_sent_7d} LinkedIn DMs went out in the last week.`,
+      href: "/dashboard/agent#outreach",
+      action: "Open",
+      tone: totalSent7d > 0 ? "ready" : "neutral",
+    });
+  }
+
+  if (hotContactCount > 0) {
+    moves.push({
+      icon: "person_search",
+      title: "Inspect hot contacts",
+      detail: `${hotContactCount} fresh signal-backed contact${
+        hotContactCount === 1 ? "" : "s"
+      } are ready with email, LinkedIn, or fit context.`,
+      href: "/dashboard/agent#verified-contacts",
+      action: "Inspect",
+      tone: "ready",
+    });
+  } else {
+    moves.push({
+      icon: "manage_search",
+      title: "Resolve contact quality",
+      detail: "Qualified signals become useful only after the agent finds verified emails or LinkedIn profiles.",
+      href: "/dashboard/agent#opportunities",
+      action: "Resolve",
+      tone: "neutral",
+    });
+  }
+
+  if (signalHealth.attention_source_name || signalHealth.quiet_sources > 0) {
+    moves.push({
+      icon: "monitor_heart",
+      title: "Tune signal sources",
+      detail:
+        signalHealth.attention_source_name && signalHealth.attention_reason
+          ? `${signalHealth.attention_source_name} needs attention: ${signalHealth.attention_reason}.`
+          : `${signalHealth.quiet_sources} active source${
+              signalHealth.quiet_sources === 1 ? " is" : "s are"
+            } quiet this week.`,
+      href: "/dashboard/agent#sources",
+      action: "Tune",
+      tone: "attention",
+    });
+  } else if (learning.strategy_summary || learning.skill_summary) {
+    moves.push({
+      icon: "auto_graph",
+      title: "Apply weekly learning",
+      detail:
+        learning.strategy_summary ??
+        learning.skill_summary ??
+        "Replies and meetings are shaping the next outreach batch.",
+      href: "/dashboard/agent#learning",
+      action: "Apply",
+      tone: "ready",
+    });
+  } else {
+    moves.push({
+      icon: "badge",
+      title: "Keep Profile current",
+      detail: "Website context, buyer fit, voice, email, LinkedIn, and contact rules control what the agent can do next.",
+      href: "/dashboard/profile#profile",
+      action: "Open",
+      tone: "neutral",
+    });
+  }
+
+  return moves;
 }
 
 function FunnelStep({ label, value }: { label: string; value: number }) {

@@ -12,6 +12,7 @@ Observed in the authenticated GojiBerry app on June 18, 2026. This is a product-
 - **Inbox is channel-first.** The unified inbox is explicitly blocked until LinkedIn is connected, making the setup dependency obvious.
 - **AI chat is workspace-aware.** Suggested prompts are grounded in lead finding, campaign performance, and ICP refinement rather than generic assistant tasks.
 - **Copilot separates review from autopilot.** The surface lets the user inspect AI-recommended leads and understand whether work is waiting on campaign activation.
+- **The app keeps suggesting the next operational move.** Home, Copilot, Inbox, and Insights all route the user toward the next unblocker: connect LinkedIn, start a campaign, review contacts, inspect signal output, or tune the agent.
 
 ## Translation To Bombsell
 
@@ -21,6 +22,7 @@ Observed in the authenticated GojiBerry app on June 18, 2026. This is a product-
 - Agent owns execution: live work, sent outreach, qualified signals, verified contacts, readiness gates, source strategy, sequence, learning, and setup summary.
 - Do not reintroduce user-facing nouns such as reps, plays, or outcomes. They remain architecture primitives or derived implementation views.
 - Make every contact and sent message explain the chain: qualified signal, verified person, channel, judged draft, reply or meeting outcome.
+- Translate AI-chat prompts into status-derived next moves inside Brief and Agent rather than adding another assistant tab.
 
 ## Current Bombsell Change From This Pass
 
@@ -29,3 +31,5 @@ The Agent page now opens with live system work and the execution evidence users 
 The Brief now carries a compact signal-health readout: active sources, productive sources in the last week, average qualified signals per day, and the source that needs attention. This borrows GojiBerry's concrete signal analytics without adding a separate Insights tab.
 
 The Agent sent-outreach section now separates channel performance into email, LinkedIn connection requests, LinkedIn messages, and replies attributed to the latest prior outbound touch. This mirrors GojiBerry's contacted/invited/replied clarity while keeping outreach under Agent.
+
+The Brief now includes a compact next-move rail. It chooses between reviewing drafted outreach, preparing outreach from qualified signals, inspecting hot contacts, resolving contact quality, tuning sources, applying learning, or refreshing Profile setup. This borrows GojiBerry's workspace-aware prompts while preserving Bombsell's three-surface product model.
