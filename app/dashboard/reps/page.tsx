@@ -809,19 +809,19 @@ export default async function RepsPage() {
         coverage={coverage}
       />
 
+      <AgentOutreachPanel outreach={state.outreach} />
+
+      <AgentOpportunityPanel opportunities={state.opportunities} />
+
+      <AgentContactsPanel contacts={state.contacts} />
+
       <AgentReadinessPanel readiness={state.readiness} />
 
       <AgentStrategyPanel strategy={state.strategy} />
 
       <AgentSequencePanel sequence={sequence} />
 
-      <AgentOpportunityPanel opportunities={state.opportunities} />
-
-      <AgentOutreachPanel outreach={state.outreach} />
-
       <AgentLearningPanel learning={state.learning} />
-
-      <AgentContactsPanel contacts={state.contacts} />
 
       <SurfaceSection
         title="Agent setup"

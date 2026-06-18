@@ -500,6 +500,21 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Tune in Profile/);
   assert.match(reps, /Voice, accounts, and limits stay in Profile/);
   assert.match(reps, /Channels and limits/);
+  assert.ok(
+    reps.indexOf("<AgentOutreachPanel outreach={state.outreach} />") <
+      reps.indexOf("<AgentReadinessPanel readiness={state.readiness} />"),
+    "sent outreach must appear before readiness so Agent opens on execution evidence",
+  );
+  assert.ok(
+    reps.indexOf("<AgentOpportunityPanel opportunities={state.opportunities} />") <
+      reps.indexOf("<AgentStrategyPanel strategy={state.strategy} />"),
+    "qualified signals must appear before source strategy on the Agent surface",
+  );
+  assert.ok(
+    reps.indexOf("<AgentContactsPanel contacts={state.contacts} />") <
+      reps.indexOf("<AgentSequencePanel sequence={sequence} />"),
+    "verified contacts must appear before sequence internals on the Agent surface",
+  );
   assert.match(reps, /href="\/dashboard\/profile#agent"/);
   assert.match(reps, /\/dashboard\/profile#channels/);
   assert.match(reps, /\/dashboard\/profile#email/);
