@@ -488,6 +488,8 @@ function BriefView({
         </p>
       </section>
 
+      <BriefSnapshotPanel actions={actions} signalKinds={signalKinds} />
+
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -506,47 +508,20 @@ function BriefView({
           </div>
         </div>
 
-        <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+        <aside className="section-note">
           <p className="text-sm font-semibold text-[var(--color-text-1)]">
-            Signal-to-outreach funnel
+            Agent insight
           </p>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <FunnelStep label="Qualified" value={actions.qualified_signals_7d} />
-            <FunnelStep label="Sent" value={totalSent7d} />
-            <FunnelStep label="Replies" value={actions.replies_7d} />
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <DashboardMetric
-          icon="sensors"
-          label="Qualified signals"
-          day={actions.qualified_signals_24h}
-          week={actions.qualified_signals_7d}
-          href="/dashboard/agent#opportunities"
-        />
-        <DashboardMetric
-          icon="mail"
-          label="Emails sent"
-          day={actions.emails_sent_24h}
-          week={actions.emails_sent_7d}
-          href="/dashboard/agent#outreach"
-        />
-        <DashboardMetric
-          icon="linkedin"
-          label="LinkedIn DMs"
-          day={actions.dms_sent_24h}
-          week={actions.dms_sent_7d}
-          href="/dashboard/agent#outreach"
-        />
-        <DashboardMetric
-          icon="event_available"
-          label="Replies / meetings"
-          day={actions.replies_24h + actions.meetings_24h}
-          week={actions.replies_7d + actions.meetings_7d}
-          href="/dashboard/brief#reply-insights"
-        />
+          <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
+            {totalSent7d === 0
+              ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals become verified contacts and judged drafts."
+              : `${totalSent7d} emails or DMs went out in the last week. ${actions.replies_7d} got useful replies, ${actions.meetings_7d} became meetings, and the current reply rate is ${replyRate}%.`}
+          </p>
+          <Link href="/dashboard/agent#outreach" className="btn-solid-sm mt-4 w-fit">
+            <Icon name="arrow_forward" size={14} />
+            Open Agent
+          </Link>
+        </aside>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -578,37 +553,8 @@ function BriefView({
           )}
         </SurfaceSection>
 
-        <SurfaceSection title="Signal mix">
-          {signalKinds.length === 0 ? (
-            <EmptyState
-              title="No qualified signals yet"
-              hint="Complete the profile and connected accounts so the agent can qualify real timing signals."
-              cta={{ href: "/dashboard/profile#profile", label: "Open profile", icon: "person" }}
-            />
-          ) : (
-            <div className="grid gap-2">
-              {signalKinds.map((signal) => (
-                <SignalKindRow key={signal.kind} signal={signal} />
-              ))}
-            </div>
-          )}
-        </SurfaceSection>
+        <ReplySnapshotCard actions={actions} totalSent7d={totalSent7d} />
       </section>
-
-      <aside className="section-note">
-        <p className="text-sm font-semibold text-[var(--color-text-1)]">
-          Agent insight
-        </p>
-        <p className="mt-3 text-sm leading-6 text-[var(--color-text-3)]">
-          {totalSent7d === 0
-            ? "No outbound volume in the last week. Connect Outlook or LinkedIn, then let qualified signals become verified contacts and judged drafts."
-            : `${totalSent7d} emails or DMs went out in the last week. ${actions.replies_7d} got useful replies, ${actions.meetings_7d} became meetings, and the current reply rate is ${replyRate}%.`}
-        </p>
-        <Link href="/dashboard/agent#outreach" className="btn-solid-sm mt-4 w-fit">
-          <Icon name="arrow_forward" size={14} />
-          Open Agent
-        </Link>
-      </aside>
 
       <div id="weekly-learning" className="scroll-mt-28">
         <SurfaceSection
@@ -646,6 +592,181 @@ function BriefView({
         </SurfaceSection>
       </div>
     </div>
+  );
+}
+
+function BriefSnapshotPanel({
+  actions,
+  signalKinds,
+}: {
+  actions: BriefActionState;
+  signalKinds: SignalKindMetric[];
+}) {
+  const metrics = [
+    {
+      icon: "sensors",
+      label: "Qualified signals",
+      day: actions.qualified_signals_24h,
+      week: actions.qualified_signals_7d,
+      href: "/dashboard/agent#opportunities",
+    },
+    {
+      icon: "mail",
+      label: "Emails sent",
+      day: actions.emails_sent_24h,
+      week: actions.emails_sent_7d,
+      href: "/dashboard/agent#outreach",
+    },
+    {
+      icon: "linkedin",
+      label: "LinkedIn DMs",
+      day: actions.dms_sent_24h,
+      week: actions.dms_sent_7d,
+      href: "/dashboard/agent#outreach",
+    },
+    {
+      icon: "mark_email_read",
+      label: "Replies",
+      day: actions.replies_24h,
+      week: actions.replies_7d,
+      href: "/dashboard/brief#reply-insights",
+    },
+    {
+      icon: "event_available",
+      label: "Meetings",
+      day: actions.meetings_24h,
+      week: actions.meetings_7d,
+      href: "/dashboard/brief#reply-insights",
+    },
+  ];
+  return (
+    <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Last day and week
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
+              The operating brief only tracks qualified signals, sent outreach,
+              replies, and meetings.
+            </p>
+          </div>
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+            24h / 7d
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {metrics.map((metric) => (
+            <BriefWindowMetricRow key={metric.label} metric={metric} />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Signal types
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+              Qualified timing evidence by type.
+            </p>
+          </div>
+          <Link href="/dashboard/agent#opportunities" className="btn-quiet-sm">
+            <Icon name="arrow_forward" size={14} />
+            Open signals
+          </Link>
+        </div>
+        {signalKinds.length === 0 ? (
+          <div className="mt-4">
+            <EmptyState
+              title="No qualified signal types yet"
+              hint="Complete Profile and connect accounts so the agent can start qualifying timing evidence."
+              cta={{
+                href: "/dashboard/profile#profile",
+                label: "Open profile",
+                icon: "person",
+              }}
+            />
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-2">
+            {signalKinds.map((signal) => (
+              <SignalKindRow key={signal.kind} signal={signal} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function BriefWindowMetricRow({
+  metric,
+}: {
+  metric: {
+    icon: string;
+    label: string;
+    day: number;
+    week: number;
+    href: string;
+  };
+}) {
+  return (
+    <Link
+      href={metric.href}
+      className="group grid grid-cols-[32px_minmax(0,1fr)_72px_72px] items-center gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-3)]"
+    >
+      <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
+        <Icon name={metric.icon} size={15} />
+      </span>
+      <span className="truncate text-sm font-semibold text-[var(--color-text-1)]">
+        {metric.label}
+      </span>
+      <span className="text-right">
+        <span className="block text-[11px] text-[var(--color-text-4)]">24h</span>
+        <strong className="block text-base font-semibold tabular-nums text-[var(--color-text-1)]">
+          {metric.day}
+        </strong>
+      </span>
+      <span className="text-right">
+        <span className="block text-[11px] text-[var(--color-text-4)]">7d</span>
+        <strong className="block text-base font-semibold tabular-nums text-[var(--color-text-1)]">
+          {metric.week}
+        </strong>
+      </span>
+    </Link>
+  );
+}
+
+function ReplySnapshotCard({
+  actions,
+  totalSent7d,
+}: {
+  actions: BriefActionState;
+  totalSent7d: number;
+}) {
+  const replyRate =
+    totalSent7d > 0 ? Math.round((actions.replies_7d / totalSent7d) * 100) : 0;
+  return (
+    <SurfaceSection title="Replies and meetings">
+      <div className="grid gap-3">
+        <FunnelStep label="Replies 24h" value={actions.replies_24h} />
+        <FunnelStep label="Replies 7d" value={actions.replies_7d} />
+        <FunnelStep label="Meetings 24h" value={actions.meetings_24h} />
+        <FunnelStep label="Meetings 7d" value={actions.meetings_7d} />
+      </div>
+      <p className="mt-4 text-sm leading-6 text-[var(--color-text-3)]">
+        {totalSent7d === 0
+          ? "No reply-rate signal yet because no email or LinkedIn outreach has gone out this week."
+          : `${replyRate}% reply rate from ${totalSent7d} emails and DMs in the last week.`}
+      </p>
+      <Link href="/dashboard/brief#reply-insights" className="btn-quiet-sm mt-4 w-fit">
+        <Icon name="arrow_forward" size={14} />
+        View insights
+      </Link>
+    </SurfaceSection>
   );
 }
 
@@ -768,47 +889,6 @@ function FunnelStep({ label, value }: { label: string; value: number }) {
         {value}
       </p>
     </div>
-  );
-}
-
-function DashboardMetric({
-  icon,
-  label,
-  day,
-  week,
-  href,
-}: {
-  icon: string;
-  label: string;
-  day: number;
-  week: number;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
-          <Icon name={icon} size={17} />
-        </span>
-        <span className="flex items-center gap-1 text-[11px] text-[var(--color-text-3)]">
-          24h / 7d
-          <Icon
-            name="arrow_forward"
-            size={12}
-            className="text-[var(--color-text-4)] transition-colors group-hover:text-[var(--color-accent)]"
-          />
-        </span>
-      </div>
-      <p className="mt-4 text-sm font-semibold text-[var(--color-text-1)]">
-        {label}
-      </p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums text-[var(--color-text-1)]">
-        {day} <span className="text-sm font-medium text-[var(--color-text-3)]">/ {week}</span>
-      </p>
-    </Link>
   );
 }
 
