@@ -9,8 +9,10 @@ import {
 } from "@/components/dashboard/SurfaceHero";
 import {
   getProductCompanyProfile,
+  getProductLaunchReadiness,
   verifiedProductWorkspaceSession,
   type ProductCompanyProfile,
+  type ProductLaunchReadinessResult,
 } from "@/core/product/app";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getRequestAuthIdentity } from "@/lib/auth";
@@ -301,9 +303,10 @@ export default async function SettingsPage() {
     workspace_id: active.workspace.id,
     user_id: active.user_id,
   });
-  const [profile, state] = await Promise.all([
+  const [profile, state, readiness] = await Promise.all([
     getProductCompanyProfile(pool, productSession),
     loadSettingsState(active.workspace.id),
+    getProductLaunchReadiness({ required_channel: "any" }, productSession),
   ]);
   const identity = await getRequestAuthIdentity();
   const mode = settingsMode(state.settings, state.approvals);
@@ -340,6 +343,8 @@ export default async function SettingsPage() {
           </div>
         }
       />
+
+      <LaunchPathPanel readiness={readiness} />
 
       <SettingsChecklist
         profile={profile}
@@ -471,6 +476,108 @@ export default async function SettingsPage() {
   );
 }
 
+function LaunchPathPanel({
+  readiness,
+}: {
+  readiness: ProductLaunchReadinessResult;
+}) {
+  const next = profileReadinessNextAction(readiness);
+  const profileReady = launchChecksReady(readiness, [
+    "workspace_profile",
+    "icp",
+    "rep",
+  ]);
+  const prospectReady = launchChecksReady(readiness, [
+    "signal_sources",
+    "plays",
+  ]);
+  const channelReady = launchChecksReady(readiness, ["outreach_channel"]);
+  const stages = [
+    {
+      title: "Website intelligence",
+      detail: profileReady
+        ? "Company, ICP, and agent context are ready."
+        : "Add the website, audience, and agent voice.",
+      href: profileReady ? "/dashboard/profile#agent" : "/dashboard/profile#profile",
+      icon: "add_business",
+      ready: profileReady,
+    },
+    {
+      title: "Find prospects",
+      detail: prospectReady
+        ? "Signal sources and outreach sequence are active."
+        : "Turn profile context into watched sources and a sequence.",
+      href: "/dashboard/agent#sources",
+      icon: "sensors",
+      ready: prospectReady,
+    },
+    {
+      title: "Start outreach",
+      detail: channelReady
+        ? "Email or LinkedIn can move after eval gates."
+        : "Connect a channel before messages can leave.",
+      href: "/dashboard/profile#channels",
+      icon: "send",
+      ready: channelReady,
+    },
+  ];
+  return (
+    <section className="section-note grid gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Launch path
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Website to outreach.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            Bombsell uses the same readiness gate as the Agent: profile, sources,
+            sequence, and connected channels must line up before outreach runs.
+          </p>
+        </div>
+        <Link href={next.href} prefetch={false} className="btn-solid-sm">
+          <Icon name={next.icon} size={14} />
+          {next.label}
+        </Link>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        {stages.map((stage) => (
+          <Link
+            key={stage.title}
+            href={stage.href}
+            prefetch={false}
+            className="grid min-h-[132px] gap-3 rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]/50"
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
+                <Icon name={stage.icon} size={16} />
+              </span>
+              <StatusPill ready={stage.ready} />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+                {stage.title}
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+                {stage.detail}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+      <p className="text-xs leading-5 text-[var(--color-text-3)]">
+        {readiness.launch_ready
+          ? "Ready: qualified signals can become email or LinkedIn outreach."
+          : `${readiness.blockers.length} launch blocker${readiness.blockers.length === 1 ? "" : "s"} remaining.`}
+      </p>
+    </section>
+  );
+}
+
 function SettingsChecklist({
   profile,
   outlookAccount,
@@ -581,6 +688,46 @@ function SettingsChecklist({
       </div>
     </section>
   );
+}
+
+function launchChecksReady(
+  readiness: ProductLaunchReadinessResult,
+  ids: ProductLaunchReadinessResult["checks"][number]["id"][],
+): boolean {
+  return ids.every((id) =>
+    readiness.checks.some((check) => check.id === id && check.status === "ready"),
+  );
+}
+
+function profileReadinessNextAction(
+  readiness: ProductLaunchReadinessResult,
+): { href: string; icon: string; label: string } {
+  const blocker = readiness.checks.find(
+    (check) => check.required && check.status !== "ready",
+  );
+  if (!blocker?.action) {
+    return {
+      href: "/dashboard/agent#opportunities",
+      icon: "rocket_launch",
+      label: "Open Agent",
+    };
+  }
+  return {
+    href: blocker.action.surface,
+    icon: readinessActionIcon(blocker.id),
+    label: blocker.action.label,
+  };
+}
+
+function readinessActionIcon(
+  id: ProductLaunchReadinessResult["checks"][number]["id"],
+): string {
+  if (id === "workspace_profile") return "add_business";
+  if (id === "icp" || id === "rep") return "badge";
+  if (id === "signal_sources") return "sensors";
+  if (id === "plays") return "send";
+  if (id === "linkedin") return "linkedin";
+  return "mail";
 }
 
 function SettingsSectionNav({

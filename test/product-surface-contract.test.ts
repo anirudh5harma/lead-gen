@@ -676,6 +676,14 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(settings, /updateWorkspaceAutonomyAction/);
   assert.match(settings, /href="\/api\/auth\/outlook\?/);
   assert.match(settings, /SettingsSectionNav/);
+  assert.match(settings, /getProductLaunchReadiness/);
+  assert.match(settings, /LaunchPathPanel/);
+  assert.match(settings, /Launch path/);
+  assert.match(settings, /Website to outreach/);
+  assert.match(settings, /Website intelligence/);
+  assert.match(settings, /Find prospects/);
+  assert.match(settings, /Start outreach/);
+  assert.match(settings, /readiness\.checks\.some/);
   assert.match(settings, /aria-label="Profile sections"/);
   assert.match(settings, /id="email"/);
   assert.match(settings, /id="linkedin"/);
