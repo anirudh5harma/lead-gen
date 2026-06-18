@@ -642,6 +642,11 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /left join channel_accounts ca/);
   assert.match(reps, /ca\.display_name as channel_account_name/);
   assert.match(reps, /ca\.status::text as channel_account_status/);
+  assert.match(reps, /coalesce\(p\.emails, '\{\}'::text\[\]\) as emails/);
+  assert.match(reps, /p\.linkedin_url/);
+  assert.match(reps, /ContactHandlePill/);
+  assert.match(reps, /Email pending/);
+  assert.match(reps, /LinkedIn pending/);
   assert.match(reps, /OutreachAccountPill/);
   assert.match(reps, /Sent through \$\{message\.channel_account_name\}/);
   assert.match(reps, /Via \$\{message\.channel_account_name\}/);

@@ -115,6 +115,8 @@ interface AgentOutreachRow {
   sent_at: Date | null;
   created_at: Date;
   counterparty_name: string | null;
+  emails: string[];
+  linkedin_url: string | null;
   company_name: string | null;
   signal_title: string | null;
 }
@@ -832,6 +834,8 @@ async function loadAgentOutreachSummary(
               m.sent_at,
               m.created_at,
               p.full_name as counterparty_name,
+              coalesce(p.emails, '{}'::text[]) as emails,
+              p.linkedin_url,
               co.name as company_name,
               s.title as signal_title
          from messages m
@@ -4067,6 +4071,20 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
               Why now: {message.signal_title}
             </span>
           ) : null}
+          <span className="mt-2 flex flex-wrap gap-1.5">
+            <ContactHandlePill
+              ready={message.emails.length > 0}
+              icon={<Icon name="verified" size={12} />}
+            >
+              {message.emails.length > 0 ? "Verified email" : "Email pending"}
+            </ContactHandlePill>
+            <ContactHandlePill
+              ready={Boolean(message.linkedin_url)}
+              icon={<BrandIcon name="linkedin" size={12} />}
+            >
+              {message.linkedin_url ? "LinkedIn profile" : "LinkedIn pending"}
+            </ContactHandlePill>
+          </span>
         </span>
       </span>
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
@@ -4083,6 +4101,30 @@ function AgentOutreachLink({ message }: { message: AgentOutreachRow }) {
         </span>
       </span>
     </Link>
+  );
+}
+
+function ContactHandlePill({
+  ready,
+  icon,
+  children,
+}: {
+  ready: boolean;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-[11px] " +
+        (ready
+          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+          : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+      }
+    >
+      {icon}
+      {children}
+    </span>
   );
 }
 

@@ -42,3 +42,5 @@ The Agent contact workbench and contact profile now expose when a contact first 
 The Profile page now has a launch-model summary under the setup hub. It makes the learned buyer fit, watched signal terms, email path, LinkedIn path, contact coverage, match gate, duplicate protection, and review mode visible before the detailed forms. This translates GojiBerry's "enter your website and the agent takes it from there" clarity into Bombsell's Profile and integrations surface.
 
 Saving the Profile or Agent setup now starts the durable signal-ingestion workflow in the background, and the Profile launch model includes a direct Check sources action. This keeps Bombsell's architecture intact while making the GojiBerry-style "agent starts working from setup" loop visible and directly accessible.
+
+Sent outreach rows now carry the graph contact handles behind each message: verified email availability and LinkedIn profile availability appear next to the signal and judged draft. This keeps GojiBerry's contact-table trust signal inside Bombsell's Agent execution trace instead of adding another Contacts tab.
