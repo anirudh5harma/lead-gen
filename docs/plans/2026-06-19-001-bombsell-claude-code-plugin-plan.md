@@ -278,17 +278,17 @@ Hooks must never auto-send outreach or auto-write Profile changes.
    Existing `product.*` tools are architecture-friendly, but plugin users need a
    smaller task vocabulary. Add wrapper tools that call the existing registry:
 
-   - `bombsell.brief.get`
+   - `bombsell.brief.get` (landed: read-only)
    - `bombsell.profile.propose_from_context`
-   - `bombsell.launch.check`
+   - `bombsell.launch.check` (landed: read-only)
    - `bombsell.signals.list_qualified`
    - `bombsell.contact_lanes.get`
    - `bombsell.outreach.prepare`
-   - `bombsell.outreach.list_sent`
-   - `bombsell.draft.get`
-   - `bombsell.approvals.list`
+   - `bombsell.outreach.list_sent` (landed: read-only)
+   - `bombsell.draft.get` (landed: read-only)
+   - `bombsell.approvals.list` (landed: read-only)
    - `bombsell.approvals.decide`
-   - `bombsell.learning.get`
+   - `bombsell.learning.get` (landed: read-only)
 
    These wrappers must remain derived views over the five primitives, not a new
    product model.
@@ -402,7 +402,7 @@ Install page bullets:
 - [ ] Add remote MCP auth suitable for Claude Code.
 - [x] Add concise MCP server instructions for tool search.
 - [ ] Add `bombsell.*` wrapper tools over the existing registry.
-- [ ] Add product contract tests for wrapper tools and manifest discovery.
+- [x] Add product contract tests for wrapper tools and manifest discovery.
 - [ ] Create `bombsell-claude-code` plugin package.
 - [ ] Add six initial skills.
 - [ ] Add two optional agents.

@@ -1,9 +1,11 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { z } from "zod";
 import {
   invokeTool,
   listTools,
+  registerTool,
   _resetToolRegistry,
 } from "../core/agents/tools/registry.ts";
 import {
@@ -17,6 +19,10 @@ import {
 import { createMcpManifest } from "../core/mcp/manifest.ts";
 import { BOMBSELL_MCP_INSTRUCTIONS } from "../core/mcp/instructions.ts";
 import {
+  registerBombsellAliasTools,
+  _resetBombsellAliasToolsRegistration,
+} from "../core/product/bombsell-tools.ts";
+import {
   registerProductTools,
   _resetProductToolsRegistration,
 } from "../core/product/tools.ts";
@@ -26,6 +32,7 @@ beforeEach(() => {
   _resetGraphToolsRegistration();
   _resetExaToolsRegistration();
   _resetProductToolsRegistration();
+  _resetBombsellAliasToolsRegistration();
 });
 
 test("product tools: registerProductTools exposes current UI actions to agents", () => {
@@ -89,6 +96,12 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.event_dispatch.dead_letters.list",
     "product.event_dispatch.redrive",
     "product.sending_domain.operate",
+    "bombsell.brief.get",
+    "bombsell.launch.check",
+    "bombsell.outreach.list_sent",
+    "bombsell.draft.get",
+    "bombsell.approvals.list",
+    "bombsell.learning.get",
   ]) {
     assert.ok(names.has(expected), `expected product tool ${expected}`);
   }
@@ -366,7 +379,215 @@ test("MCP manifest guides external agents through Brief, Agent, and Profile", ()
     "email and LinkedIn outreach",
     "approval policy",
     "hot-path eval gate",
+    "bombsell.*",
   ]) {
     assert.match(BOMBSELL_MCP_INSTRUCTIONS, new RegExp(phrase));
   }
+});
+
+test("bombsell wrapper tools summarize product state for Claude Code", async () => {
+  const workspace_id = crypto.randomUUID();
+  const user_id = crypto.randomUUID();
+  const conversation_id = crypto.randomUUID();
+  const message_id = crypto.randomUUID();
+  const outcome_id = crypto.randomUUID();
+  const signal_id = crypto.randomUUID();
+
+  registerTool({
+    name: "product.brief.get",
+    description: "stub brief",
+    kind: "read",
+    input: z.object({}),
+    output: z.unknown(),
+    async handler() {
+      return {
+        workspace_id,
+        generated_at: "2026-06-19T00:00:00.000Z",
+        windows: {
+          last_24h: {
+            qualified_signals: 3,
+            emails_sent: 2,
+            linkedin_touches_sent: 1,
+            replies: 1,
+            meetings: 0,
+          },
+          last_7d: {
+            qualified_signals: 12,
+            emails_sent: 9,
+            linkedin_touches_sent: 4,
+            replies: 3,
+            meetings: 1,
+            useful_outcomes: 4,
+          },
+        },
+        operations: {
+          pending_reviews: 1,
+          unhealthy_channels: 0,
+          bounced_24h: 0,
+        },
+        channel_readiness: {
+          email_connected: true,
+          linkedin_connected: true,
+          connected_count: 2,
+        },
+        signal_types: [
+          {
+            kind: "funding",
+            count_24h: 2,
+            count_7d: 7,
+            with_contacts_7d: 5,
+            with_drafts_7d: 4,
+          },
+        ],
+        next_action: {
+          key: "review_drafts",
+          label: "Review drafted outreach",
+          detail: "One judged draft is waiting.",
+          href: "/dashboard/agent#outreach",
+        },
+      };
+    },
+  });
+  registerTool({
+    name: "product.launch.readiness.get",
+    description: "stub readiness",
+    kind: "read",
+    input: z.object({
+      required_channel: z.enum(["any", "email", "linkedin", "both"]).optional(),
+    }),
+    output: z.unknown(),
+    async handler() {
+      return {
+        workspace_id,
+        checked_at: "2026-06-19T00:01:00.000Z",
+        status: "ready",
+        launch_ready: true,
+        next_action: "start_outreach",
+        blockers: [],
+        warnings: [],
+        checks: [
+          {
+            id: "outlook",
+            label: "Outlook",
+            status: "ready",
+            required: true,
+            detail: "Connected",
+            count: 1,
+            action: { surface: "/dashboard/profile#channels" },
+          },
+        ],
+      };
+    },
+  });
+  registerTool({
+    name: "product.state.get",
+    description: "stub state",
+    kind: "read",
+    input: z.object({}),
+    output: z.unknown(),
+    async handler() {
+      return {
+        bootstrap: { workspace_id },
+        approvals: [
+          {
+            id: crypto.randomUUID(),
+            run_id: "run-1",
+            kind: "draft",
+            reason: "Approve first email",
+            payload: { message_id },
+            decision: "pending",
+            created_at: "2026-06-19T00:02:00.000Z",
+          },
+        ],
+        sendTraces: [
+          {
+            message_id,
+            person_name: "Maya Patel",
+            company_name: "Acme",
+            signal_title: "Acme raised a Series A",
+            signal_kind: "funding",
+          },
+        ],
+        messages: [
+          {
+            id: message_id,
+            conversation_id,
+            channel: "email",
+            direction: "outbound",
+            status: "sent",
+            subject: "Series A timing",
+            body: "Saw the Series A and the new enterprise motion.",
+            sent_at: "2026-06-19T00:03:00.000Z",
+            created_at: "2026-06-19T00:02:30.000Z",
+            eval_score: 0.91,
+            eval_passed: true,
+            eval_notes: { reason: "grounded" },
+            provenance: { signal_id },
+          },
+        ],
+        outcomes: [
+          {
+            id: outcome_id,
+            kind: "positive_reply",
+            score: 1,
+            conversation_id,
+            attributed_message_id: message_id,
+            attributed_signal_id: signal_id,
+            occurred_at: "2026-06-19T00:04:00.000Z",
+            recorded_at: "2026-06-19T00:04:10.000Z",
+          },
+        ],
+      };
+    },
+  });
+  registerBombsellAliasTools();
+
+  const brief = await invokeTool<{ source_tool: string; windows: { last_24h: { qualified_signals: number } } }>(
+    "bombsell.brief.get",
+    {},
+    { workspace_id, user_id },
+  );
+  assert.equal(brief.source_tool, "product.brief.get");
+  assert.equal(brief.windows.last_24h.qualified_signals, 3);
+
+  const readiness = await invokeTool<{ launch_ready: boolean; checks: Array<{ surface: string | null }> }>(
+    "bombsell.launch.check",
+    { required_channel: "both" },
+    { workspace_id, user_id },
+  );
+  assert.equal(readiness.launch_ready, true);
+  assert.equal(readiness.checks[0]?.surface, "/dashboard/profile#channels");
+
+  const outreach = await invokeTool<{ outreach: Array<{ message_id: string; person_name: string | null; href: string }> }>(
+    "bombsell.outreach.list_sent",
+    {},
+    { workspace_id, user_id },
+  );
+  assert.equal(outreach.outreach[0]?.message_id, message_id);
+  assert.equal(outreach.outreach[0]?.person_name, "Maya Patel");
+  assert.match(outreach.outreach[0]?.href ?? "", /\/dashboard\/conversations\//);
+
+  const draft = await invokeTool<{ message: { body: string | null; eval_passed: boolean | null } | null }>(
+    "bombsell.draft.get",
+    { message_id },
+    { workspace_id, user_id },
+  );
+  assert.equal(draft.message?.body, "Saw the Series A and the new enterprise motion.");
+  assert.equal(draft.message?.eval_passed, true);
+
+  const approvals = await invokeTool<{ pending_count: number; approvals: Array<{ payload_keys: string[] }> }>(
+    "bombsell.approvals.list",
+    {},
+    { workspace_id, user_id },
+  );
+  assert.equal(approvals.pending_count, 1);
+  assert.deepEqual(approvals.approvals[0]?.payload_keys, ["message_id"]);
+
+  const learning = await invokeTool<{ useful_outcome_count: number; counts_by_kind: Record<string, number> }>(
+    "bombsell.learning.get",
+    {},
+    { workspace_id, user_id },
+  );
+  assert.equal(learning.useful_outcome_count, 1);
+  assert.equal(learning.counts_by_kind.positive_reply, 1);
 });

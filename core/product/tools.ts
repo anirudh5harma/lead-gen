@@ -59,6 +59,10 @@ import {
 import { getWorkspaceCompanyBrain } from "./company-brain.ts";
 import { getWorkspaceAgentContext } from "./context.ts";
 import { getConversationTrustTrace } from "./conversation-trust.ts";
+import {
+  registerBombsellAliasTools,
+  _resetBombsellAliasToolsRegistration,
+} from "./bombsell-tools.ts";
 import { checkProductReadiness } from "./health.ts";
 import {
   createSelectedOutreachSkill,
@@ -2145,8 +2149,11 @@ export function registerProductTools(): void {
       return { ok: true as const };
     },
   });
+
+  registerBombsellAliasTools();
 }
 
 export function _resetProductToolsRegistration(): void {
   registered = false;
+  _resetBombsellAliasToolsRegistration();
 }
