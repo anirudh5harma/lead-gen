@@ -84,6 +84,7 @@ test("Agent is the canonical dashboard surface route", () => {
   assert.match(agentDetailPage, /from "\.\.\/\.\.\/reps\/\[id\]\/page"/);
   assert.equal(exists("app/dashboard/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/loading.tsx"), false);
+  assert.equal(exists("app/dashboard/profile/loading.tsx"), true);
   assert.equal(exists("app/dashboard/profile/page.tsx"), true);
   assert.equal(exists("app/dashboard/settings/loading.tsx"), false);
   assert.match(
@@ -150,21 +151,21 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   );
   assert.match(
     source("app/dashboard/prospecting/loading.tsx"),
-    /surface="settings"/,
+    /surface="profile"/,
   );
-  assert.match(source("app/dashboard/setup/loading.tsx"), /surface="settings"/);
+  assert.match(source("app/dashboard/setup/loading.tsx"), /surface="profile"/);
   assert.match(
     source("app/dashboard/deliverability/loading.tsx"),
-    /surface="settings"/,
+    /surface="profile"/,
   );
   assert.match(
     source("app/dashboard/signals/loading.tsx"),
-    /surface="reps"/,
+    /surface="agent"/,
   );
-  assert.match(source("app/dashboard/ingestion/loading.tsx"), /surface="reps"/);
-  assert.match(source("app/dashboard/prospects/loading.tsx"), /surface="reps"/);
-  assert.match(source("app/dashboard/conversations/loading.tsx"), /surface="reps"/);
-  assert.match(source("app/dashboard/outcomes/loading.tsx"), /surface="dashboard"/);
+  assert.match(source("app/dashboard/ingestion/loading.tsx"), /surface="agent"/);
+  assert.match(source("app/dashboard/prospects/loading.tsx"), /surface="agent"/);
+  assert.match(source("app/dashboard/conversations/loading.tsx"), /surface="agent"/);
+  assert.match(source("app/dashboard/outcomes/loading.tsx"), /surface="brief"/);
   assert.match(nextConfig, /source: "\/dashboard\/prospecting"/);
   assert.match(nextConfig, /source: "\/dashboard\/setup"/);
   assert.match(nextConfig, /source: "\/dashboard\/deliverability"/);
@@ -326,8 +327,8 @@ test("Agent learning surface owns message optimization from reply evidence", () 
   assert.match(nextConfig, /destination: "\/dashboard\/agent#learning"/);
   assert.match(campaigns, /redirect\("\/dashboard\/agent#learning"\)/);
   assert.match(plays, /redirect\("\/dashboard\/agent#learning"\)/);
-  assert.match(campaignsLoading, /surface="reps"/);
-  assert.match(playsLoading, /surface="reps"/);
+  assert.match(campaignsLoading, /surface="agent"/);
+  assert.match(playsLoading, /surface="agent"/);
   assert.match(actions, /optimizeProductPlaySkills/);
   assert.match(actions, /dashboardReturnPath\(formData, "\/dashboard\/agent#learning"\)/);
   assert.match(reps, /optimizePlaySkillsAction/);
@@ -417,8 +418,8 @@ test("Reply insights keep outcome data under the simplified dashboard", () => {
   assert.match(reps, /Prepare meeting/);
   assert.match(reps, /href: "\/dashboard\/agent#outreach",\s+label: "Review sent outreach"/);
   assert.match(reps, /positive_replies_7d/);
-  assert.match(loading, /surface="dashboard"/);
-  assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
+  assert.match(loading, /surface="brief"/);
+  assert.match(loader, /brief: \{ kicker: "Dashboard"/);
   assert.doesNotMatch(outcomes, /kicker="Outcomes"/);
   assert.doesNotMatch(outcomes, /Proof your Reps/);
   assert.doesNotMatch(outcomes, /Outcome ledger/);
@@ -736,11 +737,15 @@ test("Health trace labels use product-facing names", () => {
 test("loading states use simplified product surface labels", () => {
   const loader = source("components/dashboard/LoadingState.tsx");
 
-  assert.match(loader, /reps: \{ kicker: "Agent"/);
-  assert.match(loader, /plays: \{ kicker: "Agent"/);
-  assert.match(loader, /outcomes: \{ kicker: "Dashboard"/);
-  assert.match(loader, /prospecting: \{ kicker: "Profile"/);
-  assert.match(loader, /title: "Loading profile"/);
+  assert.match(loader, /type LoadingSurface =\s+\| "agent"\s+\| "brief"\s+\| "dashboard"\s+\| "profile";/);
+  assert.match(loader, /agent: \{ kicker: "Agent"/);
+  assert.match(loader, /brief: \{ kicker: "Dashboard"/);
+  assert.match(loader, /profile: \{ kicker: "Profile"/);
+  assert.match(loader, /title: "Loading profile and integrations"/);
+  assert.doesNotMatch(loader, /reps: \{ kicker:/);
+  assert.doesNotMatch(loader, /plays: \{ kicker:/);
+  assert.doesNotMatch(loader, /outcomes: \{ kicker:/);
+  assert.doesNotMatch(loader, /prospecting: \{ kicker:/);
   assert.doesNotMatch(loader, /kicker: "Reps"/);
   assert.doesNotMatch(loader, /kicker: "Plays"/);
   assert.doesNotMatch(loader, /kicker: "Outcomes"/);
