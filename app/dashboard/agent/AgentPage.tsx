@@ -219,6 +219,22 @@ interface AgentLearningSummary {
   recommended_patterns: number;
 }
 
+interface AgentSignalMixRow {
+  kind: string;
+  seen_7d: string;
+  qualified_7d: string;
+  with_contact_7d: string;
+  with_draft_7d: string;
+}
+
+interface AgentSignalMix {
+  rows: AgentSignalMixRow[];
+  seen_7d: number;
+  qualified_7d: number;
+  with_contact_7d: number;
+  with_draft_7d: number;
+}
+
 interface AgentSourceRow {
   id: string;
   name: string;
@@ -279,6 +295,7 @@ interface RepsState {
   replies: AgentReplySummary;
   contacts: AgentContactSummary;
   learning: AgentLearningSummary;
+  signalMix: AgentSignalMix;
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
@@ -294,6 +311,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     replies,
     contacts,
     learning,
+    signalMix,
   ] = await Promise.all([
     pool.query<RepRow>(
       `select r.id,
@@ -375,6 +393,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     loadAgentReplySummary(workspaceId),
     loadAgentContactSummary(workspaceId),
     loadAgentLearningSummary(workspaceId),
+    loadAgentSignalMix(workspaceId),
   ]);
   return {
     reps: reps.rows,
@@ -387,6 +406,76 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     replies,
     contacts,
     learning,
+    signalMix,
+  };
+}
+
+async function loadAgentSignalMix(workspaceId: string): Promise<AgentSignalMix> {
+  const pool = getPool();
+  const rows = await pool.query<AgentSignalMixRow>(
+    `select coalesce(s.kind::text, 'other') as kind,
+            count(*)::text as seen_7d,
+            count(*) filter (
+              where s.status in ('matched','in_play')
+            )::text as qualified_7d,
+            count(*) filter (
+              where s.status in ('matched','in_play')
+                and exists (
+                  select 1
+                    from graph_persons p
+                   where p.workspace_id = $1
+                     and (
+                       p.id = s.related_person_id
+                       or (
+                         s.related_company_id is not null
+                         and p.company_id = s.related_company_id
+                       )
+                     )
+                     and (
+                       cardinality(coalesce(p.emails, '{}'::text[])) > 0
+                       or p.linkedin_url is not null
+                     )
+                )
+            )::text as with_contact_7d,
+            count(*) filter (
+              where s.status in ('matched','in_play')
+                and exists (
+                  select 1
+                    from conversations c
+                    join messages m
+                      on m.workspace_id = c.workspace_id
+                     and m.conversation_id = c.id
+                   where c.workspace_id = $1
+                     and c.origin_signal_id = s.id
+                     and m.direction = 'outbound'
+                     and m.status in ('draft','queued','deferred','sent','delivered','replied')
+                )
+            )::text as with_draft_7d
+       from signals s
+      where s.workspace_id = $1
+        and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+      group by coalesce(s.kind::text, 'other')
+      order by count(*) filter (where s.status in ('matched','in_play')) desc,
+               count(*) desc,
+               coalesce(s.kind::text, 'other') asc
+      limit 5`,
+    [workspaceId],
+  );
+  return {
+    rows: rows.rows,
+    seen_7d: rows.rows.reduce((total, row) => total + Number(row.seen_7d), 0),
+    qualified_7d: rows.rows.reduce(
+      (total, row) => total + Number(row.qualified_7d),
+      0,
+    ),
+    with_contact_7d: rows.rows.reduce(
+      (total, row) => total + Number(row.with_contact_7d),
+      0,
+    ),
+    with_draft_7d: rows.rows.reduce(
+      (total, row) => total + Number(row.with_draft_7d),
+      0,
+    ),
   };
 }
 
@@ -1317,6 +1406,16 @@ export default async function RepsPage() {
         coverage={coverage}
       />
 
+      <AgentSetupSnapshot
+        strategy={state.strategy}
+        signalMix={state.signalMix}
+        contacts={state.contacts}
+        outreach={state.outreach}
+        coverage={coverage}
+        sequence={sequence}
+        readiness={state.readiness}
+      />
+
       <AgentActivityPanel activity={state.activity} />
 
       <AgentOperatingLoopPanel
@@ -1533,6 +1632,266 @@ function AgentCommandLink({
   );
 }
 
+function AgentSetupSnapshot({
+  strategy,
+  signalMix,
+  contacts,
+  outreach,
+  coverage,
+  sequence,
+  readiness,
+}: {
+  strategy: AgentSourceStrategy;
+  signalMix: AgentSignalMix;
+  contacts: AgentContactSummary;
+  outreach: AgentOutreachSummary;
+  coverage: ChannelCoverage;
+  sequence: AgentSequenceStep[];
+  readiness: WorkspaceLaunchReadiness;
+}) {
+  const activeSources = strategy.sources.filter((source) => source.enabled).length;
+  const watchedTerms = uniqueStrings([
+    ...strategy.profile.signal_keywords,
+    ...strategy.profile.competitor_watchlist,
+  ]);
+  const buyerFilters = uniqueStrings([
+    ...strategy.profile.target_titles,
+    ...strategy.profile.target_markets,
+  ]);
+  const readyGates = [
+    buyerFilters.length > 0 || Boolean(strategy.icp),
+    activeSources > 0,
+    signalMix.qualified_7d > 0,
+    contacts.verified_email > 0 || contacts.with_linkedin > 0,
+    coverage.email.connected || coverage.linkedIn.connected,
+    sequence.length > 0,
+  ].filter(Boolean).length;
+  const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  const nextAction = readinessNextAction(readiness);
+  return (
+    <section className="section-note grid gap-5" aria-label="Agent setup snapshot">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-[var(--color-accent)]">
+            Agent setup
+          </p>
+          <h2
+            className="mt-1 text-[18px] font-semibold text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Signal mix, contact proof, and outreach readiness.
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
+            Buyer fit creates source checks. Qualified signals resolve people.
+            Verified handles become judged email or LinkedIn outreach.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
+            {readyGates}/6 gates ready
+          </span>
+          <Link
+            href={
+              readiness.launch_ready
+                ? "/dashboard/agent#opportunities"
+                : nextAction.href
+            }
+            prefetch={false}
+            className={readiness.launch_ready ? "btn-solid-sm" : "btn-quiet-sm"}
+          >
+            <Icon
+              name={readiness.launch_ready ? "send" : nextAction.icon}
+              size={14}
+            />
+            {readiness.launch_ready ? "Prepare outreach" : nextAction.label}
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(0,0.9fr)]">
+        <article className="grid content-start gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <span className="flex items-start justify-between gap-3">
+            <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-accent-bg)] text-[var(--color-accent)]">
+              <Icon name="person_search" size={17} />
+            </span>
+            <OpportunityPill tone={buyerFilters.length > 0 ? "ready" : "waiting"}>
+              {buyerFilters.length > 0 ? "Tuned" : "Needs buyer fit"}
+            </OpportunityPill>
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Buyer and sources
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+              {strategy.icp?.name ??
+                "Profile defines the buyer filters and signal scanner."}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+            <MiniStat label="Active sources" value={activeSources} />
+            <MiniStat label="Watched terms" value={watchedTerms.length} />
+            <MiniStat
+              label="Fit gate"
+              value={Math.round((strategy.icp?.match_threshold ?? 0.6) * 100)}
+            />
+          </div>
+          <StrategyChips
+            icon="sensors"
+            label="Watched signals"
+            values={watchedTerms}
+            empty="Add signal keywords"
+          />
+        </article>
+
+        <article className="grid content-start gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <span className="flex flex-wrap items-start justify-between gap-3">
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+                Signal mix, last 7 days
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+                Shows which timing categories are becoming qualified contacts
+                and drafts this week.
+              </span>
+            </span>
+            <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 font-mono text-xs text-[var(--color-text-3)]">
+              {signalMix.qualified_7d}/{signalMix.seen_7d} qualified
+            </span>
+          </span>
+          {signalMix.rows.length === 0 ? (
+            <div className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 text-sm text-[var(--color-text-3)]">
+              No recent signal mix yet. Check sources from Profile or Agent to
+              start the first qualified timing run.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {signalMix.rows.map((row) => (
+                <SignalMixRow key={row.kind} row={row} />
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="grid content-start gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <span className="flex items-start justify-between gap-3">
+            <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-pos-bg)] text-[var(--color-pos)]">
+              <Icon name="verified" size={17} />
+            </span>
+            <OpportunityPill
+              tone={
+                coverage.email.connected || coverage.linkedIn.connected
+                  ? "ready"
+                  : "waiting"
+              }
+            >
+              {coverage.email.connected || coverage.linkedIn.connected
+                ? "Output ready"
+                : "Connect channel"}
+            </OpportunityPill>
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Outreach conversion
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+              Verified contacts, connected channels, and active paths decide
+              whether qualified signals become email or LinkedIn touches.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <SetupGateRow
+              icon="mail"
+              label="Verified emails"
+              value={contacts.verified_email}
+              ready={contacts.verified_email > 0}
+            />
+            <SetupGateRow
+              icon="linkedin"
+              label="LinkedIn profiles"
+              value={contacts.with_linkedin}
+              ready={contacts.with_linkedin > 0}
+            />
+            <SetupGateRow
+              icon="rule"
+              label="Outreach paths"
+              value={sequence.length}
+              ready={sequence.length > 0}
+            />
+            <SetupGateRow
+              icon="send"
+              label="Sent this week"
+              value={sent7d}
+              ready={sent7d > 0}
+            />
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function SignalMixRow({ row }: { row: AgentSignalMixRow }) {
+  const seen = Number(row.seen_7d);
+  const qualified = Number(row.qualified_7d);
+  const width = seen > 0 ? Math.max(6, Math.round((qualified / seen) * 100)) : 0;
+  return (
+    <div className="grid gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(160px,0.55fr)] md:items-center">
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+          {signalKindLabel(row.kind)}
+        </span>
+        <span className="mt-1 block text-xs text-[var(--color-text-3)]">
+          {row.with_contact_7d} with contacts, {row.with_draft_7d} with drafts
+        </span>
+      </span>
+      <span>
+        <span className="flex items-center justify-between gap-3 text-xs text-[var(--color-text-3)]">
+          <span>{qualified} qualified</span>
+          <span>{seen} seen</span>
+        </span>
+        <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-[var(--color-ink-3)]">
+          <span
+            className="block h-full rounded-full bg-[var(--color-accent)]"
+            style={{ width: `${width}%` }}
+          />
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function SetupGateRow({
+  icon,
+  label,
+  value,
+  ready,
+}: {
+  icon: string;
+  label: string;
+  value: number;
+  ready: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2">
+      <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-2)]">
+        <Icon name={icon} size={14} />
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="flex items-center gap-2">
+        <strong className="text-xs tabular-nums text-[var(--color-text-1)]">
+          {value}
+        </strong>
+        <span
+          className={
+            "size-2 rounded-full " +
+            (ready ? "bg-[var(--color-pos)]" : "bg-[var(--color-text-4)]")
+          }
+        />
+      </span>
+    </div>
+  );
+}
+
 async function loadSafeRepsState(workspaceId: string): Promise<RepsState> {
   try {
     return await loadRepsState(workspaceId);
@@ -1630,6 +1989,13 @@ function emptyRepsState(workspaceId: string): RepsState {
       skill_summary: null,
       skill_updated_at: null,
       recommended_patterns: 0,
+    },
+    signalMix: {
+      rows: [],
+      seen_7d: 0,
+      qualified_7d: 0,
+      with_contact_7d: 0,
+      with_draft_7d: 0,
     },
   };
 }
@@ -5004,6 +5370,14 @@ function statusLabel(status: string): string {
   if (status === "connected") return "Connected";
   if (status === "needs_reauth") return "Needs reauth";
   return status.replace(/_/g, " ");
+}
+
+function signalKindLabel(kind: string): string {
+  const normalized = kind.trim().toLowerCase();
+  if (normalized === "hn") return "HN";
+  if (normalized === "rss") return "RSS";
+  if (normalized === "gdelt") return "GDELT";
+  return statusLabel(normalized);
 }
 
 function messagePreview(message: AgentOutreachRow): string {
