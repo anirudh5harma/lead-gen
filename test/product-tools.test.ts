@@ -43,6 +43,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.state.get",
     "product.brief.get",
     "product.context.get",
+    "product.qualified_signals.list",
     "product.company_brain.recall",
     "product.company_brain.brief.refresh",
     "product.vertical_intelligence.refresh",
@@ -98,6 +99,8 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.sending_domain.operate",
     "bombsell.brief.get",
     "bombsell.launch.check",
+    "bombsell.signals.list_qualified",
+    "bombsell.contact_lanes.get",
     "bombsell.outreach.list_sent",
     "bombsell.draft.get",
     "bombsell.approvals.list",
@@ -392,6 +395,9 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   const message_id = crypto.randomUUID();
   const outcome_id = crypto.randomUUID();
   const signal_id = crypto.randomUUID();
+  const person_id = crypto.randomUUID();
+  const linkedin_person_id = crypto.randomUUID();
+  const approval_id = crypto.randomUUID();
 
   registerTool({
     name: "product.brief.get",
@@ -540,6 +546,130 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       };
     },
   });
+  registerTool({
+    name: "product.qualified_signals.list",
+    description: "stub qualified signals",
+    kind: "read",
+    input: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+    output: z.unknown(),
+    async handler() {
+      return {
+        workspace_id,
+        generated_at: "2026-06-19T00:05:00.000Z",
+        stats: {
+          qualified: 1,
+          with_verified_contacts: 1,
+          with_outreach_draft: 1,
+          with_email_draft: 1,
+          ready_for_review: 1,
+          blocked_by_fit: 0,
+        },
+        signals: [
+          {
+            id: signal_id,
+            kind: "funding",
+            status: "matched",
+            title: "Acme raised a Series A",
+            content: "Acme is hiring its first enterprise revenue team.",
+            url: "https://example.com/acme-series-a",
+            match_score: 0.87,
+            match_reason: "Matches founder-led SaaS expansion",
+            freshness_at: "2026-06-19T00:00:00.000Z",
+            ingested_at: "2026-06-19T00:00:10.000Z",
+            matched_at: "2026-06-19T00:00:20.000Z",
+            company: {
+              id: crypto.randomUUID(),
+              name: "Acme",
+              domain: "acme.example",
+              industry: "SaaS",
+              description: "Revenue platform",
+            },
+            contacts: [
+              {
+                rank: 1,
+                person_id,
+                full_name: "Maya Patel",
+                title: "VP Sales",
+                score: 0.92,
+                contact_fit_decision: "fit",
+                reasons: ["gtm_leader", "verified_email"],
+                emails: ["maya@acme.example"],
+                linkedin_url: null,
+                verification: {
+                  email_verified: true,
+                  email_status: "valid",
+                  linkedin_ready: false,
+                },
+                provenance: { source: "test" },
+              },
+              {
+                rank: 2,
+                person_id: linkedin_person_id,
+                full_name: "Noor Chen",
+                title: "Founder",
+                score: 0.88,
+                contact_fit_decision: null,
+                reasons: ["executive_or_founder", "linkedin_ready"],
+                emails: [],
+                linkedin_url: "https://www.linkedin.com/in/noorchen",
+                verification: {
+                  email_verified: false,
+                  email_status: null,
+                  linkedin_ready: true,
+                },
+                provenance: { source: "test" },
+              },
+            ],
+            contact_source: "resolution",
+            contact_channel: "email",
+            contact_defer_reason: null,
+            outreach_draft: {
+              conversation_id,
+              message_id,
+              channel: "email",
+              status: "draft",
+              subject: "Series A timing",
+              body: "Saw the Series A and the new enterprise motion.",
+              eval_score: 0.91,
+              eval_passed: true,
+              external_id: null,
+              scheduled_at: null,
+              sent_at: null,
+              delivered_at: null,
+              latest_channel_event_type: null,
+              latest_channel_event_at: null,
+              defer_reason: null,
+              defer_detail: null,
+              pending_approval_id: approval_id,
+              created_at: "2026-06-19T00:02:30.000Z",
+            },
+            email_draft: {
+              conversation_id,
+              message_id,
+              channel: "email",
+              status: "draft",
+              subject: "Series A timing",
+              body: "Saw the Series A and the new enterprise motion.",
+              eval_score: 0.91,
+              eval_passed: true,
+              external_id: null,
+              scheduled_at: null,
+              sent_at: null,
+              delivered_at: null,
+              latest_channel_event_type: null,
+              latest_channel_event_at: null,
+              defer_reason: null,
+              defer_detail: null,
+              pending_approval_id: approval_id,
+              created_at: "2026-06-19T00:02:30.000Z",
+            },
+          },
+        ],
+      };
+    },
+  });
   registerBombsellAliasTools();
 
   const brief = await invokeTool<{ source_tool: string; windows: { last_24h: { qualified_signals: number } } }>(
@@ -566,6 +696,53 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   assert.equal(outreach.outreach[0]?.message_id, message_id);
   assert.equal(outreach.outreach[0]?.person_name, "Maya Patel");
   assert.match(outreach.outreach[0]?.href ?? "", /\/dashboard\/conversations\//);
+
+  const signals = await invokeTool<{
+    stats: { qualified: number };
+    signals: Array<{
+      signal_id: string;
+      contact_counts: {
+        email_verified: number;
+        linkedin_ready: number;
+        needs_fit_review: number;
+      };
+      contacts: Array<{ full_name: string; email_verified: boolean; linkedin_ready: boolean; emails?: string[] }>;
+      outreach_draft: { pending_approval_id: string | null } | null;
+    }>;
+  }>(
+    "bombsell.signals.list_qualified",
+    {},
+    { workspace_id, user_id },
+  );
+  assert.equal(signals.stats.qualified, 1);
+  assert.equal(signals.signals[0]?.signal_id, signal_id);
+  assert.equal(signals.signals[0]?.contact_counts.email_verified, 1);
+  assert.equal(signals.signals[0]?.contact_counts.linkedin_ready, 1);
+  assert.equal(signals.signals[0]?.contact_counts.needs_fit_review, 1);
+  assert.equal(signals.signals[0]?.contacts[0]?.full_name, "Maya Patel");
+  assert.equal(signals.signals[0]?.contacts[0]?.email_verified, true);
+  assert.equal(signals.signals[0]?.contacts[1]?.linkedin_ready, true);
+  assert.equal(signals.signals[0]?.contacts[0]?.emails, undefined);
+  assert.equal(signals.signals[0]?.outreach_draft?.pending_approval_id, approval_id);
+
+  const lanes = await invokeTool<{
+    lane_counts: {
+      email_verified: number;
+      linkedin_ready: number;
+      draft_ready: number;
+      needs_contact_resolution: number;
+      needs_fit_review: number;
+    };
+  }>(
+    "bombsell.contact_lanes.get",
+    {},
+    { workspace_id, user_id },
+  );
+  assert.equal(lanes.lane_counts.email_verified, 1);
+  assert.equal(lanes.lane_counts.linkedin_ready, 1);
+  assert.equal(lanes.lane_counts.draft_ready, 1);
+  assert.equal(lanes.lane_counts.needs_contact_resolution, 0);
+  assert.equal(lanes.lane_counts.needs_fit_review, 1);
 
   const draft = await invokeTool<{ message: { body: string | null; eval_passed: boolean | null } | null }>(
     "bombsell.draft.get",

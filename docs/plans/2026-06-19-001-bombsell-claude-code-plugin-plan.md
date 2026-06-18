@@ -281,8 +281,8 @@ Hooks must never auto-send outreach or auto-write Profile changes.
    - `bombsell.brief.get` (landed: read-only)
    - `bombsell.profile.propose_from_context`
    - `bombsell.launch.check` (landed: read-only)
-   - `bombsell.signals.list_qualified`
-   - `bombsell.contact_lanes.get`
+   - `bombsell.signals.list_qualified` (landed: read-only)
+   - `bombsell.contact_lanes.get` (landed: read-only)
    - `bombsell.outreach.prepare`
    - `bombsell.outreach.list_sent` (landed: read-only)
    - `bombsell.draft.get` (landed: read-only)

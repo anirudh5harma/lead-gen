@@ -155,6 +155,89 @@ const LearningSchema = WorkspaceResultSchema.extend({
   source_tool: z.literal("product.state.get"),
 });
 
+const SignalContactSummarySchema = z.object({
+  person_id: z.string().min(1),
+  full_name: z.string().min(1),
+  title: z.string().nullable(),
+  linkedin_url: z.string().nullable(),
+  email_verified: z.boolean(),
+  email_status: z.string().nullable(),
+  linkedin_ready: z.boolean(),
+  contact_fit_decision: z.enum(["fit", "unsure", "not_fit"]).nullable(),
+  reasons: z.array(z.string()),
+});
+
+const SignalDraftSummarySchema = z.object({
+  message_id: z.string().uuid(),
+  conversation_id: z.string().uuid(),
+  channel: z.string(),
+  status: z.string(),
+  subject: z.string().nullable(),
+  eval_score: z.number().nullable(),
+  eval_passed: z.boolean().nullable(),
+  pending_approval_id: z.string().uuid().nullable(),
+  defer_reason: z.string().nullable(),
+  href: z.string(),
+});
+
+const QualifiedSignalSummarySchema = z.object({
+  signal_id: z.string().uuid(),
+  kind: z.string(),
+  status: z.string(),
+  title: z.string(),
+  company_name: z.string().nullable(),
+  company_domain: z.string().nullable(),
+  match_score: z.number().nullable(),
+  matched_at: z.string().datetime().nullable(),
+  contact_source: z.enum(["resolution", "graph", "none"]),
+  contact_defer_reason: z.string().nullable(),
+  contact_counts: z.object({
+    total: z.number().int().nonnegative(),
+    email_verified: z.number().int().nonnegative(),
+    linkedin_ready: z.number().int().nonnegative(),
+    needs_fit_review: z.number().int().nonnegative(),
+    blocked_by_fit: z.number().int().nonnegative(),
+  }),
+  contacts: z.array(SignalContactSummarySchema),
+  outreach_draft: SignalDraftSummarySchema.nullable(),
+  href: z.string(),
+});
+
+const QualifiedSignalsAliasSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  stats: z.object({
+    qualified: z.number().int().nonnegative(),
+    with_verified_contacts: z.number().int().nonnegative(),
+    with_outreach_draft: z.number().int().nonnegative(),
+    with_email_draft: z.number().int().nonnegative(),
+    ready_for_review: z.number().int().nonnegative(),
+    blocked_by_fit: z.number().int().nonnegative(),
+  }),
+  signals: z.array(QualifiedSignalSummarySchema),
+  source_tool: z.literal("product.qualified_signals.list"),
+});
+
+const ContactLanesSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  lane_counts: z.object({
+    email_verified: z.number().int().nonnegative(),
+    linkedin_ready: z.number().int().nonnegative(),
+    draft_ready: z.number().int().nonnegative(),
+    needs_contact_resolution: z.number().int().nonnegative(),
+    needs_fit_review: z.number().int().nonnegative(),
+    blocked_by_fit: z.number().int().nonnegative(),
+  }),
+  lanes: z.object({
+    email_verified: z.array(QualifiedSignalSummarySchema),
+    linkedin_ready: z.array(QualifiedSignalSummarySchema),
+    draft_ready: z.array(QualifiedSignalSummarySchema),
+    needs_contact_resolution: z.array(QualifiedSignalSummarySchema),
+    needs_fit_review: z.array(QualifiedSignalSummarySchema),
+    blocked_by_fit: z.array(QualifiedSignalSummarySchema),
+  }),
+  source_tool: z.literal("product.qualified_signals.list"),
+});
+
 interface OperatingBrief {
   workspace_id: string;
   generated_at: string;
@@ -230,6 +313,50 @@ interface LaunchReadiness {
     detail: string;
     count: number;
     action: { surface: string } | null;
+  }>;
+}
+
+interface QualifiedSignalWorkbenchResult {
+  workspace_id: string;
+  generated_at: string;
+  stats: z.infer<typeof QualifiedSignalsAliasSchema>["stats"];
+  signals: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    title: string;
+    company: {
+      name: string | null;
+      domain: string | null;
+    };
+    match_score: number | null;
+    matched_at: string | null;
+    contact_source: "resolution" | "graph" | "none";
+    contact_defer_reason: string | null;
+    contacts: Array<{
+      person_id: string;
+      full_name: string;
+      title: string | null;
+      linkedin_url: string | null;
+      contact_fit_decision: "fit" | "unsure" | "not_fit" | null;
+      reasons: string[];
+      verification: {
+        email_verified?: boolean | null;
+        email_status?: string | null;
+        linkedin_ready?: boolean | null;
+      };
+    }>;
+    outreach_draft: {
+      message_id: string;
+      conversation_id: string;
+      channel: string;
+      status: string;
+      subject: string | null;
+      eval_score: number | null;
+      eval_passed: boolean | null;
+      pending_approval_id: string | null;
+      defer_reason: string | null;
+    } | null;
   }>;
 }
 
@@ -387,6 +514,76 @@ export function registerBombsellAliasTools(): void {
   });
 
   registerTool({
+    name: "bombsell.signals.list_qualified",
+    description:
+      "List qualified Bombsell signals with compact verified-contact and outreach-draft readiness for Claude Code workflows.",
+    kind: "read",
+    input: z.object({
+      limit: z.number().int().min(1).max(25).optional(),
+    }),
+    output: QualifiedSignalsAliasSchema,
+    async handler(input, ctx) {
+      const workbench = await qualifiedSignalWorkbench(input.limit, ctx);
+      return {
+        workspace_id: workbench.workspace_id,
+        generated_at: workbench.generated_at,
+        stats: workbench.stats,
+        signals: summarizeQualifiedSignals(workbench.signals),
+        source_tool: "product.qualified_signals.list" as const,
+      };
+    },
+  });
+
+  registerTool({
+    name: "bombsell.contact_lanes.get",
+    description:
+      "Group qualified Bombsell signals into contact lanes: verified email, LinkedIn-ready, draft-ready, needs contact resolution, needs fit review, and blocked by fit.",
+    kind: "read",
+    input: z.object({
+      limit: z.number().int().min(1).max(25).optional(),
+    }),
+    output: ContactLanesSchema,
+    async handler(input, ctx) {
+      const workbench = await qualifiedSignalWorkbench(input.limit, ctx);
+      const signals = summarizeQualifiedSignals(workbench.signals);
+      const lanes = {
+        email_verified: signals.filter(
+          (signal) => signal.contact_counts.email_verified > 0,
+        ),
+        linkedin_ready: signals.filter(
+          (signal) => signal.contact_counts.linkedin_ready > 0,
+        ),
+        draft_ready: signals.filter((signal) =>
+          isDraftReady(signal.outreach_draft)
+        ),
+        needs_contact_resolution: signals.filter(
+          (signal) => signal.contact_counts.total === 0,
+        ),
+        needs_fit_review: signals.filter(
+          (signal) => signal.contact_counts.needs_fit_review > 0,
+        ),
+        blocked_by_fit: signals.filter(
+          (signal) => signal.contact_counts.blocked_by_fit > 0,
+        ),
+      };
+      return {
+        workspace_id: workbench.workspace_id,
+        generated_at: workbench.generated_at,
+        lane_counts: {
+          email_verified: lanes.email_verified.length,
+          linkedin_ready: lanes.linkedin_ready.length,
+          draft_ready: lanes.draft_ready.length,
+          needs_contact_resolution: lanes.needs_contact_resolution.length,
+          needs_fit_review: lanes.needs_fit_review.length,
+          blocked_by_fit: lanes.blocked_by_fit.length,
+        },
+        lanes,
+        source_tool: "product.qualified_signals.list" as const,
+      };
+    },
+  });
+
+  registerTool({
     name: "bombsell.approvals.list",
     description:
       "List pending Bombsell approval gates for drafts, channel work, and recovery so Claude Code can route the user to the next review.",
@@ -460,6 +657,102 @@ export function registerBombsellAliasTools(): void {
 
 export function _resetBombsellAliasToolsRegistration(): void {
   registered = false;
+}
+
+async function qualifiedSignalWorkbench(
+  limit: number | undefined,
+  ctx: ToolContext,
+): Promise<QualifiedSignalWorkbenchResult> {
+  return invokeTool<QualifiedSignalWorkbenchResult>(
+    "product.qualified_signals.list",
+    { limit },
+    ctx,
+  );
+}
+
+function summarizeQualifiedSignals(
+  signals: QualifiedSignalWorkbenchResult["signals"],
+): Array<z.infer<typeof QualifiedSignalSummarySchema>> {
+  return signals.map((signal) => {
+    const contacts = signal.contacts.map(summarizeContact);
+    const counts = contactCounts(contacts);
+    return {
+      signal_id: signal.id,
+      kind: signal.kind,
+      status: signal.status,
+      title: signal.title,
+      company_name: signal.company.name,
+      company_domain: signal.company.domain,
+      match_score: signal.match_score,
+      matched_at: signal.matched_at,
+      contact_source: signal.contact_source,
+      contact_defer_reason: signal.contact_defer_reason,
+      contact_counts: counts,
+      contacts,
+      outreach_draft: summarizeDraft(signal.outreach_draft),
+      href: "/dashboard/agent#opportunities",
+    };
+  });
+}
+
+function summarizeContact(
+  contact: QualifiedSignalWorkbenchResult["signals"][number]["contacts"][number],
+): z.infer<typeof SignalContactSummarySchema> {
+  return {
+    person_id: contact.person_id,
+    full_name: contact.full_name,
+    title: contact.title,
+    linkedin_url: contact.linkedin_url,
+    email_verified: contact.verification.email_verified === true,
+    email_status: contact.verification.email_status ?? null,
+    linkedin_ready: contact.verification.linkedin_ready === true,
+    contact_fit_decision: contact.contact_fit_decision,
+    reasons: contact.reasons,
+  };
+}
+
+function contactCounts(
+  contacts: Array<z.infer<typeof SignalContactSummarySchema>>,
+): z.infer<typeof QualifiedSignalSummarySchema>["contact_counts"] {
+  return {
+    total: contacts.length,
+    email_verified: contacts.filter((contact) => contact.email_verified).length,
+    linkedin_ready: contacts.filter((contact) => contact.linkedin_ready).length,
+    needs_fit_review: contacts.filter((contact) =>
+      contact.contact_fit_decision === null ||
+      contact.contact_fit_decision === "unsure"
+    ).length,
+    blocked_by_fit: contacts.filter(
+      (contact) => contact.contact_fit_decision === "not_fit",
+    ).length,
+  };
+}
+
+function summarizeDraft(
+  draft: QualifiedSignalWorkbenchResult["signals"][number]["outreach_draft"],
+): z.infer<typeof SignalDraftSummarySchema> | null {
+  if (!draft) return null;
+  return {
+    message_id: draft.message_id,
+    conversation_id: draft.conversation_id,
+    channel: draft.channel,
+    status: draft.status,
+    subject: draft.subject,
+    eval_score: draft.eval_score,
+    eval_passed: draft.eval_passed,
+    pending_approval_id: draft.pending_approval_id,
+    defer_reason: draft.defer_reason,
+    href: `/dashboard/conversations/${draft.conversation_id}?message=${draft.message_id}`,
+  };
+}
+
+function isDraftReady(
+  draft: z.infer<typeof SignalDraftSummarySchema> | null,
+): boolean {
+  if (!draft || draft.eval_passed === false) return false;
+  return Boolean(draft.pending_approval_id) ||
+    draft.status === "draft" ||
+    draft.status === "deferred";
 }
 
 async function productState(ctx: ToolContext): Promise<ProductState> {

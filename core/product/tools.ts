@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { registerTool } from "../agents/tools/registry.ts";
 import type { ToolContext } from "../agents/tools/types.ts";
+import { getPool } from "../substrate/storage/index.ts";
 import {
   approveWorkflowApproval,
   configureActivationSetup,
@@ -59,6 +60,10 @@ import {
 import { getWorkspaceCompanyBrain } from "./company-brain.ts";
 import { getWorkspaceAgentContext } from "./context.ts";
 import { getConversationTrustTrace } from "./conversation-trust.ts";
+import {
+  loadQualifiedSignalWorkbench,
+  type QualifiedSignalOutreachDraft,
+} from "./qualified-signals.ts";
 import {
   registerBombsellAliasTools,
   _resetBombsellAliasToolsRegistration,
@@ -538,6 +543,82 @@ const ContactWaterfallResultSchema = WorkspaceResultSchema.extend({
   selected_person_id: z.string().uuid().nullable(),
   defer_reason: z.string().nullable(),
 });
+const QualifiedSignalContactSchema = z.object({
+  rank: z.number().int().nonnegative(),
+  person_id: z.string().min(1),
+  full_name: z.string().min(1),
+  title: z.string().nullable(),
+  score: z.number(),
+  contact_fit_decision: z.enum(["fit", "unsure", "not_fit"]).nullable(),
+  reasons: z.array(z.string()),
+  email_count: z.number().int().nonnegative(),
+  linkedin_url: z.string().nullable(),
+  verification: z.object({
+    email_verified: z.boolean().nullable().optional(),
+    email_status: z.string().nullable().optional(),
+    linkedin_ready: z.boolean().nullable().optional(),
+  }),
+  provenance: z.record(z.string(), z.unknown()),
+});
+const QualifiedSignalDraftSchema = z.object({
+  conversation_id: z.string().uuid(),
+  message_id: z.string().uuid(),
+  channel: z.string().min(1),
+  status: z.string().min(1),
+  subject: z.string().nullable(),
+  body: z.string().nullable(),
+  eval_score: z.number().nullable(),
+  eval_passed: z.boolean().nullable(),
+  external_id: z.string().nullable(),
+  scheduled_at: z.string().datetime().nullable(),
+  sent_at: z.string().datetime().nullable(),
+  delivered_at: z.string().datetime().nullable(),
+  latest_channel_event_type: z.string().nullable(),
+  latest_channel_event_at: z.string().datetime().nullable(),
+  defer_reason: z.string().nullable(),
+  defer_detail: z.string().nullable(),
+  pending_approval_id: z.string().uuid().nullable(),
+  created_at: z.string().datetime(),
+});
+const QualifiedSignalWorkbenchSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  stats: z.object({
+    qualified: z.number().int().nonnegative(),
+    with_verified_contacts: z.number().int().nonnegative(),
+    with_outreach_draft: z.number().int().nonnegative(),
+    with_email_draft: z.number().int().nonnegative(),
+    ready_for_review: z.number().int().nonnegative(),
+    blocked_by_fit: z.number().int().nonnegative(),
+  }),
+  signals: z.array(
+    z.object({
+      id: z.string().uuid(),
+      kind: z.string().min(1),
+      status: z.string().min(1),
+      title: z.string().min(1),
+      content: z.string().nullable(),
+      url: z.string().nullable(),
+      match_score: z.number().nullable(),
+      match_reason: z.string().nullable(),
+      freshness_at: z.string().datetime(),
+      ingested_at: z.string().datetime(),
+      matched_at: z.string().datetime().nullable(),
+      company: z.object({
+        id: z.string().uuid().nullable(),
+        name: z.string().nullable(),
+        domain: z.string().nullable(),
+        industry: z.string().nullable(),
+        description: z.string().nullable(),
+      }),
+      contacts: z.array(QualifiedSignalContactSchema),
+      contact_source: z.enum(["resolution", "graph", "none"]),
+      contact_channel: z.string().nullable(),
+      contact_defer_reason: z.string().nullable(),
+      outreach_draft: QualifiedSignalDraftSchema.nullable(),
+      email_draft: QualifiedSignalDraftSchema.nullable(),
+    }),
+  ),
+});
 const MeetingPrepProfileContextSchema = z.object({
   user: z.object({
     user_id: z.string().min(1).nullable(),
@@ -831,6 +912,51 @@ export function registerProductTools(): void {
     }),
     async handler(_input, ctx) {
       return getWorkspaceAgentContext(sessionFromContext(ctx));
+    },
+  });
+
+  registerTool({
+    name: "product.qualified_signals.list",
+    description:
+      "List the Agent workbench of qualified Signals with verified/contact-ready people, LinkedIn readiness, latest judged outreach draft, pending approval, and contact defer reason.",
+    kind: "read",
+    input: z.object({
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+    output: QualifiedSignalWorkbenchSchema,
+    async handler(input, ctx) {
+      const session = sessionFromContext(ctx);
+      const workbench = await loadQualifiedSignalWorkbench(
+        getPool(),
+        session.workspace_id,
+        { limit: input.limit },
+      );
+      return {
+        workspace_id: session.workspace_id,
+        generated_at: new Date().toISOString(),
+        stats: workbench.stats,
+        signals: workbench.signals.map((signal) => ({
+          ...signal,
+          freshness_at: signal.freshness_at.toISOString(),
+          ingested_at: signal.ingested_at.toISOString(),
+          matched_at: signal.matched_at?.toISOString() ?? null,
+          contacts: signal.contacts.map((contact) => ({
+            rank: contact.rank,
+            person_id: contact.person_id,
+            full_name: contact.full_name,
+            title: contact.title,
+            score: contact.score,
+            contact_fit_decision: contact.contact_fit_decision,
+            reasons: contact.reasons,
+            email_count: contact.emails.length,
+            linkedin_url: contact.linkedin_url,
+            verification: contact.verification,
+            provenance: contact.provenance,
+          })),
+          outreach_draft: isoQualifiedSignalDraft(signal.outreach_draft),
+          email_draft: isoQualifiedSignalDraft(signal.email_draft),
+        })),
+      };
     },
   });
 
@@ -2156,4 +2282,18 @@ export function registerProductTools(): void {
 export function _resetProductToolsRegistration(): void {
   registered = false;
   _resetBombsellAliasToolsRegistration();
+}
+
+function isoQualifiedSignalDraft(
+  draft: QualifiedSignalOutreachDraft | null,
+): z.infer<typeof QualifiedSignalDraftSchema> | null {
+  if (!draft) return null;
+  return {
+    ...draft,
+    scheduled_at: draft.scheduled_at?.toISOString() ?? null,
+    sent_at: draft.sent_at?.toISOString() ?? null,
+    delivered_at: draft.delivered_at?.toISOString() ?? null,
+    latest_channel_event_at: draft.latest_channel_event_at?.toISOString() ?? null,
+    created_at: draft.created_at.toISOString(),
+  };
 }
