@@ -320,6 +320,125 @@ test("contact resolution workflow defers email outreach when contacts are not ve
   assert.equal(deferred?.payload.candidate_count, 0);
 });
 
+test("contact resolution honors profile auto-enrich preference before provider spend", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const rows: ContactRows = [
+    person({
+      full_name: "Ava Founder",
+      title: "Founder and CEO",
+      company_id: companyId,
+      emails: ["ava@example.com"],
+    }),
+  ];
+  let providerCalls = 0;
+  let verifierCalls = 0;
+  const bus = createInMemoryEventBus();
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  runtime.register(
+    createContactResolutionWorkflow({
+      pool: mockContactRowsPool(rows, {
+        auto_enrich_email_addresses: false,
+      }),
+      discoveryProviders: [{
+        name: "provider.should_not_run",
+        async discover() {
+          providerCalls += 1;
+          return [];
+        },
+      }],
+      emailVerifier: {
+        name: "verifier.should_not_run",
+        async verify() {
+          verifierCalls += 1;
+          return { status: "valid", verified: true };
+        },
+      },
+    }),
+  );
+
+  const run = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input: {
+      workspace_id: workspaceId,
+      signal_id: signalId,
+      company_id: companyId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+      limit: 1,
+    },
+  });
+  const completed = await waitForCompletedRun(runtime, run.id);
+  const deferred = bus.published.find((event) => event.event_type === "contact.resolution.deferred");
+
+  assert.equal(completed.output?.decision, "deferred");
+  assert.equal(completed.output?.defer_reason, "email_auto_enrich_disabled");
+  assert.equal(completed.output?.candidates[0]?.full_name, "Ava Founder");
+  assert.equal(providerCalls, 0);
+  assert.equal(verifierCalls, 0);
+  assert.equal(deferred?.payload.defer_reason, "email_auto_enrich_disabled");
+  assert.deepEqual(deferred?.payload.provider_order, ["graph_cache"]);
+  assert.equal(deferred?.payload.candidate_count, 1);
+});
+
+test("contact resolution duplicate prevention skips already-worked contacts", async () => {
+  const workspaceId = randomUUID();
+  const signalId = randomUUID();
+  const companyId = randomUUID();
+  const playId = randomUUID();
+  const repId = randomUUID();
+  const alreadyWorked = person({
+    full_name: "Ava Founder",
+    title: "Founder and CEO",
+    company_id: companyId,
+    emails: ["ava@example.com"],
+    email_status: "valid",
+    already_worked: true,
+  });
+  const fresh = person({
+    full_name: "Ben Revenue",
+    title: "VP Revenue",
+    company_id: companyId,
+    emails: ["ben@example.com"],
+    email_status: "valid",
+  });
+  const bus = createInMemoryEventBus();
+  const runtime = createInProcessWorkflowRuntime({ bus });
+  runtime.register(
+    createContactResolutionWorkflow({
+      pool: mockContactRowsPool([alreadyWorked, fresh], {
+        prevent_team_contact_duplication: true,
+      }),
+    }),
+  );
+
+  const run = await runtime.start<ContactResolutionInput, ContactResolutionOutput>({
+    workspace_id: workspaceId,
+    workflow_name: CONTACT_RESOLUTION_WORKFLOW,
+    input: {
+      workspace_id: workspaceId,
+      signal_id: signalId,
+      company_id: companyId,
+      play_id: playId,
+      rep_id: repId,
+      channel: "email",
+      limit: 1,
+    },
+  });
+  const completed = await waitForCompletedRun(runtime, run.id);
+  const resolved = bus.published.find((event) => event.event_type === "contact.resolved");
+
+  assert.equal(completed.output?.decision, "resolved");
+  assert.equal(completed.output?.selected_person_id, fresh.id);
+  assert.equal(completed.output?.candidates[0]?.full_name, "Ben Revenue");
+  assert.equal(resolved?.payload.selected_person_id, fresh.id);
+});
+
 test("contact resolution workflow verifies alternate emails and persists the verified one first", async () => {
   const workspaceId = randomUUID();
   const signalId = randomUUID();
@@ -567,6 +686,7 @@ function person(input: {
   email_status?: string;
   contact_fit_score?: number;
   do_not_contact?: boolean;
+  already_worked?: boolean;
 }): ContactRows[number] {
   const email = input.emails?.[0]?.toLowerCase();
   return {
@@ -588,6 +708,7 @@ function person(input: {
         ? { contact_fit: { score: input.contact_fit_score } }
         : {}),
       ...(input.do_not_contact ? { do_not_contact: true } : {}),
+      ...(input.already_worked ? { already_worked: true } : {}),
     },
     provenance: { source: "test" },
     created_at: new Date(0),
@@ -636,19 +757,65 @@ function mockContactProviderPool(input: {
   } as unknown as Pool;
 }
 
-function mockContactRowsPool(rows: ContactRows): Pool {
+function mockContactRowsPool(
+  rows: ContactRows,
+  policy: {
+    auto_enrich_email_addresses?: boolean;
+    prevent_team_contact_duplication?: boolean;
+  } = {},
+): Pool {
   return {
-    async query(sql: string) {
-      if (sql.includes("from graph_persons")) return { rows };
+    async query(sql: string, params?: unknown[]) {
+      if (sql.includes("from graph_companies")) {
+        return {
+          rows: [{
+            auto_enrich_email_addresses:
+              policy.auto_enrich_email_addresses ?? true,
+            prevent_team_contact_duplication:
+              policy.prevent_team_contact_duplication ?? true,
+          }],
+        };
+      }
+      if (sql.includes("from graph_persons")) {
+        const preventDuplication = params?.[3] === true;
+        return {
+          rows: preventDuplication
+            ? rows.filter((row) => row.properties.already_worked !== true)
+            : rows,
+        };
+      }
       throw new Error(`Unexpected query: ${sql}`);
     },
   } as unknown as Pool;
 }
 
-function mutableContactRowsPool(rows: ContactRows): Pool {
+function mutableContactRowsPool(
+  rows: ContactRows,
+  policy: {
+    auto_enrich_email_addresses?: boolean;
+    prevent_team_contact_duplication?: boolean;
+  } = {},
+): Pool {
   return {
     async query(sql: string, params?: unknown[]) {
-      if (sql.includes("from graph_persons")) return { rows };
+      if (sql.includes("from graph_companies")) {
+        return {
+          rows: [{
+            auto_enrich_email_addresses:
+              policy.auto_enrich_email_addresses ?? true,
+            prevent_team_contact_duplication:
+              policy.prevent_team_contact_duplication ?? true,
+          }],
+        };
+      }
+      if (sql.includes("from graph_persons")) {
+        const preventDuplication = params?.[3] === true;
+        return {
+          rows: preventDuplication
+            ? rows.filter((row) => row.properties.already_worked !== true)
+            : rows,
+        };
+      }
       if (sql.includes("set properties = properties")) {
         const personId = params?.[1];
         const properties = typeof params?.[2] === "string"

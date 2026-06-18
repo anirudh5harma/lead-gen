@@ -744,6 +744,7 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   const settings = source("app/dashboard/settings/page.tsx");
   const actions = source("app/dashboard/actions.ts");
   const productApp = source("core/product/app.ts");
+  const contactResolution = source("core/contacts/resolution.ts");
   const registry = source("core/substrate/events/registry.ts");
 
   assert.match(settings, /editCompanyProfileAction/);
@@ -855,10 +856,16 @@ test("Settings exposes profile, activation, Outlook, and workspace autonomy cont
   assert.match(actions, /signal_keywords/);
   assert.match(actions, /competitor_watchlist/);
   assert.match(actions, /exclusion_rules/);
+  assert.match(actions, /auto_enrich_email_addresses/);
   assert.match(actions, /prevent_team_contact_duplication/);
   assert.match(actions, /configureWorkspaceAutonomyMode/);
   assert.match(actions, /dismissProductSignal/);
   assert.match(actions, /recordProductPersonFitFeedback/);
+  assert.match(contactResolution, /contact\.profile_policy\.load/);
+  assert.match(contactResolution, /auto_enrich_email_addresses/);
+  assert.match(contactResolution, /email_auto_enrich_disabled/);
+  assert.match(contactResolution, /prevent_team_contact_duplication/);
+  assert.match(contactResolution, /counterparty_person_id = graph_persons\.id/);
   assert.match(productApp, /event_type: "workspace\.configured"/);
   assert.match(productApp, /event_type: "rep\.configured"/);
   assert.match(productApp, /event_type: "play\.configured"/);

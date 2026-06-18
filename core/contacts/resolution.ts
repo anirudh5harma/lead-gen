@@ -89,6 +89,11 @@ interface ContactRow {
   updated_at: Date;
 }
 
+interface ContactResolutionPolicy {
+  auto_enrich_email_addresses: boolean;
+  prevent_team_contact_duplication: boolean;
+}
+
 export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
   return defineWorkflow<ContactResolutionInput, ContactResolutionOutput>({
     name: CONTACT_RESOLUTION_WORKFLOW,
@@ -96,9 +101,12 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
     async run(input, ctx) {
       const contact_resolution_id = randomUUID();
       const limit = Math.max(1, Math.min(3, Math.trunc(input.limit ?? 3)));
+      const policy = await ctx.step("contact.profile_policy.load", async () =>
+        loadWorkspaceContactPolicy(deps.pool, input.workspace_id),
+      );
 
       const cachedCandidates = await ctx.step("contact.graph_cache.rank", async () => {
-        const rows = await loadCandidateRows(deps.pool, input);
+        const rows = await loadCandidateRows(deps.pool, input, policy);
         return rankContactRows(rows, input.channel).slice(0, limit);
       });
       if (graphCacheSatisfied(cachedCandidates, input.channel, limit)) {
@@ -109,6 +117,25 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
           candidates: cachedCandidates,
           selected_person_id: cachedCandidates[0]!.person_id,
         };
+      }
+      if (input.channel === "email" && !policy.auto_enrich_email_addresses) {
+        const defer_reason = "email_auto_enrich_disabled";
+        const output: ContactResolutionOutput = {
+          decision: "deferred",
+          contact_resolution_id,
+          candidates: cachedCandidates,
+          selected_person_id: null,
+          defer_reason,
+        };
+        await publishDeferred(
+          ctx,
+          input,
+          contact_resolution_id,
+          defer_reason,
+          cachedCandidates.length,
+          ["graph_cache"],
+        );
+        return output;
       }
 
       await ctx.step("contact.discovery.provider_waterfall", async () => {
@@ -133,7 +160,7 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
 
       if (input.channel === "email" && deps.emailVerifier) {
         await ctx.step("contact.email.verify", async () => {
-          const rows = await loadCandidateRows(deps.pool, input);
+          const rows = await loadCandidateRows(deps.pool, input, policy);
           for (const row of rows) {
             await verifyCandidateEmails(deps.pool, input, row, deps.emailVerifier!);
           }
@@ -142,31 +169,29 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
       }
 
       const candidates = await ctx.step("contact.rank_top_three", async () => {
-        const rows = await loadCandidateRows(deps.pool, input);
+        const rows = await loadCandidateRows(deps.pool, input, policy);
         return rankContactRows(rows, input.channel)
           .filter((candidate) => channelReady(candidate, input.channel))
           .slice(0, limit);
       });
 
       if (candidates.length === 0) {
+        const defer_reason = `no_${input.channel}_ready_contact`;
         const output: ContactResolutionOutput = {
           decision: "deferred",
           contact_resolution_id,
           candidates,
           selected_person_id: null,
-          defer_reason: `no_${input.channel}_ready_contact`,
+          defer_reason,
         };
-        await ctx.publish("contact.resolution.deferred", {
+        await publishDeferred(
+          ctx,
+          input,
           contact_resolution_id,
-          signal_id: input.signal_id,
-          company_id: input.company_id,
-          play_id: input.play_id,
-          rep_id: input.rep_id,
-          channel: input.channel,
-          defer_reason: output.defer_reason!,
-          candidate_count: candidates.length,
-          provider_order: providerOrder(deps),
-        });
+          defer_reason,
+          candidates.length,
+          providerOrder(deps),
+        );
         return output;
       }
 
@@ -180,6 +205,33 @@ export function createContactResolutionWorkflow(deps: ContactResolutionDeps) {
       return output;
     },
   });
+}
+
+async function loadWorkspaceContactPolicy(
+  pool: Pool,
+  workspace_id: string,
+): Promise<ContactResolutionPolicy> {
+  const { rows } = await pool.query<{
+    auto_enrich_email_addresses: boolean | null;
+    prevent_team_contact_duplication: boolean | null;
+  }>(
+    `select coalesce((properties->>'auto_enrich_email_addresses')::boolean, true)
+              as auto_enrich_email_addresses,
+            coalesce((properties->>'prevent_team_contact_duplication')::boolean, true)
+              as prevent_team_contact_duplication
+       from graph_companies
+      where workspace_id = $1
+        and properties->>'profile_role' = 'workspace_company'
+      order by updated_at desc
+      limit 1`,
+    [workspace_id],
+  );
+  return {
+    auto_enrich_email_addresses:
+      rows[0]?.auto_enrich_email_addresses ?? true,
+    prevent_team_contact_duplication:
+      rows[0]?.prevent_team_contact_duplication ?? true,
+  };
 }
 
 async function publishResolved(
@@ -209,6 +261,27 @@ async function publishResolved(
       verification: candidate.verification,
       provenance: candidate.provenance,
     })),
+    provider_order,
+  });
+}
+
+async function publishDeferred(
+  ctx: RunContext,
+  input: ContactResolutionInput,
+  contact_resolution_id: string,
+  defer_reason: string,
+  candidate_count: number,
+  provider_order: string[],
+): Promise<void> {
+  await ctx.publish("contact.resolution.deferred", {
+    contact_resolution_id,
+    signal_id: input.signal_id,
+    company_id: input.company_id,
+    play_id: input.play_id,
+    rep_id: input.rep_id,
+    channel: input.channel,
+    defer_reason,
+    candidate_count,
     provider_order,
   });
 }
@@ -352,6 +425,7 @@ async function verifyCandidateEmails(
 async function loadCandidateRows(
   pool: Pool,
   input: ContactResolutionInput,
+  policy: ContactResolutionPolicy,
 ): Promise<ContactRow[]> {
   const { rows } = await pool.query<ContactRow>(
     `select id,
@@ -371,9 +445,23 @@ async function loadCandidateRows(
           ($3::text = 'email' and cardinality(emails) > 0)
           or ($3::text = 'linkedin' and linkedin_url is not null)
         )
+        and (
+          not $4::boolean
+          or not exists (
+            select 1
+              from conversations c
+             where c.workspace_id = $1
+               and c.counterparty_person_id = graph_persons.id
+          )
+        )
       order by updated_at desc, created_at asc
       limit 50`,
-    [input.workspace_id, input.company_id, input.channel],
+    [
+      input.workspace_id,
+      input.company_id,
+      input.channel,
+      policy.prevent_team_contact_duplication,
+    ],
   );
   return rows;
 }
