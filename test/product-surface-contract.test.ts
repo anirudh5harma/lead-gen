@@ -1213,6 +1213,12 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /Email outreach/);
   assert.match(settings, /Social outreach/);
   assert.match(settings, /Agent API/);
+  assert.match(settings, /Claude Code \+ MCP/);
+  assert.match(settings, /Use Bombsell in Claude Code/);
+  assert.match(settings, /Use in Claude Code/);
+  assert.match(settings, /bombsell\.brief\.get/);
+  assert.match(settings, /bombsell\.outreach\.list_sent/);
+  assert.match(settings, /Array\.isArray\(destination\.code\)/);
   assert.match(settings, /Automation intake/);
   assert.match(settings, /\/api\/webhooks\/signals/);
   assert.match(settings, /Next destination classes/);

@@ -348,7 +348,7 @@ Exit criteria:
 /plugin install bombsell@bombsell
 ```
 
-- Add an in-product Profile CTA: "Use Bombsell in Claude Code."
+- Added an in-product Profile CTA: "Use Bombsell in Claude Code."
 - Add a CLI helper or install snippet for auth.
 
 Exit criteria:

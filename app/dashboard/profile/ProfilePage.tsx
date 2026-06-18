@@ -1006,7 +1006,7 @@ function ProfileLaunchModel({
             prefetch={false}
             className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
           >
-            <span className="flex items-start justify-between gap-3">
+            <span className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
               <span className="flex min-w-0 items-start gap-3">
                 <span
                   className={
@@ -1658,16 +1658,16 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
         : "Not connected",
     },
     {
-      title: "Bombsell MCP",
+      title: "Claude Code + MCP",
       category: "Agent API",
       detail:
-        "External agents can use the same workspace tools for profile, signals, contacts, and outreach through the MCP endpoint.",
+        "Use Bombsell in Claude Code to review the Brief, check launch blockers, inspect sent outreach, open drafts, and read reply learning from the same workspace tools.",
       href: "/api/mcp",
-      action: "Open endpoint",
+      action: "Use in Claude Code",
       icon: <Icon name="account_tree" size={16} />,
       ready: true,
       status: "Available",
-      code: "/api/mcp",
+      code: ["/api/mcp", "bombsell.brief.get", "bombsell.outreach.list_sent"],
     },
     {
       title: "Signal webhook",
@@ -1720,7 +1720,7 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
             prefetch={false}
             className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
           >
-            <span className="flex items-start justify-between gap-3">
+            <span className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
               <span className="flex min-w-0 items-start gap-3">
                 <span
                   className={
@@ -1745,13 +1745,23 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
                     {destination.detail}
                   </span>
                   {destination.code ? (
-                    <span className="mt-2 inline-block rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-2)]">
-                      {destination.code}
+                    <span className="mt-2 flex flex-wrap gap-1.5">
+                      {(Array.isArray(destination.code)
+                        ? destination.code
+                        : [destination.code]
+                      ).map((code) => (
+                        <span
+                          key={code}
+                          className="inline-block rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-2)]"
+                        >
+                          {code}
+                        </span>
+                      ))}
                     </span>
                   ) : null}
                 </span>
               </span>
-              <span className="flex shrink-0 flex-col items-end gap-2">
+              <span className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
                 <span
                   className={
                     "rounded-[8px] px-2.5 py-1 text-[11px] font-medium " +
