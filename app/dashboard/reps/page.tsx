@@ -2036,6 +2036,7 @@ function ContactPill({
 function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
   const workStages = agentLastHourStages(activity);
   const workVolume = workStages.reduce((sum, stage) => sum + stage.value, 0);
+  const maxStageValue = Math.max(1, ...workStages.map((stage) => stage.value));
   const active =
     activity.active_workflows > 0 ||
     workVolume > 0 ||
@@ -2055,7 +2056,8 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
             </p>
           </div>
           <span className="rounded-[8px] bg-[var(--color-accent-bg)] px-3 py-1 text-xs font-medium text-[var(--color-accent)]">
-            {activity.active_workflows} active
+            {activity.active_workflows} active run
+            {activity.active_workflows === 1 ? "" : "s"}
           </span>
         </div>
         <div className="mt-5 grid gap-2 sm:grid-cols-3">
@@ -2068,25 +2070,49 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
             <AgentWorkStage key={stage.key} stage={stage} />
           ))}
         </div>
-        <div className="relative mt-6 grid h-28 grid-cols-12 items-end gap-1 overflow-hidden rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+        <div
+          className="relative mt-6 overflow-hidden rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3"
+          aria-label="Last-hour Agent operating loop"
+        >
           <span className="agent-work-sweep" aria-hidden="true" />
-          {Array.from({ length: 12 }, (_, index) => {
-            const height = 18 + ((workVolume + activity.events_last_hour + index * 7) % 58);
-            const delay = `${index * 80}ms`;
-            return (
-              <span
-                key={index}
-                className="relative z-10 animate-pulse rounded-t-[4px] bg-[var(--color-accent)]/70"
-                style={{ height: `${height}%`, animationDelay: delay }}
-              />
-            );
-          })}
+          <div className="relative z-10 grid h-32 grid-cols-5 items-end gap-2">
+            {workStages.map((stage, index) => {
+              const height =
+                stage.value === 0
+                  ? 16
+                  : Math.max(
+                      26,
+                      Math.round((stage.value / maxStageValue) * 100),
+                    );
+              const delay = `${index * 110}ms`;
+              return (
+                <span
+                  key={stage.key}
+                  className="flex h-full min-w-0 flex-col justify-end gap-2"
+                  title={`${stage.label}: ${stage.value}`}
+                >
+                  <span
+                    className={
+                      "mx-auto w-full max-w-[44px] rounded-t-[6px] transition-[height] duration-500 " +
+                      (stage.value > 0
+                        ? "animate-pulse bg-[var(--color-accent)]/75"
+                        : "bg-[var(--color-line-2)]")
+                    }
+                    style={{ height: `${height}%`, animationDelay: delay }}
+                  />
+                  <span className="flex items-center justify-center text-[var(--color-text-3)]">
+                    <Icon name={stage.icon} size={13} />
+                  </span>
+                </span>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       <aside className="section-note h-fit">
         <p className="text-sm font-semibold text-[var(--color-text-1)]">
-          System activity
+          Last-hour activity
         </p>
         <div className="mt-4 grid gap-2">
           {activity.event_types.length === 0 ? (
@@ -2768,18 +2794,18 @@ function agentLastHourStages(activity: AgentActivity): AgentWorkStageData[] {
 
 function agentCurrentWork(activity: AgentActivity): string {
   if (activity.active_workflows > 0 && activity.outbound_last_hour > 0) {
-    return `Processing ${activity.active_workflows} active workflow${activity.active_workflows === 1 ? "" : "s"} and moving ${activity.outbound_last_hour} outreach item${activity.outbound_last_hour === 1 ? "" : "s"} from the last hour.`;
+    return `Processing ${activity.active_workflows} active Agent run${activity.active_workflows === 1 ? "" : "s"} and moving ${activity.outbound_last_hour} outreach item${activity.outbound_last_hour === 1 ? "" : "s"} from the last hour.`;
   }
   if (activity.active_workflows > 0) {
-    return `Processing ${activity.active_workflows} active workflow${activity.active_workflows === 1 ? "" : "s"} across signal qualification, contact verification, and outreach gates.`;
+    return `Processing ${activity.active_workflows} active Agent run${activity.active_workflows === 1 ? "" : "s"} across signal qualification, contact verification, and outreach gates.`;
   }
   if (activity.reviews_pending > 0) {
     return `${activity.reviews_pending} outreach item${activity.reviews_pending === 1 ? " is" : "s are"} waiting for review.`;
   }
   if (activity.events_last_hour > 0) {
-    return `${activity.events_last_hour} system event${activity.events_last_hour === 1 ? "" : "s"} landed in the last hour; no outbound send is currently in motion.`;
+    return `${activity.events_last_hour} activity event${activity.events_last_hour === 1 ? "" : "s"} landed in the last hour; no outbound send is currently in motion.`;
   }
-  return "No active workflow right now. The agent will wake when a qualified signal, reply, or channel event arrives.";
+  return "No active Agent run right now. The agent will wake when a qualified signal, reply, or channel event arrives.";
 }
 
 function agentEventLabel(eventType: string): string {
@@ -2805,8 +2831,8 @@ function agentEventLabel(eventType: string): string {
     return "Profile updated";
   }
   if (normalized.includes("source")) return "Source checked";
-  if (normalized.includes("workflow")) return "Workflow advanced";
-  return "System check completed";
+  if (normalized.includes("workflow")) return "Agent run advanced";
+  return "Activity recorded";
 }
 
 function AgentOutreachPanel({
