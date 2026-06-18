@@ -1,0 +1,419 @@
+# Bombsell Claude Code Plugin Plan
+
+Date: 2026-06-19
+
+## Why This Matters
+
+Claude Code users already live inside an agentic workbench that can read their
+repo, run commands, create commits, and call external tools through MCP. Bombsell
+should meet those users there: a founder or GTM engineer should be able to ask
+Claude Code to inspect the current product, update Bombsell's Profile, review
+qualified signals, prepare outreach, approve drafts, and pull reply evidence
+without leaving their terminal or IDE.
+
+This is not a replacement for the Bombsell web app. It is a distribution and
+workflow surface over the same product primitives: Profile, Signal, Agent work,
+Conversation, and Outcome-derived learning.
+
+## Research Snapshot
+
+- Claude Code is available across terminal, IDE, desktop, and web, and the docs
+  position MCP as the way to connect external tools and data sources.
+  Source: <https://code.claude.com/docs/en/overview>
+- Claude Code plugins are self-contained directories that can package skills,
+  agents, hooks, MCP servers, LSP servers, monitors, and default settings.
+  Source: <https://code.claude.com/docs/en/plugins>
+- A plugin manifest lives at `.claude-plugin/plugin.json`. Plugin skills are
+  namespaced by plugin name, which avoids command conflicts.
+  Source: <https://code.claude.com/docs/en/plugins-reference>
+- Plugin MCP servers can be declared in `.mcp.json` or the manifest and start
+  automatically when the plugin is enabled.
+  Source: <https://code.claude.com/docs/en/plugins-reference>
+- Claude Code supports remote HTTP, SSE, WebSocket, and local stdio MCP servers.
+  MCP resources, prompts, elicitation, and tool search are supported. Tool search
+  makes a larger Bombsell toolset viable if server instructions are concise.
+  Source: <https://code.claude.com/docs/en/mcp>
+- Distribution can start with a private/company marketplace and later move to
+  the Anthropic community marketplace after validation and safety review.
+  Source: <https://code.claude.com/docs/en/plugin-marketplaces>
+
+## Current Bombsell Fit
+
+Bombsell already has the core substrate for a Claude Code plugin:
+
+- `app/api/mcp/route.ts` exposes authenticated Streamable HTTP MCP.
+- `core/product/tools.ts` registers product tools for Profile, launch readiness,
+  signal ingestion, signal matching, contact waterfall, message personalization,
+  draft eval, approvals, reply triage, company brain, and observability.
+- `core/product/context.ts` builds prompt-ready workspace context for external
+  agents.
+- The GojiBerry translation work has simplified the product surface to Brief,
+  Agent, and Profile, which maps naturally into Claude Code skills.
+
+The plugin should not create a second product API. It should package access to
+the existing MCP server and add Claude Code-native workflows around it.
+
+## Product Promise
+
+Install Bombsell in Claude Code and run GTM from the same place you build.
+
+Example user prompts:
+
+- "Use Bombsell to brief me on yesterday's qualified signals and replies."
+- "Read this repo and update Bombsell's company profile and buyer fit."
+- "Find which qualified signals are ready for email or LinkedIn outreach."
+- "Prepare outreach for the top signal, but do not send without approval."
+- "Show sent drafts and replies for prospects related to this launch."
+- "After I merge this feature, refresh Bombsell sources and suggest who we
+  should contact."
+
+## Plugin Shape
+
+Repository/package name:
+
+- `bombsell-claude-code`
+
+Plugin namespace:
+
+- `bombsell`
+
+Proposed structure:
+
+```text
+bombsell-claude-code/
+  .claude-plugin/
+    plugin.json
+    marketplace.json
+  .mcp.json
+  README.md
+  skills/
+    brief/
+      SKILL.md
+    profile-from-repo/
+      SKILL.md
+    launch-check/
+      SKILL.md
+    signal-review/
+      SKILL.md
+    prepare-outreach/
+      SKILL.md
+    reply-insights/
+      SKILL.md
+  agents/
+    gtm-operator.md
+    outreach-reviewer.md
+  hooks/
+    hooks.json
+  bin/
+    bombsell-auth
+    bombsell-status
+```
+
+Initial `.mcp.json` target:
+
+```json
+{
+  "mcpServers": {
+    "bombsell": {
+      "type": "http",
+      "url": "https://www.bombsell.com/api/mcp"
+    }
+  }
+}
+```
+
+This requires completing first-class remote MCP auth for Claude Code. Until then,
+developer testing can use a bearer token with dynamic headers or local config.
+
+## Skills
+
+### `/bombsell:brief`
+
+Pulls the operating brief: last-day and last-week qualified signals, signal
+types, email/LinkedIn sends, replies, meetings, channel blockers, and the next
+recommended action.
+
+MCP tools needed:
+
+- `product.context.get`
+- `product.launch_readiness.get`
+- `product.agent_observability.get`
+- Future ergonomic alias: `bombsell.brief.get`
+
+### `/bombsell:profile-from-repo`
+
+Reads the current repo, landing-page copy, README, docs, and package metadata,
+then proposes Profile updates: website positioning, buyer fit, proof, pain
+points, integration assumptions, and signal-source recommendations.
+
+MCP tools needed:
+
+- `product.company_profile.configure`
+- `product.icp_segment.configure`
+- `product.activation_setup.run`
+- `product.signal_source.configure`
+
+Safety:
+
+- Defaults to proposal mode.
+- Writes to Bombsell only after the user confirms the inferred company profile.
+
+### `/bombsell:launch-check`
+
+Checks whether Bombsell can move from Profile to signals to verified contacts to
+outreach.
+
+MCP tools needed:
+
+- `product.readiness.get`
+- `product.outlook_account.connect_url.get`
+- `product.linkedin_account.connect_url.get`
+- `product.signal_ingestion.run`
+
+### `/bombsell:signal-review`
+
+Lists qualified signals, contact readiness, verified email, LinkedIn-only
+contacts, fit review gaps, and draft readiness.
+
+MCP tools needed:
+
+- `product.context.get`
+- `product.qualified_signals.list` or equivalent registry addition
+- `product.contact_waterfall.run`
+- Future ergonomic alias: `bombsell.contact_lanes.get`
+
+### `/bombsell:prepare-outreach`
+
+Turns selected qualified signals into judged email or LinkedIn outreach drafts.
+
+MCP tools needed:
+
+- `product.qualified_signals.prepare`
+- `product.message.personalize`
+- `product.draft.evaluate`
+- `product.approval.approve`
+
+Safety:
+
+- Never sends directly from Claude Code in v1.
+- Produces drafts and approval records.
+- Sending still obeys Bombsell's per-channel readiness, hot-path eval gate,
+  approval policy, and daily caps.
+
+### `/bombsell:reply-insights`
+
+Fetches reply and meeting evidence so Claude Code can summarize what messages,
+signals, channels, and personas are working.
+
+MCP tools needed:
+
+- `product.reply.triage`
+- `product.campaign_strategy.optimize`
+- `product.play_skills.optimize`
+- Future ergonomic alias: `bombsell.learning.get`
+
+## Agents
+
+### `bombsell:gtm-operator`
+
+A Claude Code subagent that can read the local project and use Bombsell MCP tools
+to keep Profile, signals, and launch readiness current. It should be allowed to
+read local files and call Bombsell MCP tools, but should not write local files by
+default.
+
+### `bombsell:outreach-reviewer`
+
+A stricter review subagent for checking drafts against:
+
+- signal evidence
+- contact fit
+- workspace voice
+- eval score
+- channel readiness
+- approval policy
+- hallucinated claims
+- compliance concerns
+
+This agent should be read-only against the local repo and should only use
+Bombsell review/approval tools when the user explicitly asks.
+
+## Optional Hooks
+
+Hooks should be opt-in because they can surprise users.
+
+Candidate hooks:
+
+- `PostToolUse` after successful git commit: suggest refreshing Bombsell Profile
+  or signal sources if product-facing files changed.
+- `Stop` after a launch planning session: offer to run `/bombsell:launch-check`.
+- `UserPromptSubmit`: detect "launch", "pricing", "new feature", or "release"
+  prompts and remind Claude to consider Bombsell if the plugin is enabled.
+
+Hooks must never auto-send outreach or auto-write Profile changes.
+
+## Required Bombsell Backend Work
+
+1. Remote MCP auth for Claude Code
+
+   - Add OAuth/OIDC-style authorization for remote MCP clients, or a secure
+     installation token flow that Claude Code can store.
+   - Support workspace selection during auth.
+   - Keep bearer token support for power users and CI.
+   - Document how to revoke plugin sessions.
+
+2. Server instructions for tool search
+
+   - Add concise MCP server instructions under 2KB explaining that Bombsell tools
+     handle GTM Profile, qualified signals, verified contacts, judged outreach,
+     approvals, replies, and launch readiness.
+   - Keep critical capability words near the start so tool search works well.
+
+3. Ergonomic MCP aliases
+
+   Existing `product.*` tools are architecture-friendly, but plugin users need a
+   smaller task vocabulary. Add wrapper tools that call the existing registry:
+
+   - `bombsell.brief.get`
+   - `bombsell.profile.propose_from_context`
+   - `bombsell.launch.check`
+   - `bombsell.signals.list_qualified`
+   - `bombsell.contact_lanes.get`
+   - `bombsell.outreach.prepare`
+   - `bombsell.outreach.list_sent`
+   - `bombsell.draft.get`
+   - `bombsell.approvals.list`
+   - `bombsell.approvals.decide`
+   - `bombsell.learning.get`
+
+   These wrappers must remain derived views over the five primitives, not a new
+   product model.
+
+4. Output shaping
+
+   - Paginate large lists.
+   - Return compact summaries by default.
+   - Include IDs, URLs back into Bombsell, and provenance.
+   - Avoid raw PII unless specifically needed for the task.
+
+5. Audit and observability
+
+   - Record tool calls from Claude Code with client name, workspace, user,
+     action, primitive refs, latency, and outcome.
+   - Surface Claude Code activity in Health or Agent observability.
+   - Add tests that MCP manifest and plugin docs stay aligned.
+
+## Security And Trust Rules
+
+- The plugin must not ship secrets.
+- Local stdio servers should be avoided for v1; prefer remote HTTP MCP to keep
+  credentials and business logic server-side.
+- Claude Code should see only workspace-scoped data.
+- All state-changing tools must be idempotent or approval-backed.
+- Draft generation must keep the hot-path eval gate.
+- Sending must remain gated by Bombsell channel readiness and approval policy.
+- Contact exports should redact or summarize PII by default.
+- Hooks are opt-in and must never perform external side effects automatically.
+- Marketplace release must run `claude plugin validate --strict` and a security
+  checklist before submission.
+
+## Distribution Plan
+
+### Phase 0: Internal dogfood
+
+- Build the plugin in a separate `bombsell-claude-code` directory.
+- Load locally with `claude --plugin-dir ./bombsell-claude-code`.
+- Use bearer token or local dev auth.
+- Verify the six skills against staging and production workspaces.
+
+Exit criteria:
+
+- `/bombsell:brief` returns the same key numbers as the web Brief.
+- `/bombsell:launch-check` correctly routes users to Outlook/LinkedIn/Profile
+  blockers.
+- `/bombsell:prepare-outreach` creates judged drafts but does not send.
+
+### Phase 1: Private marketplace
+
+- Host a Bombsell plugin marketplace repository.
+- Publish `marketplace.json` with the `bombsell` plugin.
+- Add install docs:
+
+```text
+/plugin marketplace add bombsell/bombsell-claude-code
+/plugin install bombsell@bombsell
+```
+
+- Add an in-product Profile CTA: "Use Bombsell in Claude Code."
+- Add a CLI helper or install snippet for auth.
+
+Exit criteria:
+
+- Three external design partners install from the private marketplace.
+- They can connect a workspace, review signals, prepare outreach drafts, and
+  inspect replies from Claude Code.
+
+### Phase 2: Public community submission
+
+- Add polished README, screenshots/GIFs, privacy notes, and supported commands.
+- Run `claude plugin validate --strict`.
+- Submit to the Claude community marketplace through Anthropic's plugin
+  submission flow.
+- Keep our own marketplace as the fastest update channel.
+
+Exit criteria:
+
+- Plugin is installable by a new user in under five minutes.
+- No raw tokens or workspace IDs are copied manually in the normal path.
+- Bombsell web app shows Claude Code sessions in audit/health surfaces.
+
+### Phase 3: Workflow integrations
+
+- Add optional hooks for launch/release workflows.
+- Add MCP resources for reusable briefs:
+  - `bombsell://brief/current`
+  - `bombsell://profile/current`
+  - `bombsell://signals/qualified`
+  - `bombsell://outreach/sent`
+- Add prompt commands that can be referenced from Claude Code sessions.
+- Explore Claude Code routines for recurring morning Brief review.
+
+## Launch Surface Copy
+
+One-line:
+
+> Run Bombsell from Claude Code: turn product context into qualified signals,
+> verified contacts, judged outreach drafts, and reply learning.
+
+Install page bullets:
+
+- Review yesterday's GTM brief without leaving your repo.
+- Convert product changes into updated buyer fit and signal sources.
+- Prepare email and LinkedIn outreach from qualified signals.
+- Keep sends gated by Bombsell approvals, channel readiness, and evals.
+- Bring reply evidence back into launch planning.
+
+## Implementation Checklist
+
+- [ ] Add remote MCP auth suitable for Claude Code.
+- [ ] Add concise MCP server instructions for tool search.
+- [ ] Add `bombsell.*` wrapper tools over the existing registry.
+- [ ] Add product contract tests for wrapper tools and manifest discovery.
+- [ ] Create `bombsell-claude-code` plugin package.
+- [ ] Add six initial skills.
+- [ ] Add two optional agents.
+- [ ] Add README and install docs.
+- [ ] Validate locally with `claude --plugin-dir`.
+- [ ] Publish private marketplace.
+- [ ] Dogfood with design partners.
+- [ ] Submit to community marketplace.
+
+## Open Decisions
+
+- Should the first public release include Profile write tools, or keep Profile
+  updates as proposal-only until users trust the plugin?
+- Should Bombsell publish the plugin in this repo under `integrations/`, or a
+  separate public repository for cleaner marketplace submission?
+- Should auth use Supabase OAuth/session exchange, a Bombsell-scoped personal
+  access token, or full MCP OAuth metadata discovery?
+- Should Claude Code sessions show up as their own channel in Agent activity, or
+  only in Health/audit logs?
