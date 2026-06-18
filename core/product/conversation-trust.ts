@@ -16,8 +16,11 @@ export interface ConversationTrustConversation {
   counterparty_person_id: string | null;
   counterparty_name: string | null;
   counterparty_emails: string[] | null;
+  counterparty_email_status: string | null;
   counterparty_title: string | null;
   counterparty_linkedin_url: string | null;
+  counterparty_linkedin_ready: boolean | null;
+  counterparty_fit_decision: string | null;
   company_id: string | null;
   company_name: string | null;
   company_domain: string | null;
@@ -606,8 +609,17 @@ async function loadConversation(
             p.id as counterparty_person_id,
             p.full_name as counterparty_name,
             p.emails::text[] as counterparty_emails,
+            coalesce(
+              email_status.status,
+              case
+                when coalesce(cardinality(p.emails), 0) > 0 then 'found'
+                else 'missing'
+              end
+            ) as counterparty_email_status,
             p.title as counterparty_title,
             p.linkedin_url as counterparty_linkedin_url,
+            (p.linkedin_url is not null and length(trim(p.linkedin_url)) > 0) as counterparty_linkedin_ready,
+            p.properties #>> '{contact_fit,decision}' as counterparty_fit_decision,
             co.id as company_id,
             co.name as company_name,
             co.domain::text as company_domain,
@@ -625,6 +637,20 @@ async function loadConversation(
        left join graph_persons p
          on p.id = c.counterparty_person_id
         and p.workspace_id = c.workspace_id
+       left join lateral (
+         select case
+                  when ev.meta->>'verified' = 'true'
+                    or lower(coalesce(ev.meta->>'status', '')) in ('valid','verified','deliverable')
+                    then 'verified'
+                  when lower(coalesce(ev.meta->>'status', '')) in ('invalid','undeliverable','bounced')
+                    then 'invalid'
+                  else 'found'
+                end as status
+           from jsonb_each(coalesce(p.properties->'email_verification', '{}'::jsonb)) as ev(email, meta)
+          where p.emails is not null
+            and lower(ev.email) = lower(p.emails[1])
+          limit 1
+       ) email_status on true
        left join graph_companies co
          on co.id = c.counterparty_company_id
         and co.workspace_id = c.workspace_id

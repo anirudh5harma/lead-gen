@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { EmptyState } from "@/components/dashboard/Shell";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
@@ -480,22 +481,55 @@ export default async function AgentOutreachDetailPage({
           />
 
           <div className="section-note">
-            <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact</p>
-            <p className="font-sans text-sm text-[var(--color-text-1)] mt-1">
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">Contact trust</p>
+            <p className="mt-1 font-sans text-sm text-[var(--color-text-1)]">
               {conv.counterparty_name}
             </p>
+            {conv.counterparty_title ? (
+              <p className="mt-0.5 font-sans text-xs text-[var(--color-text-2)]">
+                {conv.counterparty_title}
+              </p>
+            ) : null}
             {conv.company_name ? (
-              <p className="font-sans text-xs text-[var(--color-text-2)] mt-0.5">
+              <p className="mt-0.5 font-sans text-xs text-[var(--color-text-2)]">
                 {conv.company_name}
               </p>
             ) : null}
-            {conv.counterparty_emails?.[0] ? (
-              <p className="text-xs text-[var(--color-text-3)] mt-1">
-                {conv.counterparty_emails[0]}
-              </p>
-            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <TrustPill
+                ready={conv.counterparty_email_status === "verified"}
+                icon="mail"
+              >
+                {contactEmailStatusLabel(conv.counterparty_email_status)}
+              </TrustPill>
+              <TrustPill
+                ready={conv.counterparty_linkedin_ready === true}
+                icon="linkedin"
+              >
+                {conv.counterparty_linkedin_ready ? "LinkedIn profile" : "No LinkedIn profile"}
+              </TrustPill>
+              {conv.counterparty_fit_decision ? (
+                <TrustPill
+                  ready={conv.counterparty_fit_decision === "fit"}
+                  icon="fact_check"
+                >
+                  {contactFitLabel(conv.counterparty_fit_decision)}
+                </TrustPill>
+              ) : null}
+            </div>
+            <div className="mt-4 grid gap-2 border-t border-[var(--color-line-1)] pt-4">
+              <ContactHandle
+                label="Email"
+                value={conv.counterparty_emails?.[0] ?? "Missing"}
+              />
+              <ContactHandle
+                label="LinkedIn"
+                value={conv.counterparty_linkedin_url ?? "Missing"}
+                href={conv.counterparty_linkedin_url}
+              />
+            </div>
             {conv.rep_name ? (
-              <p className="text-xs text-[var(--color-text-3)] mt-3">
+              <p className="mt-3 text-xs text-[var(--color-text-3)]">
                 Voice <span className="text-[var(--color-text-1)]">{conv.rep_name}</span>
               </p>
             ) : null}
@@ -527,6 +561,74 @@ export default async function AgentOutreachDetailPage({
 
 function agentOutreachDetailHref(conversationId: string): string {
   return `/dashboard/agent/outreach/${conversationId}`;
+}
+
+function TrustPill({
+  ready,
+  icon,
+  children,
+}: {
+  ready: boolean;
+  icon: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-xs " +
+        (ready
+          ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+          : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
+      }
+    >
+      <Icon name={icon} size={13} />
+      {children}
+    </span>
+  );
+}
+
+function ContactHandle({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: string;
+  href?: string | null;
+}) {
+  return (
+    <p className="min-w-0 text-xs leading-5 text-[var(--color-text-3)]">
+      <span className="block text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-4)]">
+        {label}
+      </span>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="block truncate text-[var(--color-text-1)] hover:text-[var(--color-accent)]"
+        >
+          {value}
+        </a>
+      ) : (
+        <span className="block truncate text-[var(--color-text-1)]">{value}</span>
+      )}
+    </p>
+  );
+}
+
+function contactEmailStatusLabel(status: string | null): string {
+  if (status === "verified") return "Verified email";
+  if (status === "invalid") return "Email invalid";
+  if (status === "found") return "Email found";
+  return "Email pending";
+}
+
+function contactFitLabel(decision: string): string {
+  if (decision === "fit") return "Good fit";
+  if (decision === "not_fit") return "Not fit";
+  if (decision === "unsure") return "Needs fit review";
+  return decision.replace(/_/g, " ");
 }
 
 function latestMeetingPrep(events: ConversationTrustEvent[]): MeetingPrepCard | null {

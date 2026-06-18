@@ -1102,6 +1102,16 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.match(detail, /id=\{`message-\$\{m\.id\}`\}/);
   assert.match(detail, /target:ring-\[var\(--color-accent\)\]/);
   assert.match(detail, /Back to sent outreach/);
+  assert.match(detail, /Contact trust/);
+  assert.match(detail, /contactEmailStatusLabel\(conv\.counterparty_email_status\)/);
+  assert.match(detail, /conv\.counterparty_linkedin_ready \? "LinkedIn profile" : "No LinkedIn profile"/);
+  assert.match(detail, /contactFitLabel\(conv\.counterparty_fit_decision\)/);
+  assert.match(detail, /label="Email"/);
+  assert.match(detail, /label="LinkedIn"/);
+  assert.match(trust, /p\.properties #>> '\{contact_fit,decision\}' as counterparty_fit_decision/);
+  assert.match(trust, /p\.linkedin_url as counterparty_linkedin_url/);
+  assert.match(trust, /counterparty_email_status/);
+  assert.match(trust, /jsonb_each\(coalesce\(p\.properties->'email_verification'/);
   assert.doesNotMatch(detail, /brief-kicker">Inbox/);
   assert.doesNotMatch(detail, /Back to Inbox/);
   assert.doesNotMatch(reps, /\/dashboard\/conversations\/\$\{conversationId\}/);

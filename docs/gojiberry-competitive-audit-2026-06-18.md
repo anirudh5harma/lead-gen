@@ -97,3 +97,5 @@ External agents can now ask directly for qualified signals and contact lanes thr
 Claude Code workflows can now decide Bombsell approval gates through `bombsell.approvals.decide`, but approving requires `confirm_channel_effects=true`. This keeps the external-agent flow simple while preserving the trust rule that an approved draft may continue only through Bombsell's existing channel readiness, approval, and eval-gated workflow path.
 
 Sent outreach proof now has a canonical Agent route at `/dashboard/agent/outreach/[id]`. Brief, Agent, Profile, contact pages, actions, and `bombsell.*` MCP aliases link to that route, while the old `/dashboard/conversations/[id]` path redirects for compatibility. This keeps exact draft/reply proof under Agent instead of leaving a hidden fourth product surface.
+
+The Agent outreach proof sidebar now uses graph-backed contact trust instead of only raw contact text. It shows verified email status, LinkedIn profile readiness, fit review, and channel handles from the same conversation trace that drives signal, message, approval, reply, and meeting proof.
