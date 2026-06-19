@@ -364,6 +364,10 @@ read-only and prepare-only flow.
 
 1. Remote MCP auth for Claude Code
 
+   - OAuth discovery metadata has landed at
+     `/.well-known/oauth-protected-resource` and
+     `/.well-known/oauth-authorization-server`, and `/api/mcp` now advertises
+     the protected-resource URL in `WWW-Authenticate`.
    - Add OAuth/OIDC-style authorization for remote MCP clients, or a secure
      installation token flow that Claude Code can store.
    - Support workspace selection during auth.
@@ -507,6 +511,8 @@ Install page bullets:
 ## Implementation Checklist
 
 - [ ] Add remote MCP auth suitable for Claude Code.
+- [x] Add OAuth discovery metadata for remote MCP clients.
+- [ ] Add OAuth browser consent and token issuance for Claude Code.
 - [x] Add concise MCP server instructions for tool search.
 - [x] Finish v1 `bombsell.*` wrapper tools over the existing registry.
   Landed: Brief, launch check, qualified signals, contact lanes, sent outreach,

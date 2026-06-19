@@ -6,6 +6,7 @@ import { findFirstProductWorkspaceForUser } from "@/core/product/app.ts";
 import { registerProductTools } from "@/core/product/tools.ts";
 import { registerGraphTools } from "@/core/graph/index.ts";
 import { registerExaTools } from "@/core/exa/index.ts";
+import { protectedResourceMetadataUrl } from "@/core/mcp/oauth-metadata.ts";
 import { validUuid, getRequestUserId } from "@/lib/auth";
 import {
   getActiveWorkspaceSession,
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
       status: 401,
       headers: {
         ...corsHeaders(),
-        "WWW-Authenticate": "Bearer",
+        "WWW-Authenticate": mcpAuthenticateHeader(request),
       },
     });
   }
@@ -59,7 +60,7 @@ async function handleMcpRequest(request: Request): Promise<Response> {
         status: 401,
         headers: {
           ...corsHeaders(),
-          "WWW-Authenticate": "Bearer",
+          "WWW-Authenticate": mcpAuthenticateHeader(request),
         },
       },
     );
@@ -151,6 +152,10 @@ function bearerToken(request: Request): string | null {
   const [scheme, token] = auth.split(/\s+/, 2);
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
   return token.trim() || null;
+}
+
+function mcpAuthenticateHeader(request: Request): string {
+  return `Bearer resource_metadata="${protectedResourceMetadataUrl(request)}"`;
 }
 
 function corsHeaders(): HeadersInit {

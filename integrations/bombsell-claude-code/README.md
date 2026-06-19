@@ -38,6 +38,15 @@ https://www.bombsell.com/api/mcp
 
 Public use requires Bombsell MCP OAuth so Claude Code can authenticate with a browser flow and store refreshable tokens securely. Do not publish static bearer tokens, workspace IDs, or `headersHelper` scripts inside this plugin. Private dogfood can use local Claude Code MCP configuration outside this package while the OAuth path is being completed.
 
+Bombsell exposes OAuth discovery metadata at:
+
+```text
+https://www.bombsell.com/.well-known/oauth-protected-resource
+https://www.bombsell.com/.well-known/oauth-authorization-server
+```
+
+Browser consent and token issuance are the remaining backend steps before public plugin auth is ready.
+
 ## Safety Model
 
 - Brief, launch check, signal review, sent outreach, draft lookup, and reply learning are read-only.

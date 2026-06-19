@@ -19,6 +19,11 @@ import {
 import { createMcpManifest } from "../core/mcp/manifest.ts";
 import { BOMBSELL_MCP_INSTRUCTIONS } from "../core/mcp/instructions.ts";
 import {
+  BOMBSELL_MCP_OAUTH_SCOPES,
+  mcpAuthorizationServerMetadata,
+  mcpProtectedResourceMetadata,
+} from "../core/mcp/oauth-metadata.ts";
+import {
   registerBombsellAliasTools,
   _resetBombsellAliasToolsRegistration,
 } from "../core/product/bombsell-tools.ts";
@@ -383,6 +388,15 @@ test("MCP manifest guides external agents through Brief, Agent, and Profile", ()
   assert.equal(manifest.instructions, BOMBSELL_MCP_INSTRUCTIONS);
   assert.deepEqual(manifest.product_surfaces, ["Brief", "Agent", "Profile"]);
   assert.equal(manifest.recommended_entry_tool, "product.brief.get");
+  assert.match(manifest.auth, /oauth-protected-resource/);
+  assert.equal(
+    manifest.oauth_protected_resource,
+    "/.well-known/oauth-protected-resource",
+  );
+  assert.equal(
+    manifest.oauth_authorization_server,
+    "/.well-known/oauth-authorization-server",
+  );
   assert.ok(
     BOMBSELL_MCP_INSTRUCTIONS.length < 2000,
     "Claude Code tool-search instructions should stay concise",
@@ -397,6 +411,39 @@ test("MCP manifest guides external agents through Brief, Agent, and Profile", ()
   ]) {
     assert.match(BOMBSELL_MCP_INSTRUCTIONS, new RegExp(phrase));
   }
+});
+
+test("MCP OAuth metadata supports Claude Code remote auth discovery", () => {
+  const request = new Request("https://www.bombsell.com/api/mcp");
+  const protectedMetadata = mcpProtectedResourceMetadata(request);
+  const authMetadata = mcpAuthorizationServerMetadata(request);
+  const mcpRoute = readProjectFile("app/api/mcp/route.ts");
+
+  assert.equal(protectedMetadata.resource, "https://www.bombsell.com/api/mcp");
+  assert.deepEqual(protectedMetadata.authorization_servers, [
+    "https://www.bombsell.com",
+  ]);
+  assert.deepEqual(protectedMetadata.bearer_methods_supported, ["header"]);
+  assert.deepEqual(protectedMetadata.scopes_supported, [
+    ...BOMBSELL_MCP_OAUTH_SCOPES,
+  ]);
+  assert.equal(authMetadata.issuer, "https://www.bombsell.com");
+  assert.equal(
+    authMetadata.authorization_endpoint,
+    "https://www.bombsell.com/api/mcp/oauth/authorize",
+  );
+  assert.equal(
+    authMetadata.token_endpoint,
+    "https://www.bombsell.com/api/mcp/oauth/token",
+  );
+  assert.equal(
+    authMetadata.registration_endpoint,
+    "https://www.bombsell.com/api/mcp/oauth/register",
+  );
+  assert.deepEqual(authMetadata.code_challenge_methods_supported, ["S256"]);
+  assert.match(mcpRoute, /resource_metadata="\$\{protectedResourceMetadataUrl\(request\)\}"/);
+  assert.ok(projectFileExists("app/.well-known/oauth-protected-resource/route.ts"));
+  assert.ok(projectFileExists("app/.well-known/oauth-authorization-server/route.ts"));
 });
 
 test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () => {
