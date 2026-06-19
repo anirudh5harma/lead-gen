@@ -1474,6 +1474,16 @@ export default async function RepsPage() {
         coverage={coverage}
       />
 
+      <AgentModeRail
+        activity={state.activity}
+        opportunities={state.opportunities}
+        contacts={state.contacts}
+        outreach={state.outreach}
+        replies={state.replies}
+        learning={state.learning}
+        readiness={state.readiness}
+      />
+
       <AgentSetupSnapshot
         strategy={state.strategy}
         signalMix={state.signalMix}
@@ -1638,6 +1648,127 @@ function commandBlockerCopy(readiness: WorkspaceLaunchReadiness): string {
     return "Set email or LinkedIn rules before signals can become messages.";
   }
   return "Finish Profile before outreach can run.";
+}
+
+function AgentModeRail({
+  activity,
+  opportunities,
+  contacts,
+  outreach,
+  replies,
+  learning,
+  readiness,
+}: {
+  activity: AgentActivity;
+  opportunities: QualifiedSignalWorkbench;
+  contacts: AgentContactSummary;
+  outreach: AgentOutreachSummary;
+  replies: AgentReplySummary;
+  learning: AgentLearningSummary;
+  readiness: WorkspaceLaunchReadiness;
+}) {
+  const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  const learning7d = learning.positive_replies_7d + learning.meetings_7d;
+  const modes = [
+    {
+      href: "#activity",
+      icon: "sync",
+      label: "Live work",
+      value: activity.active_workflows + activity.events_last_hour,
+      detail: activity.active_workflows > 0 ? "running now" : "last hour",
+      ready: activity.active_workflows > 0 || activity.events_last_hour > 0,
+    },
+    {
+      href: "#outreach",
+      icon: "send",
+      label: "Outreach",
+      value: sent7d,
+      detail: "sent 7d",
+      ready: sent7d > 0,
+    },
+    {
+      href: "#opportunities",
+      icon: "sensors",
+      label: "Signals",
+      value: opportunities.stats.qualified,
+      detail: "qualified",
+      ready: opportunities.stats.qualified > 0,
+    },
+    {
+      href: "#verified-contacts",
+      icon: "person_search",
+      label: "Contacts",
+      value: contacts.reachable,
+      detail: "reachable",
+      ready: contacts.reachable > 0,
+    },
+    {
+      href: "#replies",
+      icon: "mail",
+      label: "Replies",
+      value: replies.replies_7d,
+      detail: "ready 7d",
+      ready: replies.replies_7d > 0,
+    },
+    {
+      href: "#learning",
+      icon: "auto_graph",
+      label: "Learning",
+      value: learning7d,
+      detail: "wins 7d",
+      ready: learning7d > 0,
+    },
+    {
+      href: "#system",
+      icon: "verified",
+      label: "System",
+      value: readiness.launch_ready ? "Ready" : "Gated",
+      detail: readiness.launch_ready ? "launch" : "setup",
+      ready: readiness.launch_ready,
+    },
+  ];
+
+  return (
+    <nav
+      aria-label="Agent work modes"
+      className="sticky top-3 z-20 -mx-1 overflow-x-auto rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)]/95 p-1 shadow-[0_18px_38px_-32px_rgba(15,23,42,0.35)] backdrop-blur"
+    >
+      <div className="grid min-w-[860px] grid-cols-7 gap-1">
+        {modes.map((mode) => (
+          <Link
+            key={mode.href}
+            href={`/dashboard/agent${mode.href}`}
+            prefetch={false}
+            className="group grid grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 py-2.5 text-left transition-colors hover:bg-[var(--color-ink-2)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+          >
+            <span
+              className={
+                "grid size-8 place-items-center rounded-[8px] " +
+                (mode.ready
+                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                  : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+              }
+            >
+              <Icon name={mode.icon} size={15} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-baseline gap-1.5">
+                <span className="truncate text-xs font-semibold text-[var(--color-text-1)]">
+                  {mode.label}
+                </span>
+                <span className="font-mono text-[11px] tabular-nums text-[var(--color-text-4)]">
+                  {mode.value}
+                </span>
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] text-[var(--color-text-3)]">
+                {mode.detail}
+              </span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </nav>
+  );
 }
 
 function AgentCommandLink({
@@ -2106,15 +2237,16 @@ function AgentSystemPanel({
     learning.meetings_7d +
     learning.recommended_patterns;
   return (
-    <SurfaceSection
-      title="System status"
-      action={
-        <Link href="/dashboard/profile#agent" className="btn-quiet-sm">
-          <Icon name="edit_note" size={14} />
-          Tune in Profile
-        </Link>
-      }
-    >
+    <div id="system" className="scroll-mt-28">
+      <SurfaceSection
+        title="System status"
+        action={
+          <Link href="/dashboard/profile#agent" className="btn-quiet-sm">
+            <Icon name="edit_note" size={14} />
+            Tune in Profile
+          </Link>
+        }
+      >
       <div className="grid gap-3 lg:grid-cols-4">
         <SystemStatusCard
           icon={readiness.launch_ready ? "check_circle" : "sync_problem"}
@@ -2246,7 +2378,8 @@ function AgentSystemPanel({
           </div>
         </div>
       </div>
-    </SurfaceSection>
+      </SurfaceSection>
+    </div>
   );
 }
 
@@ -3310,7 +3443,10 @@ function AgentActivityPanel({ activity }: { activity: AgentActivity }) {
     activity.reviews_pending > 0;
   const currentWork = agentCurrentWork(activity);
   return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <section
+      id="activity"
+      className="grid scroll-mt-28 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"
+    >
       <div className="rounded-[10px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

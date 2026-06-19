@@ -618,6 +618,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /AgentOutreachPanel/);
   assert.match(reps, /AgentRepliesPanel/);
   assert.match(reps, /AgentOpportunityPanel/);
+  assert.match(reps, /AgentModeRail/);
+  assert.match(reps, /aria-label="Agent work modes"/);
+  assert.match(reps, /href=\{`\/dashboard\/agent\$\{mode\.href\}`\}/);
+  assert.match(reps, /label: "Outreach"/);
+  assert.match(reps, /label: "Contacts"/);
+  assert.match(reps, /label: "Learning"/);
   assert.doesNotMatch(reps, /AgentReadinessPanel/);
   assert.doesNotMatch(reps, /AgentStrategyPanel/);
   assert.doesNotMatch(reps, /AgentSequencePanel/);
@@ -650,7 +656,9 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /graph_sources/);
   assert.match(reps, /coalesce\(compiled->>'channel', ''\)/);
   assert.doesNotMatch(reps, /id="sources" className="scroll-mt-28"/);
+  assert.match(reps, /id="activity"/);
   assert.match(reps, /id="opportunities" className="scroll-mt-28"/);
+  assert.match(reps, /id="system" className="scroll-mt-28"/);
   assert.doesNotMatch(reps, /runAgentSourceNowAction/);
   assert.doesNotMatch(reps, /Run now/);
   assert.doesNotMatch(reps, /name="source_id" value=\{source\.id\}/);
