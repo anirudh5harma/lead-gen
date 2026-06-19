@@ -547,6 +547,7 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
     };
   };
   const readme = readProjectFile(`${root}/README.md`);
+  const plan = readProjectFile("docs/plans/2026-06-19-001-bombsell-claude-code-plugin-plan.md");
   const skills = [
     "brief",
     "profile-from-repo",
@@ -591,6 +592,12 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.match(readme, /proposal-only/);
   assert.match(readme, /does not send/);
   assert.match(readme, /Do not publish static bearer tokens/);
+  assert.match(readme, /"source": "git-subdir"/);
+  assert.match(readme, /"path": "integrations\/bombsell-claude-code"/);
+  assert.match(readme, /"sha": "<release-commit-sha>"/);
+  assert.match(plan, /"source": "git-subdir"/);
+  assert.match(plan, /"path": "integrations\/bombsell-claude-code"/);
+  assert.match(plan, /pinned commit SHA/);
   assert.doesNotMatch(readme, /Sampark|plays tab|outcomes tab/i);
   assert.ok(!projectFileExists(`${root}/hooks/hooks.json`));
   assert.ok(!projectFileExists(`${root}/agents/gtm-operator.md`));

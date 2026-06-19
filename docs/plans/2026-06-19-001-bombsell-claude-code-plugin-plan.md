@@ -44,6 +44,12 @@ Last checked against Anthropic Claude Code docs on 2026-06-19.
 - Distribution can start with a private/company marketplace and later move to
   the Anthropic community marketplace after validation and safety review.
   Source: <https://code.claude.com/docs/en/plugin-marketplaces>
+- Because the plugin lives under this monorepo today, the marketplace entry
+  should use Claude Code's `git-subdir` source type with
+  `path: "integrations/bombsell-claude-code"` and a pinned commit SHA for
+  external dogfood. That avoids publishing the whole repo as the plugin cache
+  while preserving traceability back to the exact code users installed.
+  Source: <https://code.claude.com/docs/en/plugin-marketplaces>
 - Claude Code's plugin manager shows users what a plugin will install: commands,
   agents, skills, hooks, MCP servers, and LSP servers. That means Bombsell's v1
   should keep its install footprint small and obvious.
@@ -197,6 +203,28 @@ bombsell-claude-code-marketplace/
   plugins/
     bombsell/ -> ../bombsell-claude-code or pinned source
 ```
+
+Recommended private marketplace entry while the plugin remains in this
+monorepo:
+
+```json
+{
+  "name": "bombsell",
+  "displayName": "Bombsell",
+  "description": "Run Bombsell GTM workflows from Claude Code.",
+  "source": {
+    "source": "git-subdir",
+    "url": "https://github.com/anirudh5harma/lead-gen.git",
+    "path": "integrations/bombsell-claude-code",
+    "sha": "<release-commit-sha>"
+  },
+  "strict": true
+}
+```
+
+Once the plugin is accepted by design partners, move it to a dedicated public
+repo or publish it as a standalone package so marketplace installation does not
+depend on the app monorepo remaining public-readable.
 
 Initial `.mcp.json` target:
 

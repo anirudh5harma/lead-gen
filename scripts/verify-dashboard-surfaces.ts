@@ -64,9 +64,21 @@ const forbiddenNav = ["Outreach", "Signals", "Prospects", "Inbox", "Plays", "Out
 
 const redirectChecks: RedirectCheck[] = [
   { path: "/dashboard/reps", destination: "/dashboard/agent" },
+  { path: "/dashboard/campaigns", destination: "/dashboard/agent#learning" },
+  { path: "/dashboard/content", destination: "/dashboard/agent" },
+  { path: "/dashboard/aeo", destination: "/dashboard/agent" },
+  { path: "/dashboard/plays", destination: "/dashboard/agent#learning" },
   { path: "/dashboard/signals", destination: "/dashboard/agent#opportunities" },
+  { path: "/dashboard/ingestion", destination: "/dashboard/agent#opportunities" },
+  { path: "/dashboard/prospects", destination: "/dashboard/agent#verified-contacts" },
   { path: "/dashboard/conversations", destination: "/dashboard/agent#outreach" },
+  { path: "/dashboard/review", destination: "/dashboard/agent#opportunities" },
+  { path: "/dashboard/approvals", destination: "/dashboard/agent#opportunities" },
   { path: "/dashboard/settings", destination: "/dashboard/profile#tools" },
+  { path: "/dashboard/integrations", destination: "/dashboard/profile#tools" },
+  { path: "/dashboard/deliverability", destination: "/dashboard/profile#channels" },
+  { path: "/dashboard/prospecting", destination: "/dashboard/profile#profile" },
+  { path: "/dashboard/setup", destination: "/dashboard/profile#profile" },
   { path: "/dashboard/outcomes", destination: "/dashboard/brief" },
 ];
 

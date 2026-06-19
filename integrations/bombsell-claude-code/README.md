@@ -28,6 +28,22 @@ Then run:
 
 For marketplace dogfood, publish this directory through a Bombsell-controlled Claude Code plugin marketplace and install it as `bombsell@bombsell`.
 
+Recommended marketplace source while this plugin lives in the app monorepo:
+
+```json
+{
+  "name": "bombsell",
+  "source": {
+    "source": "git-subdir",
+    "url": "https://github.com/anirudh5harma/lead-gen.git",
+    "path": "integrations/bombsell-claude-code",
+    "sha": "<release-commit-sha>"
+  }
+}
+```
+
+Pin every dogfood release by commit SHA so users can audit the exact plugin files Claude Code installed.
+
 ## Auth
 
 The plugin points Claude Code at Bombsell's remote HTTP MCP endpoint:
