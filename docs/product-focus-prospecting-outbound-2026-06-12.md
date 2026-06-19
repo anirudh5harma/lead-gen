@@ -1,4 +1,4 @@
-# Product Focus: Prospecting, Signals, Outbound, Campaigns
+# Product Focus: Signal-Led Outbound
 
 Date: 2026-06-12
 
@@ -57,18 +57,22 @@ That maps to the current primitives:
 Active navigation:
 
 - Brief
+- Agent
+- Profile
+
+Retired from navigation:
+
 - Prospecting
 - Signals
 - Outreach
 - Campaigns
-
-Retired from navigation:
-
 - Content
 - AEO
 
 Legacy deep links for `/dashboard/content` and `/dashboard/aeo` should redirect
-to `/dashboard/campaigns` instead of showing separate surfaces.
+to `/dashboard/agent` instead of showing separate surfaces. Legacy Prospecting,
+Signals, Outreach, Campaigns, Review, Approvals, and setup links should land in
+the relevant Brief, Agent, or Profile section.
 
 ## Implementation Notes
 

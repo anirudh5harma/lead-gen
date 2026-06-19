@@ -1,13 +1,15 @@
-# Bombsell — pivot-v2
+# Bombsell — signal-led outbound
 
-AI-native GTM infrastructure for agents, founders, and small teams. Outbound, online content, and campaigns on autopilot — reliably.
+AI-native GTM infrastructure for founders and lean teams. Bombsell turns quality
+signals into verified email or LinkedIn outreach, then learns from replies and
+meetings.
 
 This branch is a clean-slate rebuild against a state-of-the-art architecture. The old codebase is preserved under [`legacy/`](./legacy) for reference.
 
 ## Read first
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — the design. Five primitives (Rep, Signal, Play, Conversation, Outcome). Five layers (Substrate → Knowledge Graph → Agent Fabric → Channels → Surfaces). The non-negotiables.
-- [`docs/exa-intelligence-layer.md`](./docs/exa-intelligence-layer.md) — how Exa becomes the public-web intelligence layer for Profile, Reps, Signals, Outreach, Content, Campaigns, and AEO before X/LinkedIn provider work.
+- [`docs/exa-intelligence-layer.md`](./docs/exa-intelligence-layer.md) — how Exa becomes the public-web intelligence layer for Profile, qualified Signals, contact enrichment, draft grounding, and external-agent workflows before deeper X/LinkedIn provider work.
 - [`AGENTS.md`](./AGENTS.md) — the no-shortcuts rules. Build to the architecture; document any forced divergence in your PR.
 
 ## Layout
@@ -44,7 +46,7 @@ legacy/          # Archived previous implementation; import quarantine is tested
 | LLM client (DeepSeek V4 Pro) + LLM-backed judge       | ✅ landed |
 | Email channel (Outlook OAuth primary + optional managed domains) | ✅ landed |
 | Transactional email (Resend)                          | ✅ landed |
-| First Rep + Play end-to-end ("Sampark", Series A cold) | ✅ landed |
+| Signal-to-email workflow with hot-path eval gate        | ✅ landed |
 | Reply intake + classification → procedural feedback   | ✅ landed |
 | Optional SES SNS signature verification + trusted topic gating | ✅ landed |
 | Dashboard membership auth + Outlook credential encryption | ✅ landed |
@@ -55,7 +57,7 @@ legacy/          # Archived previous implementation; import quarantine is tested
 | Control-plane maintenance wake (scheduler → Restate)  | ✅ landed |
 | Microsoft Graph lifecycle-token validation + legacy reconnect | ✅ landed |
 | Dead-letter queue + owner recovery surface            | ✅ landed |
-| Dashboard UI (Brief, Outreach, Content, Campaigns, AEO, Profile, Review, Health) | ✅ landed |
+| Dashboard UI (Brief, Agent, Profile, Health)            | ✅ landed |
 | Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
 | Restate workflow-handler host process + release gate  | ✅ landed |
 | Auto-trigger of Plays on `signal.matched`             | ✅ landed |
@@ -114,9 +116,9 @@ The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` inte
 ### Try the dashboard end-to-end
 
 ```bash
-# Apply migrations, then seed Sampark + a Series A signal, run the cold-open
-# Play with mocked LLM + SES, and simulate an inbound positive reply so
-# the dashboard has real data.
+# Apply migrations, then seed a signal-led outreach workspace, run the
+# cold-open workflow with mocked LLM + SES, and simulate an inbound
+# positive reply so the dashboard has real data.
 npm run migrate
 BOMBSELL_ALLOW_DEMO_AUTH=1 \
 BOMBSELL_DEMO_USER_ID=00000000-0000-4000-8000-000000000001 \
@@ -375,10 +377,12 @@ Outlook setup (`external`), and AWS SES production-access review/sandbox state
 
 #### 6. Owner surfaces to bookmark
 
-- `/dashboard/campaigns` — qualified signals, campaign ideas, and recent
-  outcomes.
-- `/dashboard/deliverability` — sending-domain warmup, bounce + complaint
-  rates, channel-account health.
+- `/dashboard/brief` — last-day and last-week qualified signals, signal mix,
+  email/LinkedIn sends, replies, meetings, and the next move.
+- `/dashboard/agent` — live work, qualified signals, verified contacts, sent
+  outreach, replies, and learning.
+- `/dashboard/profile` — company Profile, buyer fit, Outlook/LinkedIn
+  integrations, contact quality, limits, and Claude Code access.
 - `/dashboard/health` — runtime readiness and owner-only recovery moments.
 
 #### Known follow-ups (do not block launch)

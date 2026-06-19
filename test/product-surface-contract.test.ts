@@ -230,6 +230,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
 
 test("retired product surfaces redirect to Agent", () => {
   const nextConfig = source("next.config.ts");
+  const focusDoc = source("docs/product-focus-prospecting-outbound-2026-06-12.md");
 
   assert.match(nextConfig, /source: "\/dashboard\/reps"/);
   assert.match(nextConfig, /source: "\/dashboard\/reps\/:id"/);
@@ -246,6 +247,10 @@ test("retired product surfaces redirect to Agent", () => {
     source("app/dashboard/aeo/page.tsx"),
     /redirect\("\/dashboard\/agent"\)/,
   );
+  assert.match(focusDoc, /# Product Focus: Signal-Led Outbound/);
+  assert.match(focusDoc, /- Brief\n- Agent\n- Profile/);
+  assert.match(focusDoc, /to `\/dashboard\/agent`/);
+  assert.doesNotMatch(focusDoc, /to `\/dashboard\/campaigns`/);
 });
 
 test("Dashboard routes setup work through Profile and current surfaces", () => {
@@ -1011,6 +1016,7 @@ test("Agent surface shows live work and account readiness", () => {
 });
 
 test("dashboard app surfaces do not leak legacy named agents", () => {
+  const readme = source("README.md");
   const surfaces = [
     source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/agent/[id]/AgentDetailPage.tsx"),
@@ -1022,6 +1028,16 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
   assert.match(surfaces, /Outbound agent/);
   assert.doesNotMatch(surfaces, /Sampark/);
   assert.doesNotMatch(surfaces, /Prayog/);
+  assert.doesNotMatch(readme, /Sampark|Prayog/);
+  assert.match(readme, /Dashboard UI \(Brief, Agent, Profile, Health\)/);
+  assert.match(readme, /\/dashboard\/brief/);
+  assert.match(readme, /\/dashboard\/agent/);
+  assert.match(readme, /\/dashboard\/profile/);
+  assert.doesNotMatch(
+    readme,
+    /Dashboard UI \(Brief, Outreach, Content, Campaigns, AEO, Profile, Review, Health\)/,
+  );
+  assert.doesNotMatch(readme, /\/dashboard\/campaigns`/);
 });
 
 test("MCP context uses the simplified product model", () => {
@@ -1283,6 +1299,8 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"Use Bombsell in Claude Code"/);
   assert.match(verifier, /"http:\/\/127\.0\.0\.1:3023"/);
   assert.doesNotMatch(capabilityMap, /\/dashboard\/agent#sources/);
+  assert.doesNotMatch(capabilityMap, /\/dashboard\/conversations\/\[id\]/);
+  assert.match(capabilityMap, /\/dashboard\/agent\/outreach\/\[id\]/);
   assert.match(capabilityMap, /\/dashboard\/profile#signal-setup/);
 });
 
