@@ -117,8 +117,9 @@ The LLM client (`core/agents/llm/`) exposes a provider-agnostic `LLMClient` inte
 
 ```bash
 # Apply migrations, then seed a signal-led outreach workspace, run the
-# cold-open workflow with mocked LLM + SES, and simulate an inbound
-# positive reply so the dashboard has real data.
+# cold-open workflow with mocked LLM + send adapter, and simulate an
+# inbound positive reply so the launch dashboard has real data without
+# sending external email.
 npm run migrate
 BOMBSELL_ALLOW_DEMO_AUTH=1 \
 BOMBSELL_DEMO_USER_ID=00000000-0000-4000-8000-000000000001 \
@@ -126,6 +127,17 @@ npm run demo:seed
 npm run dev
 # Open http://localhost:3000/dashboard
 ```
+
+After seeding, check the current launch surfaces:
+
+- `/dashboard/brief` — morning brief with non-zero qualified signal, send,
+  reply, and meeting counts.
+- `/dashboard/agent` — live work, sent outreach, verified contacts, reply
+  evidence, and learning.
+- `/dashboard/agent/outreach/<conversation-id>` — exact sent draft and
+  signal-to-outreach proof for the seeded conversation.
+- `/dashboard/profile` — Profile, channel setup, contact quality, and Claude
+  Code access.
 
 The demo opt-in inserts an accepted membership for the local demo identity.
 Production never permits demo authentication or arbitrary workspace-cookie

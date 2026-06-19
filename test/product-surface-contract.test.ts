@@ -1097,6 +1097,7 @@ test("Agent surface shows live work and account readiness", () => {
 
 test("dashboard app surfaces do not leak legacy named agents", () => {
   const readme = source("README.md");
+  const demoSeed = source("scripts/demo-seed.ts");
   const surfaces = [
     source("app/dashboard/agent/AgentPage.tsx"),
     source("app/dashboard/setup/page.tsx"),
@@ -1112,11 +1113,17 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
   assert.match(readme, /\/dashboard\/brief/);
   assert.match(readme, /\/dashboard\/agent/);
   assert.match(readme, /\/dashboard\/profile/);
+  assert.match(readme, /\/dashboard\/agent\/outreach\/<conversation-id>/);
+  assert.match(demoSeed, /\/dashboard\/agent\/outreach\/<conversation_id>/);
+  assert.match(demoSeed, /without sending external email/);
   assert.doesNotMatch(
     readme,
     /Dashboard UI \(Brief, Outreach, Content, Campaigns, AEO, Profile, Review, Health\)/,
   );
   assert.doesNotMatch(readme, /\/dashboard\/campaigns`/);
+  assert.doesNotMatch(readme, /mocked LLM \+ SES/);
+  assert.doesNotMatch(demoSeed, /\/dashboard\/conversations/);
+  assert.doesNotMatch(demoSeed, /\/dashboard\/reps/);
 });
 
 test("MCP context uses the simplified product model", () => {

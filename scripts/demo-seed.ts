@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * Demo seed. Spins up a fresh workspace, seeds the outbound agent, ingests a Series A
- * funding signal, runs the cold-open Play (with mocked LLM + SES), and
- * simulates an inbound positive reply so the dashboard has real data to
- * show:
+ * funding signal, runs the cold-open Play with mocked LLM + send adapter, and
+ * simulates an inbound positive reply so the current launch dashboard has real
+ * data to show without sending external email:
  *
  *   /dashboard               → morning brief with non-zero counts
- *   /dashboard/conversations → one open conversation
- *   /dashboard/conversations/<id> → message timeline + show-your-work
- *   /dashboard/reps          → outbound agent with a positive_reply outcome
+ *   /dashboard/agent         → live work, sent outreach, contacts, and replies
+ *   /dashboard/agent/outreach/<conversation_id> → exact sent draft + proof
+ *   /dashboard/profile       → Profile, channels, contact quality, and tools
  *
  * Run: DATABASE_URL=... npm run demo:seed
  */
