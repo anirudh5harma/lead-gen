@@ -6,7 +6,11 @@ import { findFirstProductWorkspaceForUser } from "@/core/product/app.ts";
 import { registerProductTools } from "@/core/product/tools.ts";
 import { registerGraphTools } from "@/core/graph/index.ts";
 import { registerExaTools } from "@/core/exa/index.ts";
-import { protectedResourceMetadataUrl } from "@/core/mcp/oauth-metadata.ts";
+import {
+  BOMBSELL_MCP_OAUTH_SCOPES,
+  protectedResourceMetadataUrl,
+} from "@/core/mcp/oauth-metadata.ts";
+import { validateMcpAccessToken } from "@/core/mcp/oauth.ts";
 import { validUuid, getRequestUserId } from "@/lib/auth";
 import {
   getActiveWorkspaceSession,
@@ -84,8 +88,8 @@ async function handleMcpRequest(request: Request): Promise<Response> {
   const response = await transport.handleRequest(request, {
     authInfo: {
       token: auth.token,
-      clientId: `bombsell-user:${auth.user_id}`,
-      scopes: ["bombsell:read", "bombsell:write"],
+      clientId: auth.client_id ?? `bombsell-user:${auth.user_id}`,
+      scopes: auth.scopes,
     },
   });
 
@@ -96,11 +100,20 @@ interface McpAuth {
   token: string;
   user_id: string;
   workspace_id: string;
+  client_id: string | null;
+  scopes: string[];
 }
 
 async function resolveMcpAuth(request: Request): Promise<McpAuth | null> {
   const token = bearerToken(request);
-  const userId = token ? await userIdFromBearer(token) : await getRequestUserId();
+  const oauthClaims = token?.startsWith("mcp_")
+    ? await validateMcpAccessToken(token).catch((error) => {
+      console.error("[mcp] OAuth token validation failed", error);
+      return null;
+    })
+    : null;
+  const userId = oauthClaims?.userId ??
+    (token ? await userIdFromBearer(token) : await getRequestUserId());
   if (!userId) return null;
 
   const workspaceId = await resolveWorkspaceId(request, userId);
@@ -110,6 +123,8 @@ async function resolveMcpAuth(request: Request): Promise<McpAuth | null> {
     token: token ?? "cookie-session",
     user_id: userId,
     workspace_id: workspaceId,
+    client_id: oauthClaims?.clientId ?? null,
+    scopes: oauthClaims?.scope?.split(/\s+/).filter(Boolean) ?? [...BOMBSELL_MCP_OAUTH_SCOPES],
   };
 }
 

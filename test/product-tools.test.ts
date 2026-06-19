@@ -24,6 +24,13 @@ import {
   mcpProtectedResourceMetadata,
 } from "../core/mcp/oauth-metadata.ts";
 import {
+  normalizeMcpScope,
+  pkceS256,
+  safeRedirectUri,
+  tokenHash,
+  validateMcpAccessToken,
+} from "../core/mcp/oauth.ts";
+import {
   registerBombsellAliasTools,
   _resetBombsellAliasToolsRegistration,
 } from "../core/product/bombsell-tools.ts";
@@ -444,6 +451,71 @@ test("MCP OAuth metadata supports Claude Code remote auth discovery", () => {
   assert.match(mcpRoute, /resource_metadata="\$\{protectedResourceMetadataUrl\(request\)\}"/);
   assert.ok(projectFileExists("app/.well-known/oauth-protected-resource/route.ts"));
   assert.ok(projectFileExists("app/.well-known/oauth-authorization-server/route.ts"));
+});
+
+test("MCP OAuth routes issue browser PKCE tokens for Claude Code", () => {
+  const authorize = readProjectFile("app/api/mcp/oauth/authorize/route.ts");
+  const token = readProjectFile("app/api/mcp/oauth/token/route.ts");
+  const register = readProjectFile("app/api/mcp/oauth/register/route.ts");
+  const mcpRoute = readProjectFile("app/api/mcp/route.ts");
+  const migration = readProjectFile("db/migrations/039_mcp_oauth.sql");
+
+  assert.match(authorize, /googleAuthPath\(next\)/);
+  assert.match(authorize, /code_challenge_method !== "S256"/);
+  assert.match(authorize, /mcp_oauth_codes/);
+  assert.match(token, /pkceS256\(body\.code_verifier\)/);
+  assert.match(token, /insert into mcp_oauth_tokens/);
+  assert.match(register, /insert into mcp_oauth_clients/);
+  assert.match(mcpRoute, /validateMcpAccessToken\(token\)/);
+  assert.match(mcpRoute, /token\?\.startsWith\("mcp_"\)/);
+  assert.match(migration, /create table if not exists mcp_oauth_clients/);
+  assert.match(migration, /create table if not exists mcp_oauth_codes/);
+  assert.match(migration, /create table if not exists mcp_oauth_tokens/);
+});
+
+test("MCP OAuth helpers constrain redirects, scopes, PKCE, and token hashes", async () => {
+  assert.equal(safeRedirectUri("https://claude.ai/api/mcp/auth_callback"), "https://claude.ai/api/mcp/auth_callback");
+  assert.equal(safeRedirectUri("http://127.0.0.1:1455/callback"), "http://127.0.0.1:1455/callback");
+  assert.equal(safeRedirectUri("http://evil.example/callback"), null);
+  assert.equal(safeRedirectUri("javascript:alert(1)"), null);
+  assert.equal(
+    normalizeMcpScope("profile:read profile:read outreach:prepare unknown:scope"),
+    "profile:read outreach:prepare",
+  );
+  assert.equal(
+    normalizeMcpScope(null),
+    BOMBSELL_MCP_OAUTH_SCOPES.join(" "),
+  );
+  assert.equal(
+    pkceS256("verifier"),
+    "iMnq5o6zALKXGivsnlom_0F5_WYda32GHkxlV7mq7hQ",
+  );
+  assert.equal(tokenHash("mcp_secret").length, 64);
+
+  const calls: Array<{ sql: string; params: unknown[] }> = [];
+  const pool = {
+    async query(sql: string, params: unknown[]) {
+      calls.push({ sql, params });
+      if (/select user_id, client_id, scope/.test(sql)) {
+        return {
+          rows: [{
+            user_id: "00000000-0000-4000-8000-000000000001",
+            client_id: "mcp_client",
+            scope: "brief:read outreach:prepare",
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+
+  const claims = await validateMcpAccessToken("mcp_secret", pool as never);
+  assert.equal(claims?.userId, "00000000-0000-4000-8000-000000000001");
+  assert.equal(claims?.clientId, "mcp_client");
+  assert.equal(claims?.scope, "brief:read outreach:prepare");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.params[0], tokenHash("mcp_secret"));
+  assert.match(calls[1]?.sql ?? "", /set last_used_at/);
 });
 
 test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () => {

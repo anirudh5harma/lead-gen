@@ -36,7 +36,7 @@ The plugin points Claude Code at Bombsell's remote HTTP MCP endpoint:
 https://www.bombsell.com/api/mcp
 ```
 
-Public use requires Bombsell MCP OAuth so Claude Code can authenticate with a browser flow and store refreshable tokens securely. Do not publish static bearer tokens, workspace IDs, or `headersHelper` scripts inside this plugin. Private dogfood can use local Claude Code MCP configuration outside this package while the OAuth path is being completed.
+Public use relies on Bombsell MCP OAuth so Claude Code can authenticate with a browser consent flow and store Bombsell-scoped bearer tokens securely. Do not publish static bearer tokens, workspace IDs, or `headersHelper` scripts inside this plugin.
 
 Bombsell exposes OAuth discovery metadata at:
 
@@ -45,7 +45,7 @@ https://www.bombsell.com/.well-known/oauth-protected-resource
 https://www.bombsell.com/.well-known/oauth-authorization-server
 ```
 
-Browser consent and token issuance are the remaining backend steps before public plugin auth is ready.
+Browser PKCE consent and token issuance are implemented at `/api/mcp/oauth/authorize`, `/api/mcp/oauth/token`, and `/api/mcp/oauth/register`. Public release still needs authenticated Claude Code dogfood plus audit/revocation polish.
 
 ## Safety Model
 

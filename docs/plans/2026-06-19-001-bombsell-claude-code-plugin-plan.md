@@ -178,8 +178,8 @@ integrations/bombsell-claude-code/
 ```
 
 The first package now intentionally omits agents, hooks, and local binaries.
-Those remain post-dogfood additions after remote MCP OAuth and audit logging are
-complete.
+Those remain post-dogfood additions after remote MCP authenticated dogfood and
+audit logging are complete.
 
 Private marketplace structure:
 
@@ -524,6 +524,8 @@ Install page bullets:
 - [ ] Add two optional agents.
 - [x] Add README and install docs.
 - [x] Validate plugin manifest locally with `claude plugin validate integrations/bombsell-claude-code`.
+- [x] Add OAuth discovery metadata for remote MCP clients.
+- [x] Add OAuth browser consent and token issuance for Claude Code.
 - [ ] Dogfood an authenticated session with `claude --plugin-dir ./integrations/bombsell-claude-code`.
 - [ ] Publish private marketplace.
 - [ ] Dogfood with design partners.
@@ -535,7 +537,7 @@ Install page bullets:
   updates as proposal-only until users trust the plugin?
 - Should Bombsell publish the plugin in this repo under `integrations/`, or a
   separate public repository for cleaner marketplace submission?
-- Should auth use Supabase OAuth/session exchange, a Bombsell-scoped personal
-  access token, or full MCP OAuth metadata discovery?
+- Should Claude Code MCP tokens get a self-serve revocation UI in Profile, or
+  remain admin/API managed for the first dogfood cohort?
 - Should Claude Code sessions show up as their own channel in Agent activity, or
   only in Health/audit logs?
