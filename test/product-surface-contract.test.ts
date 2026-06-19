@@ -341,6 +341,17 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /loadBriefCapabilityReadiness/);
   assert.match(dashboard, /push_signal_sources/);
   assert.match(dashboard, /visitor_signals_7d/);
+  assert.match(dashboard, /visitor_qualified_7d/);
+  assert.match(dashboard, /visitor_contacts_7d/);
+  assert.match(dashboard, /visitor_outreach_7d/);
+  assert.match(dashboard, /with visitor_signals as/);
+  assert.match(dashboard, /Visitor de-anonymization should move from identified account/);
+  assert.match(dashboard, /Website intent loop/);
+  assert.match(dashboard, /Visitors identified/);
+  assert.match(dashboard, /ICP matches/);
+  assert.match(dashboard, /Contacts found/);
+  assert.match(dashboard, /Outreach queued/);
+  assert.match(dashboard, /BriefGrowLoopStep/);
   assert.match(dashboard, /crm_destinations/);
   assert.match(dashboard, /visitor_deanonymization/);
   assert.match(dashboard, /Launch capability coverage/);

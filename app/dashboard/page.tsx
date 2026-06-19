@@ -115,6 +115,9 @@ interface BriefChannelReadiness {
 interface BriefCapabilityReadiness {
   push_signal_sources: number;
   visitor_signals_7d: number;
+  visitor_qualified_7d: number;
+  visitor_contacts_7d: number;
+  visitor_outreach_7d: number;
   crm_destinations: number;
 }
 
@@ -575,9 +578,26 @@ async function loadBriefCapabilityReadiness(
   const { rows } = await pool.query<{
     push_signal_sources: string;
     visitor_signals_7d: string;
+    visitor_qualified_7d: string;
+    visitor_contacts_7d: string;
+    visitor_outreach_7d: string;
     crm_destinations: string;
   }>(
-    `select
+    `with visitor_signals as (
+       select s.id,
+              s.status,
+              s.related_person_id,
+              s.related_company_id
+         from signals s
+        where s.workspace_id = $1
+          and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+          and (
+            s.properties #>> '{structured,visitor_deanonymization}' = 'true'
+            or s.provenance->>'source' = 'visitor_deanonymization'
+            or s.provenance->>'provider' in ('rb2b','clearbit','factors','warmly')
+          )
+     )
+     select
        (select count(*)::text
           from graph_sources gs
          where gs.workspace_id = $1
@@ -585,15 +605,35 @@ async function loadBriefCapabilityReadiness(
              gs.config->>'adapter' = 'webhook'
              or gs.properties->>'adapter' = 'webhook'
            )) as push_signal_sources,
+       (select count(*)::text from visitor_signals) as visitor_signals_7d,
        (select count(*)::text
-          from signals s
-         where s.workspace_id = $1
-           and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+          from visitor_signals vs
+         where vs.status in ('matched','in_play')) as visitor_qualified_7d,
+       (select count(distinct p.id)::text
+          from visitor_signals vs
+          join graph_persons p
+            on p.workspace_id = $1
            and (
-             s.properties #>> '{structured,visitor_deanonymization}' = 'true'
-             or s.provenance->>'source' = 'visitor_deanonymization'
-             or s.provenance->>'provider' in ('rb2b','clearbit','factors','warmly')
-           )) as visitor_signals_7d,
+             p.id = vs.related_person_id
+             or (
+               vs.related_company_id is not null
+               and p.company_id = vs.related_company_id
+             )
+           )
+           and (
+             cardinality(coalesce(p.emails, '{}'::text[])) > 0
+             or p.linkedin_url is not null
+           )) as visitor_contacts_7d,
+       (select count(distinct c.id)::text
+          from visitor_signals vs
+          join conversations c
+            on c.workspace_id = $1
+           and c.origin_signal_id = vs.id
+          join messages m
+            on m.workspace_id = c.workspace_id
+           and m.conversation_id = c.id
+           and m.direction = 'outbound'
+           and m.status in ('draft','queued','deferred','sent','delivered','replied')) as visitor_outreach_7d,
        (select count(*)::text
           from channel_accounts ca
          where ca.workspace_id = $1
@@ -604,6 +644,9 @@ async function loadBriefCapabilityReadiness(
   return {
     push_signal_sources: Number(rows[0]?.push_signal_sources ?? 0),
     visitor_signals_7d: Number(rows[0]?.visitor_signals_7d ?? 0),
+    visitor_qualified_7d: Number(rows[0]?.visitor_qualified_7d ?? 0),
+    visitor_contacts_7d: Number(rows[0]?.visitor_contacts_7d ?? 0),
+    visitor_outreach_7d: Number(rows[0]?.visitor_outreach_7d ?? 0),
     crm_destinations: Number(rows[0]?.crm_destinations ?? 0),
   };
 }
@@ -825,6 +868,9 @@ const EMPTY_CHANNEL_READINESS: BriefChannelReadiness = {
 const EMPTY_CAPABILITY_READINESS: BriefCapabilityReadiness = {
   push_signal_sources: 0,
   visitor_signals_7d: 0,
+  visitor_qualified_7d: 0,
+  visitor_contacts_7d: 0,
+  visitor_outreach_7d: 0,
   crm_destinations: 0,
 };
 
@@ -1508,6 +1554,32 @@ function BriefCapabilityCoveragePanel({
   const outreachReady =
     (channelReadiness.email_connected || channelReadiness.linkedin_connected) &&
     (draftedSignals7d > 0 || totalSent7d > 0);
+  const growLoop = [
+    {
+      icon: "radar",
+      label: "Visitors identified",
+      value: capabilityReadiness.visitor_signals_7d,
+      href: "/dashboard/profile#visitor-intent",
+    },
+    {
+      icon: "fact_check",
+      label: "ICP matches",
+      value: capabilityReadiness.visitor_qualified_7d,
+      href: "/dashboard/agent#qualified-signals",
+    },
+    {
+      icon: "person_search",
+      label: "Contacts found",
+      value: capabilityReadiness.visitor_contacts_7d,
+      href: "/dashboard/agent#verified-contacts",
+    },
+    {
+      icon: "send",
+      label: "Outreach queued",
+      value: capabilityReadiness.visitor_outreach_7d,
+      href: "/dashboard/agent#outreach",
+    },
+  ];
   const capabilities = [
     {
       icon: "radar",
@@ -1629,7 +1701,66 @@ function BriefCapabilityCoveragePanel({
           </Link>
         ))}
       </div>
+      <div className="mt-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-[var(--color-text-1)]">
+              Website intent loop
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+              Visitor de-anonymization should move from identified account to
+              ICP match, reachable contact, and email or LinkedIn outreach.
+            </p>
+          </div>
+          <Link href="/dashboard/profile#visitor-intent" className="btn-quiet-sm">
+            <Icon name="radar" size={14} />
+            Visitor setup
+          </Link>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {growLoop.map((step) => (
+            <BriefGrowLoopStep key={step.label} step={step} />
+          ))}
+        </div>
+      </div>
     </section>
+  );
+}
+
+function BriefGrowLoopStep({
+  step,
+}: {
+  step: {
+    icon: string;
+    label: string;
+    value: number;
+    href: string;
+  };
+}) {
+  return (
+    <Link
+      href={step.href}
+      className="grid min-h-[96px] content-between rounded-[8px] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)]"
+    >
+      <span className="flex items-center justify-between gap-3">
+        <span
+          className={
+            "grid size-8 place-items-center rounded-[8px] " +
+            (step.value > 0
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+          }
+        >
+          <Icon name={step.icon} size={15} />
+        </span>
+        <strong className="text-xl font-semibold tabular-nums text-[var(--color-text-1)]">
+          {step.value}
+        </strong>
+      </span>
+      <span className="mt-3 text-xs font-medium text-[var(--color-text-2)]">
+        {step.label}
+      </span>
+    </Link>
   );
 }
 
