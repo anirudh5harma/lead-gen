@@ -460,6 +460,7 @@ test("MCP OAuth routes issue browser PKCE tokens for Claude Code", () => {
   const mcpRoute = readProjectFile("app/api/mcp/route.ts");
   const migration = readProjectFile("db/migrations/039_mcp_oauth.sql");
   const revokeMigration = readProjectFile("db/migrations/040_mcp_oauth_revocation.sql");
+  const registry = readProjectFile("core/substrate/events/registry.ts");
 
   assert.match(authorize, /googleAuthPath\(next\)/);
   assert.match(authorize, /code_challenge_method !== "S256"/);
@@ -474,6 +475,11 @@ test("MCP OAuth routes issue browser PKCE tokens for Claude Code", () => {
   assert.match(migration, /create table if not exists mcp_oauth_tokens/);
   assert.match(revokeMigration, /revoked_at timestamptz/);
   assert.match(revokeMigration, /mcp_oauth_tokens_active_user_idx/);
+  assert.match(registry, /const McpToolCalled = z\.object/);
+  assert.match(registry, /"mcp\.tool\.called": McpToolCalled/);
+  assert.match(mcpRoute, /readMcpToolCalls\(request\)/);
+  assert.match(mcpRoute, /event_type: "mcp\.tool\.called"/);
+  assert.match(mcpRoute, /tokenHash\(auth\.token\)\.slice\(0, 16\)/);
 });
 
 test("MCP OAuth helpers constrain redirects, scopes, PKCE, and token hashes", async () => {

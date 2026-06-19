@@ -10,7 +10,9 @@ import {
   BOMBSELL_MCP_OAUTH_SCOPES,
   protectedResourceMetadataUrl,
 } from "@/core/mcp/oauth-metadata.ts";
-import { validateMcpAccessToken } from "@/core/mcp/oauth.ts";
+import { tokenHash, validateMcpAccessToken } from "@/core/mcp/oauth.ts";
+import { createJournaledDispatchEventBus } from "@/core/substrate/events/index.ts";
+import { getPool } from "@/core/substrate/storage/index.ts";
 import { validUuid, getRequestUserId } from "@/lib/auth";
 import {
   getActiveWorkspaceSession,
@@ -52,6 +54,8 @@ export async function DELETE(request: Request) {
 }
 
 async function handleMcpRequest(request: Request): Promise<Response> {
+  const startedAt = Date.now();
+  const toolCalls = await readMcpToolCalls(request);
   const auth = await resolveMcpAuth(request);
   if (!auth) {
     return Response.json(
@@ -93,6 +97,13 @@ async function handleMcpRequest(request: Request): Promise<Response> {
     },
   });
 
+  await publishMcpToolCallEvents({
+    auth,
+    response,
+    startedAt,
+    toolCalls,
+  });
+
   return withCors(response);
 }
 
@@ -102,6 +113,11 @@ interface McpAuth {
   workspace_id: string;
   client_id: string | null;
   scopes: string[];
+}
+
+interface McpToolCallAudit {
+  request_id: string | number | null;
+  tool_name: string;
 }
 
 async function resolveMcpAuth(request: Request): Promise<McpAuth | null> {
@@ -167,6 +183,91 @@ function bearerToken(request: Request): string | null {
   const [scheme, token] = auth.split(/\s+/, 2);
   if (scheme?.toLowerCase() !== "bearer" || !token) return null;
   return token.trim() || null;
+}
+
+async function readMcpToolCalls(request: Request): Promise<McpToolCallAudit[]> {
+  if (request.method !== "POST") return [];
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  if (contentType && !contentType.includes("application/json")) return [];
+  const body = await request.clone().json().catch(() => null) as unknown;
+  const messages = Array.isArray(body) ? body : [body];
+  return messages.flatMap((message) => {
+    if (!message || typeof message !== "object") return [];
+    const record = message as Record<string, unknown>;
+    if (record.method !== "tools/call") return [];
+    const params = record.params;
+    const toolName =
+      params && typeof params === "object" && "name" in params
+        ? (params as { name?: unknown }).name
+        : null;
+    if (typeof toolName !== "string" || !toolName.trim()) return [];
+    const requestId =
+      typeof record.id === "string" || typeof record.id === "number"
+        ? record.id
+        : null;
+    return [{ request_id: requestId, tool_name: toolName.trim() }];
+  });
+}
+
+async function publishMcpToolCallEvents({
+  auth,
+  response,
+  startedAt,
+  toolCalls,
+}: {
+  auth: McpAuth;
+  response: Response;
+  startedAt: number;
+  toolCalls: McpToolCallAudit[];
+}): Promise<void> {
+  if (toolCalls.length === 0) return;
+  const status = await mcpResponseStatus(response);
+  const bus = await createJournaledDispatchEventBus({ pool: getPool() });
+  await Promise.all(
+    toolCalls.map((call) =>
+      bus.publish({
+        workspace_id: auth.workspace_id,
+        event_type: "mcp.tool.called",
+        source: "agent",
+        producer_ref: auth.client_id ?? `mcp:user:${auth.user_id}`,
+        payload: {
+          user_id: auth.user_id,
+          client_id: auth.client_id,
+          token_fingerprint: auth.token === "cookie-session"
+            ? null
+            : tokenHash(auth.token).slice(0, 16),
+          tool_name: call.tool_name,
+          request_id: call.request_id,
+          status,
+          http_status: response.status,
+          latency_ms: Math.max(0, Date.now() - startedAt),
+          mcp_method: "tools/call",
+        },
+      }).catch((error) => {
+        console.error("[mcp] tool audit publish failed", {
+          tool: call.tool_name,
+          error,
+        });
+      })
+    ),
+  );
+}
+
+async function mcpResponseStatus(response: Response): Promise<"completed" | "errored"> {
+  if (!response.ok) return "errored";
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json")) return "completed";
+  const body = await response.clone().json().catch(() => null) as unknown;
+  const messages = Array.isArray(body) ? body : [body];
+  return messages.some((message) =>
+    Boolean(
+      message &&
+        typeof message === "object" &&
+        "error" in message,
+    )
+  )
+    ? "errored"
+    : "completed";
 }
 
 function mcpAuthenticateHeader(request: Request): string {

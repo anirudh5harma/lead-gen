@@ -110,6 +110,15 @@ interface ProfileMcpToken {
   created_at: Date;
 }
 
+interface ProfileMcpActivity {
+  id: string;
+  occurred_at: Date;
+  tool_name: string;
+  status: string;
+  client_id: string | null;
+  latency_ms: number | null;
+}
+
 interface ProfileState {
   settings: Record<string, unknown>;
   outlookAccount: ProfileOutlookAccount | null;
@@ -123,6 +132,7 @@ interface ProfileState {
   contactQuality: ProfileContactQuality;
   signalSetup: ProfileSignalSetup;
   mcpTokens: ProfileMcpToken[];
+  mcpActivity: ProfileMcpActivity[];
 }
 
 async function loadProfileMcpTokens(
@@ -154,6 +164,29 @@ async function loadProfileMcpTokens(
   }
 }
 
+async function loadProfileMcpActivity(
+  pool: Pool,
+  workspaceId: string,
+  userId: string,
+): Promise<ProfileMcpActivity[]> {
+  const { rows } = await pool.query<ProfileMcpActivity>(
+    `select id,
+            occurred_at,
+            payload->>'tool_name' as tool_name,
+            payload->>'status' as status,
+            payload->>'client_id' as client_id,
+            nullif(payload->>'latency_ms', '')::integer as latency_ms
+       from events
+      where workspace_id = $1
+        and event_type = 'mcp.tool.called'
+        and payload->>'user_id' = $2
+      order by occurred_at desc
+      limit 6`,
+    [workspaceId, userId],
+  );
+  return rows;
+}
+
 function isMissingMcpOauthSchema(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -178,6 +211,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
     contactQuality,
     signalSetup,
     mcpTokens,
+    mcpActivity,
   ] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
@@ -371,6 +405,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
       [workspaceId],
     ),
     loadProfileMcpTokens(pool, userId),
+    loadProfileMcpActivity(pool, workspaceId, userId),
   ]);
   const suppressions = suppressionStats.rows[0];
   const contacts = contactQuality.rows[0];
@@ -405,6 +440,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
       qualifiedSignals7d: Number(signalSetup.rows[0]?.qualified_signals_7d ?? 0),
     },
     mcpTokens,
+    mcpActivity,
   };
 }
 
@@ -1841,7 +1877,10 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
         ))}
       </div>
 
-      <McpAccessPanel tokens={state.mcpTokens} />
+      <McpAccessPanel
+        tokens={state.mcpTokens}
+        activity={state.mcpActivity}
+      />
 
       <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1885,7 +1924,13 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
   );
 }
 
-function McpAccessPanel({ tokens }: { tokens: ProfileMcpToken[] }) {
+function McpAccessPanel({
+  tokens,
+  activity,
+}: {
+  tokens: ProfileMcpToken[];
+  activity: ProfileMcpActivity[];
+}) {
   const activeCount = tokens.filter((token) => new Date(token.expires_at).getTime() > Date.now()).length;
   return (
     <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
@@ -1962,6 +2007,52 @@ function McpAccessPanel({ tokens }: { tokens: ProfileMcpToken[] }) {
           </p>
         </div>
       )}
+
+      <div className="mt-4 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-[var(--color-text-1)]">
+            Recent MCP activity
+          </p>
+          <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+            Evented audit
+          </span>
+        </div>
+        {activity.length > 0 ? (
+          <div className="mt-3 grid gap-2">
+            {activity.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-mono text-[11px] text-[var(--color-text-2)]">
+                    {item.tool_name}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-[var(--color-text-4)]">
+                    {freshWhen(item.occurred_at)}
+                    {item.latency_ms == null ? "" : ` · ${item.latency_ms}ms`}
+                  </span>
+                </span>
+                <span
+                  className={
+                    "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+                    (item.status === "completed"
+                      ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                      : "bg-[var(--color-neg-bg)] text-[var(--color-neg)]")
+                  }
+                >
+                  {item.status || "recorded"}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs leading-5 text-[var(--color-text-3)]">
+            No external agent calls recorded yet. Tool calls from Claude Code
+            will appear here after the plugin starts using Bombsell.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

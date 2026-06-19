@@ -1489,6 +1489,22 @@ const RepMemoryProceduralSeeded = z.object({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// External agent surfaces
+// ─────────────────────────────────────────────────────────────────────────────
+
+const McpToolCalled = z.object({
+  user_id: z.string().uuid(),
+  client_id: z.string().nullable(),
+  token_fingerprint: z.string().min(8).max(32).nullable(),
+  tool_name: z.string().min(1),
+  request_id: z.union([z.string(), z.number()]).nullable().optional(),
+  status: z.enum(["completed", "errored"]),
+  http_status: z.number().int().min(100).max(599),
+  latency_ms: z.number().int().nonnegative(),
+  mcp_method: z.literal("tools/call"),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Registry
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1607,6 +1623,8 @@ export const eventRegistry = {
 
   "rep.memory.procedural.updated": RepMemoryProceduralUpdated,
   "rep.memory.procedural.seeded": RepMemoryProceduralSeeded,
+
+  "mcp.tool.called": McpToolCalled,
 } as const;
 
 export type EventType = keyof typeof eventRegistry;

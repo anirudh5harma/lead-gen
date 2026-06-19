@@ -1308,6 +1308,11 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /McpAccessPanel/);
   assert.match(settings, /Claude Code access/);
   assert.match(settings, /Browser-authorized MCP sessions/);
+  assert.match(settings, /Recent MCP activity/);
+  assert.match(settings, /Evented audit/);
+  assert.match(settings, /event_type = 'mcp\.tool\.called'/);
+  assert.match(settings, /payload->>'tool_name' as tool_name/);
+  assert.match(settings, /payload->>'user_id' = \$2/);
   assert.match(settings, /revokeMcpTokenAction/);
   assert.match(settings, /token\.token_hash\.slice\(0, 10\)/);
   assert.match(settings, /mcp_oauth_tokens t/);
