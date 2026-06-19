@@ -7,7 +7,10 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSession } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
-import { prepareQualifiedSignalsAction } from "./actions";
+import {
+  generateMeetingPrepAction,
+  prepareQualifiedSignalsAction,
+} from "./actions";
 
 export const metadata: Metadata = {
   title: "Brief | Bombsell",
@@ -60,6 +63,8 @@ interface BriefOutcomeInsight {
   signal_title: string | null;
   message_subject: string | null;
   reply_intent: string | null;
+  meeting_prep_generated_at: Date | null;
+  meeting_prep_next_action: string | null;
 }
 
 interface BriefLearningInsight {
@@ -545,13 +550,26 @@ async function loadBriefOutcomeInsights(
             co.name as company_name,
             s.title as signal_title,
             m.subject as message_subject,
-            o.properties->>'reply_intent' as reply_intent
+            o.properties->>'reply_intent' as reply_intent,
+            meeting_prep.generated_at as meeting_prep_generated_at,
+            meeting_prep.next_action as meeting_prep_next_action
        from outcomes o
        left join conversations c on c.id = o.conversation_id
        left join graph_persons p on p.id = coalesce(o.subject_person_id, c.counterparty_person_id)
        left join graph_companies co on co.id = coalesce(o.subject_company_id, c.counterparty_company_id)
        left join signals s on s.id = coalesce(o.attributed_signal_id, c.origin_signal_id)
        left join messages m on m.id = o.attributed_message_id
+       left join lateral (
+         select (e.payload->>'generated_at')::timestamptz as generated_at,
+                e.payload->>'next_action' as next_action
+           from events e
+          where e.workspace_id = $1
+            and e.event_type = 'meeting.prep.generated'
+            and c.id is not null
+            and e.payload->>'conversation_id' = c.id::text
+          order by e.occurred_at desc
+          limit 1
+       ) meeting_prep on true
       where o.workspace_id = $1
         and o.kind in ('positive_reply','meeting_booked')
         and coalesce(o.recorded_at, o.occurred_at) >= now() - interval '7 days'
@@ -1920,50 +1938,92 @@ function BriefLearningCard({
 function OutcomeInsightRow({ insight }: { insight: BriefOutcomeInsight }) {
   const person = insight.counterparty_name ?? "Unknown contact";
   const company = insight.company_name ? ` at ${insight.company_name}` : "";
+  const needsPrep = insightNeedsMeetingPrep(insight);
   const href = insight.conversation_id
     ? `/dashboard/agent/outreach/${insight.conversation_id}${
         insight.attributed_message_id ? `#message-${insight.attributed_message_id}` : ""
       }`
     : "/dashboard/agent#outreach";
   return (
-    <Link
-      href={href}
-      prefetch={false}
-      className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
-    >
-      <span className="flex min-w-0 items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-pos-bg)] text-[var(--color-pos)]">
-          <Icon
-            name={insight.kind === "meeting_booked" ? "event_available" : "mark_email_read"}
-            size={17}
-          />
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <Link href={href} prefetch={false} className="min-w-0">
+        <span className="flex min-w-0 items-start gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-pos-bg)] text-[var(--color-pos)]">
+            <Icon
+              name={insight.kind === "meeting_booked" ? "event_available" : "mark_email_read"}
+              size={17}
+            />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+              {outcomeLabel(insight.kind)}
+              <span className="font-normal text-[var(--color-text-3)]">
+                {" "}
+                from {person}
+                {company}
+              </span>
+            </span>
+            <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+              {insight.signal_title ??
+                insight.message_subject ??
+                "Conversation outcome captured"}
+            </span>
+            {insight.reply_intent ? (
+              <span className="mt-2 block text-xs text-[var(--color-text-3)]">
+                Intent: {insight.reply_intent.replace(/_/g, " ")}
+              </span>
+            ) : null}
+          </span>
         </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
-            {outcomeLabel(insight.kind)}
-            <span className="font-normal text-[var(--color-text-3)]">
-              {" "}
-              from {person}
-              {company}
-            </span>
+      </Link>
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        {insight.meeting_prep_generated_at ? (
+          <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs text-[var(--color-pos)]">
+            {meetingPrepLabel(insight.meeting_prep_next_action)}
           </span>
-          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
-            {insight.signal_title ??
-              insight.message_subject ??
-              "Conversation outcome captured"}
-          </span>
-          {insight.reply_intent ? (
-            <span className="mt-2 block text-xs text-[var(--color-text-3)]">
-              Intent: {insight.reply_intent.replace(/_/g, " ")}
-            </span>
-          ) : null}
+        ) : needsPrep ? (
+          <form action={generateMeetingPrepAction}>
+            <input
+              type="hidden"
+              name="return_to"
+              value="/dashboard/brief#reply-insights"
+            />
+            <input
+              type="hidden"
+              name="conversation_id"
+              value={insight.conversation_id ?? ""}
+            />
+            <PendingSubmitButton
+              className="btn-quiet-sm"
+              icon="event_available"
+              iconSize={14}
+              pendingLabel="Preparing"
+            >
+              Prepare meeting
+            </PendingSubmitButton>
+          </form>
+        ) : null}
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(insight.occurred_at)}
         </span>
       </span>
-      <span className="text-xs tabular-nums text-[var(--color-text-3)]">
-        {freshWhen(insight.occurred_at)}
-      </span>
-    </Link>
+    </article>
   );
+}
+
+function insightNeedsMeetingPrep(insight: BriefOutcomeInsight): boolean {
+  return Boolean(insight.conversation_id) &&
+    (insight.kind === "meeting_booked" ||
+      insight.reply_intent === "meeting_intent" ||
+      insight.reply_intent === "positive");
+}
+
+function meetingPrepLabel(action: string | null): string {
+  if (action === "prepare_meeting") return "Meeting prep ready";
+  if (action === "ask_for_times") return "Ask for times";
+  if (action === "wait_for_reply") return "Wait for reply";
+  if (action === "do_not_follow_up") return "Do not follow up";
+  return "Prep ready";
 }
 
 function SignalKindRow({ signal }: { signal: SignalKindMetric }) {

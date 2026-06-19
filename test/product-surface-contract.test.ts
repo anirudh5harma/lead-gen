@@ -357,6 +357,13 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Open learning/);
   assert.match(dashboard, /href="\/dashboard\/agent#learning"/);
   assert.match(dashboard, /Reply and meeting insights/);
+  assert.match(dashboard, /generateMeetingPrepAction/);
+  assert.match(dashboard, /meeting_prep_generated_at/);
+  assert.match(dashboard, /meeting\.prep\.generated/);
+  assert.match(dashboard, /insightNeedsMeetingPrep/);
+  assert.match(dashboard, /value="\/dashboard\/brief#reply-insights"/);
+  assert.match(dashboard, /Prepare meeting/);
+  assert.match(dashboard, /Meeting prep ready/);
   assert.match(dashboard, /Replies and meetings/);
   assert.match(dashboard, /Replies 24h/);
   assert.match(dashboard, /Meetings 7d/);

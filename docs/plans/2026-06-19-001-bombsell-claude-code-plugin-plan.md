@@ -157,6 +157,38 @@ Code GTM workbench: inspect the repo, propose Profile updates, review qualified
 signals, prepare judged email/LinkedIn drafts, and pull reply/meeting learning
 back into the user's launch workflow.
 
+## 2026-06-19 Current-Docs Verification
+
+Rechecked the public Claude Code docs during launch planning:
+
+- The MCP reference recommends remote HTTP for cloud services, notes that OAuth
+  authentication works with HTTP servers, and documents `/mcp` as the browser
+  login path for authenticated remote servers.
+  Source: <https://code.claude.com/docs/en/mcp>
+- Claude Code first checks protected-resource metadata, then authorization
+  server metadata during OAuth discovery, and supports pinned scopes in MCP
+  config. Bombsell's existing `.mcp.json` should keep scopes narrow and
+  explicit.
+  Source: <https://code.claude.com/docs/en/mcp>
+- Plugin-provided MCP servers are loaded automatically when the plugin is
+  enabled, and their tools are managed through plugin installation rather than
+  manual `/mcp` setup.
+  Source: <https://code.claude.com/docs/en/mcp>
+- The plugin manager shows what will install, including commands, agents,
+  skills, hooks, MCP servers, and LSP servers. This reinforces the small v1
+  footprint: one Bombsell remote MCP server and six skills.
+  Source: <https://code.claude.com/docs/en/discover-plugins>
+- Anthropic warns that plugins and marketplaces are highly trusted components
+  that can execute local code. Bombsell v1 should avoid local stdio servers,
+  hooks, monitors, and `headersHelper` in the public package.
+  Source: <https://code.claude.com/docs/en/discover-plugins>
+
+Plan adjustment: keep marketplace dogfood private until authenticated remote
+MCP, audit events, token revocation, and partner install feedback are clean.
+The public package should feel boring from a security perspective: no shipped
+secrets, no local commands, no auto-send behavior, and no profile writes without
+explicit user confirmation.
+
 ## Build Plan
 
 1. Direct MCP dogfood

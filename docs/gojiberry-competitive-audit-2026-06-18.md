@@ -142,3 +142,8 @@ The Claude Code plugin plan now reflects Anthropic's current plugin guidance:
 remote HTTP MCP plus six focused `/bombsell:*` skills first, product workflow
 dogfood from real repos second, and marketplace distribution only after OAuth,
 audit logging, validation, and design-partner feedback are clean.
+
+The Brief reply/meeting insight rows now expose meeting-prep readiness and a
+direct Prepare meeting action. This reuses the existing Agent meeting-prep
+workflow and `meeting.prep.generated` event trail, so reply and meeting outcomes
+become operational next steps without adding another tab or workflow model.
