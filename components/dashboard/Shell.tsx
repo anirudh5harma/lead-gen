@@ -94,8 +94,8 @@ export function DashboardShell({
       {routePending ? (
         <div className="dashboard-route-pending" aria-hidden="true" />
       ) : null}
-      {/* Top product frame */}
-      <header className="glass-nav fixed left-0 right-0 top-0 z-50">
+      {/* Top nav — clean white like Ploy */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/80 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-[1200px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
           <Link
             href="/dashboard/brief"
@@ -130,9 +130,9 @@ export function DashboardShell({
                   onClick={(event) => handleNavClick(event, item.href, item.matches)}
                   aria-current={active ? "page" : undefined}
                   className={
-                    "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[13.5px] transition-colors " +
+                    "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[13.5px] font-medium transition-colors " +
                     (active
-                      ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                      ? "bg-[var(--color-text-1)] text-[var(--color-ink-0)]"
                       : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                   }
                 >
@@ -180,8 +180,8 @@ export function DashboardShell({
         </div>
       </header>
 
-      {/* Mobile sub-nav (visible <md) */}
-      <nav className="glass-nav fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1200px] gap-1 overflow-x-auto border-b border-[color:var(--color-line-1)] bg-[var(--color-ink-0)]/80 px-6 py-2 backdrop-blur-md md:hidden">
+      {/* Mobile sub-nav */}
+      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1200px] gap-1 overflow-x-auto border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/90 px-6 py-2 backdrop-blur-md md:hidden">
         {NAV.map((item) => {
           const active = isActivePath(pathname, item.href, item.matches);
           return (
@@ -191,9 +191,9 @@ export function DashboardShell({
               onClick={(event) => handleNavClick(event, item.href, item.matches)}
               aria-current={active ? "page" : undefined}
               className={
-                "inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-[13px] transition-colors " +
+                "inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-[13px] font-medium transition-colors " +
                 (active
-                  ? "bg-[var(--color-accent-bg)] text-[var(--color-accent)]"
+                  ? "bg-[var(--color-text-1)] text-[var(--color-ink-0)]"
                   : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
               }
             >
@@ -221,7 +221,7 @@ export function EmptyState({
   cta?: { href: string; label: string; icon?: string };
 }) {
   return (
-    <div className="rounded-[10px] border border-[color:var(--color-line-1)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
+    <div className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
       <p className="text-[17px] font-semibold text-[var(--color-text-1)]">
         {title}
       </p>

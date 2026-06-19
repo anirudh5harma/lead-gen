@@ -1,43 +1,55 @@
 @import "tailwindcss";
 
-/* Monaco-inspired product operating surface. */
+/* ═══════════════════════════════════════════════════════════════
+   Bombsell Design System v2 — inspired by Ploy.ai
+   Light, confident, product-forward.
+   ═══════════════════════════════════════════════════════════════ */
 
 @theme inline {
-  /* ── Surfaces: clean light hierarchy ── */
+  /* ── Surfaces ── */
   --color-ink-0: #ffffff;
-  --color-ink-1: #fafbfc;
-  --color-ink-2: #f1f5f9;
-  --color-ink-3: #e2e8f0;
-  --color-ink-4: #cbd5e1;
+  --color-ink-1: #f4f4f4;
+  --color-ink-2: #f7f7f7;
+  --color-ink-3: #ededed;
+  --color-ink-4: #d9d9d9;
 
-  /* ── Borders: crisp light hairlines ── */
-  --color-line-1: #e2e8f0;
-  --color-line-2: #cbd5e1;
-  --color-line-3: #94a3b8;
+  /* ── Borders ── */
+  --color-line-1: #e3e3e3;
+  --color-line-2: #d9d9d9;
+  --color-line-3: #a3a3a3;
 
-  /* ── Text: slate neutrals for high readability ── */
-  --color-text-1: #0f172a;
-  --color-text-2: #475569;
-  --color-text-3: #64748b;
-  --color-text-4: #94a3b8;
+  /* ── Text ── */
+  --color-text-1: #212121;
+  --color-text-2: #555555;
+  --color-text-3: #838383;
+  --color-text-4: #a3a3a3;
 
-  /* ── Accent: dark teal-green from logo (#26575E) ── */
-  --color-accent: #26575E;
-  --color-accent-soft: #26575E1f;
+  /* ── Brand accent (Bombsell teal, used sparingly) ── */
+  --color-accent: #26575e;
+  --color-accent-soft: #26575e1f;
   --color-accent-bg: #e8f4f5;
   --color-accent-hi: #1a3f44;
   --color-accent-on: #ffffff;
 
-  /* ── Semantic: professional status palette ── */
-  --color-pos: #059669;
-  --color-pos-bg: #d1fae5;
+  /* ── CTA / Primary action (Ploy-style black) ── */
+  --color-cta-bg: #212121;
+  --color-cta-text: #ffffff;
+  --color-cta-hover: #000000;
+
+  /* ── Semantic ── */
+  --color-pos: #7cb518;
+  --color-pos-bg: #f0f8e0;
   --color-warn: #d97706;
   --color-warn-bg: #fef3c7;
   --color-neg: #dc2626;
   --color-neg-bg: #fee2e2;
-  --color-canvas-grid: #e2e8f00a;
-  --color-canvas-grid-strong: #26575E24;
-  --color-canvas-wash: #f8fafb;
+
+  /* ── Brand palette (colorful accents) ── */
+  --color-brand-pink: #ffb8fc;
+  --color-brand-yellow: #fffa64;
+  --color-brand-green: #d1f48c;
+  --color-brand-blue: #c3dbff;
+  --color-brand-green-bright: #d1f864;
 
   /* ── Fonts ── */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
@@ -45,53 +57,47 @@
   --font-serif: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
 
+  /* ── Material tokens (shadcn compat) ── */
   --color-surface: #ffffff;
-  --color-surface-bright: #f8fafb;
-  --color-surface-dim: #f1f5f9;
+  --color-surface-bright: #f8f8f8;
+  --color-surface-dim: #f4f4f4;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f8fafb;
-  --color-surface-container: #f1f5f9;
-  --color-surface-container-high: #e2e8f0;
-  --color-surface-container-highest: #cbd5e1;
-  --color-on-surface: #0f172a;
-  --color-on-surface-variant: #475569;
-  --color-outline: #94a3b8;
-  --color-outline-variant: #e2e8f0;
-  --color-background: #fafbfc;
-  --color-on-background: #0f172a;
+  --color-surface-container-low: #f8f8f8;
+  --color-surface-container: #f4f4f4;
+  --color-surface-container-high: #ededed;
+  --color-surface-container-highest: #e3e3e3;
+  --color-on-surface: #212121;
+  --color-on-surface-variant: #555555;
+  --color-outline: #a3a3a3;
+  --color-outline-variant: #e3e3e3;
+  --color-background: #f4f4f4;
+  --color-on-background: #212121;
 
-  --color-primary: #26575E;
+  --color-primary: #212121;
   --color-on-primary: #ffffff;
-  --color-primary-container: #e8f4f5;
-  --color-on-primary-container: #0f172a;
-  --color-primary-fixed: #e8f4f5;
-  --color-primary-fixed-dim: #c5e8eb;
-  --color-inverse-primary: #1a3f44;
+  --color-primary-container: #f4f4f4;
+  --color-on-primary-container: #212121;
 
-  --color-secondary: #64748b;
+  --color-secondary: #555555;
   --color-on-secondary: #ffffff;
-  --color-secondary-container: #f1f5f9;
-  --color-on-secondary-container: #0f172a;
-  --color-secondary-fixed: #f1f5f9;
-  --color-secondary-fixed-dim: #e2e8f0;
+  --color-secondary-container: #f7f7f7;
+  --color-on-secondary-container: #212121;
 
-  --color-tertiary: #059669;
+  --color-tertiary: #26575e;
   --color-on-tertiary: #ffffff;
-  --color-tertiary-container: #d1fae5;
-  --color-on-tertiary-container: #064e3b;
-  --color-tertiary-fixed: #d1fae5;
-  --color-tertiary-fixed-dim: #a7f3d0;
+  --color-tertiary-container: #e8f4f5;
+  --color-on-tertiary-container: #1a3f44;
 
   --color-error: #dc2626;
   --color-on-error: #ffffff;
   --color-error-container: #fee2e2;
   --color-on-error-container: #7f1d1d;
 
-  --color-inverse-surface: #0f172a;
-  --color-inverse-on-surface: #f8fafb;
-  --color-surface-tint: #26575E;
+  --color-inverse-surface: #212121;
+  --color-inverse-on-surface: #f4f4f4;
+  --color-surface-tint: #212121;
 
-  /* ── Stitch spacing scale ── */
+  /* ── Spacing ── */
   --spacing-base: 4px;
   --spacing-stack-sm: 8px;
   --spacing-stack-md: 16px;
@@ -101,13 +107,13 @@
   --spacing-margin-page: 40px;
   --spacing-container-max: 1280px;
 
-  /* ── Stitch named radii ── */
+  /* ── Radii ── */
   --radius-DEFAULT: 0.125rem;
   --radius-lg: 0.25rem;
   --radius-xl: 0.5rem;
   --radius-full: 0.5rem;
 
-  /* ── Stitch typography tokens ── */
+  /* ── Typography tokens ── */
   --font-h1-editorial: var(--font-geist-sans), ui-sans-serif, system-ui;
   --font-display-sm: var(--font-geist-sans), ui-sans-serif, system-ui;
   --font-display-lg: var(--font-geist-sans), ui-sans-serif, system-ui;
@@ -163,11 +169,10 @@ html, body {
 *::-webkit-scrollbar-thumb:hover { background: var(--color-text-4); }
 
 /* Selection */
-::selection { background: var(--color-accent); color: var(--color-accent-on); }
+::selection { background: var(--color-text-1); color: var(--color-ink-0); }
 
 /* ── Editorial primitives ───────────────────────────────────── */
 
-/* Mono label: section / metadata */
 .mono {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -176,10 +181,8 @@ html, body {
   color: var(--color-text-3);
 }
 
-/* Hairline divider */
 .hairline { border-top: 1px solid var(--color-line-1); }
 
-/* Numbered section marker */
 .section-num {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -187,7 +190,6 @@ html, body {
   letter-spacing: 0.07em;
 }
 
-/* Big editorial headline */
 .editorial-h1 {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui;
   font-size: 44px;
@@ -211,14 +213,12 @@ html, body {
   .editorial-h2 { font-size: 48px; }
 }
 
-/* Accent word — bold, slightly tight (no serif/italic anymore) */
 .serif-italic {
   font-weight: 700;
   font-style: normal;
   letter-spacing: 0;
 }
 
-/* Display — confident grotesque, landing + major workspace statements */
 .display-serif {
   font-family: var(--font-display);
   font-weight: 500;
@@ -235,38 +235,37 @@ html, body {
 /* ── Buttons ────────────────────────────────────────────────── */
 
 .btn-primary {
-  background: var(--color-accent);
-  color: var(--color-accent-on);
+  background: var(--color-cta-bg);
+  color: var(--color-cta-text);
   font-weight: 500;
-  border-radius: 9999px;
+  border-radius: 10px;
   transition: background 140ms ease, transform 140ms ease;
 }
-.btn-primary:hover { background: var(--color-accent-hi); }
+.btn-primary:hover { background: var(--color-cta-hover); }
 .btn-primary:active { transform: translateY(0.5px); }
 
-/* Landing buttons — calm, 10px radius */
 .btn-solid {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   min-height: 46px; padding: 0 1.25rem;
-  background: var(--color-accent);
-  color: var(--color-accent-on);
+  background: var(--color-cta-bg);
+  color: var(--color-cta-text);
   font-size: 0.9375rem; font-weight: 500;
   border-radius: 10px;
   transition: background 180ms cubic-bezier(0.22,1,0.36,1), transform 180ms ease;
 }
-.btn-solid:hover { background: var(--color-accent-hi); }
+.btn-solid:hover { background: var(--color-cta-hover); }
 .btn-solid:active { transform: translateY(0.5px); }
 
 .btn-solid-sm {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem;
   min-height: 32px; padding: 0 0.75rem;
-  background: var(--color-accent);
-  color: var(--color-accent-on);
+  background: var(--color-cta-bg);
+  color: var(--color-cta-text);
   font-size: 0.8125rem; font-weight: 500;
   border-radius: 8px;
   transition: background 180ms cubic-bezier(0.22,1,0.36,1), transform 180ms ease;
 }
-.btn-solid-sm:hover { background: var(--color-accent-hi); }
+.btn-solid-sm:hover { background: var(--color-cta-hover); }
 .btn-solid-sm:active { transform: translateY(0.5px); }
 
 .btn-quiet-sm {
@@ -279,7 +278,7 @@ html, body {
   border-radius: 8px;
   transition: border-color 180ms ease, background 180ms ease;
 }
-.btn-quiet-sm:hover { border-color: var(--color-line-3); background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+.btn-quiet-sm:hover { border-color: var(--color-line-3); background: var(--color-ink-2); }
 
 .pending-submit-spinner {
   width: 1em;
@@ -304,13 +303,13 @@ html, body {
   border-radius: 10px;
   transition: border-color 180ms ease, background 180ms ease;
 }
-.btn-quiet:hover { border-color: var(--color-line-3); background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+.btn-quiet:hover { border-color: var(--color-line-3); background: var(--color-ink-2); }
 
 .btn-accent {
   background: var(--color-accent);
   color: var(--color-accent-on);
   font-weight: 500;
-  border-radius: 9999px;
+  border-radius: 10px;
   transition: background 140ms ease;
 }
 .btn-accent:hover { background: var(--color-accent-hi); }
@@ -319,7 +318,7 @@ html, body {
   background: transparent;
   color: var(--color-text-1);
   border: 1px solid var(--color-line-2);
-  border-radius: 9999px;
+  border-radius: 10px;
   transition: border-color 140ms ease, background 140ms ease;
 }
 .btn-ghost:hover { border-color: var(--color-line-3); background: var(--color-ink-2); }
@@ -344,7 +343,6 @@ button:active, a:active {
 .pill-neg { background: var(--color-neg-bg); color: var(--color-neg); border-color: transparent; }
 .pill-accent { background: var(--color-accent-bg); color: var(--color-accent); border-color: transparent; }
 
-/* Status dot */
 .dot {
   width: 6px; height: 6px; border-radius: 999px;
   background: var(--color-text-4);
@@ -376,8 +374,8 @@ button:active, a:active {
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 .cmdbar:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px #26575E1f;
+  border-color: var(--color-text-1);
+  box-shadow: 0 0 0 4px #2121211f;
 }
 .cmdbar input, .cmdbar textarea {
   flex: 1; min-width: 0;
@@ -386,7 +384,6 @@ button:active, a:active {
 }
 .cmdbar input::placeholder, .cmdbar textarea::placeholder { color: var(--color-text-4); }
 
-/* Keyboard kbd */
 .kbd {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 5px;
@@ -402,14 +399,13 @@ button:active, a:active {
 .card {
   background: var(--color-ink-0);
   border: 1px solid var(--color-line-1);
-  border-radius: 8px;
+  border-radius: 12px;
 }
 .card-flat {
   background: transparent;
   border-top: 1px solid var(--color-line-1);
 }
 
-/* List row (Linear-style) */
 .list-row {
   display: grid; align-items: center;
   border-bottom: 1px solid var(--color-line-1);
@@ -419,9 +415,8 @@ button:active, a:active {
 .list-row:hover { background: var(--color-ink-2); }
 .list-row:last-child { border-bottom: 0; }
 
-/* Code block */
 .codeblock {
-  background: #f1f5f9;
+  background: #f7f7f7;
   color: var(--color-text-1);
   border-radius: 12px;
   padding: 16px 18px;
@@ -431,10 +426,10 @@ button:active, a:active {
   overflow-x: auto;
   white-space: pre;
 }
-.codeblock .c-key { color: #26575E; }
-.codeblock .c-str { color: #475569; }
-.codeblock .c-com { color: #94a3b8; }
-.codeblock .c-fn  { color: #0f172a; }
+.codeblock .c-key { color: #26575e; }
+.codeblock .c-str { color: #555555; }
+.codeblock .c-com { color: #a3a3a3; }
+.codeblock .c-fn  { color: #212121; }
 
 /* ── Canvas surfaces ─────────────────────────────────────────── */
 
@@ -443,128 +438,20 @@ button:active, a:active {
   isolation: isolate;
   background-color: var(--color-ink-1);
   background-image:
-    linear-gradient(to right, rgba(38, 87, 94, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(38, 87, 94, 0.03) 1px, transparent 1px),
-    linear-gradient(180deg, #ffffff 0%, #fafbfc 48%, #f8fafb 100%);
-  background-size: 96px 96px, 96px 96px, auto;
+    linear-gradient(to right, rgba(33, 33, 33, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(33, 33, 33, 0.02) 1px, transparent 1px);
+  background-size: 96px 96px, 96px 96px;
   background-position: center top;
   background-attachment: fixed;
 }
 
-/* Clean light product surface */
 .monaco-canvas {
   position: relative;
   isolation: isolate;
   background-color: transparent;
 }
 
-/* ── Bombsell solar system (landing centerpiece) ────────────────
-   Bombsell at the core, channels revolving around it. Each orbit
-   has its own period; planets counter-rotate to stay upright. */
-.solar { position: relative; width: 100%; aspect-ratio: 1 / 1; }
-
-.solar-halo {
-  position: absolute; left: 50%; top: 50%;
-  width: 90%; aspect-ratio: 1; transform: translate(-50%, -50%);
-  border-radius: 999px; z-index: 0; pointer-events: none;
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  filter: blur(26px); opacity: 0.28;
-}
-
-/* Sun — Bombsell wordmark nucleus */
-.solar-sun {
-  position: absolute; left: 50%; top: 50%;
-  transform: translate(-50%, -50%);
-  width: 20%; aspect-ratio: 1; border-radius: 999px;
-  display: grid; place-items: center;
-  background: var(--color-accent-hi);
-  border: 1px solid color-mix(in srgb, var(--color-accent-hi) 70%, transparent);
-  box-shadow:
-    0 0 0 6px color-mix(in srgb, var(--color-accent) 10%, transparent),
-    0 0 38px 10px color-mix(in srgb, var(--color-accent) 30%, transparent),
-    0 22px 50px -28px rgba(201, 163, 91, 0.55);
-  z-index: 6;
-}
-.solar-sun-mark {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: clamp(10px, 1.6vw, 12.5px);
-  letter-spacing: -0.015em;
-  color: var(--color-accent-on);
-  line-height: 1;
-}
-.solar-sun::after {
-  content: ""; position: absolute; inset: -5px; border-radius: inherit;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
-  animation: solar-breathe 5s ease-in-out infinite;
-}
-@keyframes solar-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.4; }
-  50%      { transform: scale(1.08); opacity: 0.85; }
-}
-
-/* Orbit rings — rotate around the sun. Translate AND rotate in the
-   same keyframe so centring isn't lost when the animation runs. */
-.orbit {
-  position: absolute; left: 50%; top: 50%;
-  border-radius: 999px;
-  border: 1px dashed color-mix(in srgb, var(--color-accent) 30%, transparent);
-  pointer-events: none;
-  animation: solar-spin var(--orbit-t) linear infinite;
-  animation-delay: var(--orbit-d, 0s);
-}
-/* All orbits share the same period; per-orbit delay places each
-   planet 90° apart so they stay evenly spaced around the sun. */
-.orbit-1 { width: 50%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: 0s; }
-.orbit-2 { width: 66%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: -9s; }
-.orbit-3 { width: 82%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: -18s; }
-.orbit-4 { width: 96%; aspect-ratio: 1; --orbit-t: 36s; --orbit-d: -27s; }
-
-/* Per-orbit pill colors — distinct hues, complementing teal accent. */
-.orbit-1 .planet-icon { background: #2a2114; color: #f0c66a; }
-.orbit-2 .planet-icon { background: #1d2b21; color: #67d19a; }
-.orbit-3 .planet-icon { background: #261e2d; color: #d7b7ff; }
-.orbit-4 .planet-icon { background: #301c17; color: #ff9a87; }
-@keyframes solar-spin {
-  from { transform: translate(-50%, -50%) rotate(0deg); }
-  to   { transform: translate(-50%, -50%) rotate(360deg); }
-}
-
-/* Planet seat at orbit top — rotates with the orbit. */
-.planet-pos {
-  position: absolute; left: 50%; top: 0;
-  transform: translate(-50%, -50%);
-}
-
-/* Counter-rotates so the pill stays upright in the viewport. */
-.planet-counter {
-  animation: solar-counter var(--orbit-t) linear infinite;
-  animation-delay: var(--orbit-d, 0s);
-}
-@keyframes solar-counter {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(-360deg); }
-}
-
-.planet {
-  display: flex; align-items: center; gap: 0.45rem;
-  padding: 0.35rem 0.7rem 0.35rem 0.35rem;
-  border-radius: 999px;
-  border: 1px solid var(--color-line-2);
-  background: var(--color-ink-0);
-  box-shadow: 0 18px 42px -30px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(247, 221, 184, 0.08);
-  white-space: nowrap;
-}
-.planet-icon {
-  display: grid; place-items: center; flex: none;
-  width: 24px; height: 24px; border-radius: 7px;
-  background: var(--color-accent-bg); color: var(--color-accent-hi);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .orbit, .planet-counter, .solar-sun::after { animation: none; }
-  .orbit { transform: translate(-50%, -50%); }
-}
+/* ── App shell ──────────────────────────────────────────────── */
 
 .app-canvas-shell {
   min-height: 100dvh;
@@ -582,13 +469,8 @@ button:active, a:active {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
 }
 
-.workspace-main {
-  min-width: 0;
-}
-
-.workspace-main-inner {
-  width: 100%;
-}
+.workspace-main { min-width: 0; }
+.workspace-main-inner { width: 100%; }
 
 @media (min-width: 1024px) {
   .app-canvas-shell {
@@ -625,17 +507,7 @@ button:active, a:active {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
 }
 
-.graph-link {
-  position: absolute;
-  height: 1px;
-  transform-origin: left center;
-  background: linear-gradient(to right, color-mix(in srgb, var(--color-accent) 16%, transparent), color-mix(in srgb, var(--color-accent) 58%, transparent));
-}
-
-@keyframes orbit-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.55; }
-  50% { transform: scale(1.035); opacity: 0.95; }
-}
+/* ── Brief canvas ───────────────────────────────────────────── */
 
 .brief-canvas {
   position: relative;
@@ -658,8 +530,8 @@ button:active, a:active {
   inset: -8%;
   z-index: 0;
   background:
-    linear-gradient(115deg, transparent 0 18%, rgba(38, 87, 94, 0.06) 38%, transparent 58%),
-    linear-gradient(22deg, transparent 0 30%, rgba(5, 150, 105, 0.04) 54%, transparent 74%);
+    linear-gradient(115deg, transparent 0 18%, rgba(38, 87, 94, 0.04) 38%, transparent 58%),
+    linear-gradient(22deg, transparent 0 30%, rgba(5, 150, 105, 0.03) 54%, transparent 74%);
   filter: blur(6px);
   opacity: 0.32;
   animation: brief-drift 22s linear infinite;
@@ -679,9 +551,7 @@ button:active, a:active {
   position: absolute;
 }
 
-.brief-node {
-  z-index: 2;
-}
+.brief-node { z-index: 2; }
 
 .brief-node-primary {
   width: min(72vw, 620px);
@@ -737,12 +607,12 @@ button:active, a:active {
 
 .brief-button-primary {
   border-color: transparent;
-  background: var(--color-accent);
-  color: var(--color-accent-on);
+  background: var(--color-cta-bg);
+  color: var(--color-cta-text);
 }
 
 .brief-button-primary:hover {
-  background: var(--color-accent-hi);
+  background: var(--color-cta-hover);
 }
 
 .brief-note {
@@ -802,7 +672,7 @@ button:active, a:active {
 }
 
 .operating-loop-step:hover {
-  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
   padding-inline: 10px;
 }
 
@@ -827,43 +697,7 @@ button:active, a:active {
   transform: translateY(-1px);
 }
 
-.agent-work-sweep {
-  position: absolute;
-  inset: 0;
-  width: 36%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--color-accent) 18%, transparent),
-    transparent
-  );
-  animation: agent-work-sweep 2.4s ease-in-out infinite;
-}
-
-.agent-work-focus-bar {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 25%, transparent),
-    0 10px 24px -18px var(--color-accent);
-  animation: agent-work-focus 1.8s ease-in-out infinite;
-}
-
-@keyframes agent-work-sweep {
-  0% {
-    transform: translateX(-110%);
-  }
-  100% {
-    transform: translateX(310%);
-  }
-}
-
-@keyframes agent-work-focus {
-  0%,
-  100% {
-    opacity: 0.78;
-  }
-  50% {
-    opacity: 1;
-  }
-}
+/* ── Dashboard loader ───────────────────────────────────────── */
 
 .dashboard-loader {
   position: relative;
@@ -887,8 +721,8 @@ button:active, a:active {
   inset: -18%;
   z-index: 0;
   background:
-    linear-gradient(116deg, transparent 0 20%, rgba(38, 87, 94, 0.08) 44%, transparent 66%),
-    linear-gradient(28deg, transparent 0 34%, rgba(5, 150, 105, 0.05) 56%, transparent 74%);
+    linear-gradient(116deg, transparent 0 20%, rgba(38, 87, 94, 0.06) 44%, transparent 66%),
+    linear-gradient(28deg, transparent 0 34%, rgba(5, 150, 105, 0.04) 56%, transparent 74%);
   filter: blur(8px);
   opacity: 0.5;
   animation: brief-drift 24s linear infinite;
@@ -917,7 +751,7 @@ button:active, a:active {
 .dashboard-loader-stream {
   height: 1px;
   transform-origin: left center;
-  background: linear-gradient(to right, transparent, rgba(38, 87, 94, 0.25), rgba(5, 150, 105, 0.2), transparent);
+  background: linear-gradient(to right, transparent, rgba(38, 87, 94, 0.18), rgba(5, 150, 105, 0.14), transparent);
   opacity: 0.78;
 }
 
@@ -925,7 +759,7 @@ button:active, a:active {
   content: "";
   position: absolute;
   inset: -3px 0;
-  background: linear-gradient(to right, transparent 0 24%, rgba(38, 87, 94, 0.18) 48%, transparent 72%);
+  background: linear-gradient(to right, transparent 0 24%, rgba(38, 87, 94, 0.12) 48%, transparent 72%);
   animation: brief-flow 4.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
@@ -938,7 +772,7 @@ button:active, a:active {
   height: 8px;
   border-radius: 999px;
   background: var(--color-text-1);
-  opacity: 0.26;
+  opacity: 0.16;
   animation: brief-signal 3.2s ease-in-out infinite;
 }
 
@@ -951,7 +785,7 @@ button:active, a:active {
   height: 100%;
   width: 46%;
   border-radius: inherit;
-  background: linear-gradient(to right, rgba(38, 87, 94, 0.12), rgba(5, 150, 105, 0.4), rgba(38, 87, 94, 0.12));
+  background: linear-gradient(to right, rgba(38, 87, 94, 0.08), rgba(5, 150, 105, 0.28), rgba(38, 87, 94, 0.08));
   animation: dashboard-loader-bar 1.45s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
@@ -959,7 +793,7 @@ button:active, a:active {
   border: 1px solid var(--color-line-2);
   border-radius: 10px;
   background:
-    linear-gradient(110deg, #f1f5f9, #e2e8f0, #f1f5f9);
+    linear-gradient(110deg, #f4f4f4, #ededed, #f4f4f4);
   background-size: 220% 100%;
   animation: dashboard-loader-sheen 1.7s ease-in-out infinite;
 }
@@ -972,7 +806,7 @@ button:active, a:active {
   z-index: 60;
   height: 3px;
   overflow: hidden;
-  background: rgba(38, 87, 94, 0.08);
+  background: rgba(33, 33, 33, 0.06);
 }
 
 .dashboard-route-pending::after {
@@ -980,7 +814,7 @@ button:active, a:active {
   display: block;
   height: 100%;
   width: 42%;
-  background: linear-gradient(to right, transparent, var(--color-accent), var(--color-pos), transparent);
+  background: linear-gradient(to right, transparent, var(--color-text-1), var(--color-pos), transparent);
   animation: dashboard-route-progress 0.95s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
@@ -1000,6 +834,8 @@ button:active, a:active {
   to { transform: translateX(260%); }
 }
 
+/* ── Onboarding ─────────────────────────────────────────────── */
+
 .onboard-panel {
   position: relative;
   isolation: isolate;
@@ -1008,8 +844,8 @@ button:active, a:active {
   background: var(--color-ink-0);
   padding: clamp(24px, 3vw, 36px);
   box-shadow:
-    0 2px 6px -3px rgba(0, 0, 0, 0.08),
-    0 28px 60px -34px rgba(0, 0, 0, 0.12);
+    0 2px 6px -3px rgba(0, 0, 0, 0.06),
+    0 28px 60px -34px rgba(0, 0, 0, 0.10);
   overflow: hidden;
 }
 .onboard-panel::before {
@@ -1020,9 +856,9 @@ button:active, a:active {
   background: linear-gradient(
     to right,
     transparent 8%,
-    color-mix(in srgb, var(--color-accent) 70%, transparent),
-    var(--color-accent),
-    color-mix(in srgb, var(--color-accent) 70%, transparent),
+    color-mix(in srgb, var(--color-text-1) 70%, transparent),
+    var(--color-text-1),
+    color-mix(in srgb, var(--color-text-1) 70%, transparent),
     transparent 92%
   );
   opacity: 0.85;
@@ -1079,18 +915,20 @@ button:active, a:active {
 .onboard-field input:focus,
 .onboard-field textarea:focus,
 .onboard-field select:focus {
-  border-color: var(--color-accent);
+  border-color: var(--color-text-1);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.04),
-    0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
+    0 0 0 3px color-mix(in srgb, var(--color-text-1) 10%, transparent);
 }
-.onboard-field:focus-within .onboard-field-icon { color: var(--color-accent); }
+.onboard-field:focus-within .onboard-field-icon { color: var(--color-text-1); }
+
+/* ── Brief streams ──────────────────────────────────────────── */
 
 .section-thread {
   position: absolute;
   height: 1px;
   transform-origin: left center;
-  background: linear-gradient(to right, transparent, rgba(201, 163, 91, 0.34), rgba(103, 209, 154, 0.22), transparent);
+  background: linear-gradient(to right, transparent, rgba(38, 87, 94, 0.24), rgba(103, 209, 154, 0.16), transparent);
   pointer-events: none;
 }
 
@@ -1114,7 +952,7 @@ button:active, a:active {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-ink-1));
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-ink-1));
   color: var(--color-accent-hi);
 }
 
@@ -1122,7 +960,7 @@ button:active, a:active {
   z-index: 1;
   height: 1px;
   transform-origin: left center;
-  background: linear-gradient(to right, transparent, rgba(201, 163, 91, 0.42), rgba(103, 209, 154, 0.28), transparent);
+  background: linear-gradient(to right, transparent, rgba(38, 87, 94, 0.30), rgba(103, 209, 154, 0.20), transparent);
   opacity: 0.72;
 }
 
@@ -1130,7 +968,7 @@ button:active, a:active {
   content: "";
   position: absolute;
   inset: -3px 0;
-  background: linear-gradient(to right, transparent 0 22%, rgba(201, 163, 91, 0.34) 45%, transparent 68%);
+  background: linear-gradient(to right, transparent 0 22%, rgba(38, 87, 94, 0.24) 45%, transparent 68%);
   animation: brief-flow 5.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
@@ -1166,7 +1004,7 @@ button:active, a:active {
   height: 7px;
   border-radius: 999px;
   background: var(--color-text-1);
-  opacity: 0.28;
+  opacity: 0.18;
   animation: brief-signal 3.4s ease-in-out infinite;
 }
 
@@ -1188,8 +1026,8 @@ button:active, a:active {
 }
 
 @keyframes brief-signal {
-  0%, 100% { transform: scale(1); opacity: 0.22; }
-  50% { transform: scale(1.8); opacity: 0.48; }
+  0%, 100% { transform: scale(1); opacity: 0.16; }
+  50% { transform: scale(1.8); opacity: 0.40; }
 }
 
 @media (max-width: 767px) {
@@ -1228,17 +1066,11 @@ button:active, a:active {
   .brief-constellation {
     display: none;
   }
-  .graph-link {
-    display: none;
-  }
 }
 
-/* Section reveal — gentle */
-
-/* Focus ring — keep on links / buttons / custom controls; text inputs use their
-   own wrapper border, so no outline ring on them (it looked off). */
+/* ── Focus ring ─────────────────────────────────────────────── */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-text-1);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -1248,14 +1080,11 @@ select:focus, select:focus-visible {
   outline: none;
 }
 
-/* Backwards-compat: any legacy class references silently no-op */
+/* Backwards-compat: legacy class references silently no-op */
 .dot-grid { background: none !important; }
 .blob { display: none !important; }
 
-/* ── Responsive page gutter ─────────────────────────────────────
-   Tailwind 4's `@theme inline` bakes 40px into `.px-margin-page` at
-   build time, so override the class directly for narrower viewports.
-   Mobile: 16px · Tablet: 24px · Desktop+ keeps the 40px default. */
+/* ── Responsive page gutter ─────────────────────────────────── */
 @media (max-width: 639px) {
   .px-margin-page { padding-inline: 16px; }
   .pl-margin-page { padding-left: 16px; }
@@ -1267,23 +1096,22 @@ select:focus, select:focus-visible {
   .pr-margin-page { padding-right: 24px; }
 }
 
-/* Touch-friendly: keep tap targets at least 44x44 on coarse pointers.
-   Applied opt-in via .tap-target — used by icon-only mobile buttons. */
+/* Touch-friendly */
 @media (pointer: coarse) {
   .tap-target { min-height: 44px; min-width: 44px; }
 }
 
-/* ── Stitch hairlines (warm ink @ 7%) ──────────────────────────── */
+/* ── Hairlines ──────────────────────────────────────────────── */
 .hairline-border { border: 1px solid var(--color-line-1); }
 .hairline-b { border-bottom: 1px solid var(--color-line-1); }
 .hairline-r { border-right: 1px solid var(--color-line-1); }
 .hairline-t { border-top: 1px solid var(--color-line-1); }
 .hairline-l { border-left: 1px solid var(--color-line-1); }
 
-/* ── Editorial agentic-GTM helpers ─────────────────────────────── */
+/* ── Agentic helpers ────────────────────────────────────────── */
 .agent-status-dot { width: 6px; height: 6px; border-radius: 9999px; }
 
-/* Onboarding range slider — square coral thumb on a 2px track */
+/* Range slider */
 .range-slider { -webkit-appearance: none; appearance: none; background: transparent; }
 .range-slider::-webkit-slider-runnable-track { background: var(--color-outline-variant); height: 2px; }
 .range-slider::-moz-range-track { background: var(--color-outline-variant); height: 2px; }
@@ -1296,26 +1124,25 @@ select:focus, select:focus-visible {
   border: 0; border-radius: 0; cursor: pointer;
 }
 
-/* Right-side drawer slide */
+/* Drawer */
 .drawer-panel { transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
 .drawer-panel[data-open="false"] { transform: translateX(100%); }
 .drawer-panel[data-open="true"] { transform: translateX(0); }
 
-/* Hero backdrop — deliberately plain for the operator theme */
+/* Hero backdrop */
 .hero-bg { background: var(--color-ink-1); }
 
-/* ── rig-style structural grid (landing) ─────────────────────── */
+/* ── Structural grid ────────────────────────────────────────── */
 .page-grid {
   background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--color-on-surface) 3.5%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--color-on-surface) 3%, transparent) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--color-on-surface) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-on-surface) 2%, transparent) 1px, transparent 1px);
   background-size: 96px 96px;
   background-position: center top;
 }
-/* a single emphasized horizontal hairline (section seams) */
 .seam-y { border-top: 1px solid var(--color-line-2); }
 
-/* ── rig-style bordered block with + corner crosshairs ──────── */
+/* ── Bordered block ─────────────────────────────────────────── */
 .grid-block {
   position: relative;
   border: 1px solid var(--color-line-2);
@@ -1323,7 +1150,7 @@ select:focus, select:focus-visible {
 }
 .grid-block::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  --m: color-mix(in srgb, var(--color-on-surface) 28%, transparent);
+  --m: color-mix(in srgb, var(--color-on-surface) 24%, transparent);
   background:
     linear-gradient(var(--m), var(--m)) left -6px top -6px / 12px 1.5px no-repeat,
     linear-gradient(var(--m), var(--m)) left -6px top -6px / 1.5px 12px no-repeat,
@@ -1335,13 +1162,12 @@ select:focus, select:focus-visible {
     linear-gradient(var(--m), var(--m)) right -6px bottom -6px / 1.5px 12px no-repeat;
 }
 .grid-block.no-marks::after { content: none; }
-/* soft outlined panel — quiet fill + a clearer outline (pairs with .grid-block) */
 .panel-soft {
-  border: 1px solid color-mix(in srgb, var(--color-on-surface) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-on-surface) 10%, transparent);
   background: var(--color-surface-container-lowest);
 }
 
-/* ── motion: load-in reveal + marquee ──────────────────────── */
+/* ── Motion: load-in reveal ─────────────────────────────────── */
 @keyframes bs-fade-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
 .reveal   { animation: bs-fade-up 1.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .reveal-1 { animation-delay: 0.2s; }
@@ -1351,7 +1177,7 @@ select:focus, select:focus-visible {
 .reveal-5 { animation-delay: 1.08s; }
 .reveal-6 { animation-delay: 1.30s; }
 
-/* hero diagram — aesthetic chain assembly: nodes glide in from sides, connectors draw between them, accents finish last */
+/* Hero diagram animations */
 @keyframes hd-glide-left  { from { opacity: 0; transform: translateX(-260px) scale(0.94); } to { opacity: 1; transform: translateX(0) scale(1); } }
 @keyframes hd-glide-right { from { opacity: 0; transform: translateX(260px) scale(0.94); }  to { opacity: 1; transform: translateX(0) scale(1); } }
 @keyframes hd-glide-up    { from { opacity: 0; transform: translateY(-140px) scale(0.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -1382,13 +1208,12 @@ select:focus, select:focus-visible {
 .hd-d-10 { animation-delay: 2.50s; }
 .hd-d-11 { animation-delay: 2.75s; }
 
+/* ── Marquee ────────────────────────────────────────────────── */
 @keyframes bs-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .marquee-track { display: inline-flex; min-width: max-content; animation: bs-marquee 32s linear infinite; }
 .marquee-mask { mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent); }
 
-
-/* diagram assembly (hero illustration entrance) */
-/* hero diagram: each piece is hidden (.fx-pre) until React swaps in fx-* on its step */
+/* ── Diagram assembly ───────────────────────────────────────── */
 .fx-pre   { opacity: 0; }
 @keyframes bs-slide-up    { from { opacity: 0; transform: translateY(26px); }  to { opacity: 1; transform: translateY(0); } }
 @keyframes bs-slide-left  { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: translateX(0); } }
@@ -1416,9 +1241,7 @@ select:focus, select:focus-visible {
   }
 }
 
-/* ── depth / abstraction layers (landing) ──────────────────── */
-
-/* Deprecated decorative orb classes: kept as no-ops for old markup. */
+/* ── Depth / abstraction layers (landing) ──────────────────── */
 .float-orb {
   display: none !important;
 }
@@ -1433,7 +1256,6 @@ select:focus, select:focus-visible {
 .drift-slow   { animation-duration: 22s; }
 .drift-slower { animation-duration: 32s; }
 
-/* layered card — offset shadow card sitting behind primary panel */
 .layer-stack { position: relative; }
 .layer-stack > .layer-back {
   position: absolute; inset: 0; z-index: 0;
@@ -1456,7 +1278,6 @@ select:focus, select:focus-visible {
   position: relative; z-index: 1;
 }
 
-/* depth hover — subtle lift w/ multi-stop shadow */
 .depth-lift {
   transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease, border-color 0.2s ease;
   box-shadow:
@@ -1471,7 +1292,6 @@ select:focus, select:focus-visible {
     0 4px 10px -6px rgba(38,87,94,0.06);
 }
 
-/* stacked depth — explicit shadow ladder w/o hover */
 .depth-stack {
   box-shadow:
     0 1px 0 rgba(0,0,0,0.03),
@@ -1496,7 +1316,7 @@ select:focus, select:focus-visible {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 50%, #f8fafb 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f4f4f4 50%, #f4f4f4 100%);
 }
 
 .animated-bg-orb {
@@ -1512,7 +1332,7 @@ select:focus, select:focus-visible {
   height: 800px;
   top: -15%;
   left: -10%;
-  background: rgba(38, 87, 94, 0.14);
+  background: rgba(33, 33, 33, 0.04);
   animation-delay: 0s;
 }
 
@@ -1521,7 +1341,7 @@ select:focus, select:focus-visible {
   height: 700px;
   top: 25%;
   right: -15%;
-  background: rgba(5, 150, 105, 0.11);
+  background: rgba(38, 87, 94, 0.06);
   animation-delay: -7s;
   animation-duration: 24s, 10s;
 }
@@ -1531,7 +1351,7 @@ select:focus, select:focus-visible {
   height: 600px;
   bottom: 5%;
   left: 25%;
-  background: rgba(38, 87, 94, 0.13);
+  background: rgba(33, 33, 33, 0.04);
   animation-delay: -14s;
   animation-duration: 18s, 12s;
 }
@@ -1541,7 +1361,7 @@ select:focus, select:focus-visible {
   height: 400px;
   top: 60%;
   right: 20%;
-  background: rgba(5, 150, 105, 0.08);
+  background: rgba(38, 87, 94, 0.04);
   animation-delay: -5s;
   animation-duration: 28s, 14s;
 }
@@ -1552,10 +1372,10 @@ select:focus, select:focus-visible {
 
 /* ── Glassmorphism navbar ────────────────────────────────────── */
 .glass-nav {
-  background: rgba(255, 255, 255, 0.02);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.4);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(227, 227, 227, 0.6);
 }
 
 /* ── Scroll reveal animations ────────────────────────────────── */
