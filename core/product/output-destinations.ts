@@ -87,10 +87,15 @@ export function buildOutputDestinations(
       category: "Intent signal intake",
       status: "available",
       detail:
-        "RB2B, Clearbit, Factors, Warmly, or custom visitor-ID events can enter Bombsell as website-intent Signals with company, person, page, and intent-score proof.",
+        "Install the Bombsell visitor script or connect RB2B, Clearbit, Factors, Warmly, or custom visitor-ID events as website-intent Signals with company, person, page, and intent-score proof.",
       handoff_stage: "signal_intake",
       href: "/dashboard/profile#visitor-intent",
-      tools: ["product.source.configure", "/api/webhooks/visitors"],
+      tools: [
+        "product.source.configure",
+        "/visitor.js",
+        "/api/collect/visitors",
+        "/api/webhooks/visitors",
+      ],
     },
     {
       key: "crm-sync",

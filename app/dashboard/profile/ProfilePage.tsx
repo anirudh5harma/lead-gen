@@ -1994,11 +1994,11 @@ function VisitorIntentSetupPanel() {
             Visitor intent setup
           </p>
           <p className="mt-1 max-w-[74ch] text-xs leading-5 text-[var(--color-text-3)]">
-            Connect RB2B, Clearbit, Factors, Warmly, or your own website
-            identity feed as a webhook source. Bombsell turns firmographics,
-            page paths, dwell time, repeat visits, and consent proof into the
-            same Signal scoring, contact resolution, judged outreach, and CRM
-            handoff path.
+            Install Bombsell's visitor script or connect RB2B, Clearbit,
+            Factors, Warmly, or your own website identity feed. Bombsell turns
+            consented firmographics, page paths, dwell time, repeat visits, and
+            identity proof into the same Signal scoring, contact resolution,
+            judged outreach, and CRM handoff path.
           </p>
         </div>
         <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs text-[var(--color-pos)]">
@@ -2008,8 +2008,31 @@ function VisitorIntentSetupPanel() {
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="grid gap-2 rounded-[8px] bg-[var(--color-ink-1)] p-3">
           <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+            <Icon name="article" size={14} />
+            Website script
+          </span>
+          <code className="overflow-x-auto whitespace-pre rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] leading-5 text-[var(--color-text-2)]">
+{`<script
+  src="https://www.bombsell.com/visitor.js"
+  data-source-id="00000000-0000-4000-8000-000000000123"
+  data-company-domain="example.com"
+  data-marketing-allowed="true"
+  async></script>`}
+          </code>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <ProfileFact label="Collector" value="/api/collect/visitors" />
+            <ProfileFact label="Identity" value="window.bombsell('identify')" />
+          </div>
+          <p className="text-xs leading-5 text-[var(--color-text-3)]">
+            Browser collection never exposes the webhook secret. Anonymous or
+            opted-out visits are skipped until a consented company, email, or
+            LinkedIn identity is present.
+          </p>
+        </div>
+        <div className="grid gap-2 rounded-[8px] bg-[var(--color-ink-1)] p-3">
+          <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
             <Icon name="webhook" size={14} />
-            Endpoint and auth
+            Provider webhook
           </span>
           <code className="overflow-x-auto rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-2)]">
             POST /api/webhooks/visitors
@@ -2018,21 +2041,26 @@ function VisitorIntentSetupPanel() {
             <ProfileFact label="Auth" value="Bearer or HMAC" />
             <ProfileFact label="Secret" value="SIGNAL_WEBHOOK_SECRET" />
           </div>
-        </div>
-        <div className="grid gap-2 rounded-[8px] bg-[var(--color-ink-1)] p-3">
-          <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
-            <Icon name="sensors" size={14} />
-            Source setup
-          </span>
-          <code className="overflow-x-auto rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-2)]">
-            product.source.configure adapter=webhook provider=rb2b
-          </code>
           <p className="text-xs leading-5 text-[var(--color-text-3)]">
-            Use the returned source_id in each visitor event so Bombsell can
-            score, dedupe, suppress opted-out traffic, and route it through the
-            workspace graph.
+            Use for RB2B, Clearbit, Factors, Warmly, or server-side identity
+            providers that can sign visitor events before Bombsell scores,
+            dedupes, and routes them through the workspace graph.
           </p>
         </div>
+      </div>
+      <div className="mt-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
+        <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+          <Icon name="sensors" size={14} />
+          Source setup
+        </span>
+        <code className="mt-2 block overflow-x-auto rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-2)]">
+          product.source.configure adapter=webhook provider=bombsell_script website_url=https://example.com
+        </code>
+        <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+          Use the returned source_id in either the browser script or signed
+          provider payload. Website URL/domain lets the public collector reject
+          mismatched origins while still keeping the source_id safe to install.
+        </p>
       </div>
       <div className="mt-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
         <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">

@@ -8725,6 +8725,8 @@ function sourceConfigForAdapter(
         ...base,
         provider: signalSourceProvider(input.provider) ?? "generic",
         query: input.query?.trim() || undefined,
+        company_domain: input.company_domain?.trim(),
+        website_url: input.website_url?.trim() || input.url?.trim(),
         ...(sourceQuotaConfig(input) ?? {}),
         ingestion_contract: "bombsell_signal_v1",
         webhook_payload: {

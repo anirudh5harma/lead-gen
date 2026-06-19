@@ -5,18 +5,23 @@ and backend flow.
 
 ## Visitor De-Anonymization
 
-Status: available through signed visitor-intent webhook.
+Status: available through installable visitor script and signed
+visitor-intent webhook.
 
-- `POST /api/webhooks/visitors` accepts source-backed visitor identity events
-  from RB2B, Clearbit, Factors, Warmly, or a custom de-anonymization provider.
+- `/visitor.js` posts consented website visits to
+  `POST /api/collect/visitors`; anonymous or opted-out visits are skipped until
+  a company, email, or LinkedIn identity is present.
+- `POST /api/webhooks/visitors` accepts signed source-backed visitor identity
+  events from RB2B, Clearbit, Factors, Warmly, or a custom de-anonymization
+  provider.
 - Visitor company, person, page, LinkedIn, email, and intent score fields are
   converted into website-intent Signals through the existing evented Signal
   discovery path.
 - Profile and Agent output destinations now show Visitor de-anonymization as an
   available intake path.
 
-Native embedded tracking script, cookieless identity resolution, and provider
-OAuth/app marketplace installs remain future connector work.
+Cookieless identity resolution and provider OAuth/app marketplace installs
+remain future connector work.
 
 ## Automated Personalized Outreach
 

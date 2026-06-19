@@ -1523,7 +1523,7 @@ function BriefCapabilityCoveragePanel({
       detail:
         capabilityReadiness.visitor_signals_7d > 0
           ? "Identified website visitors are entering the Signal path."
-          : "Signed visitor-intent webhook is ready for RB2B, Clearbit, Factors, Warmly, or custom events.",
+          : "Install the Bombsell visitor script or connect RB2B, Clearbit, Factors, Warmly, or custom events.",
       href: "/dashboard/profile#tools",
       ready:
         capabilityReadiness.visitor_signals_7d > 0 ||

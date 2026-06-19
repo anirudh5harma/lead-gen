@@ -207,11 +207,12 @@ daily signal-quality diagnosis while keeping Bombsell focused on Brief, Agent,
 and Profile.
 
 Bombsell's launch capability audit now maps the customer-facing promise to real
-surfaces: visitor de-anonymization enters through `/api/webhooks/visitors` as
-source-backed website-intent Signals, automated personalized outreach stays in
-Agent with eval and approval gates, intent signals and scoring stay visible
-through signal quality and weak-signal warnings, and CRM integration is
-available as an MCP/API handoff while native CRM OAuth remains next.
+surfaces: visitor de-anonymization enters through `/visitor.js`,
+`/api/collect/visitors`, or signed `/api/webhooks/visitors` as source-backed
+website-intent Signals, automated personalized outreach stays in Agent with eval
+and approval gates, intent signals and scoring stay visible through signal
+quality and weak-signal warnings, and CRM integration is available as an
+MCP/API handoff while native CRM OAuth remains next.
 
 Brief now includes launch capability coverage for the four customer promises:
 visitor de-anonymization, intent signals and scoring, automated personalized
@@ -221,11 +222,11 @@ signal-backed contacts so the home dashboard proves the product offer rather
 than forcing users to infer it from Profile and Agent.
 
 Profile output destinations now include a concrete Visitor intent setup panel.
-It shows the `/api/webhooks/visitors` endpoint, bearer/HMAC auth expectation,
-the `product.source.configure adapter=webhook provider=rb2b` setup step that
-returns the required source id, and the minimal payload shape. This makes
-visitor de-anonymization implementable from Profile instead of only visible as
-a product capability tile.
+It shows the installable `/visitor.js` script, public
+`/api/collect/visitors` collector, signed `/api/webhooks/visitors` endpoint,
+source setup step, consent/identity behavior, and the minimal payload shape.
+This makes visitor de-anonymization implementable from Profile instead of only
+visible as a product capability tile.
 
 Ploy Grow reinforces the same launch-critical loop: identify named companies,
 enrich firmographics, score intent from pricing/path/dwell/repeat behavior,
