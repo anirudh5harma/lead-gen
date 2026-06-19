@@ -34,6 +34,7 @@
     "verify:render-free-smoke": "RENDER_BLUEPRINT_FILE=render.free.yaml RENDER_WORKER_SERVICE_NAME=bombsell-production-worker-free-smoke RENDER_WORKER_EXPECTED_PLAN=free RENDER_ALLOW_FREE_WORKER=1 RENDER_SKIP_RESTATE_CUTOVER=1 RENDER_SKIP_RUNTIME_GATES=1 node --experimental-strip-types scripts/verify-aws-exit-cutover.ts",
     "verify:outreach-pipeline": "node --experimental-strip-types scripts/verify-outreach-pipeline.ts",
     "verify:frontend-latency": "node scripts/measure-frontend-latency.mjs",
+    "verify:dashboard-surfaces": "node --experimental-strip-types scripts/verify-dashboard-surfaces.ts",
     "verify:outlook": "node --experimental-strip-types scripts/verify-outlook-readiness.ts",
     "verify:exa": "node --experimental-strip-types scripts/verify-exa-intelligence.ts",
     "verify:agent-observability": "node --experimental-strip-types scripts/verify-agent-observability.ts",

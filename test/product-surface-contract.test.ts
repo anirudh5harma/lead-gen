@@ -1247,6 +1247,29 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(capabilityMap, /`product\.signal\.ingestion\.run`/);
 });
 
+test("dashboard surface verifier covers the simplified product flow", () => {
+  const pkg = JSON.parse(source("package.json")) as {
+    scripts?: Record<string, string>;
+  };
+  const verifier = source("scripts/verify-dashboard-surfaces.ts");
+  const capabilityMap = source("docs/agent-native-capability-map.md");
+
+  assert.match(
+    pkg.scripts?.["verify:dashboard-surfaces"] ?? "",
+    /scripts\/verify-dashboard-surfaces\.ts/,
+  );
+  assert.match(verifier, /"\/dashboard\/brief"/);
+  assert.match(verifier, /"\/dashboard\/agent"/);
+  assert.match(verifier, /"\/dashboard\/profile"/);
+  assert.match(verifier, /"Live work"/);
+  assert.match(verifier, /"SETUP HUB"/);
+  assert.match(verifier, /"LAUNCH MODEL"/);
+  assert.match(verifier, /"Use Bombsell in Claude Code"/);
+  assert.match(verifier, /"http:\/\/127\.0\.0\.1:3023"/);
+  assert.doesNotMatch(capabilityMap, /\/dashboard\/agent#sources/);
+  assert.match(capabilityMap, /\/dashboard\/profile#signal-setup/);
+});
+
 test("Profile exposes profile, activation, Outlook, and workspace autonomy controls", () => {
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
   const actions = source("app/dashboard/actions.ts");
