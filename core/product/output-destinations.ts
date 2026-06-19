@@ -105,6 +105,7 @@ export function buildOutputDestinations(
       tools: [
         "bombsell.signals.list_qualified",
         "bombsell.contacts.list_lanes",
+        "bombsell.crm_handoff.queue",
         "crm.destination.configured",
       ],
     },

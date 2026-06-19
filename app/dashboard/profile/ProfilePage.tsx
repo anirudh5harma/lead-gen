@@ -2079,8 +2079,8 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
           <p className="mt-1 max-w-[74ch] text-xs leading-5 text-[var(--color-text-3)]">
             Send qualified contacts and their signal proof into HubSpot,
             Salesforce, Pipedrive, Attio, Folk, Clay, or a custom webhook.
-            Bombsell stays the source of scoring, outreach, replies, and
-            meetings; the CRM receives clean pipeline context.
+            Bombsell queues CRM-ready packages with intent score, verified
+            email or LinkedIn profile, judged outreach, replies, and meetings.
           </p>
         </div>
         <span
@@ -2117,8 +2117,8 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
             />
           </div>
           <p className="text-xs leading-5 text-[var(--color-text-3)]">
-            Use this for qualified-contact handoff now. Native OAuth apps can
-            reuse the same `channel_accounts` CRM destination later.
+            Use `bombsell.crm_handoff.queue` for qualified-contact handoff now.
+            Native OAuth apps can reuse this CRM destination later.
           </p>
         </div>
 
@@ -2214,6 +2214,7 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
           {[
             "bombsell.signals.list_qualified",
             "bombsell.contacts.list_lanes",
+            "bombsell.crm_handoff.queue",
             "crm.destination.configured",
           ].map((item) => (
             <span

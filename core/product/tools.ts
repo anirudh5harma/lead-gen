@@ -32,6 +32,7 @@ import {
   optimizeProductCampaignStrategy,
   optimizeProductPlaySkills,
   personalizeProductMessage,
+  queueWorkspaceCrmHandoff,
   researchWorkspaceWithExa,
   redriveDeadLetteredEventDispatch,
   recordProductCampaignOutcome,
@@ -619,6 +620,68 @@ const QualifiedSignalWorkbenchSchema = WorkspaceResultSchema.extend({
     }),
   ),
 });
+const CrmHandoffRecordSchema = z.object({
+  signal_id: z.string().uuid(),
+  signal_kind: z.string().min(1),
+  signal_title: z.string().min(1),
+  match_score: z.number().nullable(),
+  match_reason: z.string().nullable(),
+  company: z.object({
+    company_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    domain: z.string().nullable(),
+    industry: z.string().nullable(),
+  }),
+  contact: z.object({
+    person_id: z.string().uuid(),
+    full_name: z.string().min(1),
+    title: z.string().nullable(),
+    email: z.string().nullable(),
+    email_verified: z.boolean(),
+    email_status: z.string().nullable(),
+    linkedin_url: z.string().nullable(),
+    linkedin_ready: z.boolean(),
+    contact_fit_decision: z.enum(["fit", "unsure", "not_fit"]).nullable(),
+  }),
+  outreach: z
+    .object({
+      conversation_id: z.string().uuid(),
+      message_id: z.string().uuid(),
+      channel: z.string().min(1),
+      status: z.string().min(1),
+      eval_score: z.number().nullable(),
+      eval_passed: z.boolean().nullable(),
+      sent_at: z.string().datetime().nullable(),
+    })
+    .nullable(),
+  outcomes: z.array(
+    z.object({
+      outcome_id: z.string().uuid(),
+      kind: z.string().min(1),
+      score: z.number(),
+      occurred_at: z.string().datetime(),
+    }),
+  ),
+});
+const CrmHandoffQueueSchema = WorkspaceResultSchema.extend({
+  handoff_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  provider: z.string().min(1),
+  sync_mode: z.enum([
+    "qualified_contacts",
+    "qualified_and_sent",
+    "full_loop",
+  ]),
+  queued_records: z.number().int().nonnegative(),
+  skipped_records: z.number().int().nonnegative(),
+  event_id: z.string().uuid(),
+  records: z.array(CrmHandoffRecordSchema),
+  next_action: z.object({
+    label: z.string().min(1),
+    detail: z.string().min(1),
+    href: z.string().min(1),
+  }),
+});
 const MeetingPrepProfileContextSchema = z.object({
   user: z.object({
     user_id: z.string().min(1).nullable(),
@@ -957,6 +1020,21 @@ export function registerProductTools(): void {
           email_draft: isoQualifiedSignalDraft(signal.email_draft),
         })),
       };
+    },
+  });
+
+  registerTool({
+    name: "product.crm_handoff.queue",
+    description:
+      "Queue CRM handoff records from qualified Signals, verified contacts, judged/sent outreach context, and reply or meeting outcomes. Emits typed crm.handoff.queued events; it does not send outreach.",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().min(1).max(25).optional(),
+      confirm_queue: z.boolean().optional(),
+    }),
+    output: CrmHandoffQueueSchema,
+    async handler(input, ctx) {
+      return queueWorkspaceCrmHandoff(input, sessionFromContext(ctx));
     },
   });
 

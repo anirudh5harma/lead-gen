@@ -113,6 +113,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "product.signal.submit",
     "product.signal.match",
     "product.signals.dispatch_plays",
+    "product.crm_handoff.queue",
     "product.approval.decide",
     "product.workflow.retry",
     "product.event_dispatch.dead_letters.list",
@@ -123,6 +124,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "bombsell.profile.propose_from_context",
     "bombsell.signals.list_qualified",
     "bombsell.contact_lanes.get",
+    "bombsell.crm_handoff.queue",
     "bombsell.integrations.list",
     "bombsell.outreach.prepare",
     "bombsell.outreach.list_sent",
@@ -506,6 +508,7 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
     [
       "bombsell.signals.list_qualified",
       "bombsell.contacts.list_lanes",
+      "bombsell.crm_handoff.queue",
       "crm.destination.configured",
     ],
   );
@@ -1307,6 +1310,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     [
       "bombsell.signals.list_qualified",
       "bombsell.contacts.list_lanes",
+      "bombsell.crm_handoff.queue",
       "crm.destination.configured",
     ],
   );

@@ -4965,9 +4965,9 @@ function AgentOutputHandoffPanel({
               <p className="mt-1 max-w-[72ch] text-xs leading-5 text-[var(--color-text-3)]">
                 Sent proof, qualified contacts, replies, and meetings stay in
                 Agent first. Connected channels and agent APIs can move work
-                now; visitor-intent intake and CRM handoff are available, while
-                native CRM OAuth, outreach-tool, and team-alert sync stay
-                explicit until they are evented.
+                now; visitor-intent intake and CRM handoff queue typed proof
+                packages, while native CRM OAuth, outreach-tool, and team-alert
+                sync stay explicit connector work.
               </p>
             </div>
             <Link href="/dashboard/profile#tools" prefetch={false} className="btn-quiet-sm">
@@ -5109,6 +5109,11 @@ function agentDestinationDetail(destination: OutputDestination): string {
   }
   if (destination.handoff_stage === "signal_intake") {
     return "External signal events can enter the same qualified-signal path.";
+  }
+  if (destination.handoff_stage === "qualified_contact_sync") {
+    return destination.status === "connected"
+      ? "Qualified contacts can queue to CRM with signal proof, verified contact data, outreach context, and outcomes."
+      : "Configure CRM in Profile to queue qualified-contact proof packages for HubSpot, Salesforce, Attio, or a webhook.";
   }
   return destination.detail;
 }

@@ -338,6 +338,72 @@ const ContactLanesSchema = WorkspaceResultSchema.extend({
   source_tool: z.literal("product.qualified_signals.list"),
 });
 
+const CrmHandoffRecordSchema = z.object({
+  signal_id: z.string().uuid(),
+  signal_kind: z.string(),
+  signal_title: z.string(),
+  match_score: z.number().nullable(),
+  match_reason: z.string().nullable(),
+  company: z.object({
+    company_id: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    domain: z.string().nullable(),
+    industry: z.string().nullable(),
+  }),
+  contact: z.object({
+    person_id: z.string().uuid(),
+    full_name: z.string(),
+    title: z.string().nullable(),
+    email: z.string().nullable(),
+    email_verified: z.boolean(),
+    email_status: z.string().nullable(),
+    linkedin_url: z.string().nullable(),
+    linkedin_ready: z.boolean(),
+    contact_fit_decision: z.enum(["fit", "unsure", "not_fit"]).nullable(),
+  }),
+  outreach: z
+    .object({
+      conversation_id: z.string().uuid(),
+      message_id: z.string().uuid(),
+      channel: z.string(),
+      status: z.string(),
+      eval_score: z.number().nullable(),
+      eval_passed: z.boolean().nullable(),
+      sent_at: z.string().datetime().nullable(),
+    })
+    .nullable(),
+  outcomes: z.array(
+    z.object({
+      outcome_id: z.string().uuid(),
+      kind: z.string(),
+      score: z.number(),
+      occurred_at: z.string().datetime(),
+    }),
+  ),
+});
+
+const CrmHandoffQueueAliasSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  handoff_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  provider: z.string(),
+  sync_mode: z.enum([
+    "qualified_contacts",
+    "qualified_and_sent",
+    "full_loop",
+  ]),
+  queued_records: z.number().int().nonnegative(),
+  skipped_records: z.number().int().nonnegative(),
+  event_id: z.string().uuid(),
+  records: z.array(CrmHandoffRecordSchema),
+  next_action: z.object({
+    label: z.string(),
+    detail: z.string(),
+    href: z.string(),
+  }),
+  source_tool: z.literal("product.crm_handoff.queue"),
+});
+
 const IntegrationsAliasSchema = WorkspaceResultSchema.extend({
   generated_at: z.string().datetime(),
   native_channels_ready: z.number().int().nonnegative(),
@@ -821,6 +887,28 @@ export function registerBombsellAliasTools(): void {
         },
         lanes,
         source_tool: "product.qualified_signals.list" as const,
+      };
+    },
+  });
+
+  registerTool({
+    name: "bombsell.crm_handoff.queue",
+    description:
+      "Queue CRM-ready Bombsell contacts with signal proof, verified email or LinkedIn profile, judged/sent outreach context, and reply or meeting learning. Requires an already configured CRM handoff.",
+    kind: "write",
+    input: z.object({
+      limit: z.number().int().min(1).max(25).optional(),
+      confirm_queue: z.boolean().optional(),
+    }),
+    output: CrmHandoffQueueAliasSchema,
+    async handler(input, ctx) {
+      const result = await invokeTool<
+        Omit<z.infer<typeof CrmHandoffQueueAliasSchema>, "generated_at" | "source_tool">
+      >("product.crm_handoff.queue", input, ctx);
+      return {
+        ...result,
+        generated_at: new Date().toISOString(),
+        source_tool: "product.crm_handoff.queue" as const,
       };
     },
   });

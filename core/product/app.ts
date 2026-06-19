@@ -256,6 +256,10 @@ import {
   type WorkspaceLaunchReadiness,
 } from "./launch-readiness.ts";
 import {
+  loadQualifiedSignalWorkbench,
+  type QualifiedSignalItem,
+} from "./qualified-signals.ts";
+import {
   buildVerticalIntelligencePack,
   type VerticalIntelligencePack,
   type VerticalIntelligenceProfileInput,
@@ -490,6 +494,68 @@ export interface ConfigureCrmDestinationInput {
   sync_mode?: "qualified_contacts" | "qualified_and_sent" | "full_loop";
   include_sent_outreach?: boolean;
   include_replies_meetings?: boolean;
+}
+
+export interface QueueCrmHandoffInput {
+  limit?: number;
+  confirm_queue?: boolean;
+}
+
+export interface CrmHandoffRecord {
+  signal_id: string;
+  signal_kind: string;
+  signal_title: string;
+  match_score: number | null;
+  match_reason: string | null;
+  company: {
+    company_id: string | null;
+    name: string | null;
+    domain: string | null;
+    industry: string | null;
+  };
+  contact: {
+    person_id: string;
+    full_name: string;
+    title: string | null;
+    email: string | null;
+    email_verified: boolean;
+    email_status: string | null;
+    linkedin_url: string | null;
+    linkedin_ready: boolean;
+    contact_fit_decision: "fit" | "unsure" | "not_fit" | null;
+  };
+  outreach: {
+    conversation_id: string;
+    message_id: string;
+    channel: string;
+    status: string;
+    eval_score: number | null;
+    eval_passed: boolean | null;
+    sent_at: string | null;
+  } | null;
+  outcomes: Array<{
+    outcome_id: string;
+    kind: string;
+    score: number;
+    occurred_at: string;
+  }>;
+}
+
+export interface QueueCrmHandoffResult {
+  workspace_id: string;
+  handoff_id: string;
+  channel_account_id: string;
+  provider: string;
+  sync_mode: "qualified_contacts" | "qualified_and_sent" | "full_loop";
+  queued_records: number;
+  skipped_records: number;
+  event_id: string;
+  records: CrmHandoffRecord[];
+  next_action: {
+    label: string;
+    detail: string;
+    href: string;
+  };
 }
 
 export interface ProductWorkspace {
@@ -7287,6 +7353,294 @@ async function projectCrmDestinationConfigured(
   );
 }
 
+export async function queueWorkspaceCrmHandoff(
+  input: QueueCrmHandoffInput,
+  session: ProductWorkspaceSession,
+): Promise<QueueCrmHandoffResult> {
+  if (input.confirm_queue !== true) {
+    throw new Error(
+      "Queueing a CRM handoff packages qualified contacts, signal proof, outreach context, and outcome learning. Set confirm_queue=true to continue.",
+    );
+  }
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const destination = await loadCrmDestinationAccount(
+    engine.pool,
+    session.workspace_id,
+  );
+  if (!destination) {
+    throw new Error("Configure CRM handoff in Profile before queueing CRM sync.");
+  }
+  const limit = Math.max(1, Math.min(25, Math.trunc(input.limit ?? 10)));
+  const workbench = await loadQualifiedSignalWorkbench(
+    engine.pool,
+    session.workspace_id,
+    { limit: Math.max(limit, 10) },
+  );
+  const records = buildCrmHandoffRecords(workbench.signals).slice(0, limit);
+  if (records.length === 0) {
+    throw new Error(
+      "No CRM-ready qualified contacts found. Resolve a verified email or LinkedIn profile for a qualified Signal first.",
+    );
+  }
+  const outcomesByKey = destination.include_replies_meetings
+    ? await loadCrmHandoffOutcomes(engine.pool, session.workspace_id, records)
+    : new Map<string, CrmHandoffRecord["outcomes"]>();
+  const enrichedRecords = records.map((record) => ({
+    ...record,
+    outreach: destination.include_sent_outreach ? record.outreach : null,
+    outcomes: destination.include_replies_meetings
+      ? outcomesByKey.get(record.signal_id) ??
+        (record.outreach?.conversation_id
+          ? outcomesByKey.get(record.outreach.conversation_id)
+          : undefined) ??
+        []
+      : [],
+  }));
+  const handoff_id = randomUUID();
+  const syncMode = destination.sync_mode;
+  const payload = {
+    handoff_id,
+    channel_account_id: destination.id,
+    provider: destination.provider,
+    sync_mode: syncMode,
+    contact_count: enrichedRecords.length,
+    signal_count: new Set(enrichedRecords.map((record) => record.signal_id)).size,
+    include_sent_outreach: destination.include_sent_outreach,
+    include_replies_meetings: destination.include_replies_meetings,
+    records: enrichedRecords,
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "crm.handoff.queued",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: configurationEventKey(
+      "crm.handoff.queued",
+      session.workspace_id,
+      destination.id,
+      {
+        queued_hour: new Date().toISOString().slice(0, 13),
+        signal_ids: enrichedRecords.map((record) => record.signal_id),
+        contact_ids: enrichedRecords.map((record) => record.contact.person_id),
+        sync_mode: syncMode,
+      },
+    ),
+    payload,
+  });
+  await projectCrmHandoffQueued(engine.pool, event);
+  const skipped = Math.max(0, workbench.signals.length - enrichedRecords.length);
+  return {
+    workspace_id: session.workspace_id,
+    handoff_id,
+    channel_account_id: destination.id,
+    provider: destination.provider,
+    sync_mode: syncMode,
+    queued_records: enrichedRecords.length,
+    skipped_records: skipped,
+    event_id: event.id,
+    records: enrichedRecords,
+    next_action: {
+      label: destination.webhook_configured ? "Deliver CRM payload" : "Connect native CRM",
+      detail: destination.webhook_configured
+        ? "A typed crm.handoff.queued event is ready for the CRM webhook worker with signal, contact, outreach, and outcome proof."
+        : "The handoff package is queued and available through MCP/API; add native OAuth or webhook delivery when this account is ready.",
+      href: "/dashboard/profile#crm-sync",
+    },
+  };
+}
+
+interface CrmDestinationAccount {
+  id: string;
+  provider: string;
+  sync_mode: "qualified_contacts" | "qualified_and_sent" | "full_loop";
+  include_sent_outreach: boolean;
+  include_replies_meetings: boolean;
+  webhook_configured: boolean;
+}
+
+async function loadCrmDestinationAccount(
+  pool: Pool,
+  workspace_id: string,
+): Promise<CrmDestinationAccount | null> {
+  const result = await pool.query<{
+    id: string;
+    provider: string | null;
+    sync_mode: string | null;
+    include_sent_outreach: boolean | null;
+    include_replies_meetings: boolean | null;
+    webhook_configured: boolean | null;
+  }>(
+    `select id::text,
+            properties->>'provider' as provider,
+            properties->>'sync_mode' as sync_mode,
+            (properties->>'include_sent_outreach')::boolean as include_sent_outreach,
+            (properties->>'include_replies_meetings')::boolean as include_replies_meetings,
+            (properties->>'webhook_configured')::boolean as webhook_configured
+       from channel_accounts
+      where workspace_id = $1
+        and kind = 'crm'
+        and status = 'connected'
+      order by updated_at desc, created_at desc
+      limit 1`,
+    [workspace_id],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    provider: row.provider ?? "custom",
+    sync_mode: isCrmSyncMode(row.sync_mode)
+      ? row.sync_mode
+      : "qualified_contacts",
+    include_sent_outreach: row.include_sent_outreach ?? false,
+    include_replies_meetings: row.include_replies_meetings ?? false,
+    webhook_configured: row.webhook_configured ?? false,
+  };
+}
+
+function isCrmSyncMode(
+  value: string | null,
+): value is "qualified_contacts" | "qualified_and_sent" | "full_loop" {
+  return (
+    value === "qualified_contacts" ||
+    value === "qualified_and_sent" ||
+    value === "full_loop"
+  );
+}
+
+function buildCrmHandoffRecords(
+  signals: QualifiedSignalItem[],
+): CrmHandoffRecord[] {
+  const records: CrmHandoffRecord[] = [];
+  for (const signal of signals) {
+    const contact = signal.contacts.find(
+      (candidate) =>
+        candidate.contact_fit_decision !== "not_fit" &&
+        (candidate.verification.email_verified === true ||
+          candidate.verification.linkedin_ready === true),
+    );
+    if (!contact) continue;
+    records.push({
+      signal_id: signal.id,
+      signal_kind: signal.kind,
+      signal_title: signal.title,
+      match_score: signal.match_score,
+      match_reason: signal.match_reason,
+      company: {
+        company_id: signal.company.id,
+        name: signal.company.name,
+        domain: signal.company.domain,
+        industry: signal.company.industry,
+      },
+      contact: {
+        person_id: contact.person_id,
+        full_name: contact.full_name,
+        title: contact.title,
+        email: contact.verification.email_verified === true
+          ? (contact.emails[0] ?? null)
+          : null,
+        email_verified: contact.verification.email_verified === true,
+        email_status: contact.verification.email_status ?? null,
+        linkedin_url: contact.linkedin_url,
+        linkedin_ready: contact.verification.linkedin_ready === true,
+        contact_fit_decision: contact.contact_fit_decision,
+      },
+      outreach: signal.outreach_draft
+        ? {
+            conversation_id: signal.outreach_draft.conversation_id,
+            message_id: signal.outreach_draft.message_id,
+            channel: signal.outreach_draft.channel,
+            status: signal.outreach_draft.status,
+            eval_score: signal.outreach_draft.eval_score,
+            eval_passed: signal.outreach_draft.eval_passed,
+            sent_at: signal.outreach_draft.sent_at?.toISOString() ?? null,
+          }
+        : null,
+      outcomes: [],
+    });
+  }
+  return records;
+}
+
+async function loadCrmHandoffOutcomes(
+  pool: Pool,
+  workspace_id: string,
+  records: CrmHandoffRecord[],
+): Promise<Map<string, CrmHandoffRecord["outcomes"]>> {
+  const signalIds = records.map((record) => record.signal_id);
+  const conversationIds = records
+    .map((record) => record.outreach?.conversation_id)
+    .filter((value): value is string => Boolean(value));
+  if (signalIds.length === 0 && conversationIds.length === 0) {
+    return new Map();
+  }
+  const result = await pool.query<{
+    key: string;
+    outcome_id: string;
+    kind: string;
+    score: string | number | null;
+    occurred_at: Date;
+  }>(
+    `select coalesce(o.attributed_signal_id::text, o.conversation_id::text) as key,
+            o.id::text as outcome_id,
+            o.kind::text as kind,
+            o.score::text as score,
+            o.occurred_at
+       from outcomes o
+      where o.workspace_id = $1
+        and (
+          o.attributed_signal_id::text = any($2::text[])
+          or o.conversation_id::text = any($3::text[])
+        )
+      order by o.occurred_at desc
+      limit 100`,
+    [workspace_id, signalIds, conversationIds],
+  );
+  const byKey = new Map<string, CrmHandoffRecord["outcomes"]>();
+  for (const row of result.rows) {
+    const outcomes = byKey.get(row.key) ?? [];
+    outcomes.push({
+      outcome_id: row.outcome_id,
+      kind: row.kind,
+      score: Number(row.score ?? 0),
+      occurred_at: row.occurred_at.toISOString(),
+    });
+    byKey.set(row.key, outcomes);
+  }
+  return byKey;
+}
+
+async function projectCrmHandoffQueued(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    channel_account_id: string;
+    handoff_id: string;
+    contact_count: number;
+    signal_count: number;
+  };
+  await pool.query(
+    `update channel_accounts
+        set properties = properties || $3::jsonb,
+            updated_at = now()
+      where workspace_id = $1
+        and id = $2`,
+    [
+      event.workspace_id,
+      payload.channel_account_id,
+      JSON.stringify({
+        last_handoff_event_id: event.id,
+        last_handoff_id: payload.handoff_id,
+        last_handoff_at: event.occurred_at,
+        last_handoff_contact_count: payload.contact_count,
+        last_handoff_signal_count: payload.signal_count,
+      }),
+    ],
+  );
+}
+
 function normalizeCrmProvider(provider: string): string {
   const normalized = provider.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
   return normalized || "custom";
@@ -7728,6 +8082,11 @@ function createProductEventProjections(
       name: "crm.destination_configuration.v1",
       eventTypes: ["crm.destination.configured"],
       apply: (event) => projectCrmDestinationConfigured(engine.pool, event),
+    },
+    {
+      name: "crm.handoff_queue.projector.v1",
+      eventTypes: ["crm.handoff.queued"],
+      apply: (event) => projectCrmHandoffQueued(engine.pool, event),
     },
     {
       name: "signal.classification.projector.v1",

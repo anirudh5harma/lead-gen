@@ -49,6 +49,10 @@ native CRM OAuth remains next.
 - External agents and automation layers can pull qualified signals and contact
   lanes through `bombsell.signals.list_qualified` and
   `bombsell.contacts.list_lanes`.
+- External agents can now call `bombsell.crm_handoff.queue` to emit typed
+  `crm.handoff.queued` events containing signal proof, verified email or
+  LinkedIn profile data, judged/sent outreach context, and reply/meeting
+  outcomes for CRM delivery.
 - Profile now includes CRM handoff setup for HubSpot, Salesforce, Pipedrive,
   Attio, Folk, Clay, or a custom webhook. Saving it emits
   `crm.destination.configured` and stores the destination as a `crm`
@@ -56,3 +60,13 @@ native CRM OAuth remains next.
 - Native HubSpot, Salesforce, Pipedrive, Attio, Folk, or Clay OAuth sync can
   reuse the same evented destination model after launch traffic confirms the
   handoff contract.
+
+## Claude Code Plugin
+
+Status: planned with tool contract documented.
+
+- `docs/bombsell-claude-code-plugin-plan-2026-06-19.md` defines the first
+  plugin shape, MCP tools, write confirmations, auth model, and launch workflow.
+- The plugin should expose Brief, qualified Signals, contact lanes, outreach
+  preparation, approvals, sent proof, CRM handoff queueing, integrations, and
+  learning without creating new user-facing product nouns.

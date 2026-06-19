@@ -1,0 +1,8 @@
+# Bombsell
+
+> Bombsell reads a company website to generate a buyer profile, tracks buying signals, and automates email and LinkedIn outreach.
+
+Bombsell extracts data such as job postings, funding events, and leadership changes, then uses the information to personalize outreach and schedule demos.
+
+## Home
+- [Bombsell Home](https://bombsell.com): Overview of the buyer profiling and automated outreach service.

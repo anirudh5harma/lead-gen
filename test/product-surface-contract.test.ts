@@ -1071,8 +1071,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Sent proof, qualified contacts, replies, and meetings stay in\s+Agent first/);
   assert.match(reps, /Manage in Profile/);
   assert.match(reps, /Next handoff classes/);
-  assert.match(reps, /visitor-intent intake and CRM handoff are available/);
-  assert.match(reps, /native CRM OAuth, outreach-tool, and team-alert sync stay/);
+  assert.match(reps, /visitor-intent intake and CRM handoff queue typed proof\s+packages/);
+  assert.match(reps, /native CRM OAuth, outreach-tool, and team-alert\s+sync stay explicit connector work/);
   assert.match(reps, /AgentDestinationCard/);
   assert.match(reps, /AgentDestinationIcon/);
   assert.match(reps, /destination\.handoff_stage === "agent_api"/);
@@ -1643,14 +1643,18 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(outputDestinations, /CRM sync/);
   assert.match(outputDestinations, /href: "\/dashboard\/profile#crm-sync"/);
   assert.match(outputDestinations, /bombsell\.contacts\.list_lanes/);
+  assert.match(outputDestinations, /bombsell\.crm_handoff\.queue/);
   assert.match(outputDestinations, /crm\.destination\.configured/);
   assert.match(settings, /configureCrmDestinationAction/);
   assert.match(actions, /configureWorkspaceCrmDestination/);
   assert.match(productApp, /configureWorkspaceCrmDestination/);
   assert.match(productApp, /event_type: "crm\.destination\.configured"/);
+  assert.match(productApp, /event_type: "crm\.handoff\.queued"/);
   assert.match(productApp, /projectCrmDestinationConfigured/);
+  assert.match(productApp, /projectCrmHandoffQueued/);
   assert.match(registry, /const CrmDestinationConfigured = z\.object/);
   assert.match(registry, /"crm\.destination\.configured": CrmDestinationConfigured/);
+  assert.match(registry, /"crm\.handoff\.queued": CrmHandoffQueued/);
   assert.match(settings, /id="crm-sync"/);
   assert.match(settings, /CRM handoff setup/);
   assert.match(settings, /name="crm_provider"/);
@@ -1659,6 +1663,7 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /Save CRM handoff/);
   assert.match(settings, /Handoff contract/);
   assert.match(settings, /bombsell\.signals\.list_qualified/);
+  assert.match(settings, /bombsell\.crm_handoff\.queue/);
   assert.match(settings, /crm\.destination\.configured/);
   assert.match(outputDestinations, /Outreach tool sync/);
   assert.match(outputDestinations, /Team alerts/);
