@@ -170,3 +170,10 @@ The product and MCP Brief now use the same channel accounting as the dashboard:
 `linkedin_dms_sent` counts only LinkedIn DMs and InMail. Connection requests and
 comments remain Agent outreach evidence, so external agents no longer inflate
 the user's requested last-day/last-week DM metric with non-DM touches.
+
+The Agent Review queue now carries the same send-decision proof users see after
+outreach goes out: verified email availability, LinkedIn profile readiness,
+channel, approval policy, daily cap usage, and hot-path judge score sit next to
+the contact, signal, proof link, and approve/reject controls. This makes the
+GojiBerry-style Copilot/autopilot split operational instead of forcing users to
+open a separate trace before every decision.

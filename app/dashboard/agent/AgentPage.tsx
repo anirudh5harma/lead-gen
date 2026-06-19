@@ -254,6 +254,11 @@ interface AgentReviewRow {
   company_name: string | null;
   signal_title: string | null;
   message_subject: string | null;
+  channel: string | null;
+  eval_score: string | null;
+  eval_passed: boolean | null;
+  emails: string[];
+  linkedin_url: string | null;
 }
 
 interface AgentReviewSummary {
@@ -1477,9 +1482,21 @@ async function loadAgentReviewSummary(
               a.payload->>'conversation_id' as conversation_id,
               coalesce(a.payload->>'message_id', a.payload->>'inbound_message_id') as message_id,
               p.full_name as counterparty_name,
+              coalesce(p.emails, '{}'::text[]) as emails,
+              p.linkedin_url,
               co.name as company_name,
               s.title as signal_title,
-              m.subject as message_subject
+              m.subject as message_subject,
+              coalesce(m.channel::text, a.payload->>'channel') as channel,
+              coalesce(
+                m.eval_score,
+                case
+                  when (a.payload->>'eval_score') ~ '^[0-9]+(\\.[0-9]+)?$'
+                  then (a.payload->>'eval_score')::numeric
+                  else null
+                end
+              )::text as eval_score,
+              coalesce(m.eval_passed, true) as eval_passed
          from workflow_approvals a
          left join conversations c
            on c.workspace_id = a.workspace_id
@@ -4230,6 +4247,10 @@ function AgentReviewRowCard({
     stringPayload(payload, "draft") ??
     approval.reason;
   const href = reviewProofHref(approval);
+  const channel = approval.channel ?? stringPayload(payload, "channel");
+  const policy = stringPayload(payload, "policy");
+  const dailyCap = numberPayload(payload, "daily_cap");
+  const sentToday = numberPayload(payload, "sent_today");
   return (
     <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
       <span className="flex min-w-0 items-start gap-3">
@@ -4257,10 +4278,38 @@ function AgentReviewRowCard({
               Why now: {approval.signal_title}
             </span>
           ) : null}
+          <span className="mt-2 flex flex-wrap gap-1.5">
+            <ContactHandlePill
+              ready={approval.emails.length > 0}
+              icon={<Icon name="verified" size={12} />}
+            >
+              {approval.emails.length > 0 ? "Verified email" : "Email pending"}
+            </ContactHandlePill>
+            <ContactHandlePill
+              ready={Boolean(approval.linkedin_url)}
+              icon={<BrandIcon name="linkedin" size={12} />}
+            >
+              {approval.linkedin_url ? "LinkedIn profile" : "LinkedIn pending"}
+            </ContactHandlePill>
+            <ReviewQualityPill approval={approval} />
+          </span>
         </span>
       </span>
 
       <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {channel ? channelLabel(channel) : reviewKindLabel(approval.kind)}
+        </span>
+        {policy ? (
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+            {approvalLabel(policy)}
+          </span>
+        ) : null}
+        {dailyCap != null ? (
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs tabular-nums text-[var(--color-text-2)]">
+            {sentToday ?? 0}/{dailyCap} today
+          </span>
+        ) : null}
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
           {reviewKindLabel(approval.kind)}
         </span>
@@ -4301,6 +4350,35 @@ function AgentReviewRowCard({
         </form>
       </span>
     </article>
+  );
+}
+
+function ReviewQualityPill({ approval }: { approval: AgentReviewRow }) {
+  const score = outreachEvalScore(approval.eval_score);
+  const passed = approval.eval_passed;
+  const label =
+    passed === false
+      ? "Judge blocked"
+      : score == null
+        ? "Judge passed"
+        : `Judge ${score}%`;
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-[11px] " +
+        (passed === false
+          ? "bg-[var(--color-neg-bg)] text-[var(--color-neg)]"
+          : "bg-[var(--color-pos-bg)] text-[var(--color-pos)]")
+      }
+      title={
+        passed === false
+          ? "The hot-path judge blocked this draft."
+          : "This draft passed the hot-path judge before entering review."
+      }
+    >
+      <Icon name={passed === false ? "block" : "verified"} size={12} />
+      {label}
+    </span>
   );
 }
 
@@ -5389,6 +5467,19 @@ function stringPayload(
 ): string | null {
   const value = payload?.[key];
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberPayload(
+  payload: Record<string, unknown> | null,
+  key: string,
+): number | null {
+  const value = payload?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
 }
 
 function arrayPayloadLength(
