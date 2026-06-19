@@ -2010,6 +2010,32 @@ function McpAccessPanel({
         </div>
       )}
 
+      <div className="mt-4 grid gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <span>
+            <span className="block text-xs font-semibold text-[var(--color-text-1)]">
+              Direct MCP setup
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+              Add Bombsell to Claude Code today, then authenticate from the MCP
+              panel. The plugin adds guided /bombsell skills after marketplace
+              dogfood.
+            </span>
+          </span>
+          <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 text-[11px] text-[var(--color-text-3)]">
+            OAuth
+          </span>
+        </div>
+        <code className="overflow-x-auto rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-2)]">
+          claude mcp add --transport http bombsell https://www.bombsell.com/api/mcp
+        </code>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <McpSetupStep icon="dashboard" label="Brief" detail="24h and 7d signal, send, reply, and meeting metrics." />
+          <McpSetupStep icon="verified" label="Profile" detail="Buyer fit, channels, source setup, and contact quality." />
+          <McpSetupStep icon="auto_awesome" label="Agent" detail="Qualified signals, verified contacts, drafts, approvals, and learning." />
+        </div>
+      </div>
+
       <div className="mt-4 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold text-[var(--color-text-1)]">
@@ -2056,6 +2082,32 @@ function McpAccessPanel({
         )}
       </div>
     </div>
+  );
+}
+
+function McpSetupStep({
+  icon,
+  label,
+  detail,
+}: {
+  icon: string;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <span className="flex items-start gap-2 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2">
+      <span className="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-accent)]">
+        <Icon name={icon} size={14} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold text-[var(--color-text-1)]">
+          {label}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-4 text-[var(--color-text-4)]">
+          {detail}
+        </span>
+      </span>
+    </span>
   );
 }
 

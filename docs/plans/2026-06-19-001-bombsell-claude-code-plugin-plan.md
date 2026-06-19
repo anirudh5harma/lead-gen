@@ -98,9 +98,18 @@ Example user prompts:
 
 ## Launch Decision
 
-Build this as a Claude Code plugin, not a loose `.mcp.json` snippet.
+Ship two entry points:
 
-The plugin should ship:
+- **Direct MCP setup now:** users can add the remote Bombsell MCP endpoint from
+  Claude Code with
+  `claude mcp add --transport http bombsell https://www.bombsell.com/api/mcp`.
+  This proves auth, workspace scope, tool discovery, and audit logging without
+  waiting on marketplace distribution.
+- **Claude Code plugin for guided workflows:** the plugin packages the same
+  remote MCP server plus namespaced `/bombsell:*` skills, so users get a native
+  workflow instead of remembering tool names.
+
+The plugin already ships:
 
 - a bundled remote HTTP MCP configuration pointed at Bombsell's existing
   `/api/mcp` endpoint
@@ -108,10 +117,14 @@ The plugin should ship:
   readiness, qualified signals, outreach preparation, and reply learning
 - a Bombsell-controlled marketplace catalog that can be validated locally and
   later hosted for design partners
+- strict validation through `npm run verify:claude-code-plugin`
+
+Still deferred:
+
 - two optional read-mostly subagents for GTM operation and outreach review
 - opt-in hooks for release/commit workflows after the core plugin is trusted
-- a private marketplace first, then the Claude community marketplace after
-  validation and partner dogfood
+- hosted private marketplace publication, design-partner dogfood, then Claude
+  community marketplace submission
 
 This gives Claude Code users a native `/bombsell:*` workflow while preserving
 Bombsell as the system of record for auth, workspace scope, verified contacts,
@@ -119,45 +132,36 @@ approval gates, evals, and channel sending.
 
 ## Build Plan
 
-1. Auth and install path
+1. Direct MCP dogfood
 
-   Ship first-class remote MCP auth for Claude Code. The normal install should
-   not ask users to paste bearer tokens or edit local plugin files. Private
-   dogfood can keep `headersHelper`, but the published plugin should use a
-   Bombsell-hosted authorization flow, workspace selection, and revocation UI.
+   Ask internal users to run
+   `claude mcp add --transport http bombsell https://www.bombsell.com/api/mcp`,
+   authenticate through the browser consent flow, and call the Brief, launch,
+   signal, sent-outreach, approval, and learning tools from a real repo.
 
-2. Minimal plugin package
+2. Plugin dogfood
 
-   Create a separate `bombsell-claude-code` package with only the manifest,
-   remote MCP config, six skills, README, and privacy notes. Do not ship hooks,
-   local stdio servers, or write-heavy agents in the first public build.
+   Run `claude --plugin-dir ./integrations/bombsell-claude-code`, then exercise
+   `/bombsell:brief`, `/bombsell:profile-from-repo`,
+   `/bombsell:launch-check`, `/bombsell:signal-review`,
+   `/bombsell:prepare-outreach`, and `/bombsell:reply-insights` against a live
+   workspace. Preparation can create judged drafts and approval gates, but it
+   must not approve or send.
 
-3. Read-first skills
+3. Private marketplace
 
-   Launch the first three skills as read-only or proposal-only:
-   `/bombsell:brief`, `/bombsell:launch-check`, and
-   `/bombsell:signal-review`. These prove value quickly and validate auth,
-   workspace scoping, tool search, pagination, and links back into Bombsell.
+   Host the Bombsell marketplace catalog, keep the plugin source pinned by
+   commit SHA, and run `npm run verify:claude-code-plugin` before every catalog
+   update. Measure time to install, time to first useful Brief, auth failures,
+   tool-call latency, and whether users naturally ask Claude Code to update
+   Profile from repo context.
 
-4. Prepare-only outreach
-
-   Add `/bombsell:prepare-outreach` only after the read path is stable. It can
-   prepare or find judged drafts and route the user to approval, but it must not
-   send directly from Claude Code. Approval remains explicit through Bombsell's
-   existing eval, channel readiness, and policy gates.
-
-5. Private marketplace dogfood
-
-   Publish a Bombsell-controlled marketplace for design partners. Measure time
-   to install, time to first useful Brief, tool-call errors, and whether users
-   naturally ask Claude Code to update Profile from repo context.
-
-6. Community submission
+4. Public release
 
    Submit to Anthropic's community marketplace once auth, audit logging,
    privacy text, plugin validation, and partner feedback are clean. Keep the
-   official Bombsell marketplace as the fastest path for updates and enterprise
-   users.
+   official Bombsell marketplace as the faster update channel for design
+   partners and enterprise users.
 
 ## Plugin Shape
 
@@ -233,7 +237,7 @@ and pins the plugin to a release commit. Validate it with
 for both the plugin and marketplace, checks the marketplace source shape, and
 proves the pinned commit exists.
 
-Initial `.mcp.json` target:
+Current `.mcp.json` target:
 
 ```json
 {
@@ -242,16 +246,16 @@ Initial `.mcp.json` target:
       "type": "http",
       "url": "https://www.bombsell.com/api/mcp",
       "oauth": {
-        "scopes": ["brief:read", "profile:read", "signals:read", "outreach:read"]
+        "scopes": "brief:read profile:read signals:read outreach:read outreach:prepare approvals:read approvals:write learning:read"
       }
     }
   }
 }
 ```
 
-This requires completing first-class remote MCP auth for Claude Code. Until then,
-developer testing can use a local `.mcp.json` with `headersHelper` or static
-bearer headers, but that must stay out of the published plugin.
+First-class remote MCP auth is the public path. Developer testing can still use
+bearer headers for smoke tests, but static tokens and `headersHelper` scripts
+must stay out of the published plugin.
 
 ## Skills
 
@@ -263,11 +267,7 @@ recommended action.
 
 MCP tools needed:
 
-- `product.brief.get`
-- `product.context.get`
-- `product.launch.readiness.get`
-- `product.agent_observability.summary.get`
-- Future ergonomic alias: `bombsell.brief.get`
+- `bombsell.brief.get`
 
 ### `/bombsell:profile-from-repo`
 
@@ -277,15 +277,13 @@ points, integration assumptions, and signal-source recommendations.
 
 MCP tools needed:
 
-- `product.company.profile.configure`
-- `product.icp.configure`
-- `product.activation.setup.run`
-- `product.source.configure`
+- `bombsell.profile.propose_from_context`
 
 Safety:
 
 - Defaults to proposal mode.
-- Writes to Bombsell only after the user confirms the inferred company profile.
+- Does not write to Bombsell in v1; it returns a patch, buyer-fit draft, source
+  recommendations, missing context, and apply plan.
 
 ### `/bombsell:launch-check`
 
@@ -294,10 +292,8 @@ outreach.
 
 MCP tools needed:
 
-- `product.launch.readiness.get`
-- `product.outlook_account.connect_url.get`
-- `product.linkedin_account.connect_url.get`
-- `product.signal.ingestion.run`
+- `bombsell.launch.check`
+- `bombsell.integrations.list`
 
 ### `/bombsell:signal-review`
 
@@ -306,12 +302,8 @@ contacts, fit review gaps, and draft readiness.
 
 MCP tools needed:
 
-- `product.brief.get`
-- `product.state.get`
-- `product.context.get`
-- `product.contact.waterfall.resolve`
-- Future ergonomic aliases: `bombsell.signals.list_qualified`,
-  `bombsell.contact_lanes.get`
+- `bombsell.signals.list_qualified`
+- `bombsell.contact_lanes.get`
 
 ### `/bombsell:prepare-outreach`
 
@@ -321,11 +313,9 @@ approval records, but it should not approve sends by itself.
 
 MCP tools needed:
 
-- `product.signals.dispatch_plays`
-- `product.message.personalize`
-- `product.draft.eval.gate`
-- `product.approval.decide`
-- Future ergonomic alias: `bombsell.outreach.prepare`
+- `bombsell.signals.list_qualified`
+- `bombsell.outreach.prepare`
+- `bombsell.approvals.list`
 
 Safety:
 
@@ -341,10 +331,8 @@ signals, channels, and Agent positioning are working.
 
 MCP tools needed:
 
-- `product.reply.triage`
-- `product.campaign.strategy.optimize`
-- `product.play.skills.optimize`
-- Future ergonomic alias: `bombsell.learning.get`
+- `bombsell.learning.get`
+- `bombsell.outreach.list_sent`
 
 ## Agents
 

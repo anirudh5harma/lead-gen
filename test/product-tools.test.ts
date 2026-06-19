@@ -676,6 +676,11 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.match(verifier, /plugin", "validate", "--strict"/);
   assert.match(verifier, /git-subdir/);
   assert.match(verifier, /cat-file/);
+  assert.match(readme, /claude mcp add --transport http bombsell https:\/\/www\.bombsell\.com\/api\/mcp/);
+  assert.match(plan, /Direct MCP dogfood/);
+  assert.match(plan, /claude mcp add --transport http bombsell https:\/\/www\.bombsell\.com\/api\/mcp/);
+  assert.match(plan, /bombsell\.profile\.propose_from_context/);
+  assert.doesNotMatch(plan, /Future ergonomic alias/);
 
   for (const skill of skills) {
     const skillPath = `${root}/skills/${skill}/SKILL.md`;

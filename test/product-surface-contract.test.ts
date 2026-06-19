@@ -20,12 +20,14 @@ test("dashboard navigation uses active product surface routes", () => {
   assert.match(primaryNav, /href: "\/dashboard\/brief",\s+label: "Brief"/);
   assert.match(primaryNav, /matches: \["\/dashboard\/brief", "\/dashboard"\]/);
   assert.match(primaryNav, /href: "\/dashboard\/agent",\s+label: "Agent"/);
-  assert.match(primaryNav, /"\/dashboard\/reps"/);
+  assert.match(primaryNav, /matches: \["\/dashboard\/agent"\]/);
   assert.match(primaryNav, /href: "\/dashboard\/profile",\s+label: "Profile"/);
-  assert.match(primaryNav, /"\/dashboard\/conversations"/);
-  assert.match(primaryNav, /"\/dashboard\/signals"/);
-  assert.match(primaryNav, /"\/dashboard\/plays"/);
-  assert.match(primaryNav, /"\/dashboard\/outcomes"/);
+  assert.match(primaryNav, /matches: \["\/dashboard\/profile"\]/);
+  assert.doesNotMatch(primaryNav, /"\/dashboard\/reps"/);
+  assert.doesNotMatch(primaryNav, /"\/dashboard\/conversations"/);
+  assert.doesNotMatch(primaryNav, /"\/dashboard\/signals"/);
+  assert.doesNotMatch(primaryNav, /"\/dashboard\/plays"/);
+  assert.doesNotMatch(primaryNav, /"\/dashboard\/outcomes"/);
   assert.doesNotMatch(primaryNav, /label: "Outreach"/);
   assert.doesNotMatch(primaryNav, /label: "Prospects"/);
   assert.doesNotMatch(primaryNav, /label: "Inbox"/);
@@ -1409,6 +1411,13 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /McpAccessPanel/);
   assert.match(settings, /Claude Code access/);
   assert.match(settings, /Browser-authorized MCP sessions/);
+  assert.match(settings, /Direct MCP setup/);
+  assert.match(
+    settings,
+    /claude mcp add --transport http bombsell https:\/\/www\.bombsell\.com\/api\/mcp/,
+  );
+  assert.match(settings, /McpSetupStep/);
+  assert.match(settings, /marketplace\s+dogfood/);
   assert.match(settings, /Recent MCP activity/);
   assert.match(settings, /Evented audit/);
   assert.match(settings, /event_type = 'mcp\.tool\.called'/);

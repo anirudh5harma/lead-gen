@@ -13,6 +13,16 @@ This plugin packages Bombsell's remote MCP server and six focused skills:
 
 ## Install For Dogfood
 
+Direct MCP setup is the fastest way to test Bombsell from Claude Code:
+
+```bash
+claude mcp add --transport http bombsell https://www.bombsell.com/api/mcp
+```
+
+Authenticate through Claude Code's MCP flow, then ask for the Bombsell Brief,
+qualified signals, sent outreach, approval gates, or reply learning. The plugin
+below adds guided `/bombsell:*` skills on top of the same remote server.
+
 From this repository:
 
 ```bash
