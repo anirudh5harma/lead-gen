@@ -1261,6 +1261,11 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"\/dashboard\/brief"/);
   assert.match(verifier, /"\/dashboard\/agent"/);
   assert.match(verifier, /"\/dashboard\/profile"/);
+  assert.match(verifier, /canonicalNav = \["Brief", "Agent", "Profile"\]/);
+  assert.match(verifier, /"\/dashboard\/reps", destination: "\/dashboard\/agent"/);
+  assert.match(verifier, /"\/dashboard\/signals", destination: "\/dashboard\/agent#opportunities"/);
+  assert.match(verifier, /"\/dashboard\/settings", destination: "\/dashboard\/profile#tools"/);
+  assert.match(verifier, /"\/dashboard\/outcomes", destination: "\/dashboard\/brief"/);
   assert.match(verifier, /"Live work"/);
   assert.match(verifier, /"SETUP HUB"/);
   assert.match(verifier, /"LAUNCH MODEL"/);

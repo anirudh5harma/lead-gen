@@ -6,6 +6,11 @@ type SurfaceCheck = {
   labels: string[];
 };
 
+type RedirectCheck = {
+  path: string;
+  destination: string;
+};
+
 const origin = (
   process.env.DASHBOARD_VERIFY_ORIGIN ??
   process.env.APP_ORIGIN ??
@@ -46,10 +51,21 @@ const checks: SurfaceCheck[] = [
   },
 ];
 
+const canonicalNav = ["Brief", "Agent", "Profile"];
+
+const redirectChecks: RedirectCheck[] = [
+  { path: "/dashboard/reps", destination: "/dashboard/agent" },
+  { path: "/dashboard/signals", destination: "/dashboard/agent#opportunities" },
+  { path: "/dashboard/conversations", destination: "/dashboard/agent#outreach" },
+  { path: "/dashboard/settings", destination: "/dashboard/profile#tools" },
+  { path: "/dashboard/outcomes", destination: "/dashboard/brief" },
+];
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
   const results = [];
+  const redirects = [];
 
   try {
     for (const check of checks) {
@@ -60,9 +76,20 @@ async function main() {
       });
       const text = await page.locator("body").innerText({ timeout: 10_000 });
       const missing = check.labels.filter((label) => !text.includes(label));
+      const navLabels = await page
+        .locator("header nav a span")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => node.textContent?.trim() ?? "").filter(Boolean)
+        )
+        .catch(() => []);
+      const navMatches =
+        check.path === "/dashboard/brief"
+          ? arraysEqual(navLabels, canonicalNav)
+          : true;
       const failed =
         !response?.ok() ||
         missing.length > 0 ||
+        !navMatches ||
         text.includes("This tab could not finish") ||
         text.includes("An error occurred") ||
         text.includes("Not found");
@@ -80,6 +107,22 @@ async function main() {
         status: response?.status() ?? 0,
         ok: !failed,
         missing,
+        nav: check.path === "/dashboard/brief" ? navLabels : undefined,
+      });
+    }
+
+    for (const check of redirectChecks) {
+      const response = await page.goto(`${origin}${check.path}`, {
+        waitUntil: "networkidle",
+        timeout: 20_000,
+      });
+      const actual = normalizedPath(page.url());
+      const ok = response?.ok() && actual === check.destination;
+      redirects.push({
+        path: check.path,
+        destination: check.destination,
+        actual,
+        ok: Boolean(ok),
       });
     }
   } finally {
@@ -87,8 +130,18 @@ async function main() {
   }
 
   const failures = results.filter((result) => !result.ok);
-  console.log(JSON.stringify({ origin, results }, null, 2));
-  if (failures.length > 0) process.exit(1);
+  const redirectFailures = redirects.filter((result) => !result.ok);
+  console.log(JSON.stringify({ origin, results, redirects }, null, 2));
+  if (failures.length > 0 || redirectFailures.length > 0) process.exit(1);
+}
+
+function normalizedPath(value: string): string {
+  const url = new URL(value);
+  return `${url.pathname}${url.hash}`;
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
 main().catch((error) => {
