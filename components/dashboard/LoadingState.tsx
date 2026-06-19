@@ -1,17 +1,13 @@
 import Icon from "@/components/Icon";
 
-type LoadingSurface =
-  | "agent"
-  | "brief"
-  | "dashboard"
-  | "profile";
+type LoadingSurface = "agent" | "brief" | "dashboard" | "profile";
 
 type LoadingLayout = "tiles" | "rows" | "split";
 
 const SURFACE_COPY: Record<LoadingSurface, { kicker: string; title: string; icon: string }> = {
   agent: { kicker: "Agent", title: "Loading live work", icon: "auto_awesome" },
   dashboard: { kicker: "Dashboard", title: "Gathering the morning view", icon: "dashboard" },
-  brief: { kicker: "Dashboard", title: "Gathering the morning view", icon: "dashboard" },
+  brief: { kicker: "Brief", title: "Gathering the morning view", icon: "dashboard" },
   profile: { kicker: "Profile", title: "Loading profile and integrations", icon: "verified" },
 };
 
@@ -25,28 +21,23 @@ export function DashboardLoadingState({
   const copy = SURFACE_COPY[surface];
   return (
     <div className="space-y-8" aria-busy="true" aria-live="polite">
-      <section className="dashboard-loader">
-        <div className="dashboard-loader-orbit" aria-hidden="true">
-          <span className="dashboard-loader-stream dashboard-loader-stream-a" />
-          <span className="dashboard-loader-stream dashboard-loader-stream-b" />
-          <span className="dashboard-loader-stream dashboard-loader-stream-c" />
-          <span className="dashboard-loader-node dashboard-loader-node-a" />
-          <span className="dashboard-loader-node dashboard-loader-node-b" />
-          <span className="dashboard-loader-node dashboard-loader-node-c" />
+      <section className="relative overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-6 py-12 md:px-9 md:py-16">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-3)]">
+          {copy.kicker}
+        </p>
+        <div className="mt-5 flex items-center gap-3">
+          <span className="grid size-11 place-items-center rounded-full bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]">
+            <Icon name={copy.icon} size={18} />
+          </span>
+          <h1
+            className="text-[clamp(1.75rem,3.6vw,2.75rem)] font-bold leading-[1.04] tracking-[-0.02em] text-[var(--color-text-1)]"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            {copy.title}
+          </h1>
         </div>
-        <div className="relative z-10 max-w-xl">
-          <p className="brief-kicker">{copy.kicker}</p>
-          <div className="mt-5 flex items-center gap-3">
-            <span className="brief-note-icon">
-              <Icon name={copy.icon} size={19} />
-            </span>
-            <h1 className="display-serif text-[clamp(2rem,4.4vw,3.75rem)] text-[var(--color-text-1)]">
-              {copy.title}
-            </h1>
-          </div>
-          <div className="mt-6 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-[rgba(36,36,33,0.08)]">
-            <span className="dashboard-loader-bar" />
-          </div>
+        <div className="mt-6 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-[var(--color-ink-2)]">
+          <span className="dashboard-loader-bar" />
         </div>
       </section>
       <LoadingSkeleton layout={layout} />

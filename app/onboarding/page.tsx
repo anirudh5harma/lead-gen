@@ -39,29 +39,49 @@ export default async function OnboardingPage({
   if (completed) redirect(PRODUCT_HOME_PATH);
 
   return (
-    <main className="monaco-canvas relative isolate flex min-h-[100dvh] flex-1 items-center bg-[var(--color-ink-1)] px-6 py-8 sm:px-10 lg:px-16">
-      <section className="relative z-10 mx-auto grid w-full max-w-[1120px] gap-10 lg:grid-cols-[0.92fr_1.08fr]">
+    <main className="relative isolate flex min-h-[100dvh] flex-1 items-center bg-[var(--color-ink-1)] px-4 py-10 md:px-8 lg:px-12">
+      <section className="relative z-10 mx-auto grid w-full max-w-[1180px] items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16">
         <div className="flex flex-col justify-center">
-          <ScrollReveal delay={0.1}>
-            <p className="mono text-[var(--color-accent)]">Launch agent</p>
+          <ScrollReveal delay={0.05}>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-cta-bg)] px-2.5 py-1 text-[12px] font-semibold tracking-[-0.01em] text-[var(--color-brand-green-bright)]">
+              <span className="size-1.5 rounded-full bg-[var(--color-brand-green-bright)]" />
+              Launch Agent
+            </span>
           </ScrollReveal>
-          <ScrollReveal delay={0.2}>
-            <h1 className="display-serif mt-4 max-w-xl text-[clamp(2rem,4vw,3.5rem)] text-[var(--color-text-1)]">
-              Enter your website. Bombsell builds the Profile.
+          <ScrollReveal delay={0.15}>
+            <h1
+              className="mt-5 max-w-[14ch] text-[clamp(2.25rem,5vw,4rem)] font-bold leading-[1.0] tracking-[-0.03em] text-[var(--color-text-1)]"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Drop your URL. Agent does the rest.
             </h1>
           </ScrollReveal>
-          <ScrollReveal delay={0.3}>
-            <p className="mt-5 max-w-md text-[17px] leading-[1.6] text-[var(--color-text-2)]">
-              Add your positioning, proof, and goals once. Bombsell turns that
-              Profile into signal sources, verified contacts, and email or
-              LinkedIn outreach once your channels are connected.
+          <ScrollReveal delay={0.25}>
+            <p className="mt-6 max-w-[460px] text-[17px] leading-[1.55] tracking-[-0.01em] text-[var(--color-text-2)]">
+              Bombsell reads your site, builds positioning, ICP, voice, and the
+              signal map. Connect Outlook and LinkedIn — outreach starts.
             </p>
           </ScrollReveal>
-          <ScrollReveal delay={0.4}>
-            <div className="mt-8 grid gap-3">
-              <FlowStep number="1" label="Website" text="Your site becomes company, audience, voice, and signal context." />
-              <FlowStep number="2" label="Profile + channels" text="Connect Outlook and LinkedIn in Profile before outreach can run." />
-              <FlowStep number="3" label="Agent" text="Signals, verified contacts, drafts, sends, and replies stay together under Agent." />
+          <ScrollReveal delay={0.35}>
+            <div className="mt-9 grid gap-3">
+              <FlowStep
+                number="1"
+                tone="pink"
+                label="Website"
+                text="Becomes company, audience, voice, signal context."
+              />
+              <FlowStep
+                number="2"
+                tone="yellow"
+                label="Profile + channels"
+                text="Outlook and LinkedIn connect inside Profile."
+              />
+              <FlowStep
+                number="3"
+                tone="green"
+                label="Agent"
+                text="Signals, contacts, drafts, sends, replies — one surface."
+              />
             </div>
           </ScrollReveal>
         </div>
@@ -74,23 +94,26 @@ export default async function OnboardingPage({
                   key={step}
                   className={
                     step === 1
-                      ? "h-2.5 flex-1 rounded-full bg-[var(--color-accent)]"
-                      : "h-2.5 flex-1 rounded-full bg-[var(--color-line-2)]"
+                      ? "h-1.5 flex-1 rounded-full bg-[var(--color-cta-bg)]"
+                      : "h-1.5 flex-1 rounded-full bg-[var(--color-line-2)]"
                   }
                 />
               ))}
             </div>
             <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-[var(--color-accent)] text-[var(--color-accent-on)] shadow-[0_8px_20px_-12px_rgba(38,87,94,0.25)]">
-                <Icon name="auto_awesome" size={20} />
+              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]">
+                <Icon name="auto_awesome" size={19} />
               </span>
               <div className="min-w-0">
-                <h2 className="font-sans text-2xl font-semibold leading-tight text-[var(--color-text-1)]">
+                <h2
+                  className="text-[24px] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--color-text-1)]"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
                   Build launch Profile
                 </h2>
-                <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-                  Website analysis plus the context needed to create sources,
-                  outreach rules, and the first Agent queue.
+                <p className="mt-1.5 text-[13.5px] leading-[1.55] tracking-[-0.01em] text-[var(--color-text-3)]">
+                  Website analysis plus the context to create sources, outreach
+                  rules, and the first Agent queue.
                 </p>
               </div>
             </div>
@@ -102,8 +125,8 @@ export default async function OnboardingPage({
               initialCompanyName={initialCompanyName}
             />
 
-            <p className="mt-6 flex items-center gap-1.5 text-xs leading-5 text-[var(--color-text-4)]">
-              <Icon name="lock" size={14} />
+            <p className="mt-6 flex items-center gap-1.5 text-[12px] leading-5 text-[var(--color-text-3)]">
+              <Icon name="lock" size={13} />
               Private to your workspace. Nothing is published until you approve it.
             </p>
           </section>
@@ -113,23 +136,41 @@ export default async function OnboardingPage({
   );
 }
 
+const TONE_CLASS: Record<string, string> = {
+  pink: "bg-[var(--color-brand-pink)] text-[#9a0103]",
+  yellow: "bg-[var(--color-brand-yellow)] text-[#441f16]",
+  green: "bg-[var(--color-brand-green)] text-[#273416]",
+  blue: "bg-[var(--color-brand-blue)] text-[#0a0d27]",
+};
+
 function FlowStep({
   number,
+  tone,
   label,
   text,
 }: {
   number: string;
+  tone: string;
   label: string;
   text: string;
 }) {
   return (
-    <div className="grid grid-cols-[40px_1fr] gap-3">
-      <span className="flex size-9 items-center justify-center rounded-[8px] bg-[var(--color-accent-bg)] font-mono text-xs font-semibold text-[var(--color-accent)]">
+    <div className="grid grid-cols-[40px_1fr] items-start gap-3">
+      <span
+        className={
+          "grid size-9 place-items-center rounded-full text-[13px] font-bold tracking-[-0.01em] " +
+          (TONE_CLASS[tone] ?? TONE_CLASS.pink)
+        }
+      >
         {number}
       </span>
       <span>
-        <span className="block text-[15px] font-semibold text-[var(--color-text-1)]">{label}</span>
-        <span className="block text-[13px] leading-5 text-[var(--color-text-3)]">{text}</span>
+        <span className="block text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]">
+          {label}
+        </span>
+        <span className="block text-[13px] leading-[1.55] tracking-[-0.005em] text-[var(--color-text-3)]">
+          {text}
+        </span>
       </span>
     </div>
   );

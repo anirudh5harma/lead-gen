@@ -94,9 +94,9 @@ export function DashboardShell({
       {routePending ? (
         <div className="dashboard-route-pending" aria-hidden="true" />
       ) : null}
-      {/* Top nav — clean white like Ploy */}
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/80 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1200px] items-center gap-6 px-6 py-3.5 md:px-10 lg:px-16">
+      {/* Top nav — Ploy pill-rail pattern, floating */}
+      <header className="fixed left-0 right-0 top-0 z-50 px-4 pt-4 md:px-6">
+        <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between gap-3">
           <Link
             href="/dashboard/brief"
             onClick={(event) =>
@@ -105,22 +105,22 @@ export function DashboardShell({
                 "/dashboard",
               ])
             }
-            className="flex items-center gap-2 text-[1.0625rem] font-semibold tracking-[-0.02em] text-[var(--color-text-1)]"
+            className="inline-flex h-12 items-center gap-2 rounded-full bg-[var(--color-ink-0)]/90 px-4 text-[15px] font-semibold tracking-[-0.02em] text-[var(--color-text-1)] backdrop-blur-md ring-1 ring-[var(--color-line-1)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
             <Image
               src="/logo.svg"
               alt=""
-              width={24}
-              height={24}
+              width={22}
+              height={22}
               priority
               unoptimized
-              className="size-6"
+              className="size-[22px]"
             />
             Bombsell
           </Link>
 
-          <nav className="ml-2 hidden flex-1 items-center gap-1 md:flex">
+          <nav className="hidden h-12 items-center gap-0.5 rounded-full bg-[var(--color-ink-0)]/90 px-2 text-[13.5px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] backdrop-blur-md ring-1 ring-[var(--color-line-1)] md:inline-flex">
             {NAV.map((item) => {
               const active = isActivePath(pathname, item.href, item.matches);
               return (
@@ -130,10 +130,10 @@ export function DashboardShell({
                   onClick={(event) => handleNavClick(event, item.href, item.matches)}
                   aria-current={active ? "page" : undefined}
                   className={
-                    "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[13.5px] font-medium transition-colors " +
+                    "inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 transition-colors " +
                     (active
-                      ? "bg-[var(--color-text-1)] text-[var(--color-ink-0)]"
-                      : "text-[var(--color-text-2)] hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
+                      ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
+                      : "hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
                   }
                 >
                   <Icon name={item.icon} size={14} />
@@ -143,7 +143,7 @@ export function DashboardShell({
             })}
           </nav>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {workspaces.length > 1 ? (
               <form action={switchWorkspaceAction} className="hidden sm:block">
                 <label className="sr-only" htmlFor="workspace-switcher">
@@ -156,7 +156,7 @@ export function DashboardShell({
                   onChange={(event) =>
                     event.currentTarget.form?.requestSubmit()
                   }
-                  className="h-8 max-w-[180px] rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-2 text-[13px] font-medium text-[var(--color-text-2)] outline-none transition hover:border-[var(--color-line-3)] hover:text-[var(--color-text-1)]"
+                  className="h-12 max-w-[180px] rounded-full bg-[var(--color-ink-0)]/90 px-4 text-[13px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] outline-none ring-1 ring-[var(--color-line-1)] backdrop-blur-md transition hover:text-[var(--color-text-1)]"
                 >
                   {workspaces.map((workspace) => (
                     <option key={workspace.id} value={workspace.id}>
@@ -170,10 +170,10 @@ export function DashboardShell({
               <PendingSubmitButton
                 aria-label="Sign out"
                 title="Sign out"
-                className="relative grid size-8 place-items-center rounded-[8px] text-[var(--color-text-3)] transition-colors hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]"
+                className="grid size-12 place-items-center rounded-full bg-[var(--color-ink-0)]/90 text-[var(--color-text-3)] backdrop-blur-md ring-1 ring-[var(--color-line-1)] transition-colors hover:text-[var(--color-text-1)]"
                 pendingLabel=""
               >
-                <Icon name="logout" size={17} />
+                <Icon name="logout" size={16} />
               </PendingSubmitButton>
             </form>
           </div>
@@ -181,30 +181,32 @@ export function DashboardShell({
       </header>
 
       {/* Mobile sub-nav */}
-      <nav className="fixed left-0 right-0 top-[58px] z-40 mx-auto flex w-full max-w-[1200px] gap-1 overflow-x-auto border-b border-[var(--color-line-1)] bg-[var(--color-ink-0)]/90 px-6 py-2 backdrop-blur-md md:hidden">
-        {NAV.map((item) => {
-          const active = isActivePath(pathname, item.href, item.matches);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={(event) => handleNavClick(event, item.href, item.matches)}
-              aria-current={active ? "page" : undefined}
-              className={
-                "inline-flex shrink-0 items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-[13px] font-medium transition-colors " +
-                (active
-                  ? "bg-[var(--color-text-1)] text-[var(--color-ink-0)]"
-                  : "text-[var(--color-text-2)] hover:text-[var(--color-text-1)]")
-              }
-            >
-              <Icon name={item.icon} size={14} />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
+      <nav className="fixed left-0 right-0 top-[68px] z-40 mx-auto flex w-full max-w-[1280px] gap-1 overflow-x-auto px-4 pb-3 md:hidden">
+        <div className="mx-auto inline-flex h-11 items-center gap-0.5 rounded-full bg-[var(--color-ink-0)]/90 px-1.5 text-[13px] font-medium tracking-[-0.01em] text-[var(--color-text-2)] backdrop-blur-md ring-1 ring-[var(--color-line-1)]">
+          {NAV.map((item) => {
+            const active = isActivePath(pathname, item.href, item.matches);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={(event) => handleNavClick(event, item.href, item.matches)}
+                aria-current={active ? "page" : undefined}
+                className={
+                  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 transition-colors " +
+                  (active
+                    ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
+                    : "hover:text-[var(--color-text-1)]")
+                }
+              >
+                <Icon name={item.icon} size={14} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
       </nav>
 
-      <main className="relative z-20 mx-auto w-full min-w-0 max-w-[1200px] overflow-x-clip px-6 pb-16 pt-[108px] md:px-10 md:pt-[80px] lg:px-16">
+      <main className="relative z-20 mx-auto w-full min-w-0 max-w-[1280px] overflow-x-clip px-4 pb-16 pt-[140px] md:px-8 md:pt-[96px] lg:px-12">
         {children}
       </main>
     </div>
@@ -221,21 +223,21 @@ export function EmptyState({
   cta?: { href: string; label: string; icon?: string };
 }) {
   return (
-    <div className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-6 py-10 text-center">
-      <p className="text-[17px] font-semibold text-[var(--color-text-1)]">
+    <div className="rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-6 py-12 text-center">
+      <p
+        className="text-[17px] font-semibold tracking-[-0.015em] text-[var(--color-text-1)]"
+        style={{ fontFamily: "var(--font-display)" }}
+      >
         {title}
       </p>
       {hint ? (
-        <p className="mx-auto mt-2 max-w-md text-[13.5px] leading-6 text-[var(--color-text-3)]">
+        <p className="mx-auto mt-2.5 max-w-md text-[13.5px] leading-[1.6] tracking-[-0.01em] text-[var(--color-text-3)]">
           {hint}
         </p>
       ) : null}
       {cta ? (
-        <Link
-          href={cta.href}
-          className="btn-solid mt-5 inline-flex"
-        >
-          {cta.icon ? <Icon name={cta.icon} size={16} /> : null}
+        <Link href={cta.href} className="btn-solid-sm mt-6 inline-flex">
+          {cta.icon ? <Icon name={cta.icon} size={14} /> : null}
           {cta.label}
         </Link>
       ) : null}
