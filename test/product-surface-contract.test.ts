@@ -813,13 +813,21 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /acceptedConnectionHref/);
   assert.match(reps, /Native Outlook threads/);
   assert.match(reps, /Connection requests/);
-  assert.match(reps, /DMs, InMail, and comments/);
+  assert.match(reps, /DMs and InMail/);
   assert.match(reps, /latest_outbound_channel/);
   assert.match(reps, /linkedin_invites_7d/);
   assert.match(reps, /linkedin_accepts_7d/);
   assert.match(reps, /linkedin_messages_7d/);
   assert.match(reps, /linkedin_invite_replies_7d/);
   assert.match(reps, /linkedin_message_replies_7d/);
+  assert.match(
+    reps,
+    /and channel in \('linkedin_dm','linkedin_inmail'\)\s+and status in \('sent','delivered','replied'\)\s+and coalesce\(sent_at, created_at\) >= now\(\) - interval '7 days'\) as linkedin_messages_7d/,
+  );
+  assert.match(
+    reps,
+    /where latest_outbound_channel in \('linkedin_dm','linkedin_inmail'\)\) as linkedin_message_replies_7d/,
+  );
   assert.match(reps, /event_type = 'linkedin\.connection\.accepted'/);
   assert.match(reps, /m\.channel in \('linkedin_dm','linkedin_inmail','linkedin_comment'\)/);
   assert.match(reps, /followup\.id is null/);

@@ -133,6 +133,11 @@ LinkedIn DMs, invites, accepted connections, and accepted-connection follow-ups
 are visible before deeper execution tables. This keeps the core path focused on
 quality signals becoming verified contacts and email/LinkedIn outreach.
 
+The Agent outreach metrics now use the same DM accounting as Brief: LinkedIn
+DMs count only DMs and InMail, while connection requests, accepted connections,
+and comments stay visible as separate outreach evidence. This keeps the launch
+dashboard honest about what was actually sent as email or DM.
+
 The Claude Code plugin plan now reflects Anthropic's current plugin guidance:
 remote HTTP MCP plus six focused `/bombsell:*` skills first, product workflow
 dogfood from real repos second, and marketplace distribution only after OAuth,

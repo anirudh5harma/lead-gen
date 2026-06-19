@@ -1182,7 +1182,7 @@ async function loadAgentOutreachSummary(
          (select count(*)::text from messages
             where workspace_id = $1
               and direction = 'outbound'
-              and channel in ('linkedin_dm','linkedin_inmail','linkedin_comment')
+              and channel in ('linkedin_dm','linkedin_inmail')
               and status in ('sent','delivered','replied')
               and coalesce(sent_at, created_at) >= now() - interval '7 days') as linkedin_messages_7d,
          (select count(*)::text from recent_replies
@@ -1190,7 +1190,7 @@ async function loadAgentOutreachSummary(
          (select count(*)::text from recent_replies
             where latest_outbound_channel = 'linkedin_connection') as linkedin_invite_replies_7d,
          (select count(*)::text from recent_replies
-            where latest_outbound_channel in ('linkedin_dm','linkedin_inmail','linkedin_comment')) as linkedin_message_replies_7d,
+            where latest_outbound_channel in ('linkedin_dm','linkedin_inmail')) as linkedin_message_replies_7d,
          (select count(*)::text from messages
             where workspace_id = $1
               and direction = 'outbound'
@@ -3738,10 +3738,10 @@ function AgentOperatingLoopPanel({
               count={outreach.email_sent_7d}
             />
             <OperatingLoopChannel
-              title="LinkedIn"
+              title="LinkedIn DMs"
               channel="linkedin_dm"
               connection={coverage.linkedIn}
-              count={outreach.linkedin_sent_7d}
+              count={outreach.linkedin_messages_7d}
             />
           </div>
           <div className="mt-4 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2 text-xs leading-5 text-[var(--color-text-3)]">
@@ -4187,7 +4187,7 @@ function AgentOutreachPanel({
             </p>
             <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
               <MiniStat label="Emails sent" value={outreach.email_sent_7d} />
-              <MiniStat label="DMs sent" value={outreach.linkedin_sent_7d} />
+              <MiniStat label="DMs sent" value={outreach.linkedin_messages_7d} />
               <MiniStat label="Awaiting reply" value={outreach.awaiting_reply} />
             </div>
             <p className="text-xs leading-5 text-[var(--color-text-3)]">
@@ -4338,7 +4338,7 @@ function ChannelPerformancePanel({
       title: "LinkedIn messages",
       sent: outreach.linkedin_messages_7d,
       reply: outreach.linkedin_message_replies_7d,
-      detail: "DMs, InMail, and comments",
+      detail: "DMs and InMail",
     },
   ];
   return (
@@ -4350,7 +4350,7 @@ function ChannelPerformancePanel({
           </p>
           <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
             Outreach is split by email, LinkedIn invites, accepted
-            connections, LinkedIn messages, and channel-attributed replies.
+            connections, LinkedIn DMs, and channel-attributed replies.
           </p>
         </div>
         <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
