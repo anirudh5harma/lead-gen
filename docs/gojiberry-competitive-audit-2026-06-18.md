@@ -84,7 +84,9 @@ The Brief signal-types panel now goes beyond raw qualified-signal counts. Each s
 
 Message personalization now carries a dedicated Profile Message Ingredients block before the broader workspace context. Value proposition, pain points, features, social proof, buyer roles, markets, outreach goal, tone, and LinkedIn company page are explicitly available to the writer and hot-path judge, making the Profile -> judged email/LinkedIn outreach promise true in the backend rather than only visible in the UI.
 
-External agent clients now get a focused `product.brief.get` tool instead of having to infer the operating state from broad workspace context. The tool returns 24h/7d qualified signals, email and LinkedIn sends, replies, meetings, signal-type contact/draft readiness, channel readiness, pending reviews, and the next action. This translates GojiBerry's workspace-aware chat prompts into Bombsell's MCP/API surface without adding another dashboard tab.
+External agent clients now get a focused `product.brief.get` tool instead of having to infer the operating state from broad workspace context. The tool returns 24h/7d qualified signals, email sends, LinkedIn DM/InMail sends, replies, meetings, signal-type contact/draft readiness, channel readiness, pending reviews, and the next action. This translates GojiBerry's workspace-aware chat prompts into Bombsell's MCP/API surface without adding another dashboard tab.
+
+Launch copy now separates channel mechanics instead of using generic social-touch wording. Brief metrics count emails and LinkedIn DMs/InMail, while Agent/Profile surfaces can describe the broader LinkedIn path: verified profiles, connection requests, accepted-connection follow-ups, DMs, approval gates, and reply learning.
 
 The MCP server and manifest now tell external agent clients to enter through Brief, then use Agent evidence and Profile/readiness tools for deeper work. The instructions name qualified signals, verified contacts, email/LinkedIn outreach, approvals, replies, launch readiness, and the hot-path eval gate so Claude Code-style tool search can find Bombsell's core flow without exposing another product model.
 

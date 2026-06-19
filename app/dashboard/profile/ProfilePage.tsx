@@ -745,7 +745,7 @@ function ProfileSetupHub({
           <p className="mt-2 text-sm leading-6 text-[var(--color-text-3)]">
             Website context shapes the buyer profile, connected accounts unlock
             outreach, and verified contact coverage decides whether the Agent can
-            turn quality signals into email or LinkedIn touches.
+            turn quality signals into email sends, LinkedIn requests, or DMs.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1332,7 +1332,7 @@ function ProfileSignalBuilderPanel({
         <p className="text-sm leading-6 text-[var(--color-text-3)]">
           Keep at least five strong signal inputs across keywords, competitors,
           and active sources. Bombsell turns them into qualified contacts,
-          judged drafts, sent email or LinkedIn touches, then reply learning.
+          judged drafts, sent emails or LinkedIn DMs, then reply learning.
         </p>
         <div className="flex flex-wrap gap-2 md:justify-end">
           <form action={checkAgentSourcesAction}>

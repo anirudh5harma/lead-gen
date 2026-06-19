@@ -225,6 +225,38 @@ This gives Claude Code users a native `/bombsell:*` workflow while preserving
 Bombsell as the system of record for auth, workspace scope, verified contacts,
 approval gates, evals, and channel sending.
 
+## 2026-06-19 Research Delta
+
+Fresh Claude Code docs point to a clear launch plan: Bombsell should ship a
+small plugin wrapped around the existing remote HTTP MCP server, not a local
+agent that tries to duplicate the app. Claude Code is now explicitly positioned
+as a multi-surface agentic workbench across terminal, IDE, desktop, and web, and
+Anthropic documents MCP as the way to connect external tools and APIs. Plugins
+are self-contained bundles that can include skills, agents, hooks, MCP servers,
+monitors, and settings, while skills provide the user-facing `/plugin:skill`
+workflows. The MCP docs recommend remote HTTP for cloud services, support OAuth,
+and warn users to trust servers before connecting them. Plugin distribution can
+begin in a private marketplace and later move to the Claude community
+marketplace after validation and safety review.
+
+Sources checked:
+
+- <https://code.claude.com/docs/en/overview>
+- <https://code.claude.com/docs/en/mcp>
+- <https://code.claude.com/docs/en/skills>
+- <https://code.claude.com/docs/en/plugins>
+- <https://code.claude.com/docs/en/plugins-reference>
+- <https://code.claude.com/docs/en/plugin-marketplaces>
+- <https://code.claude.com/docs/en/hooks>
+
+The practical implication is simple: launch the Claude Code surface as a
+trusted GTM workbench. Users should install Bombsell, run `/bombsell:brief`,
+let Claude Code read their repo to propose Profile improvements, review
+qualified signals with verified email and LinkedIn lanes, prepare judged
+outreach drafts, inspect sent emails/DMs and replies, and then continue their
+normal launch workflow. Bombsell keeps OAuth, workspace scoping, approval,
+sending, eval gates, audit events, and revocation in the product.
+
 ## 2026-06-19 Research Update
 
 Anthropic's current Claude Code docs make the product path clearer:

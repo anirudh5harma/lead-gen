@@ -2104,7 +2104,8 @@ function AgentSetupSnapshot({
             </p>
             <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
               Verified contacts, connected channels, and approval rules decide
-              whether qualified signals become email or LinkedIn touches.
+              whether qualified signals become email sends, LinkedIn DMs, or
+              accepted-connection follow-ups.
             </p>
           </div>
           <div className="grid gap-2">
@@ -2393,7 +2394,7 @@ function AgentSystemPanel({
           value={`${sequence.length} rule set${sequence.length === 1 ? "" : "s"}`}
           detail={
             coverage.email.connected || coverage.linkedIn.connected
-              ? "Email and LinkedIn sends follow connected-account caps and approval gates."
+              ? "Email sends and LinkedIn actions follow connected-account caps and approval gates."
               : "Connect Outlook or LinkedIn before the agent can send."
           }
           href="/dashboard/profile#channels"
@@ -4188,9 +4189,9 @@ function AgentReviewQueuePanel({
                   Copilot review
                 </p>
                 <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-                  Approval gates keep email and LinkedIn sends behind the same
-                  channel readiness, daily caps, and hot-path judge evidence as
-                  the Agent workflow.
+                  Approval gates keep email sends and LinkedIn actions behind
+                  the same channel readiness, daily caps, and hot-path judge
+                  evidence as the Agent workflow.
                 </p>
               </div>
               <MiniStat label="Waiting for review" value={reviews.pending_count} />

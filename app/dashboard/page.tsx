@@ -1371,7 +1371,7 @@ function BriefSignalToOutreachPanel({
       icon: "send",
       label: "Sent outreach",
       value: totalSent7d,
-      detail: "Email and LinkedIn touches",
+      detail: "Emails and LinkedIn DMs",
       href: "/dashboard/agent#outreach",
       ready: totalSent7d > 0,
     },
@@ -1730,7 +1730,7 @@ function briefNextMoves(
       title: "Turn signals into outreach",
       detail: `${actions.qualified_signals_7d} qualified signal${
         actions.qualified_signals_7d === 1 ? "" : "s"
-      } are waiting for verified email or LinkedIn touches.`,
+      } are waiting for verified email sends or LinkedIn outreach.`,
       href: "/dashboard/agent#qualified-signals",
       action: "Prepare",
       tone: "ready",

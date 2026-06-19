@@ -511,7 +511,7 @@ test("Profile presents separate Outlook and LinkedIn connection gates", () => {
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Control mode/);
   assert.match(settings, /href="\/dashboard\/agent#qualified-signals"/);
-  assert.match(settings, /turn quality signals into email or LinkedIn touches/);
+  assert.match(settings, /turn quality signals into email sends, LinkedIn requests, or DMs/);
   assert.match(settings, /Email integration/);
   assert.match(settings, /LinkedIn integration/);
   assert.match(settings, /verified contact or LinkedIn profile/);

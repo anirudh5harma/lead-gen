@@ -141,7 +141,7 @@ This plan does not keep current implementation because it exists. It keeps the p
 - R14. Outlook connection is the default email launch path and must include send readiness, reply sync readiness, and later calendar readiness.
 - R15. LinkedIn connection must go through a compliant user-consented provider boundary, fail closed when unconfigured, and enforce pacing, volume, account health, and provider incident gates.
 - R16. A Campaign cannot start external outreach until the target channel account is connected, healthy, and allowed by the Play's autonomy policy.
-- R17. Email and LinkedIn touches must be coordinated as one Conversation path, not siloed channel sequences.
+- R17. Email sends, LinkedIn DMs, and accepted-connection follow-ups must be coordinated as one Conversation path, not siloed channel sequences.
 
 ### Personalized Messages and Play Skills
 
