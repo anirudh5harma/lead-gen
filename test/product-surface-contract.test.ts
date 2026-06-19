@@ -1140,11 +1140,14 @@ test("MCP context uses the simplified product model", () => {
   assert.match(productApp, /connect_accounts/);
   assert.match(productApp, /prepare_outreach/);
   assert.match(productApp, /open_agent/);
-  assert.match(context, /Active agents/);
+  assert.match(context, /Agent configurations/);
+  assert.match(context, /Recent reply\/meeting results/);
   assert.match(context, /Outreach Rules/);
   assert.doesNotMatch(context, /Outreach Sequences/);
   assert.doesNotMatch(context, /Preserve the internal five primitives/);
   assert.doesNotMatch(context, /Content opportunities/);
+  assert.doesNotMatch(context, /Active agents/);
+  assert.doesNotMatch(context, /Recent outcomes/);
   assert.doesNotMatch(context, /AEO gaps/);
   assert.match(tools, /qualified signals, verified contacts, outreach, replies, meetings/);
   assert.match(tools, /workspace Agent persona/);

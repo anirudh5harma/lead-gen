@@ -401,21 +401,21 @@ export async function getWorkspaceAgentContext(
     "- Outreach: derived email and LinkedIn messages tied to a Conversation, a verified contact, and the Signal that justified action.",
     "",
     "## Operating Rules",
-    "- Use the registered tools as primitives; compose outcomes from tools instead of assuming hidden features.",
+    "- Use the registered tools as primitives; derive replies, meetings, and learning from tool evidence instead of assuming hidden features.",
     "- State changes should flow through typed product/graph tools and durable workflows.",
     "- Keep user-facing language simple: Brief, Profile, Agent, qualified signals, verified contacts, outreach, replies, and meetings.",
     "- Preserve the durable architecture underneath; never bypass workflow, event, graph, eval, or channel-readiness contracts.",
     "- Approved sends still pass through verified contact resolution, judge, deliverability, duplicate-contact, and channel gates.",
     "",
     "## Current Counts",
-    `- Active agents: ${reps.rows.length}`,
+    `- Agent configurations: ${reps.rows.length}`,
     `- ICP segments: ${icps.rows.length}`,
     `- Outreach rules: ${plays.rows.length}`,
     `- Sources: ${sources.rows.length}`,
     `- Pending approvals: ${pendingApprovals.rows.length}`,
     `- Recent signals: ${signals.rows.length}`,
     `- Recent conversations: ${numericCount(conversationCount.rows[0]?.count)}`,
-    `- Recent outcomes: ${numericCount(outcomeCount.rows[0]?.count)}`,
+    `- Recent reply/meeting results: ${numericCount(outcomeCount.rows[0]?.count)}`,
     `- Recommendations reviewed: ${recommendationQuality.total_reviewed}`,
     `- Recommendations kept: ${recommendationQuality.accepted}`,
     `- Recommendations skipped: ${recommendationQuality.ignored}`,
@@ -429,7 +429,7 @@ export async function getWorkspaceAgentContext(
     "## Shared Company Brain",
     formatCompanyBrainMarkdown(companyBrain),
     "",
-    "## Agent Configuration",
+    "## Agent Setup",
     listOrEmpty(
       reps.rows.map((rep) => {
         const email = rep.autonomy?.channels?.email;
@@ -556,7 +556,7 @@ export function formatRecommendationQuality(quality: ContextRecommendationQualit
   }
   return [
     formatRecommendationQualityLine("All recommendations", quality),
-    formatRecommendationQualityLine("Signal opportunities", quality.content_opportunity),
+    formatRecommendationQualityLine("Signal suggestions", quality.content_opportunity),
     formatRecommendationQualityLine("Visibility gaps", quality.aeo_gap),
   ].join("\n");
 }
