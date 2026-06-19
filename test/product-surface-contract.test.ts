@@ -255,6 +255,7 @@ test("retired product surfaces redirect to Agent", () => {
 
 test("Dashboard routes setup work through Profile and current surfaces", () => {
   const dashboard = source("app/dashboard/page.tsx");
+  const profile = source("app/dashboard/profile/ProfilePage.tsx");
   const appLayout = source("app/layout.tsx");
   const urlStart = source("components/UrlStart.tsx");
 
@@ -358,6 +359,14 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Replies 24h/);
   assert.match(dashboard, /Meetings 7d/);
   assert.doesNotMatch(dashboard, /Signal mix/);
+
+  assert.match(profile, /from "@\/core\/product\/output-destinations\.ts"/);
+  assert.match(profile, /buildOutputDestinations/);
+  assert.match(profile, /destinationIcon/);
+  assert.match(profile, /BrandIcon name="microsoft"/);
+  assert.match(profile, /BrandIcon name="linkedin"/);
+  assert.match(profile, /plannedDestinations/);
+  assert.doesNotMatch(profile, /const planned = \[/);
   assert.match(dashboard, /loadBriefHotContacts/);
   assert.match(dashboard, /loadBriefOutcomeInsights/);
   assert.match(dashboard, /loadBriefLearningInsight/);
@@ -1320,6 +1329,7 @@ test("dashboard surface verifier covers the simplified product flow", () => {
 test("Profile exposes profile, activation, Outlook, and workspace autonomy controls", () => {
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
   const actions = source("app/dashboard/actions.ts");
+  const outputDestinations = source("core/product/output-destinations.ts");
   const productApp = source("core/product/app.ts");
   const contactResolution = source("core/contacts/resolution.ts");
   const registry = source("core/substrate/events/registry.ts");
@@ -1377,11 +1387,14 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /Account and limits/);
   assert.match(settings, /Output destinations/);
   assert.match(settings, /Where qualified work can go/);
-  assert.match(settings, /Email outreach/);
-  assert.match(settings, /Social outreach/);
-  assert.match(settings, /Agent API/);
-  assert.match(settings, /Claude Code \+ MCP/);
-  assert.match(settings, /Use Bombsell in Claude Code/);
+  assert.match(settings, /buildOutputDestinations/);
+  assert.match(settings, /destinationIcon/);
+  assert.match(settings, /BrandIcon name="microsoft"/);
+  assert.match(settings, /BrandIcon name="linkedin"/);
+  assert.match(outputDestinations, /Email outreach/);
+  assert.match(outputDestinations, /Social outreach/);
+  assert.match(outputDestinations, /Agent API/);
+  assert.match(outputDestinations, /Claude Code \+ MCP/);
   assert.match(settings, /Use in Claude Code/);
   assert.match(settings, /McpAccessPanel/);
   assert.match(settings, /Claude Code access/);
@@ -1395,15 +1408,14 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /token\.token_hash\.slice\(0, 10\)/);
   assert.match(settings, /mcp_oauth_tokens t/);
   assert.match(settings, /t\.revoked_at is null/);
-  assert.match(settings, /bombsell\.brief\.get/);
-  assert.match(settings, /bombsell\.outreach\.list_sent/);
-  assert.match(settings, /Array\.isArray\(destination\.code\)/);
-  assert.match(settings, /Automation intake/);
-  assert.match(settings, /\/api\/webhooks\/signals/);
+  assert.match(outputDestinations, /bombsell\.brief\.get/);
+  assert.match(outputDestinations, /bombsell\.outreach\.list_sent/);
+  assert.match(outputDestinations, /Automation intake/);
+  assert.match(outputDestinations, /\/api\/webhooks\/signals/);
   assert.match(settings, /Next destination classes/);
-  assert.match(settings, /CRM sync/);
-  assert.match(settings, /Outreach tools/);
-  assert.match(settings, /Team alerts/);
+  assert.match(outputDestinations, /CRM sync/);
+  assert.match(outputDestinations, /Outreach tool sync/);
+  assert.match(outputDestinations, /Team alerts/);
   assert.match(settings, /evented integrations rather than decorative install buttons/);
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Email and LinkedIn readiness/);
@@ -1458,7 +1470,7 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /id="agent"/);
   assert.match(settings, /id="motion"/);
   assert.match(settings, /id="tools"/);
-  assert.match(settings, /href: "\/api\/mcp"/);
+  assert.match(outputDestinations, /href: "\/dashboard\/profile#tools"/);
   assert.match(settings, /Agent inputs and outreach templates/);
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);

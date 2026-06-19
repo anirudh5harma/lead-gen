@@ -34,6 +34,7 @@ import {
   registerBombsellAliasTools,
   _resetBombsellAliasToolsRegistration,
 } from "../core/product/bombsell-tools.ts";
+import { buildOutputDestinations } from "../core/product/output-destinations.ts";
 import {
   registerProductTools,
   _resetProductToolsRegistration,
@@ -419,6 +420,71 @@ test("MCP manifest guides external agents through Brief, Agent, and Profile", ()
   ]) {
     assert.match(BOMBSELL_MCP_INSTRUCTIONS, new RegExp(phrase));
   }
+});
+
+test("output destination model is shared by Profile and Bombsell MCP aliases", () => {
+  const blocked = buildOutputDestinations({
+    email_connected: false,
+    linkedin_connected: false,
+    launch_ready: false,
+  });
+  assert.deepEqual(
+    blocked.map((destination) => destination.key),
+    [
+      "outlook",
+      "linkedin",
+      "claude-code",
+      "signal-webhook",
+      "crm-sync",
+      "outreach-tool-sync",
+      "team-alerts",
+    ],
+  );
+  assert.equal(
+    blocked.find((destination) => destination.key === "outlook")?.status,
+    "blocked",
+  );
+  assert.equal(
+    blocked.find((destination) => destination.key === "linkedin")?.status,
+    "blocked",
+  );
+  assert.deepEqual(
+    blocked.find((destination) => destination.key === "claude-code")?.tools,
+    [
+      "bombsell.brief.get",
+      "bombsell.signals.list_qualified",
+      "bombsell.outreach.list_sent",
+    ],
+  );
+  assert.equal(
+    blocked.find((destination) => destination.key === "signal-webhook")
+      ?.handoff_stage,
+    "signal_intake",
+  );
+
+  const connected = buildOutputDestinations({
+    email_connected: true,
+    linkedin_connected: true,
+    launch_ready: true,
+  });
+  assert.equal(
+    connected.find((destination) => destination.key === "outlook")?.status,
+    "connected",
+  );
+  assert.equal(
+    connected.find((destination) => destination.key === "linkedin")?.status,
+    "connected",
+  );
+  assert.equal(
+    connected.find((destination) => destination.key === "crm-sync")
+      ?.handoff_stage,
+    "qualified_contact_sync",
+  );
+  assert.equal(
+    connected.find((destination) => destination.key === "team-alerts")
+      ?.handoff_stage,
+    "reply_meeting_alert",
+  );
 });
 
 test("MCP OAuth metadata supports Claude Code remote auth discovery", () => {

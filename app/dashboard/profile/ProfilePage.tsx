@@ -16,6 +16,10 @@ import {
   type ProductCompanyProfile,
   type ProductLaunchReadinessResult,
 } from "@/core/product/app";
+import {
+  buildOutputDestinations,
+  type OutputDestination,
+} from "@/core/product/output-destinations.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getRequestAuthIdentity } from "@/lib/auth";
 import type { RequestAuthIdentity } from "@/lib/auth";
@@ -633,7 +637,7 @@ export default async function ProfilePage() {
 
         <div id="tools">
           <SurfaceSection title="Output destinations">
-            <IntegrationPanel state={state} />
+            <IntegrationPanel state={state} readiness={readiness} />
           </SurfaceSection>
         </div>
       </section>
@@ -1718,78 +1722,24 @@ function AccountPanel({
   );
 }
 
-function IntegrationPanel({ state }: { state: ProfileState }) {
-  const destinations = [
-    {
-      title: "Outlook",
-      category: "Email outreach",
-      detail: state.outlookAccount
-        ? `${outlookMailbox(state.outlookAccount)} sends native email and syncs replies.`
-        : "Connect Microsoft 365 so the agent can send email from your mailbox and read replies.",
-      href: "#email",
-      action: state.outlookAccount ? "Manage Outlook" : "Connect Outlook",
-      icon: <BrandIcon name="microsoft" size={16} />,
-      ready: state.outlookAccount?.status === "connected",
-      status: state.outlookAccount
-        ? statusLabel(state.outlookAccount.status)
-        : "Not connected",
-    },
-    {
-      title: "LinkedIn",
-      category: "Social outreach",
-      detail: state.linkedInAccount
-        ? `${state.linkedInAccount.display_name} can handle profile-backed connection requests and DMs.`
-        : "Connect LinkedIn so verified profiles can become connection requests, DMs, and reply traces.",
-      href: "#linkedin",
-      action: state.linkedInAccount ? "Manage LinkedIn" : "Connect LinkedIn",
-      icon: <BrandIcon name="linkedin" size={16} />,
-      ready: state.linkedInAccount?.status === "connected",
-      status: state.linkedInAccount
-        ? statusLabel(state.linkedInAccount.status)
-        : "Not connected",
-    },
-    {
-      title: "Claude Code + MCP",
-      category: "Agent API",
-      detail:
-        "Use Bombsell in Claude Code to review the Brief, check launch blockers, inspect sent outreach, open drafts, and read reply learning from the same workspace tools.",
-      href: "/api/mcp",
-      action: "Use in Claude Code",
-      icon: <Icon name="account_tree" size={16} />,
-      ready: true,
-      status: "Available",
-      code: ["/api/mcp", "bombsell.brief.get", "bombsell.outreach.list_sent"],
-    },
-    {
-      title: "Signal webhook",
-      category: "Automation intake",
-      detail:
-        "Push trusted buying-signal events into Bombsell so they enter the same qualification and contact-resolution path.",
-      href: "/api/webhooks/signals",
-      action: "View route",
-      icon: <Icon name="webhook" size={16} />,
-      ready: true,
-      status: "Available",
-      code: "/api/webhooks/signals",
-    },
-  ];
-  const planned = [
-    {
-      title: "CRM sync",
-      detail: "HubSpot, Pipedrive, Salesforce, Attio, and Folk should receive qualified contacts after send or reply proof exists.",
-      icon: "corporate_fare",
-    },
-    {
-      title: "Outreach tools",
-      detail: "Instantly, Smartlead, HeyReach, and SmartReach make sense as optional volume destinations after native channels are healthy.",
-      icon: "send",
-    },
-    {
-      title: "Team alerts",
-      detail: "Slack, Zapier, and outbound webhooks should announce hot contacts, replies, meetings, and blocked send reasons.",
-      icon: "hub",
-    },
-  ];
+function IntegrationPanel({
+  state,
+  readiness,
+}: {
+  state: ProfileState;
+  readiness: ProductLaunchReadinessResult;
+}) {
+  const destinations = buildOutputDestinations({
+    email_connected: state.outlookAccount?.status === "connected",
+    linkedin_connected: state.linkedInAccount?.status === "connected",
+    launch_ready: readiness.launch_ready,
+  });
+  const activeDestinations = destinations.filter(
+    (destination) => destination.status !== "planned",
+  );
+  const plannedDestinations = destinations.filter(
+    (destination) => destination.status === "planned",
+  );
   return (
     <div className="section-note grid gap-5">
       <div>
@@ -1804,10 +1754,10 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
       </div>
 
       <div className="grid gap-3">
-        {destinations.map((destination) => (
+        {activeDestinations.map((destination) => (
           <Link
-            key={destination.title}
-            href={destination.href}
+            key={destination.key}
+            href={destination.href ?? "#tools"}
             prefetch={false}
             className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
           >
@@ -1816,12 +1766,12 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
                 <span
                   className={
                     "grid size-9 shrink-0 place-items-center rounded-[8px] " +
-                    (destination.ready
+                    (destinationReady(destination)
                       ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
                       : "bg-[var(--color-ink-2)] text-[var(--color-text-2)]")
                   }
                 >
-                  {destination.icon}
+                  {destinationIcon(destination)}
                 </span>
                 <span className="min-w-0">
                   <span className="flex flex-wrap items-center gap-2">
@@ -1835,12 +1785,9 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
                   <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
                     {destination.detail}
                   </span>
-                  {destination.code ? (
+                  {destinationCode(destination).length > 0 ? (
                     <span className="mt-2 flex flex-wrap gap-1.5">
-                      {(Array.isArray(destination.code)
-                        ? destination.code
-                        : [destination.code]
-                      ).map((code) => (
+                      {destinationCode(destination).map((code) => (
                         <span
                           key={code}
                           className="inline-block rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-2)]"
@@ -1856,15 +1803,15 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
                 <span
                   className={
                     "rounded-[8px] px-2.5 py-1 text-[11px] font-medium " +
-                    (destination.ready
+                    (destinationReady(destination)
                       ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
                       : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
                   }
                 >
-                  {destination.status}
+                  {destinationStatusLabel(destination)}
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-accent)]">
-                  {destination.action}
+                  {destinationAction(destination)}
                   <Icon
                     name="arrow_forward"
                     size={13}
@@ -1898,21 +1845,21 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
           </span>
         </div>
         <div className="mt-4 grid gap-2">
-          {planned.map((item) => (
+          {plannedDestinations.map((destination) => (
             <div
-              key={item.title}
+              key={destination.key}
               className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3"
             >
               <span className="flex items-start gap-2">
                 <span className="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
-                  <Icon name={item.icon} size={14} />
+                  {destinationIcon(destination)}
                 </span>
                 <span className="min-w-0">
                   <span className="block text-xs font-semibold text-[var(--color-text-1)]">
-                    {item.title}
+                    {destination.title}
                   </span>
                   <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
-                    {item.detail}
+                    {destination.detail}
                   </span>
                 </span>
               </span>
@@ -1922,6 +1869,61 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
       </div>
     </div>
   );
+}
+
+function destinationReady(destination: OutputDestination): boolean {
+  return (
+    destination.status === "connected" || destination.status === "available"
+  );
+}
+
+function destinationStatusLabel(destination: OutputDestination): string {
+  if (destination.status === "connected") return "Connected";
+  if (destination.status === "available") return "Available";
+  if (destination.status === "planned") return "Planned";
+  return "Blocked";
+}
+
+function destinationAction(destination: OutputDestination): string {
+  if (destination.key === "outlook") {
+    return destination.status === "connected"
+      ? "Manage Outlook"
+      : "Connect Outlook";
+  }
+  if (destination.key === "linkedin") {
+    return destination.status === "connected"
+      ? "Manage LinkedIn"
+      : "Connect LinkedIn";
+  }
+  if (destination.key === "claude-code") return "Use in Claude Code";
+  if (destination.key === "signal-webhook") return "View route";
+  return destinationStatusLabel(destination);
+}
+
+function destinationCode(destination: OutputDestination): string[] {
+  if (destination.tools.length > 0) return destination.tools;
+  if (destination.href?.startsWith("/api/")) return [destination.href];
+  return [];
+}
+
+function destinationIcon(destination: OutputDestination): ReactNode {
+  if (destination.key === "outlook") {
+    return <BrandIcon name="microsoft" size={16} />;
+  }
+  if (destination.key === "linkedin") {
+    return <BrandIcon name="linkedin" size={16} />;
+  }
+  if (destination.key === "signal-webhook") {
+    return <Icon name="webhook" size={16} />;
+  }
+  if (destination.key === "crm-sync") {
+    return <Icon name="corporate_fare" size={16} />;
+  }
+  if (destination.key === "outreach-tool-sync") {
+    return <Icon name="send" size={16} />;
+  }
+  if (destination.key === "team-alerts") return <Icon name="hub" size={16} />;
+  return <Icon name="account_tree" size={16} />;
 }
 
 function McpAccessPanel({
