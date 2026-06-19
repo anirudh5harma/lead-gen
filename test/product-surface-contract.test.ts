@@ -52,6 +52,20 @@ test("dashboard navigation uses active product surface routes", () => {
   assert.doesNotMatch(shell, /hashchange/);
 });
 
+test("launch docs describe three user-facing dashboard surfaces", () => {
+  const readme = source("README.md");
+  const outlookCallback = source("app/api/auth/outlook/callback/route.ts");
+
+  assert.match(readme, /Dashboard UI \(Brief, Agent, Profile\)/);
+  assert.match(readme, /\/dashboard\/brief` — last-day and last-week qualified signals/);
+  assert.match(readme, /\/dashboard\/agent` — live work, qualified signals/);
+  assert.match(readme, /\/dashboard\/profile` — company Profile, buyer fit, Outlook\/LinkedIn/);
+  assert.match(readme, /\/dashboard\/health` — owner-only runtime readiness/);
+  assert.match(outlookCallback, /redirects to Profile's channel section/);
+  assert.doesNotMatch(readme, /Dashboard UI \(Brief, Agent, Profile, Health\)/);
+  assert.doesNotMatch(outlookCallback, /Deliverability surface/);
+});
+
 test("dashboard shell keeps route chrome simple and avoids extra flow queries", () => {
   const shell = source("components/dashboard/Shell.tsx");
   const layout = source("app/dashboard/layout.tsx");
@@ -1109,7 +1123,7 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
   assert.doesNotMatch(surfaces, /Sampark/);
   assert.doesNotMatch(surfaces, /Prayog/);
   assert.doesNotMatch(readme, /Sampark|Prayog/);
-  assert.match(readme, /Dashboard UI \(Brief, Agent, Profile, Health\)/);
+  assert.match(readme, /Dashboard UI \(Brief, Agent, Profile\)/);
   assert.match(readme, /\/dashboard\/brief/);
   assert.match(readme, /\/dashboard\/agent/);
   assert.match(readme, /\/dashboard\/profile/);

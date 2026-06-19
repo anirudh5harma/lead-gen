@@ -29,9 +29,9 @@ import { callbackRedirectUri } from "./redirect-uri.ts";
  *   GET /api/auth/outlook/callback?code=<x>&state=<signed>
  *   GET /api/auth/microsoft-mail/callback?code=<x>&state=<signed>
  *
- * On success, redirects to the in-app Deliverability surface with the
- * channel_account_id so the user lands on an existing channel-health view while
- * the durable subscription repair workflow finishes.
+ * On success, redirects to Profile's channel section with the channel_account_id
+ * so the user lands on the setup/integrations surface while the durable
+ * subscription repair workflow finishes.
  */
 
 export const dynamic = "force-dynamic";

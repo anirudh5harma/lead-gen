@@ -57,7 +57,7 @@ legacy/          # Archived previous implementation; import quarantine is tested
 | Control-plane maintenance wake (scheduler → Restate)  | ✅ landed |
 | Microsoft Graph lifecycle-token validation + legacy reconnect | ✅ landed |
 | Dead-letter queue + owner recovery surface            | ✅ landed |
-| Dashboard UI (Brief, Agent, Profile, Health)            | ✅ landed |
+| Dashboard UI (Brief, Agent, Profile)                    | ✅ landed |
 | Recovery / NATS / SES verification smoke harnesses    | ✅ landed |
 | Restate workflow-handler host process + release gate  | ✅ landed |
 | Auto-trigger of Plays on `signal.matched`             | ✅ landed |
@@ -395,7 +395,7 @@ Outlook setup (`external`), and AWS SES production-access review/sandbox state
   outreach, replies, and learning.
 - `/dashboard/profile` — company Profile, buyer fit, Outlook/LinkedIn
   integrations, contact quality, limits, and Claude Code access.
-- `/dashboard/health` — runtime readiness and owner-only recovery moments.
+- `/dashboard/health` — owner-only runtime readiness and recovery moments.
 
 #### Known follow-ups (do not block launch)
 
