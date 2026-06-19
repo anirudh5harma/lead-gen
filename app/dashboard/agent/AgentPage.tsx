@@ -1874,13 +1874,13 @@ function AgentModeRail({
       aria-label="Agent work modes"
       className="sticky top-3 z-20 -mx-1 overflow-x-auto rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)]/95 p-1 shadow-[0_18px_38px_-32px_rgba(15,23,42,0.35)] backdrop-blur"
     >
-      <div className="grid min-w-[980px] grid-cols-8 gap-1">
+      <div className="flex min-w-max gap-1">
         {modes.map((mode) => (
           <Link
             key={mode.href}
             href={`/dashboard/agent${mode.href}`}
             prefetch={false}
-            className="group grid grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 py-2.5 text-left transition-colors hover:bg-[var(--color-ink-2)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+            className="group grid min-w-[126px] grid-cols-[32px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2 py-2.5 text-left transition-colors hover:bg-[var(--color-ink-2)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
           >
             <span
               className={
@@ -1894,14 +1894,14 @@ function AgentModeRail({
             </span>
             <span className="min-w-0">
               <span className="flex items-baseline gap-1.5">
-                <span className="truncate text-xs font-semibold text-[var(--color-text-1)]">
+                <span className="whitespace-nowrap text-xs font-semibold text-[var(--color-text-1)]">
                   {mode.label}
                 </span>
                 <span className="font-mono text-[11px] tabular-nums text-[var(--color-text-4)]">
                   {mode.value}
                 </span>
               </span>
-              <span className="mt-0.5 block truncate text-[11px] text-[var(--color-text-3)]">
+              <span className="mt-0.5 block whitespace-nowrap text-[11px] text-[var(--color-text-3)]">
                 {mode.detail}
               </span>
             </span>

@@ -676,6 +676,13 @@ const CrmHandoffQueueSchema = WorkspaceResultSchema.extend({
   skipped_records: z.number().int().nonnegative(),
   event_id: z.string().uuid(),
   records: z.array(CrmHandoffRecordSchema),
+  delivery: z.object({
+    status: z.enum(["delivered", "failed", "not_configured"]),
+    event_id: z.string().uuid().nullable(),
+    status_code: z.number().int().nullable(),
+    error: z.string().nullable(),
+    webhook_url_configured: z.boolean(),
+  }),
   next_action: z.object({
     label: z.string().min(1),
     detail: z.string().min(1),
@@ -1026,7 +1033,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.crm_handoff.queue",
     description:
-      "Queue CRM handoff records from qualified Signals, verified contacts, judged/sent outreach context, and reply or meeting outcomes. Emits typed crm.handoff.queued events; it does not send outreach.",
+      "Queue CRM handoff records from qualified Signals, verified contacts, judged/sent outreach context, and reply or meeting outcomes. Emits typed crm.handoff.queued events and delivers to the configured CRM webhook when present; it does not send outreach.",
     kind: "write",
     input: z.object({
       limit: z.number().int().min(1).max(25).optional(),

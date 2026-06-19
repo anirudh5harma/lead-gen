@@ -551,6 +551,13 @@ export interface QueueCrmHandoffResult {
   skipped_records: number;
   event_id: string;
   records: CrmHandoffRecord[];
+  delivery: {
+    status: "delivered" | "failed" | "not_configured";
+    event_id: string | null;
+    status_code: number | null;
+    error: string | null;
+    webhook_url_configured: boolean;
+  };
   next_action: {
     label: string;
     detail: string;
@@ -7429,6 +7436,14 @@ export async function queueWorkspaceCrmHandoff(
     payload,
   });
   await projectCrmHandoffQueued(engine.pool, event);
+  const delivery = await deliverCrmHandoffWebhook({
+    engine,
+    session,
+    destination,
+    handoff_id,
+    queued_event_id: event.id,
+    payload,
+  });
   const skipped = Math.max(0, workbench.signals.length - enrichedRecords.length);
   return {
     workspace_id: session.workspace_id,
@@ -7440,11 +7455,20 @@ export async function queueWorkspaceCrmHandoff(
     skipped_records: skipped,
     event_id: event.id,
     records: enrichedRecords,
+    delivery,
     next_action: {
-      label: destination.webhook_configured ? "Deliver CRM payload" : "Connect native CRM",
-      detail: destination.webhook_configured
-        ? "A typed crm.handoff.queued event is ready for the CRM webhook worker with signal, contact, outreach, and outcome proof."
-        : "The handoff package is queued and available through MCP/API; add native OAuth or webhook delivery when this account is ready.",
+      label:
+        delivery.status === "delivered"
+          ? "CRM payload delivered"
+          : delivery.webhook_url_configured
+            ? "Review CRM delivery"
+            : "Connect native CRM",
+      detail:
+        delivery.status === "delivered"
+          ? "The CRM webhook accepted the qualified-contact package with signal, outreach, and outcome proof."
+          : delivery.webhook_url_configured
+            ? "The CRM handoff package was queued, but webhook delivery failed. Review the CRM destination URL or retry the handoff."
+            : "The handoff package is queued and available through MCP/API; add native OAuth or webhook delivery when this account is ready.",
       href: "/dashboard/profile#crm-sync",
     },
   };
@@ -7457,6 +7481,7 @@ interface CrmDestinationAccount {
   include_sent_outreach: boolean;
   include_replies_meetings: boolean;
   webhook_configured: boolean;
+  webhook_url: string | null;
 }
 
 async function loadCrmDestinationAccount(
@@ -7470,13 +7495,15 @@ async function loadCrmDestinationAccount(
     include_sent_outreach: boolean | null;
     include_replies_meetings: boolean | null;
     webhook_configured: boolean | null;
+    webhook_url: string | null;
   }>(
     `select id::text,
             properties->>'provider' as provider,
             properties->>'sync_mode' as sync_mode,
             (properties->>'include_sent_outreach')::boolean as include_sent_outreach,
             (properties->>'include_replies_meetings')::boolean as include_replies_meetings,
-            (properties->>'webhook_configured')::boolean as webhook_configured
+            (properties->>'webhook_configured')::boolean as webhook_configured,
+            credentials->>'webhook_url' as webhook_url
        from channel_accounts
       where workspace_id = $1
         and kind = 'crm'
@@ -7496,7 +7523,208 @@ async function loadCrmDestinationAccount(
     include_sent_outreach: row.include_sent_outreach ?? false,
     include_replies_meetings: row.include_replies_meetings ?? false,
     webhook_configured: row.webhook_configured ?? false,
+    webhook_url: row.webhook_url ?? null,
   };
+}
+
+async function deliverCrmHandoffWebhook({
+  engine,
+  session,
+  destination,
+  handoff_id,
+  queued_event_id,
+  payload,
+}: {
+  engine: Awaited<ReturnType<typeof getProductEngine>>;
+  session: ProductWorkspaceSession;
+  destination: CrmDestinationAccount;
+  handoff_id: string;
+  queued_event_id: string;
+  payload: {
+    handoff_id: string;
+    channel_account_id: string;
+    provider: string;
+    sync_mode: "qualified_contacts" | "qualified_and_sent" | "full_loop";
+    contact_count: number;
+    signal_count: number;
+    include_sent_outreach: boolean;
+    include_replies_meetings: boolean;
+    records: CrmHandoffRecord[];
+  };
+}): Promise<QueueCrmHandoffResult["delivery"]> {
+  const webhookUrl = destination.webhook_url;
+  if (!webhookUrl) {
+    return {
+      status: "not_configured",
+      event_id: null,
+      status_code: null,
+      error: null,
+      webhook_url_configured: false,
+    };
+  }
+
+  const endpoint = crmWebhookEndpoint(webhookUrl);
+  if (!endpoint) {
+    const error = "CRM webhook URL must use http or https.";
+    const failed = await publishCrmHandoffWebhookFailed({
+      engine,
+      session,
+      destination,
+      handoff_id,
+      queued_event_id,
+      endpointHost: null,
+      statusCode: null,
+      error,
+      retryable: false,
+    });
+    await projectCrmHandoffWebhookStatus(engine.pool, failed);
+    return {
+      status: "failed",
+      event_id: failed.id,
+      status_code: null,
+      error,
+      webhook_url_configured: true,
+    };
+  }
+
+  const endpointHost = endpoint.host;
+  const body = JSON.stringify({
+    type: "crm.handoff",
+    workspace_id: session.workspace_id,
+    event_id: queued_event_id,
+    ...payload,
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "Bombsell CRM Handoff/1.0",
+        "x-bombsell-event-type": "crm.handoff.queued",
+        "x-bombsell-handoff-id": handoff_id,
+      },
+      body,
+      signal: controller.signal,
+    });
+    const statusCode = response.status;
+    if (!response.ok) {
+      const error = `CRM webhook returned HTTP ${statusCode}`;
+      const failed = await publishCrmHandoffWebhookFailed({
+        engine,
+        session,
+        destination,
+        handoff_id,
+        queued_event_id,
+        endpointHost,
+        statusCode,
+        error,
+        retryable: true,
+      });
+      await projectCrmHandoffWebhookStatus(engine.pool, failed);
+      return {
+        status: "failed",
+        event_id: failed.id,
+        status_code: statusCode,
+        error,
+        webhook_url_configured: true,
+      };
+    }
+    const delivered = await engine.bus.publish({
+      workspace_id: session.workspace_id,
+      event_type: "crm.handoff.webhook.delivered",
+      source: "system",
+      producer_ref: "crm:webhook",
+      correlation_id: queued_event_id,
+      causation_id: queued_event_id,
+      idempotency_key: `crm-webhook-delivered:${session.workspace_id}:${handoff_id}`,
+      payload: {
+        handoff_id,
+        channel_account_id: destination.id,
+        provider: destination.provider,
+        endpoint_host: endpointHost,
+        status_code: statusCode,
+        delivered_at: new Date().toISOString(),
+        contact_count: payload.contact_count,
+        signal_count: payload.signal_count,
+      },
+    });
+    await projectCrmHandoffWebhookStatus(engine.pool, delivered);
+    return {
+      status: "delivered",
+      event_id: delivered.id,
+      status_code: statusCode,
+      error: null,
+      webhook_url_configured: true,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "CRM webhook delivery failed";
+    const failed = await publishCrmHandoffWebhookFailed({
+      engine,
+      session,
+      destination,
+      handoff_id,
+      queued_event_id,
+      endpointHost,
+      statusCode: null,
+      error: message,
+      retryable: true,
+    });
+    await projectCrmHandoffWebhookStatus(engine.pool, failed);
+    return {
+      status: "failed",
+      event_id: failed.id,
+      status_code: null,
+      error: message,
+      webhook_url_configured: true,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function publishCrmHandoffWebhookFailed({
+  engine,
+  session,
+  destination,
+  handoff_id,
+  queued_event_id,
+  endpointHost,
+  statusCode,
+  error,
+  retryable,
+}: {
+  engine: Awaited<ReturnType<typeof getProductEngine>>;
+  session: ProductWorkspaceSession;
+  destination: CrmDestinationAccount;
+  handoff_id: string;
+  queued_event_id: string;
+  endpointHost: string | null;
+  statusCode: number | null;
+  error: string;
+  retryable: boolean;
+}): Promise<PublishedEvent> {
+  return engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "crm.handoff.webhook.failed",
+    source: "system",
+    producer_ref: "crm:webhook",
+    correlation_id: queued_event_id,
+    causation_id: queued_event_id,
+    idempotency_key: `crm-webhook-failed:${session.workspace_id}:${handoff_id}`,
+    payload: {
+      handoff_id,
+      channel_account_id: destination.id,
+      provider: destination.provider,
+      endpoint_host: endpointHost,
+      status_code: statusCode,
+      error,
+      retryable,
+      failed_at: new Date().toISOString(),
+    },
+  });
 }
 
 function isCrmSyncMode(
@@ -7639,6 +7867,62 @@ async function projectCrmHandoffQueued(
       }),
     ],
   );
+}
+
+async function projectCrmHandoffWebhookStatus(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    channel_account_id: string;
+    handoff_id: string;
+    endpoint_host?: string | null;
+    status_code?: number | null;
+    error?: string | null;
+    delivered_at?: string;
+    failed_at?: string;
+  };
+  const delivered = event.event_type === "crm.handoff.webhook.delivered";
+  await pool.query(
+    `update channel_accounts
+        set properties = properties || $3::jsonb,
+            last_error = case when $4::boolean then null else $5::jsonb end,
+            updated_at = now()
+      where workspace_id = $1
+        and id = $2`,
+    [
+      event.workspace_id,
+      payload.channel_account_id,
+      JSON.stringify({
+        last_webhook_event_id: event.id,
+        last_webhook_handoff_id: payload.handoff_id,
+        last_webhook_status: delivered ? "delivered" : "failed",
+        last_webhook_status_code: payload.status_code ?? null,
+        last_webhook_endpoint_host: payload.endpoint_host ?? null,
+        last_webhook_at: delivered ? payload.delivered_at : payload.failed_at,
+      }),
+      delivered,
+      JSON.stringify(
+        delivered
+          ? null
+          : {
+              kind: "crm_webhook_delivery_failed",
+              message: payload.error ?? "CRM webhook delivery failed",
+              event_id: event.id,
+            },
+      ),
+    ],
+  );
+}
+
+function crmWebhookEndpoint(value: string): { url: URL; host: string } | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return { url, host: url.host };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeCrmProvider(provider: string): string {
@@ -8087,6 +8371,14 @@ function createProductEventProjections(
       name: "crm.handoff_queue.projector.v1",
       eventTypes: ["crm.handoff.queued"],
       apply: (event) => projectCrmHandoffQueued(engine.pool, event),
+    },
+    {
+      name: "crm.handoff_webhook_status.projector.v1",
+      eventTypes: [
+        "crm.handoff.webhook.delivered",
+        "crm.handoff.webhook.failed",
+      ],
+      apply: (event) => projectCrmHandoffWebhookStatus(engine.pool, event),
     },
     {
       name: "signal.classification.projector.v1",

@@ -396,6 +396,13 @@ const CrmHandoffQueueAliasSchema = WorkspaceResultSchema.extend({
   skipped_records: z.number().int().nonnegative(),
   event_id: z.string().uuid(),
   records: z.array(CrmHandoffRecordSchema),
+  delivery: z.object({
+    status: z.enum(["delivered", "failed", "not_configured"]),
+    event_id: z.string().uuid().nullable(),
+    status_code: z.number().int().nullable(),
+    error: z.string().nullable(),
+    webhook_url_configured: z.boolean(),
+  }),
   next_action: z.object({
     label: z.string(),
     detail: z.string(),
@@ -894,7 +901,7 @@ export function registerBombsellAliasTools(): void {
   registerTool({
     name: "bombsell.crm_handoff.queue",
     description:
-      "Queue CRM-ready Bombsell contacts with signal proof, verified email or LinkedIn profile, judged/sent outreach context, and reply or meeting learning. Requires an already configured CRM handoff.",
+      "Queue CRM-ready Bombsell contacts with signal proof, verified email or LinkedIn profile, judged/sent outreach context, and reply or meeting learning. Delivers to the configured CRM webhook when present.",
     kind: "write",
     input: z.object({
       limit: z.number().int().min(1).max(25).optional(),

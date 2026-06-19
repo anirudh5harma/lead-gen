@@ -112,6 +112,8 @@ export function buildOutputDestinations(
         "bombsell.contacts.list_lanes",
         "bombsell.crm_handoff.queue",
         "crm.destination.configured",
+        "crm.handoff.webhook.delivered",
+        "crm.handoff.webhook.failed",
       ],
     },
     {

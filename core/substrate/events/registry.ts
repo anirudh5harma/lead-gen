@@ -905,6 +905,28 @@ const CrmHandoffQueued = z.object({
   ),
 });
 
+const CrmHandoffWebhookDelivered = z.object({
+  handoff_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  provider: z.string().min(1),
+  endpoint_host: z.string().min(1).nullable(),
+  status_code: z.number().int().min(200).max(299),
+  delivered_at: z.string().datetime(),
+  contact_count: z.number().int().nonnegative(),
+  signal_count: z.number().int().nonnegative(),
+});
+
+const CrmHandoffWebhookFailed = z.object({
+  handoff_id: z.string().uuid(),
+  channel_account_id: z.string().uuid(),
+  provider: z.string().min(1),
+  endpoint_host: z.string().min(1).nullable(),
+  status_code: z.number().int().min(100).max(599).nullable(),
+  error: z.string().min(1),
+  retryable: z.boolean(),
+  failed_at: z.string().datetime(),
+});
+
 const ChannelAccountErrored = z.object({
   channel_account_id: z.string().uuid(),
   kind: z.string(),
@@ -1663,6 +1685,8 @@ export const eventRegistry = {
   "channel.account.configured": ChannelAccountConfigured,
   "crm.destination.configured": CrmDestinationConfigured,
   "crm.handoff.queued": CrmHandoffQueued,
+  "crm.handoff.webhook.delivered": CrmHandoffWebhookDelivered,
+  "crm.handoff.webhook.failed": CrmHandoffWebhookFailed,
   "channel.account.errored": ChannelAccountErrored,
   "linkedin.account.authorization.received":
     LinkedInAccountAuthorizationReceived,

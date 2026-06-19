@@ -515,6 +515,8 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
       "bombsell.contacts.list_lanes",
       "bombsell.crm_handoff.queue",
       "crm.destination.configured",
+      "crm.handoff.webhook.delivered",
+      "crm.handoff.webhook.failed",
     ],
   );
   assert.equal(
@@ -1322,6 +1324,8 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       "bombsell.contacts.list_lanes",
       "bombsell.crm_handoff.queue",
       "crm.destination.configured",
+      "crm.handoff.webhook.delivered",
+      "crm.handoff.webhook.failed",
     ],
   );
   assert.equal(

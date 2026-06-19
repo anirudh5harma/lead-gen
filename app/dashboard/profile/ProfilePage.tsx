@@ -131,6 +131,7 @@ interface ProfileCrmAccount {
   status: string;
   last_error: unknown | null;
   properties: Record<string, unknown> | null;
+  webhook_url: string | null;
   updated_at: Date;
 }
 
@@ -441,6 +442,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
               status::text as status,
               last_error,
               properties,
+              credentials->>'webhook_url' as webhook_url,
               updated_at
          from channel_accounts
         where workspace_id = $1
@@ -2184,6 +2186,7 @@ function VisitorIntentSetupPanel({
 function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }) {
   const provider = crmProviderFromAccount(account);
   const syncMode = crmSyncModeFromAccount(account);
+  const deliveryStatus = crmWebhookDeliveryStatus(account);
   return (
     <div
       id="crm-sync"
@@ -2233,10 +2236,16 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
               label="Webhook"
               value={crmWebhookConfigured(account) ? "Configured" : "Optional"}
             />
+            <ProfileFact label="Delivery" value={deliveryStatus} />
+            <ProfileFact
+              label="Last payload"
+              value={crmLastHandoffLabel(account)}
+            />
           </div>
           <p className="text-xs leading-5 text-[var(--color-text-3)]">
             Use `bombsell.crm_handoff.queue` for qualified-contact handoff now.
-            Native OAuth apps can reuse this CRM destination later.
+            If a webhook URL is configured, Bombsell posts the proof package and
+            records delivery or failure as typed CRM handoff events.
           </p>
         </div>
 
@@ -2277,6 +2286,7 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
             <input
               name="crm_webhook_url"
               type="url"
+              defaultValue={account?.webhook_url ?? ""}
               placeholder="https://hooks.example.com/bombsell/crm"
               className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm text-[var(--color-text-1)] outline-none"
             />
@@ -2334,6 +2344,8 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
             "bombsell.contacts.list_lanes",
             "bombsell.crm_handoff.queue",
             "crm.destination.configured",
+            "crm.handoff.webhook.delivered",
+            "crm.handoff.webhook.failed",
           ].map((item) => (
             <span
               key={item}
@@ -2362,6 +2374,39 @@ function crmSyncModeFromAccount(account: ProfileCrmAccount | null): string {
 
 function crmWebhookConfigured(account: ProfileCrmAccount | null): boolean {
   return account?.properties?.webhook_configured === true;
+}
+
+function crmWebhookDeliveryStatus(account: ProfileCrmAccount | null): string {
+  const status = stringProperty(account?.properties, "last_webhook_status");
+  if (status === "delivered") {
+    const code = stringProperty(account?.properties, "last_webhook_status_code");
+    return code ? `Delivered (${code})` : "Delivered";
+  }
+  if (status === "failed") {
+    const code = stringProperty(account?.properties, "last_webhook_status_code");
+    return code ? `Failed (${code})` : "Failed";
+  }
+  return crmWebhookConfigured(account) ? "Ready" : "Not configured";
+}
+
+function crmLastHandoffLabel(account: ProfileCrmAccount | null): string {
+  const count = stringProperty(account?.properties, "last_handoff_contact_count");
+  const status = stringProperty(account?.properties, "last_webhook_status");
+  if (count && status) return `${count} contacts, ${status}`;
+  if (count) return `${count} contacts queued`;
+  return "None yet";
+}
+
+function stringProperty(
+  record: Record<string, unknown> | null | undefined,
+  key: string,
+): string | null {
+  const value = record?.[key];
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
 }
 
 function domainFromWebsite(value: string | null | undefined): string | null {
