@@ -833,6 +833,17 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /signalScoreLabel\(contact\.latest_signal_score\)/);
   assert.match(reps, /emailStatusLabel\(contact\.email_status\)/);
   assert.match(reps, /campaignStatusLabel\(contact\.campaign_status\)/);
+  assert.match(reps, /const nextHandoff = contactNextHandoff\(contact\)/);
+  assert.match(reps, /Next handoff:/);
+  assert.match(reps, /contactNextHandoff/);
+  assert.match(reps, /Learn from reply/);
+  assert.match(reps, /Next DM/);
+  assert.match(reps, /Review draft/);
+  assert.match(reps, /Awaiting reply/);
+  assert.match(reps, /Email outreach/);
+  assert.match(reps, /LinkedIn outreach/);
+  assert.match(reps, /Verify email/);
+  assert.match(reps, /Resolve contact/);
   assert.match(reps, /contactFitLabel\(contact\.contact_fit_decision\)/);
   assert.match(reps, /signal score/);
   assert.match(reps, /Verified email/);

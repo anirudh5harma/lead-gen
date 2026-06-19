@@ -2809,7 +2809,7 @@ function AgentOpportunityPanel({
         }
       >
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <aside className="grid h-fit gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">
               Signal-to-outreach queue
             </p>
@@ -3167,7 +3167,7 @@ function AgentContactsPanel({
         }
       >
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="grid gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <aside className="grid h-fit gap-2 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
             <p className="text-sm font-semibold text-[var(--color-text-1)]">
               Contact workbench
             </p>
@@ -3378,12 +3378,13 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
     : freshWhen(contact.updated_at);
   const signalScore = signalScoreLabel(contact.latest_signal_score);
   const campaignStatus = campaignStatusLabel(contact.campaign_status);
+  const nextHandoff = contactNextHandoff(contact);
   const campaignDetail =
     contact.campaign_status === "not_contacted"
       ? "No outreach"
       : `${campaignStatus}${contact.latest_outreach_channel ? ` via ${channelLabel(contact.latest_outreach_channel)}` : ""}`;
   return (
-    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[1fr_auto] md:items-center">
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_minmax(260px,360px)] md:items-start">
       <Link
         href={`/dashboard/agent/contacts/${contact.id}`}
         prefetch={false}
@@ -3392,7 +3393,7 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
         <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-ink-2)] text-[var(--color-text-2)]">
           <Icon name="person" size={17} />
         </span>
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
             {contact.full_name}
             <span className="font-normal text-[var(--color-text-3)]">
@@ -3407,6 +3408,31 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             <span className="font-medium text-[var(--color-text-2)]">Why now:</span>{" "}
             {contact.latest_signal_title ??
               "Verified contact ready for the next qualified signal."}
+          </span>
+          <span className="mt-2 flex w-full max-w-2xl items-start gap-2 rounded-[8px] bg-[var(--color-ink-1)] px-2.5 py-2 text-xs leading-5 text-[var(--color-text-3)]">
+            <span
+              className={
+                "mt-0.5 grid size-5 shrink-0 place-items-center rounded-[6px] " +
+                (nextHandoff.tone === "ready"
+                  ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                  : nextHandoff.tone === "review"
+                    ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+                    : "bg-[var(--color-accent-bg)] text-[var(--color-accent)]")
+              }
+              aria-hidden="true"
+            >
+              {nextHandoff.icon === "linkedin" ? (
+                <BrandIcon name="linkedin" size={12} />
+              ) : (
+                <Icon name={nextHandoff.icon} size={12} />
+              )}
+            </span>
+            <span className="min-w-0">
+              <span className="font-medium text-[var(--color-text-2)]">
+                Next handoff:
+              </span>{" "}
+              {nextHandoff.detail}
+            </span>
           </span>
           <span className="mt-2 flex flex-wrap gap-2">
             <ContactPill ready={Boolean(signalScore)} icon="auto_graph">
@@ -3476,6 +3502,24 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
             {conversations} conversation{conversations === 1 ? "" : "s"}
           </span>
         ) : null}
+        <span
+          className={
+            "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-xs " +
+            (nextHandoff.tone === "ready"
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : nextHandoff.tone === "review"
+                ? "bg-[var(--color-warn-bg)] text-[var(--color-warn)]"
+                : "bg-[var(--color-accent-bg)] text-[var(--color-accent)]")
+          }
+          title={nextHandoff.detail}
+        >
+          {nextHandoff.icon === "linkedin" ? (
+            <BrandIcon name="linkedin" size={13} />
+          ) : (
+            <Icon name={nextHandoff.icon} size={13} />
+          )}
+          {nextHandoff.label}
+        </span>
         <ContactQualificationControls
           personId={contact.id}
           currentDecision={contact.contact_fit_decision}
@@ -3484,6 +3528,84 @@ function AgentContactLink({ contact }: { contact: AgentContactRow }) {
       </div>
     </article>
   );
+}
+
+function contactNextHandoff(contact: AgentContactRow): {
+  label: string;
+  detail: string;
+  icon: string;
+  tone: "fit" | "ready" | "review";
+} {
+  if (contact.campaign_status === "message_replied") {
+    return {
+      label: "Learn from reply",
+      detail:
+        "Reply evidence is ready for Agent learning and meeting follow-up.",
+      icon: "forum",
+      tone: "ready",
+    };
+  }
+  if (contact.campaign_status === "connection_accepted") {
+    return {
+      label: "Next DM",
+      detail:
+        "Accepted LinkedIn connection is ready for the next DM or InMail follow-up.",
+      icon: "linkedin",
+      tone: "ready",
+    };
+  }
+  if (contact.campaign_status === "draft_ready") {
+    return {
+      label: "Review draft",
+      detail:
+        "Judged outreach is prepared; review the draft before it leaves the channel.",
+      icon: "rate_review",
+      tone: "review",
+    };
+  }
+  if (contact.campaign_status === "contacted") {
+    return {
+      label: "Awaiting reply",
+      detail:
+        "Sent proof exists; keep this contact in Agent until reply or meeting evidence appears.",
+      icon: "schedule",
+      tone: "fit",
+    };
+  }
+  if (contact.email_status === "verified") {
+    return {
+      label: "Email outreach",
+      detail:
+        "Verified email can move into judged outreach once the channel gate is ready.",
+      icon: "mail",
+      tone: "ready",
+    };
+  }
+  if (contact.linkedin_url) {
+    return {
+      label: "LinkedIn outreach",
+      detail:
+        "LinkedIn profile can move into a connection request, accepted follow-up, or DM path.",
+      icon: "linkedin",
+      tone: "ready",
+    };
+  }
+  if (contact.email_status === "found") {
+    return {
+      label: "Verify email",
+      detail:
+        "Email handle is present but still needs verification before sending.",
+      icon: "verified",
+      tone: "review",
+    };
+  }
+  return {
+    label: "Resolve contact",
+    detail:
+      "The signal has a person, but Agent still needs a verified email or LinkedIn profile.",
+    icon: "person_search",
+    tone: "review",
+  };
 }
 
 function ContactQualificationControls({

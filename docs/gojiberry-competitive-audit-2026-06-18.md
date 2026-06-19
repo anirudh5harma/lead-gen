@@ -184,3 +184,9 @@ channels and agent APIs can move work now, and keeps CRM sync, outreach-tool
 sync, and team alerts visibly planned until they are real evented destinations.
 This translates GojiBerry's output-pipe clarity without adding an Integrations
 tab back into the product.
+
+The Agent verified-contact rows now show a per-contact Next handoff: email
+outreach, LinkedIn outreach, next DM, review draft, awaiting reply, reply
+learning, email verification, or contact resolution. This pushes GojiBerry's
+"where does this lead go next?" clarity down to the person row while keeping
+contacts under Agent instead of reviving a separate Prospects or Campaigns tab.
