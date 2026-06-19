@@ -27,6 +27,7 @@ import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
   configureActivationAction,
+  configureCrmDestinationAction,
   createWorkspaceAction,
   editCompanyProfileAction,
   revokeMcpTokenAction,
@@ -123,11 +124,21 @@ interface ProfileMcpActivity {
   latency_ms: number | null;
 }
 
+interface ProfileCrmAccount {
+  id: string;
+  display_name: string;
+  status: string;
+  last_error: unknown | null;
+  properties: Record<string, unknown> | null;
+  updated_at: Date;
+}
+
 interface ProfileState {
   settings: Record<string, unknown>;
   outlookAccount: ProfileOutlookAccount | null;
   linkedInAccount: ProfileLinkedInAccount | null;
   linkedInAccounts: ProfileLinkedInAccount[];
+  crmAccount: ProfileCrmAccount | null;
   rep: ProfileRepRow | null;
   icp: ProfileIcpRow | null;
   approvals: string[];
@@ -216,6 +227,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
     signalSetup,
     mcpTokens,
     mcpActivity,
+    crm,
   ] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
@@ -410,6 +422,22 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
     ),
     loadProfileMcpTokens(pool, userId),
     loadProfileMcpActivity(pool, workspaceId, userId),
+    pool.query<ProfileCrmAccount>(
+      `select id,
+              display_name,
+              status::text as status,
+              last_error,
+              properties,
+              updated_at
+         from channel_accounts
+        where workspace_id = $1
+          and kind = 'crm'
+        order by case when status = 'connected' then 0 else 1 end,
+                 updated_at desc,
+                 created_at desc
+        limit 1`,
+      [workspaceId],
+    ),
   ]);
   const suppressions = suppressionStats.rows[0];
   const contacts = contactQuality.rows[0];
@@ -418,6 +446,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
     outlookAccount: outlook.rows[0] ?? null,
     linkedInAccount: linkedIn.rows[0] ?? null,
     linkedInAccounts: linkedIn.rows,
+    crmAccount: crm.rows[0] ?? null,
     rep: rep.rows[0] ?? null,
     icp: icp.rows[0] ?? null,
     approvals: policies.rows.flatMap((row) =>
@@ -1748,6 +1777,7 @@ function IntegrationPanel({
   const destinations = buildOutputDestinations({
     email_connected: state.outlookAccount?.status === "connected",
     linkedin_connected: state.linkedInAccount?.status === "connected",
+    crm_connected: state.crmAccount?.status === "connected",
     launch_ready: readiness.launch_ready,
   });
   const activeDestinations = destinations.filter(
@@ -1848,6 +1878,8 @@ function IntegrationPanel({
 
       <VisitorIntentSetupPanel />
 
+      <CrmHandoffSetupPanel account={state.crmAccount} />
+
       <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1917,6 +1949,7 @@ function destinationAction(destination: OutputDestination): string {
   if (destination.key === "claude-code") return "Use Bombsell in Claude Code";
   if (destination.key === "signal-webhook") return "View route";
   if (destination.key === "visitor-deanonymization") return "Set up visitor ID";
+  if (destination.key === "crm-sync") return "Set up CRM handoff";
   return destinationStatusLabel(destination);
 }
 
@@ -2028,6 +2061,207 @@ function VisitorIntentSetupPanel() {
       </div>
     </div>
   );
+}
+
+function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }) {
+  const provider = crmProviderFromAccount(account);
+  const syncMode = crmSyncModeFromAccount(account);
+  return (
+    <div
+      id="crm-sync"
+      className="scroll-mt-28 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            CRM handoff setup
+          </p>
+          <p className="mt-1 max-w-[74ch] text-xs leading-5 text-[var(--color-text-3)]">
+            Send qualified contacts and their signal proof into HubSpot,
+            Salesforce, Pipedrive, Attio, Folk, Clay, or a custom webhook.
+            Bombsell stays the source of scoring, outreach, replies, and
+            meetings; the CRM receives clean pipeline context.
+          </p>
+        </div>
+        <span
+          className={
+            "rounded-[8px] px-2.5 py-1 text-xs " +
+            (account?.status === "connected"
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-2)] text-[var(--color-text-3)]")
+          }
+        >
+          {account?.status === "connected" ? "Connected" : "Available"}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="grid content-start gap-3 rounded-[8px] bg-[var(--color-ink-1)] p-3">
+          <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+            <Icon name="corporate_fare" size={14} />
+            Current handoff
+          </span>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <ProfileFact
+              label="Destination"
+              value={account?.display_name ?? "Not configured"}
+            />
+            <ProfileFact
+              label="Sync mode"
+              value={crmSyncModeLabel(syncMode)}
+            />
+            <ProfileFact label="Provider" value={crmProviderLabel(provider)} />
+            <ProfileFact
+              label="Webhook"
+              value={crmWebhookConfigured(account) ? "Configured" : "Optional"}
+            />
+          </div>
+          <p className="text-xs leading-5 text-[var(--color-text-3)]">
+            Use this for qualified-contact handoff now. Native OAuth apps can
+            reuse the same `channel_accounts` CRM destination later.
+          </p>
+        </div>
+
+        <form
+          action={configureCrmDestinationAction}
+          className="grid gap-3 rounded-[8px] bg-[var(--color-ink-1)] p-3"
+        >
+          <input type="hidden" name="return_to" value="/dashboard/profile#crm-sync" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1.5 text-xs font-medium text-[var(--color-text-2)]">
+              CRM
+              <select
+                name="crm_provider"
+                defaultValue={provider}
+                className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm text-[var(--color-text-1)] outline-none"
+              >
+                <option value="hubspot">HubSpot</option>
+                <option value="salesforce">Salesforce</option>
+                <option value="pipedrive">Pipedrive</option>
+                <option value="attio">Attio</option>
+                <option value="folk">Folk</option>
+                <option value="clay">Clay</option>
+                <option value="custom">Custom webhook</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-xs font-medium text-[var(--color-text-2)]">
+              Label
+              <input
+                name="crm_display_name"
+                defaultValue={account?.display_name ?? ""}
+                placeholder="Revenue CRM"
+                className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm text-[var(--color-text-1)] outline-none"
+              />
+            </label>
+          </div>
+          <label className="grid gap-1.5 text-xs font-medium text-[var(--color-text-2)]">
+            Webhook URL
+            <input
+              name="crm_webhook_url"
+              type="url"
+              placeholder="https://hooks.example.com/bombsell/crm"
+              className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm text-[var(--color-text-1)] outline-none"
+            />
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium text-[var(--color-text-2)]">
+            What to sync
+            <select
+              name="crm_sync_mode"
+              defaultValue={syncMode}
+              className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 text-sm text-[var(--color-text-1)] outline-none"
+            >
+              <option value="qualified_contacts">Qualified contacts</option>
+              <option value="qualified_and_sent">Contacts and sent outreach</option>
+              <option value="full_loop">Contacts, outreach, replies, meetings</option>
+            </select>
+          </label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-start gap-2 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2 text-xs text-[var(--color-text-2)]">
+              <input
+                name="crm_include_sent_outreach"
+                type="checkbox"
+                defaultChecked={syncMode !== "qualified_contacts"}
+                className="mt-0.5"
+              />
+              Include sent outreach proof
+            </label>
+            <label className="flex items-start gap-2 rounded-[8px] bg-[var(--color-ink-0)] px-3 py-2 text-xs text-[var(--color-text-2)]">
+              <input
+                name="crm_include_replies_meetings"
+                type="checkbox"
+                defaultChecked={syncMode === "full_loop"}
+                className="mt-0.5"
+              />
+              Include replies and meetings
+            </label>
+          </div>
+          <PendingSubmitButton
+            className="btn-solid w-fit"
+            icon="check"
+            pendingLabel="Saving CRM"
+          >
+            Save CRM handoff
+          </PendingSubmitButton>
+        </form>
+      </div>
+
+      <div className="mt-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
+        <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+          <Icon name="account_tree" size={14} />
+          Handoff contract
+        </span>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {[
+            "bombsell.signals.list_qualified",
+            "bombsell.contacts.list_lanes",
+            "crm.destination.configured",
+          ].map((item) => (
+            <span
+              key={item}
+              className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-2)]"
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function crmProviderFromAccount(account: ProfileCrmAccount | null): string {
+  const provider = account?.properties?.provider;
+  return typeof provider === "string" && provider ? provider : "hubspot";
+}
+
+function crmSyncModeFromAccount(account: ProfileCrmAccount | null): string {
+  const mode = account?.properties?.sync_mode;
+  return mode === "full_loop" || mode === "qualified_and_sent"
+    ? mode
+    : "qualified_contacts";
+}
+
+function crmWebhookConfigured(account: ProfileCrmAccount | null): boolean {
+  return account?.properties?.webhook_configured === true;
+}
+
+function crmProviderLabel(provider: string): string {
+  const labels: Record<string, string> = {
+    hubspot: "HubSpot",
+    salesforce: "Salesforce",
+    pipedrive: "Pipedrive",
+    attio: "Attio",
+    folk: "Folk",
+    clay: "Clay",
+    custom: "Custom webhook",
+  };
+  return labels[provider] ?? provider.replace(/_/g, " ");
+}
+
+function crmSyncModeLabel(mode: string): string {
+  if (mode === "full_loop") return "Full loop";
+  if (mode === "qualified_and_sent") return "Contacts + sent proof";
+  return "Qualified contacts";
 }
 
 function McpAccessPanel({

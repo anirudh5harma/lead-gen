@@ -41,13 +41,18 @@ Status: available.
 
 ## CRM Integration
 
-Status: available as MCP/API handoff; native CRM OAuth remains next.
+Status: available as MCP/API handoff with configurable CRM destination;
+native CRM OAuth remains next.
 
 - Profile and Agent output destinations now expose CRM sync as available for
   qualified-contact handoff through Bombsell's MCP/API tools.
 - External agents and automation layers can pull qualified signals and contact
   lanes through `bombsell.signals.list_qualified` and
   `bombsell.contacts.list_lanes`.
-- Native HubSpot, Salesforce, Pipedrive, Attio, Folk, or Clay OAuth sync should
-  be built as the next evented connector layer after launch traffic confirms the
-  handoff model.
+- Profile now includes CRM handoff setup for HubSpot, Salesforce, Pipedrive,
+  Attio, Folk, Clay, or a custom webhook. Saving it emits
+  `crm.destination.configured` and stores the destination as a `crm`
+  `channel_accounts` row.
+- Native HubSpot, Salesforce, Pipedrive, Attio, Folk, or Clay OAuth sync can
+  reuse the same evented destination model after launch traffic confirms the
+  handoff contract.

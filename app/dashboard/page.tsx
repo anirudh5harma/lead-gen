@@ -115,6 +115,7 @@ interface BriefChannelReadiness {
 interface BriefCapabilityReadiness {
   push_signal_sources: number;
   visitor_signals_7d: number;
+  crm_destinations: number;
 }
 
 interface BriefNextMove {
@@ -574,6 +575,7 @@ async function loadBriefCapabilityReadiness(
   const { rows } = await pool.query<{
     push_signal_sources: string;
     visitor_signals_7d: string;
+    crm_destinations: string;
   }>(
     `select
        (select count(*)::text
@@ -591,12 +593,18 @@ async function loadBriefCapabilityReadiness(
              s.properties #>> '{structured,visitor_deanonymization}' = 'true'
              or s.provenance->>'source' = 'visitor_deanonymization'
              or s.provenance->>'provider' in ('rb2b','clearbit','factors','warmly')
-           )) as visitor_signals_7d`,
+           )) as visitor_signals_7d,
+       (select count(*)::text
+          from channel_accounts ca
+         where ca.workspace_id = $1
+           and ca.kind = 'crm'
+           and ca.status = 'connected') as crm_destinations`,
     [workspaceId],
   );
   return {
     push_signal_sources: Number(rows[0]?.push_signal_sources ?? 0),
     visitor_signals_7d: Number(rows[0]?.visitor_signals_7d ?? 0),
+    crm_destinations: Number(rows[0]?.crm_destinations ?? 0),
   };
 }
 
@@ -817,6 +825,7 @@ const EMPTY_CHANNEL_READINESS: BriefChannelReadiness = {
 const EMPTY_CAPABILITY_READINESS: BriefCapabilityReadiness = {
   push_signal_sources: 0,
   visitor_signals_7d: 0,
+  crm_destinations: 0,
 };
 
 export default async function BriefPage() {
@@ -1552,13 +1561,20 @@ function BriefCapabilityCoveragePanel({
     {
       icon: "corporate_fare",
       label: "CRM handoff",
-      value: `${contactReadiness.signal_backed} contacts`,
+      value:
+        capabilityReadiness.crm_destinations > 0
+          ? `${capabilityReadiness.crm_destinations} connected`
+          : `${contactReadiness.signal_backed} contacts`,
       detail:
-        contactReadiness.signal_backed > 0
-          ? "Qualified contacts are available through Bombsell MCP/API handoff; native CRM OAuth is next."
-          : "CRM handoff is available once qualified contacts clear signal and contact proof.",
-      href: "/dashboard/profile#tools",
-      ready: contactReadiness.signal_backed > 0,
+        capabilityReadiness.crm_destinations > 0
+          ? "Qualified contacts, signal proof, and outreach context can sync through the configured CRM handoff."
+          : contactReadiness.signal_backed > 0
+            ? "Qualified contacts are available through Bombsell MCP/API handoff; configure CRM in Profile."
+            : "CRM handoff is available once qualified contacts clear signal and contact proof.",
+      href: "/dashboard/profile#crm-sync",
+      ready:
+        capabilityReadiness.crm_destinations > 0 ||
+        contactReadiness.signal_backed > 0,
     },
   ];
 

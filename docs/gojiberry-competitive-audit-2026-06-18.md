@@ -235,3 +235,11 @@ but visitor intake now accepts those useful Grow fields: industry, headcount,
 funding stage, weighted page paths, dwell time, scroll depth, repeat visits,
 and consent metadata. Events with explicit marketing opt-out or Do Not Track
 are acknowledged and suppressed instead of becoming Signals.
+
+CRM handoff is now configurable from Profile instead of only described as a
+future OAuth layer. The setup stores HubSpot, Salesforce, Pipedrive, Attio,
+Folk, Clay, or custom webhook destinations as `crm` channel accounts through the
+typed `crm.destination.configured` event, while the handoff contract remains
+focused on qualified contacts, signal proof, sent outreach, replies, and
+meetings. This matches GojiBerry/Ploy-style CRM output pipes without turning
+Bombsell into a generic CRM.

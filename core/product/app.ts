@@ -483,6 +483,15 @@ export interface ConfigureEmailInput {
   daily_cap: number;
 }
 
+export interface ConfigureCrmDestinationInput {
+  provider: string;
+  display_name?: string;
+  webhook_url?: string | null;
+  sync_mode?: "qualified_contacts" | "qualified_and_sent" | "full_loop";
+  include_sent_outreach?: boolean;
+  include_replies_meetings?: boolean;
+}
+
 export interface ProductWorkspace {
   id: string;
   slug: string;
@@ -7175,6 +7184,141 @@ export async function configureWorkspaceEmailAccount(
   return { workspace_id: session.workspace_id, channel_account_id };
 }
 
+export async function configureWorkspaceCrmDestination(
+  input: ConfigureCrmDestinationInput,
+  session: ProductWorkspaceSession,
+): Promise<{ workspace_id: string; channel_account_id: string }> {
+  const engine = await getProductEngine();
+  await assertProductWorkspaceAccess(session, engine.pool);
+  const existing = await findCrmDestinationAccount(
+    engine.pool,
+    session.workspace_id,
+  );
+  const channel_account_id = existing?.id ?? randomUUID();
+  const provider = normalizeCrmProvider(input.provider);
+  const sync_mode = input.sync_mode ?? "qualified_contacts";
+  const webhook_url = normalizeOptionalUrl(input.webhook_url);
+  const payload = {
+    channel_account_id,
+    kind: "crm" as const,
+    provider,
+    display_name: input.display_name?.trim() || crmProviderLabel(provider),
+    webhook_url,
+    sync_mode,
+    include_sent_outreach:
+      input.include_sent_outreach ?? sync_mode !== "qualified_contacts",
+    include_replies_meetings:
+      input.include_replies_meetings ?? sync_mode === "full_loop",
+  };
+  const event = await engine.bus.publish({
+    workspace_id: session.workspace_id,
+    event_type: "crm.destination.configured",
+    source: "user",
+    producer_ref: session.user_id,
+    idempotency_key: configurationEventKey(
+      "crm.destination.configured",
+      session.workspace_id,
+      channel_account_id,
+      payload,
+    ),
+    payload,
+  });
+  await projectCrmDestinationConfigured(engine.pool, event);
+  return { workspace_id: session.workspace_id, channel_account_id };
+}
+
+async function findCrmDestinationAccount(
+  pool: Pool,
+  workspace_id: string,
+): Promise<{ id: string } | null> {
+  const existing = await pool.query<{ id: string }>(
+    `select id
+       from channel_accounts
+      where workspace_id = $1
+        and kind = 'crm'
+      order by case when status = 'connected' then 0 else 1 end,
+               updated_at desc,
+               created_at desc
+      limit 1`,
+    [workspace_id],
+  );
+  return existing.rows[0] ?? null;
+}
+
+async function projectCrmDestinationConfigured(
+  pool: Pool,
+  event: PublishedEvent,
+): Promise<void> {
+  const payload = event.payload as {
+    channel_account_id: string;
+    provider: string;
+    display_name: string;
+    webhook_url: string | null;
+    sync_mode: "qualified_contacts" | "qualified_and_sent" | "full_loop";
+    include_sent_outreach: boolean;
+    include_replies_meetings: boolean;
+  };
+  await pool.query(
+    `insert into channel_accounts (
+       id, workspace_id, kind, display_name, status, daily_cap, daily_used, credentials, properties
+     ) values ($1, $2, 'crm'::channel_account_kind, $3, 'connected'::channel_account_status, null, 0, $4::jsonb, $5::jsonb)
+     on conflict (id) do update set
+       display_name = excluded.display_name,
+       status = excluded.status,
+       credentials = excluded.credentials,
+       properties = channel_accounts.properties || excluded.properties,
+       updated_at = now()`,
+    [
+      payload.channel_account_id,
+      event.workspace_id,
+      payload.display_name,
+      JSON.stringify({
+        webhook_url: payload.webhook_url,
+      }),
+      JSON.stringify({
+        provider: payload.provider,
+        sync_mode: payload.sync_mode,
+        webhook_configured: Boolean(payload.webhook_url),
+        include_sent_outreach: payload.include_sent_outreach,
+        include_replies_meetings: payload.include_replies_meetings,
+        configured_event_id: event.id,
+      }),
+    ],
+  );
+}
+
+function normalizeCrmProvider(provider: string): string {
+  const normalized = provider.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+  return normalized || "custom";
+}
+
+function crmProviderLabel(provider: string): string {
+  const labels: Record<string, string> = {
+    hubspot: "HubSpot",
+    salesforce: "Salesforce",
+    pipedrive: "Pipedrive",
+    attio: "Attio",
+    folk: "Folk",
+    clay: "Clay",
+    custom: "Custom CRM",
+  };
+  return labels[provider] ?? provider.replace(/_/g, " ");
+}
+
+function normalizeOptionalUrl(value: string | null | undefined): string | null {
+  const clean = value?.trim();
+  if (!clean) return null;
+  try {
+    const parsed = new URL(clean);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      throw new Error("Unsupported URL protocol.");
+    }
+    return parsed.toString();
+  } catch {
+    throw new Error("Enter a valid CRM webhook URL.");
+  }
+}
+
 export async function getLinkedInAccountConnectIntent(
   session: ProductWorkspaceSession,
 ): Promise<LinkedInAccountConnectIntent> {
@@ -7579,6 +7723,11 @@ function createProductEventProjections(
           },
         );
       },
+    },
+    {
+      name: "crm.destination_configuration.v1",
+      eventTypes: ["crm.destination.configured"],
+      apply: (event) => projectCrmDestinationConfigured(engine.pool, event),
     },
     {
       name: "signal.classification.projector.v1",

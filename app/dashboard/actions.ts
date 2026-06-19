@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   approveWorkflowApproval,
   configureActivationSetup,
+  configureWorkspaceCrmDestination,
   configureRep,
   configureWorkspaceAutonomyMode,
   configureWorkspaceCompanyProfile,
@@ -525,6 +526,39 @@ export async function revokeMcpTokenAction(formData: FormData) {
     rowCount ? "Claude Code access revoked." : "That Claude Code session was already revoked.",
     rowCount ? "success" : "info",
   );
+}
+
+export async function configureCrmDestinationAction(formData: FormData) {
+  const session = await requireDashboardSession(formData);
+  const returnTo = dashboardReturnPath(formData, "/dashboard/profile#crm-sync");
+  const provider = value(formData, "crm_provider") || "hubspot";
+  const syncModeValue = value(formData, "crm_sync_mode");
+  const sync_mode =
+    syncModeValue === "full_loop"
+      ? "full_loop"
+      : syncModeValue === "qualified_and_sent"
+        ? "qualified_and_sent"
+        : "qualified_contacts";
+  try {
+    await configureWorkspaceCrmDestination(
+      {
+        provider,
+        display_name: value(formData, "crm_display_name") || undefined,
+        webhook_url: value(formData, "crm_webhook_url") || null,
+        sync_mode,
+        include_sent_outreach: checked(formData, "crm_include_sent_outreach"),
+        include_replies_meetings: checked(formData, "crm_include_replies_meetings"),
+      },
+      session,
+    );
+  } catch (error) {
+    if (error instanceof Error && /valid CRM webhook URL/i.test(error.message)) {
+      redirectWithToast(returnTo, "Enter a valid CRM webhook URL.", "error");
+    }
+    throw error;
+  }
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "CRM handoff saved.");
 }
 
 function isMissingMcpOauthSchema(error: unknown): boolean {

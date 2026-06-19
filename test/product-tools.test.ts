@@ -478,10 +478,15 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
       ?.tools,
     ["product.source.configure", "/api/webhooks/visitors"],
   );
+  assert.equal(
+    blocked.find((destination) => destination.key === "crm-sync")?.href,
+    "/dashboard/profile#crm-sync",
+  );
 
   const connected = buildOutputDestinations({
     email_connected: true,
     linkedin_connected: true,
+    crm_connected: true,
     launch_ready: true,
   });
   assert.equal(
@@ -494,13 +499,14 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
   );
   assert.equal(
     connected.find((destination) => destination.key === "crm-sync")?.status,
-    "available",
+    "connected",
   );
   assert.deepEqual(
     connected.find((destination) => destination.key === "crm-sync")?.tools,
     [
       "bombsell.signals.list_qualified",
       "bombsell.contacts.list_lanes",
+      "crm.destination.configured",
     ],
   );
   assert.equal(
@@ -874,6 +880,12 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     async handler() {
       return {
         bootstrap: { workspace_id },
+        channelAccounts: [
+          {
+            kind: "crm",
+            status: "connected",
+          },
+        ],
         approvals: [
           {
             id: crypto.randomUUID(),
@@ -1254,6 +1266,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   assert.deepEqual(integrations.source_tools, [
     "product.brief.get",
     "product.launch.readiness.get",
+    "product.state.get",
   ]);
   assert.equal(
     integrations.destinations.find((item) => item.key === "outlook")?.status,
@@ -1287,7 +1300,15 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   );
   assert.equal(
     integrations.destinations.find((item) => item.key === "crm-sync")?.status,
-    "available",
+    "connected",
+  );
+  assert.deepEqual(
+    integrations.destinations.find((item) => item.key === "crm-sync")?.tools,
+    [
+      "bombsell.signals.list_qualified",
+      "bombsell.contacts.list_lanes",
+      "crm.destination.configured",
+    ],
   );
   assert.equal(
     integrations.destinations.find((item) => item.key === "team-alerts")

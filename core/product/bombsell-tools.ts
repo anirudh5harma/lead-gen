@@ -351,6 +351,7 @@ const IntegrationsAliasSchema = WorkspaceResultSchema.extend({
   source_tools: z.tuple([
     z.literal("product.brief.get"),
     z.literal("product.launch.readiness.get"),
+    z.literal("product.state.get"),
   ]),
 });
 
@@ -392,6 +393,10 @@ interface OperatingBrief {
 interface ProductState {
   workspace_id?: string;
   bootstrap?: { workspace_id?: string };
+  channelAccounts?: Array<{
+    kind: string;
+    status: string;
+  }>;
   approvals?: Array<{
     id: string;
     run_id: string;
@@ -828,13 +833,15 @@ export function registerBombsellAliasTools(): void {
     input: z.object({}),
     output: IntegrationsAliasSchema,
     async handler(_input, ctx) {
-      const [brief, readiness] = await Promise.all([
+      const [brief, readiness, state] = await Promise.all([
         invokeTool<OperatingBrief>("product.brief.get", {}, ctx),
         invokeTool<LaunchReadiness>("product.launch.readiness.get", {}, ctx),
+        productState(ctx),
       ]);
       const destinations = buildOutputDestinations({
         email_connected: brief.channel_readiness.email_connected,
         linkedin_connected: brief.channel_readiness.linkedin_connected,
+        crm_connected: crmConnectedFromState(state),
         launch_ready: readiness.launch_ready,
       });
       return {
@@ -858,7 +865,12 @@ export function registerBombsellAliasTools(): void {
         source_tools: [
           "product.brief.get",
           "product.launch.readiness.get",
-        ] as ["product.brief.get", "product.launch.readiness.get"],
+          "product.state.get",
+        ] as [
+          "product.brief.get",
+          "product.launch.readiness.get",
+          "product.state.get",
+        ],
       };
     },
   });
@@ -1327,6 +1339,14 @@ function proposalApplyPlan(
     });
   }
   return applyPlan;
+}
+
+function crmConnectedFromState(state: ProductState): boolean {
+  return Boolean(
+    state.channelAccounts?.some(
+      (account) => account.kind === "crm" && account.status === "connected",
+    ),
+  );
 }
 
 function missingProfileContext(

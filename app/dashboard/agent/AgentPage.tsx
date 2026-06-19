@@ -462,6 +462,9 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     outputDestinations: buildOutputDestinations({
       email_connected: coverage.email.connected,
       linkedin_connected: coverage.linkedIn.connected,
+      crm_connected: channelRows.some(
+        (channel) => channel.kind === "crm" && channel.status === "connected",
+      ),
       launch_ready: readiness.launch_ready,
     }),
   };
@@ -2486,6 +2489,7 @@ function emptyRepsState(workspaceId: string): RepsState {
     outputDestinations: buildOutputDestinations({
       email_connected: false,
       linkedin_connected: false,
+      crm_connected: false,
       launch_ready: false,
     }),
   };
@@ -4936,7 +4940,7 @@ function AgentOutputHandoffPanel({
   destinations: OutputDestination[];
 }) {
   const active = destinations.filter((destination) =>
-    ["channel_send", "agent_api", "signal_intake"].includes(
+    ["channel_send", "agent_api", "signal_intake", "qualified_contact_sync"].includes(
       destination.handoff_stage,
     ),
   );

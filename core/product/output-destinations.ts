@@ -23,6 +23,7 @@ export type OutputDestination = z.infer<typeof OutputDestinationSchema>;
 export interface OutputDestinationInput {
   email_connected: boolean;
   linkedin_connected: boolean;
+  crm_connected?: boolean;
   launch_ready: boolean;
 }
 
@@ -95,14 +96,16 @@ export function buildOutputDestinations(
       key: "crm-sync",
       title: "CRM sync",
       category: "Qualified contact sync",
-      status: "available",
-      detail:
-        "HubSpot, Pipedrive, Salesforce, Attio, Folk, and Clay can receive qualified contacts through Bombsell MCP/API handoff after signal and contact proof exists; native OAuth sync is next.",
+      status: input.crm_connected ? "connected" : "available",
+      detail: input.crm_connected
+        ? "Qualified contacts, signal proof, sent outreach, replies, and meeting context can sync to the configured CRM handoff."
+        : "HubSpot, Pipedrive, Salesforce, Attio, Folk, Clay, or a custom webhook can receive qualified contacts through Bombsell MCP/API handoff; native OAuth sync is next.",
       handoff_stage: "qualified_contact_sync",
-      href: "/dashboard/profile#claude-code",
+      href: "/dashboard/profile#crm-sync",
       tools: [
         "bombsell.signals.list_qualified",
         "bombsell.contacts.list_lanes",
+        "crm.destination.configured",
       ],
     },
     {

@@ -828,6 +828,21 @@ const ChannelAccountConfigured = z.object({
   transport: z.enum(["resend", "dry-run", "unconfigured"]),
 });
 
+const CrmDestinationConfigured = z.object({
+  channel_account_id: z.string().uuid(),
+  kind: z.literal("crm"),
+  provider: z.string().min(1),
+  display_name: z.string().min(1),
+  webhook_url: z.string().url().nullable(),
+  sync_mode: z.enum([
+    "qualified_contacts",
+    "qualified_and_sent",
+    "full_loop",
+  ]),
+  include_sent_outreach: z.boolean(),
+  include_replies_meetings: z.boolean(),
+});
+
 const ChannelAccountErrored = z.object({
   channel_account_id: z.string().uuid(),
   kind: z.string(),
@@ -1584,6 +1599,7 @@ export const eventRegistry = {
 
   "channel.account.connected": ChannelAccountConnected,
   "channel.account.configured": ChannelAccountConfigured,
+  "crm.destination.configured": CrmDestinationConfigured,
   "channel.account.errored": ChannelAccountErrored,
   "linkedin.account.authorization.received":
     LinkedInAccountAuthorizationReceived,
