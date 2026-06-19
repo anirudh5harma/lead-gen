@@ -130,6 +130,33 @@ This gives Claude Code users a native `/bombsell:*` workflow while preserving
 Bombsell as the system of record for auth, workspace scope, verified contacts,
 approval gates, evals, and channel sending.
 
+## 2026-06-19 Research Update
+
+Anthropic's current Claude Code docs make the product path clearer:
+
+- Use **remote HTTP MCP** as the default connection. It is the recommended
+  transport for cloud services, supports OAuth, reconnects automatically, and
+  keeps Bombsell credentials and GTM logic server-side.
+- Use a **Claude Code plugin** when we want distribution, team consistency, and
+  namespaced workflows. Plugins can bundle MCP server config and skills, so
+  users install Bombsell once and then run `/bombsell:*` commands instead of
+  remembering raw MCP tool names.
+- Keep v1 small. Claude Code displays installed plugin components, so Bombsell's
+  first install should show one MCP server and six obvious skills: Brief,
+  Profile-from-repo, launch check, signal review, prepare outreach, and reply
+  insights.
+- Treat hooks, background monitors, subagents, and local stdio servers as
+  post-dogfood additions. They are powerful, but they expand the trust surface
+  before the core remote MCP flow has design-partner proof.
+- Public release should pass `claude plugin validate`, use marketplace-pinned
+  source, include privacy and permission language, and keep the normal auth path
+  free of copied tokens or shell `headersHelper` scripts.
+
+The launch wedge is therefore not "a plugin that sends email." It is a Claude
+Code GTM workbench: inspect the repo, propose Profile updates, review qualified
+signals, prepare judged email/LinkedIn drafts, and pull reply/meeting learning
+back into the user's launch workflow.
+
 ## Build Plan
 
 1. Direct MCP dogfood
@@ -148,7 +175,16 @@ approval gates, evals, and channel sending.
    workspace. Preparation can create judged drafts and approval gates, but it
    must not approve or send.
 
-3. Private marketplace
+3. Product workflow dogfood
+
+   Run the plugin from real customer-style repos. Have Claude Code read the
+   README, package metadata, docs, launch notes, pricing copy, and route-level
+   UI copy, then propose Bombsell Profile, buyer-fit, signal-source, and
+   LinkedIn-behavior updates. Measure whether those proposals improve the web
+   Brief and Agent queues without creating writes that bypass Bombsell approval
+   and event flow.
+
+4. Private marketplace
 
    Host the Bombsell marketplace catalog, keep the plugin source pinned by
    commit SHA, and run `npm run verify:claude-code-plugin` before every catalog
@@ -156,7 +192,7 @@ approval gates, evals, and channel sending.
    tool-call latency, and whether users naturally ask Claude Code to update
    Profile from repo context.
 
-4. Public release
+5. Public release
 
    Submit to Anthropic's community marketplace once auth, audit logging,
    privacy text, plugin validation, and partner feedback are clean. Keep the

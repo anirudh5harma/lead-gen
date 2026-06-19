@@ -1539,6 +1539,11 @@ function AgentCommandStrip({
 }) {
   const next = readinessNextAction(readiness);
   const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
+  const acceptedFollowups = outreach.accepted_followups.length;
+  const acceptedFollowupCopy =
+    acceptedFollowups === 1
+      ? "1 accepted LinkedIn contact needs the next DM."
+      : `${acceptedFollowups} accepted LinkedIn contacts need the next DM.`;
   return (
     <section
       className="grid gap-3 rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3 md:grid-cols-2 xl:grid-cols-4"
@@ -1547,9 +1552,9 @@ function AgentCommandStrip({
       <AgentCommandLink
         href="/dashboard/agent#opportunities"
         icon={<Icon name="sensors" size={17} />}
-        title="Active signals"
+        title="Qualified signals"
         value={opportunities.stats.qualified}
-        detail={`${opportunities.stats.with_verified_contacts} verified contacts, ${opportunities.stats.with_outreach_draft} judged drafts`}
+        detail={`${opportunities.stats.with_verified_contacts} verified contacts, ${opportunities.stats.with_outreach_draft} drafts ready`}
         ready={opportunities.stats.qualified > 0}
       />
       <AgentCommandLink
@@ -1559,7 +1564,7 @@ function AgentCommandStrip({
         value={coverage.email.connected ? outreach.email_sent_7d : "Setup"}
         detail={
           coverage.email.connected
-            ? `${coverage.email.label}; ${coverage.email.dailyCap ?? "uncapped"} daily cap`
+            ? `${outreach.email_replies_7d} replies; ${coverage.email.label}; ${coverage.email.dailyCap ?? "uncapped"} daily cap`
             : "Outlook unlocks native email threads and reply sync."
         }
         metricLabel={coverage.email.connected ? "sent 7d" : "needed"}
@@ -1569,13 +1574,13 @@ function AgentCommandStrip({
         href={coverage.linkedIn.href}
         icon={<BrandIcon name="linkedin" size={17} />}
         title={coverage.linkedIn.connected ? "LinkedIn ready" : "Connect LinkedIn"}
-        value={coverage.linkedIn.connected ? outreach.linkedin_sent_7d : "Setup"}
+        value={coverage.linkedIn.connected ? outreach.linkedin_messages_7d : "Setup"}
         detail={
           coverage.linkedIn.connected
-            ? `${coverage.linkedIn.label}; ${coverage.linkedIn.dailyCap ?? "uncapped"} daily cap`
+            ? `${outreach.linkedin_invites_7d} invites, ${outreach.linkedin_accepts_7d} accepted, ${acceptedFollowups} follow-ups due`
             : "LinkedIn unlocks connection requests, DMs, and reply capture."
         }
-        metricLabel={coverage.linkedIn.connected ? "sent 7d" : "needed"}
+        metricLabel={coverage.linkedIn.connected ? "DMs 7d" : "needed"}
         ready={coverage.linkedIn.connected}
       />
       <div className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] p-4">
@@ -1600,7 +1605,9 @@ function AgentCommandStrip({
           </span>
           <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
             {readiness.launch_ready
-              ? `${sent7d} sent this week. Push qualified signals into verified email or LinkedIn drafts.`
+              ? acceptedFollowups > 0
+                ? acceptedFollowupCopy
+                : `${sent7d} sent this week. Push qualified signals into verified email or LinkedIn drafts.`
               : commandBlockerCopy(readiness)}
           </span>
         </span>

@@ -126,3 +126,14 @@ Profile proposals, used by source recommendations, and included in the
 Profile Message Ingredients block that feeds email/LinkedIn writers and the
 hot-path judge. This brings over GojiBerry's concrete LinkedIn signal editor
 without adding another user-facing tab.
+
+The Agent command strip now uses the same channel accounting users expect from
+GojiBerry-style outreach: qualified signals, verified contacts, email replies,
+LinkedIn DMs, invites, accepted connections, and accepted-connection follow-ups
+are visible before deeper execution tables. This keeps the core path focused on
+quality signals becoming verified contacts and email/LinkedIn outreach.
+
+The Claude Code plugin plan now reflects Anthropic's current plugin guidance:
+remote HTTP MCP plus six focused `/bombsell:*` skills first, product workflow
+dogfood from real repos second, and marketplace distribution only after OAuth,
+audit logging, validation, and design-partner feedback are clean.
