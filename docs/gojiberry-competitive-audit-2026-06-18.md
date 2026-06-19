@@ -212,3 +212,10 @@ source-backed website-intent Signals, automated personalized outreach stays in
 Agent with eval and approval gates, intent signals and scoring stay visible
 through signal quality and weak-signal warnings, and CRM integration is
 available as an MCP/API handoff while native CRM OAuth remains next.
+
+Brief now includes launch capability coverage for the four customer promises:
+visitor de-anonymization, intent signals and scoring, automated personalized
+outreach, and CRM handoff. It uses backend counts for push sources,
+visitor-intent Signals, qualified Signals, judged drafts, sent outreach, and
+signal-backed contacts so the home dashboard proves the product offer rather
+than forcing users to infer it from Profile and Agent.

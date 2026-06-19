@@ -337,6 +337,18 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Judged drafts/);
   assert.match(dashboard, /Sent outreach/);
   assert.match(dashboard, /reply or meeting signal/);
+  assert.match(dashboard, /BriefCapabilityCoveragePanel/);
+  assert.match(dashboard, /loadBriefCapabilityReadiness/);
+  assert.match(dashboard, /push_signal_sources/);
+  assert.match(dashboard, /visitor_signals_7d/);
+  assert.match(dashboard, /visitor_deanonymization/);
+  assert.match(dashboard, /Launch capability coverage/);
+  assert.match(dashboard, /Visitor de-anonymization/);
+  assert.match(dashboard, /Intent signals and scoring/);
+  assert.match(dashboard, /Automated personalized outreach/);
+  assert.match(dashboard, /CRM handoff/);
+  assert.match(dashboard, /RB2B, Clearbit, Factors, Warmly/);
+  assert.match(dashboard, /native CRM OAuth is next/);
   assert.match(dashboard, /BriefNextMovesPanel/);
   assert.match(dashboard, /briefNextMoves/);
   assert.match(dashboard, /Review drafted outreach/);

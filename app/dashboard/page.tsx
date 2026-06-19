@@ -112,6 +112,11 @@ interface BriefChannelReadiness {
   connected_count: number;
 }
 
+interface BriefCapabilityReadiness {
+  push_signal_sources: number;
+  visitor_signals_7d: number;
+}
+
 interface BriefNextMove {
   icon: string;
   title: string;
@@ -562,6 +567,39 @@ async function loadBriefChannelReadiness(
   };
 }
 
+async function loadBriefCapabilityReadiness(
+  workspaceId: string,
+): Promise<BriefCapabilityReadiness> {
+  const pool = getPool();
+  const { rows } = await pool.query<{
+    push_signal_sources: string;
+    visitor_signals_7d: string;
+  }>(
+    `select
+       (select count(*)::text
+          from graph_sources gs
+         where gs.workspace_id = $1
+           and (
+             gs.config->>'adapter' = 'webhook'
+             or gs.properties->>'adapter' = 'webhook'
+           )) as push_signal_sources,
+       (select count(*)::text
+          from signals s
+         where s.workspace_id = $1
+           and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days'
+           and (
+             s.properties #>> '{structured,visitor_deanonymization}' = 'true'
+             or s.provenance->>'source' = 'visitor_deanonymization'
+             or s.provenance->>'provider' in ('rb2b','clearbit','factors','warmly')
+           )) as visitor_signals_7d`,
+    [workspaceId],
+  );
+  return {
+    push_signal_sources: Number(rows[0]?.push_signal_sources ?? 0),
+    visitor_signals_7d: Number(rows[0]?.visitor_signals_7d ?? 0),
+  };
+}
+
 async function loadBriefOutcomeInsights(
   workspaceId: string,
 ): Promise<BriefOutcomeInsight[]> {
@@ -776,6 +814,11 @@ const EMPTY_CHANNEL_READINESS: BriefChannelReadiness = {
   connected_count: 0,
 };
 
+const EMPTY_CAPABILITY_READINESS: BriefCapabilityReadiness = {
+  push_signal_sources: 0,
+  visitor_signals_7d: 0,
+};
+
 export default async function BriefPage() {
   const session = await getActiveWorkspaceSessionForDashboard("brief");
   if (!session) {
@@ -786,6 +829,7 @@ export default async function BriefPage() {
         signalHealth={EMPTY_SIGNAL_HEALTH}
         contactReadiness={EMPTY_CONTACT_READINESS}
         channelReadiness={EMPTY_CHANNEL_READINESS}
+        capabilityReadiness={EMPTY_CAPABILITY_READINESS}
         hotContacts={[]}
         outcomeInsights={[]}
         learning={EMPTY_LEARNING_INSIGHT}
@@ -799,6 +843,7 @@ export default async function BriefPage() {
     signalHealth,
     contactReadiness,
     channelReadiness,
+    capabilityReadiness,
     hotContacts,
     outcomeInsights,
     learning,
@@ -810,6 +855,7 @@ export default async function BriefPage() {
       signalHealth={signalHealth}
       contactReadiness={contactReadiness}
       channelReadiness={channelReadiness}
+      capabilityReadiness={capabilityReadiness}
       hotContacts={hotContacts}
       outcomeInsights={outcomeInsights}
       learning={learning}
@@ -826,6 +872,7 @@ async function loadBriefState(
   signalHealth: BriefSignalHealth;
   contactReadiness: BriefContactReadiness;
   channelReadiness: BriefChannelReadiness;
+  capabilityReadiness: BriefCapabilityReadiness;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
@@ -837,6 +884,7 @@ async function loadBriefState(
       signalHealth,
       contactReadiness,
       channelReadiness,
+      capabilityReadiness,
       hotContacts,
       outcomeInsights,
       learning,
@@ -847,6 +895,7 @@ async function loadBriefState(
         loadBriefSignalHealth(workspaceId),
         loadBriefContactReadiness(workspaceId),
         loadBriefChannelReadiness(workspaceId),
+        loadBriefCapabilityReadiness(workspaceId),
         loadBriefHotContacts(workspaceId),
         loadBriefOutcomeInsights(workspaceId),
         loadBriefLearningInsight(workspaceId),
@@ -857,6 +906,7 @@ async function loadBriefState(
       signalHealth,
       contactReadiness,
       channelReadiness,
+      capabilityReadiness,
       hotContacts,
       outcomeInsights,
       learning,
@@ -869,6 +919,7 @@ async function loadBriefState(
       signalHealth: EMPTY_SIGNAL_HEALTH,
       contactReadiness: EMPTY_CONTACT_READINESS,
       channelReadiness: EMPTY_CHANNEL_READINESS,
+      capabilityReadiness: EMPTY_CAPABILITY_READINESS,
       hotContacts: [],
       outcomeInsights: [],
       learning: EMPTY_LEARNING_INSIGHT,
@@ -882,6 +933,7 @@ function BriefView({
   signalHealth,
   contactReadiness,
   channelReadiness,
+  capabilityReadiness,
   hotContacts,
   outcomeInsights,
   learning,
@@ -892,6 +944,7 @@ function BriefView({
   signalHealth: BriefSignalHealth;
   contactReadiness: BriefContactReadiness;
   channelReadiness: BriefChannelReadiness;
+  capabilityReadiness: BriefCapabilityReadiness;
   hotContacts: BriefHotContact[];
   outcomeInsights: BriefOutcomeInsight[];
   learning: BriefLearningInsight;
@@ -947,6 +1000,15 @@ function BriefView({
 
       <BriefSignalToOutreachPanel
         actions={actions}
+        contactReadiness={contactReadiness}
+        draftedSignals7d={draftedSignals7d}
+        totalSent7d={totalSent7d}
+      />
+
+      <BriefCapabilityCoveragePanel
+        actions={actions}
+        capabilityReadiness={capabilityReadiness}
+        channelReadiness={channelReadiness}
         contactReadiness={contactReadiness}
         draftedSignals7d={draftedSignals7d}
         totalSent7d={totalSent7d}
@@ -1414,6 +1476,142 @@ function BriefSignalToOutreachPanel({
           {outcomeCount7d} reply or meeting signal
           {outcomeCount7d === 1 ? "" : "s"} for learning
         </span>
+      </div>
+    </section>
+  );
+}
+
+function BriefCapabilityCoveragePanel({
+  actions,
+  capabilityReadiness,
+  channelReadiness,
+  contactReadiness,
+  draftedSignals7d,
+  totalSent7d,
+}: {
+  actions: BriefActionState;
+  capabilityReadiness: BriefCapabilityReadiness;
+  channelReadiness: BriefChannelReadiness;
+  contactReadiness: BriefContactReadiness;
+  draftedSignals7d: number;
+  totalSent7d: number;
+}) {
+  const outreachReady =
+    (channelReadiness.email_connected || channelReadiness.linkedin_connected) &&
+    (draftedSignals7d > 0 || totalSent7d > 0);
+  const capabilities = [
+    {
+      icon: "radar",
+      label: "Visitor de-anonymization",
+      value:
+        capabilityReadiness.visitor_signals_7d > 0
+          ? `${capabilityReadiness.visitor_signals_7d} visits`
+          : capabilityReadiness.push_signal_sources > 0
+            ? `${capabilityReadiness.push_signal_sources} source${
+                capabilityReadiness.push_signal_sources === 1 ? "" : "s"
+              }`
+            : "Ready",
+      detail:
+        capabilityReadiness.visitor_signals_7d > 0
+          ? "Identified website visitors are entering the Signal path."
+          : "Signed visitor-intent webhook is ready for RB2B, Clearbit, Factors, Warmly, or custom events.",
+      href: "/dashboard/profile#tools",
+      ready:
+        capabilityReadiness.visitor_signals_7d > 0 ||
+        capabilityReadiness.push_signal_sources > 0,
+    },
+    {
+      icon: "auto_graph",
+      label: "Intent signals and scoring",
+      value: `${actions.qualified_signals_7d} scored`,
+      detail:
+        actions.qualified_signals_7d > 0
+          ? "Fresh Signals are qualifying through source quality, ICP fit, and match score."
+          : "Sources are ready, but no qualified timing evidence landed this week.",
+      href: "/dashboard/agent#qualified-signals",
+      ready: actions.qualified_signals_7d > 0,
+    },
+    {
+      icon: "send",
+      label: "Automated personalized outreach",
+      value: `${totalSent7d} sent`,
+      detail:
+        totalSent7d > 0
+          ? "Judged email and LinkedIn outreach has moved through Agent this week."
+          : `${draftedSignals7d} judged draft${
+              draftedSignals7d === 1 ? "" : "s"
+            } and ${contactReadiness.signal_backed} signal-backed contact${
+              contactReadiness.signal_backed === 1 ? "" : "s"
+            } are ready for Agent work.`,
+      href:
+        draftedSignals7d > 0
+          ? "/dashboard/agent#review-queue"
+          : "/dashboard/agent#qualified-signals",
+      ready: outreachReady,
+    },
+    {
+      icon: "corporate_fare",
+      label: "CRM handoff",
+      value: `${contactReadiness.signal_backed} contacts`,
+      detail:
+        contactReadiness.signal_backed > 0
+          ? "Qualified contacts are available through Bombsell MCP/API handoff; native CRM OAuth is next."
+          : "CRM handoff is available once qualified contacts clear signal and contact proof.",
+      href: "/dashboard/profile#tools",
+      ready: contactReadiness.signal_backed > 0,
+    },
+  ];
+
+  return (
+    <section className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Launch capability coverage
+          </p>
+          <p className="mt-1 max-w-[76ch] text-sm leading-6 text-[var(--color-text-3)]">
+            The core offer stays visible from Brief: identify visitors, score
+            intent, personalize outreach, and hand qualified contacts to CRM
+            workflows.
+          </p>
+        </div>
+        <Link href="/dashboard/profile#tools" className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          Output paths
+        </Link>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {capabilities.map((capability) => (
+          <Link
+            key={capability.label}
+            href={capability.href}
+            className="grid min-h-[150px] content-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] p-3 transition-colors hover:bg-[var(--color-ink-3)]"
+          >
+            <span className="flex items-start justify-between gap-3">
+              <span
+                className={
+                  "grid size-8 shrink-0 place-items-center rounded-[8px] " +
+                  (capability.ready
+                    ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+                    : "bg-[var(--color-warn-bg)] text-[var(--color-warn)]")
+                }
+              >
+                <Icon name={capability.icon} size={15} />
+              </span>
+              <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 font-mono text-[11px] text-[var(--color-text-3)]">
+                {capability.value}
+              </span>
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+                {capability.label}
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+                {capability.detail}
+              </span>
+            </span>
+          </Link>
+        ))}
       </div>
     </section>
   );
