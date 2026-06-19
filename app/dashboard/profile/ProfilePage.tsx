@@ -788,7 +788,7 @@ function ProfileSetupHub({
             : `${readiness.blockers.length} launch blocker${readiness.blockers.length === 1 ? "" : "s"} remaining before outreach can run.`}
         </p>
         <Link
-          href="/dashboard/agent#opportunities"
+          href="/dashboard/agent#qualified-signals"
           prefetch={false}
           className="btn-quiet-sm w-fit"
         >
@@ -808,7 +808,7 @@ function profileReadinessNextAction(
   );
   if (!blocker?.action) {
     return {
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       icon: "rocket_launch",
       label: "Open Agent",
     };
@@ -1147,12 +1147,12 @@ function ProfileLaunchModel({
             </PendingSubmitButton>
           </form>
           <Link
-            href="/dashboard/agent#opportunities"
+            href="/dashboard/agent#qualified-signals"
             prefetch={false}
             className="btn-quiet-sm w-fit"
           >
             <Icon name="arrow_forward" size={14} />
-            Open signal queue
+            Open qualified signals
           </Link>
         </div>
       </div>
@@ -1347,7 +1347,7 @@ function ProfileSignalBuilderPanel({
             </PendingSubmitButton>
           </form>
           <Link
-            href="/dashboard/agent#opportunities"
+            href="/dashboard/agent#qualified-signals"
             prefetch={false}
             className="btn-quiet-sm w-fit"
           >

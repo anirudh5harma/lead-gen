@@ -1022,7 +1022,7 @@ function BriefView({
               title="No signal-backed contacts yet"
               hint="Once qualified signals resolve to verified emails or LinkedIn profiles, the freshest people will appear here."
               cta={{
-                href: "/dashboard/agent#opportunities",
+                href: "/dashboard/agent#qualified-signals",
                 label: "Review signals",
                 icon: "person_search",
               }}
@@ -1141,7 +1141,7 @@ function BriefSnapshotPanel({
       label: "Qualified signals",
       day: actions.qualified_signals_24h,
       week: actions.qualified_signals_7d,
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
     },
     {
       icon: "mail",
@@ -1206,7 +1206,7 @@ function BriefSnapshotPanel({
               Qualified timing evidence by type.
             </p>
           </div>
-          <Link href="/dashboard/agent#opportunities" className="btn-quiet-sm">
+          <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
             <Icon name="arrow_forward" size={14} />
             Open signals
           </Link>
@@ -1332,7 +1332,7 @@ function BriefSignalToOutreachPanel({
       label: "Qualified signals",
       value: actions.qualified_signals_7d,
       detail: "Matched timing evidence",
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       ready: actions.qualified_signals_7d > 0,
     },
     {
@@ -1364,7 +1364,7 @@ function BriefSignalToOutreachPanel({
       label: "Judged drafts",
       value: draftedSignals7d,
       detail: "Drafts behind eval and review",
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       ready: draftedSignals7d > 0,
     },
     {
@@ -1679,7 +1679,7 @@ function briefPriority(
       action: "prepare_outreach",
       detail:
         "Qualified signals are ready, but no email or LinkedIn outreach has gone out this week.",
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       icon: "send",
       label: "Prepare outreach",
     };
@@ -1731,7 +1731,7 @@ function briefNextMoves(
       detail: `${actions.qualified_signals_7d} qualified signal${
         actions.qualified_signals_7d === 1 ? "" : "s"
       } are waiting for verified email or LinkedIn touches.`,
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       action: "Prepare",
       tone: "ready",
     });
@@ -1782,7 +1782,7 @@ function briefNextMoves(
       icon: "manage_search",
       title: "Resolve contact quality",
       detail: "Qualified signals become useful only after the agent finds verified emails or LinkedIn profiles.",
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       action: "Resolve",
       tone: "neutral",
     });
@@ -2084,7 +2084,7 @@ function SignalKindRow({ signal }: { signal: SignalKindMetric }) {
       : 0;
   return (
     <Link
-      href="/dashboard/agent#opportunities"
+      href="/dashboard/agent#qualified-signals"
       className="grid gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-3 transition-colors hover:border-[var(--color-line-3)] md:grid-cols-[minmax(0,1fr)_92px] md:items-center"
     >
       <span className="min-w-0">

@@ -435,7 +435,7 @@ export async function optimizePlaySkillsAction(formData: FormData) {
 
 export async function prepareQualifiedSignalsAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#opportunities");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#qualified-signals");
   await dispatchSignalPlaysOnce(
     { limit: numberValue(formData, "limit", 25) },
     session,
@@ -446,7 +446,7 @@ export async function prepareQualifiedSignalsAction(formData: FormData) {
 
 export async function resolveQualifiedSignalContactsAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#opportunities");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#qualified-signals");
   const signalId = value(formData, "signal_id");
   if (!signalId) {
     redirectWithToast(
@@ -586,7 +586,7 @@ export async function dismissQualifiedSignalAction(formData: FormData) {
         signal_id: signalId,
         reason:
           value(formData, "reason") ||
-          "Skipped from Agent because the opportunity is not a fit for outreach.",
+          "Skipped from Agent because the signal is not a fit for outreach.",
       },
       session,
     );
@@ -720,7 +720,7 @@ async function startAgentSourceCheck(
 
 export async function decideApprovalWithDraftAction(formData: FormData) {
   const session = await requireDashboardSession();
-  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#opportunities");
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#qualified-signals");
   const approvalId = value(formData, "approval_id");
   if (!approvalId) {
     redirectWithToast(

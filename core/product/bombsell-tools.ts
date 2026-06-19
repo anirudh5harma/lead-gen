@@ -1047,7 +1047,7 @@ function summarizeQualifiedSignals(
       contact_counts: counts,
       contacts,
       outreach_draft: summarizeDraft(signal.outreach_draft),
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
     };
   });
 }

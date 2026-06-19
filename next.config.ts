@@ -61,12 +61,12 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/dashboard/signals",
-        destination: "/dashboard/agent#opportunities",
+        destination: "/dashboard/agent#qualified-signals",
         permanent: false,
       },
       {
         source: "/dashboard/ingestion",
-        destination: "/dashboard/agent#opportunities",
+        destination: "/dashboard/agent#qualified-signals",
         permanent: false,
       },
       {

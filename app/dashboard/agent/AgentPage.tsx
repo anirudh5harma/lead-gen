@@ -1633,7 +1633,7 @@ function AgentCommandStrip({
       aria-label="Agent launch commands"
     >
       <AgentCommandLink
-        href="/dashboard/agent#opportunities"
+        href="/dashboard/agent#qualified-signals"
         icon={<Icon name="sensors" size={17} />}
         title="Qualified signals"
         value={opportunities.stats.qualified}
@@ -1697,7 +1697,7 @@ function AgentCommandStrip({
         {readiness.launch_ready ? (
           <form action={prepareQualifiedSignalsAction}>
             <input type="hidden" name="limit" value="25" />
-            <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+            <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
             <PendingSubmitButton
               className="btn-solid-sm w-fit"
               icon="send"
@@ -1785,7 +1785,7 @@ function AgentModeRail({
       ready: sent7d > 0,
     },
     {
-      href: "#opportunities",
+      href: "#qualified-signals",
       icon: "sensors",
       label: "Signals",
       value: opportunities.stats.qualified,
@@ -1991,7 +1991,7 @@ function AgentSetupSnapshot({
           <Link
             href={
               readiness.launch_ready
-                ? "/dashboard/agent#opportunities"
+                ? "/dashboard/agent#qualified-signals"
                 : nextAction.href
             }
             prefetch={false}
@@ -2383,7 +2383,7 @@ function AgentSystemPanel({
             strategy.sources[0]?.name ??
             "Profile setup creates launch, hiring, funding, and competitor sources."
           }
-          href="/dashboard/agent#opportunities"
+          href="/dashboard/agent#qualified-signals"
           action="Open signals"
           ready={activeSources > 0}
         />
@@ -2525,7 +2525,7 @@ function AgentGetStartedChecklist({
       title: "Qualified signal sources",
       detail: "The Agent is watching sources for fresh timing evidence.",
       blocked: "Check sources so the Agent can find qualified signals.",
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       icon: "sensors",
       ready: launchChecksReady(readiness, ["signal_sources"]),
     },
@@ -2746,14 +2746,15 @@ function AgentOpportunityPanel({
   opportunities: QualifiedSignalWorkbench;
 }) {
   return (
-    <div id="opportunities" className="scroll-mt-28">
+    <div id="qualified-signals" className="scroll-mt-28">
+      <span id="opportunities" className="sr-only" aria-hidden="true" />
       <SurfaceSection
         title="Qualified signals"
         action={
           <div className="flex flex-wrap items-center gap-2">
             <form action={prepareQualifiedSignalsAction}>
               <input type="hidden" name="limit" value="25" />
-              <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
               <PendingSubmitButton
                 className="btn-solid-sm"
                 icon="send"
@@ -2898,7 +2899,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
         {draft?.pending_approval_id ? (
           <>
             <form action={decideApprovalWithDraftAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
               <input
                 type="hidden"
                 name="approval_id"
@@ -2915,7 +2916,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
               </PendingSubmitButton>
             </form>
             <form action={decideApprovalWithDraftAction}>
-              <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+              <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
               <input
                 type="hidden"
                 name="approval_id"
@@ -2937,7 +2938,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
           <ContactQualificationControls
             personId={contact.person_id}
             currentDecision={contact.contact_fit_decision}
-            returnTo="/dashboard/agent#opportunities"
+            returnTo="/dashboard/agent#qualified-signals"
             compact
           />
         ) : null}
@@ -2953,7 +2954,7 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
         {needsContactResolution(signal) ? (
           <form action={resolveQualifiedSignalContactsAction}>
             <input type="hidden" name="signal_id" value={signal.id} />
-            <input type="hidden" name="return_to" value="/dashboard/agent#opportunities" />
+            <input type="hidden" name="return_to" value="/dashboard/agent#qualified-signals" />
             <PendingSubmitButton
               className="btn-quiet-sm"
               icon="person_search"
@@ -2970,9 +2971,9 @@ function AgentOpportunityLink({ signal }: { signal: QualifiedSignalItem }) {
           <input
             type="hidden"
             name="reason"
-            value="Skipped from Agent because the opportunity is not a fit for outreach."
+            value="Skipped from Agent because the signal is not a fit for outreach."
           />
-          <button type="submit" className="btn-quiet-sm" title="Skip opportunity">
+          <button type="submit" className="btn-quiet-sm" title="Skip signal">
             <Icon name="block" size={14} />
             Skip
           </button>
@@ -3109,7 +3110,7 @@ function opportunityHref(
     );
   }
   if (contact?.person_id) return `/dashboard/agent/contacts/${contact.person_id}`;
-  return "/dashboard/agent#opportunities";
+  return "/dashboard/agent#qualified-signals";
 }
 
 function AgentContactsPanel({
@@ -3747,7 +3748,7 @@ function AgentOperatingLoopPanel({
       title: "Qualified signals",
       value: opportunities.stats.qualified,
       detail: `${opportunities.stats.with_verified_contacts} with verified contacts`,
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       tone: "fit" as const,
     },
     {
@@ -3763,7 +3764,7 @@ function AgentOperatingLoopPanel({
       title: "Judged drafts",
       value: opportunities.stats.with_outreach_draft,
       detail: `${opportunities.stats.ready_for_review} need review`,
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       tone: "waiting" as const,
     },
     {
@@ -3886,8 +3887,8 @@ function AgentModeCards({
       statLabel: "Qualified",
       statValue: opportunities.stats.qualified,
       meta: `${activeSources} active source${activeSources === 1 ? "" : "s"}`,
-      href: "/dashboard/agent#opportunities",
-      cta: "Open signal queue",
+      href: "/dashboard/agent#qualified-signals",
+      cta: "Open qualified signals",
       ready: activeSources > 0,
     },
     {
@@ -3983,7 +3984,7 @@ function AgentHotSignalPaths({
             trace.
           </p>
         </div>
-        <Link href="/dashboard/agent#opportunities" className="btn-quiet-sm">
+        <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
           <Icon name="arrow_forward" size={14} />
           Open queue
         </Link>
@@ -4159,7 +4160,7 @@ function AgentReviewQueuePanel({
         title="Review queue"
         action={
           reviews.pending_count > 0 ? (
-            <Link href="/dashboard/agent#opportunities" className="btn-quiet-sm">
+            <Link href="/dashboard/agent#qualified-signals" className="btn-quiet-sm">
               <Icon name="sensors" size={14} />
               Open signals
             </Link>
@@ -4171,7 +4172,7 @@ function AgentReviewQueuePanel({
             title="No outreach waiting on review"
             hint="When judged email or LinkedIn drafts need a send decision, they will appear here before the Agent can continue."
             cta={{
-              href: "/dashboard/agent#opportunities",
+              href: "/dashboard/agent#qualified-signals",
               label: "Review signals",
               icon: "rate_review",
             }}
@@ -4319,7 +4320,7 @@ function readinessNextAction(readiness: WorkspaceLaunchReadiness): {
   }
   if (readiness.launch_ready) {
     return {
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
       icon: "send",
       label: "Prepare outreach",
     };

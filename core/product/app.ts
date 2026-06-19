@@ -6131,7 +6131,7 @@ export async function dismissProductSignal(
   await assertProductWorkspaceAccess(session, engine.pool);
   const reason =
     input.reason?.trim() ||
-    "Skipped from Agent because the opportunity is not a fit for outreach.";
+    "Skipped from Agent because the signal is not a fit for outreach.";
   const { rows } = await engine.pool.query<{ status: string }>(
     `select status::text as status
        from signals
@@ -12072,7 +12072,7 @@ function operatingBriefNextAction(
       label: "Prepare outreach",
       detail:
         "Qualified signals are ready, but no email or LinkedIn outreach has gone out this week.",
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#qualified-signals",
     };
   }
   return {

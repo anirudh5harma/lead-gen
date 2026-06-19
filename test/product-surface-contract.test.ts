@@ -147,11 +147,11 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   );
   assert.match(
     source("app/dashboard/signals/page.tsx"),
-    /redirect\("\/dashboard\/agent#opportunities"\)/,
+    /redirect\("\/dashboard\/agent#qualified-signals"\)/,
   );
   assert.match(
     source("app/dashboard/ingestion/page.tsx"),
-    /redirect\("\/dashboard\/agent#opportunities"\)/,
+    /redirect\("\/dashboard\/agent#qualified-signals"\)/,
   );
   assert.match(
     source("app/dashboard/prospects/page.tsx"),
@@ -212,7 +212,7 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   assert.match(nextConfig, /destination: "\/dashboard\/profile#profile"/);
   assert.match(nextConfig, /destination: "\/dashboard\/profile#channels"/);
   assert.match(nextConfig, /destination: "\/dashboard\/profile#tools"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/agent#opportunities"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent#qualified-signals"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent\/contacts\/:id"/);
   assert.match(nextConfig, /destination: "\/dashboard\/agent#outreach"/);
@@ -279,7 +279,7 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.doesNotMatch(weekDmMetric, /linkedin_connection|linkedin_comment/);
   assert.match(dashboard, /Replies/);
   assert.match(dashboard, /Meetings/);
-  assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
+  assert.match(dashboard, /href="\/dashboard\/agent#qualified-signals"/);
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
   assert.match(dashboard, /href="\/dashboard\/brief#reply-insights"/);
   assert.match(dashboard, /id="reply-insights" className="scroll-mt-28"/);
@@ -423,7 +423,7 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /No signal-backed contacts yet/);
   assert.match(dashboard, /href: "\/dashboard\/profile#profile"/);
   assert.match(dashboard, /href="\/dashboard\/agent#outreach"/);
-  assert.match(dashboard, /href="\/dashboard\/agent#opportunities"/);
+  assert.match(dashboard, /href="\/dashboard\/agent#qualified-signals"/);
   assert.match(dashboard, /\/dashboard\/agent\/outreach\/\$\{insight\.conversation_id\}/);
   assert.match(source("app/dashboard/brief/page.tsx"), /dynamic = "force-dynamic"/);
   assert.match(source("app/dashboard/brief/page.tsx"), /from "\.\.\/page"/);
@@ -480,7 +480,7 @@ test("Profile presents separate Outlook and LinkedIn connection gates", () => {
   assert.match(settings, /return_to" value="\/dashboard\/profile#signal-setup"/);
   assert.match(settings, /Email channel/);
   assert.match(settings, /LinkedIn channel/);
-  assert.match(settings, /Open signal queue/);
+  assert.match(settings, /Open qualified signals/);
   assert.match(settings, /checkAgentSourcesAction/);
   assert.match(settings, /Check sources/);
   assert.match(settings, /profileSignalList/);
@@ -488,7 +488,7 @@ test("Profile presents separate Outlook and LinkedIn connection gates", () => {
   assert.match(settings, /Agent and buyer fit/);
   assert.match(settings, /Contact quality/);
   assert.match(settings, /Control mode/);
-  assert.match(settings, /href="\/dashboard\/agent#opportunities"/);
+  assert.match(settings, /href="\/dashboard\/agent#qualified-signals"/);
   assert.match(settings, /turn quality signals into email or LinkedIn touches/);
   assert.match(settings, /Email integration/);
   assert.match(settings, /LinkedIn integration/);
@@ -704,7 +704,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.doesNotMatch(reps, /id="sources" className="scroll-mt-28"/);
   assert.match(reps, /id="activity"/);
   assert.match(reps, /id="review-queue" className="scroll-mt-28"/);
-  assert.match(reps, /id="opportunities" className="scroll-mt-28"/);
+  assert.match(reps, /id="qualified-signals" className="scroll-mt-28"/);
+  assert.match(reps, /id="opportunities" className="sr-only"/);
   assert.match(reps, /id="system" className="scroll-mt-28"/);
   assert.doesNotMatch(reps, /runAgentSourceNowAction/);
   assert.doesNotMatch(reps, /Run now/);
@@ -750,16 +751,16 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /aria-label="Contact qualification"/);
   assert.match(reps, /name="person_id" value=\{personId\}/);
   assert.match(reps, /name="decision" value=\{option\.decision\}/);
-  assert.match(reps, /returnTo="\/dashboard\/agent#opportunities"/);
+  assert.match(reps, /returnTo="\/dashboard\/agent#qualified-signals"/);
   assert.match(reps, /returnTo="\/dashboard\/agent#verified-contacts"/);
   assert.match(reps, /Good fit/);
   assert.match(reps, /Not fit/);
   assert.match(reps, /draftOpportunityLabel\(draft\.status, draft\.channel\)/);
   assert.match(reps, /opportunityHref\(signal, contact\)/);
-  assert.match(reps, /return "\/dashboard\/agent#opportunities"/);
+  assert.match(reps, /return "\/dashboard\/agent#qualified-signals"/);
   assert.match(reps, /sentDraftHref\(\s*signal\.outreach_draft\.conversation_id/);
   assert.match(reps, /dismissQualifiedSignalAction/);
-  assert.match(reps, /Skip opportunity/);
+  assert.match(reps, /Skip signal/);
   assert.match(reps, /name="signal_id" value=\{signal\.id\}/);
   assert.match(reps, /Contact workbench/);
   assert.match(reps, /Signal-ready contacts show why now, score, email verification/);
@@ -882,7 +883,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /href=\{sentDraftHref\(message\.conversation_id, message\.id\)\}/);
   assert.match(reps, /#message-\$\{messageId\}/);
   assert.match(reps, /decideApprovalWithDraftAction/);
-  assert.match(reps, /value="\/dashboard\/agent#opportunities"/);
+  assert.match(reps, /value="\/dashboard\/agent#qualified-signals"/);
   assert.match(reps, /value=\{draft\.pending_approval_id\}/);
   assert.doesNotMatch(reps, /signal\.email_draft/);
   assert.match(reps, /id="learning" className="scroll-mt-28"/);
@@ -1322,7 +1323,7 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(productApp, /runWorkspaceSourcePollNow/);
   assert.match(productApp, /workflow_name: WORKSPACE_POLL_WORKFLOW/);
   assert.match(productApp, /workspace-source-manual/);
-  assert.match(signals, /redirect\("\/dashboard\/agent#opportunities"\)/);
+  assert.match(signals, /redirect\("\/dashboard\/agent#qualified-signals"\)/);
   assert.match(reps, /Qualified signals/);
   assert.match(reps, /score, email verification,\s+LinkedIn profile, fit, and outreach state/);
   assert.match(reps, /signalScoreLabel/);
@@ -1378,8 +1379,8 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"\/dashboard\/content", destination: "\/dashboard\/agent"/);
   assert.match(verifier, /"\/dashboard\/aeo", destination: "\/dashboard\/agent"/);
   assert.match(verifier, /"\/dashboard\/plays", destination: "\/dashboard\/agent#learning"/);
-  assert.match(verifier, /"\/dashboard\/signals", destination: "\/dashboard\/agent#opportunities"/);
-  assert.match(verifier, /"\/dashboard\/ingestion", destination: "\/dashboard\/agent#opportunities"/);
+  assert.match(verifier, /"\/dashboard\/signals", destination: "\/dashboard\/agent#qualified-signals"/);
+  assert.match(verifier, /"\/dashboard\/ingestion", destination: "\/dashboard\/agent#qualified-signals"/);
   assert.match(verifier, /"\/dashboard\/prospects", destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(verifier, /"\/dashboard\/conversations", destination: "\/dashboard\/agent#outreach"/);
   assert.match(verifier, /"\/dashboard\/review", destination: "\/dashboard\/agent#review-queue"/);
