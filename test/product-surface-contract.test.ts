@@ -1481,8 +1481,10 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(outputDestinations, /Social outreach/);
   assert.match(outputDestinations, /Agent API/);
   assert.match(outputDestinations, /Claude Code \+ MCP/);
+  assert.match(outputDestinations, /href: "\/dashboard\/profile#claude-code"/);
   assert.match(settings, /Use Bombsell in Claude Code/);
   assert.match(settings, /McpAccessPanel/);
+  assert.match(settings, /id="claude-code"/);
   assert.match(settings, /Claude Code access/);
   assert.match(settings, /Browser-authorized MCP sessions/);
   assert.match(settings, /Direct MCP setup/);
@@ -1567,7 +1569,7 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /id="agent"/);
   assert.match(settings, /id="motion"/);
   assert.match(settings, /id="tools"/);
-  assert.match(outputDestinations, /href: "\/dashboard\/profile#tools"/);
+  assert.match(outputDestinations, /href: "\/dashboard\/profile#claude-code"/);
   assert.match(settings, /Agent inputs and outreach templates/);
   assert.match(settings, /AI outreach template/);
   assert.match(settings, /name="rep_story"/);

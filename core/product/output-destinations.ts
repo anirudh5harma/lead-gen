@@ -62,7 +62,7 @@ export function buildOutputDestinations(
       detail:
         "External agents can read Brief, Profile proposals, qualified signals, sent outreach, drafts, approvals, and reply learning through Bombsell MCP tools.",
       handoff_stage: "agent_api",
-      href: "/dashboard/profile#tools",
+      href: "/dashboard/profile#claude-code",
       tools: [
         "bombsell.brief.get",
         "bombsell.signals.list_qualified",

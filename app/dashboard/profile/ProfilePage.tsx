@@ -1951,7 +1951,10 @@ function McpAccessPanel({
 }) {
   const activeCount = tokens.filter((token) => new Date(token.expires_at).getTime() > Date.now()).length;
   return (
-    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+    <div
+      id="claude-code"
+      className="scroll-mt-28 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[var(--color-text-1)]">
