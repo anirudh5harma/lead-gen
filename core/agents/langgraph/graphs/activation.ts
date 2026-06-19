@@ -47,6 +47,7 @@ export interface ActivationSetupGraphInput {
   social_proof?: string;
   signal_keywords?: string;
   competitor_watchlist?: string;
+  linkedin_signal_behaviors?: string;
   exclusion_rules?: string;
   preferred_language?: string;
   outreach_goal?: string;
@@ -71,6 +72,7 @@ export interface ActivationProfileDraft {
   social_proof?: string | null;
   signal_keywords?: string | null;
   competitor_watchlist?: string | null;
+  linkedin_signal_behaviors?: string | null;
   exclusion_rules?: string | null;
   preferred_language?: string | null;
   outreach_goal?: string | null;
@@ -241,6 +243,7 @@ export function createActivationSetupGraph(
               social_proof: input.social_proof ?? null,
               signal_keywords: input.signal_keywords ?? null,
               competitor_watchlist: input.competitor_watchlist ?? null,
+              linkedin_signal_behaviors: input.linkedin_signal_behaviors ?? null,
               exclusion_rules: input.exclusion_rules ?? null,
               preferred_language: input.preferred_language ?? null,
               outreach_goal: input.outreach_goal ?? null,
@@ -363,6 +366,8 @@ export function createActivationSetupGraph(
                 social_proof: profile.social_proof ?? undefined,
                 signal_keywords: profile.signal_keywords ?? undefined,
                 competitor_watchlist: profile.competitor_watchlist ?? undefined,
+                linkedin_signal_behaviors:
+                  profile.linkedin_signal_behaviors ?? undefined,
                 exclusion_rules: profile.exclusion_rules ?? undefined,
                 preferred_language: profile.preferred_language ?? undefined,
                 outreach_goal: profile.outreach_goal ?? undefined,
@@ -473,6 +478,7 @@ export function createActivationSetupGraph(
               description: profile.description,
               signal_keywords: profile.signal_keywords,
               competitor_watchlist: profile.competitor_watchlist,
+              linkedin_signal_behaviors: profile.linkedin_signal_behaviors,
               signal_kind: icp.signal_kind,
             },
             {
@@ -632,6 +638,9 @@ function activationInputFromState(
     social_proof: stringOrUndefined(state.attributes?.social_proof),
     signal_keywords: stringOrUndefined(state.attributes?.signal_keywords),
     competitor_watchlist: stringOrUndefined(state.attributes?.competitor_watchlist),
+    linkedin_signal_behaviors: stringOrUndefined(
+      state.attributes?.linkedin_signal_behaviors,
+    ),
     exclusion_rules: stringOrUndefined(state.attributes?.exclusion_rules),
     preferred_language: stringOrUndefined(state.attributes?.preferred_language),
     outreach_goal: stringOrUndefined(state.attributes?.outreach_goal),
@@ -701,6 +710,7 @@ function profileDraftFromState(
     social_proof: input.social_proof?.trim() || null,
     signal_keywords: input.signal_keywords?.trim() || null,
     competitor_watchlist: input.competitor_watchlist?.trim() || null,
+    linkedin_signal_behaviors: input.linkedin_signal_behaviors?.trim() || null,
     exclusion_rules: input.exclusion_rules?.trim() || null,
     preferred_language: input.preferred_language?.trim() || null,
     outreach_goal: input.outreach_goal?.trim() || null,
@@ -745,6 +755,7 @@ function icpDraftFromProfile(
   const markets = splitSetupLines(profile.target_markets);
   const keywords = splitSetupLines(profile.signal_keywords);
   const competitors = splitSetupLines(profile.competitor_watchlist);
+  const linkedInBehaviors = splitSetupLines(profile.linkedin_signal_behaviors);
   const exclusions = splitSetupLines(profile.exclusion_rules);
   const roleText = roles.length ? ` Buyer roles: ${roles.join(", ")}.` : "";
   const marketText = markets.length
@@ -766,6 +777,9 @@ function icpDraftFromProfile(
       ...markets.slice(0, 5).map((target) => `Target market: ${target}`),
       ...keywords.slice(0, 6).map((keyword) => `Signal keyword: ${keyword}`),
       ...competitors.slice(0, 5).map((name) => `Competitor watch: ${name}`),
+      ...linkedInBehaviors
+        .slice(0, 5)
+        .map((behavior) => `LinkedIn behavior: ${behavior}`),
       ...exclusions.slice(0, 5).map((rule) => `Exclude: ${rule}`),
     ],
     inferred_from: {

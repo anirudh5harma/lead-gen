@@ -1188,9 +1188,13 @@ function ProfileSignalBuilderPanel({
   const markets = splitProfileTerms(profile?.target_markets);
   const keywords = splitProfileTerms(profile?.signal_keywords);
   const competitors = splitProfileTerms(profile?.competitor_watchlist);
+  const linkedInBehaviors = profileLinkedInBehaviors(profile);
   const exclusions = splitProfileTerms(profile?.exclusion_rules);
   const signalCount =
-    keywords.length + competitors.length + state.signalSetup.activeSources;
+    keywords.length +
+    competitors.length +
+    linkedInBehaviors.length +
+    state.signalSetup.activeSources;
   const fitGate = state.icp
     ? Math.round(Number(state.icp.match_threshold) * 100)
     : 0;
@@ -1280,6 +1284,11 @@ function ProfileSignalBuilderPanel({
             label="Watched terms"
             values={[...keywords, ...competitors]}
             empty="Add keywords or competitors"
+          />
+          <SetupChipGroup
+            label="LinkedIn behavior"
+            values={linkedInBehaviors}
+            empty="Choose LinkedIn behaviors"
           />
           <SetupChipGroup
             label="Source categories"
@@ -1472,6 +1481,7 @@ function profileSignalList(profile: ProductCompanyProfile | null): string[] {
   const terms = [
     ...splitProfileTerms(profile?.signal_keywords),
     ...splitProfileTerms(profile?.competitor_watchlist),
+    ...profileLinkedInBehaviors(profile),
     ...(profile?.exa_market_terms ?? []),
     ...(profile?.exa_competitor_mentions ?? []),
   ];
@@ -1486,6 +1496,12 @@ function profileSignalList(profile: ProductCompanyProfile | null): string[] {
     if (compact.length === 5) break;
   }
   return compact;
+}
+
+function profileLinkedInBehaviors(
+  profile: ProductCompanyProfile | null,
+): string[] {
+  return splitProfileTerms(profile?.linkedin_signal_behaviors);
 }
 
 function splitProfileTerms(value: string | null | undefined): string[] {
@@ -2215,6 +2231,15 @@ function CompanyProfileForm({
           rows={4}
         />
       </div>
+      <TextArea
+        name="linkedin_signal_behaviors"
+        label="LinkedIn behavior to watch"
+        defaultValue={
+          profile?.linkedin_signal_behaviors ??
+          "Company and team engagement\nKeyworded post likes and comments\nRelevant LinkedIn profiles\nCompetitor engagement"
+        }
+        rows={4}
+      />
       <TextArea
         name="exclusion_rules"
         label="Do not contact"

@@ -1129,6 +1129,9 @@ test("message personalization uses Profile ingredients before outreach drafts", 
   assert.match(productApp, /\["Social proof", profile\.social_proof\]/);
   assert.match(productApp, /\["Buyer roles", profile\.target_titles\]/);
   assert.match(productApp, /\["Target markets", profile\.target_markets\]/);
+  assert.match(productApp, /\["Signal keywords", profile\.signal_keywords\]/);
+  assert.match(productApp, /\["Competitors to watch", profile\.competitor_watchlist\]/);
+  assert.match(productApp, /\["LinkedIn behavior to watch", profile\.linkedin_signal_behaviors\]/);
   assert.match(productApp, /\["Outreach goal", profile\.outreach_goal\]/);
   assert.match(productApp, /\["Message tone", profile\.message_tone\]/);
   assert.match(productApp, /\["LinkedIn company page", profile\.linkedin_company_url\]/);
@@ -1446,6 +1449,10 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /Social proof/);
   assert.match(settings, /Signal keywords/);
   assert.match(settings, /Competitors to watch/);
+  assert.match(settings, /LinkedIn behavior to watch/);
+  assert.match(settings, /name="linkedin_signal_behaviors"/);
+  assert.match(settings, /Company and team engagement/);
+  assert.match(settings, /Keyworded post likes and comments/);
   assert.match(settings, /Do not contact/);
   assert.match(settings, /Preferred language/);
   assert.match(settings, /Outreach goal/);
@@ -1511,6 +1518,7 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(actions, /target_markets/);
   assert.match(actions, /signal_keywords/);
   assert.match(actions, /competitor_watchlist/);
+  assert.match(actions, /linkedin_signal_behaviors/);
   assert.match(actions, /exclusion_rules/);
   assert.match(actions, /auto_enrich_email_addresses/);
   assert.match(actions, /prevent_team_contact_duplication/);
@@ -1800,6 +1808,7 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(onboardingActions, /target_markets/);
   assert.match(onboardingActions, /signal_keywords/);
   assert.match(onboardingActions, /competitor_watchlist/);
+  assert.match(onboardingActions, /linkedin_signal_behaviors/);
   assert.match(onboardingActions, /exclusion_rules/);
   assert.match(onboardingActions, /preferred_language/);
   assert.match(onboardingActions, /runWorkspaceSignalIngestion/);
@@ -1813,6 +1822,7 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(activationGraph, /Target market:/);
   assert.match(activationGraph, /Signal keyword:/);
   assert.match(activationGraph, /Competitor watch:/);
+  assert.match(activationGraph, /LinkedIn behavior:/);
   assert.match(activationGraph, /Exclude:/);
   assert.match(activationGraph, /outreach_goal/);
   assert.match(activationGraph, /message_tone/);
@@ -1832,6 +1842,7 @@ test("onboarding website setup starts activation then durable Signal ingestion",
     /await ensureDefaultRepTeam\(engine, session\.workspace_id, session\.user_id\)/,
   );
   assert.match(onboardingForm, /createActivationSetupFormAction/);
+  assert.match(onboardingForm, /name="linkedin_signal_behaviors"/);
   assert.doesNotMatch(onboardingForm, /createProfileAndAggregatorFormAction/);
   assert.match(productTools, /name: "product\.activation\.setup\.run"/);
   assert.match(productTools, /industry_hint/);
@@ -1840,6 +1851,7 @@ test("onboarding website setup starts activation then durable Signal ingestion",
   assert.match(productTools, /target_markets/);
   assert.match(productTools, /signal_keywords/);
   assert.match(productTools, /competitor_watchlist/);
+  assert.match(productTools, /linkedin_signal_behaviors/);
   assert.match(productTools, /exclusion_rules/);
   assert.match(productTools, /preferred_language/);
   assert.match(productTools, /runWorkspaceActivationSetup/);

@@ -27,6 +27,7 @@ Use this skill when the user wants Bombsell to learn from the current repository
    - `social_proof`
    - `signal_keywords`
    - `competitor_watchlist`
+   - `linkedin_signal_behaviors`
    - `exclusion_rules`
    - `preferred_language`
    - `outreach_goal`

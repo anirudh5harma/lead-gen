@@ -120,6 +120,8 @@ async function createActivationSetup(formData: FormData): Promise<void> {
       social_proof: value(formData, "social_proof") || undefined,
       signal_keywords: value(formData, "signal_keywords") || undefined,
       competitor_watchlist: value(formData, "competitor_watchlist") || undefined,
+      linkedin_signal_behaviors:
+        value(formData, "linkedin_signal_behaviors") || undefined,
       exclusion_rules: value(formData, "exclusion_rules") || undefined,
       preferred_language: value(formData, "preferred_language") || undefined,
       outreach_goal: value(formData, "outreach_goal") || undefined,

@@ -199,6 +199,7 @@ const ProfileProposalSchema = WorkspaceResultSchema.extend({
     social_proof: z.string().nullable(),
     signal_keywords: z.string().nullable(),
     competitor_watchlist: z.string().nullable(),
+    linkedin_signal_behaviors: z.string().nullable(),
     exclusion_rules: z.string().nullable(),
     preferred_language: z.string().nullable(),
     outreach_goal: z.string().nullable(),
@@ -566,6 +567,7 @@ export function registerBombsellAliasTools(): void {
       social_proof: z.string().min(1).optional(),
       signal_keywords: z.string().min(1).optional(),
       competitor_watchlist: z.string().min(1).optional(),
+      linkedin_signal_behaviors: z.string().min(1).optional(),
       exclusion_rules: z.string().min(1).optional(),
       preferred_language: z.string().min(1).optional(),
       outreach_goal: z.string().min(1).optional(),
@@ -593,6 +595,7 @@ export function registerBombsellAliasTools(): void {
         social_proof: clean(input.social_proof),
         signal_keywords: clean(input.signal_keywords),
         competitor_watchlist: clean(input.competitor_watchlist),
+        linkedin_signal_behaviors: clean(input.linkedin_signal_behaviors),
         exclusion_rules: clean(input.exclusion_rules),
         preferred_language: clean(input.preferred_language) ?? "English (US)",
         outreach_goal: clean(input.outreach_goal) ?? "conversations",
@@ -1112,8 +1115,13 @@ function isDraftReady(
 function inferProfileSignalKind(input: {
   repo_context: string;
   signal_keywords?: string;
+  linkedin_signal_behaviors?: string;
 }): z.infer<typeof ProfileSignalKindSchema> {
-  const text = `${input.signal_keywords ?? ""}\n${input.repo_context}`.toLowerCase();
+  const text = [
+    input.signal_keywords ?? "",
+    input.linkedin_signal_behaviors ?? "",
+    input.repo_context,
+  ].join("\n").toLowerCase();
   if (/\b(funding|series [abc]|raised|investor)\b/.test(text)) return "funding";
   if (/\b(hiring|headcount|jobs?|careers?|recruiting)\b/.test(text)) return "hiring";
   if (/\b(launch|released|shipping|new product|changelog)\b/.test(text)) {
@@ -1132,11 +1140,15 @@ function inferProfileSignalKind(input: {
 
 function proposalNiceToHaves(input: {
   signal_keywords?: string;
+  linkedin_signal_behaviors?: string;
   integrations?: string[];
   source_urls?: string[];
 }): string[] {
   return unique([
     ...lines(input.signal_keywords).slice(0, 6),
+    ...lines(input.linkedin_signal_behaviors)
+      .slice(0, 4)
+      .map((value) => `LinkedIn behavior: ${value}`),
     ...(input.integrations ?? []).map((value) => `Uses ${value}`),
     ...(input.source_urls ?? []).slice(0, 3),
   ]).slice(0, 10);
@@ -1146,6 +1158,7 @@ function proposalSources(input: {
   website_url?: string;
   signal_keywords?: string;
   competitor_watchlist?: string;
+  linkedin_signal_behaviors?: string;
   source_urls?: string[];
 }): Array<z.infer<typeof ProfileProposalSchema>["source_recommendations"][number]> {
   const sources: Array<z.infer<typeof ProfileProposalSchema>["source_recommendations"][number]> = [];
@@ -1171,6 +1184,15 @@ function proposalSources(input: {
       kind: "competitor_watch",
       reason: "Watch competitor movement and migration timing signals.",
       value: competitor,
+    });
+  }
+  for (const behavior of lines(input.linkedin_signal_behaviors).slice(0, 5)) {
+    sources.push({
+      label: `LinkedIn behavior: ${behavior}`,
+      kind: "linkedin_behavior",
+      reason:
+        "Track concrete LinkedIn engagement that can become verified contacts and DM-ready profiles.",
+      value: behavior,
     });
   }
   for (const url of (input.source_urls ?? []).slice(0, 5)) {

@@ -230,6 +230,8 @@ test("product tools: activation setup exposes setup and initial Signal ingestion
     social_proof: "Used by founder-led GTM teams.",
     signal_keywords: "intent data\nlinkedin prospecting",
     competitor_watchlist: "Apollo.io\nZoomInfo",
+    linkedin_signal_behaviors:
+      "Company and team engagement\nKeyworded post likes and comments",
     exclusion_rules: "Service providers\nOpen to work",
     preferred_language: "English (US)",
     outreach_goal: "conversations",
@@ -240,6 +242,10 @@ test("product tools: activation setup exposes setup and initial Signal ingestion
   assert.equal(parsedInput.website_url, "acme.ai");
   assert.equal(parsedInput.target_titles, "VP of Sales\nHead of Growth");
   assert.equal(parsedInput.signal_keywords, "intent data\nlinkedin prospecting");
+  assert.equal(
+    parsedInput.linkedin_signal_behaviors,
+    "Company and team engagement\nKeyworded post likes and comments",
+  );
   assert.equal(parsedInput.outreach_goal, "conversations");
   assert.equal(parsedInput.message_tone, "professional");
   assert.equal(parsedInput.wait, false);
@@ -1080,6 +1086,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       website_url: string | null;
       value_proposition: string | null;
       signal_keywords: string | null;
+      linkedin_signal_behaviors: string | null;
     };
     icp_draft: {
       signal_kind: string;
@@ -1106,6 +1113,8 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       target_titles: "VP of Sales\nHead of Growth",
       target_markets: "North America\nB2B SaaS",
       signal_keywords: "funding\nlinkedin prospecting",
+      linkedin_signal_behaviors:
+        "Company and team engagement\nKeyworded post likes and comments",
       integrations: ["Outlook", "LinkedIn"],
     },
     { workspace_id, user_id },
@@ -1117,11 +1126,25 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     profileProposal.profile_patch.value_proposition,
     "Turns quality signals into verified outreach.",
   );
+  assert.equal(
+    profileProposal.profile_patch.linkedin_signal_behaviors,
+    "Company and team engagement Keyworded post likes and comments",
+  );
   assert.equal(profileProposal.icp_draft.signal_kind, "funding");
   assert.deepEqual(profileProposal.icp_draft.nice_to_haves.slice(0, 2), [
     "funding",
     "linkedin prospecting",
   ]);
+  assert.ok(
+    profileProposal.icp_draft.nice_to_haves.some((item) =>
+      item.includes("LinkedIn behavior: Company and team engagement"),
+    ),
+  );
+  assert.ok(
+    profileProposal.source_recommendations.some(
+      (source) => source.kind === "linkedin_behavior",
+    ),
+  );
   assert.equal(profileProposal.source_recommendations[0]?.kind, "website");
   assert.equal(profileProposal.source_recommendations[0]?.value, "https://acme.example");
   assert.equal(profileProposal.apply_plan[0]?.tool_name, "product.company.profile.configure");

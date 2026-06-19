@@ -669,6 +669,8 @@ export async function editCompanyProfileAction(formData: FormData) {
         social_proof: value(formData, "social_proof") || null,
         signal_keywords: value(formData, "signal_keywords") || null,
         competitor_watchlist: value(formData, "competitor_watchlist") || null,
+        linkedin_signal_behaviors:
+          value(formData, "linkedin_signal_behaviors") || null,
         exclusion_rules: value(formData, "exclusion_rules") || null,
         preferred_language: value(formData, "preferred_language") || null,
         outreach_goal: value(formData, "outreach_goal") || null,

@@ -132,6 +132,14 @@ export default function OnboardingForm({
             />
           </div>
           <TextArea
+            name="linkedin_signal_behaviors"
+            label="LinkedIn behavior"
+            placeholder={
+              "Company and team engagement\nKeyworded post likes and comments\nRelevant LinkedIn profiles\nCompetitor engagement"
+            }
+            rows={4}
+          />
+          <TextArea
             name="exclusion_rules"
             label="Do not contact"
             placeholder="Service providers, freelancers, consultants, open-to-work profiles, existing customers, or named companies to avoid."

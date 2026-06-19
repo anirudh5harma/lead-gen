@@ -1248,6 +1248,7 @@ export function registerProductTools(): void {
       social_proof: z.string().optional(),
       signal_keywords: z.string().optional(),
       competitor_watchlist: z.string().optional(),
+      linkedin_signal_behaviors: z.string().optional(),
       exclusion_rules: z.string().optional(),
       preferred_language: z.string().optional(),
       outreach_goal: z.string().optional(),
@@ -1316,6 +1317,7 @@ export function registerProductTools(): void {
       social_proof: z.string().optional(),
       signal_keywords: z.string().optional(),
       competitor_watchlist: z.string().optional(),
+      linkedin_signal_behaviors: z.string().optional(),
       exclusion_rules: z.string().optional(),
       preferred_language: z.string().optional(),
       outreach_goal: z.string().optional(),
@@ -1862,6 +1864,7 @@ export function registerProductTools(): void {
       description: z.string().optional(),
       signal_keywords: z.string().optional(),
       competitor_watchlist: z.string().optional(),
+      linkedin_signal_behaviors: z.string().optional(),
       signal_kind: SignalKindSchema.optional(),
     }),
     output: WorkspaceResultSchema.extend({

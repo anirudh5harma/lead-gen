@@ -117,3 +117,12 @@ The Claude Code distribution path now includes a concrete private marketplace ca
 `npm run verify:claude-code-plugin` now acts as the repeatable launch gate for that external-agent path: it strict-validates the Bombsell Claude Code plugin and marketplace, verifies the catalog uses the pinned `git-subdir` source, and checks that the release commit exists before design-partner install instructions are trusted.
 
 External agents can now inspect output destinations through `bombsell.integrations.list`. It mirrors Profile's integration model by showing connected Outlook, LinkedIn, Claude Code/MCP, and signal-webhook paths plus planned CRM, outreach-tool, and team-alert destinations, so Claude Code can answer where qualified signals, verified contacts, sent proof, replies, and meetings should flow without inventing another integrations tab.
+
+Profile and onboarding now capture concrete LinkedIn signal behaviors to watch:
+company/team engagement, keyworded post likes and comments, relevant LinkedIn
+profiles, and competitor engagement. The field is persisted through
+`workspace.company.profiled`, carried through activation setup and Claude Code
+Profile proposals, used by source recommendations, and included in the
+Profile Message Ingredients block that feeds email/LinkedIn writers and the
+hot-path judge. This brings over GojiBerry's concrete LinkedIn signal editor
+without adding another user-facing tab.

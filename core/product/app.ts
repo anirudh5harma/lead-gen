@@ -693,6 +693,7 @@ export interface ConfigureWorkspaceProfileInput {
   social_proof?: string | null;
   signal_keywords?: string | null;
   competitor_watchlist?: string | null;
+  linkedin_signal_behaviors?: string | null;
   exclusion_rules?: string | null;
   preferred_language?: string | null;
   outreach_goal?: string | null;
@@ -1093,6 +1094,7 @@ export interface ProductCompanyProfile {
   social_proof?: string | null;
   signal_keywords?: string | null;
   competitor_watchlist?: string | null;
+  linkedin_signal_behaviors?: string | null;
   exclusion_rules?: string | null;
   preferred_language?: string | null;
   outreach_goal?: string | null;
@@ -2646,6 +2648,9 @@ export async function configureWorkspaceCompanyProfile(
     social_proof: blankToNull(input.social_proof ?? undefined),
     signal_keywords: blankToNull(input.signal_keywords ?? undefined),
     competitor_watchlist: blankToNull(input.competitor_watchlist ?? undefined),
+    linkedin_signal_behaviors: blankToNull(
+      input.linkedin_signal_behaviors ?? undefined,
+    ),
     exclusion_rules: blankToNull(input.exclusion_rules ?? undefined),
     preferred_language: blankToNull(input.preferred_language ?? undefined),
     outreach_goal: blankToNull(input.outreach_goal ?? undefined),
@@ -4600,6 +4605,9 @@ function messageProfileIngredientLines(
     ["Social proof", profile.social_proof],
     ["Buyer roles", profile.target_titles],
     ["Target markets", profile.target_markets],
+    ["Signal keywords", profile.signal_keywords],
+    ["Competitors to watch", profile.competitor_watchlist],
+    ["LinkedIn behavior to watch", profile.linkedin_signal_behaviors],
     ["Outreach goal", profile.outreach_goal],
     ["Message tone", profile.message_tone],
     ["LinkedIn company page", profile.linkedin_company_url],
@@ -5111,6 +5119,7 @@ async function projectWorkspaceCompanyProfiled(
     social_proof?: string | null;
     signal_keywords?: string | null;
     competitor_watchlist?: string | null;
+    linkedin_signal_behaviors?: string | null;
     exclusion_rules?: string | null;
     preferred_language?: string | null;
     outreach_goal?: string | null;
@@ -5158,6 +5167,7 @@ async function projectWorkspaceCompanyProfiled(
         social_proof: payload.social_proof ?? null,
         signal_keywords: payload.signal_keywords ?? null,
         competitor_watchlist: payload.competitor_watchlist ?? null,
+        linkedin_signal_behaviors: payload.linkedin_signal_behaviors ?? null,
         exclusion_rules: payload.exclusion_rules ?? null,
         preferred_language: payload.preferred_language ?? null,
         outreach_goal: payload.outreach_goal ?? null,
@@ -5245,6 +5255,7 @@ export async function configureDefaultSignalAggregator(
     description?: string | null;
     signal_keywords?: string | null;
     competitor_watchlist?: string | null;
+    linkedin_signal_behaviors?: string | null;
     signal_kind?: string;
   },
   session: ProductWorkspaceSession,
@@ -5256,6 +5267,7 @@ export async function configureDefaultSignalAggregator(
   const keywordPhrase = compactSearchTerms(
     input.signal_keywords,
     input.competitor_watchlist,
+    input.linkedin_signal_behaviors,
   );
   // Keep signup/profile bootstrap predictable and free-source-first. Paid Exa
   // monitoring is configured explicitly through product.signal.discover_open_web.
@@ -6399,6 +6411,7 @@ function activationSetupIdempotencyKey(
         social_proof: input.social_proof ?? null,
         signal_keywords: input.signal_keywords ?? null,
         competitor_watchlist: input.competitor_watchlist ?? null,
+        linkedin_signal_behaviors: input.linkedin_signal_behaviors ?? null,
         exclusion_rules: input.exclusion_rules ?? null,
         preferred_language: input.preferred_language ?? null,
         outreach_goal: input.outreach_goal ?? null,
@@ -12721,6 +12734,9 @@ function productProfileState(
     social_proof: stringStateValue(row.properties.social_proof),
     signal_keywords: stringStateValue(row.properties.signal_keywords),
     competitor_watchlist: stringStateValue(row.properties.competitor_watchlist),
+    linkedin_signal_behaviors: stringStateValue(
+      row.properties.linkedin_signal_behaviors,
+    ),
     exclusion_rules: stringStateValue(row.properties.exclusion_rules),
     preferred_language: stringStateValue(row.properties.preferred_language),
     outreach_goal: stringStateValue(row.properties.outreach_goal),
