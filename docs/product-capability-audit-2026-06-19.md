@@ -46,7 +46,7 @@ Status: available.
 
 ## CRM Integration
 
-Status: available as MCP/API handoff with configurable CRM destination;
+Status: available as MCP/API handoff with configurable webhook delivery;
 native CRM OAuth remains next.
 
 - Profile and Agent output destinations now expose CRM sync as available for
@@ -58,6 +58,10 @@ native CRM OAuth remains next.
   `crm.handoff.queued` events containing signal proof, verified email or
   LinkedIn profile data, judged/sent outreach context, and reply/meeting
   outcomes for CRM delivery.
+- When the CRM destination has a webhook URL, Bombsell posts the handoff package
+  immediately and records `crm.handoff.webhook.delivered` or
+  `crm.handoff.webhook.failed` with endpoint host, status code, retryability,
+  and last-delivery status visible in Profile.
 - Profile now includes CRM handoff setup for HubSpot, Salesforce, Pipedrive,
   Attio, Folk, Clay, or a custom webhook. Saving it emits
   `crm.destination.configured` and stores the destination as a `crm`

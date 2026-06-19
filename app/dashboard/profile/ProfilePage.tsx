@@ -2202,6 +2202,7 @@ function CrmHandoffSetupPanel({ account }: { account: ProfileCrmAccount | null }
             Salesforce, Pipedrive, Attio, Folk, Clay, or a custom webhook.
             Bombsell queues CRM-ready packages with intent score, verified
             email or LinkedIn profile, judged outreach, replies, and meetings.
+            Delivery status appears here after each webhook handoff.
           </p>
         </div>
         <span

@@ -41,7 +41,8 @@ should sync to CRM" from one tool surface.
 - `bombsell.approvals.list` and `bombsell.approvals.decide`: approval gates for
   reviewable work.
 - `bombsell.crm_handoff.queue`: packages CRM-ready qualified contacts with
-  signal proof, verified email or LinkedIn data, outreach context, and outcomes.
+  signal proof, verified email or LinkedIn data, outreach context, outcomes, and
+  webhook delivery status when a CRM destination URL is configured.
 - `bombsell.integrations.list`: connected channels, visitor-intent intake, MCP,
   and CRM handoff readiness.
 - `bombsell.learning.get`: recent reply and meeting learning.
@@ -51,8 +52,10 @@ should sync to CRM" from one tool surface.
 - Write tools must be explicit: `confirm_prepare=true`,
   `confirm_channel_effects=true`, or `confirm_queue=true`.
 - Outreach sending remains inside Bombsell channel workflows and approval gates.
-- CRM sync begins as typed `crm.handoff.queued` events; native OAuth delivery can
-  consume the same event once providers are installed.
+- CRM sync begins as typed `crm.handoff.queued` events and posts to the
+  configured CRM webhook when present. Delivery writes
+  `crm.handoff.webhook.delivered` or `crm.handoff.webhook.failed`; native OAuth
+  delivery can consume the same event once providers are installed.
 - All tool responses return dashboard links so a human can inspect the
   underlying Brief, Agent, Outreach, or Profile surface.
 
