@@ -48,6 +48,9 @@ interface BriefSignalHealth {
   watched_sources: number;
   productive_sources_7d: number;
   quiet_sources: number;
+  due_sources: number;
+  next_check_at: Date | null;
+  next_check_source_name: string | null;
   attention_source_name: string | null;
   attention_reason: string | null;
 }
@@ -336,6 +339,9 @@ async function loadBriefSignalHealth(
     watched_sources: string;
     productive_sources_7d: string;
     quiet_sources: string;
+    due_sources: string;
+    next_check_at: Date | null;
+    next_check_source_name: string | null;
     attention_source_name: string | null;
     attention_reason: string | null;
   }>(
@@ -344,6 +350,12 @@ async function loadBriefSignalHealth(
               gs.name,
               (wsc.enabled and gs.enabled) as enabled,
               coalesce(wsc.last_polled_at, gs.last_polled_at) as last_polled_at,
+              case
+                when not (wsc.enabled and gs.enabled) then null
+                when coalesce(wsc.last_polled_at, gs.last_polled_at) is null then now()
+                else coalesce(wsc.last_polled_at, gs.last_polled_at)
+                  + (wsc.poll_cadence_sec * interval '1 second')
+              end as next_check_at,
               wsc.last_error,
               (select count(*)::int
                  from signals s
@@ -376,6 +388,17 @@ async function loadBriefSignalHealth(
             count(*)::text as watched_sources,
             count(*) filter (where enabled and matched_week > 0)::text as productive_sources_7d,
             count(*) filter (where enabled and matched_week = 0)::text as quiet_sources,
+            count(*) filter (where enabled and next_check_at <= now())::text as due_sources,
+            (select next_check_at
+               from source_rows
+              where enabled
+              order by next_check_at asc nulls first, name asc
+              limit 1) as next_check_at,
+            (select name
+               from source_rows
+              where enabled
+              order by next_check_at asc nulls first, name asc
+              limit 1) as next_check_source_name,
             (select name from attention) as attention_source_name,
             (select reason from attention) as attention_reason
        from source_rows`,
@@ -387,6 +410,9 @@ async function loadBriefSignalHealth(
     watched_sources: Number(row?.watched_sources ?? 0),
     productive_sources_7d: Number(row?.productive_sources_7d ?? 0),
     quiet_sources: Number(row?.quiet_sources ?? 0),
+    due_sources: Number(row?.due_sources ?? 0),
+    next_check_at: row?.next_check_at ?? null,
+    next_check_source_name: row?.next_check_source_name ?? null,
     attention_source_name: row?.attention_source_name ?? null,
     attention_reason: row?.attention_reason ?? null,
   };
@@ -729,6 +755,9 @@ const EMPTY_SIGNAL_HEALTH: BriefSignalHealth = {
   watched_sources: 0,
   productive_sources_7d: 0,
   quiet_sources: 0,
+  due_sources: 0,
+  next_check_at: null,
+  next_check_source_name: null,
   attention_source_name: null,
   attention_reason: null,
 };
@@ -1228,7 +1257,7 @@ function SignalHealthPanel({
           Sources
         </Link>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      <div className="mt-3 grid gap-2 sm:grid-cols-4">
         <SignalHealthMetric
           label="Active sources"
           value={`${health.active_sources}/${health.watched_sources}`}
@@ -1240,6 +1269,10 @@ function SignalHealthPanel({
         <SignalHealthMetric
           label="Avg/day"
           value={formatDailyAverage(dailyAverage)}
+        />
+        <SignalHealthMetric
+          label="Next check"
+          value={signalNextCheckLabel(health)}
         />
       </div>
       <p
@@ -1253,6 +1286,13 @@ function SignalHealthPanel({
         {attention ??
           "Signal engine is active. Productive sources are creating qualified timing evidence this week."}
       </p>
+      {health.next_check_source_name ? (
+        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs leading-5 text-[var(--color-text-3)]">
+          <Icon name="schedule" size={13} />
+          Next source check: {health.next_check_source_name}{" "}
+          {signalNextCheckLabel(health)}.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1439,6 +1479,13 @@ function signalHealthAttention(health: BriefSignalHealth): string | null {
     } quiet this week. Review source mix if qualified signals slow down.`;
   }
   return null;
+}
+
+function signalNextCheckLabel(health: BriefSignalHealth): string {
+  if (health.due_sources > 0) {
+    return health.due_sources === 1 ? "Due now" : `${health.due_sources} due`;
+  }
+  return upcomingWhen(health.next_check_at);
 }
 
 function formatDailyAverage(value: number): string {
@@ -2122,4 +2169,15 @@ function freshWhen(value: Date): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function upcomingWhen(value: Date | null): string {
+  if (!value) return "Not scheduled";
+  const diff = new Date(value).getTime() - Date.now();
+  if (diff <= 0) return "Due now";
+  const minutes = Math.ceil(diff / 60_000);
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+  return `in ${Math.ceil(hours / 24)}d`;
 }

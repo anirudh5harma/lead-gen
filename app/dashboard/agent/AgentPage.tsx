@@ -248,6 +248,7 @@ interface AgentSourceRow {
   poll_cadence_sec: number;
   last_polled_at: Date | null;
   source_last_polled_at: Date | null;
+  next_check_at: Date | null;
   last_error: Record<string, unknown> | null;
   signal_kind: string | null;
   query: string | null;
@@ -537,6 +538,12 @@ async function loadAgentSourceStrategy(
               wsc.poll_cadence_sec,
               wsc.last_polled_at,
               gs.last_polled_at as source_last_polled_at,
+              case
+                when not (wsc.enabled and gs.enabled) then null
+                when coalesce(wsc.last_polled_at, gs.last_polled_at) is null then now()
+                else coalesce(wsc.last_polled_at, gs.last_polled_at)
+                  + (wsc.poll_cadence_sec * interval '1 second')
+              end as next_check_at,
               wsc.last_error,
               coalesce(wsc.config_overrides->>'signal_kind', gs.config->>'signal_kind') as signal_kind,
               coalesce(wsc.config_overrides->>'query', gs.config->>'query', gs.config->>'url') as query,
@@ -1874,6 +1881,7 @@ function AgentSetupSnapshot({
   ].filter(Boolean).length;
   const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
   const nextAction = readinessNextAction(readiness);
+  const nextSource = nextSourceCheck(strategy.sources);
   return (
     <section className="section-note grid gap-5" aria-label="Agent setup snapshot">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1940,6 +1948,10 @@ function AgentSetupSnapshot({
               label="Fit gate"
               value={Math.round((strategy.icp?.match_threshold ?? 0.6) * 100)}
             />
+            <MiniStat
+              label="Next check"
+              value={sourceCheckLabel(nextSource?.next_check_at ?? null)}
+            />
           </div>
           <StrategyChips
             icon="sensors"
@@ -1947,6 +1959,13 @@ function AgentSetupSnapshot({
             values={watchedTerms}
             empty="Add signal keywords"
           />
+          {nextSource ? (
+            <p className="flex flex-wrap items-center gap-1.5 text-xs leading-5 text-[var(--color-text-3)]">
+              <Icon name="schedule" size={13} />
+              Next source check: {nextSource.name}{" "}
+              {sourceCheckLabel(nextSource.next_check_at)}.
+            </p>
+          ) : null}
         </article>
 
         <article className="grid content-start gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
@@ -5109,7 +5128,7 @@ function arrayPayloadLength(
   return Array.isArray(value) ? value.length : 0;
 }
 
-function MiniStat({ label, value }: { label: string; value: number }) {
+function MiniStat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <span className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-2)] px-3 py-2">
       <strong className="block text-lg font-semibold tabular-nums text-[var(--color-text-1)]">
@@ -5120,6 +5139,24 @@ function MiniStat({ label, value }: { label: string; value: number }) {
       </span>
     </span>
   );
+}
+
+function nextSourceCheck(sources: AgentSourceRow[]): AgentSourceRow | null {
+  const enabled = sources.filter((source) => source.enabled);
+  if (enabled.length === 0) return null;
+  return [...enabled].sort(
+    (left, right) =>
+      sourceCheckTime(left.next_check_at) - sourceCheckTime(right.next_check_at) ||
+      left.name.localeCompare(right.name),
+  )[0] ?? null;
+}
+
+function sourceCheckTime(value: Date | null): number {
+  return value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+}
+
+function sourceCheckLabel(value: Date | null): string {
+  return upcomingWhen(value);
 }
 
 function workspaceChannelCoverage(channels: ChannelRow[]): ChannelCoverage {
@@ -5307,6 +5344,17 @@ function freshWhen(value: Date): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function upcomingWhen(value: Date | null): string {
+  if (!value) return "Not scheduled";
+  const diff = new Date(value).getTime() - Date.now();
+  if (diff <= 0) return "Due now";
+  const minutes = Math.ceil(diff / 60_000);
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+  return `in ${Math.ceil(hours / 24)}d`;
 }
 
 function channelLabel(channel: string): string {

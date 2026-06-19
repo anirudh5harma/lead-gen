@@ -294,6 +294,11 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Active sources/);
   assert.match(dashboard, /Productive 7d/);
   assert.match(dashboard, /Avg\/day/);
+  assert.match(dashboard, /Next check/);
+  assert.match(dashboard, /next_check_at/);
+  assert.match(dashboard, /poll_cadence_sec \* interval '1 second'/);
+  assert.match(dashboard, /signalNextCheckLabel/);
+  assert.match(dashboard, /Due now/);
   assert.match(dashboard, /Signal engine is active/);
   assert.match(dashboard, /Review source mix if qualified signals slow down/);
   assert.match(dashboard, /The operating brief only tracks qualified signals/);
@@ -685,6 +690,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.doesNotMatch(reps, /Competitor audience/);
   assert.match(reps, /workspace_source_configs/);
   assert.match(reps, /graph_sources/);
+  assert.match(reps, /next_check_at/);
+  assert.match(reps, /poll_cadence_sec \* interval '1 second'/);
+  assert.match(reps, /Next check/);
+  assert.match(reps, /Next source check/);
+  assert.match(reps, /nextSourceCheck/);
+  assert.match(reps, /sourceCheckLabel/);
   assert.match(reps, /coalesce\(compiled->>'channel', ''\)/);
   assert.doesNotMatch(reps, /id="sources" className="scroll-mt-28"/);
   assert.match(reps, /id="activity"/);

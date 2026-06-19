@@ -147,3 +147,8 @@ The Brief reply/meeting insight rows now expose meeting-prep readiness and a
 direct Prepare meeting action. This reuses the existing Agent meeting-prep
 workflow and `meeting.prep.generated` event trail, so reply and meeting outcomes
 become operational next steps without adding another tab or workflow model.
+
+Brief signal health and the Agent setup snapshot now show the next source check
+from existing source cadence. This brings over GojiBerry's "next launch timing"
+clarity without adding a campaign tab: users can see which signal scanner is due
+now or when it will run again.
