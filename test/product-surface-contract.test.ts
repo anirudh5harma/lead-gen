@@ -1305,6 +1305,13 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(settings, /Claude Code \+ MCP/);
   assert.match(settings, /Use Bombsell in Claude Code/);
   assert.match(settings, /Use in Claude Code/);
+  assert.match(settings, /McpAccessPanel/);
+  assert.match(settings, /Claude Code access/);
+  assert.match(settings, /Browser-authorized MCP sessions/);
+  assert.match(settings, /revokeMcpTokenAction/);
+  assert.match(settings, /token\.token_hash\.slice\(0, 10\)/);
+  assert.match(settings, /mcp_oauth_tokens t/);
+  assert.match(settings, /t\.revoked_at is null/);
   assert.match(settings, /bombsell\.brief\.get/);
   assert.match(settings, /bombsell\.outreach\.list_sent/);
   assert.match(settings, /Array\.isArray\(destination\.code\)/);
@@ -1396,6 +1403,10 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(actions, /configureWorkspaceAutonomyMode/);
   assert.match(actions, /dismissProductSignal/);
   assert.match(actions, /recordProductPersonFitFeedback/);
+  assert.match(actions, /export async function revokeMcpTokenAction/);
+  assert.match(actions, /revoked_by_user_id = \$2/);
+  assert.match(actions, /and user_id = \$2/);
+  assert.match(actions, /Claude Code access revoked/);
   assert.match(contactResolution, /contact\.profile_policy\.load/);
   assert.match(contactResolution, /auto_enrich_email_addresses/);
   assert.match(contactResolution, /email_auto_enrich_disabled/);

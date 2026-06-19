@@ -501,6 +501,49 @@ export async function runAgentSourceNowAction(formData: FormData) {
   redirectWithToast(returnTo, "Source run started.");
 }
 
+export async function revokeMcpTokenAction(formData: FormData) {
+  const session = await requireDashboardSession();
+  const returnTo = dashboardReturnPath(formData, "/dashboard/profile#tools");
+  const tokenHash = value(formData, "token_hash");
+  if (!/^[a-f0-9]{64}$/i.test(tokenHash)) {
+    redirectWithToast(returnTo, "Choose a Claude Code session before revoking.", "error");
+  }
+
+  let rowCount: number | null = 0;
+  try {
+    ({ rowCount } = await getPool().query(
+      `update mcp_oauth_tokens
+          set revoked_at = now(),
+              revoked_by_user_id = $2
+        where token_hash = $1
+          and user_id = $2
+          and revoked_at is null`,
+      [tokenHash, session.user_id],
+    ));
+  } catch (error) {
+    if (isMissingMcpOauthSchema(error)) {
+      redirectWithToast(returnTo, "Claude Code access is not initialized yet.", "error");
+    }
+    throw error;
+  }
+  revalidatePath("/dashboard/profile");
+  redirectWithToast(
+    returnTo,
+    rowCount ? "Claude Code access revoked." : "That Claude Code session was already revoked.",
+    rowCount ? "success" : "info",
+  );
+}
+
+function isMissingMcpOauthSchema(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    ((error as { code?: unknown }).code === "42P01" ||
+      (error as { code?: unknown }).code === "42703")
+  );
+}
+
 export async function generateMeetingPrepAction(formData: FormData) {
   const session = await requireDashboardSession();
   const conversationId = value(formData, "conversation_id");

@@ -459,6 +459,7 @@ test("MCP OAuth routes issue browser PKCE tokens for Claude Code", () => {
   const register = readProjectFile("app/api/mcp/oauth/register/route.ts");
   const mcpRoute = readProjectFile("app/api/mcp/route.ts");
   const migration = readProjectFile("db/migrations/039_mcp_oauth.sql");
+  const revokeMigration = readProjectFile("db/migrations/040_mcp_oauth_revocation.sql");
 
   assert.match(authorize, /googleAuthPath\(next\)/);
   assert.match(authorize, /code_challenge_method !== "S256"/);
@@ -471,6 +472,8 @@ test("MCP OAuth routes issue browser PKCE tokens for Claude Code", () => {
   assert.match(migration, /create table if not exists mcp_oauth_clients/);
   assert.match(migration, /create table if not exists mcp_oauth_codes/);
   assert.match(migration, /create table if not exists mcp_oauth_tokens/);
+  assert.match(revokeMigration, /revoked_at timestamptz/);
+  assert.match(revokeMigration, /mcp_oauth_tokens_active_user_idx/);
 });
 
 test("MCP OAuth helpers constrain redirects, scopes, PKCE, and token hashes", async () => {
@@ -516,6 +519,7 @@ test("MCP OAuth helpers constrain redirects, scopes, PKCE, and token hashes", as
   assert.equal(calls.length, 2);
   assert.equal(calls[0]?.params[0], tokenHash("mcp_secret"));
   assert.match(calls[1]?.sql ?? "", /set last_used_at/);
+  assert.match(calls[0]?.sql ?? "", /revoked_at is null/);
 });
 
 test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () => {

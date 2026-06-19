@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import type { Pool } from "pg";
 import BrandIcon from "@/components/BrandIcon";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
@@ -24,6 +25,7 @@ import {
   configureActivationAction,
   createWorkspaceAction,
   editCompanyProfileAction,
+  revokeMcpTokenAction,
   updateWorkspaceAutonomyAction,
 } from "../actions";
 
@@ -98,6 +100,16 @@ interface ProfileSignalSetup {
   qualifiedSignals7d: number;
 }
 
+interface ProfileMcpToken {
+  token_hash: string;
+  client_id: string | null;
+  client_name: string | null;
+  scope: string | null;
+  expires_at: Date;
+  last_used_at: Date | null;
+  created_at: Date;
+}
+
 interface ProfileState {
   settings: Record<string, unknown>;
   outlookAccount: ProfileOutlookAccount | null;
@@ -110,9 +122,49 @@ interface ProfileState {
   recentSuppressions: ProfileSuppressionRow[];
   contactQuality: ProfileContactQuality;
   signalSetup: ProfileSignalSetup;
+  mcpTokens: ProfileMcpToken[];
 }
 
-async function loadProfileState(workspaceId: string): Promise<ProfileState> {
+async function loadProfileMcpTokens(
+  pool: Pool,
+  userId: string,
+): Promise<ProfileMcpToken[]> {
+  try {
+    const { rows } = await pool.query<ProfileMcpToken>(
+      `select t.token_hash,
+              t.client_id,
+              c.client_name,
+              t.scope,
+              t.expires_at,
+              t.last_used_at,
+              t.created_at
+         from mcp_oauth_tokens t
+         left join mcp_oauth_clients c
+           on c.client_id = t.client_id
+        where t.user_id = $1
+          and t.revoked_at is null
+        order by coalesce(t.last_used_at, t.created_at) desc
+        limit 10`,
+      [userId],
+    );
+    return rows;
+  } catch (error) {
+    if (isMissingMcpOauthSchema(error)) return [];
+    throw error;
+  }
+}
+
+function isMissingMcpOauthSchema(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    ((error as { code?: unknown }).code === "42P01" ||
+      (error as { code?: unknown }).code === "42703")
+  );
+}
+
+async function loadProfileState(workspaceId: string, userId: string): Promise<ProfileState> {
   const pool = getPool();
   const [
     workspace,
@@ -125,6 +177,7 @@ async function loadProfileState(workspaceId: string): Promise<ProfileState> {
     recentSuppressions,
     contactQuality,
     signalSetup,
+    mcpTokens,
   ] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
@@ -317,6 +370,7 @@ async function loadProfileState(workspaceId: string): Promise<ProfileState> {
              and coalesce(s.ingested_at, s.freshness_at) >= now() - interval '7 days') as qualified_signals_7d`,
       [workspaceId],
     ),
+    loadProfileMcpTokens(pool, userId),
   ]);
   const suppressions = suppressionStats.rows[0];
   const contacts = contactQuality.rows[0];
@@ -350,6 +404,7 @@ async function loadProfileState(workspaceId: string): Promise<ProfileState> {
       sourceKinds: signalSetup.rows[0]?.source_kinds ?? [],
       qualifiedSignals7d: Number(signalSetup.rows[0]?.qualified_signals_7d ?? 0),
     },
+    mcpTokens,
   };
 }
 
@@ -364,7 +419,7 @@ export default async function ProfilePage() {
   });
   const [profile, state, readiness] = await Promise.all([
     getProductCompanyProfile(pool, productSession),
-    loadProfileState(active.workspace.id),
+    loadProfileState(active.workspace.id, active.user_id),
     getProductLaunchReadiness({ required_channel: "any" }, productSession),
   ]);
   const identity = await getRequestAuthIdentity();
@@ -1786,6 +1841,8 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
         ))}
       </div>
 
+      <McpAccessPanel tokens={state.mcpTokens} />
+
       <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1824,6 +1881,87 @@ function IntegrationPanel({ state }: { state: ProfileState }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function McpAccessPanel({ tokens }: { tokens: ProfileMcpToken[] }) {
+  const activeCount = tokens.filter((token) => new Date(token.expires_at).getTime() > Date.now()).length;
+  return (
+    <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Claude Code access
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+            Browser-authorized MCP sessions can inspect Brief, Profile,
+            qualified signals, sent outreach, drafts, approvals, and reply
+            learning through the same gated Bombsell tools.
+          </p>
+        </div>
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+          {activeCount} active
+        </span>
+      </div>
+
+      {tokens.length > 0 ? (
+        <div className="mt-4 grid gap-2">
+          {tokens.map((token) => (
+            <div
+              key={token.token_hash}
+              className="grid gap-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-[var(--color-text-1)]">
+                    {token.client_name?.trim() || "Claude Code MCP client"}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-[var(--color-text-4)]">
+                    token {token.token_hash.slice(0, 10)}...
+                  </p>
+                </div>
+                <form action={revokeMcpTokenAction}>
+                  <input type="hidden" name="return_to" value="/dashboard/profile#tools" />
+                  <input type="hidden" name="token_hash" value={token.token_hash} />
+                  <PendingSubmitButton
+                    className="btn-quiet-sm"
+                    icon="block"
+                    pendingLabel="Revoking"
+                  >
+                    Revoke
+                  </PendingSubmitButton>
+                </form>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <ProfileFact
+                  label="Last used"
+                  value={token.last_used_at ? freshWhen(token.last_used_at) : "Never"}
+                />
+                <ProfileFact label="Created" value={freshWhen(token.created_at)} />
+                <ProfileFact label="Expires" value={expiresWhen(token.expires_at)} />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {mcpScopeList(token.scope).map((scope) => (
+                  <span
+                    key={scope}
+                    className="rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-2 py-1 font-mono text-[10.5px] text-[var(--color-text-3)]"
+                  >
+                    {scope}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-[8px] border border-dashed border-[var(--color-line-2)] bg-[var(--color-ink-1)] p-3">
+          <p className="text-xs leading-5 text-[var(--color-text-3)]">
+            No Claude Code sessions yet. Install the Bombsell plugin and connect
+            through the browser consent flow to create the first MCP session.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -2655,6 +2793,24 @@ function freshWhen(value: Date): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function expiresWhen(value: Date): string {
+  const diff = new Date(value).getTime() - Date.now();
+  if (diff <= 0) return "Expired";
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function mcpScopeList(scope: string | null): string[] {
+  const scopes = (scope ?? "")
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return scopes.length ? scopes : ["brief:read", "profile:read"];
 }
 
 function agentDisplayName(role: string): string {

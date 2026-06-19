@@ -68,9 +68,10 @@ export async function validateMcpAccessToken(
     scope: string | null;
   }>(
     `select user_id, client_id, scope
-       from mcp_oauth_tokens
+      from mcp_oauth_tokens
       where token_hash = $1
         and expires_at > $2
+        and revoked_at is null
       limit 1`,
     [tokenHash(token), now],
   );
