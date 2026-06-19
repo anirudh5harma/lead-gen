@@ -167,11 +167,11 @@ test("legacy list and Profile routes redirect to current product hubs", () => {
   );
   assert.match(
     source("app/dashboard/review/page.tsx"),
-    /redirect\("\/dashboard\/agent#opportunities"\)/,
+    /redirect\("\/dashboard\/agent#review-queue"\)/,
   );
   assert.match(
     source("app/dashboard/approvals/page.tsx"),
-    /redirect\("\/dashboard\/agent#opportunities"\)/,
+    /redirect\("\/dashboard\/agent#review-queue"\)/,
   );
   assert.match(
     source("app/dashboard/outcomes/page.tsx"),
@@ -1382,8 +1382,8 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"\/dashboard\/ingestion", destination: "\/dashboard\/agent#opportunities"/);
   assert.match(verifier, /"\/dashboard\/prospects", destination: "\/dashboard\/agent#verified-contacts"/);
   assert.match(verifier, /"\/dashboard\/conversations", destination: "\/dashboard\/agent#outreach"/);
-  assert.match(verifier, /"\/dashboard\/review", destination: "\/dashboard\/agent#opportunities"/);
-  assert.match(verifier, /"\/dashboard\/approvals", destination: "\/dashboard\/agent#opportunities"/);
+  assert.match(verifier, /"\/dashboard\/review", destination: "\/dashboard\/agent#review-queue"/);
+  assert.match(verifier, /"\/dashboard\/approvals", destination: "\/dashboard\/agent#review-queue"/);
   assert.match(verifier, /"\/dashboard\/settings", destination: "\/dashboard\/profile#tools"/);
   assert.match(verifier, /"\/dashboard\/integrations", destination: "\/dashboard\/profile#tools"/);
   assert.match(verifier, /"\/dashboard\/deliverability", destination: "\/dashboard\/profile#channels"/);
@@ -1470,7 +1470,7 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(outputDestinations, /Social outreach/);
   assert.match(outputDestinations, /Agent API/);
   assert.match(outputDestinations, /Claude Code \+ MCP/);
-  assert.match(settings, /Use in Claude Code/);
+  assert.match(settings, /Use Bombsell in Claude Code/);
   assert.match(settings, /McpAccessPanel/);
   assert.match(settings, /Claude Code access/);
   assert.match(settings, /Browser-authorized MCP sessions/);

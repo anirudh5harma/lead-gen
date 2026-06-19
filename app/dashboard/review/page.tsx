@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function LegacyReviewPage() {
-  redirect("/dashboard/agent#opportunities");
+  redirect("/dashboard/agent#review-queue");
 }

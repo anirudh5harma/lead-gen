@@ -52,7 +52,7 @@ projection, and visible UI feedback where applicable.
 | Submit manual signal | MCP/internal Rep execution | `product.signal.submit` | Manual Signal ingestion event path | Ready |
 | Dispatch matched Plays | Internal/dashboard action | `product.signals.dispatch_plays` | Starts Signal email/LinkedIn Play workflows after contact waterfall resolution; campaign allocation can substitute a compatible learned Play Skill into the workflow input, and the Play writer honors that skill in draft provenance before hot-path judge/send | Ready |
 | Ground draft with public evidence | MCP/internal Rep execution, automatic Play step | `product.draft.ground` | `draft.grounding.exa`: Exa Search/Contents -> graph evidence sources -> judge/writer-ready proof summary -> draft `exa_grounding` provenance | Ready |
-| Approve/reject draft | `/dashboard/review` | `product.approval.decide` | Resolves workflow approval gate | Ready |
+| Approve/reject draft | `/dashboard/agent#review-queue` | `product.approval.decide` | Resolves workflow approval gate | Ready |
 | Retry failed workflow | `/dashboard/health`, MCP/internal Rep execution | `product.workflow.retry` | Durable workflow retry/resume | Ready |
 | Inspect/redrive dead-lettered event delivery | `/dashboard/health` | `product.event_dispatch.dead_letters.list`, `product.event_dispatch.redrive` | Shared workspace-scoped recovery queue; redrive resets the NATS dispatch row for replay and emits `event.dispatch.redriven` as a typed audit event | Ready |
 | Provision/verify/refresh sending domain | `/dashboard/profile#email`, MCP/internal Rep execution | `product.sending_domain.operate` | Starts sending-domain workflow | Ready |

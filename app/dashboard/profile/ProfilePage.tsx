@@ -1911,7 +1911,7 @@ function destinationAction(destination: OutputDestination): string {
       ? "Manage LinkedIn"
       : "Connect LinkedIn";
   }
-  if (destination.key === "claude-code") return "Use in Claude Code";
+  if (destination.key === "claude-code") return "Use Bombsell in Claude Code";
   if (destination.key === "signal-webhook") return "View route";
   return destinationStatusLabel(destination);
 }

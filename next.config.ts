@@ -91,12 +91,12 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/dashboard/review",
-        destination: "/dashboard/agent#opportunities",
+        destination: "/dashboard/agent#review-queue",
         permanent: false,
       },
       {
         source: "/dashboard/approvals",
-        destination: "/dashboard/agent#opportunities",
+        destination: "/dashboard/agent#review-queue",
         permanent: false,
       },
       {
