@@ -471,7 +471,12 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
   assert.equal(
     blocked.find((destination) => destination.key === "visitor-deanonymization")
       ?.href,
-    "/api/webhooks/visitors",
+    "/dashboard/profile#visitor-intent",
+  );
+  assert.deepEqual(
+    blocked.find((destination) => destination.key === "visitor-deanonymization")
+      ?.tools,
+    ["product.source.configure", "/api/webhooks/visitors"],
   );
 
   const connected = buildOutputDestinations({
@@ -1273,6 +1278,12 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       (item) => item.key === "visitor-deanonymization",
     )?.handoff_stage,
     "signal_intake",
+  );
+  assert.deepEqual(
+    integrations.destinations.find(
+      (item) => item.key === "visitor-deanonymization",
+    )?.tools,
+    ["product.source.configure", "/api/webhooks/visitors"],
   );
   assert.equal(
     integrations.destinations.find((item) => item.key === "crm-sync")?.status,

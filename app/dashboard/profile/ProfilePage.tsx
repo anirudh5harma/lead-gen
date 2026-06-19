@@ -1846,6 +1846,8 @@ function IntegrationPanel({
         activity={state.mcpActivity}
       />
 
+      <VisitorIntentSetupPanel />
+
       <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1914,7 +1916,7 @@ function destinationAction(destination: OutputDestination): string {
   }
   if (destination.key === "claude-code") return "Use Bombsell in Claude Code";
   if (destination.key === "signal-webhook") return "View route";
-  if (destination.key === "visitor-deanonymization") return "View route";
+  if (destination.key === "visitor-deanonymization") return "Set up visitor ID";
   return destinationStatusLabel(destination);
 }
 
@@ -1945,6 +1947,87 @@ function destinationIcon(destination: OutputDestination): ReactNode {
   }
   if (destination.key === "team-alerts") return <Icon name="hub" size={16} />;
   return <Icon name="account_tree" size={16} />;
+}
+
+function VisitorIntentSetupPanel() {
+  return (
+    <div
+      id="visitor-intent"
+      className="scroll-mt-28 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Visitor intent setup
+          </p>
+          <p className="mt-1 max-w-[74ch] text-xs leading-5 text-[var(--color-text-3)]">
+            Connect RB2B, Clearbit, Factors, Warmly, or your own website
+            identity feed as a webhook source. Bombsell turns firmographics,
+            page paths, dwell time, repeat visits, and consent proof into the
+            same Signal scoring, contact resolution, judged outreach, and CRM
+            handoff path.
+          </p>
+        </div>
+        <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs text-[var(--color-pos)]">
+          Available
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid gap-2 rounded-[8px] bg-[var(--color-ink-1)] p-3">
+          <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+            <Icon name="webhook" size={14} />
+            Endpoint and auth
+          </span>
+          <code className="overflow-x-auto rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-2)]">
+            POST /api/webhooks/visitors
+          </code>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <ProfileFact label="Auth" value="Bearer or HMAC" />
+            <ProfileFact label="Secret" value="SIGNAL_WEBHOOK_SECRET" />
+          </div>
+        </div>
+        <div className="grid gap-2 rounded-[8px] bg-[var(--color-ink-1)] p-3">
+          <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+            <Icon name="sensors" size={14} />
+            Source setup
+          </span>
+          <code className="overflow-x-auto rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-2)]">
+            product.source.configure adapter=webhook provider=rb2b
+          </code>
+          <p className="text-xs leading-5 text-[var(--color-text-3)]">
+            Use the returned source_id in each visitor event so Bombsell can
+            score, dedupe, suppress opted-out traffic, and route it through the
+            workspace graph.
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
+        <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+          <Icon name="radar" size={14} />
+          Minimal visitor payload
+        </span>
+        <code className="mt-2 block overflow-x-auto whitespace-pre rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] leading-5 text-[var(--color-text-2)]">
+{`{
+  "source_id": "00000000-0000-4000-8000-000000000123",
+  "external_id": "visitor-event-id",
+  "company_domain": "example.com",
+  "industry": "Software",
+  "headcount": "51-200",
+  "page_url": "https://example.com/pricing",
+  "intent_score": 0.82,
+  "dwell_time_seconds": 93,
+  "scroll_depth": 0.78,
+  "repeat_visits": 3,
+  "consent": {
+    "marketing_allowed": true,
+    "do_not_track": false,
+    "record_id": "consent-record-id"
+  }
+}`}
+        </code>
+      </div>
+    </div>
+  );
 }
 
 function McpAccessPanel({

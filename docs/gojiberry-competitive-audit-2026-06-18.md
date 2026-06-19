@@ -219,3 +219,19 @@ outreach, and CRM handoff. It uses backend counts for push sources,
 visitor-intent Signals, qualified Signals, judged drafts, sent outreach, and
 signal-backed contacts so the home dashboard proves the product offer rather
 than forcing users to infer it from Profile and Agent.
+
+Profile output destinations now include a concrete Visitor intent setup panel.
+It shows the `/api/webhooks/visitors` endpoint, bearer/HMAC auth expectation,
+the `product.source.configure adapter=webhook provider=rb2b` setup step that
+returns the required source id, and the minimal payload shape. This makes
+visitor de-anonymization implementable from Profile instead of only visible as
+a product capability tile.
+
+Ploy Grow reinforces the same launch-critical loop: identify named companies,
+enrich firmographics, score intent from pricing/path/dwell/repeat behavior,
+then sync hot accounts to CRM or rep queues. Bombsell should keep the narrower
+outbound product shape rather than copying Ploy's site/personalization suite,
+but visitor intake now accepts those useful Grow fields: industry, headcount,
+funding stage, weighted page paths, dwell time, scroll depth, repeat visits,
+and consent metadata. Events with explicit marketing opt-out or Do Not Track
+are acknowledged and suppressed instead of becoming Signals.

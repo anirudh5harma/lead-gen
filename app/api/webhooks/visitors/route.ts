@@ -13,6 +13,9 @@ const VisitorEvent = z.object({
   provider: z.string().min(1).optional(),
   company_name: z.string().min(1).optional(),
   company_domain: z.string().min(1).optional(),
+  industry: z.string().min(1).optional(),
+  headcount: z.union([z.string().min(1), z.number().int().nonnegative()]).optional(),
+  funding_stage: z.string().min(1).optional(),
   website_url: z.string().url().optional(),
   page_url: z.string().url().optional(),
   referrer: z.string().url().optional(),
@@ -23,6 +26,30 @@ const VisitorEvent = z.object({
   intent_score: z.number().min(0).max(1).optional(),
   visited_at: z.string().datetime().optional(),
   pages: z.array(z.string().min(1)).max(20).optional(),
+  weighted_pages: z.array(
+    z.object({
+      path: z.string().min(1).optional(),
+      url: z.string().url().optional(),
+      intent_weight: z.number().min(0).max(1).optional(),
+      dwell_time_seconds: z.number().nonnegative().optional(),
+      scroll_depth: z.number().min(0).max(1).optional(),
+      visited_at: z.string().datetime().optional(),
+    }),
+  ).max(20).optional(),
+  dwell_time_seconds: z.number().nonnegative().optional(),
+  scroll_depth: z.number().min(0).max(1).optional(),
+  repeat_visits: z.number().int().nonnegative().optional(),
+  visit_count: z.number().int().nonnegative().optional(),
+  consent: z.object({
+    marketing_allowed: z.boolean().optional(),
+    do_not_track: z.boolean().optional(),
+    privacy_disclosed: z.boolean().optional(),
+    record_id: z.string().min(1).optional(),
+    source: z.string().min(1).optional(),
+    timestamp: z.string().datetime().optional(),
+    region: z.string().min(1).optional(),
+    ip: z.string().min(1).optional(),
+  }).passthrough().optional(),
   structured: z.record(z.string(), z.unknown()).optional(),
   provenance: z.record(z.string(), z.unknown()).optional(),
 });
@@ -63,6 +90,14 @@ export async function POST(req: Request): Promise<Response> {
 
   const results = [];
   for (const visitor of visitors) {
+    if (visitorSuppressedByConsent(visitor)) {
+      results.push({
+        outcome: "skipped:consent_suppressed",
+        external_id: clean(visitor.external_id) ?? null,
+      });
+      continue;
+    }
+
     try {
       results.push(
         await discoverSignalFromWebhook(visitorSignal(visitor), {
@@ -122,12 +157,28 @@ function visitorSignal(visitor: VisitorInput) {
     visitor.email ? `Email: ${visitor.email}` : null,
     visitor.linkedin_url ? `LinkedIn: ${visitor.linkedin_url}` : null,
     visitor.company_domain ? `Company domain: ${visitor.company_domain}` : null,
+    visitor.industry ? `Industry: ${visitor.industry}` : null,
+    visitor.headcount != null ? `Headcount: ${String(visitor.headcount)}` : null,
+    visitor.funding_stage ? `Funding stage: ${visitor.funding_stage}` : null,
     page ? `Visited: ${page}` : null,
     visitor.referrer ? `Referrer: ${visitor.referrer}` : null,
     typeof visitor.intent_score === "number"
       ? `Intent score: ${visitor.intent_score.toFixed(2)}`
       : null,
+    typeof visitor.dwell_time_seconds === "number"
+      ? `Dwell time: ${Math.round(visitor.dwell_time_seconds)}s`
+      : null,
+    typeof visitor.scroll_depth === "number"
+      ? `Scroll depth: ${Math.round(visitor.scroll_depth * 100)}%`
+      : null,
+    visitor.repeat_visits != null || visitor.visit_count != null
+      ? `Visits: ${visitor.repeat_visits ?? visitor.visit_count}`
+      : null,
     visitor.pages?.length ? `Pages: ${visitor.pages.join(", ")}` : null,
+    visitor.weighted_pages?.length
+      ? `Weighted pages: ${visitor.weighted_pages.map(weightedPageLabel).join(", ")}`
+      : null,
+    visitor.consent?.record_id ? `Consent record: ${visitor.consent.record_id}` : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -156,20 +207,44 @@ function visitorSignal(visitor: VisitorInput) {
       provider,
       company_name: visitor.company_name ?? null,
       company_domain: visitor.company_domain ?? null,
+      industry: visitor.industry ?? null,
+      headcount: visitor.headcount ?? null,
+      funding_stage: visitor.funding_stage ?? null,
       person_name: visitor.person_name ?? null,
       title: visitor.title ?? null,
       email: visitor.email ?? null,
       linkedin_url: visitor.linkedin_url ?? null,
       intent_score: visitor.intent_score ?? null,
       pages: visitor.pages ?? [],
+      weighted_pages: visitor.weighted_pages ?? [],
+      dwell_time_seconds: visitor.dwell_time_seconds ?? null,
+      scroll_depth: visitor.scroll_depth ?? null,
+      repeat_visits: visitor.repeat_visits ?? visitor.visit_count ?? null,
+      consent: visitor.consent ?? null,
     },
     provenance: {
       ...(visitor.provenance ?? {}),
       adapter: "webhook",
       provider,
       source: "visitor_deanonymization",
+      consent_record_id: visitor.consent?.record_id ?? null,
+      consent_region: visitor.consent?.region ?? null,
     },
   };
+}
+
+function visitorSuppressedByConsent(visitor: VisitorInput): boolean {
+  return (
+    visitor.consent?.marketing_allowed === false ||
+    visitor.consent?.do_not_track === true
+  );
+}
+
+function weightedPageLabel(page: NonNullable<VisitorInput["weighted_pages"]>[number]): string {
+  const viewed = page.url ?? page.path ?? "unknown";
+  return typeof page.intent_weight === "number"
+    ? `${viewed} (${page.intent_weight.toFixed(2)})`
+    : viewed;
 }
 
 function isAuthorized(req: Request, rawBody: string, secret: string): boolean {

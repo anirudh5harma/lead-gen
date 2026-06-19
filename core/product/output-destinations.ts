@@ -88,8 +88,8 @@ export function buildOutputDestinations(
       detail:
         "RB2B, Clearbit, Factors, Warmly, or custom visitor-ID events can enter Bombsell as website-intent Signals with company, person, page, and intent-score proof.",
       handoff_stage: "signal_intake",
-      href: "/api/webhooks/visitors",
-      tools: ["product.signal.submit"],
+      href: "/dashboard/profile#visitor-intent",
+      tools: ["product.source.configure", "/api/webhooks/visitors"],
     },
     {
       key: "crm-sync",
