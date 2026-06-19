@@ -762,14 +762,14 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
           last_24h: {
             qualified_signals: 3,
             emails_sent: 2,
-            linkedin_touches_sent: 1,
+            linkedin_dms_sent: 1,
             replies: 1,
             meetings: 0,
           },
           last_7d: {
             qualified_signals: 12,
             emails_sent: 9,
-            linkedin_touches_sent: 4,
+            linkedin_dms_sent: 4,
             replies: 3,
             meetings: 1,
             useful_outcomes: 4,

@@ -13,7 +13,7 @@ const WorkspaceResultSchema = z.object({
 const CountWindowSchema = z.object({
   qualified_signals: z.number().int().nonnegative(),
   emails_sent: z.number().int().nonnegative(),
-  linkedin_touches_sent: z.number().int().nonnegative(),
+  linkedin_dms_sent: z.number().int().nonnegative(),
   replies: z.number().int().nonnegative(),
   meetings: z.number().int().nonnegative(),
 });
@@ -497,7 +497,7 @@ export function registerBombsellAliasTools(): void {
   registerTool({
     name: "bombsell.brief.get",
     description:
-      "Get Bombsell's concise operating Brief for Claude Code: 24h/7d qualified signals, signal types, email/LinkedIn sends, replies, meetings, blockers, and next action.",
+      "Get Bombsell's concise operating Brief for Claude Code: 24h/7d qualified signals, signal types, sent emails, sent LinkedIn DMs/InMail, replies, meetings, blockers, and next action.",
     kind: "read",
     input: z.object({}),
     output: BombsellBriefSchema,

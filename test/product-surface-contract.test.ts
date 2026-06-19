@@ -1153,12 +1153,14 @@ test("MCP context uses the simplified product model", () => {
   assert.match(tools, /name: "product\.brief\.get"/);
   assert.match(tools, /Read the current operating Brief for agent clients/);
   assert.match(tools, /last-day and last-week qualified signals/);
-  assert.match(tools, /sent email\/LinkedIn outreach/);
+  assert.match(tools, /sent LinkedIn DMs\/InMail/);
   assert.match(productApp, /export interface ProductOperatingBrief/);
   assert.match(productApp, /getProductOperatingBrief/);
   assert.match(productApp, /last_24h/);
   assert.match(productApp, /last_7d/);
-  assert.match(productApp, /linkedin_touches_sent/);
+  assert.match(productApp, /linkedin_dms_sent/);
+  assert.match(productApp, /m\.channel in \('linkedin_dm','linkedin_inmail'\)/);
+  assert.doesNotMatch(productApp, /as linkedin_touches_sent/);
   assert.match(productApp, /signal_types/);
   assert.match(productApp, /with_contacts_7d/);
   assert.match(productApp, /with_drafts_7d/);

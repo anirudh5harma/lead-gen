@@ -390,7 +390,7 @@ Outlook setup (`external`), and AWS SES production-access review/sandbox state
 #### 6. Owner surfaces to bookmark
 
 - `/dashboard/brief` — last-day and last-week qualified signals, signal mix,
-  email/LinkedIn sends, replies, meetings, and the next move.
+  email sends, LinkedIn DMs, replies, meetings, and the next move.
 - `/dashboard/agent` — live work, qualified signals, verified contacts, sent
   outreach, replies, and learning.
 - `/dashboard/profile` — company Profile, buyer fit, Outlook/LinkedIn

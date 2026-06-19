@@ -395,7 +395,7 @@ export async function getWorkspaceAgentContext(
     `Workspace: ${session.workspace_id}`,
     "",
     "## Product Vocabulary",
-    "- Brief: the current operating summary with 24h and 7d qualified signals, signal mix, sent email/LinkedIn outreach, replies, meetings, and next action.",
+    "- Brief: the current operating summary with 24h and 7d qualified signals, signal mix, sent emails, sent LinkedIn DMs/InMail, replies, meetings, and next action.",
     "- Profile: company positioning, ICP, contact-quality preferences, Outlook and LinkedIn connections, account health, and launch guardrails.",
     "- Agent: the execution surface for qualified signals, verified contacts, judged drafts, sent outreach, replies, meetings, and learning.",
     "- Outreach: derived email and LinkedIn messages tied to a Conversation, a verified contact, and the Signal that justified action.",

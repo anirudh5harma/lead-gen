@@ -317,7 +317,7 @@ const WorkspaceResultSchema = z.object({
 const OperatingBriefWindowSchema = z.object({
   qualified_signals: z.number().int().nonnegative(),
   emails_sent: z.number().int().nonnegative(),
-  linkedin_touches_sent: z.number().int().nonnegative(),
+  linkedin_dms_sent: z.number().int().nonnegative(),
   replies: z.number().int().nonnegative(),
   meetings: z.number().int().nonnegative(),
 });
@@ -879,7 +879,7 @@ export function registerProductTools(): void {
   registerTool({
     name: "product.brief.get",
     description:
-      "Read the current operating Brief for agent clients: last-day and last-week qualified signals, signal types, sent email/LinkedIn outreach, replies, meetings, channel readiness, pending reviews, and the next action.",
+      "Read the current operating Brief for agent clients: last-day and last-week qualified signals, signal types, sent email, sent LinkedIn DMs/InMail, replies, meetings, channel readiness, pending reviews, and the next action.",
     kind: "read",
     input: z.object({}),
     output: OperatingBriefSchema,

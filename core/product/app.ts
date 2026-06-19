@@ -1128,14 +1128,14 @@ export interface ProductOperatingBrief {
     last_24h: {
       qualified_signals: number;
       emails_sent: number;
-      linkedin_touches_sent: number;
+      linkedin_dms_sent: number;
       replies: number;
       meetings: number;
     };
     last_7d: {
       qualified_signals: number;
       emails_sent: number;
-      linkedin_touches_sent: number;
+      linkedin_dms_sent: number;
       replies: number;
       meetings: number;
       useful_outcomes: number;
@@ -11799,8 +11799,8 @@ export async function getProductOperatingBrief(
       qualified_signals_7d: string;
       emails_sent_24h: string;
       emails_sent_7d: string;
-      linkedin_touches_sent_24h: string;
-      linkedin_touches_sent_7d: string;
+      linkedin_dms_sent_24h: string;
+      linkedin_dms_sent_7d: string;
       replies_24h: string;
       replies_7d: string;
       meetings_24h: string;
@@ -11879,15 +11879,15 @@ export async function getProductOperatingBrief(
          (select count(*)::text from messages m
             where m.workspace_id = $1
               and m.direction = 'outbound'
-              and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+              and m.channel in ('linkedin_dm','linkedin_inmail')
               and m.status in ('sent','delivered','replied')
-              and coalesce(m.sent_at, m.created_at) >= now() - interval '24 hours') as linkedin_touches_sent_24h,
+              and coalesce(m.sent_at, m.created_at) >= now() - interval '24 hours') as linkedin_dms_sent_24h,
          (select count(*)::text from messages m
             where m.workspace_id = $1
               and m.direction = 'outbound'
-              and m.channel in ('linkedin_dm','linkedin_inmail','linkedin_connection','linkedin_comment')
+              and m.channel in ('linkedin_dm','linkedin_inmail')
               and m.status in ('sent','delivered','replied')
-              and coalesce(m.sent_at, m.created_at) >= now() - interval '7 days') as linkedin_touches_sent_7d,
+              and coalesce(m.sent_at, m.created_at) >= now() - interval '7 days') as linkedin_dms_sent_7d,
          (select count(*)::text from outcomes o
             where o.workspace_id = $1
               and o.kind = 'positive_reply'
@@ -11992,16 +11992,14 @@ export async function getProductOperatingBrief(
       last_24h: {
         qualified_signals: Number(row?.qualified_signals_24h ?? 0),
         emails_sent: Number(row?.emails_sent_24h ?? 0),
-        linkedin_touches_sent: Number(
-          row?.linkedin_touches_sent_24h ?? 0,
-        ),
+        linkedin_dms_sent: Number(row?.linkedin_dms_sent_24h ?? 0),
         replies: Number(row?.replies_24h ?? 0),
         meetings: Number(row?.meetings_24h ?? 0),
       },
       last_7d: {
         qualified_signals: Number(row?.qualified_signals_7d ?? 0),
         emails_sent: Number(row?.emails_sent_7d ?? 0),
-        linkedin_touches_sent: Number(row?.linkedin_touches_sent_7d ?? 0),
+        linkedin_dms_sent: Number(row?.linkedin_dms_sent_7d ?? 0),
         replies: Number(row?.replies_7d ?? 0),
         meetings: Number(row?.meetings_7d ?? 0),
         useful_outcomes: Number(row?.useful_outcomes_7d ?? 0),
@@ -12036,7 +12034,7 @@ function operatingBriefNextAction(
 ): ProductOperatingBrief["next_action"] {
   const totalSent7d =
     brief.windows.last_7d.emails_sent +
-    brief.windows.last_7d.linkedin_touches_sent;
+    brief.windows.last_7d.linkedin_dms_sent;
   if (brief.operations.pending_reviews > 0) {
     return {
       key: "review_drafts",

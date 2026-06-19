@@ -460,7 +460,7 @@ must stay out of the published plugin.
 ### `/bombsell:brief`
 
 Pulls the operating brief: last-day and last-week qualified signals, signal
-types, email/LinkedIn sends, replies, meetings, channel blockers, and the next
+types, email sends, LinkedIn DMs/InMail, replies, meetings, channel blockers, and the next
 recommended action.
 
 MCP tools needed:

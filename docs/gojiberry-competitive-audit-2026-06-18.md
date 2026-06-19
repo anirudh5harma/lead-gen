@@ -163,3 +163,8 @@ Brief and Claude Code next actions now route pending or newly prepared outreach
 to `/dashboard/agent#review-queue`, not the older qualified-signal list. The
 morning brief can therefore move from "drafts need review" straight to the
 Copilot approval surface where sends are actually decided.
+
+The product and MCP Brief now use the same channel accounting as the dashboard:
+`linkedin_dms_sent` counts only LinkedIn DMs and InMail. Connection requests and
+comments remain Agent outreach evidence, so external agents no longer inflate
+the user's requested last-day/last-week DM metric with non-DM touches.
