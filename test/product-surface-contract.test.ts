@@ -1262,6 +1262,9 @@ test("dashboard surface verifier covers the simplified product flow", () => {
   assert.match(verifier, /"\/dashboard\/agent"/);
   assert.match(verifier, /"\/dashboard\/profile"/);
   assert.match(verifier, /canonicalNav = \["Brief", "Agent", "Profile"\]/);
+  assert.match(verifier, /forbiddenNav = \["Outreach", "Signals", "Prospects", "Inbox", "Plays", "Outcomes", "Reps"\]/);
+  assert.match(verifier, /"\/login\?next=%2Fdashboard"/);
+  assert.match(verifier, /"\/auth\/google\?next=%2Fdashboard"/);
   assert.match(verifier, /"\/dashboard\/reps", destination: "\/dashboard\/agent"/);
   assert.match(verifier, /"\/dashboard\/signals", destination: "\/dashboard\/agent#opportunities"/);
   assert.match(verifier, /"\/dashboard\/settings", destination: "\/dashboard\/profile#tools"/);

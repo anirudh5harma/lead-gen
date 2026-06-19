@@ -11,6 +11,11 @@ type RedirectCheck = {
   destination: string;
 };
 
+type AuthRedirectCheck = {
+  path: string;
+  locationIncludes: string;
+};
+
 const origin = (
   process.env.DASHBOARD_VERIFY_ORIGIN ??
   process.env.APP_ORIGIN ??
@@ -53,6 +58,8 @@ const checks: SurfaceCheck[] = [
 
 const canonicalNav = ["Brief", "Agent", "Profile"];
 
+const forbiddenNav = ["Outreach", "Signals", "Prospects", "Inbox", "Plays", "Outcomes", "Reps"];
+
 const redirectChecks: RedirectCheck[] = [
   { path: "/dashboard/reps", destination: "/dashboard/agent" },
   { path: "/dashboard/signals", destination: "/dashboard/agent#opportunities" },
@@ -61,11 +68,16 @@ const redirectChecks: RedirectCheck[] = [
   { path: "/dashboard/outcomes", destination: "/dashboard/brief" },
 ];
 
+const authRedirectChecks: AuthRedirectCheck[] = [
+  { path: "/login?next=%2Fdashboard", locationIncludes: "/auth/google?next=%2Fdashboard" },
+];
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
   const results = [];
   const redirects = [];
+  const auth = [];
 
   try {
     for (const check of checks) {
@@ -86,10 +98,14 @@ async function main() {
         check.path === "/dashboard/brief"
           ? arraysEqual(navLabels, canonicalNav)
           : true;
+      const forbiddenNavLabels = navLabels.filter((label) =>
+        forbiddenNav.includes(label)
+      );
       const failed =
         !response?.ok() ||
         missing.length > 0 ||
         !navMatches ||
+        forbiddenNavLabels.length > 0 ||
         text.includes("This tab could not finish") ||
         text.includes("An error occurred") ||
         text.includes("Not found");
@@ -108,6 +124,8 @@ async function main() {
         ok: !failed,
         missing,
         nav: check.path === "/dashboard/brief" ? navLabels : undefined,
+        forbiddenNav:
+          check.path === "/dashboard/brief" ? forbiddenNavLabels : undefined,
       });
     }
 
@@ -125,14 +143,34 @@ async function main() {
         ok: Boolean(ok),
       });
     }
+
+    for (const check of authRedirectChecks) {
+      const response = await page.request.get(`${origin}${check.path}`, {
+        maxRedirects: 0,
+        timeout: 20_000,
+      });
+      const location = response.headers().location ?? "";
+      auth.push({
+        path: check.path,
+        status: response.status(),
+        location,
+        ok:
+          response.status() >= 300 &&
+          response.status() < 400 &&
+          location.includes(check.locationIncludes),
+      });
+    }
   } finally {
     await browser.close();
   }
 
   const failures = results.filter((result) => !result.ok);
   const redirectFailures = redirects.filter((result) => !result.ok);
-  console.log(JSON.stringify({ origin, results, redirects }, null, 2));
-  if (failures.length > 0 || redirectFailures.length > 0) process.exit(1);
+  const authFailures = auth.filter((result) => !result.ok);
+  console.log(JSON.stringify({ origin, results, redirects, auth }, null, 2));
+  if (failures.length > 0 || redirectFailures.length > 0 || authFailures.length > 0) {
+    process.exit(1);
+  }
 }
 
 function normalizedPath(value: string): string {
