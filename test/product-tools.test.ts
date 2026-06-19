@@ -547,7 +547,26 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
     };
   };
   const readme = readProjectFile(`${root}/README.md`);
-  const plan = readProjectFile("docs/plans/2026-06-19-001-bombsell-claude-code-plugin-plan.md");
+  const plan = readProjectFile(
+    "docs/plans/2026-06-19-001-bombsell-claude-code-plugin-plan.md",
+  );
+  const marketplace = JSON.parse(
+    readProjectFile(
+      "integrations/bombsell-claude-code-marketplace/.claude-plugin/marketplace.json",
+    ),
+  ) as {
+    name: string;
+    plugins: Array<{
+      name: string;
+      version: string;
+      source: {
+        source: string;
+        url: string;
+        path: string;
+        sha?: string;
+      };
+    }>;
+  };
   const skills = [
     "brief",
     "profile-from-repo",
@@ -564,6 +583,20 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.equal(mcp.mcpServers.bombsell.url, "https://www.bombsell.com/api/mcp");
   assert.match(mcp.mcpServers.bombsell.oauth?.scopes ?? "", /profile:read/);
   assert.match(mcp.mcpServers.bombsell.oauth?.scopes ?? "", /outreach:prepare/);
+  assert.equal(marketplace.name, "bombsell");
+  assert.equal(marketplace.plugins.length, 1);
+  assert.equal(marketplace.plugins[0]?.name, manifest.name);
+  assert.equal(marketplace.plugins[0]?.version, manifest.version);
+  assert.equal(marketplace.plugins[0]?.source.source, "git-subdir");
+  assert.equal(
+    marketplace.plugins[0]?.source.url,
+    "https://github.com/anirudh5harma/lead-gen.git",
+  );
+  assert.equal(
+    marketplace.plugins[0]?.source.path,
+    "integrations/bombsell-claude-code",
+  );
+  assert.match(marketplace.plugins[0]?.source.sha ?? "", /^[0-9a-f]{40}$/);
 
   for (const skill of skills) {
     const skillPath = `${root}/skills/${skill}/SKILL.md`;
@@ -592,11 +625,14 @@ test("Claude Code plugin package exposes Bombsell's focused GTM workbench", () =
   assert.match(readme, /proposal-only/);
   assert.match(readme, /does not send/);
   assert.match(readme, /Do not publish static bearer tokens/);
+  assert.match(readme, /\/plugin marketplace add \.\/integrations\/bombsell-claude-code-marketplace/);
+  assert.match(readme, /\/plugin install bombsell@bombsell/);
   assert.match(readme, /"source": "git-subdir"/);
   assert.match(readme, /"path": "integrations\/bombsell-claude-code"/);
   assert.match(readme, /"sha": "<release-commit-sha>"/);
   assert.match(plan, /"source": "git-subdir"/);
   assert.match(plan, /"path": "integrations\/bombsell-claude-code"/);
+  assert.match(plan, /claude plugin validate integrations\/bombsell-claude-code-marketplace/);
   assert.match(plan, /pinned commit SHA/);
   assert.doesNotMatch(readme, /Sampark|plays tab|outcomes tab/i);
   assert.ok(!projectFileExists(`${root}/hooks/hooks.json`));

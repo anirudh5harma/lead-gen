@@ -106,6 +106,8 @@ The plugin should ship:
   `/api/mcp` endpoint
 - six namespaced skills that guide users through Brief, Profile, launch
   readiness, qualified signals, outreach preparation, and reply learning
+- a Bombsell-controlled marketplace catalog that can be validated locally and
+  later hosted for design partners
 - two optional read-mostly subagents for GTM operation and outreach review
 - opt-in hooks for release/commit workflows after the core plugin is trusted
 - a private marketplace first, then the Claude community marketplace after
@@ -197,11 +199,9 @@ audit logging are complete.
 Private marketplace structure:
 
 ```text
-bombsell-claude-code-marketplace/
+integrations/bombsell-claude-code-marketplace/
   .claude-plugin/
     marketplace.json
-  plugins/
-    bombsell/ -> ../bombsell-claude-code or pinned source
 ```
 
 Recommended private marketplace entry while the plugin remains in this
@@ -225,6 +225,11 @@ monorepo:
 Once the plugin is accepted by design partners, move it to a dedicated public
 repo or publish it as a standalone package so marketplace installation does not
 depend on the app monorepo remaining public-readable.
+
+The first local catalog now lives at
+`integrations/bombsell-claude-code-marketplace/.claude-plugin/marketplace.json`
+and pins the plugin to a release commit. Validate it with
+`claude plugin validate integrations/bombsell-claude-code-marketplace`.
 
 Initial `.mcp.json` target:
 
@@ -560,6 +565,8 @@ Install page bullets:
   approvals, and learning.
 - [x] Add product contract tests for wrapper tools and manifest discovery.
 - [x] Create `bombsell-claude-code` plugin package under `integrations/`.
+- [x] Create a local Bombsell marketplace catalog for internal validation and
+  private dogfood.
 - [x] Add six initial skills.
 - [ ] Add two optional agents.
 - [x] Add README and install docs.

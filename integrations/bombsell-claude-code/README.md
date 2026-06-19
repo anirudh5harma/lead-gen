@@ -28,6 +28,19 @@ Then run:
 
 For marketplace dogfood, publish this directory through a Bombsell-controlled Claude Code plugin marketplace and install it as `bombsell@bombsell`.
 
+This repo includes a local marketplace catalog for internal validation at:
+
+```text
+integrations/bombsell-claude-code-marketplace
+```
+
+Local install flow:
+
+```text
+/plugin marketplace add ./integrations/bombsell-claude-code-marketplace
+/plugin install bombsell@bombsell
+```
+
 Recommended marketplace source while this plugin lives in the app monorepo:
 
 ```json

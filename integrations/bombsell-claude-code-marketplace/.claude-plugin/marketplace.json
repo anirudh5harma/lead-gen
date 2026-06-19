@@ -1,0 +1,31 @@
+{
+  "name": "bombsell",
+  "description": "Bombsell Claude Code plugins for signal-led outbound workflows.",
+  "owner": {
+    "name": "Bombsell",
+    "email": "founders@bombsell.com"
+  },
+  "plugins": [
+    {
+      "name": "bombsell",
+      "displayName": "Bombsell",
+      "description": "Run Bombsell GTM workflows from Claude Code: Brief, Profile proposals, launch checks, qualified signals, prepare-only outreach, and reply learning.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Bombsell"
+      },
+      "homepage": "https://www.bombsell.com",
+      "repository": "https://github.com/anirudh5harma/lead-gen",
+      "license": "UNLICENSED",
+      "category": "productivity",
+      "tags": ["gtm", "sales", "outreach", "mcp"],
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/anirudh5harma/lead-gen.git",
+        "path": "integrations/bombsell-claude-code",
+        "sha": "048255bb418082e93fb118ca2a4d024141d61b9c"
+      },
+      "strict": true
+    }
+  ]
+}
