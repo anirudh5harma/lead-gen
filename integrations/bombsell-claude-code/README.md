@@ -92,6 +92,7 @@ This plugin expects the Bombsell MCP manifest to expose:
 - `bombsell.launch.check`
 - `bombsell.signals.list_qualified`
 - `bombsell.contact_lanes.get`
+- `bombsell.integrations.list`
 - `bombsell.outreach.prepare`
 - `bombsell.outreach.list_sent`
 - `bombsell.draft.get`

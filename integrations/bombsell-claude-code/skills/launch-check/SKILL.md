@@ -9,12 +9,15 @@ Use this skill when the user asks whether Bombsell is ready to launch, send outr
 ## Steps
 
 1. Call `bombsell.launch.check`.
-2. Report:
+2. If the user asks about integrations, output destinations, CRM sync, or where qualified work can go next, call `bombsell.integrations.list`.
+3. Report:
    - launch status
    - blockers
    - warnings
    - required checks
+   - connected or blocked native output paths
+   - planned CRM, outreach-tool, and team-alert destinations if requested
    - next action
-3. If a check has a Profile or Agent surface, include that path.
+4. If a check or destination has a Profile or Agent surface, include that path.
 
 Keep this operational. Do not turn it into a marketing summary.

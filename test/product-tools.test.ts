@@ -122,6 +122,7 @@ test("product tools: registerProductTools exposes current UI actions to agents",
     "bombsell.profile.propose_from_context",
     "bombsell.signals.list_qualified",
     "bombsell.contact_lanes.get",
+    "bombsell.integrations.list",
     "bombsell.outreach.prepare",
     "bombsell.outreach.list_sent",
     "bombsell.draft.get",
@@ -1114,6 +1115,57 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   assert.equal(lanes.lane_counts.draft_ready, 1);
   assert.equal(lanes.lane_counts.needs_contact_resolution, 0);
   assert.equal(lanes.lane_counts.needs_fit_review, 1);
+
+  const integrations = await invokeTool<{
+    native_channels_ready: number;
+    launch_ready: boolean;
+    next_action: { href: string };
+    destinations: Array<{
+      key: string;
+      status: string;
+      handoff_stage: string;
+      tools: string[];
+    }>;
+    source_tools: string[];
+  }>(
+    "bombsell.integrations.list",
+    {},
+    { workspace_id, user_id },
+  );
+  assert.equal(integrations.native_channels_ready, 2);
+  assert.equal(integrations.launch_ready, true);
+  assert.equal(integrations.next_action.href, "/dashboard/profile#tools");
+  assert.deepEqual(integrations.source_tools, [
+    "product.brief.get",
+    "product.launch.readiness.get",
+  ]);
+  assert.equal(
+    integrations.destinations.find((item) => item.key === "outlook")?.status,
+    "connected",
+  );
+  assert.equal(
+    integrations.destinations.find((item) => item.key === "linkedin")?.status,
+    "connected",
+  );
+  assert.equal(
+    integrations.destinations.find((item) => item.key === "claude-code")
+      ?.handoff_stage,
+    "agent_api",
+  );
+  assert.deepEqual(
+    integrations.destinations.find((item) => item.key === "signal-webhook")
+      ?.tools,
+    ["product.signal.submit"],
+  );
+  assert.equal(
+    integrations.destinations.find((item) => item.key === "crm-sync")?.status,
+    "planned",
+  );
+  assert.equal(
+    integrations.destinations.find((item) => item.key === "team-alerts")
+      ?.handoff_stage,
+    "reply_meeting_alert",
+  );
 
   await assert.rejects(
     invokeTool(

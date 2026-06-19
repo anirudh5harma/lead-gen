@@ -317,6 +317,42 @@ const ContactLanesSchema = WorkspaceResultSchema.extend({
   source_tool: z.literal("product.qualified_signals.list"),
 });
 
+const OutputDestinationSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  category: z.string(),
+  status: z.enum(["connected", "available", "planned", "blocked"]),
+  detail: z.string(),
+  handoff_stage: z.enum([
+    "channel_send",
+    "agent_api",
+    "signal_intake",
+    "qualified_contact_sync",
+    "sent_proof_sync",
+    "reply_meeting_alert",
+  ]),
+  href: z.string().nullable(),
+  tools: z.array(z.string()),
+});
+
+type OutputDestination = z.infer<typeof OutputDestinationSchema>;
+
+const IntegrationsAliasSchema = WorkspaceResultSchema.extend({
+  generated_at: z.string().datetime(),
+  native_channels_ready: z.number().int().nonnegative(),
+  launch_ready: z.boolean(),
+  next_action: z.object({
+    label: z.string(),
+    detail: z.string(),
+    href: z.string(),
+  }),
+  destinations: z.array(OutputDestinationSchema),
+  source_tools: z.tuple([
+    z.literal("product.brief.get"),
+    z.literal("product.launch.readiness.get"),
+  ]),
+});
+
 const OutreachPrepareSchema = WorkspaceResultSchema.extend({
   generated_at: z.string().datetime(),
   requested_limit: z.number().int().positive(),
@@ -782,6 +818,45 @@ export function registerBombsellAliasTools(): void {
   });
 
   registerTool({
+    name: "bombsell.integrations.list",
+    description:
+      "List Bombsell output destinations for qualified signals, verified contacts, sent outreach proof, replies, and meetings so external agents know what is connected, available, planned, or blocked.",
+    kind: "read",
+    input: z.object({}),
+    output: IntegrationsAliasSchema,
+    async handler(_input, ctx) {
+      const [brief, readiness] = await Promise.all([
+        invokeTool<OperatingBrief>("product.brief.get", {}, ctx),
+        invokeTool<LaunchReadiness>("product.launch.readiness.get", {}, ctx),
+      ]);
+      const destinations = integrationDestinations(brief, readiness);
+      return {
+        workspace_id: brief.workspace_id,
+        generated_at: new Date().toISOString(),
+        native_channels_ready: brief.channel_readiness.connected_count,
+        launch_ready: readiness.launch_ready,
+        next_action: {
+          label: readiness.launch_ready
+            ? "Route qualified work"
+            : "Finish Profile and channel setup",
+          detail: readiness.launch_ready
+            ? "Native email, LinkedIn, MCP, and signal intake are the active output paths; CRM and alert sync remain planned evented integrations."
+            : readiness.next_action || "Connect required channels before external output destinations can move outreach.",
+          href: readiness.launch_ready
+            ? "/dashboard/profile#tools"
+            : readiness.checks.find((check) => check.action?.surface)?.action?.surface ??
+              "/dashboard/profile#tools",
+        },
+        destinations,
+        source_tools: [
+          "product.brief.get",
+          "product.launch.readiness.get",
+        ] as ["product.brief.get", "product.launch.readiness.get"],
+      };
+    },
+  });
+
+  registerTool({
     name: "bombsell.outreach.prepare",
     description:
       "Prepare judged Bombsell email or LinkedIn outreach from qualified signals without sending. This dispatches the existing durable Agent workflow and returns review-ready drafts for approval.",
@@ -984,6 +1059,105 @@ function summarizeQualifiedSignals(
       href: "/dashboard/agent#opportunities",
     };
   });
+}
+
+function integrationDestinations(
+  brief: OperatingBrief,
+  readiness: LaunchReadiness,
+): OutputDestination[] {
+  const emailReady = brief.channel_readiness.email_connected;
+  const linkedInReady = brief.channel_readiness.linkedin_connected;
+  const destinations: OutputDestination[] = [
+    {
+      key: "outlook",
+      title: "Outlook",
+      category: "Email outreach",
+      status: emailReady ? "connected" : "blocked",
+      detail: emailReady
+        ? "Verified email outreach can send from the connected Microsoft 365 mailbox and sync replies."
+        : "Connect Outlook in Profile before verified email contacts can leave Bombsell.",
+      handoff_stage: "channel_send",
+      href: "/dashboard/profile#email",
+      tools: ["product.outlook_account.connect_url.get"],
+    },
+    {
+      key: "linkedin",
+      title: "LinkedIn",
+      category: "Social outreach",
+      status: linkedInReady ? "connected" : "blocked",
+      detail: linkedInReady
+        ? "LinkedIn-ready profiles can become connection requests, accepted-connection follow-ups, DMs, and reply traces."
+        : "Connect LinkedIn in Profile before profile-backed outreach can run.",
+      handoff_stage: "channel_send",
+      href: "/dashboard/profile#linkedin",
+      tools: ["product.linkedin_account.connect_url.get"],
+    },
+    {
+      key: "claude-code",
+      title: "Claude Code + MCP",
+      category: "Agent API",
+      status: "available",
+      detail:
+        "External agents can read Brief, Profile proposals, qualified signals, sent outreach, drafts, approvals, and reply learning through Bombsell MCP tools.",
+      handoff_stage: "agent_api",
+      href: "/dashboard/profile#tools",
+      tools: [
+        "bombsell.brief.get",
+        "bombsell.signals.list_qualified",
+        "bombsell.outreach.list_sent",
+      ],
+    },
+    {
+      key: "signal-webhook",
+      title: "Signal webhook",
+      category: "Automation intake",
+      status: "available",
+      detail:
+        "Trusted external buying-signal events can enter Bombsell's qualification, contact-resolution, draft, and approval path.",
+      handoff_stage: "signal_intake",
+      href: "/api/webhooks/signals",
+      tools: ["product.signal.submit"],
+    },
+    {
+      key: "crm-sync",
+      title: "CRM sync",
+      category: "Qualified contact sync",
+      status: "planned",
+      detail:
+        "HubSpot, Pipedrive, Salesforce, Attio, Folk, and Clay should receive qualified contacts only after signal and contact proof exists.",
+      handoff_stage: "qualified_contact_sync",
+      href: null,
+      tools: [],
+    },
+    {
+      key: "outreach-tool-sync",
+      title: "Outreach tool sync",
+      category: "Sent proof sync",
+      status: "planned",
+      detail:
+        "Instantly, Smartlead, HeyReach, and SmartReach should stay optional volume destinations after native channel readiness and sent proof are healthy.",
+      handoff_stage: "sent_proof_sync",
+      href: null,
+      tools: [],
+    },
+    {
+      key: "team-alerts",
+      title: "Team alerts",
+      category: "Reply and meeting alerts",
+      status: "planned",
+      detail:
+        "Slack, Zapier, and outbound webhooks should announce hot contacts, replies, meetings, and blocked send reasons from typed events.",
+      handoff_stage: "reply_meeting_alert",
+      href: null,
+      tools: [],
+    },
+  ];
+  return destinations.map((destination): OutputDestination => ({
+    ...destination,
+    status: readiness.launch_ready || destination.status !== "blocked"
+      ? destination.status
+      : "blocked",
+  }));
 }
 
 function summarizeContact(
