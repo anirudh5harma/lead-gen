@@ -30,6 +30,8 @@ const checks: SurfaceCheck[] = [
       "Qualified signals",
       "Emails sent",
       "LinkedIn DMs",
+      "Signal-to-outreach flow",
+      "Verified email",
       "Agent insight",
     ],
   },

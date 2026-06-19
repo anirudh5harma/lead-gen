@@ -292,7 +292,16 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Today priority/);
   assert.match(dashboard, /prepareQualifiedSignalsAction/);
   assert.match(dashboard, /action: "prepare_outreach"/);
+  assert.match(dashboard, /value="\/dashboard\/agent#opportunities"/);
   assert.match(dashboard, /pendingLabel="Preparing"/);
+  assert.match(dashboard, /BriefSignalToOutreachPanel/);
+  assert.match(dashboard, /BriefFlowStep/);
+  assert.match(dashboard, /draftedSignals7d/);
+  assert.match(dashboard, /Signal-to-outreach flow/);
+  assert.match(dashboard, /Signal-backed contacts/);
+  assert.match(dashboard, /Judged drafts/);
+  assert.match(dashboard, /Sent outreach/);
+  assert.match(dashboard, /reply or meeting signal/);
   assert.match(dashboard, /BriefNextMovesPanel/);
   assert.match(dashboard, /briefNextMoves/);
   assert.match(dashboard, /Review drafted outreach/);
@@ -343,7 +352,6 @@ test("Dashboard routes setup work through Profile and current surfaces", () => {
   assert.match(dashboard, /Replies and meetings/);
   assert.match(dashboard, /Replies 24h/);
   assert.match(dashboard, /Meetings 7d/);
-  assert.doesNotMatch(dashboard, /Signal-to-outreach funnel/);
   assert.doesNotMatch(dashboard, /Signal mix/);
   assert.match(dashboard, /loadBriefHotContacts/);
   assert.match(dashboard, /loadBriefOutcomeInsights/);

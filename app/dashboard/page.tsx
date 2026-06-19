@@ -859,6 +859,10 @@ function BriefView({
   const totalSent7d = actions.emails_sent_7d + actions.dms_sent_7d;
   const replyRate =
     totalSent7d > 0 ? Math.round((actions.replies_7d / totalSent7d) * 100) : 0;
+  const draftedSignals7d = signalKinds.reduce(
+    (total, signal) => total + signal.with_drafts_7d,
+    0,
+  );
   const priority = briefPriority(actions, channelReadiness, totalSent7d);
   const nextMoves = briefNextMoves(
     actions,
@@ -876,12 +880,12 @@ function BriefView({
           {today}
         </p>
         <h1
-          className="mt-4 text-[2rem] font-semibold leading-tight text-[var(--color-text-1)] sm:text-[3rem]"
+          className="mt-4 max-w-full break-words text-[2rem] font-semibold leading-tight text-[var(--color-text-1)] [overflow-wrap:anywhere] sm:text-[3rem]"
           style={{ fontFamily: "var(--font-display)", letterSpacing: 0 }}
         >
           Welcome back, {workspaceName}.
         </h1>
-        <p className="mt-3 max-w-[72ch] text-[15px] leading-7 text-[var(--color-text-2)]">
+        <p className="mt-3 max-w-[72ch] break-words text-[15px] leading-7 text-[var(--color-text-2)] [overflow-wrap:anywhere]">
           Your agent found {actions.qualified_signals_24h} qualified signals in
           the last day, sent {totalSent24h} emails or LinkedIn DMs, and produced{" "}
           {actions.replies_24h} replies with {actions.meetings_24h} meetings.
@@ -892,6 +896,13 @@ function BriefView({
         actions={actions}
         signalKinds={signalKinds}
         signalHealth={signalHealth}
+      />
+
+      <BriefSignalToOutreachPanel
+        actions={actions}
+        contactReadiness={contactReadiness}
+        draftedSignals7d={draftedSignals7d}
+        totalSent7d={totalSent7d}
       />
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -910,7 +921,7 @@ function BriefView({
                 <input
                   type="hidden"
                   name="return_to"
-                  value="/dashboard/brief#reply-insights"
+                  value="/dashboard/agent#opportunities"
                 />
                 <input type="hidden" name="limit" value="25" />
                 <PendingSubmitButton
@@ -1245,6 +1256,155 @@ function SignalHealthMetric({
   );
 }
 
+function BriefSignalToOutreachPanel({
+  actions,
+  contactReadiness,
+  draftedSignals7d,
+  totalSent7d,
+}: {
+  actions: BriefActionState;
+  contactReadiness: BriefContactReadiness;
+  draftedSignals7d: number;
+  totalSent7d: number;
+}) {
+  const outcomeCount7d = actions.replies_7d + actions.meetings_7d;
+  const steps = [
+    {
+      icon: "sensors",
+      label: "Qualified signals",
+      value: actions.qualified_signals_7d,
+      detail: "Matched timing evidence",
+      href: "/dashboard/agent#opportunities",
+      ready: actions.qualified_signals_7d > 0,
+    },
+    {
+      icon: "person_search",
+      label: "Signal-backed contacts",
+      value: contactReadiness.signal_backed,
+      detail: "People tied to fresh signals",
+      href: "/dashboard/agent#verified-contacts",
+      ready: contactReadiness.signal_backed > 0,
+    },
+    {
+      icon: "verified",
+      label: "Verified email",
+      value: contactReadiness.verified_email,
+      detail: "Deliverable email handles",
+      href: "/dashboard/agent#verified-contacts",
+      ready: contactReadiness.verified_email > 0,
+    },
+    {
+      icon: "linkedin",
+      label: "LinkedIn profiles",
+      value: contactReadiness.linkedin_profiles,
+      detail: "Profiles ready for social outreach",
+      href: "/dashboard/agent#verified-contacts",
+      ready: contactReadiness.linkedin_profiles > 0,
+    },
+    {
+      icon: "rate_review",
+      label: "Judged drafts",
+      value: draftedSignals7d,
+      detail: "Drafts behind eval and review",
+      href: "/dashboard/agent#opportunities",
+      ready: draftedSignals7d > 0,
+    },
+    {
+      icon: "send",
+      label: "Sent outreach",
+      value: totalSent7d,
+      detail: "Email and LinkedIn touches",
+      href: "/dashboard/agent#outreach",
+      ready: totalSent7d > 0,
+    },
+  ];
+
+  return (
+    <section className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Signal-to-outreach flow
+          </p>
+          <p className="mt-1 max-w-[76ch] text-sm leading-6 text-[var(--color-text-3)]">
+            Quality signals should become verified email or LinkedIn contacts,
+            judged drafts, sent outreach, and reply learning without making you
+            hunt through separate tabs.
+          </p>
+        </div>
+        <Link href="/dashboard/agent#outreach" className="btn-quiet-sm">
+          <Icon name="arrow_forward" size={14} />
+          Open Agent
+        </Link>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+        {steps.map((step) => (
+          <BriefFlowStep key={step.label} step={step} />
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-3)]">
+        <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
+          <Icon name="mail" size={13} />
+          {actions.replies_7d} replies
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
+          <Icon name="event_available" size={13} />
+          {actions.meetings_7d} meetings
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1">
+          <Icon name="auto_graph" size={13} />
+          {outcomeCount7d} reply or meeting signal
+          {outcomeCount7d === 1 ? "" : "s"} for learning
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function BriefFlowStep({
+  step,
+}: {
+  step: {
+    icon: string;
+    label: string;
+    value: number;
+    detail: string;
+    href: string;
+    ready: boolean;
+  };
+}) {
+  return (
+    <Link
+      href={step.href}
+      className="grid min-h-[142px] gap-3 rounded-[8px] bg-[var(--color-ink-2)] p-3 transition-colors hover:bg-[var(--color-ink-3)]"
+    >
+      <span className="flex items-center justify-between gap-3">
+        <span
+          className={
+            "grid size-8 place-items-center rounded-[8px] " +
+            (step.ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+          }
+        >
+          <Icon name={step.icon} size={15} />
+        </span>
+        <strong className="text-xl font-semibold tabular-nums text-[var(--color-text-1)]">
+          {step.value}
+        </strong>
+      </span>
+      <span>
+        <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+          {step.label}
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-[var(--color-text-3)]">
+          {step.detail}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 function signalHealthAttention(health: BriefSignalHealth): string | null {
   if (health.watched_sources === 0) {
     return "No signal sources are configured yet. Complete Profile so the Agent can watch for timing evidence.";
@@ -1283,7 +1443,7 @@ function BriefWindowMetricRow({
   return (
     <Link
       href={metric.href}
-      className="group grid grid-cols-[32px_minmax(0,1fr)_72px_72px] items-center gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-3)]"
+      className="group grid grid-cols-[32px_minmax(0,1fr)_48px_48px] items-center gap-2 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition-colors hover:bg-[var(--color-ink-3)] sm:grid-cols-[32px_minmax(0,1fr)_72px_72px] sm:gap-3"
     >
       <span className="grid size-8 place-items-center rounded-[8px] bg-[var(--color-ink-0)] text-[var(--color-text-2)]">
         <Icon name={metric.icon} size={15} />
