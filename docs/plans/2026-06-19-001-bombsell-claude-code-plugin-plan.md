@@ -15,6 +15,33 @@ This is not a replacement for the Bombsell web app. It is a distribution and
 workflow surface over the same product primitives: Profile, Signal, Agent work,
 Conversation, and Outcome-derived learning.
 
+## Launch Plan Summary
+
+The Claude Code path should launch as a controlled GTM workbench, not as a
+shadow outreach app.
+
+1. **Direct MCP now.** Keep the first install path simple:
+   `claude mcp add --transport http bombsell https://www.bombsell.com/api/mcp`.
+   This validates OAuth, workspace scoping, tool discovery, revocation, and
+   audit events against the production server before users install a package.
+2. **Plugin dogfood next.** Use `integrations/bombsell-claude-code` for a small
+   plugin footprint: one remote HTTP MCP server and six `/bombsell:*` skills.
+   The skills map to the simplified product model: Brief, Profile, Agent
+   signals, Agent outreach preparation, approvals, and learning.
+3. **Private marketplace after proof.** Host the pinned
+   `git-subdir` marketplace only after authenticated dogfood proves that the
+   plugin can connect, revoke, prepare drafts, and route users back to
+   `/dashboard/agent#review-queue` without leaking tokens or bypassing approval
+   gates.
+4. **Public marketplace last.** Submit to the Claude community marketplace only
+   after `npm run verify:claude-code-plugin`, production OAuth, design-partner
+   installs, privacy copy, and audit visibility are clean.
+
+The v1 promise is: Claude Code can inspect a user's repo, propose Bombsell
+Profile improvements, review qualified signals, prepare judged email/LinkedIn
+drafts, and summarize replies or meetings. Bombsell still owns approval,
+sending, channel readiness, eval gates, token revocation, and the audit trail.
+
 ## Research Snapshot
 
 Last checked against Anthropic Claude Code docs on 2026-06-19.

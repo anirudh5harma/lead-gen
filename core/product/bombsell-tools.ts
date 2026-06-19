@@ -893,7 +893,7 @@ export function registerBombsellAliasTools(): void {
           detail: reviewReadySignals.length > 0
             ? `${reviewReadySignals.length} judged draft${reviewReadySignals.length === 1 ? "" : "s"} ready under Agent.`
             : "Preparation started. Check Agent for verified contacts, judged drafts, and approval gates.",
-          href: "/dashboard/agent#outreach",
+          href: "/dashboard/agent#review-queue",
         },
         source_tool: "product.signals.dispatch_plays" as const,
       };

@@ -968,7 +968,7 @@ function BriefView({
                 <input
                   type="hidden"
                   name="return_to"
-                  value="/dashboard/agent#opportunities"
+                  value="/dashboard/agent#review-queue"
                 />
                 <input type="hidden" name="limit" value="25" />
                 <PendingSubmitButton
@@ -1650,7 +1650,7 @@ function briefPriority(
       detail: `${actions.pending_reviews} drafted outreach ${
         actions.pending_reviews === 1 ? "message needs" : "messages need"
       } review before sending.`,
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#review-queue",
       icon: "rate_review",
       label: "Review drafts",
     };
@@ -1710,7 +1710,7 @@ function briefNextMoves(
       detail: `${actions.pending_reviews} judged draft${
         actions.pending_reviews === 1 ? "" : "s"
       } ${actions.pending_reviews === 1 ? "needs" : "need"} a send decision before the agent can move them forward.`,
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#review-queue",
       action: "Review",
       tone: "attention",
     });

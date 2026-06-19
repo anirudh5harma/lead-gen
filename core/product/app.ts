@@ -12044,7 +12044,7 @@ function operatingBriefNextAction(
       detail: `${brief.operations.pending_reviews} drafted outreach ${
         brief.operations.pending_reviews === 1 ? "message needs" : "messages need"
       } review before sending.`,
-      href: "/dashboard/agent#opportunities",
+      href: "/dashboard/agent#review-queue",
     };
   }
   if (brief.operations.unhealthy_channels > 0) {

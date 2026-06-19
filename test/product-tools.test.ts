@@ -798,7 +798,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
           key: "review_drafts",
           label: "Review drafted outreach",
           detail: "One judged draft is waiting.",
-          href: "/dashboard/agent#outreach",
+          href: "/dashboard/agent#review-queue",
         },
       };
     },
@@ -1296,7 +1296,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     prepared.review_ready_signals[0]?.outreach_draft?.pending_approval_id,
     approval_id,
   );
-  assert.equal(prepared.next_action.href, "/dashboard/agent#outreach");
+  assert.equal(prepared.next_action.href, "/dashboard/agent#review-queue");
   assert.equal(prepared.source_tool, "product.signals.dispatch_plays");
   assert.deepEqual(dispatchCalls, [{ limit: 3 }]);
 

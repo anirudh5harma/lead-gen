@@ -158,3 +158,8 @@ outreach. It reads pending `workflow_approvals`, shows the contact, signal,
 draft proof link, and approve/reject controls, then routes decisions through the
 existing approval action. This translates GojiBerry's Copilot/autopilot split
 into Bombsell without bypassing channel readiness, hot-path evals, or daily caps.
+
+Brief and Claude Code next actions now route pending or newly prepared outreach
+to `/dashboard/agent#review-queue`, not the older qualified-signal list. The
+morning brief can therefore move from "drafts need review" straight to the
+Copilot approval surface where sends are actually decided.
