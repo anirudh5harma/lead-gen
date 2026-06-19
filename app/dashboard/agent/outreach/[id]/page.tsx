@@ -9,9 +9,11 @@ import {
   type ConversationTrustApproval,
   type ConversationTrustConversation,
   type ConversationTrustEvent,
+  type ConversationTrustGateExplanation,
   type ConversationTrustMessage,
   type ConversationTrustOutcome,
   type ConversationTrustReplyProof,
+  type ConversationTrustTrace,
 } from "@/core/product/conversation-trust";
 import { getActiveWorkspace } from "@/lib/workspace";
 import {
@@ -98,6 +100,231 @@ function TrustTracePanel({
       </div>
     </div>
   );
+}
+
+function OutreachProofTimeline({
+  conversation,
+  messages,
+  approvals,
+  outcomes,
+  replyProofs,
+  gateExplanations,
+  workflow,
+}: {
+  conversation: ConversationTrustConversation;
+  messages: ConversationTrustMessage[];
+  approvals: ConversationTrustApproval[];
+  outcomes: ConversationTrustOutcome[];
+  replyProofs: ConversationTrustReplyProof[];
+  gateExplanations: ConversationTrustGateExplanation[];
+  workflow: ConversationTrustTrace["workflow"];
+}) {
+  const outbound =
+    [...messages].reverse().find((message) => message.direction === "outbound") ??
+    null;
+  const latestOutcome = outcomes.at(-1) ?? null;
+  const latestReplyProof = replyProofs.at(-1) ?? null;
+  const strongestGate = strongestGateExplanation(
+    gateExplanations.filter((gate) =>
+      gate.kind === "judge" || gate.kind === "brand_voice"
+    ),
+  );
+  const channelGate = strongestGateExplanation(
+    gateExplanations.filter((gate) =>
+      gate.kind === "channel" || gate.kind === "deliverability"
+    ),
+  );
+  const workflowStepCount = workflow?.steps.length ?? 0;
+  const completedStepCount =
+    workflow?.steps.filter((step) => step.status === "completed").length ?? 0;
+  const timelineItems: TimelineItemData[] = [
+    {
+      key: "signal",
+      icon: "sensors",
+      label: "Signal",
+      title: conversation.signal_title ?? conversation.topic ?? "No signal anchor",
+      detail: [
+        conversation.signal_kind
+          ? conversation.signal_kind.replace(/_/g, " ")
+          : null,
+        conversation.signal_url ? "Source linked" : null,
+      ].filter(Boolean).join(" · ") || "Timing evidence is still being resolved.",
+      href: conversation.signal_url,
+      tone: conversation.signal_title ? "ready" : "neutral",
+    },
+    {
+      key: "contact",
+      icon: "verified",
+      label: "Contact proof",
+      title: conversation.counterparty_name ?? "Unknown contact",
+      detail: [
+        contactEmailStatusLabel(conversation.counterparty_email_status),
+        conversation.counterparty_linkedin_ready
+          ? "LinkedIn profile"
+          : "LinkedIn missing",
+        conversation.counterparty_fit_decision
+          ? contactFitLabel(conversation.counterparty_fit_decision)
+          : "Fit pending",
+      ].join(" · "),
+      href: conversation.counterparty_person_id
+        ? `/dashboard/agent/contacts/${conversation.counterparty_person_id}`
+        : null,
+      tone:
+        conversation.counterparty_email_status === "verified" ||
+        conversation.counterparty_linkedin_ready
+          ? "ready"
+          : "attention",
+    },
+    {
+      key: "draft",
+      icon: "fact_check",
+      label: "Draft and judge",
+      title: outbound
+        ? `${channelLabel(outbound.channel)} ${messageStatusLabel(outbound.status)}`
+        : "No outbound draft yet",
+      detail: outbound
+        ? outreachJudgeSummary(outbound, strongestGate)
+        : "The agent has not produced channel-ready outreach for this conversation.",
+      href: outbound ? `#message-${outbound.id}` : null,
+      tone:
+        outbound?.eval_passed === false
+          ? "blocked"
+          : outbound?.eval_passed === true
+            ? "ready"
+            : "neutral",
+    },
+    {
+      key: "channel",
+      icon: "account_tree",
+      label: "Channel",
+      title: channelGate?.summary ?? "Channel evidence pending",
+      detail:
+        channelGate?.detail ??
+        (outbound
+          ? `${channelLabel(outbound.channel)} status: ${messageStatusLabel(outbound.status)}`
+          : "No email or LinkedIn send proof yet."),
+      href: null,
+      tone:
+        channelGate?.severity === "block"
+          ? "blocked"
+          : channelGate?.severity === "warn"
+            ? "attention"
+            : channelGate
+              ? "ready"
+              : "neutral",
+    },
+    {
+      key: "outcome",
+      icon: "forum",
+      label: "Reply or meeting",
+      title: latestOutcome
+        ? outcomeLabel(latestOutcome.kind)
+        : latestReplyProof?.summary ?? "No outcome yet",
+      detail: latestOutcome
+        ? formatWhen(latestOutcome.occurred_at)
+        : latestReplyProof
+          ? "Reply proof captured from the conversation trace."
+          : "Replies, meetings, and useful outcomes will appear here.",
+      href:
+        latestReplyProof?.inbound_message_id
+          ? `#message-${latestReplyProof.inbound_message_id}`
+          : null,
+      tone: latestOutcome || latestReplyProof ? "ready" : "neutral",
+    },
+  ];
+
+  return (
+    <section className="section-note">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-1)]">
+            Signal-to-outreach trace
+          </p>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--color-text-3)]">
+            The proof chain for this email or LinkedIn touch: timing signal,
+            verified contact, judged draft, channel handoff, and reply learning.
+          </p>
+        </div>
+        {workflow ? (
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 font-mono text-[11px] text-[var(--color-text-3)]">
+            {workflow.run.workflow_name} · {completedStepCount}/{workflowStepCount} steps
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-5">
+        {timelineItems.map((item) => (
+          <TimelineItem key={item.key} item={item} />
+        ))}
+      </div>
+      {workflow ? (
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {workflow.steps.slice(0, 6).map((step) => (
+            <span
+              key={`${step.step_position}-${step.step_name}-${step.attempt}`}
+              className="rounded-[8px] bg-[var(--color-ink-0)] px-2 py-1 text-[11px] text-[var(--color-text-3)]"
+              title={`${step.step_name}: ${step.status}`}
+            >
+              {stepLabel(step.step_name)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+interface TimelineItemData {
+  key: string;
+  icon: string;
+  label: string;
+  title: string;
+  detail: string;
+  href: string | null | undefined;
+  tone: "ready" | "attention" | "blocked" | "neutral";
+}
+
+function TimelineItem({ item }: { item: TimelineItemData }) {
+  const content = (
+    <span className="flex h-full flex-col rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-3 transition-colors hover:border-[var(--color-line-3)]">
+      <span className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-text-4)]">
+          <Icon name={item.icon} size={13} />
+          {item.label}
+        </span>
+        <span
+          className={
+            "size-2 rounded-full " +
+            (item.tone === "ready"
+              ? "bg-[var(--color-pos)]"
+              : item.tone === "attention"
+                ? "bg-[var(--color-warn)]"
+                : item.tone === "blocked"
+                  ? "bg-[var(--color-neg)]"
+                  : "bg-[var(--color-line-3)]")
+          }
+        />
+      </span>
+      <span className="mt-3 line-clamp-2 text-sm font-semibold leading-5 text-[var(--color-text-1)]">
+        {item.title}
+      </span>
+      <span className="mt-2 line-clamp-3 text-xs leading-5 text-[var(--color-text-3)]">
+        {item.detail}
+      </span>
+    </span>
+  );
+  if (item.href) {
+    const external = item.href.startsWith("http");
+    return external ? (
+      <a href={item.href} target="_blank" rel="noreferrer" className="min-w-0">
+        {content}
+      </a>
+    ) : (
+      <Link href={item.href} prefetch={false} className="min-w-0">
+        {content}
+      </Link>
+    );
+  }
+  return <div className="min-w-0">{content}</div>;
 }
 
 interface MeetingPrepCard {
@@ -322,6 +549,51 @@ function channelEventLabel(eventType: string): string {
   return eventType.replace(/_/g, " ").replace(/\./g, " ");
 }
 
+function strongestGateExplanation(
+  gates: ConversationTrustGateExplanation[],
+): ConversationTrustGateExplanation | null {
+  return (
+    gates.find((gate) => gate.severity === "block") ??
+    gates.find((gate) => gate.severity === "warn") ??
+    gates.find((gate) => gate.kind === "channel") ??
+    gates[0] ??
+    null
+  );
+}
+
+function channelLabel(channel: string): string {
+  if (channel === "email") return "Email";
+  if (channel === "linkedin_dm") return "LinkedIn DM";
+  if (channel === "linkedin_connection") return "LinkedIn connection";
+  if (channel === "linkedin_inmail") return "LinkedIn InMail";
+  return channel.replace(/_/g, " ");
+}
+
+function outreachJudgeSummary(
+  message: ConversationTrustMessage,
+  gate: ConversationTrustGateExplanation | null,
+): string {
+  const score = message.eval_score ? Number(message.eval_score) : null;
+  const judge =
+    message.eval_passed === false
+      ? "Judge blocked"
+      : message.eval_passed === true
+        ? "Judge passed"
+        : "Judge pending";
+  const scoreText = score !== null && Number.isFinite(score)
+    ? ` at ${score.toFixed(2)}`
+    : "";
+  return [judge + scoreText, gate?.summary].filter(Boolean).join(" · ");
+}
+
+function stepLabel(stepName: string): string {
+  return stepName
+    .replace(/^step[:._-]?/i, "")
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function meetingPrepActionLabel(action: string): string {
   if (action === "prepare_meeting") return "Prepare meeting";
   if (action === "ask_for_times") return "Ask for times";
@@ -379,7 +651,9 @@ export default async function AgentOutreachDetailPage({
     events,
     approvals,
     outcomes,
+    gate_explanations: gateExplanations,
     reply_proofs: replyProofs,
+    workflow,
   } = trace;
   const pendingApproval =
     approvals.filter((approval) => approval.decision === "pending").at(-1) ?? null;
@@ -397,6 +671,16 @@ export default async function AgentOutreachDetailPage({
           {conv.topic ?? conv.signal_title ?? "Conversation detail and proof of work."}
         </p>
       </section>
+
+      <OutreachProofTimeline
+        conversation={conv}
+        messages={messages}
+        approvals={approvals}
+        outcomes={outcomes}
+        replyProofs={replyProofs}
+        gateExplanations={gateExplanations}
+        workflow={workflow}
+      />
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
         <section>

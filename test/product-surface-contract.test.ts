@@ -1163,6 +1163,16 @@ test("sent outreach links open the exact draft in the conversation trace", () =>
   assert.doesNotMatch(outreach, /kicker="Inbox"/);
   assert.doesNotMatch(outreach, /Sent list/);
   assert.match(detail, /brief-kicker">Agent/);
+  assert.match(detail, /OutreachProofTimeline/);
+  assert.match(detail, /Signal-to-outreach trace/);
+  assert.match(detail, /timing signal,\s+verified contact, judged draft, channel handoff, and reply learning/);
+  assert.match(detail, /gate_explanations: gateExplanations/);
+  assert.match(detail, /workflow=\{workflow\}/);
+  assert.match(detail, /strongestGateExplanation/);
+  assert.match(detail, /channelLabel\(outbound\.channel\)/);
+  assert.match(detail, /contactEmailStatusLabel\(conversation\.counterparty_email_status\)/);
+  assert.match(detail, /\/dashboard\/agent\/contacts\/\$\{conversation\.counterparty_person_id\}/);
+  assert.match(detail, /completedStepCount/);
   assert.match(detail, /id=\{`message-\$\{m\.id\}`\}/);
   assert.match(detail, /target:ring-\[var\(--color-accent\)\]/);
   assert.match(detail, /Back to sent outreach/);
