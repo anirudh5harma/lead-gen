@@ -15,6 +15,10 @@ import {
   type WorkspaceLaunchReadiness,
 } from "@/core/product/launch-readiness.ts";
 import {
+  buildOutputDestinations,
+  type OutputDestination,
+} from "@/core/product/output-destinations.ts";
+import {
   loadQualifiedSignalWorkbench,
   type QualifiedSignalContact,
   type QualifiedSignalItem,
@@ -329,6 +333,7 @@ interface RepsState {
   contacts: AgentContactSummary;
   learning: AgentLearningSummary;
   signalMix: AgentSignalMix;
+  outputDestinations: OutputDestination[];
 }
 
 async function loadRepsState(workspaceId: string): Promise<RepsState> {
@@ -430,9 +435,11 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     loadAgentLearningSummary(workspaceId),
     loadAgentSignalMix(workspaceId),
   ]);
+  const channelRows = channels.rows;
+  const coverage = workspaceChannelCoverage(channelRows);
   return {
     reps: reps.rows,
-    channels: channels.rows,
+    channels: channelRows,
     readiness,
     activity,
     strategy,
@@ -443,6 +450,11 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     contacts,
     learning,
     signalMix,
+    outputDestinations: buildOutputDestinations({
+      email_connected: coverage.email.connected,
+      linkedin_connected: coverage.linkedIn.connected,
+      launch_ready: readiness.launch_ready,
+    }),
   };
 }
 
@@ -1606,6 +1618,8 @@ export default async function RepsPage() {
 
       <AgentOutreachPanel outreach={state.outreach} />
 
+      <AgentOutputHandoffPanel destinations={state.outputDestinations} />
+
       <AgentRepliesPanel replies={state.replies} />
 
       <AgentLearningPanel learning={state.learning} />
@@ -2334,6 +2348,11 @@ function emptyRepsState(workspaceId: string): RepsState {
       with_contact_7d: 0,
       with_draft_7d: 0,
     },
+    outputDestinations: buildOutputDestinations({
+      email_connected: false,
+      linkedin_connected: false,
+      launch_ready: false,
+    }),
   };
 }
 
@@ -4652,6 +4671,181 @@ function acceptedConnectionHref(
   if (row.conversation_id) return `/dashboard/agent/outreach/${row.conversation_id}`;
   if (row.person_id) return `/dashboard/agent/contacts/${row.person_id}`;
   return "/dashboard/agent#outreach";
+}
+
+function AgentOutputHandoffPanel({
+  destinations,
+}: {
+  destinations: OutputDestination[];
+}) {
+  const active = destinations.filter((destination) =>
+    ["channel_send", "agent_api", "signal_intake"].includes(
+      destination.handoff_stage,
+    ),
+  );
+  const planned = destinations.filter(
+    (destination) =>
+      destination.status === "planned" &&
+      [
+        "qualified_contact_sync",
+        "sent_proof_sync",
+        "reply_meeting_alert",
+      ].includes(destination.handoff_stage),
+  );
+  return (
+    <div id="output-handoff" className="scroll-mt-28">
+      <SurfaceSection title="Output handoff">
+        <div className="rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                Where qualified work can go
+              </p>
+              <p className="mt-1 max-w-[72ch] text-xs leading-5 text-[var(--color-text-3)]">
+                Sent proof, qualified contacts, replies, and meetings stay in
+                Agent first. Connected channels and agent APIs can move work
+                now; CRM, outreach-tool, and team-alert handoffs stay planned
+                until they are evented.
+              </p>
+            </div>
+            <Link href="/dashboard/profile#tools" prefetch={false} className="btn-quiet-sm">
+              <Icon name="hub" size={14} />
+              Manage in Profile
+            </Link>
+          </div>
+
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {active.map((destination) => (
+              <AgentDestinationCard
+                key={destination.key}
+                destination={destination}
+              />
+            ))}
+          </div>
+
+          {planned.length > 0 ? (
+            <div className="mt-4 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-[var(--color-text-1)]">
+                    Next handoff classes
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-[var(--color-text-3)]">
+                    These are the output pipes to add after native email,
+                    LinkedIn, review, and reply proof are healthy.
+                  </p>
+                </div>
+                <span className="rounded-[8px] bg-[var(--color-ink-0)] px-2.5 py-1 text-xs text-[var(--color-text-3)]">
+                  Planned
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {planned.map((destination) => (
+                  <span
+                    key={destination.key}
+                    className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--color-ink-0)] px-2.5 py-1 text-xs text-[var(--color-text-2)]"
+                  >
+                    <AgentDestinationIcon destination={destination} size={13} />
+                    {destination.title}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function AgentDestinationCard({
+  destination,
+}: {
+  destination: OutputDestination;
+}) {
+  const ready =
+    destination.status === "connected" || destination.status === "available";
+  return (
+    <Link
+      href={destination.href ?? "/dashboard/profile#tools"}
+      prefetch={false}
+      className="group grid min-h-[132px] content-between gap-3 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-3 transition-colors hover:bg-[var(--color-ink-3)]"
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span
+          className={
+            "grid size-8 shrink-0 place-items-center rounded-[8px] " +
+            (ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+          }
+        >
+          <AgentDestinationIcon destination={destination} size={15} />
+        </span>
+        <span
+          className={
+            "rounded-[8px] px-2 py-1 text-[11px] font-medium " +
+            (ready
+              ? "bg-[var(--color-pos-bg)] text-[var(--color-pos)]"
+              : "bg-[var(--color-ink-0)] text-[var(--color-text-3)]")
+          }
+        >
+          {agentDestinationStatus(destination)}
+        </span>
+      </span>
+      <span>
+        <span className="block text-sm font-semibold text-[var(--color-text-1)]">
+          {destination.title}
+        </span>
+        <span className="mt-1 block line-clamp-2 text-xs leading-5 text-[var(--color-text-3)]">
+          {agentDestinationDetail(destination)}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function AgentDestinationIcon({
+  destination,
+  size,
+}: {
+  destination: OutputDestination;
+  size: number;
+}) {
+  if (destination.key === "outlook") {
+    return <BrandIcon name="microsoft" size={size} />;
+  }
+  if (destination.key === "linkedin") {
+    return <BrandIcon name="linkedin" size={size} />;
+  }
+  if (destination.key === "signal-webhook") {
+    return <Icon name="webhook" size={size} />;
+  }
+  if (destination.key === "crm-sync") {
+    return <Icon name="person_search" size={size} />;
+  }
+  if (destination.key === "outreach-tool-sync") {
+    return <Icon name="send" size={size} />;
+  }
+  if (destination.key === "team-alerts") return <Icon name="hub" size={size} />;
+  return <Icon name="neurology" size={size} />;
+}
+
+function agentDestinationStatus(destination: OutputDestination): string {
+  if (destination.status === "connected") return "Connected";
+  if (destination.status === "available") return "Available";
+  if (destination.status === "planned") return "Planned";
+  return "Blocked";
+}
+
+function agentDestinationDetail(destination: OutputDestination): string {
+  if (destination.handoff_stage === "agent_api") {
+    return "Brief, signals, sent proof, approvals, and learning are available to Claude Code.";
+  }
+  if (destination.handoff_stage === "signal_intake") {
+    return "External signal events can enter the same qualified-signal path.";
+  }
+  return destination.detail;
 }
 
 function ChannelPerformancePanel({

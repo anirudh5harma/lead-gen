@@ -177,3 +177,10 @@ channel, approval policy, daily cap usage, and hot-path judge score sit next to
 the contact, signal, proof link, and approve/reject controls. This makes the
 GojiBerry-style Copilot/autopilot split operational instead of forcing users to
 open a separate trace before every decision.
+
+The Agent sent-outreach flow now includes a compact Output handoff panel backed
+by the same destination model as Profile and MCP. It shows which connected
+channels and agent APIs can move work now, and keeps CRM sync, outreach-tool
+sync, and team alerts visibly planned until they are real evented destinations.
+This translates GojiBerry's output-pipe clarity without adding an Integrations
+tab back into the product.
