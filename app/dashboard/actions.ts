@@ -6,6 +6,7 @@ import {
   approveWorkflowApproval,
   configureActivationSetup,
   configureWorkspaceCrmDestination,
+  configureWorkspaceSignalSource,
   configureRep,
   configureWorkspaceAutonomyMode,
   configureWorkspaceCompanyProfile,
@@ -493,6 +494,39 @@ export async function runAgentSourceNowAction(formData: FormData) {
   }
   revalidateProductPaths();
   redirectWithToast(returnTo, "Source run started.");
+}
+
+export async function configureVisitorIntentSourceAction(formData: FormData) {
+  const session = await requireDashboardSession(formData);
+  const returnTo = dashboardReturnPath(formData, "/dashboard/profile#visitor-intent");
+  const websiteUrl = value(formData, "visitor_website_url");
+  const companyDomain = value(formData, "visitor_company_domain");
+  const companyName = value(formData, "visitor_company_name");
+  try {
+    await configureWorkspaceSignalSource(
+      {
+        adapter: "webhook",
+        name: "Bombsell visitor intent",
+        provider: "bombsell_script",
+        website_url: websiteUrl || undefined,
+        company_domain: companyDomain || undefined,
+        company_name: companyName || undefined,
+        signal_kind: "other",
+        poll_interval_minutes: 60,
+        enabled: true,
+      },
+      session,
+    );
+  } catch (error) {
+    console.error("Visitor intent source setup failed", error);
+    redirectWithToast(
+      returnTo,
+      "Could not create the visitor source yet. Refresh and try again.",
+      "error",
+    );
+  }
+  revalidateProductPaths();
+  redirectWithToast(returnTo, "Visitor intent source created.");
 }
 
 export async function revokeMcpTokenAction(formData: FormData) {

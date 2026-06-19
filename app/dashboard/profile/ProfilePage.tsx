@@ -26,6 +26,7 @@ import type { RequestAuthIdentity } from "@/lib/auth";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
+  configureVisitorIntentSourceAction,
   configureActivationAction,
   configureCrmDestinationAction,
   createWorkspaceAction,
@@ -133,6 +134,16 @@ interface ProfileCrmAccount {
   updated_at: Date;
 }
 
+interface ProfileVisitorIntentSource {
+  id: string;
+  name: string;
+  enabled: boolean;
+  provider: string | null;
+  website_url: string | null;
+  company_domain: string | null;
+  created_at: Date;
+}
+
 interface ProfileState {
   settings: Record<string, unknown>;
   outlookAccount: ProfileOutlookAccount | null;
@@ -148,6 +159,7 @@ interface ProfileState {
   signalSetup: ProfileSignalSetup;
   mcpTokens: ProfileMcpToken[];
   mcpActivity: ProfileMcpActivity[];
+  visitorIntentSource: ProfileVisitorIntentSource | null;
 }
 
 async function loadProfileMcpTokens(
@@ -228,6 +240,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
     mcpTokens,
     mcpActivity,
     crm,
+    visitorIntent,
   ] = await Promise.all([
     pool.query<{ settings: Record<string, unknown> }>(
       `select settings
@@ -438,6 +451,27 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
         limit 1`,
       [workspaceId],
     ),
+    pool.query<ProfileVisitorIntentSource>(
+      `select gs.id::text as id,
+              gs.name,
+              gs.enabled,
+              coalesce(gs.config->>'provider', gs.properties->>'provider') as provider,
+              coalesce(gs.config->>'website_url', gs.properties->>'website_url') as website_url,
+              coalesce(gs.config->>'company_domain', gs.properties->>'company_domain') as company_domain,
+              gs.created_at
+         from graph_sources gs
+        where gs.workspace_id = $1
+          and gs.kind = 'web_monitor'
+          and coalesce(gs.config->>'provider', gs.properties->>'provider') in ('bombsell_script','rb2b','clearbit','factors','warmly','generic')
+          and (
+            gs.config->>'ingestion_contract' = 'bombsell_signal_v1'
+            or gs.properties->>'ingestion_contract' = 'bombsell_signal_v1'
+          )
+        order by case when coalesce(gs.config->>'provider', gs.properties->>'provider') = 'bombsell_script' then 0 else 1 end,
+                 gs.created_at desc
+        limit 1`,
+      [workspaceId],
+    ),
   ]);
   const suppressions = suppressionStats.rows[0];
   const contacts = contactQuality.rows[0];
@@ -474,6 +508,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
     },
     mcpTokens,
     mcpActivity,
+    visitorIntentSource: visitorIntent.rows[0] ?? null,
   };
 }
 
@@ -666,7 +701,11 @@ export default async function ProfilePage() {
 
         <div id="tools">
           <SurfaceSection title="Output destinations">
-            <IntegrationPanel state={state} readiness={readiness} />
+            <IntegrationPanel
+              profile={profile}
+              state={state}
+              readiness={readiness}
+            />
           </SurfaceSection>
         </div>
       </section>
@@ -1768,9 +1807,11 @@ function AccountPanel({
 }
 
 function IntegrationPanel({
+  profile,
   state,
   readiness,
 }: {
+  profile: ProductCompanyProfile | null;
   state: ProfileState;
   readiness: ProductLaunchReadinessResult;
 }) {
@@ -1876,7 +1917,10 @@ function IntegrationPanel({
         activity={state.mcpActivity}
       />
 
-      <VisitorIntentSetupPanel />
+      <VisitorIntentSetupPanel
+        profile={profile}
+        source={state.visitorIntentSource}
+      />
 
       <CrmHandoffSetupPanel account={state.crmAccount} />
 
@@ -1982,7 +2026,26 @@ function destinationIcon(destination: OutputDestination): ReactNode {
   return <Icon name="account_tree" size={16} />;
 }
 
-function VisitorIntentSetupPanel() {
+function VisitorIntentSetupPanel({
+  profile,
+  source,
+}: {
+  profile: ProductCompanyProfile | null;
+  source: ProfileVisitorIntentSource | null;
+}) {
+  const sourceId = source?.id ?? "00000000-0000-4000-8000-000000000123";
+  const websiteUrl = profile?.website_url ?? "";
+  const companyDomain =
+    source?.company_domain ?? profile?.domain ?? domainFromWebsite(profile?.website_url) ?? "";
+  const companyName = profile?.company_name ?? "";
+  const scriptHost = "https://www.bombsell.com";
+  const scriptSnippet = `<script
+  src="${scriptHost}/visitor.js"
+  data-source-id="${sourceId}"${
+    companyDomain ? `\n  data-company-domain="${companyDomain}"` : ""
+  }
+  data-marketing-allowed="true"
+  async></script>`;
   return (
     <div
       id="visitor-intent"
@@ -2002,9 +2065,41 @@ function VisitorIntentSetupPanel() {
           </p>
         </div>
         <span className="rounded-[8px] bg-[var(--color-pos-bg)] px-2.5 py-1 text-xs text-[var(--color-pos)]">
-          Available
+          {source ? "Source ready" : "Available"}
         </span>
       </div>
+      {!source ? (
+        <form
+          action={configureVisitorIntentSourceAction}
+          className="mt-4 flex flex-wrap items-end gap-3 rounded-[8px] bg-[var(--color-ink-1)] p-3"
+        >
+          <input type="hidden" name="return_to" value="/dashboard/profile#visitor-intent" />
+          <input type="hidden" name="visitor_website_url" value={websiteUrl} />
+          <input type="hidden" name="visitor_company_domain" value={companyDomain} />
+          <input type="hidden" name="visitor_company_name" value={companyName} />
+          <span className="min-w-[220px] flex-1 text-xs leading-5 text-[var(--color-text-3)]">
+            Create the source first, then install the generated snippet on the
+            website. Bombsell will use the workspace profile domain to keep the
+            public collector origin-aware.
+          </span>
+          <PendingSubmitButton
+            className="btn-solid-sm"
+            icon="sensors"
+            pendingLabel="Creating source"
+          >
+            Create visitor source
+          </PendingSubmitButton>
+        </form>
+      ) : (
+        <div className="mt-4 grid gap-2 rounded-[8px] bg-[var(--color-ink-1)] p-3 sm:grid-cols-3">
+          <ProfileFact label="Source ID" value={source.id} />
+          <ProfileFact label="Provider" value={source.provider ?? "bombsell_script"} />
+          <ProfileFact
+            label="Origin"
+            value={source.website_url ?? source.company_domain ?? "Any"}
+          />
+        </div>
+      )}
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="grid gap-2 rounded-[8px] bg-[var(--color-ink-1)] p-3">
           <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
@@ -2012,12 +2107,7 @@ function VisitorIntentSetupPanel() {
             Website script
           </span>
           <code className="overflow-x-auto whitespace-pre rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] leading-5 text-[var(--color-text-2)]">
-{`<script
-  src="https://www.bombsell.com/visitor.js"
-  data-source-id="00000000-0000-4000-8000-000000000123"
-  data-company-domain="example.com"
-  data-marketing-allowed="true"
-  async></script>`}
+{scriptSnippet}
           </code>
           <div className="grid gap-2 sm:grid-cols-2">
             <ProfileFact label="Collector" value="/api/collect/visitors" />
@@ -2054,11 +2144,11 @@ function VisitorIntentSetupPanel() {
           Source setup
         </span>
         <code className="mt-2 block overflow-x-auto rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-3 py-2 font-mono text-[11px] text-[var(--color-text-2)]">
-          product.source.configure adapter=webhook provider=bombsell_script website_url=https://example.com
+          product.source.configure adapter=webhook provider=bombsell_script source_id=${sourceId}
         </code>
         <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
-          Use the returned source_id in either the browser script or signed
-          provider payload. Website URL/domain lets the public collector reject
+          Use this source_id in either the browser script or signed provider
+          payload. Website URL/domain lets the public collector reject
           mismatched origins while still keeping the source_id safe to install.
         </p>
       </div>
@@ -2272,6 +2362,15 @@ function crmSyncModeFromAccount(account: ProfileCrmAccount | null): string {
 
 function crmWebhookConfigured(account: ProfileCrmAccount | null): boolean {
   return account?.properties?.webhook_configured === true;
+}
+
+function domainFromWebsite(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
 }
 
 function crmProviderLabel(provider: string): string {
