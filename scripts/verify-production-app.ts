@@ -53,6 +53,7 @@ export async function runProductionAppSmoke(
   const checks: ProductionAppSmokeCheck[] = [];
 
   await checkHealth(origin, fetchImpl, checks);
+  await checkPublicEntry(origin, fetchImpl, checks);
   await checkRedirect(
     origin,
     "/dashboard",
@@ -256,6 +257,67 @@ async function checkAuthenticatedMcpManifest(
     detail: `workspace=${hasWorkspace ? "present" : "missing"} product.readiness.get=${
       hasReadinessTool ? "present" : "missing"
     }`,
+  });
+}
+
+async function checkPublicEntry(
+  origin: string,
+  fetchImpl: typeof fetch,
+  checks: ProductionAppSmokeCheck[],
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchImpl(`${origin}/`, {
+      method: "GET",
+      headers: { Accept: "text/html" },
+    });
+  } catch (err) {
+    checks.push({
+      name: "public.entry",
+      status: "fail",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  if (!response.ok) {
+    checks.push({
+      name: "public.entry",
+      status: "fail",
+      detail: `HTTP ${response.status}`,
+    });
+    return;
+  }
+
+  const body = await response.text();
+  const missing: string[] = [];
+  if (!body.includes("/auth/google?next=%2Fdashboard")) {
+    missing.push("Google login link");
+  }
+  if (!body.includes("/auth/google?next=%2Fonboarding")) {
+    missing.push("Google onboarding CTA");
+  }
+  if (!body.includes('action="/auth/start"')) {
+    missing.push("domain capture form");
+  }
+
+  const stale = [
+    'href="/login"',
+    "/login?next=",
+    'href="/onboarding"',
+    'action="/onboarding"',
+  ].filter((needle) => body.includes(needle));
+
+  const ok = missing.length === 0 && stale.length === 0;
+  checks.push({
+    name: "public.entry",
+    status: ok ? "ok" : "fail",
+    detail: ok
+      ? "landing CTAs go through direct Google auth and domain capture"
+      : [
+          missing.length ? `missing ${missing.join(", ")}` : "",
+          stale.length ? `stale ${stale.join(", ")}` : "",
+        ].filter(Boolean).join("; "),
   });
 }
 

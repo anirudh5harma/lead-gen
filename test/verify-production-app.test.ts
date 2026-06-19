@@ -19,6 +19,17 @@ function redirect(location: string, status = 307): Response {
   });
 }
 
+function landingPage(html = ""): Response {
+  return new Response(
+    html || [
+      '<a href="/auth/google?next=%2Fdashboard">Log in</a>',
+      '<form action="/auth/start" method="GET"></form>',
+      '<a href="/auth/google?next=%2Fonboarding">Get started free</a>',
+    ].join(""),
+    { status: 200, headers: { "Content-Type": "text/html" } },
+  );
+}
+
 function healthPayload(extraChecks: Array<{ name: string; status: string; detail?: string }> = []) {
   return {
     service: "bombsell-product",
@@ -55,6 +66,7 @@ test("production app smoke passes for a fully ready production app", async () =>
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
@@ -76,6 +88,7 @@ test("production app smoke allows only the known LinkedIn provider readiness gap
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") {
         return response(
           healthPayload([
@@ -108,6 +121,7 @@ test("production app smoke fails when dashboard does not go straight to Google O
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/login?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
@@ -122,6 +136,33 @@ test("production app smoke fails when dashboard does not go straight to Google O
   );
 });
 
+test("production app smoke fails when the landing page keeps stale auth entrypoints", async () => {
+  const result = await runProductionAppSmoke({
+    origin,
+    fetchImpl: async (url) => {
+      const path = new URL(String(url)).pathname;
+      const protectedResponse = protectedAuthResponse(path);
+      if (protectedResponse) return protectedResponse;
+      if (path === "/") {
+        return landingPage([
+          '<a href="/login">Log in</a>',
+          '<form action="/onboarding" method="GET"></form>',
+        ].join(""));
+      }
+      if (path === "/api/health/readiness") return response(healthPayload());
+      if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
+      if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
+      return new Response(null, { status: 404 });
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.checks.find((check) => check.name === "public.entry")?.status,
+    "fail",
+  );
+});
+
 test("production app smoke fails on unexpected degraded health checks", async () => {
   const result = await runProductionAppSmoke({
     origin,
@@ -129,6 +170,7 @@ test("production app smoke fails on unexpected degraded health checks", async ()
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") {
         return response(
           healthPayload([
@@ -162,6 +204,7 @@ test("production app smoke verifies a signed-in completed workspace session", as
         const protectedResponse = protectedAuthResponse(path);
         if (protectedResponse) return protectedResponse;
       }
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") {
         return signedIn
@@ -223,6 +266,7 @@ test("production app smoke fails when a completed session still sees onboarding"
       const path = new URL(String(url)).pathname;
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return new Response("<main>Brief</main>", { status: 200 });
       if (path === "/onboarding") {
@@ -255,6 +299,7 @@ test("production app smoke can verify MCP readiness discovery with a bearer toke
       const authorization = new Headers(init?.headers).get("authorization");
       const protectedResponse = protectedAuthResponse(path);
       if (protectedResponse) return protectedResponse;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
@@ -284,6 +329,7 @@ test("production app smoke fails when Outlook OAuth starts without a workspace s
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");
@@ -309,6 +355,7 @@ test("production app smoke fails when LinkedIn OAuth exposes provider setup befo
     origin,
     fetchImpl: async (url) => {
       const path = new URL(String(url)).pathname;
+      if (path === "/") return landingPage();
       if (path === "/api/health/readiness") return response(healthPayload());
       if (path === "/dashboard") return redirect("/auth/google?next=%2Fdashboard");
       if (path === "/onboarding") return redirect("/auth/google?next=%2Fonboarding");

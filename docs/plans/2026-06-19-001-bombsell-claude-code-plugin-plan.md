@@ -42,6 +42,53 @@ Profile improvements, review qualified signals, prepare judged email/LinkedIn
 drafts, and summarize replies or meetings. Bombsell still owns approval,
 sending, channel readiness, eval gates, token revocation, and the audit trail.
 
+## Launch Execution Plan
+
+Use the Claude Code plugin as a focused distribution layer for Bombsell's core
+product, not as another outreach UI. The user should feel one simple loop:
+connect Bombsell, let Claude Code read product context from the repo, improve
+the Bombsell Profile, review qualified signals with verified contact lanes,
+prepare judged email/LinkedIn outreach, and inspect replies or meetings.
+
+**Now: direct remote MCP.** Ship and support the raw setup command first:
+`claude mcp add --transport http bombsell https://www.bombsell.com/api/mcp`.
+This proves the hard parts that matter for launch: Google/OAuth consent,
+workspace selection, tool discovery, scoped bearer tokens, revocation, audit
+events, and no accidental sending from external agents.
+
+**Next: private plugin dogfood.** Install
+`integrations/bombsell-claude-code` with
+`claude --plugin-dir ./integrations/bombsell-claude-code`. The plugin should
+show exactly one remote MCP server and six skills in Claude Code:
+`brief`, `profile-from-repo`, `launch-check`, `signal-review`,
+`prepare-outreach`, and `reply-insights`. No hooks, no local binaries, no
+background monitors, no stdio server, and no `headersHelper` in the public
+path.
+
+**Then: pinned marketplace for design partners.** Publish the marketplace only
+after authenticated dogfood passes. Use a `git-subdir` source pinned to the
+release commit, keep the marketplace private at first, and run
+`npm run verify:claude-code-plugin` before every catalog update.
+
+**Finally: public/community release.** Submit publicly only when design
+partners can install, authenticate, get a useful Brief, propose Profile
+changes, inspect qualified signal lanes, prepare outreach without sending, open
+sent proof, and revoke access without support help.
+
+Launch gates:
+
+- Product gate: Claude Code can answer "what happened yesterday and last week"
+  with qualified signals, signal types, emails/DMs sent, replies, meetings, and
+  next action.
+- Profile gate: repo context produces proposal-only Profile changes and source
+  recommendations; writes still require explicit Bombsell approval tools.
+- Agent gate: outreach preparation creates judged drafts or approval work, but
+  never sends without Bombsell channel readiness and approval gates.
+- Trust gate: every MCP token has scopes, workspace ownership, revocation, and
+  `mcp.tool.called` audit visibility in Profile/Integrations.
+- Distribution gate: plugin validation, marketplace validation, privacy copy,
+  and install docs pass before external rollout.
+
 ## Immediate Launch Track
 
 Current Claude Code docs reinforce a focused path: ship Bombsell as a remote
