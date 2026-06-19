@@ -152,3 +152,9 @@ Brief signal health and the Agent setup snapshot now show the next source check
 from existing source cadence. This brings over GojiBerry's "next launch timing"
 clarity without adding a campaign tab: users can see which signal scanner is due
 now or when it will run again.
+
+The Agent page now has a dedicated Review queue between live work and sent
+outreach. It reads pending `workflow_approvals`, shows the contact, signal,
+draft proof link, and approve/reject controls, then routes decisions through the
+existing approval action. This translates GojiBerry's Copilot/autopilot split
+into Bombsell without bypassing channel readiness, hot-path evals, or daily caps.

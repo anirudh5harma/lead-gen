@@ -654,10 +654,12 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /AgentOutreachPanel/);
   assert.match(reps, /AgentRepliesPanel/);
   assert.match(reps, /AgentOpportunityPanel/);
+  assert.match(reps, /AgentReviewQueuePanel/);
   assert.match(reps, /AgentModeRail/);
   assert.match(reps, /aria-label="Agent work modes"/);
   assert.match(reps, /href=\{`\/dashboard\/agent\$\{mode\.href\}`\}/);
   assert.match(reps, /label: "Outreach"/);
+  assert.match(reps, /label: "Review"/);
   assert.match(reps, /label: "Contacts"/);
   assert.match(reps, /label: "Learning"/);
   assert.doesNotMatch(reps, /AgentReadinessPanel/);
@@ -669,6 +671,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /loadAgentLearningSummary/);
   assert.match(reps, /loadAgentOutreachSummary/);
   assert.match(reps, /loadAgentReplySummary/);
+  assert.match(reps, /loadAgentReviewSummary/);
   assert.match(reps, /visibleReps = state\.reps\.filter\(isVisibleProductAgent\)/);
   assert.match(reps, /return rep\.role === "sdr"/);
   assert.match(reps, /Verified contacts/);
@@ -699,6 +702,7 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /coalesce\(compiled->>'channel', ''\)/);
   assert.doesNotMatch(reps, /id="sources" className="scroll-mt-28"/);
   assert.match(reps, /id="activity"/);
+  assert.match(reps, /id="review-queue" className="scroll-mt-28"/);
   assert.match(reps, /id="opportunities" className="scroll-mt-28"/);
   assert.match(reps, /id="system" className="scroll-mt-28"/);
   assert.doesNotMatch(reps, /runAgentSourceNowAction/);
@@ -976,6 +980,21 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Judged drafts/);
   assert.match(reps, /OperatingLoopChannel/);
   assert.match(reps, /sent 7d/);
+  assert.match(reps, /Review queue/);
+  assert.match(reps, /No outreach waiting on review/);
+  assert.match(reps, /Copilot review/);
+  assert.match(reps, /workflow_approvals a/);
+  assert.match(reps, /a\.payload->>'conversation_id' as conversation_id/);
+  assert.match(reps, /reviewProofHref/);
+  assert.match(reps, /reviewKindLabel/);
+  assert.match(reps, /reviewPreview/);
+  assert.match(reps, /AgentReviewRowCard/);
+  assert.match(reps, /value="\/dashboard\/agent#review-queue"/);
+  assert.match(reps, /name="approval_id" value=\{approval\.id\}/);
+  assert.match(reps, /Open proof/);
+  assert.match(reps, /Waiting for review/);
+  assert.match(reps, /approval gates/);
+  assert.match(reps, /reviews_pending/);
   assert.match(reps, /AgentSystemPanel/);
   assert.match(reps, /SystemStatusCard/);
   assert.match(reps, /AgentGetStartedChecklist/);
@@ -1019,6 +1038,11 @@ test("Agent surface shows live work and account readiness", () => {
   assert.doesNotMatch(reps, /<AgentSequencePanel/);
   assert.match(reps, /<AgentLearningPanel learning=\{state\.learning\} \/>/);
   assert.doesNotMatch(reps, /<AgentSetupSummary/);
+  assert.ok(
+    reps.indexOf("<AgentReviewQueuePanel reviews={state.reviews} />") <
+      reps.indexOf("<AgentOutreachPanel outreach={state.outreach} />"),
+    "pending review gates must appear before sent outreach on the Agent surface",
+  );
   assert.ok(
     reps.indexOf("<AgentOutreachPanel outreach={state.outreach} />") <
       reps.indexOf("<AgentRepliesPanel replies={state.replies} />"),

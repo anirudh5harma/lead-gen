@@ -240,6 +240,27 @@ interface AgentSignalMix {
   with_draft_7d: number;
 }
 
+interface AgentReviewRow {
+  id: string;
+  run_id: string;
+  kind: string;
+  reason: string | null;
+  payload: Record<string, unknown>;
+  created_at: Date;
+  expires_at: Date | null;
+  conversation_id: string | null;
+  message_id: string | null;
+  counterparty_name: string | null;
+  company_name: string | null;
+  signal_title: string | null;
+  message_subject: string | null;
+}
+
+interface AgentReviewSummary {
+  pending_count: number;
+  recent: AgentReviewRow[];
+}
+
 interface AgentSourceRow {
   id: string;
   name: string;
@@ -299,6 +320,7 @@ interface RepsState {
   opportunities: QualifiedSignalWorkbench;
   outreach: AgentOutreachSummary;
   replies: AgentReplySummary;
+  reviews: AgentReviewSummary;
   contacts: AgentContactSummary;
   learning: AgentLearningSummary;
   signalMix: AgentSignalMix;
@@ -315,6 +337,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     opportunities,
     outreach,
     replies,
+    reviews,
     contacts,
     learning,
     signalMix,
@@ -397,6 +420,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     loadQualifiedSignalWorkbench(pool, workspaceId, { limit: 5 }),
     loadAgentOutreachSummary(workspaceId),
     loadAgentReplySummary(workspaceId),
+    loadAgentReviewSummary(workspaceId),
     loadAgentContactSummary(workspaceId),
     loadAgentLearningSummary(workspaceId),
     loadAgentSignalMix(workspaceId),
@@ -410,6 +434,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     opportunities,
     outreach,
     replies,
+    reviews,
     contacts,
     learning,
     signalMix,
@@ -1436,6 +1461,55 @@ async function loadAgentReplySummary(
   };
 }
 
+async function loadAgentReviewSummary(
+  workspaceId: string,
+): Promise<AgentReviewSummary> {
+  const pool = getPool();
+  const [recent, summary] = await Promise.all([
+    pool.query<AgentReviewRow>(
+      `select a.id::text as id,
+              a.run_id::text as run_id,
+              a.kind,
+              a.reason,
+              a.payload,
+              a.created_at,
+              a.expires_at,
+              a.payload->>'conversation_id' as conversation_id,
+              coalesce(a.payload->>'message_id', a.payload->>'inbound_message_id') as message_id,
+              p.full_name as counterparty_name,
+              co.name as company_name,
+              s.title as signal_title,
+              m.subject as message_subject
+         from workflow_approvals a
+         left join conversations c
+           on c.workspace_id = a.workspace_id
+          and c.id::text = a.payload->>'conversation_id'
+         left join graph_persons p on p.id = c.counterparty_person_id
+         left join graph_companies co on co.id = c.counterparty_company_id
+         left join signals s on s.id = c.origin_signal_id
+         left join messages m
+           on m.workspace_id = a.workspace_id
+          and m.id::text = coalesce(a.payload->>'message_id', a.payload->>'inbound_message_id')
+        where a.workspace_id = $1
+          and a.decision = 'pending'
+        order by a.created_at desc
+        limit 6`,
+      [workspaceId],
+    ),
+    pool.query<{ pending_count: string }>(
+      `select count(*)::text as pending_count
+         from workflow_approvals a
+        where a.workspace_id = $1
+          and a.decision = 'pending'`,
+      [workspaceId],
+    ),
+  ]);
+  return {
+    pending_count: Number(summary.rows[0]?.pending_count ?? 0),
+    recent: recent.rows,
+  };
+}
+
 export default async function RepsPage() {
   const active = await getActiveWorkspaceSession();
   if (!active) return <NoWorkspaceReps />;
@@ -1510,6 +1584,8 @@ export default async function RepsPage() {
         outreach={state.outreach}
         coverage={coverage}
       />
+
+      <AgentReviewQueuePanel reviews={state.reviews} />
 
       <AgentOutreachPanel outreach={state.outreach} />
 
@@ -1693,6 +1769,14 @@ function AgentModeRail({
       ready: activity.active_workflows > 0 || activity.events_last_hour > 0,
     },
     {
+      href: "#review-queue",
+      icon: "rate_review",
+      label: "Review",
+      value: activity.reviews_pending,
+      detail: "waiting",
+      ready: activity.reviews_pending > 0,
+    },
+    {
       href: "#outreach",
       icon: "send",
       label: "Outreach",
@@ -1747,7 +1831,7 @@ function AgentModeRail({
       aria-label="Agent work modes"
       className="sticky top-3 z-20 -mx-1 overflow-x-auto rounded-[12px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)]/95 p-1 shadow-[0_18px_38px_-32px_rgba(15,23,42,0.35)] backdrop-blur"
     >
-      <div className="grid min-w-[860px] grid-cols-7 gap-1">
+      <div className="grid min-w-[980px] grid-cols-8 gap-1">
         {modes.map((mode) => (
           <Link
             key={mode.href}
@@ -2183,6 +2267,10 @@ function emptyRepsState(workspaceId: string): RepsState {
       drafted_replies: 0,
       meeting_intent: 0,
       prep_ready: 0,
+    },
+    reviews: {
+      pending_count: 0,
+      recent: [],
     },
     opportunities: {
       signals: [],
@@ -4059,6 +4147,161 @@ function OperatingLoopChannel({
   );
 }
 
+function AgentReviewQueuePanel({
+  reviews,
+}: {
+  reviews: AgentReviewSummary;
+}) {
+  const visibleCount = reviews.recent.length;
+  return (
+    <div id="review-queue" className="scroll-mt-28">
+      <SurfaceSection
+        title="Review queue"
+        action={
+          reviews.pending_count > 0 ? (
+            <Link href="/dashboard/agent#opportunities" className="btn-quiet-sm">
+              <Icon name="sensors" size={14} />
+              Open signals
+            </Link>
+          ) : undefined
+        }
+      >
+        {reviews.pending_count === 0 ? (
+          <EmptyState
+            title="No outreach waiting on review"
+            hint="When judged email or LinkedIn drafts need a send decision, they will appear here before the Agent can continue."
+            cta={{
+              href: "/dashboard/agent#opportunities",
+              label: "Review signals",
+              icon: "rate_review",
+            }}
+          />
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+            <aside className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
+              <span className="grid size-9 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
+                <Icon name="rate_review" size={17} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-[var(--color-text-1)]">
+                  Copilot review
+                </p>
+                <p className="mt-2 text-xs leading-5 text-[var(--color-text-3)]">
+                  Approval gates keep email and LinkedIn sends behind the same
+                  channel readiness, daily caps, and hot-path judge evidence as
+                  the Agent workflow.
+                </p>
+              </div>
+              <MiniStat label="Waiting for review" value={reviews.pending_count} />
+            </aside>
+
+            <div className="grid gap-2">
+              {reviews.recent.map((approval) => (
+                <AgentReviewRowCard key={approval.id} approval={approval} />
+              ))}
+              {reviews.pending_count > visibleCount ? (
+                <p className="rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 text-xs text-[var(--color-text-3)]">
+                  +{reviews.pending_count - visibleCount} more waiting behind
+                  the same approval gate.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function AgentReviewRowCard({
+  approval,
+}: {
+  approval: AgentReviewRow;
+}) {
+  const payload = recordPayload(approval.payload) ?? {};
+  const subject =
+    stringPayload(payload, "subject") ??
+    approval.message_subject ??
+    reviewKindLabel(approval.kind);
+  const body =
+    stringPayload(payload, "body") ??
+    stringPayload(payload, "draft") ??
+    approval.reason;
+  const href = reviewProofHref(approval);
+  return (
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <span className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
+          <Icon name="rate_review" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {approval.counterparty_name ?? "Unknown contact"}
+            {approval.company_name ? (
+              <span className="font-normal text-[var(--color-text-3)]">
+                {" "}
+                at {approval.company_name}
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-1 block truncate text-sm text-[var(--color-text-2)]">
+            {subject}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+            {reviewPreview(body)}
+          </span>
+          {approval.signal_title ? (
+            <span className="mt-2 block truncate text-xs text-[var(--color-text-3)]">
+              Why now: {approval.signal_title}
+            </span>
+          ) : null}
+        </span>
+      </span>
+
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs text-[var(--color-text-2)]">
+          {reviewKindLabel(approval.kind)}
+        </span>
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(approval.created_at)}
+        </span>
+        {href ? (
+          <Link href={href} prefetch={false} className="btn-quiet-sm">
+            <Icon name="arrow_forward" size={14} />
+            Open proof
+          </Link>
+        ) : null}
+        <form action={decideApprovalWithDraftAction}>
+          <input type="hidden" name="return_to" value="/dashboard/agent#review-queue" />
+          <input type="hidden" name="approval_id" value={approval.id} />
+          <input type="hidden" name="decision" value="approved" />
+          <PendingSubmitButton
+            className="btn-solid-sm"
+            icon="check"
+            iconSize={14}
+            pendingLabel="Approving"
+          >
+            Approve
+          </PendingSubmitButton>
+        </form>
+        <form action={decideApprovalWithDraftAction}>
+          <input type="hidden" name="return_to" value="/dashboard/agent#review-queue" />
+          <input type="hidden" name="approval_id" value={approval.id} />
+          <input type="hidden" name="decision" value="rejected" />
+          <PendingSubmitButton
+            className="btn-quiet-sm"
+            icon="close"
+            iconSize={14}
+            pendingLabel="Rejecting"
+          >
+            Reject
+          </PendingSubmitButton>
+        </form>
+      </span>
+    </article>
+  );
+}
+
 function readinessNextAction(readiness: WorkspaceLaunchReadiness): {
   href: string;
   icon: string;
@@ -4861,6 +5104,32 @@ function outreachEvalScore(score: string | null): number | null {
 
 function sentDraftHref(conversationId: string, messageId: string): string {
   return `/dashboard/agent/outreach/${conversationId}#message-${messageId}`;
+}
+
+function reviewProofHref(approval: AgentReviewRow): string | null {
+  if (!approval.conversation_id) return null;
+  if (approval.message_id) {
+    return sentDraftHref(approval.conversation_id, approval.message_id);
+  }
+  return `/dashboard/agent/outreach/${approval.conversation_id}`;
+}
+
+function reviewKindLabel(kind: string): string {
+  const normalized = kind.toLowerCase();
+  if (normalized.includes("linkedin")) return "LinkedIn review";
+  if (normalized.includes("reply")) return "Reply draft";
+  if (normalized.includes("email")) return "Email review";
+  if (normalized.includes("channel")) return "Channel review";
+  return kind
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function reviewPreview(value: string | null): string {
+  if (!value) return "Review the Agent's gated draft before it can continue.";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 150) return normalized;
+  return `${normalized.slice(0, 147)}...`;
 }
 
 function AgentSetupSummary({

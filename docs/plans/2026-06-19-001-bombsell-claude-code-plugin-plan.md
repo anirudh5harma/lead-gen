@@ -189,6 +189,41 @@ The public package should feel boring from a security perspective: no shipped
 secrets, no local commands, no auto-send behavior, and no profile writes without
 explicit user confirmation.
 
+## 2026-06-19 Launch-Finalization Research Note
+
+Rechecked the current Claude Code docs again while finalizing the product launch
+surface:
+
+- Remote HTTP remains the right default for Bombsell because the MCP reference
+  describes it as the recommended transport for cloud services and documents
+  OAuth authentication through `/mcp`.
+  Source: <https://code.claude.com/docs/en/mcp>
+- Plugin-provided MCP servers are managed through plugin install/reload, and
+  Claude Code names plugin MCP tools with a plugin/server prefix. Bombsell
+  should therefore keep user-facing workflows in six `/bombsell:*` skills and
+  let those skills call the existing `bombsell.*` aliases.
+  Source: <https://code.claude.com/docs/en/mcp>
+- Tool Search is enabled by default and defers MCP tool schemas until needed.
+  Bombsell's MCP instructions should stay concise, describe GTM tasks clearly,
+  and avoid a giant always-loaded catalog.
+  Source: <https://code.claude.com/docs/en/mcp>
+- The plugin docs now emphasize that plugins are for team/community distribution
+  and versioned releases, while standalone `.claude/` config is for experiments.
+  Bombsell should keep private dogfood as a plugin package because design
+  partners need the same installable workflow across repos.
+  Source: <https://code.claude.com/docs/en/plugins>
+- Team marketplace configuration can be added through `.claude/settings.json`,
+  and third-party marketplaces are trusted code. For launch, Bombsell should
+  keep the marketplace private, pinned, and boring: no hooks, no local binaries,
+  no `headersHelper`, and no automatic sends.
+  Source: <https://code.claude.com/docs/en/discover-plugins>
+
+Launch implication: the Claude Code plugin should feel like a controlled GTM
+workbench inside the developer's repo. Claude can read product context, propose
+Profile changes, review qualified signal lanes, prepare judged outreach drafts,
+and summarize replies/meetings. Approval, sending, revocation, audit, and
+workspace scope remain Bombsell-owned server behavior.
+
 ## Build Plan
 
 1. Direct MCP dogfood
