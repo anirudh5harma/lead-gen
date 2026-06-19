@@ -190,9 +190,9 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
   },
   {
     name: "HUNTER_API_KEY",
-    requirement: "optional",
+    requirement: "production",
     category: "intelligence",
-    description: "Optional Hunter API key for contact discovery, email finding, and fallback email verification in contact resolution.",
+    description: "Hunter API key for contact discovery, email finding, and fallback email verification. Required for launch — without it LinkedIn URL discovery and email finding degrade to empty results.",
     example: "hunter_...",
   },
   {

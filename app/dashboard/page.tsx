@@ -7,6 +7,7 @@ import { getPool } from "@/core/substrate/storage/index.ts";
 import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
+import FirstSignalsLoading from "@/components/dashboard/FirstSignalsLoading";
 import {
   generateMeetingPrepAction,
   prepareQualifiedSignalsAction,
@@ -892,17 +893,35 @@ export default async function BriefPage() {
       />
     );
   }
-  const {
-    actions,
-    signalKinds,
-    signalHealth,
-    contactReadiness,
-    channelReadiness,
-    capabilityReadiness,
-    hotContacts,
-    outcomeInsights,
-    learning,
-  } = await loadBriefState(session.workspace.id);
+  const [
+    {
+      actions,
+      signalKinds,
+      signalHealth,
+      contactReadiness,
+      channelReadiness,
+      capabilityReadiness,
+      hotContacts,
+      outcomeInsights,
+      learning,
+    },
+    workspaceAgeSeconds,
+  ] = await Promise.all([
+    loadBriefState(session.workspace.id),
+    loadWorkspaceAgeSeconds(session.workspace.id),
+  ]);
+
+  const isFreshWorkspace =
+    workspaceAgeSeconds !== null &&
+    workspaceAgeSeconds < 5 * 60 &&
+    actions.qualified_signals_7d === 0 &&
+    actions.qualified_signals_24h === 0 &&
+    signalHealth.watched_sources === 0;
+
+  if (isFreshWorkspace) {
+    return <FirstSignalsLoading workspaceName={session.workspace.name} />;
+  }
+
   return (
     <BriefView
       actions={actions}
@@ -917,6 +936,25 @@ export default async function BriefPage() {
       workspaceName={session.workspace.name}
     />
   );
+}
+
+async function loadWorkspaceAgeSeconds(
+  workspaceId: string,
+): Promise<number | null> {
+  try {
+    const { rows } = await getPool().query<{ age_seconds: string }>(
+      `select extract(epoch from (now() - created_at))::text as age_seconds
+         from workspaces
+        where id = $1`,
+      [workspaceId],
+    );
+    if (!rows[0]) return null;
+    const value = Number(rows[0].age_seconds);
+    return Number.isFinite(value) ? value : null;
+  } catch (err) {
+    console.error("[dashboard/brief] failed to load workspace age", err);
+    return null;
+  }
 }
 
 async function loadBriefState(

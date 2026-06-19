@@ -279,6 +279,26 @@ interface AgentReviewSummary {
   recent: AgentReviewRow[];
 }
 
+interface RejectedDraftRow {
+  id: string;
+  subject: string | null;
+  body: string | null;
+  eval_score: string | null;
+  eval_notes: Record<string, unknown> | null;
+  created_at: Date;
+  conversation_id: string | null;
+  counterparty_person_id: string | null;
+  origin_signal_id: string | null;
+  counterparty_name: string | null;
+  company_name: string | null;
+  signal_title: string | null;
+  signal_kind: string | null;
+}
+
+interface RejectedDraftSummary {
+  recent: RejectedDraftRow[];
+}
+
 interface AgentSourceRow {
   id: string;
   name: string;
@@ -339,6 +359,7 @@ interface RepsState {
   outreach: AgentOutreachSummary;
   replies: AgentReplySummary;
   reviews: AgentReviewSummary;
+  rejectedDrafts: RejectedDraftSummary;
   contacts: AgentContactSummary;
   learning: AgentLearningSummary;
   signalMix: AgentSignalMix;
@@ -357,6 +378,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     outreach,
     replies,
     reviews,
+    rejectedDrafts,
     contacts,
     learning,
     signalMix,
@@ -440,6 +462,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     loadAgentOutreachSummary(workspaceId),
     loadAgentReplySummary(workspaceId),
     loadAgentReviewSummary(workspaceId),
+    loadRejectedDrafts(workspaceId),
     loadAgentContactSummary(workspaceId),
     loadAgentLearningSummary(workspaceId),
     loadAgentSignalMix(workspaceId),
@@ -456,6 +479,7 @@ async function loadRepsState(workspaceId: string): Promise<RepsState> {
     outreach,
     replies,
     reviews,
+    rejectedDrafts,
     contacts,
     learning,
     signalMix,
@@ -1551,6 +1575,49 @@ async function loadAgentReviewSummary(
   };
 }
 
+async function loadRejectedDrafts(
+  workspaceId: string,
+): Promise<RejectedDraftSummary> {
+  const pool = getPool();
+  const rows = await pool.query<RejectedDraftRow>(
+    `select m.id::text as id,
+            m.subject,
+            m.body,
+            m.eval_score::text as eval_score,
+            m.eval_notes,
+            m.created_at,
+            m.conversation_id::text as conversation_id,
+            c.counterparty_person_id::text as counterparty_person_id,
+            c.origin_signal_id::text as origin_signal_id,
+            p.full_name as counterparty_name,
+            co.name as company_name,
+            s.title as signal_title,
+            s.kind::text as signal_kind
+       from messages m
+       left join conversations c
+         on c.id = m.conversation_id
+        and c.workspace_id = m.workspace_id
+       left join graph_persons p
+         on p.id = c.counterparty_person_id
+        and p.workspace_id = m.workspace_id
+       left join graph_companies co
+         on co.id = p.company_id
+        and co.workspace_id = m.workspace_id
+       left join signals s
+         on s.id = c.origin_signal_id
+        and s.workspace_id = m.workspace_id
+      where m.workspace_id = $1
+        and m.direction = 'outbound'
+        and m.status = 'deferred'
+        and m.eval_passed = false
+        and (m.eval_notes->>'defer_reason') in ('eval_rejected','eval_rejected_after_edit')
+      order by m.created_at desc
+      limit 25`,
+    [workspaceId],
+  );
+  return { recent: rows.rows };
+}
+
 export default async function RepsPage() {
   const active = await getActiveWorkspaceSessionForDashboard("agent");
   if (!active) return <NoWorkspaceReps />;
@@ -1627,6 +1694,8 @@ export default async function RepsPage() {
       />
 
       <AgentReviewQueuePanel reviews={state.reviews} />
+
+      <AgentRejectedDraftsPanel rejected={state.rejectedDrafts} />
 
       <AgentOutreachPanel outreach={state.outreach} />
 
@@ -2440,6 +2509,9 @@ function emptyRepsState(workspaceId: string): RepsState {
     },
     reviews: {
       pending_count: 0,
+      recent: [],
+    },
+    rejectedDrafts: {
       recent: [],
     },
     opportunities: {
@@ -4628,6 +4700,102 @@ function AgentReviewRowCard({
             Reject
           </PendingSubmitButton>
         </form>
+      </span>
+    </article>
+  );
+}
+
+function AgentRejectedDraftsPanel({
+  rejected,
+}: {
+  rejected: RejectedDraftSummary;
+}) {
+  const rows = rejected.recent;
+  return (
+    <div id="rejected-drafts" className="scroll-mt-28">
+      <SurfaceSection title="Rejected drafts">
+        {rows.length === 0 ? (
+          <EmptyState
+            title="No rejected drafts"
+            hint="The judge is approving every draft this week."
+          />
+        ) : (
+          <div className="grid gap-2">
+            {rows.map((row) => (
+              <RejectedDraftRowCard key={row.id} row={row} />
+            ))}
+          </div>
+        )}
+      </SurfaceSection>
+    </div>
+  );
+}
+
+function RejectedDraftRowCard({ row }: { row: RejectedDraftRow }) {
+  const notes = row.eval_notes ?? {};
+  const deferReason =
+    typeof notes.defer_reason === "string" ? notes.defer_reason : null;
+  const deferDetail =
+    typeof notes.defer_detail === "string" ? notes.defer_detail.trim() : "";
+  const truncatedDetail =
+    deferDetail.length > 240 ? `${deferDetail.slice(0, 240)}…` : deferDetail;
+  const scoreNum = row.eval_score != null ? Number(row.eval_score) : null;
+  const scoreLabel =
+    scoreNum != null && Number.isFinite(scoreNum) ? scoreNum.toFixed(2) : null;
+  const subject = row.subject?.trim() || "No subject";
+  const bodyPreview = row.body ? row.body.slice(0, 140) : "";
+  const contactLine =
+    row.counterparty_name
+      ? row.company_name
+        ? `${row.counterparty_name} at ${row.company_name}`
+        : row.counterparty_name
+      : "Unknown contact";
+  const signalLine = row.signal_title
+    ? row.signal_kind
+      ? `${row.signal_title} · ${row.signal_kind.replace(/_/g, " ")}`
+      : row.signal_title
+    : "no signal context";
+  return (
+    <article className="grid gap-3 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] px-4 py-4 transition-colors hover:border-[var(--color-line-3)] md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+      <span className="flex min-w-0 items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-[8px] bg-[var(--color-warn-bg)] text-[var(--color-warn)]">
+          <Icon name="block" size={17} />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-[var(--color-text-1)]">
+            {contactLine}
+          </span>
+          <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+            {signalLine}
+          </span>
+          <span className="mt-2 block truncate text-sm text-[var(--color-text-2)]">
+            {subject}
+          </span>
+          {bodyPreview ? (
+            <span className="mt-1 block truncate text-xs text-[var(--color-text-3)]">
+              {bodyPreview}
+            </span>
+          ) : null}
+          {truncatedDetail ? (
+            <span className="mt-2 block text-xs leading-5 text-[var(--color-text-3)]">
+              Judge: {truncatedDetail}
+            </span>
+          ) : null}
+        </span>
+      </span>
+
+      <span className="flex flex-wrap items-center gap-2 md:justify-end">
+        {scoreLabel ? (
+          <span className="rounded-[8px] bg-[var(--color-ink-2)] px-2.5 py-1 text-xs tabular-nums text-[var(--color-text-2)] mono">
+            Judge {scoreLabel}
+          </span>
+        ) : null}
+        <span className="pill pill-warn">
+          Reason: {deferReason ?? "eval_rejected"}
+        </span>
+        <span className="text-xs tabular-nums text-[var(--color-text-3)]">
+          {freshWhen(row.created_at)}
+        </span>
       </span>
     </article>
   );

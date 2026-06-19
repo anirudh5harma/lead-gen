@@ -101,6 +101,15 @@ console.log("[production-worker] booting");
 
 process.env.BOMBSELL_SUBSTRATE ??= "nats_restate";
 
+if (process.env.NODE_ENV === "production") {
+  if (!hasEnv("HUNTER_API_KEY") && !hasEnv("EXA_API_KEY")) {
+    throw new Error("Production worker requires HUNTER_API_KEY or EXA_API_KEY for contact discovery");
+  }
+  if (!hasEnv("HUNTER_API_KEY") && !hasEnv("ZEROBOUNCE_API_KEY")) {
+    throw new Error("Production worker requires HUNTER_API_KEY or ZEROBOUNCE_API_KEY for email verification");
+  }
+}
+
 const natsUrl = requiredEnv("NATS_URL");
 const natsCreds = process.env.NATS_CREDS?.trim();
 const restateIngressUrl = requiredEnv("RESTATE_INGRESS_URL");
@@ -378,6 +387,10 @@ function requiredEnv(key: string): string {
   const value = process.env[key]?.trim();
   if (!value) throw new Error(`${key} is required for the production worker`);
   return value;
+}
+
+function hasEnv(key: string): boolean {
+  return Boolean(process.env[key]?.trim());
 }
 
 function createProductLinkedInTransport(): LinkedInTransport {

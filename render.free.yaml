@@ -49,6 +49,16 @@ services:
         sync: false
       - key: ZEROBOUNCE_API_KEY
         sync: false
+      - key: LINKEDIN_PROVIDER_URL
+        sync: false
+      - key: LINKEDIN_PROVIDER_AUTH_URL
+        sync: false
+      - key: LINKEDIN_PROVIDER_HEALTH_URL
+        sync: false
+      - key: LINKEDIN_PROVIDER_API_KEY
+        sync: false
+      - key: LINKEDIN_PROVIDER_WEBHOOK_SECRET
+        sync: false
       - key: MICROSOFT_CLIENT_ID
         sync: false
       - key: MICROSOFT_CLIENT_SECRET
