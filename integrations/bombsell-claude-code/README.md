@@ -45,7 +45,7 @@ https://www.bombsell.com/.well-known/oauth-protected-resource
 https://www.bombsell.com/.well-known/oauth-authorization-server
 ```
 
-Browser PKCE consent and token issuance are implemented at `/api/mcp/oauth/authorize`, `/api/mcp/oauth/token`, and `/api/mcp/oauth/register`. Public release still needs authenticated Claude Code dogfood plus audit/revocation polish.
+Browser PKCE consent and token issuance are implemented at `/api/mcp/oauth/authorize`, `/api/mcp/oauth/token`, and `/api/mcp/oauth/register`. Profile shows active Claude Code sessions, revocation controls, and recent MCP tool-call audit events. Public release still needs authenticated Claude Code dogfood and marketplace packaging.
 
 ## Safety Model
 

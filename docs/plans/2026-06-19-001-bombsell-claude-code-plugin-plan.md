@@ -58,6 +58,13 @@ Last checked against Anthropic Claude Code docs on 2026-06-19.
 Bombsell already has the core substrate for a Claude Code plugin:
 
 - `app/api/mcp/route.ts` exposes authenticated Streamable HTTP MCP.
+- `/.well-known/oauth-protected-resource`,
+  `/.well-known/oauth-authorization-server`, and `/api/mcp/oauth/*` provide
+  remote MCP OAuth discovery, browser consent, PKCE token issuance, and dynamic
+  client registration for Claude Code-style clients.
+- Profile now shows Claude Code sessions, revocation controls, and recent
+  `mcp.tool.called` audit events so users can see which external-agent tools are
+  touching their workspace.
 - `core/product/tools.ts` registers product tools for Profile, launch readiness,
   signal ingestion, signal matching, contact waterfall, message personalization,
   draft eval, approvals, reply triage, company brain, and observability.
@@ -368,11 +375,12 @@ read-only and prepare-only flow.
      `/.well-known/oauth-protected-resource` and
      `/.well-known/oauth-authorization-server`, and `/api/mcp` now advertises
      the protected-resource URL in `WWW-Authenticate`.
-   - Add OAuth/OIDC-style authorization for remote MCP clients, or a secure
-     installation token flow that Claude Code can store.
-   - Support workspace selection during auth.
+   - Browser PKCE consent, token issuance, dynamic client registration, token
+     hashing, and revocation controls have landed for Claude Code-style clients.
+   - Keep improving workspace selection during auth as multi-workspace dogfood
+     expands.
    - Keep bearer token support for power users and CI.
-   - Document how to revoke plugin sessions.
+   - Keep Profile as the self-serve revocation surface.
    - Keep `headersHelper`-based bearer auth as a private dogfood escape hatch
      only; do not require users to paste tokens into plugin files.
 
@@ -413,9 +421,11 @@ read-only and prepare-only flow.
 
 5. Audit and observability
 
-   - Record tool calls from Claude Code with client name, workspace, user,
-     action, primitive refs, latency, and outcome.
-   - Surface Claude Code activity in Health or Agent observability.
+   - Record tool calls from Claude Code with client name, workspace, user, tool,
+     request id, latency, HTTP status, and outcome through the typed
+     `mcp.tool.called` event.
+   - Surface recent Claude Code activity in Profile today; add rollups to Health
+     or Agent observability after authenticated dogfood produces real traffic.
    - Add tests that MCP manifest and plugin docs stay aligned.
 
 ## Security And Trust Rules
@@ -510,9 +520,11 @@ Install page bullets:
 
 ## Implementation Checklist
 
-- [ ] Add remote MCP auth suitable for Claude Code.
+- [x] Add remote MCP auth suitable for Claude Code.
 - [x] Add OAuth discovery metadata for remote MCP clients.
-- [ ] Add OAuth browser consent and token issuance for Claude Code.
+- [x] Add OAuth browser consent and token issuance for Claude Code.
+- [x] Add Profile revocation for Claude Code MCP sessions.
+- [x] Add evented audit logging for Claude Code MCP tool calls.
 - [x] Add concise MCP server instructions for tool search.
 - [x] Finish v1 `bombsell.*` wrapper tools over the existing registry.
   Landed: Brief, launch check, qualified signals, contact lanes, sent outreach,
@@ -524,9 +536,9 @@ Install page bullets:
 - [ ] Add two optional agents.
 - [x] Add README and install docs.
 - [x] Validate plugin manifest locally with `claude plugin validate integrations/bombsell-claude-code`.
-- [x] Add OAuth discovery metadata for remote MCP clients.
-- [x] Add OAuth browser consent and token issuance for Claude Code.
 - [ ] Dogfood an authenticated session with `claude --plugin-dir ./integrations/bombsell-claude-code`.
+- [ ] Confirm OAuth token refresh/expiry behavior from Claude Code in production.
+- [ ] Add a private marketplace repository or catalog entry.
 - [ ] Publish private marketplace.
 - [ ] Dogfood with design partners.
 - [ ] Submit to community marketplace.
@@ -537,7 +549,7 @@ Install page bullets:
   updates as proposal-only until users trust the plugin?
 - Should Bombsell publish the plugin in this repo under `integrations/`, or a
   separate public repository for cleaner marketplace submission?
-- Should Claude Code MCP tokens get a self-serve revocation UI in Profile, or
-  remain admin/API managed for the first dogfood cohort?
-- Should Claude Code sessions show up as their own channel in Agent activity, or
-  only in Health/audit logs?
+- Should authenticated Claude Code sessions appear in Agent activity, Health, or
+  both once dogfood generates enough event volume?
+- Should the private marketplace live inside the main Bombsell repo initially,
+  or in a dedicated lightweight distribution repo pinned by commit SHA?
