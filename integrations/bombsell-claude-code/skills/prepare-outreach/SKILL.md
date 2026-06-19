@@ -15,6 +15,7 @@ Use this skill when the user wants Bombsell to turn qualified signals into judge
    - how many workflows were dispatched
    - how many signals now have drafts
    - which signals are review-ready
+   - each review-ready signal's `next_handoff`
    - the Agent path for review
 5. If drafts are ready, call `bombsell.approvals.list` and point the user to the approval gate.
 

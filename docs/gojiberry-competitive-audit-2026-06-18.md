@@ -190,3 +190,10 @@ outreach, LinkedIn outreach, next DM, review draft, awaiting reply, reply
 learning, email verification, or contact resolution. This pushes GojiBerry's
 "where does this lead go next?" clarity down to the person row while keeping
 contacts under Agent instead of reviving a separate Prospects or Campaigns tab.
+
+The Claude Code qualified-signal aliases now return the same `next_handoff`
+object for every signal. External agents can route a signal to review prepared
+outreach, email outreach, LinkedIn outreach, fit review, email verification, or
+contact resolution without inferring the path from raw counts. This keeps the
+GojiBerry-style lead handoff visible in Bombsell's API surface as well as the
+web Agent.

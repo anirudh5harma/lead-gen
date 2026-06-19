@@ -1174,6 +1174,7 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
       };
       contacts: Array<{ full_name: string; email_verified: boolean; linkedin_ready: boolean; emails?: string[] }>;
       outreach_draft: { pending_approval_id: string | null } | null;
+      next_handoff: { label: string; stage: string; href: string; detail: string };
     }>;
   }>(
     "bombsell.signals.list_qualified",
@@ -1190,6 +1191,10 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
   assert.equal(signals.signals[0]?.contacts[1]?.linkedin_ready, true);
   assert.equal(signals.signals[0]?.contacts[0]?.emails, undefined);
   assert.equal(signals.signals[0]?.outreach_draft?.pending_approval_id, approval_id);
+  assert.equal(signals.signals[0]?.next_handoff.label, "Review prepared outreach");
+  assert.equal(signals.signals[0]?.next_handoff.stage, "review_draft");
+  assert.match(signals.signals[0]?.next_handoff.href ?? "", /\/dashboard\/agent\/outreach\//);
+  assert.match(signals.signals[0]?.next_handoff.detail ?? "", /Judged outreach/);
 
   const lanes = await invokeTool<{
     lane_counts: {

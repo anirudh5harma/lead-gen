@@ -264,6 +264,21 @@ const SignalDraftSummarySchema = z.object({
   href: z.string(),
 });
 
+const SignalNextHandoffSchema = z.object({
+  label: z.string(),
+  detail: z.string(),
+  href: z.string(),
+  stage: z.enum([
+    "review_draft",
+    "email_outreach",
+    "linkedin_outreach",
+    "verify_email",
+    "resolve_contact",
+    "review_fit",
+    "blocked_by_fit",
+  ]),
+});
+
 const QualifiedSignalSummarySchema = z.object({
   signal_id: z.string().uuid(),
   kind: z.string(),
@@ -284,6 +299,7 @@ const QualifiedSignalSummarySchema = z.object({
   }),
   contacts: z.array(SignalContactSummarySchema),
   outreach_draft: SignalDraftSummarySchema.nullable(),
+  next_handoff: SignalNextHandoffSchema,
   href: z.string(),
 });
 
@@ -737,7 +753,7 @@ export function registerBombsellAliasTools(): void {
   registerTool({
     name: "bombsell.signals.list_qualified",
     description:
-      "List qualified Bombsell signals with compact verified-contact and outreach-draft readiness for Claude Code workflows.",
+      "List qualified Bombsell signals with compact verified-contact readiness, outreach-draft readiness, and the next handoff for Claude Code workflows.",
     kind: "read",
     input: z.object({
       limit: z.number().int().min(1).max(25).optional(),
@@ -758,7 +774,7 @@ export function registerBombsellAliasTools(): void {
   registerTool({
     name: "bombsell.contact_lanes.get",
     description:
-      "Group qualified Bombsell signals into contact lanes: verified email, LinkedIn-ready, draft-ready, needs contact resolution, needs fit review, and blocked by fit.",
+      "Group qualified Bombsell signals into contact lanes with next handoffs: verified email, LinkedIn-ready, draft-ready, needs contact resolution, needs fit review, and blocked by fit.",
     kind: "read",
     input: z.object({
       limit: z.number().int().min(1).max(25).optional(),
@@ -1047,6 +1063,7 @@ function summarizeQualifiedSignals(
       contact_counts: counts,
       contacts,
       outreach_draft: summarizeDraft(signal.outreach_draft),
+      next_handoff: signalNextHandoff(signal, contacts, counts),
       href: "/dashboard/agent#qualified-signals",
     };
   });
@@ -1100,6 +1117,80 @@ function summarizeDraft(
     pending_approval_id: draft.pending_approval_id,
     defer_reason: draft.defer_reason,
     href: `/dashboard/agent/outreach/${draft.conversation_id}#message-${draft.message_id}`,
+  };
+}
+
+function signalNextHandoff(
+  signal: QualifiedSignalWorkbenchResult["signals"][number],
+  contacts: Array<z.infer<typeof SignalContactSummarySchema>>,
+  counts: z.infer<typeof QualifiedSignalSummarySchema>["contact_counts"],
+): z.infer<typeof SignalNextHandoffSchema> {
+  const draft = summarizeDraft(signal.outreach_draft);
+  if (draft && isDraftReady(draft)) {
+    return {
+      label: "Review prepared outreach",
+      detail:
+        "Judged outreach exists for this qualified signal; review the draft in Agent before sending.",
+      href: draft.href,
+      stage: "review_draft",
+    };
+  }
+  if (counts.blocked_by_fit > 0 && counts.blocked_by_fit >= counts.total) {
+    return {
+      label: "Blocked by fit",
+      detail:
+        "The available contact is marked not fit. Review fit feedback before preparing outreach.",
+      href: "/dashboard/agent#verified-contacts",
+      stage: "blocked_by_fit",
+    };
+  }
+  if (counts.needs_fit_review > 0 && counts.needs_fit_review >= counts.total) {
+    return {
+      label: "Review contact fit",
+      detail:
+        "A reachable contact exists, but fit review should happen before Agent prepares outreach.",
+      href: "/dashboard/agent#verified-contacts",
+      stage: "review_fit",
+    };
+  }
+  if (counts.email_verified > 0) {
+    return {
+      label: "Prepare email outreach",
+      detail:
+        "A verified email contact can move into judged email outreach once channel readiness and approval gates pass.",
+      href: "/dashboard/agent#qualified-signals",
+      stage: "email_outreach",
+    };
+  }
+  if (counts.linkedin_ready > 0) {
+    return {
+      label: "Prepare LinkedIn outreach",
+      detail:
+        "A LinkedIn-ready contact can move into a connection request, accepted follow-up, DM, or InMail path.",
+      href: "/dashboard/agent#qualified-signals",
+      stage: "linkedin_outreach",
+    };
+  }
+  const hasUnverifiedEmail = contacts.some((contact) =>
+    contact.email_status && contact.email_status !== "missing"
+  );
+  if (hasUnverifiedEmail) {
+    return {
+      label: "Verify email",
+      detail:
+        "An email handle exists, but Bombsell needs verification before the channel can send.",
+      href: "/dashboard/profile#contact-quality",
+      stage: "verify_email",
+    };
+  }
+  return {
+    label: "Resolve contact",
+    detail:
+      signal.contact_defer_reason
+        ? `Contact resolution is blocked by ${signal.contact_defer_reason.replace(/_/g, " ")}.`
+        : "Resolve a verified email or LinkedIn profile before outreach can be prepared.",
+    href: "/dashboard/agent#verified-contacts",
+    stage: "resolve_contact",
   };
 }
 
