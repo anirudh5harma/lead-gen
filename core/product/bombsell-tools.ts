@@ -847,7 +847,7 @@ export function registerBombsellAliasTools(): void {
             ? "Route qualified work"
             : "Finish Profile and channel setup",
           detail: readiness.launch_ready
-            ? "Native email, LinkedIn, MCP, and signal intake are the active output paths; CRM and alert sync remain planned evented integrations."
+            ? "Native email, LinkedIn, MCP, signal intake, visitor-intent intake, and CRM handoff are active paths; native CRM OAuth and alert sync remain planned evented integrations."
             : readiness.next_action || "Connect required channels before external output destinations can move outreach.",
           href: readiness.launch_ready
             ? "/dashboard/profile#tools"

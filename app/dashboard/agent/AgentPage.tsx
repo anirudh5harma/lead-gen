@@ -244,6 +244,15 @@ interface AgentSignalMix {
   with_draft_7d: number;
 }
 
+interface SignalReadinessWarning {
+  key: string;
+  label: string;
+  detail: string;
+  icon: string;
+  tone: "blocked" | "review" | "waiting";
+  href: string;
+}
+
 interface AgentReviewRow {
   id: string;
   run_id: string;
@@ -1997,6 +2006,7 @@ function AgentSetupSnapshot({
   const sent7d = outreach.email_sent_7d + outreach.linkedin_sent_7d;
   const nextAction = readinessNextAction(readiness);
   const nextSource = nextSourceCheck(strategy.sources);
+  const signalWarnings = signalReadinessWarnings(signalMix);
   return (
     <section className="section-note grid gap-5" aria-label="Agent setup snapshot">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2110,6 +2120,47 @@ function AgentSetupSnapshot({
               ))}
             </div>
           )}
+          <div className="grid gap-2 rounded-[8px] border border-[var(--color-line-1)] bg-[var(--color-ink-1)] p-3">
+            <span className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-4)]">
+                <Icon name="warning" size={13} />
+                Weak signal warnings
+              </span>
+              <span className="font-mono text-[11px] text-[var(--color-text-4)]">
+                {signalWarnings.length} open
+              </span>
+            </span>
+            {signalWarnings.length === 0 ? (
+              <p className="rounded-[8px] bg-[var(--color-pos-bg)] px-3 py-2 text-xs leading-5 text-[var(--color-pos)]">
+                Signal flow is clearing the launch gates: qualified timing,
+                contact proof, and draft proof are all present this week.
+              </p>
+            ) : (
+              <div className="grid gap-2">
+                {signalWarnings.map((warning) => (
+                  <Link
+                    key={warning.key}
+                    href={warning.href}
+                    prefetch={false}
+                    className="group grid gap-2 rounded-[8px] bg-[var(--color-ink-2)] px-3 py-2 transition hover:bg-[var(--color-ink-3)]"
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[var(--color-text-1)]">
+                        <Icon name={warning.icon} size={14} />
+                        <span className="truncate">{warning.label}</span>
+                      </span>
+                      <OpportunityPill tone={warning.tone}>
+                        Fix
+                      </OpportunityPill>
+                    </span>
+                    <span className="text-xs leading-5 text-[var(--color-text-3)]">
+                      {warning.detail}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </article>
 
         <article className="grid content-start gap-4 rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4">
@@ -2169,6 +2220,90 @@ function AgentSetupSnapshot({
       </div>
     </section>
   );
+}
+
+function signalReadinessWarnings(
+  signalMix: AgentSignalMix,
+): SignalReadinessWarning[] {
+  const warnings: SignalReadinessWarning[] = [];
+
+  if (signalMix.seen_7d === 0) {
+    return [
+      {
+        key: "no-signal-volume",
+        label: "No signal volume yet",
+        detail:
+          "No fresh signals landed this week. Check source cadence and buyer terms before expecting outreach.",
+        icon: "sensors",
+        tone: "waiting",
+        href: "/dashboard/profile#signal-setup",
+      },
+    ];
+  }
+
+  if (signalMix.qualified_7d === 0) {
+    warnings.push({
+      key: "signals-not-qualifying",
+      label: "Signals are not qualifying",
+      detail: `${signalMix.seen_7d} seen this week, none qualified. Tighten buyer fit, source terms, or score thresholds.`,
+      icon: "rule",
+      tone: "review",
+      href: "/dashboard/profile#signal-setup",
+    });
+  }
+
+  if (signalMix.qualified_7d > 0 && signalMix.with_contact_7d === 0) {
+    warnings.push({
+      key: "qualified-signals-need-contacts",
+      label: "Qualified signals need contacts",
+      detail: `${signalMix.qualified_7d} qualified signals have no verified email or LinkedIn profile yet.`,
+      icon: "person_search",
+      tone: "blocked",
+      href: "/dashboard/agent#qualified-signals",
+    });
+  }
+
+  if (signalMix.with_contact_7d > 0 && signalMix.with_draft_7d === 0) {
+    warnings.push({
+      key: "contacts-need-drafts",
+      label: "Contacts need drafts",
+      detail: `${signalMix.with_contact_7d} qualified contacts are ready, but none have judged email or LinkedIn drafts.`,
+      icon: "rate_review",
+      tone: "review",
+      href: "/dashboard/agent#qualified-signals",
+    });
+  }
+
+  const rowWarnings: SignalReadinessWarning[] = [];
+  for (const row of signalMix.rows) {
+    const qualified = Number(row.qualified_7d);
+    const withContact = Number(row.with_contact_7d);
+    const withDraft = Number(row.with_draft_7d);
+    const label = signalKindLabel(row.kind);
+    if (qualified > 0 && withContact === 0) {
+      rowWarnings.push({
+        key: `${row.kind}-contacts`,
+        label: `${label} needs contacts`,
+        detail: `${qualified} qualified ${label.toLowerCase()} signals have no verified email or LinkedIn profile.`,
+        icon: "person_search",
+        tone: "blocked",
+        href: "/dashboard/agent#qualified-signals",
+      });
+      continue;
+    }
+    if (withContact > 0 && withDraft === 0) {
+      rowWarnings.push({
+        key: `${row.kind}-drafts`,
+        label: `${label} needs drafts`,
+        detail: `${withContact} ${label.toLowerCase()} contacts are reachable but waiting on judged outreach.`,
+        icon: "rate_review",
+        tone: "review",
+        href: "/dashboard/agent#qualified-signals",
+      });
+    }
+  }
+
+  return [...warnings, ...rowWarnings].slice(0, 3);
 }
 
 function SignalMixRow({ row }: { row: AgentSignalMixRow }) {
@@ -4826,8 +4961,9 @@ function AgentOutputHandoffPanel({
               <p className="mt-1 max-w-[72ch] text-xs leading-5 text-[var(--color-text-3)]">
                 Sent proof, qualified contacts, replies, and meetings stay in
                 Agent first. Connected channels and agent APIs can move work
-                now; CRM, outreach-tool, and team-alert handoffs stay planned
-                until they are evented.
+                now; visitor-intent intake and CRM handoff are available, while
+                native CRM OAuth, outreach-tool, and team-alert sync stay
+                explicit until they are evented.
               </p>
             </div>
             <Link href="/dashboard/profile#tools" prefetch={false} className="btn-quiet-sm">
@@ -4942,6 +5078,9 @@ function AgentDestinationIcon({
   }
   if (destination.key === "signal-webhook") {
     return <Icon name="webhook" size={size} />;
+  }
+  if (destination.key === "visitor-deanonymization") {
+    return <Icon name="radar" size={size} />;
   }
   if (destination.key === "crm-sync") {
     return <Icon name="person_search" size={size} />;

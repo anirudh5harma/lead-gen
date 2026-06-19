@@ -441,6 +441,7 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
       "linkedin",
       "claude-code",
       "signal-webhook",
+      "visitor-deanonymization",
       "crm-sync",
       "outreach-tool-sync",
       "team-alerts",
@@ -467,6 +468,11 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
       ?.handoff_stage,
     "signal_intake",
   );
+  assert.equal(
+    blocked.find((destination) => destination.key === "visitor-deanonymization")
+      ?.href,
+    "/api/webhooks/visitors",
+  );
 
   const connected = buildOutputDestinations({
     email_connected: true,
@@ -482,9 +488,15 @@ test("output destination model is shared by Profile and Bombsell MCP aliases", (
     "connected",
   );
   assert.equal(
-    connected.find((destination) => destination.key === "crm-sync")
-      ?.handoff_stage,
-    "qualified_contact_sync",
+    connected.find((destination) => destination.key === "crm-sync")?.status,
+    "available",
+  );
+  assert.deepEqual(
+    connected.find((destination) => destination.key === "crm-sync")?.tools,
+    [
+      "bombsell.signals.list_qualified",
+      "bombsell.contacts.list_lanes",
+    ],
   );
   assert.equal(
     connected.find((destination) => destination.key === "team-alerts")
@@ -1257,8 +1269,14 @@ test("bombsell wrapper tools summarize product state for Claude Code", async () 
     ["product.signal.submit"],
   );
   assert.equal(
+    integrations.destinations.find(
+      (item) => item.key === "visitor-deanonymization",
+    )?.handoff_stage,
+    "signal_intake",
+  );
+  assert.equal(
     integrations.destinations.find((item) => item.key === "crm-sync")?.status,
-    "planned",
+    "available",
   );
   assert.equal(
     integrations.destinations.find((item) => item.key === "team-alerts")

@@ -1763,8 +1763,9 @@ function IntegrationPanel({
           Where qualified work can go
         </p>
         <p className="mt-1 text-sm leading-6 text-[var(--color-text-3)]">
-          Bombsell routes quality signals into native outreach first, then opens
-          the same graph-backed tools to agent and webhook surfaces. CRM and
+          Bombsell routes quality signals into native outreach first, accepts
+          visitor-intent and signal webhooks, then opens the same graph-backed
+          tools to agent and CRM handoff surfaces. Native CRM OAuth and
           volume-tool sync stay explicit until those destinations are wired.
         </p>
       </div>
@@ -1913,6 +1914,7 @@ function destinationAction(destination: OutputDestination): string {
   }
   if (destination.key === "claude-code") return "Use Bombsell in Claude Code";
   if (destination.key === "signal-webhook") return "View route";
+  if (destination.key === "visitor-deanonymization") return "View route";
   return destinationStatusLabel(destination);
 }
 
@@ -1931,6 +1933,9 @@ function destinationIcon(destination: OutputDestination): ReactNode {
   }
   if (destination.key === "signal-webhook") {
     return <Icon name="webhook" size={16} />;
+  }
+  if (destination.key === "visitor-deanonymization") {
+    return <Icon name="radar" size={16} />;
   }
   if (destination.key === "crm-sync") {
     return <Icon name="corporate_fare" size={16} />;

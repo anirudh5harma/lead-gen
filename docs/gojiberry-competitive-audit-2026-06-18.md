@@ -197,3 +197,18 @@ outreach, email outreach, LinkedIn outreach, fit review, email verification, or
 contact resolution without inferring the path from raw counts. This keeps the
 GojiBerry-style lead handoff visible in Bombsell's API surface as well as the
 web Agent.
+
+The Agent setup snapshot now derives weak-signal warnings from the same 7-day
+signal mix used in the launch dashboard. It calls out no signal volume, signals
+that are not qualifying, qualified signals without verified email or LinkedIn
+profiles, and reachable contacts without judged drafts, then routes each fix to
+Profile signal setup or Agent qualified signals. This brings over GojiBerry's
+daily signal-quality diagnosis while keeping Bombsell focused on Brief, Agent,
+and Profile.
+
+Bombsell's launch capability audit now maps the customer-facing promise to real
+surfaces: visitor de-anonymization enters through `/api/webhooks/visitors` as
+source-backed website-intent Signals, automated personalized outreach stays in
+Agent with eval and approval gates, intent signals and scoring stay visible
+through signal quality and weak-signal warnings, and CRM integration is
+available as an MCP/API handoff while native CRM OAuth remains next.

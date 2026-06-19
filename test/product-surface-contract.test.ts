@@ -977,6 +977,15 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /with_contact_7d/);
   assert.match(reps, /with_draft_7d/);
   assert.match(reps, /coalesce\(s\.kind::text, 'other'\) as kind/);
+  assert.match(reps, /SignalReadinessWarning/);
+  assert.match(reps, /signalReadinessWarnings/);
+  assert.match(reps, /Weak signal warnings/);
+  assert.match(reps, /No signal volume yet/);
+  assert.match(reps, /Signals are not qualifying/);
+  assert.match(reps, /Qualified signals need contacts/);
+  assert.match(reps, /Contacts need drafts/);
+  assert.match(reps, /\/dashboard\/profile#signal-setup/);
+  assert.match(reps, /\/dashboard\/agent#qualified-signals/);
   assert.match(reps, /SignalMixRow/);
   assert.match(reps, /SetupGateRow/);
   assert.match(reps, /Buyer and sources/);
@@ -1048,7 +1057,8 @@ test("Agent surface shows live work and account readiness", () => {
   assert.match(reps, /Sent proof, qualified contacts, replies, and meetings stay in\s+Agent first/);
   assert.match(reps, /Manage in Profile/);
   assert.match(reps, /Next handoff classes/);
-  assert.match(reps, /CRM, outreach-tool, and team-alert handoffs stay planned/);
+  assert.match(reps, /visitor-intent intake and CRM handoff are available/);
+  assert.match(reps, /native CRM OAuth, outreach-tool, and team-alert sync stay/);
   assert.match(reps, /AgentDestinationCard/);
   assert.match(reps, /AgentDestinationIcon/);
   assert.match(reps, /destination\.handoff_stage === "agent_api"/);
@@ -1424,6 +1434,22 @@ test("dashboard Signal surfaces do not expose manual ingestion controls", () => 
   assert.match(capabilityMap, /`product\.signal\.ingestion\.run`/);
 });
 
+test("visitor de-anonymization enters the Signal path", () => {
+  const route = source("app/api/webhooks/visitors/route.ts");
+  const outputDestinations = source("core/product/output-destinations.ts");
+  assert.match(route, /VisitorEvent/);
+  assert.match(route, /SIGNAL_WEBHOOK_SECRET/);
+  assert.match(route, /discoverSignalFromWebhook/);
+  assert.match(route, /producerRef: "webhook:visitors"/);
+  assert.match(route, /visitor_deanonymization: true/);
+  assert.match(route, /intent_score/);
+  assert.match(route, /company_domain/);
+  assert.match(route, /linkedin_url/);
+  assert.match(route, /signal_kind: "other" as const/);
+  assert.match(outputDestinations, /Visitor de-anonymization/);
+  assert.match(outputDestinations, /\/api\/webhooks\/visitors/);
+});
+
 test("dashboard surface verifier covers the simplified product flow", () => {
   const pkg = JSON.parse(source("package.json")) as {
     scripts?: Record<string, string>;
@@ -1565,8 +1591,15 @@ test("Profile exposes profile, activation, Outlook, and workspace autonomy contr
   assert.match(outputDestinations, /bombsell\.outreach\.list_sent/);
   assert.match(outputDestinations, /Automation intake/);
   assert.match(outputDestinations, /\/api\/webhooks\/signals/);
+  assert.match(outputDestinations, /Visitor de-anonymization/);
+  assert.match(outputDestinations, /Intent signal intake/);
+  assert.match(outputDestinations, /RB2B, Clearbit, Factors, Warmly/);
+  assert.match(outputDestinations, /\/api\/webhooks\/visitors/);
+  assert.match(settings, /visitor-intent and signal webhooks/);
   assert.match(settings, /Next destination classes/);
   assert.match(outputDestinations, /CRM sync/);
+  assert.match(outputDestinations, /native OAuth sync is next/);
+  assert.match(outputDestinations, /bombsell\.contacts\.list_lanes/);
   assert.match(outputDestinations, /Outreach tool sync/);
   assert.match(outputDestinations, /Team alerts/);
   assert.match(settings, /evented integrations rather than decorative install buttons/);

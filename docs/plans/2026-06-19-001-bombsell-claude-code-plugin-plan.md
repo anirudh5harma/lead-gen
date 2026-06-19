@@ -351,6 +351,50 @@ Profile changes, review qualified signal lanes, prepare judged outreach drafts,
 and summarize replies/meetings. Approval, sending, revocation, audit, and
 workspace scope remain Bombsell-owned server behavior.
 
+## 2026-06-19 Claude Code Plugin Research Refresh
+
+Current Claude Code plugin docs reinforce the same launch strategy, with one
+important emphasis: users review the plugin footprint before installing, so
+Bombsell v1 should be easy to trust at a glance.
+
+- The official plugin docs say plugins extend Claude Code with skills, agents,
+  hooks, and MCP servers, and are meant for reusable team/community
+  distribution. Bombsell should therefore ship the native workflow as a plugin,
+  but keep the actual GTM execution on the existing server-side MCP API.
+  Source: <https://code.claude.com/docs/en/plugins>
+- The MCP docs recommend remote HTTP for cloud services and show the exact
+  install shape Bombsell should support:
+  `claude mcp add --transport http bombsell https://www.bombsell.com/api/mcp`.
+  This keeps OAuth, workspace scope, rate limits, eval gates, and sends inside
+  Bombsell instead of a local Claude Code process.
+  Source: <https://code.claude.com/docs/en/mcp>
+- Plugin-provided MCP servers start automatically when a plugin is enabled and
+  are managed through plugin installation. Bombsell's plugin should therefore
+  bundle only one MCP server named `bombsell` plus the six focused skills.
+  Source: <https://code.claude.com/docs/en/mcp>
+- The plugin manager shows the commands, skills, hooks, agents, MCP servers,
+  and LSP servers a plugin will install. For trust, Bombsell v1 should install
+  no hooks, no local binaries, no background monitors, and no subagents.
+  Source: <https://code.claude.com/docs/en/discover-plugins>
+- The community marketplace requires validation and safety review. Design
+  partner distribution should use a private pinned marketplace first, then move
+  to the community marketplace after OAuth, audit events, revocation, and
+  partner install feedback are clean.
+  Source: <https://code.claude.com/docs/en/discover-plugins>
+
+Updated launch plan:
+
+1. Ship direct remote MCP setup as the first public instruction.
+2. Dogfood the existing `integrations/bombsell-claude-code` plugin locally with
+   production OAuth and real workspaces.
+3. Publish a private pinned marketplace for design partners only after the
+   authenticated plugin path can brief, propose Profile updates, review
+   qualified signals, prepare judged drafts, inspect sent proof, and revoke
+   access.
+4. Submit to the Claude community marketplace only after
+   `npm run verify:claude-code-plugin`, privacy copy, audit visibility, and
+   partner feedback pass.
+
 ## Build Plan
 
 1. Direct MCP dogfood

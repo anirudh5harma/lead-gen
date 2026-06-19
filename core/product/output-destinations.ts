@@ -81,15 +81,29 @@ export function buildOutputDestinations(
       tools: ["product.signal.submit"],
     },
     {
+      key: "visitor-deanonymization",
+      title: "Visitor de-anonymization",
+      category: "Intent signal intake",
+      status: "available",
+      detail:
+        "RB2B, Clearbit, Factors, Warmly, or custom visitor-ID events can enter Bombsell as website-intent Signals with company, person, page, and intent-score proof.",
+      handoff_stage: "signal_intake",
+      href: "/api/webhooks/visitors",
+      tools: ["product.signal.submit"],
+    },
+    {
       key: "crm-sync",
       title: "CRM sync",
       category: "Qualified contact sync",
-      status: "planned",
+      status: "available",
       detail:
-        "HubSpot, Pipedrive, Salesforce, Attio, Folk, and Clay should receive qualified contacts only after signal and contact proof exists.",
+        "HubSpot, Pipedrive, Salesforce, Attio, Folk, and Clay can receive qualified contacts through Bombsell MCP/API handoff after signal and contact proof exists; native OAuth sync is next.",
       handoff_stage: "qualified_contact_sync",
-      href: null,
-      tools: [],
+      href: "/dashboard/profile#claude-code",
+      tools: [
+        "bombsell.signals.list_qualified",
+        "bombsell.contacts.list_lanes",
+      ],
     },
     {
       key: "outreach-tool-sync",
