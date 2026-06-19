@@ -75,9 +75,11 @@ test("public entry sends login directly to Google OAuth", () => {
   const body = readFileSync("app/page.tsx", "utf8");
   const authStart = readFileSync("app/auth/start/route.ts", "utf8");
   assert.match(body, /href=\{googleAuthPath\(PRODUCT_HOME_PATH\)\}/);
+  assert.match(body, /href=\{googleAuthPath\('\/onboarding'\)\}/);
   assert.match(body, /action="\/auth\/start"/);
   assert.doesNotMatch(body, /action="\/onboarding"/);
   assert.doesNotMatch(body, /href="\/login"/);
+  assert.doesNotMatch(body, /href="\/onboarding"/);
   assert.match(authStart, /googleAuthPath\(next\)/);
   assert.match(authStart, /onboardingPathForWebsite\(searchParams\.get\("url"\)\)/);
 });
