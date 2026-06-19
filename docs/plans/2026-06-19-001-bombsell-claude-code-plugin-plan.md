@@ -229,7 +229,9 @@ depend on the app monorepo remaining public-readable.
 The first local catalog now lives at
 `integrations/bombsell-claude-code-marketplace/.claude-plugin/marketplace.json`
 and pins the plugin to a release commit. Validate it with
-`claude plugin validate integrations/bombsell-claude-code-marketplace`.
+`npm run verify:claude-code-plugin`, which runs strict Claude plugin validation
+for both the plugin and marketplace, checks the marketplace source shape, and
+proves the pinned commit exists.
 
 Initial `.mcp.json` target:
 
@@ -567,6 +569,8 @@ Install page bullets:
 - [x] Create `bombsell-claude-code` plugin package under `integrations/`.
 - [x] Create a local Bombsell marketplace catalog for internal validation and
   private dogfood.
+- [x] Add `npm run verify:claude-code-plugin` as the repeatable release gate
+  for the plugin package and private marketplace catalog.
 - [x] Add six initial skills.
 - [ ] Add two optional agents.
 - [x] Add README and install docs.

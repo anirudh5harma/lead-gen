@@ -23,7 +23,7 @@
         "source": "git-subdir",
         "url": "https://github.com/anirudh5harma/lead-gen.git",
         "path": "integrations/bombsell-claude-code",
-        "sha": "048255bb418082e93fb118ca2a4d024141d61b9c"
+        "sha": "99954ef5d65589d9a11b4cbdd844de856e053984"
       },
       "strict": true
     }

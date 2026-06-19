@@ -35,6 +35,7 @@
     "verify:outreach-pipeline": "node --experimental-strip-types scripts/verify-outreach-pipeline.ts",
     "verify:frontend-latency": "node scripts/measure-frontend-latency.mjs",
     "verify:dashboard-surfaces": "node --experimental-strip-types scripts/verify-dashboard-surfaces.ts",
+    "verify:claude-code-plugin": "node --experimental-strip-types scripts/verify-claude-code-plugin.ts",
     "verify:outlook": "node --experimental-strip-types scripts/verify-outlook-readiness.ts",
     "verify:exa": "node --experimental-strip-types scripts/verify-exa-intelligence.ts",
     "verify:agent-observability": "node --experimental-strip-types scripts/verify-agent-observability.ts",
