@@ -60,6 +60,17 @@ export const getActiveWorkspaceSession = cache(async (): Promise<ActiveWorkspace
   return { workspace, user_id: userId, role };
 });
 
+export async function getActiveWorkspaceSessionForDashboard(
+  surface: string,
+): Promise<ActiveWorkspaceSession | null> {
+  try {
+    return await getActiveWorkspaceSession();
+  } catch (err) {
+    console.error(`[dashboard/${surface}] failed to load active workspace`, err);
+    return null;
+  }
+}
+
 export async function getActiveWorkspace(): Promise<ActiveWorkspace | null> {
   return (await getActiveWorkspaceSession())?.workspace ?? null;
 }
@@ -79,6 +90,17 @@ export const listWorkspaces = cache(async (): Promise<ActiveWorkspace[]> => {
   );
   return rows;
 });
+
+export async function listWorkspacesForDashboard(
+  surface: string,
+): Promise<ActiveWorkspace[]> {
+  try {
+    return await listWorkspaces();
+  } catch (err) {
+    console.error(`[dashboard/${surface}] failed to list workspaces`, err);
+    return [];
+  }
+}
 
 export async function setActiveWorkspaceCookie(workspaceId: string): Promise<void> {
   const userId = await getRequestUserId();

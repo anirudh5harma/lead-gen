@@ -1,3 +1,7 @@
+import { redirect } from "next/navigation";
+
 export const dynamic = "force-dynamic";
 
-export { default } from "./AgentDetailPage";
+export default function AgentDetailRedirectPage() {
+  redirect("/dashboard/agent#system");
+}

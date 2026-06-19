@@ -42,6 +42,27 @@ Profile improvements, review qualified signals, prepare judged email/LinkedIn
 drafts, and summarize replies or meetings. Bombsell still owns approval,
 sending, channel readiness, eval gates, token revocation, and the audit trail.
 
+## Immediate Launch Track
+
+Current Claude Code docs reinforce a focused path: ship Bombsell as a remote
+HTTP MCP-backed plugin with a small skill set, then use marketplace distribution
+after authenticated dogfood proves trust.
+
+1. **Production MCP first.** Keep `https://www.bombsell.com/api/mcp` as the
+   only execution path. Claude Code's HTTP MCP transport is the right fit for a
+   cloud product, and Bombsell keeps OAuth, workspace scoping, eval gates,
+   approvals, sending, revocation, and audit logs server-side.
+2. **Plugin as workflow packaging.** The plugin should package one MCP server
+   plus six skills: Brief, Profile from repo, launch check, signal review,
+   prepare outreach, and reply insights. No hooks, local binaries, background
+   monitors, or stdio servers in v1.
+3. **Private marketplace release.** Publish a pinned marketplace entry for
+   design partners only after `npm run verify:claude-code-plugin` and one
+   authenticated Claude Code session have passed against production OAuth.
+4. **Community marketplace after proof.** Submit publicly only after design
+   partners can install, authenticate, review qualified signals, prepare drafts,
+   inspect sent outreach, and revoke access without support help.
+
 ## Research Snapshot
 
 Last checked against Anthropic Claude Code docs on 2026-06-19.

@@ -23,7 +23,7 @@ import {
 import { getPool } from "@/core/substrate/storage/index.ts";
 import { getRequestAuthIdentity } from "@/lib/auth";
 import type { RequestAuthIdentity } from "@/lib/auth";
-import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
   configureActivationAction,
@@ -449,7 +449,7 @@ async function loadProfileState(workspaceId: string, userId: string): Promise<Pr
 }
 
 export default async function ProfilePage() {
-  const active = await getActiveWorkspaceSession();
+  const active = await getActiveWorkspaceSessionForDashboard("profile");
   if (!active) return <NoWorkspaceProfile />;
 
   const pool = getPool();

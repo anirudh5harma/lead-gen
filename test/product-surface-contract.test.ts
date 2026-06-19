@@ -55,6 +55,7 @@ test("dashboard navigation uses active product surface routes", () => {
 test("dashboard shell keeps route chrome simple and avoids extra flow queries", () => {
   const shell = source("components/dashboard/Shell.tsx");
   const layout = source("app/dashboard/layout.tsx");
+  const workspace = source("lib/workspace.ts");
 
   assert.match(shell, /DashboardShell/);
   assert.match(shell, /const NAV/);
@@ -63,7 +64,15 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   assert.match(shell, /label: "Profile"/);
   assert.match(layout, /<DashboardShell/);
   assert.match(layout, /getActiveWorkspaceSession/);
+  assert.match(layout, /loadDashboardChrome/);
+  assert.match(layout, /DashboardUnavailable/);
+  assert.match(layout, /getActiveWorkspaceSessionForDashboard\("layout"\)/);
+  assert.match(layout, /listWorkspacesForDashboard\("layout"\)/);
   assert.match(layout, /listWorkspaces/);
+  assert.match(workspace, /getActiveWorkspaceSessionForDashboard/);
+  assert.match(workspace, /listWorkspacesForDashboard/);
+  assert.match(workspace, /failed to load active workspace/);
+  assert.match(workspace, /failed to list workspaces/);
 
   assert.doesNotMatch(shell, /ProductFlowMetrics/);
   assert.doesNotMatch(shell, /DEFAULT_FLOW_METRICS/);
@@ -83,14 +92,14 @@ test("Agent is the canonical dashboard surface route", () => {
   assert.match(agentPage, /export const dynamic = "force-dynamic"/);
   assert.match(agentPage, /from "\.\/AgentPage"/);
   assert.match(agentDetailPage, /export const dynamic = "force-dynamic"/);
-  assert.match(agentDetailPage, /from "\.\/AgentDetailPage"/);
+  assert.match(agentDetailPage, /redirect\("\/dashboard\/agent#system"\)/);
   assert.match(
     source("app/dashboard/reps/page.tsx"),
     /redirect\("\/dashboard\/agent"\)/,
   );
   assert.match(
     source("app/dashboard/reps/[id]/page.tsx"),
-    /redirect\(`\/dashboard\/agent\/\$\{id\}`\)/,
+    /redirect\("\/dashboard\/agent#system"\)/,
   );
   assert.equal(exists("app/dashboard/loading.tsx"), false);
   assert.equal(exists("app/dashboard/agent/loading.tsx"), false);
@@ -112,7 +121,6 @@ test("Agent is the canonical dashboard surface route", () => {
     source("components/dashboard/Shell.tsx"),
     source("app/dashboard/page.tsx"),
     source("app/dashboard/agent/AgentPage.tsx"),
-    source("app/dashboard/agent/[id]/AgentDetailPage.tsx"),
     source("app/dashboard/agent/contacts/[id]/ContactPage.tsx"),
     source("app/dashboard/setup/page.tsx"),
     source("app/dashboard/actions.ts"),
@@ -236,7 +244,7 @@ test("retired product surfaces redirect to Agent", () => {
 
   assert.match(nextConfig, /source: "\/dashboard\/reps"/);
   assert.match(nextConfig, /source: "\/dashboard\/reps\/:id"/);
-  assert.match(nextConfig, /destination: "\/dashboard\/agent\/:id"/);
+  assert.match(nextConfig, /destination: "\/dashboard\/agent#system"/);
   assert.match(nextConfig, /source: "\/dashboard\/content"/);
   assert.match(nextConfig, /source: "\/dashboard\/aeo"/);
   assert.match(nextConfig, /source: "\/dashboard\/ops"/);
@@ -1091,7 +1099,6 @@ test("dashboard app surfaces do not leak legacy named agents", () => {
   const readme = source("README.md");
   const surfaces = [
     source("app/dashboard/agent/AgentPage.tsx"),
-    source("app/dashboard/agent/[id]/AgentDetailPage.tsx"),
     source("app/dashboard/setup/page.tsx"),
     source("app/dashboard/profile/ProfilePage.tsx"),
     source("app/dashboard/campaigns/page.tsx"),
@@ -1704,7 +1711,6 @@ test("account connection entry points carry explicit product return targets", ()
 test("new product defaults are autonomous after checks", () => {
   const actions = source("app/dashboard/actions.ts");
   const settings = source("app/dashboard/profile/ProfilePage.tsx");
-  const repDetail = source("app/dashboard/agent/[id]/AgentDetailPage.tsx");
   const productApp = source("core/product/app.ts");
   const playAutonomy = source("core/plays/autonomy.ts");
   const repPrimitive = source("core/primitives/rep.ts");
@@ -1716,10 +1722,6 @@ test("new product defaults are autonomous after checks", () => {
   assert.match(
     settings,
     /const approval =\s+rep\?\.autonomy\?\.channels\?\.email\?\.approval \?\? "none"/,
-  );
-  assert.match(
-    repDetail,
-    /defaultValue=\{rep\.autonomy\.channels\?\.email\?\.approval \?\? "none"\}/,
   );
   assert.match(
     productApp,

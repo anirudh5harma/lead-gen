@@ -21,7 +21,7 @@ import {
   type QualifiedSignalWorkbench,
 } from "@/core/product/qualified-signals.ts";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import {
   checkAgentSourcesAction,
   decideApprovalWithDraftAction,
@@ -1511,7 +1511,7 @@ async function loadAgentReviewSummary(
 }
 
 export default async function RepsPage() {
-  const active = await getActiveWorkspaceSession();
+  const active = await getActiveWorkspaceSessionForDashboard("agent");
   if (!active) return <NoWorkspaceReps />;
 
   const state = await loadSafeRepsState(active.workspace.id);

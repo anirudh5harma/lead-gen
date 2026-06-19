@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/dashboard/reps/:id",
-        destination: "/dashboard/agent/:id",
+        destination: "/dashboard/agent#system",
         permanent: false,
       },
       {

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { getPool } from "@/core/substrate/storage/index.ts";
-import { getActiveWorkspaceSession } from "@/lib/workspace";
+import { getActiveWorkspaceSessionForDashboard } from "@/lib/workspace";
 import { EmptyState } from "@/components/dashboard/Shell";
 import { SurfaceSection } from "@/components/dashboard/SurfaceHero";
 import {
@@ -777,7 +777,7 @@ const EMPTY_CHANNEL_READINESS: BriefChannelReadiness = {
 };
 
 export default async function BriefPage() {
-  const session = await getActiveWorkspaceSession();
+  const session = await getActiveWorkspaceSessionForDashboard("brief");
   if (!session) {
     return (
       <BriefView

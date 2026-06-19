@@ -245,11 +245,7 @@ export async function configureActivationAction(formData: FormData) {
 
 export async function configureRepAction(formData: FormData) {
   const session = await requireDashboardSession(formData);
-  const repId = value(formData, "rep_id");
-  const returnTo = dashboardReturnPath(
-    formData,
-    repId ? `/dashboard/agent/${repId}` : "/dashboard/agent",
-  );
+  const returnTo = dashboardReturnPath(formData, "/dashboard/agent#system");
   const name = await repNameFromForm(formData, session);
   await configureRep(
     {
@@ -267,9 +263,6 @@ export async function configureRepAction(formData: FormData) {
     session,
   );
   revalidateProductPaths();
-  if (repId) {
-    revalidatePath(`/dashboard/agent/${repId}`);
-  }
   redirectWithToast(returnTo, "Agent guidance saved.");
 }
 

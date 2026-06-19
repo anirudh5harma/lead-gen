@@ -64,6 +64,8 @@ const forbiddenNav = ["Outreach", "Signals", "Prospects", "Inbox", "Plays", "Out
 
 const redirectChecks: RedirectCheck[] = [
   { path: "/dashboard/reps", destination: "/dashboard/agent" },
+  { path: "/dashboard/reps/demo-agent", destination: "/dashboard/agent#system" },
+  { path: "/dashboard/agent/demo-agent", destination: "/dashboard/agent#system" },
   { path: "/dashboard/campaigns", destination: "/dashboard/agent#learning" },
   { path: "/dashboard/content", destination: "/dashboard/agent" },
   { path: "/dashboard/aeo", destination: "/dashboard/agent" },
