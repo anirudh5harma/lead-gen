@@ -49,6 +49,22 @@ const WorkspaceConfigured = z.object({
   settings: z.record(z.string(), z.unknown()),
 });
 
+const WorkspaceBillingSubscriptionSynced = z.object({
+  workspace_id: z.string().uuid(),
+  provider: z.literal("dodo"),
+  plan: z.enum(["free", "pro"]),
+  status: z.enum(["active", "canceled", "expired", "inactive"]),
+  period: z.enum(["monthly", "annual"]).nullable(),
+  provider_customer_id: z.string().min(1).nullable().optional(),
+  provider_subscription_id: z.string().min(1).nullable().optional(),
+  provider_product_id: z.string().min(1).nullable().optional(),
+  current_period_start_at: z.string().datetime().nullable().optional(),
+  renews_at: z.string().datetime().nullable().optional(),
+  canceled_at: z.string().datetime().nullable().optional(),
+  webhook_event_type: z.string().min(1),
+  raw_status: z.string().min(1).nullable().optional(),
+});
+
 const RepConfigured = z.object({
   rep_id: z.string().uuid(),
   name: z.string().min(1),
@@ -1613,6 +1629,7 @@ export const eventRegistry = {
   "workspace.member.accepted": WorkspaceMemberAccepted,
   "workspace.activation.requested": WorkspaceActivationRequested,
   "workspace.configured": WorkspaceConfigured,
+  "workspace.billing.subscription.synced": WorkspaceBillingSubscriptionSynced,
   "rep.configured": RepConfigured,
   "rep.role.completed": RepRoleCompleted,
   "workspace.icp.configured": WorkspaceIcpConfigured,

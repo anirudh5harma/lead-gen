@@ -11,6 +11,7 @@ export interface ProductEnvVar {
     | "llm"
     | "local"
     | "runtime"
+    | "billing"
     | "substrate";
   description: string;
   example?: string;
@@ -291,6 +292,43 @@ export const PRODUCT_ENV_VARS: readonly ProductEnvVar[] = [
     category: "channels",
     description: "Standard Webhooks secret for Resend delivery, bounce, and complaint callbacks.",
     example: "whsec_...",
+  },
+  {
+    name: "DODO_API_KEY",
+    requirement: "production",
+    category: "billing",
+    description: "Dodo Payments API key for Pro checkout sessions and customer portal sessions.",
+  },
+  {
+    name: "DODO_ENV",
+    requirement: "optional",
+    category: "billing",
+    description: "Dodo Payments environment selector. Use test_mode for sandbox checkouts; defaults to live_mode.",
+    example: "live_mode",
+  },
+  {
+    name: "DODO_WEBHOOK_SECRET",
+    requirement: "production",
+    category: "billing",
+    description: "Dodo Payments standard webhook secret for subscription lifecycle callbacks.",
+  },
+  {
+    name: "DODO_PRODUCT_LAUNCH_MONTHLY",
+    requirement: "production",
+    category: "billing",
+    description: "Dodo product ID used for the Pro monthly subscription.",
+  },
+  {
+    name: "DODO_PRODUCT_LAUNCH_ANNUAL",
+    requirement: "production",
+    category: "billing",
+    description: "Dodo product ID used for the Pro annual subscription.",
+  },
+  {
+    name: "DODO_BUSINESS_ID",
+    requirement: "production",
+    category: "billing",
+    description: "Dodo business ID used for customer portal login fallback URLs.",
   },
   {
     name: "AWS_REGION",

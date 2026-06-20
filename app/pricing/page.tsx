@@ -126,6 +126,9 @@ export default function PricingPage() {
           <div className="mx-auto grid max-w-[820px] grid-cols-1 gap-4 md:grid-cols-2">
             {PLANS.map((plan, i) => {
               const price = annual ? plan.annual : plan.monthly
+              const href = plan.id === 'pro'
+                ? `/api/billing/pro/checkout?period=${annual ? 'annual' : 'monthly'}`
+                : plan.href
               return (
                 <ScrollReveal key={plan.id} delay={i * 0.08}>
                   <div
@@ -197,7 +200,8 @@ export default function PricingPage() {
                       </a>
                     ) : (
                       <Link
-                        href={plan.href}
+                        href={href}
+                        prefetch={false}
                         className={
                           'mt-6 inline-flex h-12 items-center justify-center gap-1.5 rounded-full px-6 text-[14px] font-semibold tracking-[-0.01em] transition-transform active:scale-[0.98] ' +
                           (plan.featured
