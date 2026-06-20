@@ -204,6 +204,21 @@ const icons: Record<string, IconNode> = {
       <path d="M13.5 15.5l2 2L20 13" />
     </>
   ),
+  mic: (
+    <>
+      <rect x="9" y="4" width="6" height="10" rx="3" />
+      <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
+      <path d="M12 17v4M9 21h6" />
+    </>
+  ),
+  mic_off: (
+    <>
+      <rect x="9" y="4" width="6" height="10" rx="3" />
+      <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
+      <path d="M12 17v4M9 21h6" />
+      <path d="M5 5l14 14" />
+    </>
+  ),
   monitor_heart: (
     <>
       <rect x="3" y="4" width="18" height="13" rx="2" />

@@ -1636,6 +1636,23 @@ const McpToolCalled = z.object({
   mcp_method: z.literal("tools/call"),
 });
 
+const AssistantSessionStarted = z.object({
+  user_id: z.string().uuid(),
+  mode: z.enum(["text", "voice"]),
+  call_id: z.string().nullable(),
+  output_voice: z.string().min(1),
+});
+
+const AssistantToolCalled = z.object({
+  user_id: z.string().uuid(),
+  tool_name: z.string().min(1),
+  call_id: z.string().nullable(),
+  request_id: z.string().nullable(),
+  status: z.enum(["completed", "confirmation_pending", "errored"]),
+  latency_ms: z.number().int().nonnegative(),
+  requires_confirmation: z.boolean(),
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1762,6 +1779,8 @@ export const eventRegistry = {
   "rep.memory.procedural.updated": RepMemoryProceduralUpdated,
   "rep.memory.procedural.seeded": RepMemoryProceduralSeeded,
 
+  "assistant.session.started": AssistantSessionStarted,
+  "assistant.tool.called": AssistantToolCalled,
   "mcp.tool.called": McpToolCalled,
 } as const;
 

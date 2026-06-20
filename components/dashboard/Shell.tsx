@@ -7,6 +7,7 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import { switchWorkspaceAction } from "@/app/dashboard/actions";
 import Icon from "@/components/Icon";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
+import VoiceAssistantDrawer from "@/components/dashboard/VoiceAssistantDrawer";
 
 interface NavItem {
   href: string;
@@ -166,6 +167,7 @@ export function DashboardShell({
                 </select>
               </form>
             ) : null}
+            <VoiceAssistantDrawer />
             <form action="/auth/sign-out" method="post">
               <PendingSubmitButton
                 aria-label="Sign out"

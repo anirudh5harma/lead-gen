@@ -99,6 +99,21 @@ test("dashboard shell keeps route chrome simple and avoids extra flow queries", 
   assert.doesNotMatch(layout, /from messages m/);
 });
 
+test("dashboard shell mounts the global voice assistant drawer", () => {
+  const shell = source("components/dashboard/Shell.tsx");
+  const drawer = source("components/dashboard/VoiceAssistantDrawer.tsx");
+  const transport = source("components/dashboard/assistantTransport.ts");
+
+  assert.match(shell, /VoiceAssistantDrawer/);
+  assert.match(shell, /<VoiceAssistantDrawer \/>/);
+  assert.match(drawer, /aria-label="Open voice assistant"/);
+  assert.match(drawer, /Talk to Bombsell/);
+  assert.match(drawer, /Push to talk|Hold to talk/);
+  assert.match(drawer, /\/api\/assistant\/tool/);
+  assert.match(transport, /\/api\/assistant\/session/);
+  assert.match(transport, /response\.create/);
+});
+
 test("Agent is the canonical dashboard surface route", () => {
   const agentPage = source("app/dashboard/agent/page.tsx");
   const agentDetailPage = source("app/dashboard/agent/[id]/page.tsx");
