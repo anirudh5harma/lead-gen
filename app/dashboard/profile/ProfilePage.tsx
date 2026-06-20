@@ -843,7 +843,7 @@ function ProfileSignalBuilderPanel({
           <span className="rounded-[8px] border border-[var(--color-line-2)] bg-[var(--color-ink-0)] px-3 py-1 font-mono text-[12px] text-[var(--color-text-2)]">
             {readyGates}/5 gates ready
           </span>
-          <Link href={next.href} prefetch={false} className="btn-solid-sm">
+          <Link href={next.href} prefetch className="btn-solid-sm">
             <Icon name={next.icon} size={14} />
             {next.label}
           </Link>
@@ -963,7 +963,7 @@ function ProfileSignalBuilderPanel({
           </form>
           <Link
             href="/dashboard/agent#qualified-signals"
-            prefetch={false}
+            prefetch
             className="btn-quiet-sm w-fit"
           >
             <Icon name="arrow_forward" size={14} />
@@ -1018,7 +1018,7 @@ function SignalSetupCard({
       <div className="grid content-start gap-3">{children}</div>
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-[var(--color-line-1)] pt-3">
         <span className="text-xs text-[var(--color-text-3)]">{footer}</span>
-        <Link href={href} prefetch={false} className="btn-quiet-sm">
+        <Link href={href} prefetch className="btn-quiet-sm">
           <Icon name="edit_note" size={14} />
           Tune
         </Link>
@@ -1238,7 +1238,7 @@ function IntegrationPanel({
           <Link
             key={destination.key}
             href={destination.href ?? "#tools"}
-            prefetch={false}
+            prefetch
             className="group rounded-[10px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-4 transition-colors hover:border-[var(--color-line-3)] hover:bg-[var(--color-ink-2)]"
           >
             <span className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
@@ -1449,7 +1449,7 @@ function VisitorIntentSetupPanel({
             Visitor intent setup
           </p>
           <p className="mt-1 max-w-[74ch] text-xs leading-5 text-[var(--color-text-3)]">
-            Install Bombsell's visitor script or connect RB2B, Clearbit,
+            Install Bombsell&apos;s visitor script or connect RB2B, Clearbit,
             Factors, Warmly, or your own website identity feed. Bombsell turns
             consented firmographics, page paths, dwell time, repeat visits, and
             identity proof into the same Signal scoring, contact resolution,
@@ -1835,7 +1835,8 @@ function McpAccessPanel({
   tokens: ProfileMcpToken[];
   activity: ProfileMcpActivity[];
 }) {
-  const activeCount = tokens.filter((token) => new Date(token.expires_at).getTime() > Date.now()).length;
+  const now = new Date();
+  const activeCount = tokens.filter((token) => new Date(token.expires_at).getTime() > now.getTime()).length;
   return (
     <div
       id="claude-code"
@@ -2728,7 +2729,7 @@ function ContactQualityPanel({
         />
       </div>
 
-      <Link href="/dashboard/agent#verified-contacts" prefetch={false} className="btn-quiet-sm w-fit">
+      <Link href="/dashboard/agent#verified-contacts" prefetch className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
         Open Agent contacts
       </Link>
@@ -2814,7 +2815,7 @@ function BlocklistPanel({
         </div>
       )}
 
-      <Link href="/dashboard/agent#outreach" prefetch={false} className="btn-quiet-sm w-fit">
+      <Link href="/dashboard/agent#outreach" prefetch className="btn-quiet-sm w-fit">
         <Icon name="arrow_forward" size={14} />
         Open Agent outreach
       </Link>
@@ -2847,7 +2848,7 @@ function BlocklistRow({ row }: { row: ProfileSuppressionRow }) {
 
   if (!row.conversation_id) return content;
   return (
-    <Link href={`/dashboard/agent/outreach/${row.conversation_id}`} prefetch={false}>
+    <Link href={`/dashboard/agent/outreach/${row.conversation_id}`} prefetch>
       {content}
     </Link>
   );

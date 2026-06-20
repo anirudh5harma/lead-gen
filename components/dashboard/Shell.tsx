@@ -124,18 +124,19 @@ export function DashboardShell({
             {NAV.map((item) => {
               const active = isActivePath(pathname, item.href, item.matches);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={(event) => handleNavClick(event, item.href, item.matches)}
-                  aria-current={active ? "page" : undefined}
-                  className={
-                    "inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 transition-colors " +
-                    (active
-                      ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
-                      : "hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
-                  }
-                >
+            <Link
+              key={item.href}
+              href={item.href}
+              prefetch
+              onClick={(event) => handleNavClick(event, item.href, item.matches)}
+              aria-current={active ? "page" : undefined}
+              className={
+                "inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 transition-colors " +
+                (active
+                  ? "bg-[var(--color-cta-bg)] text-[var(--color-cta-text)]"
+                  : "hover:bg-[var(--color-ink-2)] hover:text-[var(--color-text-1)]")
+              }
+            >
                   <Icon name={item.icon} size={14} />
                   <span>{item.label}</span>
                 </Link>
@@ -189,6 +190,7 @@ export function DashboardShell({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 onClick={(event) => handleNavClick(event, item.href, item.matches)}
                 aria-current={active ? "page" : undefined}
                 className={
@@ -206,7 +208,10 @@ export function DashboardShell({
         </div>
       </nav>
 
-      <main className="relative z-20 mx-auto w-full min-w-0 max-w-[1280px] overflow-x-clip px-4 pb-16 pt-[140px] md:px-8 md:pt-[96px] lg:px-12">
+      <main
+        className="relative z-20 mx-auto w-full min-w-0 max-w-[1280px] overflow-x-clip px-4 pb-16 pt-[140px] md:px-8 md:pt-[96px] lg:px-12"
+        aria-busy={routePending}
+      >
         {children}
       </main>
     </div>
