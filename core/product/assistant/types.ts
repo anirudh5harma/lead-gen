@@ -2,6 +2,20 @@ import { z } from "zod";
 
 export const AssistantSessionModeSchema = z.enum(["text", "voice"]);
 export type AssistantSessionMode = z.infer<typeof AssistantSessionModeSchema>;
+export const ASSISTANT_TOOL_NAMES = [
+  "get_brief",
+  "get_launch_readiness",
+  "list_qualified_signals",
+  "get_workspace_context",
+  "recall_company_brain",
+  "get_conversation_proof",
+  "generate_meeting_prep",
+  "decide_approval",
+  "dispatch_outreach",
+  "retry_failed_workflow",
+] as const;
+export const AssistantToolNameSchema = z.enum(ASSISTANT_TOOL_NAMES);
+export type AssistantToolName = z.infer<typeof AssistantToolNameSchema>;
 
 export interface AssistantCardMetric {
   label: string;
@@ -49,7 +63,7 @@ export interface AssistantToolRouteResponse {
 }
 
 export const AssistantSessionRequestSchema = z.object({
-  sdp: z.string().min(1),
+  sdp: z.string().min(1).max(200_000),
   mode: AssistantSessionModeSchema.default("voice"),
 });
 export type AssistantSessionRequest = z.infer<
@@ -66,12 +80,15 @@ export type AssistantSessionResponse = z.infer<
   typeof AssistantSessionResponseSchema
 >;
 
+const AssistantCallIdSchema = z.string().min(1).max(256);
+const AssistantRequestIdSchema = z.string().min(1).max(256);
+
 export const AssistantToolInvokeRequestSchema = z.object({
   action: z.literal("invoke"),
-  tool_name: z.string().min(1),
-  call_id: z.string().nullable().optional(),
-  arguments: z.record(z.string(), z.unknown()).default({}),
-  request_id: z.string().nullable().optional(),
+  tool_name: AssistantToolNameSchema,
+  call_id: AssistantCallIdSchema.nullable().optional(),
+  arguments: z.record(z.string().max(64), z.unknown()).default({}),
+  request_id: AssistantRequestIdSchema.nullable().optional(),
 });
 export type AssistantToolInvokeRequest = z.infer<
   typeof AssistantToolInvokeRequestSchema
@@ -79,7 +96,7 @@ export type AssistantToolInvokeRequest = z.infer<
 
 export const AssistantToolConfirmRequestSchema = z.object({
   action: z.literal("confirm"),
-  confirmation_token: z.string().min(1),
+  confirmation_token: z.string().min(1).max(4096),
 });
 export type AssistantToolConfirmRequest = z.infer<
   typeof AssistantToolConfirmRequestSchema
@@ -90,4 +107,3 @@ export const AssistantToolRequestSchema = z.discriminatedUnion("action", [
   AssistantToolConfirmRequestSchema,
 ]);
 export type AssistantToolRequest = z.infer<typeof AssistantToolRequestSchema>;
-

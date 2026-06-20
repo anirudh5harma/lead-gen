@@ -1,27 +1,49 @@
+import { z } from "zod";
 import { invokeTool } from "../../agents/tools/registry.ts";
 import type { ToolContext } from "../../agents/tools/types.ts";
 import { registerProductTools } from "../tools.ts";
 import { createConfirmationToken, describeConfirmation, toolRequiresConfirmation } from "./policy.ts";
 import { presentErrorCard, presentToolResult } from "./presenters.ts";
 import type {
+  AssistantToolName,
   AssistantRealtimeFunctionTool,
   AssistantToolRouteResponse,
 } from "./types.ts";
 
-type AssistantToolName =
-  | "get_brief"
-  | "get_launch_readiness"
-  | "list_qualified_signals"
-  | "get_workspace_context"
-  | "recall_company_brain"
-  | "get_conversation_proof"
-  | "generate_meeting_prep"
-  | "decide_approval"
-  | "dispatch_outreach"
-  | "retry_failed_workflow";
+const AssistantUuidSchema = z.string().uuid();
+
+const AssistantToolInputSchemas = {
+  get_brief: z.object({}).strict(),
+  get_launch_readiness: z.object({
+    required_channel: z.enum(["any", "email", "linkedin", "both"]).optional(),
+  }).strict(),
+  list_qualified_signals: z.object({
+    limit: z.number().int().min(1).max(25).optional(),
+  }).strict(),
+  get_workspace_context: z.object({}).strict(),
+  recall_company_brain: z.object({}).strict(),
+  get_conversation_proof: z.object({
+    conversation_id: AssistantUuidSchema,
+  }).strict(),
+  generate_meeting_prep: z.object({
+    conversation_id: AssistantUuidSchema,
+  }).strict(),
+  decide_approval: z.object({
+    approval_id: AssistantUuidSchema,
+    decision: z.enum(["approved", "rejected"]),
+    note: z.string().trim().min(1).max(500).optional(),
+  }).strict(),
+  dispatch_outreach: z.object({
+    limit: z.number().int().min(1).max(25).optional(),
+  }).strict(),
+  retry_failed_workflow: z.object({
+    run_id: AssistantUuidSchema,
+  }).strict(),
+} satisfies Record<AssistantToolName, z.ZodType<Record<string, unknown>>>;
 
 interface AssistantToolDefinition {
   description: string;
+  inputSchema: z.ZodType<Record<string, unknown>>;
   name: AssistantToolName;
   parameters: Record<string, unknown>;
   productTool: string;
@@ -32,6 +54,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "get_brief",
     description:
       "Get the current Bombsell operating brief: signal volume, outreach, replies, meetings, pending reviews, channel readiness, and next action.",
+    inputSchema: AssistantToolInputSchemas.get_brief,
     productTool: "product.brief.get",
     parameters: {
       type: "object",
@@ -43,6 +66,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "get_launch_readiness",
     description:
       "Check why outbound is ready, blocked, or needs attention for email or LinkedIn.",
+    inputSchema: AssistantToolInputSchemas.get_launch_readiness,
     productTool: "product.launch.readiness.get",
     parameters: {
       type: "object",
@@ -60,6 +84,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "list_qualified_signals",
     description:
       "List qualified signals, verified contacts, draft readiness, and approval blockers.",
+    inputSchema: AssistantToolInputSchemas.list_qualified_signals,
     productTool: "product.qualified_signals.list",
     parameters: {
       type: "object",
@@ -78,6 +103,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "get_workspace_context",
     description:
       "Load deeper workspace context spanning profile, sources, approvals, conversations, and outcomes.",
+    inputSchema: AssistantToolInputSchemas.get_workspace_context,
     productTool: "product.context.get",
     parameters: {
       type: "object",
@@ -89,6 +115,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "recall_company_brain",
     description:
       "Recall shared company memory, decisions, signals, outcomes, and meeting prep.",
+    inputSchema: AssistantToolInputSchemas.recall_company_brain,
     productTool: "product.company_brain.recall",
     parameters: {
       type: "object",
@@ -100,6 +127,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "get_conversation_proof",
     description:
       "Load the exact proof trace for one outreach conversation, including signal, drafts, replies, and meeting evidence.",
+    inputSchema: AssistantToolInputSchemas.get_conversation_proof,
     productTool: "product.conversation.trust.get",
     parameters: {
       type: "object",
@@ -117,6 +145,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "generate_meeting_prep",
     description:
       "Generate source-backed meeting prep for one Bombsell conversation.",
+    inputSchema: AssistantToolInputSchemas.generate_meeting_prep,
     productTool: "product.meeting.prep.generate",
     parameters: {
       type: "object",
@@ -134,6 +163,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "decide_approval",
     description:
       "Approve or reject a pending Bombsell approval gate after explicit confirmation.",
+    inputSchema: AssistantToolInputSchemas.decide_approval,
     productTool: "product.approval.decide",
     parameters: {
       type: "object",
@@ -160,6 +190,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "dispatch_outreach",
     description:
       "Dispatch durable outreach workflows for matched Bombsell signals after explicit confirmation.",
+    inputSchema: AssistantToolInputSchemas.dispatch_outreach,
     productTool: "product.signals.dispatch_plays",
     parameters: {
       type: "object",
@@ -178,6 +209,7 @@ const TOOL_DEFS: Record<AssistantToolName, AssistantToolDefinition> = {
     name: "retry_failed_workflow",
     description:
       "Retry a failed Bombsell workflow run after explicit confirmation.",
+    inputSchema: AssistantToolInputSchemas.retry_failed_workflow,
     productTool: "product.workflow.retry",
     parameters: {
       type: "object",
@@ -208,6 +240,41 @@ function getAssistantTool(
   return TOOL_DEFS[toolName as AssistantToolName];
 }
 
+function formatAssistantToolValidationError(
+  toolName: AssistantToolName,
+  error: z.ZodError,
+): string {
+  const issue = error.issues[0];
+  if (!issue) return `Invalid arguments for ${toolName}.`;
+  const path = issue.path.join(".");
+  return path
+    ? `Invalid arguments for ${toolName}: ${path} ${issue.message}.`
+    : `Invalid arguments for ${toolName}: ${issue.message}.`;
+}
+
+export function validateAssistantToolInvocation(input: {
+  arguments: Record<string, unknown>;
+  toolName: string;
+}): {
+  arguments: Record<string, unknown>;
+  toolName: AssistantToolName;
+} {
+  const def = getAssistantTool(input.toolName);
+  if (!def) {
+    throw new Error("Unknown assistant tool.");
+  }
+  const parsed = def.inputSchema.safeParse(input.arguments);
+  if (!parsed.success) {
+    throw new Error(
+      formatAssistantToolValidationError(def.name, parsed.error),
+    );
+  }
+  return {
+    arguments: parsed.data,
+    toolName: def.name,
+  };
+}
+
 async function runProductTool(
   toolName: AssistantToolName,
   input: Record<string, unknown>,
@@ -226,21 +293,28 @@ export async function executeAssistantTool(input: {
   ctx: ToolContext & { user_id: string };
   confirmed?: boolean;
 }): Promise<AssistantToolRouteResponse> {
-  const def = getAssistantTool(input.toolName);
-  if (!def) {
+  let validated;
+  try {
+    validated = validateAssistantToolInvocation({
+      toolName: input.toolName,
+      arguments: input.arguments,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       status: "errored",
       tool_name: input.toolName,
-      cards: presentErrorCard(input.toolName, "Unknown assistant tool."),
-      error: "Unknown assistant tool.",
+      cards: presentErrorCard(input.toolName, message),
+      error: message,
     };
   }
+  const def = TOOL_DEFS[validated.toolName];
 
   if (toolRequiresConfirmation(def.name) && !input.confirmed) {
-    const description = describeConfirmation(def.name, input.arguments);
+    const description = describeConfirmation(def.name, validated.arguments);
     const token = createConfirmationToken({
       toolName: def.name,
-      input: input.arguments,
+      input: validated.arguments,
       userId: input.ctx.user_id,
       workspaceId: input.ctx.workspace_id,
     });
@@ -272,7 +346,7 @@ export async function executeAssistantTool(input: {
   }
 
   try {
-    const result = await runProductTool(def.name, input.arguments, input.ctx);
+    const result = await runProductTool(def.name, validated.arguments, input.ctx);
     return {
       status: "completed",
       tool_name: def.name,

@@ -13,6 +13,7 @@ import Icon from "../Icon";
 import type {
   AssistantCard,
   AssistantConfirmationRequest,
+  AssistantToolName,
   AssistantToolRequest,
   AssistantToolRouteResponse,
 } from "../../core/product/assistant/types.ts";
@@ -436,7 +437,10 @@ export default function VoiceAssistantDrawer() {
           const parsedArguments = JSON.parse(rawArguments) as Record<string, unknown>;
           const body: AssistantToolRequest = {
             action: "invoke",
-            tool_name: toolName,
+            // Tool name arrives from the realtime model as an untrusted string;
+            // the /api/assistant/tool route revalidates it against the allowed
+            // tool surface (400 on unknown), so a boundary cast is safe here.
+            tool_name: toolName as AssistantToolName,
             call_id: callId,
             request_id: responseId ?? null,
             arguments: parsedArguments,

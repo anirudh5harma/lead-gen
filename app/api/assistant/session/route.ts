@@ -6,7 +6,11 @@ import {
   startAssistantRealtimeSession,
   assistantVoice,
 } from "../../../../core/product/assistant/session.ts";
-import { publishAssistantSessionStarted } from "../../../../core/product/assistant/telemetry.ts";
+import {
+  assertAssistantSessionAllowed,
+  isAssistantUsageCapExceededError,
+  publishAssistantSessionStarted,
+} from "../../../../core/product/assistant/telemetry.ts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +31,7 @@ export async function handleAssistantSessionRequest(
   deps: {
     getSession?: typeof loadActiveWorkspaceSession;
     publishStarted?: typeof publishAssistantSessionStarted;
+    assertSessionAllowed?: typeof assertAssistantSessionAllowed;
     startRealtime?: typeof startAssistantRealtimeSession;
   } = {},
 ): Promise<Response> {
@@ -42,6 +47,21 @@ export async function handleAssistantSessionRequest(
     return Response.json(
       { error: "Valid sdp and mode are required." },
       { status: 400 },
+    );
+  }
+
+  try {
+    await (deps.assertSessionAllowed ?? assertAssistantSessionAllowed)({
+      workspaceId: active.workspace.id,
+    });
+  } catch (error) {
+    if (isAssistantUsageCapExceededError(error)) {
+      return Response.json({ error: error.message }, { status: 429 });
+    }
+    console.error("[assistant/session] usage guard failed", error);
+    return Response.json(
+      { error: "Failed to start assistant session." },
+      { status: 503 },
     );
   }
 

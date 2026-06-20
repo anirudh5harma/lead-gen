@@ -22,6 +22,26 @@ export function assistantVoice(): string {
   return "marin";
 }
 
+function readNonnegativeIntEnv(
+  key: string,
+  fallback: number,
+): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed)
+    ? Math.max(0, Math.trunc(parsed))
+    : fallback;
+}
+
+export function assistantDailySessionCapDefault(): number {
+  return readNonnegativeIntEnv("BOMBSELL_ASSISTANT_DAILY_SESSION_CAP", 50);
+}
+
+export function assistantDailyToolCapDefault(): number {
+  return readNonnegativeIntEnv("BOMBSELL_ASSISTANT_DAILY_TOOL_CAP", 500);
+}
+
 export function assistantSafetyIdentifier(userId: string): string {
   return createHash("sha256").update(`bombsell:${userId}`).digest("hex");
 }
@@ -63,4 +83,3 @@ export function buildRealtimeSessionConfig(
     tool_choice: "auto",
   };
 }
-

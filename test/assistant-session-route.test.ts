@@ -5,6 +5,7 @@ import {
   handleAssistantSessionRequest,
   runtime,
 } from "../app/api/assistant/session/route.ts";
+import { AssistantUsageCapExceededError } from "../core/product/assistant/telemetry.ts";
 import type { ActiveWorkspaceSession } from "../lib/workspace.ts";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
@@ -47,6 +48,7 @@ test("assistant session route validates the request body", async () => {
     mode: "voice",
   }), {
     getSession: async () => activeSession(),
+    assertSessionAllowed: async () => {},
   });
 
   assert.equal(response.status, 400);
@@ -72,6 +74,7 @@ test("assistant session route starts realtime and records telemetry", async () =
     mode: "voice",
   }), {
     getSession: async () => activeSession(),
+    assertSessionAllowed: async () => {},
     startRealtime: async (input) => {
       seenRealtime = input;
       return { sdp: "answer-sdp", callId: "call_123" };
@@ -108,13 +111,14 @@ test("assistant session route surfaces realtime startup failures", async () => {
 
   try {
     const response = await handleAssistantSessionRequest(sessionRequest({
-      sdp: "offer-sdp",
-      mode: "text",
-    }), {
-      getSession: async () => activeSession(),
-      startRealtime: async () => {
-        throw new Error("OpenAI unavailable");
-      },
+    sdp: "offer-sdp",
+    mode: "text",
+  }), {
+    getSession: async () => activeSession(),
+    assertSessionAllowed: async () => {},
+    startRealtime: async () => {
+      throw new Error("OpenAI unavailable");
+    },
     });
 
     assert.equal(response.status, 503);
@@ -122,6 +126,25 @@ test("assistant session route surfaces realtime startup failures", async () => {
   } finally {
     console.error = originalError;
   }
+});
+
+test("assistant session route enforces the workspace session cap", async () => {
+  const response = await handleAssistantSessionRequest(sessionRequest({
+    sdp: "offer-sdp",
+    mode: "voice",
+  }), {
+    getSession: async () => activeSession(),
+    assertSessionAllowed: async () => {
+      throw new AssistantUsageCapExceededError({
+        kind: "session",
+        cap: 3,
+        used: 3,
+      });
+    },
+  });
+
+  assert.equal(response.status, 429);
+  assert.match(await response.text(), /session cap reached/i);
 });
 
 test("assistant session route runs as a dynamic node handler", () => {
