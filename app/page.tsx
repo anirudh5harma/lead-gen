@@ -244,8 +244,8 @@ export default function Home() {
           <div className="mt-12 grid grid-cols-1 gap-3 md:grid-cols-2 lg:gap-4">
             {FEATURES.map((feature, i) => (
               <ScrollReveal key={feature.title} delay={i * 0.08}>
-                <article className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-7 transition-colors hover:border-[var(--color-line-3)]">
-                  <div className={`mb-5 inline-flex size-10 items-center justify-center rounded-[10px] ${TONE_BG[feature.tone]}`}>
+                <article className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-7 transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] hover:-translate-y-1 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)]">
+                  <div className={`mb-5 inline-flex size-10 items-center justify-center rounded-[10px] transition-transform duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] group-hover:scale-105 ${TONE_BG[feature.tone]}`}>
                     <Icon name={feature.icon} size={18} />
                   </div>
                   <h3 className="text-[20px] font-semibold tracking-[-0.015em] text-[var(--color-text-1)]">
@@ -280,12 +280,8 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             {STACK.map((card, i) => (
               <ScrollReveal key={card.title} delay={i * 0.05}>
-                <div className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-colors hover:border-[var(--color-line-3)]">
-                  <div
-                    aria-hidden
-                    className={`pointer-events-none absolute -right-6 -top-6 size-16 rounded-full opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-60 ${TONE_DOT[card.tone]}`}
-                  />
-                  <div className={`relative mb-4 inline-flex size-10 items-center justify-center rounded-[10px] ${TONE_BG[card.tone]}`}>
+                <div className="group relative h-full overflow-hidden rounded-[16px] border border-[var(--color-line-1)] bg-[var(--color-ink-0)] p-5 transition-[transform,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] hover:-translate-y-1 hover:border-[var(--color-line-3)] hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.22)]">
+                  <div className={`mb-4 inline-flex size-10 items-center justify-center rounded-[10px] transition-transform duration-300 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] group-hover:scale-105 ${TONE_BG[card.tone]}`}>
                     <Icon name={card.icon} size={18} />
                   </div>
                   <p className="relative text-[15px] font-semibold tracking-[-0.01em] text-[var(--color-text-1)]">
